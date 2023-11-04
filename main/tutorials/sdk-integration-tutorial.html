@@ -556,13 +556,13 @@ from executing a <a class="reference external" href="../sdk-bundled-io.html">Bun
 <p>In this tutorial, a <cite>Bundled Program</cite> is created from the example model above.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
-
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <a href="https://pytorch.org/docs/stable/export.html#torch.export.export" title="torch.export.export" class="sphx-glr-backref-module-torch-export sphx-glr-backref-type-py-function"><span class="n">export</span></a>
 
 <span class="c1"># Step 1: ExecuTorch Program Export</span>
@@ -720,7 +720,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.614 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.519 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>

@@ -456,27 +456,6 @@
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<dl class="py function">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.config.MethodTestCase.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span></dt>
-<dd><p class="sd-card-text">Single test case for verifying specific method</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p class="sd-card-text"><strong>input</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
-<p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
-other than torch.tensor type, only the input in torch.tensor type will be actually updated in
-the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
-</p></li>
-<li><p class="sd-card-text"><strong>expected_output</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p class="sd-card-text">self</p>
-</dd>
-</dl>
-</dd></dl>
-
 </div>
 </details><details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -485,30 +464,12 @@ the method, and the rest of the inputs will just do a sanity check if they match
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<dl class="py function">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">MethodTestSuite</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_cases</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/config.html#MethodTestSuite"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p class="sd-card-text">All test info related to verify method</p>
-<dl class="py attribute">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">method_name</span></span></dt>
-<dd><p class="sd-card-text">Name of the method to be verified.</p>
-</dd></dl>
-
-<dl class="py attribute">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">test_cases</span></span></dt>
-<dd><p class="sd-card-text">All test cases for verifying the method.</p>
-</dd></dl>
-
-</dd></dl>
-
 </div>
 </details><p>Since each model may have multiple inference methods, we need to generate <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold all essential infos.</p>
 </div>
 <div class="section" id="step-3-generate-bundledprogram">
 <h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this headline">¶</a></h3>
-<p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
+<p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/sdk/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><div class="sd-summary-down docutils">
@@ -516,23 +477,6 @@ the method, and the rest of the inputs will just do a sanity check if they match
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<dl class="py function">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.core.</span></span><span class="sig-name descname"><span class="pre">create_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">method_test_suites</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/core.html#create_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p class="sd-card-text">Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p class="sd-card-text"><strong>program</strong> – The program to be bundled.</p></li>
-<li><p class="sd-card-text"><strong>method_test_suites</strong> – The testcases for certain methods to be bundled.</p></li>
-</ul>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p class="sd-card-text">The <cite>BundledProgram</cite> variable contains given ExecuTorch program and test cases.</p>
-</dd>
-</dl>
-</dd></dl>
-
 </div>
 </details><p><code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> will do sannity check internally to see if the given <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> matches the given Program’s requirements. Specifically:</p>
 <ol class="arabic simple">
@@ -542,7 +486,7 @@ the method, and the rest of the inputs will just do a sanity check if they match
 </div>
 <div class="section" id="step-4-serialize-bundledprogram-to-flatbuffer">
 <h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this headline">¶</a></h3>
-<p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/bundled_program/serialize/__init__.py</span></code>.</p>
+<p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/sdk/bundled_program/serialize/__init__.py</span></code>.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 Serialize and Deserialize<div class="sd-summary-down docutils">
@@ -550,34 +494,6 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<dl class="py function">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">serialize_from_bundled_program_to_flatbuffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bundled_program</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/serialize.html#serialize_from_bundled_program_to_flatbuffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p class="sd-card-text">Serialize a BundledProgram into FlatBuffer binary format.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p class="sd-card-text"><strong>bundled_program</strong> (<em>BundledProgram</em>) – The <cite>BundledProgram</cite> variable to be serialized.</p>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p class="sd-card-text">The serialized FlatBuffer binary data in bytes.</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py function">
-<dt class="sig sig-object py">
-<span class="sig-prename descclassname"><span class="pre">bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">deserialize_from_flatbuffer_to_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flatbuffer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/bundled_program/serialize.html#deserialize_from_flatbuffer_to_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
-<dd><p class="sd-card-text">Deserialize a FlatBuffer binary format into a BundledProgram.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p class="sd-card-text"><strong>flatbuffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#bytes" title="(in Python v3.12)"><em>bytes</em></a>) – The FlatBuffer binary data in bytes.</p>
-</dd>
-<dt class="field-even">Returns</dt>
-<dd class="field-even"><p class="sd-card-text">A <cite>BundledProgram</cite> instance.</p>
-</dd>
-</dl>
-</dd></dl>
-
 </div>
 </details></div>
 <div class="section" id="emit-example">
@@ -586,9 +502,9 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
 
@@ -693,7 +609,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </pre></div>
 </div>
 <p>We can also regenerate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> from flatbuffer file if needed:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.bundled_program.serialize</span> <span class="kn">import</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.serialize</span> <span class="kn">import</span> <span class="n">deserialize_from_flatbuffer_to_bundled_program</span>
 <span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;bundled_program.bpte&quot;</span>
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">serialized_bundled_program</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
@@ -718,25 +634,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p class="sd-card-text">doxygenfunction: Unable to resolve function “torch::executor::util::GetProgramData” with arguments “None”.
-Candidate function could not be parsed. Parsing error is
-Error when parsing function declaration.
-If the function has no return type:
-  Error in declarator or parameters-and-qualifiers
-  Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 15]
-    __ET_NODISCARD Error GetProgramData (void *file_data, size_t file_data_len, const void **out_program_data, size_t *out_program_data_len)
-    —————^
-If the function has a return type:
-  Error in declarator or parameters-and-qualifiers
-  If pointer to member declarator:
-    Invalid C++ declaration: Expected ‘::’ in pointer to member (function). [error at 21]
-      __ET_NODISCARD Error GetProgramData (void *file_data, size_t file_data_len, const void **out_program_data, size_t *out_program_data_len)
-      ———————^
-  If declarator-id:
-    Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 21]
-      __ET_NODISCARD Error GetProgramData (void *file_data, size_t file_data_len, const void **out_program_data, size_t *out_program_data_len)
-      ———————^
-</p>
+<p class="sd-card-text">doxygenfunction: Cannot find function “torch::executor::bundled_program::GetProgramData” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
 </div>
 </div>
 </details><p>Here’s an example of how to use the <code class="docutils literal notranslate"><span class="pre">GetProgramData</span></code> API:</p>
@@ -753,7 +651,7 @@ If the function has a return type:
 
 <span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">program_ptr</span><span class="p">;</span>
 <span class="kt">size_t</span><span class="w"> </span><span class="n">program_len</span><span class="p">;</span>
-<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">util</span><span class="o">::</span><span class="n">GetProgramData</span><span class="p">(</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">GetProgramData</span><span class="p">(</span>
 <span class="w">    </span><span class="n">buff_ptr</span><span class="p">.</span><span class="n">get</span><span class="p">(),</span><span class="w"> </span><span class="n">buff_len</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_ptr</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">program_len</span><span class="p">);</span>
 <span class="n">ET_CHECK_MSG</span><span class="p">(</span>
 <span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">,</span>
@@ -764,7 +662,7 @@ If the function has a return type:
 </div>
 <div class="section" id="load-bundled-input-to-method">
 <h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this headline">¶</a></h3>
-<p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::util::LoadBundledInput</span></code>:</p>
+<p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::bundled_program::LoadBundledInput</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">LoadBundledInput</span></code><div class="sd-summary-down docutils">
@@ -774,31 +672,13 @@ If the function has a return type:
 </summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p class="sd-card-text">doxygenfunction: Unable to resolve function “torch::executor::util::LoadBundledInput” with arguments “None”.
-Candidate function could not be parsed. Parsing error is
-Error when parsing function declaration.
-If the function has no return type:
-  Error in declarator or parameters-and-qualifiers
-  Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 15]
-    __ET_NODISCARD Error LoadBundledInput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx)
-    —————^
-If the function has a return type:
-  Error in declarator or parameters-and-qualifiers
-  If pointer to member declarator:
-    Invalid C++ declaration: Expected ‘::’ in pointer to member (function). [error at 21]
-      __ET_NODISCARD Error LoadBundledInput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx)
-      ———————^
-  If declarator-id:
-    Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 21]
-      __ET_NODISCARD Error LoadBundledInput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx)
-      ———————^
-</p>
+<p class="sd-card-text">doxygenfunction: Cannot find function “torch::executor::bundled_program::LoadBundledInput” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
 </div>
 </div>
 </details></div>
 <div class="section" id="verify-the-method-s-output">
 <h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this headline">¶</a></h3>
-<p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::util::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
+<p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 <code class="docutils literal notranslate"><span class="pre">VerifyResultWithBundledExpectedOutput</span></code><div class="sd-summary-down docutils">
@@ -808,25 +688,7 @@ If the function has a return type:
 </summary><div class="sd-summary-content sd-card-body docutils">
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p class="sd-card-text">doxygenfunction: Unable to resolve function “torch::executor::util::VerifyResultWithBundledExpectedOutput” with arguments “None”.
-Candidate function could not be parsed. Parsing error is
-Error when parsing function declaration.
-If the function has no return type:
-  Error in declarator or parameters-and-qualifiers
-  Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 15]
-    __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx, double rtol, double atol)
-    —————^
-If the function has a return type:
-  Error in declarator or parameters-and-qualifiers
-  If pointer to member declarator:
-    Invalid C++ declaration: Expected ‘::’ in pointer to member (function). [error at 21]
-      __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx, double rtol, double atol)
-      ———————^
-  If declarator-id:
-    Invalid C++ declaration: Expecting “(” in parameters-and-qualifiers. [error at 21]
-      __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput (Method &amp;method, serialized_bundled_program *bundled_program_ptr, MemoryAllocator *memory_allocator, const char *method_name, size_t testset_idx, double rtol, double atol)
-      ———————^
-</p>
+<p class="sd-card-text">doxygenfunction: Cannot find function “torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput” in doxygen xml output for project “ExecuTorch” from directory: ../build/xml/</p>
 </div>
 </div>
 </details></div>
@@ -844,7 +706,7 @@ If the function has a return type:
 <span class="w">    </span><span class="n">method</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
 
 <span class="c1">// Load testset_idx-th input in the buffer to plan</span>
-<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">util</span><span class="o">::</span><span class="n">LoadBundledInput</span><span class="p">(</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">LoadBundledInput</span><span class="p">(</span>
 <span class="w">        </span><span class="o">*</span><span class="n">method</span><span class="p">,</span>
 <span class="w">        </span><span class="n">program_data</span><span class="p">.</span><span class="n">bundled_program_data</span><span class="p">(),</span>
 <span class="w">        </span><span class="o">&amp;</span><span class="n">bundled_input_allocator</span><span class="p">,</span>
@@ -863,7 +725,7 @@ If the function has a return type:
 <span class="w">    </span><span class="n">status</span><span class="p">);</span>
 
 <span class="c1">// Verify the result.</span>
-<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">util</span><span class="o">::</span><span class="n">VerifyResultWithBundledExpectedOutput</span><span class="p">(</span>
+<span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">VerifyResultWithBundledExpectedOutput</span><span class="p">(</span>
 <span class="w">        </span><span class="o">*</span><span class="n">method</span><span class="p">,</span>
 <span class="w">        </span><span class="n">program_data</span><span class="p">.</span><span class="n">bundled_program_data</span><span class="p">(),</span>
 <span class="w">        </span><span class="o">&amp;</span><span class="n">bundled_input_allocator</span><span class="p">,</span>
@@ -888,8 +750,8 @@ If the function has a return type:
 <p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
@@ -979,7 +841,7 @@ Raised Error<div class="sd-summary-down docutils">
      <span class="mi">68</span> <span class="p">]</span>
      <span class="mi">70</span> <span class="c1"># Step 3: Generate BundledProgram</span>
 <span class="o">---&gt;</span> <span class="mi">72</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
     <span class="mi">264</span> <span class="s2">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
 <span class="s2">    265</span>
 <span class="s2">    266 Args:</span>
@@ -990,7 +852,7 @@ Raised Error<div class="sd-summary-down docutils">
 <span class="o">--&gt;</span> <span class="mi">276</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
     <span class="mi">278</span> <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="mi">280</span> <span class="c1"># Emit data and metadata of bundled tensor</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">219</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">219</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
     <span class="mi">215</span> <span class="c1"># type of tensor input should match execution plan</span>
     <span class="mi">216</span> <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">cur_plan_test_inputs</span><span class="p">[</span><span class="n">j</span><span class="p">])</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
     <span class="mi">217</span>     <span class="c1"># pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`</span>
@@ -1025,8 +887,8 @@ Raised Error<div class="sd-summary-down docutils">
 <p>Another common error would be the method name in any <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
@@ -1113,7 +975,7 @@ Raised Error<div class="sd-summary-down docutils">
      <span class="mi">70</span> <span class="n">method_test_suites</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">method_name</span> <span class="o">=</span> <span class="s2">&quot;MISSING_METHOD_NAME&quot;</span>
      <span class="mi">72</span> <span class="c1"># Generate BundledProgram</span>
 <span class="o">---&gt;</span> <span class="mi">73</span> <span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">276</span><span class="p">,</span> <span class="ow">in</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
     <span class="mi">264</span> <span class="s2">&quot;&quot;&quot;Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.</span>
 <span class="s2">    265</span>
 <span class="s2">    266 Args:</span>
@@ -1124,7 +986,7 @@ Raised Error<div class="sd-summary-down docutils">
 <span class="o">--&gt;</span> <span class="mi">276</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
     <span class="mi">278</span> <span class="n">bundled_method_test_suites</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">bp_schema</span><span class="o">.</span><span class="n">BundledMethodTestSuite</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="mi">280</span> <span class="c1"># Emit data and metadata of bundled tensor</span>
-<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">141</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
+<span class="n">File</span> <span class="o">/</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">bundled_program</span><span class="o">/</span><span class="n">core</span><span class="o">.</span><span class="n">py</span><span class="p">:</span><span class="mi">141</span><span class="p">,</span> <span class="ow">in</span> <span class="n">assert_valid_bundle</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">method_test_suites</span><span class="p">)</span>
     <span class="mi">138</span> <span class="n">method_name_of_program</span> <span class="o">=</span> <span class="p">{</span><span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="n">program</span><span class="o">.</span><span class="n">execution_plan</span><span class="p">}</span>
     <span class="mi">139</span> <span class="n">method_name_of_test_suites</span> <span class="o">=</span> <span class="p">{</span><span class="n">t</span><span class="o">.</span><span class="n">method_name</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">method_test_suites</span><span class="p">}</span>
 <span class="o">--&gt;</span> <span class="mi">141</span> <span class="k">assert</span> <span class="n">method_name_of_test_suites</span><span class="o">.</span><span class="n">issubset</span><span class="p">(</span>
