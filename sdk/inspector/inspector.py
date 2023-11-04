@@ -10,6 +10,7 @@ from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
+    Any,
     Dict,
     List,
     Mapping,
@@ -119,6 +120,10 @@ class PerfData:
         self.raw: List[float] = raw
 
     @property
+    def p10(self) -> float:
+        return np.percentile(self.raw, 10)
+
+    @property
     def p50(self) -> float:
         return np.percentile(self.raw, 50)
 
@@ -147,7 +152,7 @@ class Event:
 
     Args:
         name: Name of the profiling/debugging `Event`.
-        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p50, p90, avg, min and max).
+        perf_data: Performance data associated with the event retrived from the runtime (available attributes: p10, p50, p90, avg, min and max).
         op_type: List of op types corresponding to the event.
         delegate_debug_identifier: Supplemental identifier used in combination with instruction id.
         debug_handles: Debug handles in the model graph to which this event is correlated.
@@ -217,7 +222,8 @@ class Event:
         )
 
     def _associate_with_op_graph_nodes(
-        self, debug_handle_to_op_node_map: Dict[int, OperatorNode]
+        self,
+        debug_handle_to_op_node_map: Dict[int, OperatorNode],
     ) -> None:
         """
         Helper function to populate the stack_traces, module_hierarchy and op_types attributes
@@ -236,6 +242,7 @@ class Event:
 
         for handle in debug_handles:
             node = debug_handle_to_op_node_map.get(handle)
+            # Attach node metadata including stack traces, module hierarchy and op_types to this event
             if node is not None and (metadata := node.metadata) is not None:
                 self.stack_traces[node.name] = metadata.get("stack_trace")
                 self.module_hierarchy[node.name] = metadata.get("nn_module_stack")
@@ -282,6 +289,7 @@ class EventBlock:
             "event_block_name": [self.name] * len(self.events),
             "event_name": [event.name for event in self.events],
             "raw": [event.perf_data.raw for event in self.events],
+            "p10" + units: [event.perf_data.p10 for event in self.events],
             "p50" + units: [event.perf_data.p50 for event in self.events],
             "p90" + units: [event.perf_data.p90 for event in self.events],
             "avg" + units: [event.perf_data.avg for event in self.events],
@@ -494,7 +502,9 @@ class Inspector:
 
         for event_block in self.event_blocks:
             for event in event_block.events:
-                event._associate_with_op_graph_nodes(debug_handle_to_op_node_map)
+                event._associate_with_op_graph_nodes(
+                    debug_handle_to_op_node_map=debug_handle_to_op_node_map,
+                )
 
     def print_data_tabular(self, include_units: bool = True) -> None:
         """
