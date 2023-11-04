@@ -61,13 +61,13 @@ def define_common_targets():
     runtime.export_file(
         name = INPUT_BUNDLED,
         visibility = [
-            "//executorch/bundled_program/serialize/...",
+            "//executorch/sdk/bundled_program/serialize/...",
         ],
     )
     runtime.export_file(
         name = INPUT_SCALAR_TYPE,
         visibility = [
-            "//executorch/bundled_program/serialize/...",
+            "//executorch/sdk/bundled_program/serialize/...",
             "//executorch/exir/_serialize/...",
             "//executorch/sdk/etdump/...",
         ],
@@ -110,7 +110,7 @@ def define_common_targets():
         name = BUNDLED_LIBRARY_NAME,
         srcs = [],
         visibility = [
-            "//executorch/bundled_program/...",
+            "//executorch/sdk/bundled_program/...",
             "//executorch/extension/pybindings/...",
             "//executorch/examples/bundled_executor_runner/...",
             "//executorch/util/...",  # bundled_program_verification
