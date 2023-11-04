@@ -16,7 +16,7 @@ from executorch.sdk.bundled_program.serialize import (
     deserialize_from_flatbuffer_to_bundled_program,
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.sdk.bundled_program.tests.common import get_common_program
+from executorch.sdk.bundled_program.util.test_util import get_common_program
 
 
 class TestSerialize(unittest.TestCase):
