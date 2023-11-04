@@ -25,8 +25,8 @@
 #include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/schema/bundled_program_schema_generated.h>
-#include <executorch/util/bundled_program_verification.h>
+#include <executorch/sdk/bundled_program/runtime.h>
+#include <executorch/sdk/bundled_program/schema/bundled_program_schema_generated.h>
 #include <executorch/util/read_file.h>
 
 #include <ATen/Functions.h>
@@ -466,7 +466,7 @@ struct PyModule final {
       const string method_name,
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = util::LoadBundledInput(
+    Error status = bundled_program::LoadBundledInput(
         module_->get_method(method_name),
         bundled_program_ptr,
         &m.get_bundled_input_allocator(),
@@ -483,7 +483,7 @@ struct PyModule final {
       const string method_name,
       size_t testset_idx) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
-    Error status = util::VerifyResultWithBundledExpectedOutput(
+    Error status = bundled_program::VerifyResultWithBundledExpectedOutput(
         module_->get_method(method_name),
         bundled_program_ptr,
         &m.get_bundled_input_allocator(),

@@ -1,0 +1,12 @@
+# @noautodeps
+
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "schema",
+    srcs = [
+        "test_schema.py",
+    ],
+)

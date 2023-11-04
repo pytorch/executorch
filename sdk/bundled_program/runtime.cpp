@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/util/bundled_program_verification.h>
+#include <executorch/sdk/bundled_program/runtime.h>
 
 #include <cmath>
 #include <cstddef>
@@ -20,11 +20,11 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/log.h>
-#include <executorch/schema/bundled_program_schema_generated.h>
+#include <executorch/sdk/bundled_program/schema/bundled_program_schema_generated.h>
 
 namespace torch {
 namespace executor {
-namespace util {
+namespace bundled_program {
 
 namespace {
 
@@ -365,6 +365,6 @@ bool IsBundledProgram(void* file_data) {
       file_data);
 }
 
-} // namespace util
+} // namespace bundled_program
 } // namespace executor
 } // namespace torch

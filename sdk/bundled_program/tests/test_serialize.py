@@ -8,14 +8,15 @@
 
 import unittest
 
-from executorch.bundled_program.core import create_bundled_program
+from executorch.exir.print_program import pretty_print
 
-from executorch.bundled_program.serialize import (
+from executorch.sdk.bundled_program.core import create_bundled_program
+
+from executorch.sdk.bundled_program.serialize import (
     deserialize_from_flatbuffer_to_bundled_program,
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.bundled_program.tests.common import get_common_program
-from executorch.exir.print_program import pretty_print
+from executorch.sdk.bundled_program.tests.common import get_common_program
 
 
 class TestSerialize(unittest.TestCase):

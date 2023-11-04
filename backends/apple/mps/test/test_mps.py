@@ -25,12 +25,6 @@ from executorch.backends.apple.mps.test.test_mps_utils import (
     TestMPS,
 )
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
-)
-
 from executorch.exir import ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.tests.models import (
@@ -42,6 +36,12 @@ from executorch.exir.tests.models import (
     ModelWithUnusedArg,
     Mul,
     Repeat,
+)
+
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
+    serialize_from_bundled_program_to_flatbuffer,
 )
 
 

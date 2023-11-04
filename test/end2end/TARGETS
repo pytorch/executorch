@@ -40,9 +40,6 @@ python_unittest(
         ":exported_module",
         ":register_scratch_meta_fns",
         "//caffe2:torch",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
-        "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:dynamic_shape",
         "//executorch/exir:lib",
         "//executorch/exir:memory",
@@ -59,6 +56,9 @@ python_unittest(
         "//executorch/extension/pybindings:aten_lib",
         "//executorch/extension/pytree:pybindings",
         "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
     ],
 )
 
@@ -72,9 +72,6 @@ python_unittest(
         ":exported_module",
         ":register_scratch_meta_fns",
         "//caffe2:torch",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
-        "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:dynamic_shape",
         "//executorch/exir:lib",
         "//executorch/exir:memory",
@@ -91,5 +88,8 @@ python_unittest(
         "//executorch/extension/pybindings:portable_lib",
         "//executorch/extension/pytree:pybindings",
         "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
     ],
 )

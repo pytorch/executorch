@@ -8,8 +8,8 @@ __pycache__/
 build/lib/
 exir/_serialize/scalar_type.fbs
 exir/_serialize/program.fbs
-bundled_program/serialize/bundled_program_schema.fbs
-bundled_program/serialize/scalar_type.fbs
+sdk/bundled_program/serialize/bundled_program_schema.fbs
+sdk/bundled_program/serialize/scalar_type.fbs
 
 # Any exported models and profiling outputs
 *.pte

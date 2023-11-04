@@ -10,15 +10,15 @@ import string
 from typing import List, Tuple
 
 import torch
-from executorch.bundled_program.config import (
+
+from executorch.exir import to_edge
+from executorch.exir.schema import Program
+from executorch.sdk.bundled_program.config import (
     MethodInputType,
     MethodOutputType,
     MethodTestCase,
     MethodTestSuite,
 )
-
-from executorch.exir import to_edge
-from executorch.exir.schema import Program
 from torch.export import export
 
 # A hacky integer to deal with a mismatch between execution plan and complier.

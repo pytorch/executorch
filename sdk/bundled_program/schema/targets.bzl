@@ -1,18 +1,17 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-# Construct the input and output file names. All input and output files rely on scalar_type file.
-PROGRAM_STEM = "program"
+BUNLDED_STEM = "bundled_program_schema"
 SCALAR_TYPE_STEM = "scalar_type"
 
-INPUT_PROGRAM = PROGRAM_STEM + ".fbs"
+INPUT_BUNDLED = BUNLDED_STEM + ".fbs"
 INPUT_SCALAR_TYPE = SCALAR_TYPE_STEM + ".fbs"
 
-OUTPUT_PROGRAM_HEADER = PROGRAM_STEM + "_generated.h"
+OUTPUT_BUNDLED_HEADER = BUNLDED_STEM + "_generated.h"
 OUTPUT_SCALAR_TYPE_HEADER = SCALAR_TYPE_STEM + "_generated.h"
 
-PROGRAM_GEN_RULE_NAME = "generate_program"
+BUNDLED_GEN_RULE_NAME = "generate_bundled_program"
 
-PROGRAM_LIRRARY_NAME = PROGRAM_STEM
+BUNDLED_LIBRARY_NAME = BUNLDED_STEM + "_fbs"
 
 def _generate_schema_header(rule_name, srcs, headers, default_header):
     """Generate header file given flatbuffer schema
@@ -48,55 +47,37 @@ def define_common_targets():
     """
 
     runtime.export_file(
-        name = INPUT_PROGRAM,
+        name = INPUT_BUNDLED,
         visibility = [
-            "//executorch/exir/_serialize/...",
+            "//executorch/sdk/bundled_program/serialize/...",
         ],
     )
+
     runtime.export_file(
         name = INPUT_SCALAR_TYPE,
         visibility = [
-            "//executorch/exir/_serialize/...",
-            "//executorch/sdk/etdump/...",
+            "//executorch/sdk/bundled_program/serialize/...",
         ],
     )
 
     _generate_schema_header(
-        PROGRAM_GEN_RULE_NAME,
-        [INPUT_PROGRAM, INPUT_SCALAR_TYPE],
-        [OUTPUT_PROGRAM_HEADER, OUTPUT_SCALAR_TYPE_HEADER],
-        OUTPUT_PROGRAM_HEADER,
+        BUNDLED_GEN_RULE_NAME,
+        [INPUT_BUNDLED, INPUT_SCALAR_TYPE],
+        [OUTPUT_BUNDLED_HEADER, OUTPUT_SCALAR_TYPE_HEADER],
+        OUTPUT_BUNDLED_HEADER,
     )
 
-    # Header-only library target with the generate executorch program schema header.
+    # Header-only library target with the generate bundled program schema header.
     runtime.cxx_library(
-        name = PROGRAM_LIRRARY_NAME,
+        name = BUNDLED_LIBRARY_NAME,
         srcs = [],
         visibility = [
-            # Lock this down as tightly as possible to ensure that flatbuffers
-            # are an implementation detail. Ideally this list would only include
-            # //executorch/runtime/executor/...
-            "//executorch/codegen/tools/...",
-            "//executorch/runtime/executor/...",
+            "//executorch/sdk/bundled_program/...",
+            "//executorch/extension/pybindings/...",
         ],
         exported_headers = {
-            OUTPUT_PROGRAM_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_PROGRAM_HEADER),
-            OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(PROGRAM_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
+            OUTPUT_BUNDLED_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_BUNDLED_HEADER),
+            OUTPUT_SCALAR_TYPE_HEADER: ":{}[{}]".format(BUNDLED_GEN_RULE_NAME, OUTPUT_SCALAR_TYPE_HEADER),
         },
         exported_external_deps = ["flatbuffers-api"],
-    )
-
-    runtime.cxx_library(
-        name = "extended_header",
-        srcs = ["extended_header.cpp"],
-        exported_headers = [
-            "extended_header.h",
-        ],
-        visibility = [
-            "//executorch/runtime/executor/...",
-            "//executorch/schema/test/...",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-        ],
     )
