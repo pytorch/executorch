@@ -13,7 +13,7 @@ import torch
 from executorch.extension.pytree import tree_flatten
 from executorch.sdk.bundled_program.config import DataContainer
 
-from executorch.sdk.bundled_program.tests.common import (
+from executorch.sdk.bundled_program.util.test_util import (
     get_random_test_suites,
     get_random_test_suites_with_eager_model,
     SampleModel,

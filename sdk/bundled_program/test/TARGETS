@@ -1,24 +1,7 @@
 # @noautodeps
-
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
-
-python_library(
-    name = "lib",
-    srcs = [
-        "common.py",
-    ],
-    visibility = [],
-    deps = [
-        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-        "//executorch/exir:schema",
-        "//executorch/sdk/bundled_program:config",
-    ],
-)
 
 python_unittest(
     name = "bundle_data",
@@ -26,25 +9,12 @@ python_unittest(
         "test_bundle_data.py",
     ],
     deps = [
-        ":lib",
         "//caffe2:torch",
         "//executorch/exir/_serialize:lib",
         "//executorch/sdk/bundled_program:config",
         "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/bundled_program/schema:bundled_program_schema_py",
-    ],
-)
-
-python_unittest(
-    name = "serialize",
-    srcs = [
-        "test_serialize.py",
-    ],
-    deps = [
-        ":lib",
-        "//executorch/exir:print_program",
-        "//executorch/sdk/bundled_program:core",
-        "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/sdk/bundled_program/util:test_util",
     ],
 )
 
@@ -54,10 +24,10 @@ python_unittest(
         "test_config.py",
     ],
     deps = [
-        ":lib",
         "//caffe2:torch",
         "//executorch/extension/pytree:pylib",
         "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program/util:test_util",
     ],
 )
 
@@ -67,7 +37,6 @@ python_unittest(
         "test_end2end.py",
     ],
     deps = [
-        ":lib",
         "//caffe2:torch",
         "//executorch/exir:dynamic_shape",
         "//executorch/exir:lib",
@@ -88,5 +57,6 @@ python_unittest(
         "//executorch/sdk/bundled_program:config",
         "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/bundled_program/serialize:lib",
+        "//executorch/sdk/bundled_program/util:test_util",
     ],
 )

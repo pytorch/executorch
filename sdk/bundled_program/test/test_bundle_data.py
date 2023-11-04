@@ -15,7 +15,7 @@ import torch
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.sdk.bundled_program.config import ConfigValue
 from executorch.sdk.bundled_program.core import create_bundled_program
-from executorch.sdk.bundled_program.tests.common import get_common_program
+from executorch.sdk.bundled_program.util.test_util import get_common_program
 
 
 class TestBundle(unittest.TestCase):
