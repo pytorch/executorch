@@ -10,8 +10,8 @@ runtime.python_library(
         "__init__.py",
     ],
     resources = {
-        "//executorch/schema:bundled_program_schema.fbs": "bundled_program_schema.fbs",
-        "//executorch/schema:scalar_type.fbs": "scalar_type.fbs",
+        "//executorch/sdk/bundled_program/schema:bundled_program_schema.fbs": "bundled_program_schema.fbs",
+        "//executorch/sdk/bundled_program/schema:scalar_type.fbs": "scalar_type.fbs",
     },
     # Currently serialization API should only be used in some dedicated targets,
     # to avoid ODR violation when linking with another Flatbuffers library.
@@ -32,6 +32,6 @@ runtime.python_library(
     deps = [
         "fbsource//third-party/pypi/setuptools:setuptools",
         "//executorch/exir/_serialize:lib",
-        "//executorch/sdk/bundled_program:schema",
+        "//executorch/sdk/bundled_program/schema:bundled_program_schema_py",
     ],
 )
