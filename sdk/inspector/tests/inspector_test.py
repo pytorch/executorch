@@ -65,7 +65,7 @@ class TestInspector(unittest.TestCase):
             # Call the constructor of Inspector
             Inspector(
                 etdump_path=ETDUMP_PATH,
-                etrecord_path=ETRECORD_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
             # Assert that expected functions are called
@@ -85,7 +85,7 @@ class TestInspector(unittest.TestCase):
             # Call the constructor of Inspector
             inspector_instance = Inspector(
                 etdump_path=ETDUMP_PATH,
-                etrecord_path=ETRECORD_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
             # The mock inspector instance starts with having an empty event blocks list.
@@ -193,7 +193,7 @@ class TestInspector(unittest.TestCase):
             # Call the constructor of Inspector
             inspector_instance = Inspector(
                 etdump_path=ETDUMP_PATH,
-                etrecord_path=ETRECORD_PATH,
+                etrecord=ETRECORD_PATH,
             )
 
             # Gen a mock etrecord
