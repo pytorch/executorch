@@ -12,7 +12,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
-        "//executorch/sdk/etrecord:etrecord",
+        "//executorch/sdk:lib",
     ],
 )
 
@@ -27,7 +27,7 @@ python_binary(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
-        "//executorch/sdk/etrecord:etrecord",
+        "//executorch/sdk:lib",
     ],
 )
 
@@ -44,6 +44,6 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/sdk/etrecord:etrecord",
+        "//executorch/sdk:lib",
     ],
 )

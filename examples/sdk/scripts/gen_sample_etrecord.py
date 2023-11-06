@@ -17,7 +17,7 @@ from executorch.exir import (
     ExportedProgram,
     to_edge,
 )
-from executorch.sdk.etrecord import generate_etrecord
+from executorch.sdk import generate_etrecord
 from torch.export import export
 
 from ...models import MODEL_NAME_TO_MODEL

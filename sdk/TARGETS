@@ -7,6 +7,6 @@ python_library(
     srcs = ["__init__.py"],
     deps = [
         "//executorch/sdk/etrecord:etrecord",
-        "//executorch/sdk/inspector:inspector",
+        "//executorch/sdk/inspector:lib",
     ],
 )
