@@ -283,7 +283,7 @@ inline std::error_code make_error_code(InMemoryFileSystem::ErrorCode code) {
     return {static_cast<int>(code), errorCategory};
 }
 
-} // namespace inmemoryfs
+}; // namespace inmemoryfs
 
 namespace std {
 

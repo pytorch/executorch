@@ -52,6 +52,6 @@ void dequantize(
     int32_t zero_point,
     size_t size);
 
-} // namespace kernels
-} // namespace HiFi
-} // namespace impl
+}; // namespace kernels
+}; // namespace HiFi
+}; // namespace impl

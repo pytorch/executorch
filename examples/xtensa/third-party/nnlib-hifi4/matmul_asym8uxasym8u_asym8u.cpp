@@ -433,6 +433,6 @@ WORD32 matmul_asym8uxasym8u_asym8u(
   return 0;
 }
 
-} // namespace kernels
-} // namespace HiFi
-} // namespace impl
+}; // namespace kernels
+}; // namespace HiFi
+}; // namespace impl
