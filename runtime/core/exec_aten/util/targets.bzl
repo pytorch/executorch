@@ -42,13 +42,13 @@ def define_common_targets():
 
     dtype_selective_build_lib = native.read_config("executorch", "dtype_selective_build_lib", None)
     if dtype_selective_build_lib != None:
-        # retrieve selected_mobile_ops.h from codegen
-        genrule_name = dtype_selective_build_lib + "_et_op_dtype_gen[selected_mobile_ops]"
+        # retrieve selected_op_variants.h from codegen
+        genrule_name = dtype_selective_build_lib + "_et_op_dtype_gen[selected_op_variants]"
         runtime.cxx_library(
             name = "dtype_headers",
             srcs = [],
             exported_headers = {
-                "selected_mobile_ops.h": genrule_name,
+                "selected_op_variants.h": genrule_name,
             },
             visibility = [
                 "//executorch/...",
