@@ -38,7 +38,7 @@ set(_etdump_schema__srcs
     ${CMAKE_CURRENT_SOURCE_DIR}/etdump/scalar_type.fbs)
 
 
-set (_bundled_program_schema_dir
+set(_bundled_program_schema_dir
      ${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/schema)
 
 set(_bundled_program_schema__srcs
