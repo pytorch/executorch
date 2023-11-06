@@ -49,5 +49,6 @@ python_library(
     srcs = ["__init__.py"],
     deps = [
         ":inspector",
+        ":inspector_utils",
     ],
 )
