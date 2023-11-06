@@ -61,11 +61,11 @@ def emit_bundled_tensor(
 
 
 def emit_prim(val: ConfigValue, bundled_values: List[bp_schema.Value]):
-    if type(val) == int:
+    if type(val) is int:
         bundled_values.append(bp_schema.Value(val=bp_schema.Int(int_val=val)))
-    elif type(val) == bool:
+    elif type(val) is bool:
         bundled_values.append(bp_schema.Value(val=bp_schema.Bool(bool_val=val)))
-    elif type(val) == float:
+    elif type(val) is float:
         bundled_values.append(bp_schema.Value(val=bp_schema.Double(double_val=val)))
     else:
         assert 0, "Unsupported primitive type received."
@@ -198,7 +198,7 @@ def assert_valid_bundle(
             for j in range(len(cur_plan_test_inputs)):
                 assert (
                     type(cur_plan_test_inputs[j])
-                    == supported_program_type_table[
+                    is supported_program_type_table[
                         type(get_program_input(program, program_plan_id, j))
                     ]
                 ), "The type {}-th input in {}-th test set of {}-th execution plan does not meet Program's requirement: expected {} but get {}".format(
@@ -212,7 +212,7 @@ def assert_valid_bundle(
                 )
 
                 # type of tensor input should match execution plan
-                if type(cur_plan_test_inputs[j]) == torch.Tensor:
+                if type(cur_plan_test_inputs[j]) is torch.Tensor:
                     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
                     # has no attribute `dtype`.
                     assert cur_plan_test_inputs[j].dtype == get_input_dtype(
@@ -227,7 +227,7 @@ def assert_valid_bundle(
                     bool,
                     float,
                 ):
-                    assert type(cur_plan_test_inputs[j]) == get_input_type(
+                    assert type(cur_plan_test_inputs[j]) is get_input_type(
                         program, program_plan_id, j
                     ), "The input primitive dtype shall be {}, but now is {}".format(
                         get_input_type(program, program_plan_id, j),
@@ -237,7 +237,7 @@ def assert_valid_bundle(
             # Check if bundled expected output in the current exeution plan test share same type as output in Program
             for j in range(len(cur_plan_test_expected_outputs)):
                 assert (
-                    type(cur_plan_test_expected_outputs[j]) == torch.Tensor
+                    type(cur_plan_test_expected_outputs[j]) is torch.Tensor
                 ), "The {}-th expected output shall be a tensor, but now is {}".format(
                     j, type(cur_plan_test_expected_outputs[j])
                 )
@@ -288,7 +288,7 @@ def create_bundled_program(
             ].expected_outputs
 
             for input_val in cur_plan_test_inputs:
-                if type(input_val) == torch.Tensor:
+                if type(input_val) is torch.Tensor:
                     emit_bundled_tensor(
                         TensorSpec.from_tensor(input_val, const=True),
                         inputs,
@@ -300,7 +300,7 @@ def create_bundled_program(
                     )
             for expected_output_tensor in cur_plan_test_expected_outputs:
                 assert (
-                    type(expected_output_tensor) == torch.Tensor
+                    type(expected_output_tensor) is torch.Tensor
                 ), "Only tensor outputs are currently supported."
                 emit_bundled_tensor(
                     TensorSpec.from_tensor(expected_output_tensor, const=True),
