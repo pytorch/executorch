@@ -17,8 +17,8 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "selected_mobile_ops_header_test",
-        srcs = ["selected_mobile_ops_header_test.cpp"],
+        name = "selected_op_variants_test",
+        srcs = ["selected_op_variants_test.cpp"],
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util_TEST_ONLY",
             "//executorch/runtime/core/portable_type:portable_type",
