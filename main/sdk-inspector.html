@@ -562,50 +562,11 @@ of an <code class="docutils literal notranslate"><span class="pre">Inspector</sp
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span>
 </pre></div>
 </div>
-<dl class="py class">
-<dt class="sig sig-object py" id="sdk.inspector.inspector.EventBlock">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.</span></span><span class="sig-name descname"><span class="pre">EventBlock</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">events=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_time_scale=TimeScale.NS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_time_scale=TimeScale.MS</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/inspector/inspector.html#EventBlock"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.inspector.inspector.EventBlock" title="Permalink to this definition">¶</a></dt>
-<dd><p>An <cite>EventBlock</cite> contains a collection of events associated with a particular profiling/debugging block retrieved from the runtime.
-Each <cite>EventBlock</cite> represents a pattern of execution. For example, model initiation and loading lives in a single <cite>EventBlock</cite>.
-If there’s a control flow, each branch will be represented by a separate <cite>EventBlock</cite>.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>name</strong> – Name of the profiling/debugging block.</p></li>
-<li><p><strong>events</strong> – List of <cite>Event</cite>s associated with the profiling/debugging block.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
 </div>
 <div class="section" id="event-class">
 <h3><code class="docutils literal notranslate"><span class="pre">Event</span></code> Class<a class="headerlink" href="#event-class" title="Permalink to this headline">¶</a></h3>
 <p>Access <code class="docutils literal notranslate"><span class="pre">Event</span></code> instances through the <code class="docutils literal notranslate"><span class="pre">events</span></code> attribute of an
 <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instance.</p>
-<dl class="py class">
-<dt class="sig sig-object py" id="sdk.inspector.inspector.Event">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">sdk.inspector.inspector.</span></span><span class="sig-name descname"><span class="pre">Event</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">perf_data</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">op_types=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_debug_identifier=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_handles=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stack_traces=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_hierarchy=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">is_delegated_op=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_backend_name=None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_data=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_debug_metadatas=&lt;factory&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_instruction_id=None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/inspector/inspector.html#Event"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.inspector.inspector.Event" title="Permalink to this definition">¶</a></dt>
-<dd><p>An Event corresponds to an operator instance with perf data retrieved from the runtime and other metadata from <cite>ETRecord</cite>.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><ul class="simple">
-<li><p><strong>name</strong> – Name of the profiling/debugging <cite>Event</cite>.</p></li>
-<li><p><strong>perf_data</strong> – Performance data associated with the event retrived from the runtime (available attributes: p10, p50, p90, avg, min and max).</p></li>
-<li><p><strong>op_type</strong> – List of op types corresponding to the event.</p></li>
-<li><p><strong>delegate_debug_identifier</strong> – Supplemental identifier used in combination with instruction id.</p></li>
-<li><p><strong>debug_handles</strong> – Debug handles in the model graph to which this event is correlated.</p></li>
-<li><p><strong>stack_trace</strong> – A dictionary mapping the name of each associated op to its stack trace.</p></li>
-<li><p><strong>module_hierarchy</strong> – A dictionary mapping the name of each associated op to its module hierarchy.</p></li>
-<li><p><strong>is_delegated_op</strong> – Whether or not the event was delegated.</p></li>
-<li><p><strong>delegate_backend_name</strong> – Name of the backend this event was delegated to.</p></li>
-<li><p><strong>debug_data</strong> – Intermediate data collected during runtime.</p></li>
-<li><p><strong>delegate_debug_metadatas</strong> – A list of delegate debug metadata in string, one for each profile event.</p></li>
-</ul>
-</dd>
-</dl>
-</dd></dl>
-
 <p><strong>Example Usage:</strong></p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
     <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
