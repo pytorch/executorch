@@ -6,7 +6,7 @@ oncall("executorch")
 python_library(
     name = "inspector",
     srcs = [
-        "inspector.py",
+        "_inspector.py",
     ],
     deps = [
         "fbsource//third-party/pypi/ipython:ipython",
@@ -26,7 +26,7 @@ python_binary(
     name = "inspector_cli",
     main_src = "inspector_cli.py",
     deps = [
-        ":inspector",
+        "//executorch/sdk:lib",
     ],
 )
 
@@ -41,5 +41,13 @@ python_library(
         "//executorch/sdk/etdump:schema_flatcc",
         "//executorch/sdk/etdump:serialize",
         "//executorch/sdk/etrecord:etrecord",
+    ],
+)
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":inspector",
     ],
 )

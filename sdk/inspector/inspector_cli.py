@@ -6,7 +6,7 @@
 
 import argparse
 
-from executorch.sdk.inspector.inspector import Inspector
+from executorch.sdk import Inspector
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
