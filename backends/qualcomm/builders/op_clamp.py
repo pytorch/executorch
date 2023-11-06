@@ -27,12 +27,12 @@ class Clamp(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = node.args[0]
-        input_tensor, use_memo = self.get_tensor(input_node, node)
+        input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers if use_memo else {},
+            nodes_to_wrappers,
         )
 
         # default value of output_min and output_max
@@ -47,7 +47,7 @@ class Clamp(NodeVisitor):
                 # update output_max
                 output_max = cast(float, node.args[2])
 
-        output_tensor, _ = self.get_tensor(node, node)
+        output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

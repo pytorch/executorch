@@ -24,7 +24,7 @@ class DequantizeOpBase(NodeVisitor):
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         dequant_input_tensors = []
         input_node = node.args[0]
-        input_tensor, _ = self.get_tensor(input_node, node)
+        input_tensor = self.get_tensor(input_node, node)
         inp_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
@@ -33,7 +33,7 @@ class DequantizeOpBase(NodeVisitor):
         )
         dequant_input_tensors.append(inp_tensor_wrapper)
 
-        output_tensor, _ = self.get_tensor(node, node)
+        output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

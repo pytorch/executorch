@@ -25,7 +25,7 @@ class Mul(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        out_tensor, _ = self.get_tensor(node, node)
+        out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             out_tensor,
@@ -37,14 +37,14 @@ class Mul(NodeVisitor):
         mul_input_tensors = []
         for index in range(2):
             input_node = node.args[index]
-            input_tensor, use_memo = self.get_tensor(input_node, node)
+            input_tensor = self.get_tensor(input_node, node)
             tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
                 input_tensor,
                 tensor_type,
-                nodes_to_wrappers if use_memo else {},
+                nodes_to_wrappers,
             )
             mul_input_tensors.append(input_tensor_wrapper)
 

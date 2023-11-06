@@ -52,10 +52,9 @@ class NodeVisitor:
     """
 
     def __init__(
-        self, external_ids, compile_mode, edge_program: torch.export.ExportedProgram
+        self, external_ids, edge_program: torch.export.ExportedProgram
     ) -> None:
         self.external_ids = external_ids or {}
-        self.compile_mode = compile_mode
         self.edge_program = edge_program
 
     def get_tensor(self, input_node, op_node, idx=None):
@@ -74,33 +73,10 @@ class NodeVisitor:
                 return get_parameter(node, self.edge_program)
             return node.meta["val"]
 
-        def get_tensor_compile_time(index):
-            tensor, use_memo = _get_tensor(input_node, index), True
-            if "axis_order" in op_node.meta:
-                tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
-            return tensor, use_memo
-
-        def get_tensor_partition_time(index):
-            tensor, use_memo = _get_tensor(input_node, index), True
-            res = ["axis_order" in meta for meta in [input_node.meta, op_node.meta]]
-            if res == [False, True]:
-                tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
-                use_memo = False
-            elif res == [True, False]:
-                use_memo = False
-            elif res == [True, True]:
-                tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
-            return tensor, use_memo
-
-        tensor, use_memo = _get_tensor(input_node, idx), True
-        if len(tensor.shape) == 0:
-            return tensor, use_memo
-
-        return (
-            get_tensor_compile_time(idx)
-            if self.compile_mode
-            else get_tensor_partition_time(idx)
-        )
+        tensor = _get_tensor(input_node, idx)
+        if len(tensor.shape) != 0 and "axis_order" in op_node.meta:
+            tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
+        return tensor
 
     def get_quant_encoding_conf(self, node: torch.fx.Node) -> Tuple[Any, Dict]:
         if not node.meta.get("quant_attrs", None):
@@ -320,7 +296,6 @@ def generate_node_to_external_map(
 
 def get_node_visitors(
     edge_program: torch.export.ExportedProgram,
-    compile_mode=True,
 ) -> Dict[str, NodeVisitor]:
     """Create a new class instance at runtime, and put them in a dict"""
     node_to_external_map = generate_node_to_external_map(edge_program)
@@ -329,7 +304,5 @@ def get_node_visitors(
         assert callable(
             visitor
         ), f"Expeting a callable class, but got {visitor} of type {type(visitor)}"
-        node_visitors[target] = visitor(
-            node_to_external_map, compile_mode, edge_program
-        )
+        node_visitors[target] = visitor(node_to_external_map, edge_program)
     return node_visitors

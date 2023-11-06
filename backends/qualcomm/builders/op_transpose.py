@@ -29,12 +29,12 @@ class TransposeVisitor(NodeVisitor):
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = node.args[0]
         permute_node = input_node if "qnn_permute" in node.meta else node
-        input_tensor, use_memo = self.get_tensor(input_node, permute_node)
+        input_tensor = self.get_tensor(input_node, permute_node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers if use_memo else {},
+            nodes_to_wrappers,
         )
 
         # permutation

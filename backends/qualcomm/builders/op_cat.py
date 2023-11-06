@@ -30,13 +30,13 @@ class Cat(NodeVisitor):
         list_of_tensor_wrappers = []
 
         for tensor_input in list_of_tensors:
-            input_tensor, use_memo = self.get_tensor(tensor_input, node)
+            input_tensor = self.get_tensor(tensor_input, node)
             list_of_tensor_wrappers.append(
                 self.define_tensor(
                     tensor_input,
                     input_tensor,
                     PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-                    nodes_to_wrappers if use_memo else {},
+                    nodes_to_wrappers,
                 )
             )
 
@@ -46,7 +46,7 @@ class Cat(NodeVisitor):
             )
             return
 
-        output_tensor, _ = self.get_tensor(node, node)
+        output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

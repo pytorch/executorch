@@ -24,14 +24,12 @@ from executorch.exir.backend.partitioner import (
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
-from .common_defs import allow_list_operator, not_supported_operator, supported_modules
+from .common_defs import allow_list_operator, not_supported_operator
 
 
 class QnnOperatorSupport(OperatorSupportBase):
     def __init__(self, edge_program: torch.export.ExportedProgram, compiler_specs):
-        self.node_visitors = node_visitor.get_node_visitors(
-            edge_program, compile_mode=False
-        )
+        self.node_visitors = node_visitor.get_node_visitors(edge_program)
         self.nodes_to_wrappers = {}
         self.qnn_manager = PyQnnManager.QnnManager(
             generate_qnn_executorch_option(compiler_specs)
@@ -68,7 +66,6 @@ class QnnPartitioner(Partitioner):
         QnnPartitioner.compiler_specs = compiler_specs
 
     def __init__(self):
-        self.supported_modules = set(supported_modules)
         self.compiler_specs_snapshot = copy.deepcopy(QnnPartitioner.compiler_specs)
         self.delegation_spec = DelegationSpec(
             QnnBackend.__name__, self.compiler_specs_snapshot

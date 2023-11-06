@@ -27,7 +27,7 @@ class BatchNorm(NodeVisitor):
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = node.args[0]
-        input_tensor, use_memo = self.get_tensor(input_node, node)
+        input_tensor = self.get_tensor(input_node, node)
 
         mean_node, var_node, eps = node.args[3], node.args[4], 1e-5
         mean_tensor = get_parameter(mean_node, self.edge_program)
@@ -37,7 +37,7 @@ class BatchNorm(NodeVisitor):
             input_node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers if use_memo else {},
+            nodes_to_wrappers,
         )
 
         bias_node = node.args[2]
@@ -68,7 +68,7 @@ class BatchNorm(NodeVisitor):
             bias_tensor_wrapper,
         ]
 
-        output_tensor, _ = self.get_tensor(node, node, 0)
+        output_tensor = self.get_tensor(node, node, 0)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

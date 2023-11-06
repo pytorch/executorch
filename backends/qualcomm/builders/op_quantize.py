@@ -24,7 +24,7 @@ class QuantizeOpBase(NodeVisitor):
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         quant_input_tensors = []
         input_node = node.args[0]
-        input_tensor, _ = self.get_tensor(input_node, node)
+        input_tensor = self.get_tensor(input_node, node)
         inp_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
@@ -39,7 +39,7 @@ class QuantizeOpBase(NodeVisitor):
             name = arg_schema.name
             node.meta["quant_attrs"][name] = node.args[i + 1]
 
-        output_tensor, _ = self.get_tensor(node, node)
+        output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

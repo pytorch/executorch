@@ -37,17 +37,17 @@ class Embedding(NodeVisitor):
         )
 
         indices_node = node.args[1]
-        indices_tensor, use_memo = self.get_tensor(indices_node, node)
+        indices_tensor = self.get_tensor(indices_node, node)
         indices_tensor_wrapper = self.define_scalar(
             indices_node,
             indices_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers if use_memo else {},
+            nodes_to_wrappers,
         )
 
         gather_input_tensors = [weight_tensor_wrapper, indices_tensor_wrapper]
 
-        output_tensor, _ = self.get_tensor(node, node)
+        output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,
