@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from enum import Enum
 from typing import Dict, Mapping, Optional
 
 from executorch.sdk.debug_format.base_schema import OperatorNode
@@ -14,7 +15,39 @@ from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
 from executorch.sdk.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.sdk.etrecord import ETRecord
 
+FORWARD = "forward"
 EDGE_DIALECT_GRAPH_KEY = "edge_dialect_graph_module"
+
+RESERVED_FRAMEWORK_EVENT_NAMES = [
+    "Method::init",
+    "Program::load_method",
+    "Method::execute",
+]
+EXCLUDED_COLUMNS_WHEN_PRINTING = [
+    "raw",
+    "delegate_debug_identifier",
+    "stack_traces",
+    "module_hierarchy",
+    "debug_data",
+]
+EXCLUDED_EVENTS_WHEN_PRINTING = {"OPERATOR_CALL"}
+
+
+class TimeScale(Enum):
+    NS = "ns"
+    US = "us"
+    MS = "ms"
+    S = "s"
+    CYCLES = "cycles"
+
+
+TIME_SCALE_DICT = {
+    TimeScale.NS: 1000000000,
+    TimeScale.US: 1000000,
+    TimeScale.MS: 1000,
+    TimeScale.S: 1,
+    TimeScale.CYCLES: 1,
+}
 
 
 def gen_graphs_from_etrecord(
