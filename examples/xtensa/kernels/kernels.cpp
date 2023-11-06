@@ -225,6 +225,6 @@ typed_requantize_vec(int8_t, uint8_t);
 typed_requantize_vec(uint8_t, int8_t);
 #undef typed_requantize_vec
 
-}; // namespace kernels
-}; // namespace HiFi
-}; // namespace impl
+} // namespace kernels
+} // namespace HiFi
+} // namespace impl
