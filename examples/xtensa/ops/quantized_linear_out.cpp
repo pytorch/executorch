@@ -78,6 +78,6 @@ void quantized_linear_pt2_out(
   ET_DCHECK_MSG(ret == 0, "HiFi quantized::linear failed");
 }
 
-} // namespace native
-} // namespace HiFi
-} // namespace impl
+}; // namespace native
+}; // namespace HiFi
+}; // namespace impl

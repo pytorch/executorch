@@ -46,6 +46,6 @@ void dequantize_per_tensor_out(
   }
 }
 
-} // namespace native
-} // namespace HiFi
-} // namespace impl
+}; // namespace native
+}; // namespace HiFi
+}; // namespace impl
