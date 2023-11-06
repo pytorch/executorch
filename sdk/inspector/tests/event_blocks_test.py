@@ -10,13 +10,8 @@ from typing import List, Optional, Tuple, Union
 
 import executorch.sdk.etdump.schema_flatcc as flatcc
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
-from executorch.sdk.inspector.inspector import (
-    DelegateMetadata,
-    Event,
-    EventBlock,
-    PerfData,
-    ProfileEventSignature,
-)
+from executorch.sdk.inspector import Event, EventBlock, PerfData
+from executorch.sdk.inspector._inspector import DelegateMetadata, ProfileEventSignature
 
 
 class TestEventBlock(unittest.TestCase):
