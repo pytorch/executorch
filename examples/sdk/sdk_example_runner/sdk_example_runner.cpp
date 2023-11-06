@@ -200,17 +200,10 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Method loaded.");
 
   // Prepare the inputs.
-  // Use ones-initialized inputs or bundled inputs.
-  MemoryAllocator bundled_input_allocator{
-      MemoryAllocator(kBundledAllocatorPoolSize, bundled_allocator_pool)};
   exec_aten::ArrayRef<void*> inputs;
   // Use the inputs embedded in the bundled program.
   status = torch::executor::bundled_program::LoadBundledInput(
-      *method,
-      file_data->data(),
-      &bundled_input_allocator,
-      method_name,
-      FLAGS_testset_idx);
+      *method, file_data->data(), FLAGS_testset_idx);
   ET_CHECK_MSG(
       status == Error::Ok,
       "LoadBundledInput failed with status 0x%" PRIx32,
@@ -260,8 +253,6 @@ int main(int argc, char** argv) {
         torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
             *method,
             file_data->data(),
-            &bundled_input_allocator,
-            method_name,
             FLAGS_testset_idx,
             1e-3, // rtol
             1e-5 // atol
