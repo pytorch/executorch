@@ -193,6 +193,17 @@ def get_non_lowered_nodes(graph: torch.fx.Graph) -> List[torch.fx.Node]:
     ]
 
 
+def get_delegates(graph: torch.fx.Graph) -> List[torch.fx.Node]:
+    """
+    Returns the list of delegates from the graph.
+    """
+    return [
+        node
+        for node in graph.nodes
+        if node.op == "get_attr" and node.name.startswith("lowered_module_")
+    ]
+
+
 # TODO - style: use templated types
 class DelegateMappingBuilder:
     """
