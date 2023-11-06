@@ -709,8 +709,6 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">LoadBundledInput</span><span class="p">(</span>
 <span class="w">        </span><span class="o">*</span><span class="n">method</span><span class="p">,</span>
 <span class="w">        </span><span class="n">program_data</span><span class="p">.</span><span class="n">bundled_program_data</span><span class="p">(),</span>
-<span class="w">        </span><span class="o">&amp;</span><span class="n">bundled_input_allocator</span><span class="p">,</span>
-<span class="w">        </span><span class="n">method_name</span><span class="p">,</span>
 <span class="w">        </span><span class="n">FLAGS_testset_idx</span><span class="p">);</span>
 <span class="n">ET_CHECK_MSG</span><span class="p">(</span>
 <span class="w">    </span><span class="n">status</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">,</span>
@@ -728,8 +726,6 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <span class="n">status</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">bundled_program</span><span class="o">::</span><span class="n">VerifyResultWithBundledExpectedOutput</span><span class="p">(</span>
 <span class="w">        </span><span class="o">*</span><span class="n">method</span><span class="p">,</span>
 <span class="w">        </span><span class="n">program_data</span><span class="p">.</span><span class="n">bundled_program_data</span><span class="p">(),</span>
-<span class="w">        </span><span class="o">&amp;</span><span class="n">bundled_input_allocator</span><span class="p">,</span>
-<span class="w">        </span><span class="n">method_name</span><span class="p">,</span>
 <span class="w">        </span><span class="n">FLAGS_testset_idx</span><span class="p">,</span>
 <span class="w">        </span><span class="n">FLAGS_rtol</span><span class="p">,</span>
 <span class="w">        </span><span class="n">FLAGS_atol</span><span class="p">);</span>
