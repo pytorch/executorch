@@ -8,7 +8,6 @@ import dataclasses
 import logging
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
-from enum import Enum
 from typing import (
     Dict,
     List,
@@ -32,26 +31,17 @@ from executorch.sdk.etrecord import ETRecord, parse_etrecord
 from executorch.sdk.inspector._inspector_utils import (
     create_debug_handle_to_op_node_mapping,
     EDGE_DIALECT_GRAPH_KEY,
+    EXCLUDED_COLUMNS_WHEN_PRINTING,
+    EXCLUDED_EVENTS_WHEN_PRINTING,
+    FORWARD,
     gen_etdump_object,
     gen_graphs_from_etrecord,
+    RESERVED_FRAMEWORK_EVENT_NAMES,
+    TIME_SCALE_DICT,
+    TimeScale,
 )
 
 from tabulate import tabulate
-
-FORWARD = "forward"
-RESERVED_FRAMEWORK_EVENT_NAMES = [
-    "Method::init",
-    "Program::load_method",
-    "Method::execute",
-]
-EXCLUDED_COLUMNS_WHEN_PRINTING = [
-    "raw",
-    "delegate_debug_identifier",
-    "stack_traces",
-    "module_hierarchy",
-    "debug_data",
-]
-EXCLUDED_EVENTS_WHEN_PRINTING = {"OPERATOR_CALL"}
 
 
 log: logging.Logger = logging.getLogger(__name__)
@@ -94,23 +84,6 @@ DelegateMetadata = TypedDict(
     "DelegateMetadata",
     {"name": str, "delegate_map": DelegateIdentifierDebugHandleMap},
 )
-
-
-class TimeScale(Enum):
-    NS = "ns"
-    US = "us"
-    MS = "ms"
-    S = "s"
-    CYCLES = "cycles"
-
-
-time_scale_dict = {
-    TimeScale.NS: 1000000000,
-    TimeScale.US: 1000000,
-    TimeScale.MS: 1000,
-    TimeScale.S: 1,
-    TimeScale.CYCLES: 1,
-}
 
 
 @dataclass
@@ -352,7 +325,7 @@ class EventBlock:
                 run_signature_events.setdefault(event_signature, []).append(event)
 
         scale_factor = (
-            time_scale_dict[source_time_scale] / time_scale_dict[target_time_scale]
+            TIME_SCALE_DICT[source_time_scale] / TIME_SCALE_DICT[target_time_scale]
         )
         # Create EventBlocks from the Profile Run Groups
         return [
