@@ -32,6 +32,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
@@ -1057,3 +1058,84 @@ class TestPasses(unittest.TestCase):
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
         ).run(gm.code)
+
+    def test_constant_prop_pass_for_add(self) -> None:
+        def add(x: torch.Tensor) -> torch.Tensor:
+            return x + 3
+
+        edge = exir.capture(add, (torch.ones(1),), exir.CaptureConfig(enable_aot=True))
+        edge = edge.transform(ScalarToTensorPass(), RemoveMixedTypeOperators())
+        edge.exported_program = lift_constant_tensor_pass(edge.exported_program)
+
+        # Check there is a lifted tensor followed by a to_copy node
+        FileCheck().check("_lifted_tensor_constant0").check(
+            "torch.ops.aten._to_copy.default"
+        ).run(edge.exported_program.graph_module.code)
+
+        new_ep = constant_prop_pass(edge.exported_program)
+
+        # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
+        FileCheck().check_not("_lifted_tensor_constant").check(
+            "_prop_tensor_constant1"
+        ).check_not("torch.ops.aten._to_copy.default").run(new_ep.graph_module.code)
+
+    def test_constant_prop_pass_for_parameter(self) -> None:
+        def count_additions(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (node.target == torch.ops.aten.add.Tensor) for node in gm.graph.nodes
+            )
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.ones(1, 2, 3))
+
+            def forward(self, x):
+                b = self.a + self.a
+                c = torch.cat([self.a, b])
+                return (c + c) + x
+
+        edge = exir.capture(
+            M(),
+            (torch.zeros(2, 2, 3),),
+            exir.CaptureConfig(enable_aot=True),
+        )
+        self.assertEqual(count_additions(edge.exported_program.graph_module), 3)
+        edge.exported_program = constant_prop_pass(edge.exported_program)
+        self.assertEqual(count_additions(edge.exported_program.graph_module), 1)
+
+    def test_constant_prop_pass_for_control_flow(self) -> None:
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(3, 3)
+
+            def t(self, val):
+                return val + 1
+
+            def f(self, val):
+                return val - 1
+
+            def true_fn(self, val):
+                return self.linear(val) + self.t(val)
+
+            def false_fn(self, val):
+                return self.linear(val) - self.f(val)
+
+            def forward(self, pred, x):
+                return torch.ops.higher_order.cond(
+                    pred, self.true_fn, self.false_fn, [x]
+                )
+
+        mod = Module()
+        x = torch.randn([3, 3])
+        pred = torch.tensor(x[0][0].item() < 0)
+        edge = exir.capture(mod, (pred, x), config=exir.CaptureConfig(enable_aot=True))
+        error_msg = r"constant_prop_pass for control flow is not supported yet."
+
+        # TODO(chenlai): enable constant prop pass for control flow
+        with self.assertRaisesRegex(
+            RuntimeError,
+            error_msg,
+        ):
+            _ = constant_prop_pass(edge.exported_program)

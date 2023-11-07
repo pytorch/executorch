@@ -78,6 +78,16 @@ python_library(
 )
 
 python_library(
+    name = "constant_prop_pass",
+    srcs = [
+        "constant_prop_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
     name = "remove_assert_async_pass",
     srcs = [
         "remove_assert_async_pass.py",
