@@ -30,7 +30,7 @@ import torch
 
 from executorch.exir.backend.backend_api import to_backend
 
-from executorch.backends.coreml.compiler import CoreMLBackend
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
 class LowerableSubModel(torch.nn.Module):
     def __init__(self):
@@ -45,7 +45,7 @@ example_input = (torch.ones(1), )
 to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
 
 # Lower to Core ML backend
-lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule, [])
+lowered_module = to_backend('CoreMLBackend', to_be_lowered_exir_submodule.exported_program, [])
 ```
 
 Currently, the **Core ML** backend delegates the whole module to **Core ML**. If a specific op is not supported by the **Core ML** backend then the `to_backend` call would throw an exception. We will be adding a **Core ML Partitioner** to resolve the issue.
