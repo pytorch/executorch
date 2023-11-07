@@ -144,7 +144,9 @@ jobs:
         CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
         conda activate "${CONDA_ENV}"
 
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh cmake
+        source .ci/scripts/utils.sh
+        install_flatc_from_source
+        install_executorch
         # Test selective build
         source /opt/arm-sdk/setup_path.sh
         PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2

@@ -47,11 +47,8 @@ using string_view = torch::executor::string_view;
 } // namespace exec_aten
 #endif
 
-namespace torch {
-namespace executor {
-
 #ifdef EXECUTORCH_SELECTIVE_BUILD_DTYPE
-#include <executorch/runtime/core/exec_aten/util/selected_mobile_ops.h>
+#include <executorch/runtime/core/exec_aten/util/selected_op_variants.h>
 #else
 inline constexpr bool should_include_kernel_dtype(
     const char* /*operator_name*/,
@@ -61,6 +58,8 @@ inline constexpr bool should_include_kernel_dtype(
 }
 #endif
 
+namespace torch {
+namespace executor {
 #define ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type)               \
   do {                                                             \
     if (!should_include_kernel_dtype(et_switch_name, enum_type)) { \

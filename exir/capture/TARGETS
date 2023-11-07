@@ -23,6 +23,7 @@ python_library(
         "//executorch/exir:tracer",
         "//executorch/exir/program:lib",
         "//executorch/exir/program:program",
+        "//executorch/exir/verification:verifier",
     ],
 )
 

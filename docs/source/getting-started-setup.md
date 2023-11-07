@@ -273,6 +273,13 @@ Complete the following steps:
 
    The `--show-output` flag prints the path to the executable if you want to run it directly.
 
+   If you run into `Stderr: clang-14: error: invalid linker name in argument
+   '-fuse-ld=lld'`, `lld` is not available on your system. Try installing it
+   with `conda` or with your system's package manager.
+   ```bash
+   conda install -c conda-forge lld
+   ```
+
 Now that you have built our sample programs, you can proceed to
 run them.
 

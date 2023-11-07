@@ -6,7 +6,7 @@
 
 import argparse
 
-from executorch.sdk.inspector.inspector import Inspector
+from executorch.sdk import Inspector
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -23,7 +23,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    inspector = Inspector(
-        etdump_path=args.etdump_path, etrecord_path=args.etrecord_path
-    )
+    inspector = Inspector(etdump_path=args.etdump_path, etrecord=args.etrecord_path)
     inspector.print_data_tabular()

@@ -119,8 +119,8 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_library(
-        name = "gen_selected_mobile_ops_lib",
-        srcs = ["gen_selected_mobile_ops.py"],
+        name = "gen_selected_op_variants_lib",
+        srcs = ["gen_selected_op_variants.py"],
         base_module = "executorch.codegen.tools",
         visibility = ["//executorch/..."],
         external_deps = [
@@ -129,29 +129,29 @@ def define_common_targets(is_fbcode = False):
     )
 
     runtime.python_binary(
-        name = "gen_selected_mobile_ops",
-        main_module = "executorch.codegen.tools.gen_selected_mobile_ops",
+        name = "gen_selected_op_variants",
+        main_module = "executorch.codegen.tools.gen_selected_op_variants",
         package_style = "inplace",
         visibility = [
             "PUBLIC",
         ],
         deps = [
-            ":gen_selected_mobile_ops_lib",
+            ":gen_selected_op_variants_lib",
         ],
         _is_external_target = True,
     )
 
     runtime.python_test(
-        name = "test_gen_selected_mobile_ops",
+        name = "test_gen_selected_op_variants",
         srcs = [
-            "test/test_gen_selected_mobile_ops.py",
+            "test/test_gen_selected_op_variants.py",
         ],
         package_style = "inplace",
         visibility = [
             "PUBLIC",
         ],
         deps = [
-            ":gen_selected_mobile_ops_lib",
+            ":gen_selected_op_variants_lib",
             "fbsource//third-party/pypi/expecttest:expecttest",
         ],
         _is_external_target = True,

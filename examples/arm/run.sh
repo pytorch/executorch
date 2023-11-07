@@ -28,7 +28,7 @@ setup_path_script=${root_dir}/setup_path.sh
 
 # Executorch
 et_root_dir=$(cd ${script_dir}/../.. && pwd)
-et_build_dir=${root_dir}/executorch-cmake-out
+et_build_dir=${et_root_dir}/cmake-out
 
 fvp_model=FVP_Corstone_SSE-300_Ethos-U55
 toolchain_cmake=${script_dir}/ethos-u-setup/arm-none-eabi-gcc.cmake
@@ -54,30 +54,42 @@ function generate_pte_file() {
 
 # build ExecuTorch Libraries
 function build_executorch() {
+    set -x
+
     [[ -d "${et_build_dir}" ]] \
         && echo "[${FUNCNAME[0]}] Warn: using already existing build-dir for executorch: ${et_build_dir}!!"
     mkdir -p "${et_build_dir}"
 
-    cd "${et_build_dir}"
+    cd "${et_root_dir}"
     cmake                                                 \
         -DBUCK2=${buck2}                                  \
-        -DEXECUTORCH_BUILD_XNNPACK=OFF                    \
-        -DEXECUTORCH_BUILD_GFLAGS=OFF                     \
+        -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
-        -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \
-        -DEXECUTORCH_BUILD_SDK=OFF                        \
-        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-        -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
+        -B${et_build_dir}                                 \
         "${et_root_dir}"
 
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build . -- -j"$((n - 5))"
+    cmake --build ${et_build_dir} -j"$((n - 5))" --target install --config Release
+
+    cmake                                                 \
+        -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
+        -DCMAKE_BUILD_TYPE=Release                        \
+        -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+        -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
+        -B"${et_build_dir}"/examples/arm                  \
+        "${et_root_dir}"/examples/arm
+    cmake --build ${et_build_dir}/examples/arm -- -j"$((n - 5))"
+
+    set +x
+
+    cd "${et_build_dir}"
     echo "[${FUNCNAME[0]}] Generated static libraries for ExecuTorch:"
     find . -name "*.a" -exec ls -al {} \;
 }

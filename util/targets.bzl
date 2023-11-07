@@ -23,23 +23,6 @@ def define_common_targets():
 
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
-        runtime.cxx_library(
-            name = "bundled_program_verification" + aten_suffix,
-            srcs = ["bundled_program_verification.cpp"],
-            exported_headers = ["bundled_program_verification.h"],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-            deps = [
-                "//executorch/runtime/core/exec_aten/util:dim_order_util" + aten_suffix,
-                "//executorch/schema:bundled_program_schema",
-            ],
-            exported_deps = [
-                "//executorch/runtime/core:memory_allocator",
-                "//executorch/runtime/executor:program" + aten_suffix,
-            ],
-        )
 
         runtime.cxx_library(
             name = "util" + aten_suffix,

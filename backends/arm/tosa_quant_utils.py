@@ -8,9 +8,9 @@
 import math
 
 import serializer.tosa_serializer as ts
+from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp, TosaSerializerTensor
-
 
 q_op = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default
 dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
@@ -30,6 +30,12 @@ def isQuantNode(node):
 def isQuantArg(arg):
     consumer_node = list(arg.users)[0]
     return consumer_node.target == q_op
+
+
+def getQuantNodeArgs(node):
+    quant_args = [TosaArg(arg) for arg in node.args]
+    # Return the scale and zp
+    return quant_args[1].number, quant_args[2].number
 
 
 # Check if scale32 mode is used for given output element type

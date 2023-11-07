@@ -21,14 +21,14 @@ python_unittest(
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
-        "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
     ],
 )
 
@@ -49,15 +49,15 @@ python_unittest(
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
-        "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
     ],
 )
 
@@ -78,27 +78,30 @@ python_unittest(
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
-        "//executorch/bundled_program:config",
-        "//executorch/bundled_program:core",
-        "//executorch/bundled_program/serialize:lib",
         "//executorch/exir:lib",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
         "//pytorch/vision:torchvision",
     ],
 )
 
 python_unittest(
     name = "test_xnnpack_passes",
-    srcs = [
+    srcs = glob([
+        "passes/*.py",
+    ]) + [
         "test_xnnpack_passes.py",
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/xnnpack/passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:lib",
         "//executorch/exir:pass_base",

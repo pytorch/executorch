@@ -27,8 +27,8 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/sdk/bundled_program/bundled_program.h>
 #include <executorch/sdk/etdump/etdump_flatcc.h>
-#include <executorch/util/bundled_program_verification.h>
 #include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4MB
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
   // Find the offset to the embedded Program.
   const void* program_data;
   size_t program_data_len;
-  Error status = torch::executor::util::GetProgramData(
+  Error status = torch::executor::bundled_program::GetProgramData(
       const_cast<void*>(file_data->data()),
       file_data->size(),
       &program_data,
@@ -200,17 +200,10 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Method loaded.");
 
   // Prepare the inputs.
-  // Use ones-initialized inputs or bundled inputs.
-  MemoryAllocator bundled_input_allocator{
-      MemoryAllocator(kBundledAllocatorPoolSize, bundled_allocator_pool)};
   exec_aten::ArrayRef<void*> inputs;
   // Use the inputs embedded in the bundled program.
-  status = torch::executor::util::LoadBundledInput(
-      *method,
-      file_data->data(),
-      &bundled_input_allocator,
-      method_name,
-      FLAGS_testset_idx);
+  status = torch::executor::bundled_program::LoadBundledInput(
+      *method, file_data->data(), FLAGS_testset_idx);
   ET_CHECK_MSG(
       status == Error::Ok,
       "LoadBundledInput failed with status 0x%" PRIx32,
@@ -256,15 +249,14 @@ int main(int argc, char** argv) {
 
   if (FLAGS_output_verification) {
     // Verify the outputs.
-    status = torch::executor::util::VerifyResultWithBundledExpectedOutput(
-        *method,
-        file_data->data(),
-        &bundled_input_allocator,
-        method_name,
-        FLAGS_testset_idx,
-        1e-3, // rtol
-        1e-5 // atol
-    );
+    status =
+        torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
+            *method,
+            file_data->data(),
+            FLAGS_testset_idx,
+            1e-3, // rtol
+            1e-5 // atol
+        );
     ET_CHECK_MSG(
         status == Error::Ok,
         "Bundle verification failed with status 0x%" PRIx32,

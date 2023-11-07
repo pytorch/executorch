@@ -130,13 +130,13 @@ from unittest.mock import patch
 
 import torch
 
-from executorch.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.bundled_program.core import create_bundled_program
-from executorch.bundled_program.serialize import (
+from executorch.exir import to_edge
+
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
-
-from executorch.exir import to_edge
 from torch.export import export
 
 # Step 1: ExecuTorch Program Export
@@ -210,7 +210,7 @@ inspector_patch.start()
 inspector_patch_print.start()
 # sphinx_gallery_end_ignore
 etdump_path = "etdump.etdp"
-inspector = Inspector(etdump_path=etdump_path, etrecord_path=etrecord_path)
+inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
 # sphinx_gallery_start_ignore
 inspector.event_blocks = []
 # sphinx_gallery_end_ignore
