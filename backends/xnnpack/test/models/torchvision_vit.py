@@ -53,7 +53,7 @@ class TestViT(unittest.TestCase):
             .to_edge()
             .check(list(self.all_operators))
             .partition()
-            .check(["torch.ops.executorch_call_delegate"])
+            .check(["torch.ops.higher_order.executorch_call_delegate"])
             .check_not(list(lowerable_xnn_operators))
             .to_executorch()
             .serialize()

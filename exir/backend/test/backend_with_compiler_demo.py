@@ -62,7 +62,7 @@ class BackendWithCompilerDemo(BackendDetails):
     graph():
         %arg0_1 : [#users=2] = placeholder[target=arg0_1]
         %lowered_module_0 : [#users=1] = get_attr[target=lowered_module_0]
-        %executorch_call_delegate : [#users=1] = call_function[target=torch.ops.executorch_call_delegate](args = (%lowered_module_0, forward, %arg0_1), kwargs = {})
+        %executorch_call_delegate : [#users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, forward, %arg0_1), kwargs = {})
         return [executorch_call_delegate]
 
     Args:

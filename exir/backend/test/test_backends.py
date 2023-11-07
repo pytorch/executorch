@@ -171,7 +171,9 @@ class TestBackends(unittest.TestCase):
 
         # Check that there exists a call_delegate, representing the call to the
         # delegated function
-        FileCheck().check("torch.ops.executorch_call_delegate").run(graph_module.code)
+        FileCheck().check("torch.ops.higher_order.executorch_call_delegate").run(
+            graph_module.code
+        )
         lowered_submodules = get_lowered_submodules(graph_module)
         self.assertEqual(len(lowered_submodules), 1)
 
@@ -386,7 +388,9 @@ class TestBackends(unittest.TestCase):
 
         # Check that there exists a call_delegate op, representing the call to the
         # delegated function
-        FileCheck().check("torch.ops.executorch_call_delegate").run(graph_module.code)
+        FileCheck().check("torch.ops.higher_order.executorch_call_delegate").run(
+            graph_module.code
+        )
 
         for node in graph_module.graph.nodes:
             if node.op == "call_function" and node.target == executorch_call_delegate:
