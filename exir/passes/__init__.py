@@ -53,8 +53,6 @@ from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
-
-from functorch.experimental._map import map_impl
 from torch import fx
 from torch._subclasses import FakeTensor
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
@@ -330,7 +328,7 @@ class ToOutVarPass(PassBase):
                 self.call(get_submodule(node.args[1]))
                 self.call(get_submodule(node.args[2]))
                 continue
-            if target == map_impl:
+            if target == torch.ops.higher_order.map_impl:
                 self.call(get_submodule(node.args[0]))
                 continue
             elif target == control_flow.while_loop:
