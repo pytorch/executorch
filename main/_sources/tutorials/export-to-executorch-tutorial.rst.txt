@@ -971,11 +971,11 @@ can compose this lowered module with another module.
             def forward(self, arg0_1: f32[1], arg1_1: f32[1]):
                 # File: /pytorch/executorch/exir/lowered_backend_module.py:283, code: return executorch_call_delegate(self, *args)
                 lowered_module_0 = self.lowered_module_0
-                executorch_call_delegate: f32[1] = torch.ops.executorch_call_delegate(lowered_module_0, arg1_1);  lowered_module_0 = arg1_1 = None
+                executorch_call_delegate: f32[1] = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg1_1);  lowered_module_0 = arg1_1 = None
             
                 # File: /pytorch/executorch/exir/lowered_backend_module.py:283, code: return executorch_call_delegate(self, *args)
                 lowered_module_1 = self.lowered_module_0
-                executorch_call_delegate_1: f32[1] = torch.ops.executorch_call_delegate(lowered_module_1, executorch_call_delegate);  lowered_module_1 = None
+                executorch_call_delegate_1: f32[1] = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, executorch_call_delegate);  lowered_module_1 = None
             
                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:445, code: return torch.add(torch.add(a, b), self.bias)
                 aten_add_tensor: f32[1] = executorch_exir_dialects_edge__ops_aten_add_Tensor(executorch_call_delegate, executorch_call_delegate_1)
@@ -1006,7 +1006,7 @@ can compose this lowered module with another module.
 
 .. GENERATED FROM PYTHON SOURCE LINES 474-478
 
-Notice that there is now a ``torch.ops.executorch_call_delegate`` node in the
+Notice that there is now a ``torch.ops.higher_order.executorch_call_delegate`` node in the
 graph, which is calling ``lowered_module_0``. Additionally, the contents of
 ``lowered_module_0`` are the same as the ``lowered_module`` we created
 previously.
@@ -1091,7 +1091,7 @@ partition those nodes into subgraphs, and then create a
             def forward(self, arg0_1: f32[2, 2], arg1_1: f32[2, 2], arg2_1: f32[2, 2]):
                 # No stacktrace found for following nodes
                 lowered_module_0 = self.lowered_module_0
-                executorch_call_delegate = torch.ops.executorch_call_delegate(lowered_module_0, arg0_1, arg1_1, arg2_1);  lowered_module_0 = None
+                executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg0_1, arg1_1, arg2_1);  lowered_module_0 = None
                 getitem: f32[2, 2] = executorch_call_delegate[0];  executorch_call_delegate = None
             
                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:493, code: a = z - a
@@ -1099,7 +1099,7 @@ partition those nodes into subgraphs, and then create a
             
                 # No stacktrace found for following nodes
                 lowered_module_1 = self.lowered_module_1
-                executorch_call_delegate_1 = torch.ops.executorch_call_delegate(lowered_module_1, aten_sub_tensor, arg1_1, arg2_1);  lowered_module_1 = aten_sub_tensor = arg1_1 = arg2_1 = None
+                executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, aten_sub_tensor, arg1_1, arg2_1);  lowered_module_1 = aten_sub_tensor = arg1_1 = arg2_1 = None
                 getitem_1: f32[2, 2] = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
                 return (getitem_1,)
             
@@ -1141,7 +1141,7 @@ partition those nodes into subgraphs, and then create a
 
 .. GENERATED FROM PYTHON SOURCE LINES 516-522
 
-Notice that there are now 2 ``torch.ops.executorch_call_delegate`` nodes in the
+Notice that there are now 2 ``torch.ops.higher_order.executorch_call_delegate`` nodes in the
 graph, one containing the operations `add, mul` and the other containing the
 operations `mul, add`.
 
@@ -1187,7 +1187,7 @@ call ``to_backend`` on it:
             def forward(self, arg0_1: f32[2, 2], arg1_1: f32[2, 2], arg2_1: f32[2, 2]):
                 # No stacktrace found for following nodes
                 lowered_module_0 = self.lowered_module_0
-                executorch_call_delegate = torch.ops.executorch_call_delegate(lowered_module_0, arg0_1, arg1_1, arg2_1);  lowered_module_0 = None
+                executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg0_1, arg1_1, arg2_1);  lowered_module_0 = None
                 getitem: f32[2, 2] = executorch_call_delegate[0];  executorch_call_delegate = None
             
                 # File: /pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py:527, code: a = z - a
@@ -1195,7 +1195,7 @@ call ``to_backend`` on it:
             
                 # No stacktrace found for following nodes
                 lowered_module_1 = self.lowered_module_1
-                executorch_call_delegate_1 = torch.ops.executorch_call_delegate(lowered_module_1, aten_sub_tensor, arg1_1, arg2_1);  lowered_module_1 = aten_sub_tensor = arg1_1 = arg2_1 = None
+                executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, aten_sub_tensor, arg1_1, arg2_1);  lowered_module_1 = aten_sub_tensor = arg1_1 = arg2_1 = None
                 getitem_1: f32[2, 2] = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
                 return (getitem_1,)
             
@@ -1398,7 +1398,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 10.333 seconds)
+   **Total running time of the script:** (0 minutes 10.584 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
