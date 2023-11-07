@@ -13,6 +13,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.utils import (
+    get_delegates,
     get_non_lowered_nodes,
     is_identical_graph,
     remove_first_quant_and_last_dequant,
@@ -380,3 +381,24 @@ class TestPartitioners(unittest.TestCase):
         number_of_cpu_nodes = get_non_lowered_nodes(edge.exported_program.graph)
         # Only sub is not not lowerable
         self.assertEqual(len(number_of_cpu_nodes), 1)
+
+    def test_get_delegates(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+        edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
+        edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
+        number_of_delegates = get_delegates(edge.exported_program.graph)
+        # there will be 2 delegates: (mm + add) -> sub -> (mm + add)
+        self.assertEqual(len(number_of_delegates), 2)
