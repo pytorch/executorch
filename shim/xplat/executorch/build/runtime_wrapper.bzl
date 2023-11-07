@@ -230,6 +230,7 @@ def _cxx_library_common(*args, **kwargs):
     env.patch_headers(kwargs)
     env.patch_pp_flags(kwargs)
     env.patch_cxx_compiler_flags(kwargs)
+    env.patch_force_static(kwargs)
 
     env.cxx_library(*args, **kwargs)
 

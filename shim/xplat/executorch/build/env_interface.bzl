@@ -39,10 +39,11 @@ _EXTERNAL_DEPS = {
     "gtest": "//third-party:gtest",
     "gtest_aten": "//third-party:gtest_aten",
     "libtorch": "//third-party:libtorch",
+    "libtorch_python": "//third-party:libtorch_python",
     "prettytable": "//third-party:prettytable",
-    "pybind11": [],  # TODO(larryliu0820): Add support
+    "pybind11": "//third-party:pybind11",
     # Core C++ PyTorch functionality like Tensor and ScalarType.
-    "torch-core-cpp": [],  # TODO(larryliu0820): Add support
+    "torch-core-cpp": "//third-party:libtorch",
     "torchgen": "//third-party:torchgen",
 }
 
@@ -95,6 +96,13 @@ def _patch_deps(kwargs, dep_type):
 def _patch_platform_build_mode_flags(kwargs):
     return kwargs
 
+def _patch_force_static(kwargs):
+    """For OSS cxx library, force static linkage unless specify otherwise.
+    """
+    if "force_static" not in kwargs:
+        kwargs["force_static"] = True
+    return kwargs
+
 def _remove_platform_specific_args(kwargs):
     """Removes platform specific arguments for BUCK builds
 
@@ -118,6 +126,7 @@ def _remove_platform_specific_args(kwargs):
 def _remove_unsupported_kwargs(kwargs):
     """Removes environment unsupported kwargs
     """
+    kwargs.pop("tags", None)  # tags = ["long_running"] doesn't work in oss
     kwargs.pop("types", None)  # will have to find a different way to handle .pyi files in oss
     return kwargs
 
@@ -204,6 +213,7 @@ env = struct(
     patch_deps = _patch_deps,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,
+    patch_force_static = _patch_force_static,
     patch_headers = _patch_headers,
     patch_platform_build_mode_flags = _patch_platform_build_mode_flags,
     patch_platforms = _patch_platforms,
