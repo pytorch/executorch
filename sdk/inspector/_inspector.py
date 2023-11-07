@@ -427,6 +427,15 @@ class Inspector:
             None
         """
 
+        if (source_time_scale == TimeScale.CYCLES) ^ (
+            target_time_scale == TimeScale.CYCLES
+        ):
+            raise RuntimeError(
+                "For TimeScale in cycles both the source and target time scale have to be in cycles."
+            )
+        self._source_time_scale = source_time_scale
+        self._target_time_scale = target_time_scale
+
         if etrecord is None:
             self._etrecord = None
         elif isinstance(etrecord, ETRecord):
@@ -437,15 +446,6 @@ class Inspector:
             raise TypeError("Unsupported ETRecord type")
 
         etdump = gen_etdump_object(etdump_path=etdump_path)
-        if (source_time_scale == TimeScale.CYCLES) ^ (
-            target_time_scale == TimeScale.CYCLES
-        ):
-            raise RuntimeError(
-                "For TimeScale in cycles both the source and target time scale have to be in cycles."
-            )
-
-        self._source_time_scale = source_time_scale
-        self._target_time_scale = target_time_scale
         self.event_blocks = EventBlock._gen_from_etdump(
             etdump, self._source_time_scale, self._target_time_scale
         )
