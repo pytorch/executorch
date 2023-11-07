@@ -315,6 +315,7 @@ def exir_custom_ops_aot_lib(
             supports_python_dlopen = True,
             platforms = platforms,
             compiler_flags = compiler_flags,
+            force_static = False,
         )
 
 def executorch_generated_lib(

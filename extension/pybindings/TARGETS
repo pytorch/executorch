@@ -2,8 +2,8 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain fbcode-only targets.
 
-load("@fbcode//executorch/extension/pybindings:pybindings.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "executorch_pybindings")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "executorch_pybindings")
 
 # Export this so the internal fb/ subdir can create pybindings with custom internal deps
 # without forking the pybinding source.
@@ -36,12 +36,14 @@ runtime.genrule(
 )
 
 executorch_pybindings(
+    compiler_flags = ["-std=c++17"],
     cppdeps = PORTABLE_MODULE_DEPS,
     python_module_name = "core",
     visibility = ["PUBLIC"],
 )
 
 executorch_pybindings(
+    compiler_flags = ["-std=c++17"],
     cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
     python_module_name = "portable_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[portable_lib.pyi]"],
@@ -49,6 +51,7 @@ executorch_pybindings(
 )
 
 executorch_pybindings(
+    compiler_flags = ["-std=c++17"],
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_lib.pyi]"],
