@@ -18,7 +18,7 @@ class RunHigherOrderOperatorError(Exception):
     """
     Raised when an we try to run delegate or other HigherOrderOperator in a graph module.
     E.g., %executorch_call_delegate : [#users=1] = call_function[
-        target=torch.ops.executorch_call_delegate](args = (%lowered_module_0, %arg0_1), kwargs = {})
+        target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, %arg0_1), kwargs = {})
     """
 
     def __init__(self, message: str) -> None:

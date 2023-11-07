@@ -48,12 +48,12 @@ GraphModule(
 
 def forward(self, arg314_1):
     lowered_module_0 = self.lowered_module_0
-    executorch_call_delegate = torch.ops.executorch_call_delegate(lowered_module_0, arg314_1);  lowered_module_0 = arg314_1 = None
+    executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg314_1);  lowered_module_0 = arg314_1 = None
     getitem = executorch_call_delegate[0];  executorch_call_delegate = None
     aten_view_copy_default = executorch_exir_dialects_edge__ops_aten_view_copy_default(getitem, [1, 1280]);  getitem = None
     aten_clone_default = executorch_exir_dialects_edge__ops_aten_clone_default(aten_view_copy_default);  aten_view_copy_default = None
     lowered_module_1 = self.lowered_module_1
-    executorch_call_delegate_1 = torch.ops.executorch_call_delegate(lowered_module_1, aten_clone_default);  lowered_module_1 = aten_clone_default = None
+    executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, aten_clone_default);  lowered_module_1 = aten_clone_default = None
     getitem_1 = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None
     return (getitem_1,)
 ```

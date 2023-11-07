@@ -471,7 +471,7 @@ print(exported_program.graph_module.lowered_module_0.processed_bytes)
 print(exported_program.graph_module.lowered_module_0.original_module)
 
 ######################################################################
-# Notice that there is now a ``torch.ops.executorch_call_delegate`` node in the
+# Notice that there is now a ``torch.ops.higher_order.executorch_call_delegate`` node in the
 # graph, which is calling ``lowered_module_0``. Additionally, the contents of
 # ``lowered_module_0`` are the same as the ``lowered_module`` we created
 # previously.
@@ -513,7 +513,7 @@ print(delegated_program.graph_module.lowered_module_0.original_module)
 print(delegated_program.graph_module.lowered_module_1.original_module)
 
 ######################################################################
-# Notice that there are now 2 ``torch.ops.executorch_call_delegate`` nodes in the
+# Notice that there are now 2 ``torch.ops.higher_order.executorch_call_delegate`` nodes in the
 # graph, one containing the operations `add, mul` and the other containing the
 # operations `mul, add`.
 #

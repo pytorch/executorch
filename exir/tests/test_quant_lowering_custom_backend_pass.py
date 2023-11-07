@@ -594,7 +594,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         # Check the toplevel graph
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor_default"
-        ).check("torch.ops.executorch_call_delegate").check(
+        ).check("torch.ops.higher_order.executorch_call_delegate").check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
         ).check(
             "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor_default"
