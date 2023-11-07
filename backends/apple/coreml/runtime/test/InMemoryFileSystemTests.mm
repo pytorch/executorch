@@ -11,12 +11,14 @@
 #import <iostream>
 #import <sstream>
 
-#import <inmemory_filesystem.hpp>
+#import <inmemory_filesystem_utils.hpp>
 #import <memory_stream.hpp>
 #import <json.hpp>
+#import <json_util.hpp>
+
+using json = nlohmann::json;
 
 namespace {
-using json = nlohmann::json;
 using namespace inmemoryfs;
 
 struct Content {
@@ -49,7 +51,7 @@ void from_json(const json& j, Content& content) {
 }
 
 template <typename T>
-std::shared_ptr<MemoryBuffer> toMemoryBuffer(const T& value) {
+std::shared_ptr<MemoryBuffer> to_memory_buffer(const T& value) {
     std::stringstream ss;
     json j;
     to_json(j, value);
@@ -59,7 +61,7 @@ std::shared_ptr<MemoryBuffer> toMemoryBuffer(const T& value) {
 }
 
 template <typename T>
-T fromMemoryBuffer(const std::shared_ptr<MemoryBuffer>& buffer) {
+T from_memory_buffer(const std::shared_ptr<MemoryBuffer>& buffer) {
     T result;
     MemoryIStream memstream(buffer);
     json j;
@@ -86,7 +88,7 @@ using namespace inmemoryfs;
 - (void)testMakeFileAtPath {
     auto fs = InMemoryFileSystem("test");
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     std::error_code error;
     XCTAssertTrue(fs.make_file({"content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
     // This must fail if we try to overwrite the file at the same path but with the `overwrite` parameter set to true.
@@ -111,7 +113,7 @@ using namespace inmemoryfs;
     XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
     XCTAssertTrue(fs.is_directory({"dir1"}));
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
     XCTAssertFalse(fs.is_directory({"dir1", "content.json"}));
 }
@@ -121,7 +123,7 @@ using namespace inmemoryfs;
     std::error_code error;
     XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
     XCTAssertTrue(fs.is_file({"dir1", "content.json"}));
     XCTAssertFalse(fs.is_file({"dir1"}));
@@ -132,7 +134,7 @@ using namespace inmemoryfs;
     std::error_code error;
     XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
     auto contents = fs.get_file_content({"dir1", "content.json"}, error);
     XCTAssert(contents != nullptr);
@@ -143,7 +145,7 @@ using namespace inmemoryfs;
     std::error_code error;
     XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer, InMemoryFileSystem::Attributes(), false  /*overwrite*/, error));
     XCTAssertTrue(fs.remove_item({"dir1", "content.json"}, error));
     XCTAssertFalse(fs.exists({"dir1", "content.json"}));
@@ -154,7 +156,7 @@ using namespace inmemoryfs;
 - (void)testWriteItemAtPath {
     auto fs = InMemoryFileSystem("test");
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     std::error_code error;
     
     XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
@@ -185,7 +187,7 @@ using namespace inmemoryfs;
 
 - (void)testCreationFromFileSystem {
     Content content("abc", "xyz");
-    std::shared_ptr<MemoryBuffer> buffer = toMemoryBuffer(content);
+    std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
     NSURL *dirURL = [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
     NSFileManager *fm = [[NSFileManager alloc] init];
     NSError *localError = nil;
@@ -217,27 +219,76 @@ using namespace inmemoryfs;
     {
         auto fs = InMemoryFileSystem("test");
         XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
-        std::shared_ptr<MemoryBuffer> buffer1 = toMemoryBuffer(content1);
+        std::shared_ptr<MemoryBuffer> buffer1 = to_memory_buffer(content1);
         XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer1, InMemoryFileSystem::Attributes(), false /*overwrite*/, error));
         XCTAssertTrue(fs.make_directory({"dir2"}, InMemoryFileSystem::Attributes(), false, error));
-        std::shared_ptr<MemoryBuffer> buffer2 = toMemoryBuffer(content2);
+        std::shared_ptr<MemoryBuffer> buffer2 = to_memory_buffer(content2);
         XCTAssertTrue(fs.make_file({"dir2", "content.json"}, buffer2, InMemoryFileSystem::Attributes(), false /*overwrite*/, error));
-        size_t length = fs.get_serialization_size({}, 1);
+        size_t length = inmemoryfs::get_serialization_size(fs, {}, 1);
         std::vector<uint8_t> bytes;
         bytes.resize(length);
         serializedBuffer = MemoryBuffer::make(std::move(bytes));
         auto memstream = MemoryOStream(serializedBuffer);
-        fs.serialize({}, 1, memstream);
+        inmemoryfs::serialize(fs, {}, 1, memstream);
     }
     
     {
         std::error_code error;
-        auto fs = InMemoryFileSystem::make(serializedBuffer);
+        auto fs = inmemoryfs::make(serializedBuffer);
         XCTAssertTrue(fs->is_directory({"dir1"}));
         XCTAssertTrue(fs->is_directory({"dir2"}));
-        XCTAssertEqual(fromMemoryBuffer<Content>(fs->get_file_content({"dir1", "content.json"}, error)), content1);
-        XCTAssertEqual(fromMemoryBuffer<Content>(fs->get_file_content({"dir2", "content.json"}, error)), content2);
+        XCTAssertEqual(from_memory_buffer<Content>(fs->get_file_content({"dir1", "content.json"}, error)), content1);
+        XCTAssertEqual(from_memory_buffer<Content>(fs->get_file_content({"dir2", "content.json"}, error)), content2);
     }
+}
+
+- (void)testReadJSONObject {
+    using json = nlohmann::json;
+    {
+        std::stringstream ss;
+        std::string fragment("{\"x\" : 1}xyz");
+        ss << fragment;
+        auto object = executorchcoreml::json::read_object_from_stream(ss);
+        XCTAssertTrue(object.has_value(), "There is a valid json object, `read_json_object` must not return nullopt");
+        auto j = json::parse(object.value().begin(), object.value().end());
+        XCTAssertEqual(j["x"], 1, "The value must match");
+    }
+    
+    {
+        std::stringstream ss;
+        std::string fragment("{\"x\" : 1");
+        ss << fragment;
+        auto object = executorchcoreml::json::read_object_from_stream(ss);
+        XCTAssertFalse(object.has_value(), "There is no closing brace, `read_json_object` must return nullopt");
+    }
+    
+    
+    {
+        std::stringstream ss;
+        std::string fragment("{\"x\" : \"\\\"1\"}xyz");
+        ss << fragment;
+        auto object = executorchcoreml::json::read_object_from_stream(ss);
+        XCTAssertTrue(object.has_value(), "There is a valid json object, `read_json_object` must not return nullopt");
+        auto j = json::parse(object.value().begin(), object.value().end());
+        std::string value = j["x"];
+        XCTAssertEqual(value, std::string("\"1"), "The value must match");
+    }
+    
+    {
+        std::stringstream ss;
+        std::string fragment("{sdhalskjks}");
+        ss << fragment;
+        auto object = executorchcoreml::json::read_object_from_stream(ss);
+        XCTAssertTrue(object.has_value(), "The json object is invalid but is correctly nested, `read_json_object` must not return nullopt");
+        std::exception_ptr eptr;
+        try {
+            auto j = json::parse(object.value().begin(), object.value().end());
+        } catch (...) {
+            eptr = std::current_exception();
+        }
+        XCTAssertNotEqual(eptr, nullptr, "Parsing invalid json object must throw an exception");
+    }
+    
 }
 
 @end

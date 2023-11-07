@@ -11,6 +11,8 @@
 #import <string>
 #import <vector>
 
+#import <serde_json.h>
+
 namespace executorchcoreml {
 
 /// A struct containing the file info.
@@ -54,6 +56,12 @@ struct Asset {
     std::string path;
     /// The package info.
     PackageInfo package_info;
+
+    inline std::string to_json_string() const noexcept { return serde::json::to_json_string(*this); }
+
+    inline void from_json_string(std::string json_string) noexcept {
+        serde::json::from_json_string(json_string, *this);
+    }
 
     static std::optional<Asset>
     make(NSURL* srcURL, NSString* identifier, NSFileManager* fm, NSError* __autoreleasing* error);

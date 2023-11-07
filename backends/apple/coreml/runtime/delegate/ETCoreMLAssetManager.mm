@@ -21,7 +21,6 @@ namespace  {
 
 using namespace executorchcoreml;
 using namespace executorchcoreml::sqlite;
-using json = nlohmann::json;
 
 constexpr size_t kBusyTimeIntervalInMS = 100;
 

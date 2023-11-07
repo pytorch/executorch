@@ -17,7 +17,7 @@
 
 #import <os/lock.h>
 
-#import <inmemory_filesystem.hpp>
+#import <inmemory_filesystem_utils.hpp>
 #import <metadata.h>
 #import <serde_json.h>
 
@@ -31,7 +31,6 @@
 
 namespace {
 
-using json = nlohmann::json;
 using namespace executorchcoreml;
 
 std::vector<std::string> canonical_path(NSString *path) {
@@ -127,10 +126,10 @@ std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSy
         return std::nullopt;
     }
     
-    char *ptr = static_cast<char *>(buffer->data());
-    auto json = json::parse(ptr, ptr + buffer->size());
+    std::string contents;
+    contents.assign(reinterpret_cast<char *>(buffer->data()), buffer->size());
     ModelMetadata metadata;
-    from_json(json, metadata);
+    metadata.from_json_string(std::move(contents));
     if (metadata.isValid()) {
         return metadata;
     }
@@ -381,7 +380,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     using namespace inmemoryfs;
     
     auto buffer = MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
-    std::unique_ptr<InMemoryFileSystem> inMemoryFS = InMemoryFileSystem::make(buffer);
+    std::unique_ptr<InMemoryFileSystem> inMemoryFS = inmemoryfs::make(buffer);
     if (!inMemoryFS) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,

@@ -10,13 +10,9 @@
 
 #import <optional>
 
+#import <objc_safe_cast.h>
+
 namespace  {
-
-inline id check_class(id obj, Class cls) {
-    return [obj isKindOfClass:cls] ? obj : nil;
-}
-
-#define SAFE_CAST(Object, Type) ((Type *)check_class(Object, [Type class]))
 
 NSNumber * _Nullable is_regular_file(NSURL *url, NSError * __autoreleasing *error) {
     NSNumber *result = nil;
