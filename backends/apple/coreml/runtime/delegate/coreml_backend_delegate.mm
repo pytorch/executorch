@@ -12,6 +12,7 @@
 #import <unordered_map>
 #import <vector>
 
+#import <objc_safe_cast.h>
 #import <multiarray.h>
 
 #import <ETCoreMLLogging.h>
@@ -23,12 +24,6 @@
 namespace {
 using namespace torch::executor;
 using namespace executorchcoreml;
-
-inline id check_class(id obj, Class cls) {
-    return [obj isKindOfClass:cls] ? obj : nil;
-}
-
-#define SAFE_CAST(Object, Type) ((Type *)check_class(Object, [Type class]))
 
 std::optional<MultiArray::DataType> get_data_type(ScalarType scalar_type) {
     if (scalar_type == ScalarType::Float) {

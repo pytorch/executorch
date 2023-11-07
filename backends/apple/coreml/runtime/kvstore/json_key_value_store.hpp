@@ -12,12 +12,16 @@
 #include <iostream>
 #include <sstream>
 
-#include <json.hpp>
-
 namespace executorchcoreml {
 namespace sqlite {
 
-using json = nlohmann::json;
+/// Returns string from `sqlite::UnOwnedValue`
+///
+/// The method fails if the `value` does not contain `UnOwnedString`.
+///
+/// @param value The unowned value.
+/// @retval The string.
+std::string string_from_unowned_value(const sqlite::UnOwnedValue& value);
 
 /// JSON converter for a type `T`.
 template <typename T>
@@ -25,20 +29,14 @@ struct JSONConverter {
     static constexpr StorageType storage_type = StorageType::Text;
     
     /// Converts a value of type `T` to a `sqlite::Value`.
-    inline static sqlite::Value to_sqlite_value(const T& value) {
-        json j;
-        to_json(j, value);
-        std::stringstream ss;
-        ss << j;
-        return ss.str();
+    inline static sqlite::Value to_sqlite_value(const T& value) noexcept {
+        return value.to_json_string();
     }
     
     /// Converts a `sqlite::UnOwnedValue` to a value of type `T`.
-    inline static T from_sqlite_value(const sqlite::UnOwnedValue& value) {
-        auto text = std::get<sqlite::UnOwnedString>(value);
-        json j = json::parse(text.data, text.data + text.size);
+    inline static T from_sqlite_value(const sqlite::UnOwnedValue& value) noexcept {
         T result;
-        from_json(j, result);
+        result.from_json_string(string_from_unowned_value(value));
         return result;
     }
 };

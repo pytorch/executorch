@@ -8,37 +8,38 @@
 #pragma once
 
 #import <string>
-#import <vector>
-
-#import <json.hpp>
-
-#import <asset.h>
-#import <metadata.h>
 
 namespace executorchcoreml {
+struct Asset;
+struct ModelMetadata;
 
-/// Populates `nlohmann::json` from `ModelAsset`.
+namespace serde {
+namespace json {
+
+/// Serializes `Asset` to json.
 ///
-/// @param json The json value to be populated from the asset value.
 /// @param asset The asset value.
-void to_json(nlohmann::json& json, const Asset& asset);
+/// @retval Serialized json.
+std::string to_json_string(const executorchcoreml::Asset& asset);
 
-/// Populates `ModelAsset` from `nlohmann::json`.
+/// Populates `Asset` from serialized json.
 ///
-/// @param json The json value.
-/// @param asset The asset value to be populated from the json value.
-void from_json(const nlohmann::json& json, Asset& asset);
+/// @param json_string  A json string.
+/// @param asset The asset value to be populated from the json string.
+void from_json_string(const std::string& json_string, executorchcoreml::Asset& asset);
 
-/// Populates nlohmann::json`from `ModelMetadata`.
+/// Serializes `ModelMetadata` to json.
 ///
-/// @param json The json value to be populated from the metadata value.
-/// @param metadata The metadata value.
-void to_json(nlohmann::json& json, const ModelMetadata& metadata);
+/// @param metdata The metadata value.
+/// @retval Serialized json.
+std::string to_json_string(const executorchcoreml::ModelMetadata& metdata);
 
-/// Populates `ModelMetadata` from `nlohmann::json`.
+/// Populates `ModelMetadata` from serialized json.
 ///
-/// @param json The json value.
-/// @param metadata The metadata value to be populated from the json value.
-void from_json(const nlohmann::json& json, ModelMetadata& metadata);
+/// @param json_string  A json string.
+/// @param metadata The metadata value to be populated from the json string.
+void from_json_string(const std::string& json_string, executorchcoreml::ModelMetadata& metadata);
 
+} // namespace json
+} // namespace serde
 } // namespace executorchcoreml

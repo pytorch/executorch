@@ -278,10 +278,8 @@ public:
     /// @param error   On failure, error is populated with the failure reason.
     /// @param update_access_statistics   If it is `true` then the access statistics (access time and access count) are updated otherwise not.
     /// @retval The associated value for the key.
-    template<typename T>
+    template<typename T = Key>
     inline std::optional<Value> get(T&& key, std::error_code& error, bool update_access_statistics = true) noexcept {
-        static_assert(same_key<T>::value, "Key type is not supported.");
-        
         Value result;
         std::function<void(const UnOwnedValue&)> fn = [&result](const UnOwnedValue& value) {
             result = ValueConverter::from_sqlite_value(value);
@@ -299,10 +297,8 @@ public:
     /// @param key The key.
     /// @param error   On failure, error is populated with the failure reason.
     /// @retval `true` if the key exists in the store otherwise `false`.
-    template<typename T>
+    template<typename T = Key>
     inline bool exists(T&& key, std::error_code& error) noexcept {
-        static_assert(same_key<T>::value, "Key type is not supported.");
-        
         return impl_->exists(KeyConverter::to_sqlite_value(std::forward<T>(key)), error);
     }
     
@@ -312,11 +308,8 @@ public:
     /// @param value The value.
     /// @param error   On failure, error is populated with the failure reason.
     /// @retval `true` if the operation succeeded otherwise `false`.
-    template<typename T, typename U>
+    template<typename T = Key, typename U = Value>
     inline bool put(T&& key, U&& value, std::error_code& error) const noexcept {
-        static_assert(same_key<T>::value, "Key type is not supported.");
-        static_assert(same_value<U>::value, "Value type is not supported.");
-        
         return impl_->put(KeyConverter::to_sqlite_value(std::forward<T>(key)),
                           ValueConverter::to_sqlite_value(std::forward<U>(value)),
                           error);
@@ -365,9 +358,8 @@ public:
     /// @param key The key.
     /// @param error   On failure, error is populated with the failure reason.
     /// @retval `true` if the operation succeeded otherwise `false`.
-    template<typename T>
+    template<typename T = Key>
     inline bool remove(T&& key, std::error_code& error) noexcept {
-        static_assert(same_key<T>::value, "Key type is not supported");
         return impl_->remove(Converter<Key>::to_sqlite_value(std::forward<T>(key)), error);
     }
     

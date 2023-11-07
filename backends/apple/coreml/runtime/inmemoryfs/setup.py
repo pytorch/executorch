@@ -18,8 +18,10 @@ ext_modules = [
     Pybind11Extension(
         "executorchcoreml",
         [
+            "../util/json_util.cpp",
             "inmemory_filesystem.cpp",
             "inmemory_filesystem_py.cpp",
+            "inmemory_filesystem_utils.cpp",
             "memory_buffer.cpp",
             "memory_stream.cpp",
             "reversed_memory_stream.cpp",
@@ -30,6 +32,7 @@ ext_modules = [
         include_dirs=[
             "../../third-party/nlohmann_json/single_include/nlohmann",
             ".",
+            "../util",
         ],
     ),
 ]
