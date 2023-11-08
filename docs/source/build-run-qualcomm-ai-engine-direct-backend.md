@@ -1,6 +1,6 @@
 # Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend
 
-In this tutorial we will walk you through the process of getting setup to
+In this tutorial we will walk you through the process of getting started to
 build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.
 
 Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation.
@@ -53,7 +53,7 @@ This example is verified with SM8550 and SM8450.
 
  - Follow ExecuTorch recommneded Python version.
  - A compiler to compile AOT parts. GCC 9.4 come with Ubuntu20.04 is verified.
- - Android NDK. This example is verified with NDK 25c.
+ - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 25c.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)
    - Follow the download button. After logging in, search Qualcomm AI Stack at the *Tool* panel.
    - You can find Qualcomm AI Engine Direct SDK under the AI Stack group.
@@ -97,7 +97,7 @@ i.e., the directory containing `QNN_README.txt`.
 We set `LD_LIBRARY_PATH` to make sure the dynamic linker can find QNN libraries.
 
 Further, we set `PYTHONPATH` because it's easier to develop and import ExecuTorch
-Pytho APIs.
+Python APIs.
 
 ```bash
 export LD_LIBRARY_PATH=$QNN_SDK_ROOT/lib/x86_64-linux-clang/:$LD_LIBRARY_PATH
@@ -106,7 +106,7 @@ export PYTHONPATH=$EXECUTORCH_ROOT/..
 
 ## Build
 
-An example script for below building instructions is [here](../../backends/qualcomm/scripts/build.sh).
+An example script for below building instructions is [here](https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh).
 
 ### AOT (Ahead-of-time) components:
 
@@ -135,13 +135,28 @@ Commands to build `qnn_executor_runner` for Android:
 cd $EXECUTORCH_ROOT
 mkdir build_android
 cd build_android
-cmake .. -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+# build executorch & qnn_executorch_backend
+cmake .. \
+    -DBUCK2=buck2 \
+    -DCMAKE_INSTALL_PREFIX=$PWD \
     -DEXECUTORCH_BUILD_QNN=ON \
+    -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_NATIVE_API_LEVEL=23 \
-    -DBUCK2=buck2
-cmake --build . -j8
+    -B$PWD
+
+cmake --build $PWD -j16 --target install
+
+cmake ../examples/qualcomm \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI='arm64-v8a' \
+    -DANDROID_NATIVE_API_LEVEL=23 \
+    -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+    -Bexamples/qualcomm
+
+cmake --build examples/qualcomm -j16
 ```
 
 You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
@@ -151,7 +166,7 @@ You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
 
 ### AOT compile a model
 
-You can refer to [this script](../../examples/qualcomm/scripts/deeplab_v3.py) for the exact flow.
+You can refer to [this script](https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py) for the exact flow.
 We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:
 
 ```
@@ -179,7 +194,7 @@ output         output                    output                       ([getitem_
 The compiled model is `./deeplab_v3/dlv3_qnn.pte`.
 
 
-### Run model Inference on an Android smartphone with Qualcomm SoCs
+### Run model inference on an Android smartphone with Qualcomm SoCs
 
 ***Step 1***. We need to push required QNN libraries to the device.
 
@@ -222,12 +237,12 @@ I 00:00:01.835706 executorch:qnn_executor_runner.cpp:298] 100 inference took 109
 ### Running a model via ExecuTorch's android demo-app
 
 An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-`examples`. Please refer to android demo app tutorial.
+`examples`. Please refer to android demo app [tutorial](https://pytorch.org/executorch/stable/demo-apps-android.html).
 
 
 ## What is coming?
 
- - [An example using quantized mobilebert](https://github.com/pytorch/executorch/pull/658) to solve multi-class text classification.
+ - [An example using quantized mobilebert](https://github.com/pytorch/executorch/pull/1043) to solve multi-class text classification.
  - More Qualcomm AI Engine Direct accelerators, e.g., GPU.
 
 ## FAQ
