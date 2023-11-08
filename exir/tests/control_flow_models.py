@@ -65,7 +65,8 @@ class FTCondDeadCode(Module):
 
     def forward(self, inp):
         def true_branch(x):
-            return torch.inverse(x).contiguous()
+            x - 1
+            return x + 1
 
         def false_branch(x):
             return x * 2

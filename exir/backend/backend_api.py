@@ -326,4 +326,6 @@ def _(
         copy.deepcopy(edge_program.range_constraints),
         copy.deepcopy(edge_program.equality_constraints),
         copy.deepcopy(edge_program.module_call_graph),
+        None,
+        edge_program.verifier,
     )

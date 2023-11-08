@@ -37,6 +37,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.serde.schema import GraphSignature
 from torch._export.serde.serialize import SerializeError
+from torch._export.verifier import load_verifier
 from torch.export.exported_program import (
     ExportGraphSignature,
     ModuleCallEntry,
@@ -367,7 +368,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 range_constraints=serialized_range_constraints,
                 equality_constraints=serialized_equality_constraints,
                 schema_version=schema.SCHEMA_VERSION,
-                example_inputs=None,
+                dialect=exported_program.dialect,
             ),
             export_serialize.serialize_torch_artifact(gm_serializer.state_dict),
         )
@@ -686,15 +687,23 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             serialized_exported_program.equality_constraints
         )
 
-        return exir.ExportedProgram(
+        dummy_g = torch.fx.Graph()
+        dummy_g.output(())
+        ep = exir.ExportedProgram(
             state_dict,
-            graph_module.graph,
+            dummy_g,
             sig,
             {},  # TODO(T157676982)
             range_constraints,
             equality_constraints,
             module_call_graph,
+            None,
+            load_verifier(serialized_exported_program.dialect),
         )
+        ep.graph_module.graph = graph_module.graph
+        for name, t in state_dict.items():
+            setattr(ep.graph_module, name, t)
+        return ep
 
 
 def serialize(
