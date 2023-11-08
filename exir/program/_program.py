@@ -32,6 +32,7 @@ from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
+    get_aten_verifier,
 )
 from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
@@ -42,6 +43,21 @@ from torch.fx._compatibility import compatibility
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+def _copy_module(new_prog, new_gm):
+    new_prog.meta.update(new_gm.meta)
+    new_prog.graph = new_gm.graph
+    submodules = [name for name, _ in new_prog.named_children()]
+    for name in submodules:
+        delattr(new_prog, name)
+    for name, mod in new_gm.named_children():
+        setattr(new_prog, name, mod)
+    for node in new_gm.graph.nodes:
+        if node.op == "get_attr":
+            t = getattr(new_gm, node.target, None)
+            if isinstance(t, torch.Tensor):
+                setattr(new_prog, node.target, t)
 
 
 def lift_constant_tensor_pass(ep):
@@ -131,6 +147,7 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
         equality_constraints,
         module_call_graph,
         example_inputs,
+        verifier,
     ):
         super().__init__(
             root,
@@ -141,8 +158,8 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
             equality_constraints,
             module_call_graph,
             example_inputs,
+            verifier,
         )
-        self._dialect = "HACKED_ATEN"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         import torch._export.error as error
@@ -245,9 +262,15 @@ class ExirExportedProgram:
         if not self.after_to_edge_passes:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
-        ep = self.exported_program
-        new_prog = ep._transform(*edge_to_executorch_passes(config))
-        new_prog = ExirExportedProgram(new_prog, self.after_to_edge_passes)
+        new_gm = self.exported_program.graph_module
+        for p in edge_to_executorch_passes(config):
+            new_gm_res = p(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
+        new_prog = ExirExportedProgram(
+            copy.deepcopy(self.exported_program), self.after_to_edge_passes
+        )
+        _copy_module(new_prog.exported_program.graph_module, new_gm)
         executorch_prog = ExecutorchProgram(
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
@@ -256,9 +279,7 @@ class ExirExportedProgram:
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
         )
-        executorch_prog.graph_module.meta.update(
-            new_prog.exported_program.graph_module.meta
-        )
+        executorch_prog.graph_module.meta.update(new_gm.meta)
         executorch_prog.graph_module.meta.update(
             self.exported_program.graph_module.meta
         )
@@ -356,6 +377,22 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             )
             raise
 
+    dialect = ep.exported_program.dialect
+    if dialect == "ATEN":
+        ep = ExirExportedProgram(
+            ExportedProgram(
+                ep.exported_program.graph_module,
+                ep.exported_program.graph_module.graph,
+                ep.exported_program.graph_signature,
+                ep.exported_program.state_dict,
+                ep.exported_program.range_constraints,
+                ep.exported_program.equality_constraints,
+                ep.exported_program.module_call_graph,
+                ep.exported_program.example_inputs,
+                verifier=get_aten_verifier(enable=config._check_ir_validity),
+            ),
+            False,
+        )
     # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
     # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
@@ -364,16 +401,23 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     post_op_replace_passes = aten_to_edge_passes.passes[-2:]
 
     new_ep = copy.deepcopy(ep).transform(*pre_op_replace_passes)
-    if new_ep.exported_program.dialect == "ATEN":
+    if dialect == "ATEN":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
+    new_gm = new_ep.exported_program.graph_module
     if config._use_edge_ops:
-        new_ep = new_ep.transform(OpReplacePass())
+        new_gm_res = OpReplacePass()(new_gm)
+        assert new_gm_res is not None
+        new_gm = new_gm_res.graph_module
 
-    new_ep = new_ep.transform(*post_op_replace_passes)
+    for p in post_op_replace_passes:
+        new_gm_res = p(new_gm)
+        assert new_gm_res is not None
+        new_gm = new_gm_res.graph_module
+
     new_ep.exported_program = ExportedProgram(
-        new_ep.exported_program.graph_module,
-        new_ep.exported_program.graph,
+        new_gm,
+        new_gm.graph,
         new_ep.exported_program.graph_signature,
         new_ep.exported_program.state_dict,
         new_ep.exported_program.range_constraints,
@@ -386,11 +430,6 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             class_only=True,
         ),
     )
-    if config._check_ir_validity:
-        # TODO(zhxchen17) Remove this call after we turn on verifier in ctor.
-        EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
-            new_ep.exported_program.graph_module
-        )
     new_ep.after_to_edge_passes = True
     return new_ep
 
@@ -623,8 +662,18 @@ def multi_method_program_to_executorch(
 ) -> MultiMethodExecutorchProgram:
     config = config or ExecutorchBackendConfig()
     passes = edge_to_executorch_passes(config)
+    res = {}
+    for method_name, prog in edge_dialect_program._method_to_program.items():
+        new_prog = copy.deepcopy(prog)
+        gm = prog.exported_program.graph_module
+        for p in passes:
+            gm_res = p(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+        _copy_module(new_prog.exported_program.graph_module, gm)
+        res[method_name] = new_prog
     return MultiMethodExecutorchProgram(
-        executorch_dialect_program=edge_dialect_program.transform(*passes),
+        executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
         extract_segments=config.extract_segments,
         segment_alignment=config.segment_alignment,
@@ -674,8 +723,6 @@ def to_edge(
                 logging.info(f"Input program {name} is not in ATen dialect.")
                 raise e
 
-        op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
-
         # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
         # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
         # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
@@ -686,9 +733,31 @@ def to_edge(
             ReplaceViewOpsWithViewCopyOpsPass()
         )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
         passes.extend(aten_to_edge_passes.passes[:-2])
-        passes.extend(op_replace_pass)
-        passes.extend(aten_to_edge_passes.passes[-2:])
         edge_program = program._transform(*passes)
+        if config._use_edge_ops:
+            gm_res = OpReplacePass()(edge_program.graph_module)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+        else:
+            gm = edge_program.graph_module
+        edge_program = ExportedProgram(
+            root=gm,
+            graph=gm.graph,
+            graph_signature=edge_program.graph_signature,
+            state_dict=edge_program.state_dict,
+            range_constraints=edge_program.range_constraints,
+            equality_constraints=edge_program.equality_constraints,
+            module_call_graph=edge_program.module_call_graph,
+            example_inputs=edge_program.example_inputs,
+            verifier=EXIREdgeDialectVerifier(
+                check_edge_ops=config._use_edge_ops,
+                enable=config._check_ir_validity,
+                class_only=True,
+            ),
+        )
+        passes = []
+        passes.extend(aten_to_edge_passes.passes[-2:])
+        edge_program = edge_program._transform(*passes)
         try:
             EXIREdgeDialectVerifier(
                 check_edge_ops=config._use_edge_ops, enable=config._check_ir_validity
@@ -852,7 +921,13 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
-            new_prog = program._transform(*edge_to_executorch_passes(config))
+            new_gm = program.graph_module
+            for p in edge_to_executorch_passes(config):
+                new_gm_res = p(new_gm)
+                assert new_gm_res is not None
+                new_gm = new_gm_res.graph_module
+            new_prog = copy.deepcopy(program)
+            _copy_module(new_prog.graph_module, new_gm)
             execution_programs[name] = new_prog
 
         return ExecutorchProgramManager(

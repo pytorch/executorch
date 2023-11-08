@@ -22,7 +22,7 @@ from executorch.exir.tracer import (
     flatten_output,
     Value,
 )
-from executorch.exir.verification.verifier import EXIRATenDialectVerifier
+from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
@@ -79,6 +79,16 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
     assert output_node.op == "output"
     user_outputs = [arg.name for arg in output_node.args[0]]
 
+    for n in graph_module.graph.nodes:
+        if n.op == "call_function" and "val" not in n.meta:
+            try:
+                args, kwargs = pytree.tree_map_only(
+                    torch.fx.Node, lambda x: x.meta["val"], (n.args, n.kwargs)
+                )
+                n.meta["val"] = n.target(*args, **kwargs)
+            except Exception:
+                n.meta["val"] = None
+
     ep = HackedUpExportedProgramDONOTUSE(
         graph_module,
         graph_module.graph,
@@ -112,6 +122,7 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
             )
         ],
         None,
+        EXIRATenDialectVerifierBase,
     )
     return ExirExportedProgram(ep, False)
 
@@ -281,6 +292,7 @@ def capture(  # noqa: C901
         for arg in output_node.args[0]
     ]
 
+    graph_module.graph.eliminate_dead_code()
     ep = ExportedProgram(
         graph_module,
         graph_module.graph,
@@ -300,7 +312,7 @@ def capture(  # noqa: C901
             )
         ],
         None,
-        EXIRATenDialectVerifier,
+        EXIRATenDialectVerifierBase,
     )
     return ExirExportedProgram(ep, False)
 

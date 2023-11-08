@@ -32,9 +32,10 @@ class ExampleBackend(BackendDetails):
         print("entering  the lowerable parts in ExampleBackend.preprocess....")
 
         copy_edge_program = copy.deepcopy(edge_program)
-        copy_edge_program._transform(
-            PermuteMemoryFormatsPass(),
-            MergeToDimPass(),
-        )
-        processed_bytes = str(copy_edge_program.graph)
+        graph_module = copy_edge_program.graph_module
+        graph_module_res = PermuteMemoryFormatsPass()(graph_module)
+        assert graph_module_res is not None
+        graph_module_res = MergeToDimPass()(graph_module_res.graph_module)
+        assert graph_module_res is not None
+        processed_bytes = str(graph_module_res.graph_module.graph)
         return PreprocessResult(bytes(processed_bytes, encoding="utf8"))

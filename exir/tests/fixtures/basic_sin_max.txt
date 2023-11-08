@@ -51,34 +51,13 @@
             "layout": 0,
             "shape_dynamism": "STATIC"
           }
-        },
-        {
-          "val_type": "Tensor",
-          "val": {
-            "scalar_type": "FLOAT",
-            "storage_offset": 0,
-            "sizes": [
-
-            ],
-            "dim_order": [
-
-            ],
-            "requires_grad": false,
-            "constant_buffer_idx": 0,
-            "allocation_info": {
-              "memory_id": 1,
-              "memory_offset": 0
-            },
-            "layout": 0,
-            "shape_dynamism": "STATIC"
-          }
         }
       ],
       "inputs": [
         0
       ],
       "outputs": [
-        2
+        1
       ],
       "chains": [
         {
@@ -99,17 +78,6 @@
                   1
                 ]
               }
-            },
-            {
-              "instr_args_type": "KernelCall",
-              "instr_args": {
-                "op_index": 1,
-                "args": [
-                  1,
-                  2,
-                  2
-                ]
-              }
             }
           ]
         }
@@ -118,10 +86,6 @@
         {
           "name": "aten::sin",
           "overload": "out"
-        },
-        {
-          "name": "aten::max",
-          "overload": "unary_out"
         }
       ],
       "delegates": [
