@@ -40,9 +40,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
             .exported_program.graph_module
         )
 
-        FileCheck().check("executorch_exir_dialects_edge__ops_aten_sin").check(
-            "executorch_exir_dialects_edge__ops_aten_max"
-        ).run(f.code)
+        FileCheck().check("executorch_exir_dialects_edge__ops_aten_sin").run(f.code)
 
     def test_static_control_flow(self) -> None:
         def f(pred: bool, x: torch.Tensor) -> torch.Tensor:

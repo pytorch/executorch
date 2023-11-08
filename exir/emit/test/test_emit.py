@@ -146,13 +146,12 @@ class TestEmit(unittest.TestCase):
             self.assertIn(op.overload, {"out", "unary_out"})
 
         self.assertEqual(ops[0].name, "aten::sin")
-        self.assertEqual(ops[1].name, "aten::max")
 
         self.assertEqual(len(exec_plan.inputs), 1)
         self.assertEqual(len(exec_plan.outputs), 1)
 
         self.assertEqual(exec_plan.inputs[0], 0)
-        self.assertEqual(exec_plan.outputs[0], 2)
+        self.assertEqual(exec_plan.outputs[0], 1)
 
     def test_nested_return(self) -> None:
         def f(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:

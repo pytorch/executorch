@@ -210,6 +210,9 @@ class LoweredBackendModule(torch.nn.Module):
         delegate_node.meta["spec"] = tuple(
             [make_spec(node.meta["val"]) for node in original_output_nodes]
         )
+        delegate_node.meta["val"] = tuple(
+            [node.meta["val"] for node in original_output_nodes]
+        )
 
         # The getitem nodes that are going to be inserted to the lowered graph module
         getitem_nodes = []
@@ -218,6 +221,7 @@ class LoweredBackendModule(torch.nn.Module):
                 operator.getitem,
                 args=(delegate_node, i),
             )
+            getitem_node.meta["val"] = delegate_node.meta["val"][i]
             getitem_nodes.append(getitem_node)
         lowered_exported_program.graph.output(getitem_nodes)
 
@@ -264,6 +268,8 @@ class LoweredBackendModule(torch.nn.Module):
             range_constraints=lowered_exported_program.range_constraints,
             equality_constraints=lowered_exported_program.equality_constraints,
             module_call_graph=lowered_exported_program.module_call_graph,
+            example_inputs=None,
+            verifier=lowered_exported_program.verifier,
         )
         exported_program = exported_program._transform(
             SpecPropPass(), MemoryPlanningPass("greedy")
@@ -466,6 +472,7 @@ def create_exported_program_from_submodule(
         range_constraints=copy.deepcopy(owning_program.range_constraints),
         equality_constraints=[],
         module_call_graph=[],
+        verifier=owning_program.verifier,
     )
 
 
