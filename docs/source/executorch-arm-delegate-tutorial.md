@@ -157,7 +157,7 @@ git reset --hard 0995223100e3da8011700f58e491f1bf59511e3c
 
 # Download the Vela compiler
 cd .. # To the top-level development dir
-git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
+git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
 ```
 
 Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.
@@ -190,7 +190,7 @@ pip install .
 
 ### Install the TOSA reference model
 ```bash
-git clone https://git.mlplatform.org/tosa/reference_model.git -b v0.80.0
+git clone https://review.mlplatform.org/tosa/reference_model -b v0.80.0
 cd reference_model
 git submodule update --init --recursive
 mkdir -p build
