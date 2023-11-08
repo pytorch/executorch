@@ -12,6 +12,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(EXECUTORCH_BUILD_XNN_EXECUTOR_RUNNER "Whether to build the executor runner." ON)
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -91,7 +92,7 @@ target_link_options_shared_lib(xnnpack_backend)
 list(APPEND xnn_executor_runner_libs xnnpack_backend)
 
 # ios can only build library but not binary
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
+if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$" AND EXECUTORCH_BUILD_XNN_EXECUTOR_RUNNER)
   #
   # xnn_executor_runner: Like executor_runner but with XNNPACK, the binary will
   # be at ${CMAKE_BINARY_DIR}/backends/xnnpack
