@@ -5,19 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 import _operator
 
-import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 
-
-supported_modules = [
-    torch.nn.BatchNorm2d,
-    torch.nn.Conv2d,
-    torch.nn.Hardtanh,
-    torch.nn.Linear,
-    torch.nn.ReLU,
-    torch.nn.Embedding,
-    "forward",
-]
 
 not_supported_operator = [
     exir_ops.edge.aten.arange.start_step,

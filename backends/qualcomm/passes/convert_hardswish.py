@@ -27,7 +27,7 @@ class ConvertHardswish(ExportPass):
                 with graph.inserting_after(input_node):
                     hardswish_op = exir_ops.edge.aten.hardswish.default
                     hardswish_node = graph.create_node(
-                        "call_function", hardswish_op, tuple(input_node)
+                        "call_function", hardswish_op, (input_node,)
                     )
                     users = output_node.users.copy()
                     for user in users:

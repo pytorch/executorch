@@ -6,6 +6,8 @@
 from typing import Dict
 
 import torch
+
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -26,8 +28,9 @@ class InsertIOQDQ(ExportPass):
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
-    def __init__(self):
+    def __init__(self, edge_program: torch.export.ExportedProgram):
         super(InsertIOQDQ, self).__init__()
+        self.edge_program = edge_program
 
     def _ceate_args(self, target: torch.fx.node.Target, quant_attrs: Dict):
         ret = []
@@ -67,7 +70,11 @@ class InsertIOQDQ(ExportPass):
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
             # insert q after input
-            if n.op == "placeholder" and n.meta.get("quant_attrs"):
+            if (
+                n.op == "placeholder"
+                and n.meta.get("quant_attrs")
+                and not is_parameter(n, self.edge_program)
+            ):
                 self._insert_node(graph_module, n, n.meta["quant_attrs"]["encoding"])
 
             # insert dq before output

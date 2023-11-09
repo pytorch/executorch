@@ -10,20 +10,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-
-def get_quant_attrs(graph_module: torch.fx.GraphModule, quant_node: torch.fx.Node):
-    quant_attr_keys = [arg.name for arg in quant_node.target._schema.arguments][1:]
-    quant_attrs = dict.fromkeys(quant_attr_keys)
-
-    for i in range(1, len(quant_node.args)):
-        attr_n = quant_node.args[i]
-        value = attr_n
-        if type(attr_n) == torch.fx.node.Node:
-            value = getattr(graph_module, attr_n.target)
-        quant_attrs[quant_attr_keys[i - 1]] = value
-
-    quant_attrs["encoding"] = quant_node.target
-    return quant_attrs
+from .utils import get_quant_attrs
 
 
 class AnnotateQuantAttrs(ExportPass):
@@ -38,8 +25,9 @@ class AnnotateQuantAttrs(ExportPass):
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     }
 
-    def __init__(self, annotate_only: bool = True):
+    def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateQuantAttrs, self).__init__()
+        self.edge_program = edge_program
 
     def _annotate_source_nodes(
         self, quant_node: torch.fx.Node, quant_attrs: Dict[str, Any]
@@ -60,7 +48,7 @@ class AnnotateQuantAttrs(ExportPass):
             if n.target not in self.q_ops:
                 continue
 
-            quant_attrs = get_quant_attrs(graph_module, n)
+            quant_attrs = get_quant_attrs(self.edge_program, n)
             self._annotate_source_nodes(n, quant_attrs)
 
         return graph_module

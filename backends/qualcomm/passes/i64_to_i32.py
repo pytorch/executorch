@@ -3,54 +3,19 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import Dict, Tuple
-
 import torch
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.qualcomm.builders.utils import get_parameter, is_constant
 from executorch.exir.pass_base import ExportPass, PassResult
 
 
 class I64toI32(ExportPass):
     """
-    Try cast unsuuported int64 datatype into int32.
-    Currently supported patterns are:
-
-    1. placeholder (int64) -> placeholder + cast (int32)
+    Cast unsupported int64 datatype into int32.
     """
 
-    def __init__(self):
+    def __init__(self, edge_program: torch.export.ExportedProgram):
         super(I64toI32, self).__init__()
-
-    def _create_call_function_node(
-        self,
-        graph_module: torch.fx.GraphModule,
-        target: torch.fx.node.Target,
-        args: Tuple[torch.fx.node.Argument, ...],
-        kwargs: Dict[str, torch.fx.node.Argument],
-    ):
-        return graph_module.graph.create_node(
-            "call_function",
-            target=target,
-            args=args,
-            kwargs=kwargs,
-        )
-
-    def _insert_node(
-        self,
-        graph_module: torch.fx.GraphModule,
-        node: torch.fx.node,
-    ) -> None:
-        with graph_module.graph.inserting_after(node):
-            users = node.users.copy()
-            cast = self._create_call_function_node(
-                graph_module,
-                exir_ops.edge.aten._to_copy.default,
-                (node,),
-                {"dtype": torch.int32},
-            )
-
-            for user in users:
-                user.replace_input_with(node, cast)
+        self.edge_program = edge_program
 
     def _update_meta(self, node: torch.fx.node) -> None:
         meta_val = node.meta["val"]
@@ -67,13 +32,11 @@ class I64toI32(ExportPass):
 
     def _cast_to_int32(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
-            if n.target == exir_ops.edge.aten._to_copy.default:
-                continue
-
-            meta_val = n.meta["val"]
-
-            if (n.op == "placeholder") and meta_val.dtype == torch.int64:
-                self._insert_node(graph_module, n)
+            if is_constant(n, self.edge_program):
+                param = get_parameter(n, self.edge_program)
+                if param.dtype == torch.int64:
+                    # QNN does not support int64
+                    self._update_meta(n)
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._cast_to_int32(graph_module)

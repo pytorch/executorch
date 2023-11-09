@@ -11,13 +11,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, U
 import torch
 import torch.nn.functional as F
 
-from executorch.backends.qualcomm.passes import (
-    ConvertHardsigmoid,
-    RecomposePixelShuffle,
-    RemoveClone,
-)
-from torch import Tensor
+from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
+from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 
+from torch import Tensor
 from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
@@ -30,7 +27,6 @@ from torch.ao.quantization.quantize_pt2e import (
     Quantizer,
 )
 from torch.ao.quantization.quantizer import SharedQuantizationSpec
-
 from torch.ao.quantization.quantizer.utils import (
     _annotate_input_qspec_map,
     _annotate_output_qspec,
@@ -38,7 +34,6 @@ from torch.ao.quantization.quantizer.utils import (
     _node_only_used_for_sym_size,
 )
 from torch.fx import Node
-
 from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 __all__ = [
@@ -741,7 +736,6 @@ class QnnQuantizer(Quantizer):
     def _preprocess(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         model = RemoveClone()(model).graph_module
         model = ConvertHardsigmoid(quantization_capture=True)(model).graph_module
-        model = RecomposePixelShuffle()(model).graph_module
         return model
 
     def _annotate_custom_annotation(self, gm: torch.fx.GraphModule) -> None:
