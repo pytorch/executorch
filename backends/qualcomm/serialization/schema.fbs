@@ -140,6 +140,12 @@ table QnnExecuTorchOptions {
 
   /// Check if on-device graph construction. Default is false.
   online_prepare:bool;
+
+  /// Tensor dump output path. If a path is given, Delegate would write
+  /// outputs of each OP there.
+  /// In ALL cases, we don't recommend to set this option.
+  /// This option exist just for debugging some accuracy issues.
+  tensor_dump_output_path:string;
 }
 
 root_type QnnExecuTorchOptions;

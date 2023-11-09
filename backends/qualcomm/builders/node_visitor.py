@@ -57,10 +57,14 @@ class NodeVisitor:
     """
 
     def __init__(
-        self, external_ids, edge_program: torch.export.ExportedProgram
+        self,
+        external_ids,
+        edge_program: torch.export.ExportedProgram,
+        enable_tensor_dump,
     ) -> None:
         self.external_ids = external_ids or {}
         self.edge_program = edge_program
+        self.enable_tensor_dump = enable_tensor_dump
 
     def get_tensor(self, input_node, op_node, idx=None):
         """
@@ -176,6 +180,9 @@ class NodeVisitor:
         if is_parameter(node, self.edge_program):
             return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
 
+        # dump all tensor, set to app read
+        if self.enable_tensor_dump:
+            return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
         return tensor_type
 
     def get_data_type(
@@ -250,13 +257,16 @@ class NodeVisitor:
 
         if node_name in nodes_to_wrappers:
             return nodes_to_wrappers[node_name]
+        tensor_name = node.name
+        if is_graph_output(node):
+            tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
         tensor_type = self.get_tensor_type(node, tensor_type)
         quant_encoding, quant_configs = self.get_quant_encoding_conf(node)
         dtype = self.get_data_type(tensor, quant_configs, is_tensor)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
-                node_name,
+                tensor_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
@@ -270,7 +280,7 @@ class NodeVisitor:
             if quant_configs:
                 tensor = self.get_quant_tensor_value(node, tensor, dtype)
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
-                node_name,
+                tensor_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
@@ -372,6 +382,7 @@ def generate_node_to_external_map(
 
 def get_node_visitors(
     edge_program: torch.export.ExportedProgram,
+    enable_tensor_dump=False,
 ) -> Dict[str, NodeVisitor]:
     """Create a new class instance at runtime, and put them in a dict"""
     node_to_external_map = generate_node_to_external_map(edge_program)
@@ -380,5 +391,7 @@ def get_node_visitors(
         assert callable(
             visitor
         ), f"Expeting a callable class, but got {visitor} of type {type(visitor)}"
-        node_visitors[target] = visitor(node_to_external_map, edge_program)
+        node_visitors[target] = visitor(
+            node_to_external_map, edge_program, enable_tensor_dump
+        )
     return node_visitors
