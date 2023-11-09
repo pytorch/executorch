@@ -141,6 +141,7 @@ runtime.python_test(
     deps = [
         "fbsource//third-party/pypi/timm:timm",
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
+        "fbsource//third-party/pypi/transformers:transformers",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
         "//pytorch/vision:torchvision",  # @manual
     ],
