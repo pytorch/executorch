@@ -359,7 +359,7 @@ python_binary(
     srcs = [
         "test_fixtures.py",
     ],
-    main_module = "executorch.exir.tests.test_fixtures",
+    main_function = "executorch.exir.tests.test_fixtures.generate_json_fixtures",
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
         ":lib",

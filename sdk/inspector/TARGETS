@@ -24,6 +24,7 @@ python_library(
 
 python_binary(
     name = "inspector_cli",
+    main_function = ".inspector_cli.main",
     main_src = "inspector_cli.py",
     deps = [
         "//executorch/sdk:lib",

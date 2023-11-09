@@ -21,7 +21,7 @@ python_library(
 python_binary(
     name = "gen",
     srcs = [],
-    main_module = "executorch.exir.dialects.edge.spec.gen",
+    main_function = "executorch.exir.dialects.edge.spec.gen.main",
     deps = [
         "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
         ":lib",
