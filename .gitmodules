@@ -33,7 +33,7 @@
 	url = https://github.com/google/XNNPACK.git
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
-	url = https://git.mlplatform.org/tosa/serialization_lib.git
+	url = https://review.mlplatform.org/tosa/serialization_lib
 [submodule "third-party/flatcc"]
 	path = third-party/flatcc
 	url = https://github.com/dvidelabs/flatcc.git
@@ -45,4 +45,4 @@
 	url = https://github.com/facebookincubator/fbjni.git
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
-	url = https://git.mlplatform.org/ml/ethos-u/ethos-u-core-driver.git
+	url = https://review.mlplatform.org/ml/ethos-u/ethos-u-core-driver
