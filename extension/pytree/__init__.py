@@ -40,15 +40,15 @@ except:
     from torch.utils._pytree import (
         _broadcast_to_and_flatten,
         _register_pytree_node,
-        pytree_to_str,
-        str_to_pytree,
         tree_flatten,
         tree_map,
         tree_unflatten,
         TreeSpec,
+        treespec_dumps,
+        treespec_loads,
     )
 
     broadcast_to_and_flatten = _broadcast_to_and_flatten
-    from_str = str_to_pytree
+    from_str = treespec_loads
     register_custom = _register_pytree_node
-    TreeSpec.to_str = pytree_to_str  # pyre-ignore
+    TreeSpec.to_str = treespec_dumps  # pyre-ignore
