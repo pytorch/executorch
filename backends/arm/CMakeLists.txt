@@ -7,6 +7,14 @@ project(arm_backend)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Build config requirements for Arm Backend
+if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
+  message(FATAL_ERROR, "expected EXECUTORCH_BUILD_ARM_BAREMETAL")
+endif()
+if(NOT DEFINED ETHOSU_DDK_PATH)
+    message(FATAL_ERROR "ETHOSU_DDK_PATH must be set and point to ethos-u-core-driver")
+endif()
+
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -16,9 +24,8 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-# Third-party folder and Ethos-U driver inclued
-set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
-set(DRIVER_ETHOSU_INCLUDE_DIR "${THIRD_PARTY_ROOT}/ethos-u-core-driver/include")
+# Third-party include for Ethos-U driver
+set(DRIVER_ETHOSU_INCLUDE_DIR "${ETHOSU_DDK_PATH}/include")
 include_directories( ${DRIVER_ETHOSU_INCLUDE_DIR} )
 
 set(_arm_baremetal_sources
