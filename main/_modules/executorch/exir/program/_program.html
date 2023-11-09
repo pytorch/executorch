@@ -453,6 +453,7 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.verification.verifier</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">EXIRATenDialectVerifier</span><span class="p">,</span>
     <span class="n">EXIREdgeDialectVerifier</span><span class="p">,</span>
+    <span class="n">get_aten_verifier</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span> <span class="nn">torch._export.passes</span> <span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
@@ -463,6 +464,21 @@
 <span class="kn">from</span> <span class="nn">torch.utils</span> <span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">pytree</span>
 
 <span class="n">Val</span> <span class="o">=</span> <span class="n">Any</span>
+
+
+<span class="k">def</span> <span class="nf">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">):</span>
+    <span class="n">new_prog</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_gm</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
+    <span class="n">new_prog</span><span class="o">.</span><span class="n">graph</span> <span class="o">=</span> <span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span>
+    <span class="n">submodules</span> <span class="o">=</span> <span class="p">[</span><span class="n">name</span> <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">new_prog</span><span class="o">.</span><span class="n">named_children</span><span class="p">()]</span>
+    <span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">submodules</span><span class="p">:</span>
+        <span class="nb">delattr</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">mod</span> <span class="ow">in</span> <span class="n">new_gm</span><span class="o">.</span><span class="n">named_children</span><span class="p">():</span>
+        <span class="nb">setattr</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">mod</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;get_attr&quot;</span><span class="p">:</span>
+            <span class="n">t</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">new_gm</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">t</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+                <span class="nb">setattr</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span><span class="p">,</span> <span class="n">t</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">ep</span><span class="p">):</span>
@@ -552,6 +568,7 @@
         <span class="n">equality_constraints</span><span class="p">,</span>
         <span class="n">module_call_graph</span><span class="p">,</span>
         <span class="n">example_inputs</span><span class="p">,</span>
+        <span class="n">verifier</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
             <span class="n">root</span><span class="p">,</span>
@@ -562,8 +579,8 @@
             <span class="n">equality_constraints</span><span class="p">,</span>
             <span class="n">module_call_graph</span><span class="p">,</span>
             <span class="n">example_inputs</span><span class="p">,</span>
+            <span class="n">verifier</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_dialect</span> <span class="o">=</span> <span class="s2">&quot;HACKED_ATEN&quot;</span>
 
     <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
         <span class="kn">import</span> <span class="nn">torch._export.error</span> <span class="k">as</span> <span class="nn">error</span>
@@ -666,9 +683,15 @@
         <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Must run to_edge before to_executorch.&quot;</span><span class="p">)</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
-        <span class="n">ep</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span>
-        <span class="n">new_prog</span> <span class="o">=</span> <span class="n">ep</span><span class="o">.</span><span class="n">_transform</span><span class="p">(</span><span class="o">*</span><span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
-        <span class="n">new_prog</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span><span class="n">new_prog</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span><span class="p">)</span>
+        <span class="n">new_gm</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
+            <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+        <span class="n">new_prog</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
+            <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span>
+        <span class="p">)</span>
+        <span class="n">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
         <span class="n">executorch_prog</span> <span class="o">=</span> <span class="n">ExecutorchProgram</span><span class="p">(</span>
             <span class="n">new_prog</span><span class="p">,</span>
             <span class="n">emit_stacktrace</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">emit_stacktrace</span><span class="p">,</span>
@@ -677,9 +700,7 @@
             <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
             <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">delegate_alignment</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="n">executorch_prog</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
-            <span class="n">new_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span>
-        <span class="p">)</span>
+        <span class="n">executorch_prog</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">new_gm</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
         <span class="n">executorch_prog</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span>
         <span class="p">)</span>
@@ -777,6 +798,22 @@
             <span class="p">)</span>
             <span class="k">raise</span>
 
+    <span class="n">dialect</span> <span class="o">=</span> <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">dialect</span>
+    <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
+        <span class="n">ep</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
+            <span class="n">ExportedProgram</span><span class="p">(</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+                <span class="n">verifier</span><span class="o">=</span><span class="n">get_aten_verifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">),</span>
+            <span class="p">),</span>
+            <span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
     <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
     <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
     <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
@@ -785,16 +822,23 @@
     <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">aten_to_edge_passes</span><span class="o">.</span><span class="n">passes</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
 
     <span class="n">new_ep</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
         <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="p">)</span>
 
+    <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">:</span>
-        <span class="n">new_ep</span> <span class="o">=</span> <span class="n">new_ep</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="n">OpReplacePass</span><span class="p">())</span>
+        <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">OpReplacePass</span><span class="p">()(</span><span class="n">new_gm</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
-    <span class="n">new_ep</span> <span class="o">=</span> <span class="n">new_ep</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">post_op_replace_passes</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">post_op_replace_passes</span><span class="p">:</span>
+        <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
     <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+        <span class="n">new_gm</span><span class="p">,</span>
+        <span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
         <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
         <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
         <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
@@ -807,11 +851,6 @@
             <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">)</span>
-    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
-        <span class="c1"># TODO(zhxchen17) Remove this call after we turn on verifier in ctor.</span>
-        <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span><span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">)(</span>
-            <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
-        <span class="p">)</span>
     <span class="n">new_ep</span><span class="o">.</span><span class="n">after_to_edge_passes</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="n">new_ep</span>
 
@@ -1044,8 +1083,18 @@
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">:</span>
     <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
     <span class="n">passes</span> <span class="o">=</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">prog</span> <span class="ow">in</span> <span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">_method_to_program</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">new_prog</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">prog</span><span class="p">)</span>
+        <span class="n">gm</span> <span class="o">=</span> <span class="n">prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
+            <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+        <span class="n">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">gm</span><span class="p">)</span>
+        <span class="n">res</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_prog</span>
     <span class="k">return</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">(</span>
-        <span class="n">executorch_dialect_program</span><span class="o">=</span><span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">),</span>
+        <span class="n">executorch_dialect_program</span><span class="o">=</span><span class="n">MultiMethodExirExportedProgram</span><span class="p">(</span><span class="n">res</span><span class="p">),</span>
         <span class="n">emit_stacktrace</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">emit_stacktrace</span><span class="p">,</span>
         <span class="n">extract_segments</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">extract_segments</span><span class="p">,</span>
         <span class="n">segment_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">segment_alignment</span><span class="p">,</span>
@@ -1095,8 +1144,6 @@
                 <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
 
-        <span class="n">op_replace_pass</span> <span class="o">=</span> <span class="p">[</span><span class="n">OpReplacePass</span><span class="p">()]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span> <span class="k">else</span> <span class="p">[]</span>
-
         <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
         <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
         <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
@@ -1107,9 +1154,36 @@
             <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span><span class="p">()</span>
         <span class="p">)</span>  <span class="c1"># TODO move inside aten_to_edge passes after all users are migrated off v1 capture</span>
         <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">aten_to_edge_passes</span><span class="o">.</span><span class="n">passes</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">])</span>
-        <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">op_replace_pass</span><span class="p">)</span>
+        <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
+        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">program</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
+            <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
+        <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">:</span>
+            <span class="n">gm_res</span> <span class="o">=</span> <span class="n">OpReplacePass</span><span class="p">()(</span><span class="n">gm</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
+        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
+            <span class="n">root</span><span class="o">=</span><span class="n">gm</span><span class="p">,</span>
+            <span class="n">graph</span><span class="o">=</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+            <span class="n">graph_signature</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+            <span class="n">state_dict</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+            <span class="n">range_constraints</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
+            <span class="n">equality_constraints</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
+            <span class="n">module_call_graph</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
+            <span class="n">example_inputs</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+            <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
+                <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
+                <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
+                <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">passes</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">aten_to_edge_passes</span><span class="o">.</span><span class="n">passes</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:])</span>
-        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">_transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
+        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">_transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
                 <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span> <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span>
@@ -1273,7 +1347,13 @@
 
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">new_prog</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">_transform</span><span class="p">(</span><span class="o">*</span><span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">))</span>
+            <span class="n">new_gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
+            <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
+                <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+            <span class="n">new_prog</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+            <span class="n">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
             <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_prog</span>
 
         <span class="k">return</span> <span class="n">ExecutorchProgramManager</span><span class="p">(</span>

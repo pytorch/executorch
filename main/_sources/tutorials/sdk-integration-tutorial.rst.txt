@@ -129,13 +129,6 @@ In this tutorial, an example model (shown below) is used to demonstrate.
 
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
-      warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
-
 
 
 
@@ -206,13 +199,6 @@ In this tutorial, a `Bundled Program` is created from the example model above.
 
 
 
-
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
-      warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
 
 
 
@@ -432,7 +418,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.530 seconds)
+   **Total running time of the script:** (0 minutes 2.762 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:

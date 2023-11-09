@@ -215,9 +215,9 @@ different than the ones we used while tracing, we will run into an error:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 132, in <module>
         print(aten_dialect(torch.ones(3, 2), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 252, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 250, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 608, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 606, in _check_input_constraints
         _assertion_graph(*args)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 736, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
@@ -229,9 +229,9 @@ different than the ones we used while tracing, we will run into an error:
         return self._call_impl(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.160", line 11, in forward
+      File "<eval_with_key>.134", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is specialized at 3');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 513, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is specialized at 3
 
@@ -350,9 +350,9 @@ Now let's try running the model with different shapes:
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 184, in <module>
         print(aten_dialect(torch.ones(3, 15), torch.ones(3, 15)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 252, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 250, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 608, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 606, in _check_input_constraints
         _assertion_graph(*args)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 736, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
@@ -364,17 +364,17 @@ Now let's try running the model with different shapes:
         return self._call_impl(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.191", line 17, in forward
+      File "<eval_with_key>.165", line 17, in forward
         _assert_async_2 = torch.ops.aten._assert_async.msg(scalar_tensor_2, 'Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]');  scalar_tensor_2 = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 513, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg0_1.shape[1] is outside of specified dynamic range [2, 10]
     Traceback (most recent call last):
       File "/pytorch/executorch/docs/source/tutorials_source/export-to-executorch-tutorial.py", line 190, in <module>
         print(aten_dialect(torch.ones(3, 3), torch.ones(3, 2)))
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 252, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 250, in __call__
         self._check_input_constraints(*ordered_params, *ordered_buffers, *args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 608, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 606, in _check_input_constraints
         _assertion_graph(*args)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/fx/graph_module.py", line 736, in call_wrapped
         return self._wrapped_call(self, *args, **kwargs)
@@ -386,9 +386,9 @@ Now let's try running the model with different shapes:
         return self._call_impl(*args, **kwargs)
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1519, in _call_impl
         return forward_call(*args, **kwargs)
-      File "<eval_with_key>.196", line 11, in forward
+      File "<eval_with_key>.170", line 11, in forward
         _assert_async = torch.ops.aten._assert_async.msg(scalar_tensor, 'Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]');  scalar_tensor = None
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 513, in __call__
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_ops.py", line 516, in __call__
         return self._op(*args, **kwargs or {})
     RuntimeError: Input arg1_1.shape[1] is not equal to input arg0_1.shape[1]
 
@@ -892,8 +892,6 @@ lowering process.
     Range constraints: {}
     Equality constraints: []
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
-      warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
 
 
 
@@ -969,11 +967,11 @@ can compose this lowered module with another module.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, arg0_1: f32[1], arg1_1: f32[1]):
-                # File: /pytorch/executorch/exir/lowered_backend_module.py:283, code: return executorch_call_delegate(self, *args)
+                # File: /pytorch/executorch/exir/lowered_backend_module.py:289, code: return executorch_call_delegate(self, *args)
                 lowered_module_0 = self.lowered_module_0
                 executorch_call_delegate: f32[1] = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg1_1);  lowered_module_0 = arg1_1 = None
             
-                # File: /pytorch/executorch/exir/lowered_backend_module.py:283, code: return executorch_call_delegate(self, *args)
+                # File: /pytorch/executorch/exir/lowered_backend_module.py:289, code: return executorch_call_delegate(self, *args)
                 lowered_module_1 = self.lowered_module_0
                 executorch_call_delegate_1: f32[1] = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, executorch_call_delegate);  lowered_module_1 = None
             
@@ -1252,8 +1250,6 @@ writing a custom memory planning pass can be found
 
  .. code-block:: none
 
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
-      warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
     ExecuTorch Dialect
     ExportedProgram:
         class GraphModule(torch.nn.Module):
@@ -1367,13 +1363,6 @@ Here is an example for an entire end-to-end workflow:
 
 
 
-.. rst-class:: sphx-glr-script-out
-
- .. code-block:: none
-
-    /opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/utils/_pytree.py:768: UserWarning: pytree_to_str is deprecated. Please use treespec_dumps
-      warnings.warn("pytree_to_str is deprecated. Please use treespec_dumps")
-
 
 
 
@@ -1398,7 +1387,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 10.182 seconds)
+   **Total running time of the script:** (0 minutes 15.622 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
