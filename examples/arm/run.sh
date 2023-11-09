@@ -24,6 +24,7 @@ root_dir=$(realpath ${root_dir})
 buck2=${2:-"/tmp/buck2"}
 ethos_u_root_dir="$(cd ${root_dir}/ethos-u && pwd)"
 ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build
+ethos_u_driver_dir=${ethos_u_root_dir}/core_software/core_driver/
 setup_path_script=${root_dir}/setup_path.sh
 
 # Executorch
@@ -67,7 +68,9 @@ function build_executorch() {
         -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
+        -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+        -DETHOSU_DDK_PATH=${ethos_u_driver_dir}           \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B${et_build_dir}                                 \
