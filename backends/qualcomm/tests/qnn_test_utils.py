@@ -73,7 +73,7 @@ def save_model_and_expected_output(
         input_name = f"input_{idx}.raw"
         inp.detach().numpy().tofile(input_name)
         input_list += input_name + " "
-    input_list += "\n"
+    input_list = input_list.strip() + "\n"
     with open("input_list.txt", "w") as file:
         file.write(input_list)
 

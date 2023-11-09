@@ -21,19 +21,15 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
-from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
-from .common_defs import allow_list_operator, not_supported_operator, supported_modules
+from .common_defs import allow_list_operator, not_supported_operator
 
 
 class QnnOperatorSupport(OperatorSupportBase):
-    def __init__(self, graph_module: torch.fx.GraphModule, compiler_specs):
-        self.node_visitors = node_visitor.get_node_visitors(
-            graph_module, compile_mode=False
-        )
+    def __init__(self, edge_program: torch.export.ExportedProgram, compiler_specs):
+        self.node_visitors = node_visitor.get_node_visitors(edge_program)
         self.nodes_to_wrappers = {}
         self.qnn_manager = PyQnnManager.QnnManager(
             generate_qnn_executorch_option(compiler_specs)
@@ -41,25 +37,20 @@ class QnnOperatorSupport(OperatorSupportBase):
         self.qnn_manager.Init()
 
     def is_node_supported(self, _, node: torch.fx.Node) -> bool:
-        if node.op != "call_function":
+        if node.op != "call_function" or node.target in not_supported_operator:
             return False
 
-        if node.target in not_supported_operator:
-            return False
-
-        op_wrapper = self.node_visitors[node.target.__name__].define_node(
-            node, self.nodes_to_wrappers
-        )
         if node.target in allow_list_operator:
             return True
 
-        if op_wrapper is None:
-            print(f"[QNN Partitioner Op Support]: {node.target.__name__} | False")
-            return False
-
-        supported = self.qnn_manager.IsNodeSupportedByBackend(
-            [op_wrapper.GetOpWrapper()]
+        supported = False
+        op_wrapper = self.node_visitors[node.target.__name__].define_node(
+            node, self.nodes_to_wrappers
         )
+        if op_wrapper is not None:
+            supported = self.qnn_manager.IsNodeSupportedByBackend(
+                [op_wrapper.GetOpWrapper()]
+            )
         self.nodes_to_wrappers.clear()
         print(f"[QNN Partitioner Op Support]: {node.target.__name__} | {supported}")
         return supported
@@ -75,42 +66,20 @@ class QnnPartitioner(Partitioner):
         QnnPartitioner.compiler_specs = compiler_specs
 
     def __init__(self):
-        self.supported_modules = set(supported_modules)
         self.compiler_specs_snapshot = copy.deepcopy(QnnPartitioner.compiler_specs)
         self.delegation_spec = DelegationSpec(
             QnnBackend.__name__, self.compiler_specs_snapshot
         )
         self.partition_tags: Dict[str, DelegationSpec] = {}
 
-    def get_module_partitions(
-        self, graph_module: torch.fx.GraphModule
-    ) -> List[List[torch.fx.Node]]:
-        def filter_fn(node):
-            if node.op == "call_function":
-                return self.op_support_checker.is_node_supported(None, node)
-            return True
-
-        src_partition_dict = get_source_partitions(
-            graph_module.graph,
-            self.supported_modules,
-            filter_fn,
-        )
-        all_partitions = src_partition_dict.values()
-
-        module_partitions = []
-        for src_partitions in all_partitions:
-            for src_partition in src_partitions:
-                module_partitions.append(src_partition.nodes)
-
-        return module_partitions
-
-    def generate_partitions(self, graph_module: torch.fx.GraphModule) -> List[Any]:
+    def generate_partitions(
+        self, edge_program: torch.export.ExportedProgram
+    ) -> List[Any]:
         self.op_support_checker = QnnOperatorSupport(
-            graph_module, self.compiler_specs_snapshot
+            edge_program, self.compiler_specs_snapshot
         )
         return generate_partitions_from_list_of_nodes(
-            graph_module,
-            pattern_list=self.get_module_partitions(graph_module),
+            edge_program.graph_module,
             op_support=self.op_support_checker,
         )
 
@@ -122,16 +91,15 @@ class QnnPartitioner(Partitioner):
                 self.partition_tags[delegation_tag] = self.delegation_spec
 
     # override
-    def partition(self, exported_program: ExportedProgram) -> PartitionResult:
-        graph_module = exported_program.graph_module
-        partitions = self.generate_partitions(graph_module)
+    def partition(self, edge_program: torch.export.ExportedProgram) -> PartitionResult:
+        partitions = self.generate_partitions(edge_program)
         if len(partitions) != 0:
             self.tag_nodes(partitions)
-        for node in graph_module.graph.nodes:
+        for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation
                 # TODO: need to put property name in common definitions
                 node.meta.pop("axis_order", "")
         return PartitionResult(
-            tagged_exported_program=exported_program, partition_tags=self.partition_tags
+            tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

@@ -9,10 +9,8 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
+
+from .node_visitor import NodeVisitor, register_node_visitor
 
 
 class OpSkipOps(NodeVisitor):

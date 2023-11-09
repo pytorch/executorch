@@ -6,16 +6,11 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpElementWiseSubtract,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
+
+from .node_visitor import NodeVisitor, register_node_visitor
+from .qnn_constants import OpElementWiseSubtract, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -30,7 +25,7 @@ class Sub(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        out_tensor, _ = self.get_tensor_shape(node, node)
+        out_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             out_tensor,
@@ -41,14 +36,15 @@ class Sub(NodeVisitor):
 
         sub_input_tensors = []
         for index in range(2):
-            input_node = get_input_node(node, index)
-            input_tensor, use_memo = self.get_tensor_shape(input_node, node)
+            input_node = node.args[index]
+            input_tensor = self.get_tensor(input_node, node)
+            tensor_type = PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
                 input_tensor,
-                PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-                nodes_to_wrappers if use_memo else {},
+                tensor_type,
+                nodes_to_wrappers,
             )
             sub_input_tensors.append(input_tensor_wrapper)
 
