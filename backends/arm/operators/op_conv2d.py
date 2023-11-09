@@ -12,7 +12,12 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import buildRescaleOpConvOutput
-from executorch.backends.arm.tosa_utils import getNodeArgs, transpose_helper
+from executorch.backends.arm.tosa_utils import (
+    buildReshape,
+    getNodeArgs,
+    transpose_helper,
+)
+
 from serializer.tosa_serializer import TosaOp
 
 
@@ -62,14 +67,37 @@ class Conv2dVisitor(NodeVisitor):
             )
 
         if group.number > 1:
-            assert (
-                is_quant_node is False
-            ), "quantized depthwise convolution is not supported yet in BI mode"
+            """Depthwise convolution case"""
+            # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
+            in_channels = input.shape[1]
+            out_channels = weight.shape[0]
+
+            # Reshape torch shape format of weight tensor to tosa required format.
+            # https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d
+            m_length = int(round(out_channels / in_channels))
+            weight_post_shape = (
+                in_channels,
+                m_length,
+                weight.shape[2],
+                weight.shape[3],
+            )
+
+            weight_reshaped = tosa_graph.addIntermediate(
+                weight_post_shape,
+                ts.DType.INT8 if is_quant_node else weight.dtype,
+            )
+
+            buildReshape(
+                tosa_graph, weight.name, weight_post_shape, weight_reshaped.name
+            )
 
             # Transpose weight to [KH, KW, C, M]
             weight_HWCM_Order = [2, 3, 0, 1]
             weight_transposed = transpose_helper(
-                tosa_graph, weight, weight_HWCM_Order, output.dtype
+                tosa_graph,
+                weight_reshaped,
+                weight_HWCM_Order,
+                ts.DType.INT8 if is_quant_node else weight.dtype,
             )
 
             ## TOSA output shape is [N, H, W, C*M]
@@ -77,7 +105,8 @@ class Conv2dVisitor(NodeVisitor):
             out_shape_TOSA_Depthwise_CONV2D = [output.shape[i] for i in NHWO_Order]
 
             conv2d_res = tosa_graph.addIntermediate(
-                out_shape_TOSA_Depthwise_CONV2D, output.dtype
+                out_shape_TOSA_Depthwise_CONV2D,
+                ts.DType.INT32 if is_quant_node else output.dtype,
             )
             tosa_graph.addOperator(
                 TosaOp.Op().DEPTHWISE_CONV2D,
@@ -90,11 +119,14 @@ class Conv2dVisitor(NodeVisitor):
                 attr,
             )
         else:
-            # TODO: Transpose the weight AoT
+            """Regular convolution case"""
             # Transpose weight to [OC, H, W, IC]
             weight_CHWC_Order = [0, 2, 3, 1]
             weight_transposed = transpose_helper(
-                tosa_graph, weight, weight_CHWC_Order, actual_out_type
+                tosa_graph,
+                weight,
+                weight_CHWC_Order,
+                actual_out_type,
             )
 
             ## TOSA output shape is [NHWO]

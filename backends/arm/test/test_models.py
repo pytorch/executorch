@@ -34,6 +34,10 @@ class TosaProfile(Enum):
     BI_INT = 3  # integer only BI subset tests (for test graphs)
 
 
+def rand_test_integers(low, high, size):
+    return torch.from_numpy(np.float32(rng.integers(low, high, size)))
+
+
 class TorchBuilder:
     """The member functions build the PyTorch operators into small networks
     for our tests"""
@@ -336,19 +340,137 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_depthwise_conv2d(torch.nn.Module):
+    class simple_depthwise_conv2d_3x3x3_1x3x256x256_group3_stride1(torch.nn.Module):
+        data = torch.ones(1, 3, 256, 256)
         inputs = {
-            TosaProfile.MI: (torch.ones(1, 3, 256, 256),),
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
         }
 
         def __init__(self):
             super().__init__()
-            self.conv2d = torch.nn.Conv2d(
+            """ in_channels == out_channels """
+            self.depthwise_conv2d = torch.nn.Conv2d(
                 in_channels=3, out_channels=3, kernel_size=3, stride=1, groups=3
             )
+            with torch.no_grad():
+                self.depthwise_conv2d.weight.copy_(
+                    rand_test_integers(low=100, high=130, size=(3, 1, 3, 3))
+                )
+                self.depthwise_conv2d.bias.copy_(torch.ones(3))
 
         def forward(self, x):
-            x = self.conv2d(x)
+            x = self.depthwise_conv2d(x)
+            return x
+
+    @register_test
+    class simple_depthwise_conv2d_8x4x3x3_1x4x256x256_group4_stride1(torch.nn.Module):
+        data = torch.ones(1, 4, 256, 256)
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            """ in_channels * k == out_channels, where k = 2 """
+            self.depthwise_conv2d = torch.nn.Conv2d(
+                in_channels=4, out_channels=8, kernel_size=3, stride=1, groups=4
+            )
+            with torch.no_grad():
+                self.depthwise_conv2d.weight.copy_(
+                    rand_test_integers(low=21, high=25, size=(8, 1, 3, 3))
+                )
+                self.depthwise_conv2d.bias.copy_(
+                    rand_test_integers(low=1, high=4, size=(8))
+                )
+
+        def forward(self, x):
+            x = self.depthwise_conv2d(x)
+            return x
+
+    @register_test
+    class simple_depthwise_conv2d_8x16x3_2x8x198x198_group8_stride3(torch.nn.Module):
+        data = torch.ones(2, 8, 198, 198)
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.depthwise_conv2d = torch.nn.Conv2d(
+                in_channels=8, out_channels=16, kernel_size=3, stride=3, groups=8
+            )
+            with torch.no_grad():
+                self.depthwise_conv2d.weight.copy_(
+                    rand_test_integers(low=80, high=110, size=(16, 1, 3, 3))
+                )
+                self.depthwise_conv2d.bias.copy_(
+                    rand_test_integers(low=1, high=4, size=(16))
+                )
+
+        def forward(self, x):
+            x = self.depthwise_conv2d(x)
+            return x
+
+    @register_test
+    class simple_depthwise_conv2d_3x3_1x4x256x256_group4_non_bias(torch.nn.Module):
+        data = torch.ones(1, 4, 256, 256)
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.depthwise_conv2d = torch.nn.Conv2d(
+                in_channels=4,
+                out_channels=8,
+                kernel_size=3,
+                stride=1,
+                groups=4,
+                bias=False,
+            )
+            with torch.no_grad():
+                self.depthwise_conv2d.weight.copy_(
+                    rand_test_integers(low=30, high=50, size=(8, 1, 3, 3))
+                )
+
+        def forward(self, x):
+            x = self.depthwise_conv2d(x)
+            return x
+
+    @register_test
+    class block_two_depthwise_conv2d(torch.nn.Module):
+        data = rand_test_integers(low=10, high=20, size=(2, 4, 64, 64))
+
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.depthwise_conv2d = torch.nn.Conv2d(
+                in_channels=4, out_channels=8, kernel_size=3, stride=1, groups=4
+            )
+            self.depthwise_conv2d_2 = torch.nn.Conv2d(
+                in_channels=8, out_channels=24, kernel_size=3, stride=1, groups=8
+            )
+            with torch.no_grad():
+                self.depthwise_conv2d.weight.copy_(
+                    rand_test_integers(low=11, high=14, size=(8, 1, 3, 3))
+                )
+                self.depthwise_conv2d.bias.copy_(torch.ones(8))
+                self.depthwise_conv2d_2.weight.copy_(
+                    rand_test_integers(low=11, high=14, size=(24, 1, 3, 3))
+                )
+                self.depthwise_conv2d.bias.copy_(torch.ones(8))
+
+        def forward(self, x):
+            x = self.depthwise_conv2d(x)
+            x = self.depthwise_conv2d_2(x)
             return x
 
     @register_test
