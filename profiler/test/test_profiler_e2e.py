@@ -128,5 +128,9 @@ class TestCustomOps(unittest.TestCase):
         self.assertEqual(found_count, len(expected_entries))
 
 
-if __name__ == "__main__":
+def main() -> None:
     unittest.main()
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

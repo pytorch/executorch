@@ -18,7 +18,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -41,3 +41,7 @@ if __name__ == "__main__":
 
     prog = export_to_exec_prog(model, example_inputs)
     save_pte_program(prog.buffer, args.model_name)
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover
