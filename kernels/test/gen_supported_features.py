@@ -103,10 +103,14 @@ def main(args: List[Any]) -> None:
             print(generate_header(y))
 
 
-if __name__ == "__main__":
+def invoke_main() -> None:
     if len(sys.argv) != 2:
         print(
             "Usage: gen_supported_features.py <path-to>/supported_features{_def}.yaml"
         )
         exit(1)
     main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    invoke_main()  # pragma: no cover

@@ -109,7 +109,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     assert compute_sqnr(after_quant_result, after_quant_result_fx) > 30
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -195,3 +195,7 @@ if __name__ == "__main__":
     end = time.perf_counter()
     logging.info(f"Save time: {end - start}s")
     logging.info("finished")
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

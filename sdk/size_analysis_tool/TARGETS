@@ -21,7 +21,7 @@ python_binary(
     srcs = [
         "size_analysis_tool.py",
     ],
-    main_module = "executorch.sdk.size_analysis_tool.size_analysis_tool",
+    main_function = "executorch.sdk.size_analysis_tool.size_analysis_tool.main",
     visibility = ["PUBLIC"],
     deps = [
         "//caffe2:torch",

@@ -27,7 +27,7 @@ runtime.python_library(
 
 runtime.python_binary(
     name = "profiler_results_cli",
-    main_module = "executorch.profiler.profiler_results_cli",
+    main_function = "executorch.profiler.profiler_results_cli.invoke_main",
     deps = [
         ":profiler_results_cli_lib",
     ],
