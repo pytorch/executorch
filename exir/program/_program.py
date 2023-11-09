@@ -733,13 +733,18 @@ def to_edge(
             ReplaceViewOpsWithViewCopyOpsPass()
         )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
         passes.extend(aten_to_edge_passes.passes[:-2])
-        edge_program = program._transform(*passes)
-        if config._use_edge_ops:
-            gm_res = OpReplacePass()(edge_program.graph_module)
+        gm = program.graph_module
+        edge_program = program
+        for p in passes:
+            gm_res = p(gm)
             assert gm_res is not None
             gm = gm_res.graph_module
-        else:
-            gm = edge_program.graph_module
+
+        if config._use_edge_ops:
+            gm_res = OpReplacePass()(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+
         edge_program = ExportedProgram(
             root=gm,
             graph=gm.graph,
