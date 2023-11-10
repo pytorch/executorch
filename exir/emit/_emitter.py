@@ -375,7 +375,10 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.allocated_specs.append(spec)
             self.program_state.cached_spec_hash_values[hashed] = buffer_idx
             self.program_state.constant_buffer.append(buffer)
-
+        else:
+            buffer_idx = (
+                buffer_idx + 1
+            )  # +1 because the first buffer location is reserved
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
