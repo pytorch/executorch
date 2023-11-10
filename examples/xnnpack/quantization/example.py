@@ -137,6 +137,7 @@ def main() -> None:
     has_out_ops = True
     try:
         op = torch.ops.quantized_decomposed.add.out
+        print("Loaded", op)
     except AttributeError:
         logging.info("No registered quantized ops")
         has_out_ops = False
