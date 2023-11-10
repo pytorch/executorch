@@ -257,7 +257,7 @@ class ToExecutorch(Stage):
 
     def dump_artifact(self, path_to_dump: Optional[str]):
         """
-        dump_artifact is overriden to dump the serialized program
+        dump_artifact is overridden to dump the serialized program
         """
         original_stdout = sys.stdout
 

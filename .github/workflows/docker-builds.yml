@@ -6,6 +6,7 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
+      - requirements-lintrunner.txt
   push:
     branches:
       - main
