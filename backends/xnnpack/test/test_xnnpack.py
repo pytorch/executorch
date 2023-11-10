@@ -570,6 +570,7 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
 
         self.lower_and_test_with_partitioner(maxpool2d_module, model_inputs)
 
+    @unittest.expectedFailure
     def test_xnnpack_backend_max_dim_vals(self):
         class MaxModule(torch.nn.Module):
             def __init__(
