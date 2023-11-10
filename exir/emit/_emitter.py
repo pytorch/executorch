@@ -363,13 +363,18 @@ class _Emitter(torch.fx.Interpreter):
 
         buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
+        buffer = (
+            Buffer(storage=b"")
+            if spec.allocated_memory == 0
+            else Buffer(storage=buffer_data)
+        )
+
+        hashed = hashlib.sha256(buffer).hexdigest()
+
+        buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
+
         # Haven't seen this constant before
         if buffer_idx == -1:
-            if spec.allocated_memory == 0:
-                buffer = Buffer(storage=b"")
-            else:
-                buffer = Buffer(storage=buffer_data)
-
             # Update buffer_idx to point to the end of the list where we are adding the new buffer.
             buffer_idx = len(self.program_state.constant_buffer)
             self.program_state.allocated_specs.append(spec)
