@@ -38,10 +38,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
-    convert_scalars_to_attrs,
-    QuantizationConfig,
-)
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 from torch.testing import FileCheck
 from torch.utils._pytree import tree_flatten
 
@@ -143,7 +140,6 @@ class Quantize(Stage):
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
         captured_graph = export.capture_pre_autograd_graph(artifact, inputs)
-        captured_graph = convert_scalars_to_attrs(captured_graph)
         prepared = prepare_pt2e(captured_graph, self.quantizer)
         converted = convert_pt2e(prepared)
         self.converted_graph = converted
