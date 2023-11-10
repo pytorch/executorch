@@ -32,7 +32,6 @@ import ctypes
 import hashlib
 import operator
 import typing
-
 from dataclasses import dataclass, field
 from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
@@ -88,7 +87,6 @@ from executorch.exir.tensor import (
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
 
-from functorch.experimental._map import map_impl
 from torch._export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
@@ -622,7 +620,7 @@ class _Emitter(torch.fx.Interpreter):
             return control_flow.map(map_fn, x, y)
 
         Corresponding graph: def forward(self, arg0_1, arg1_1):
-            submodule_0 = self.submodule_0 map_1 = torch.ops.map_impl(submodule_0, arg0_1, arg1_1);
+            submodule_0 = self.submodule_0 map_1 = torch.ops.higher_order.map_impl(submodule_0, arg0_1, arg1_1);
             submodule_0 = arg0_1 = arg1_1 = None return [map_1]
 
         submodule_0: def forward(self, arg0_1, arg1_1):
@@ -825,7 +823,7 @@ class _Emitter(torch.fx.Interpreter):
 
         if target is torch.ops.higher_order.cond:
             return self._emit_cond(args, subemitter_binding_output_values)
-        elif target is map_impl:
+        elif target is torch.ops.higher_order.map_impl:
             return self._emit_map(args, subemitter_binding_output_values)
         else:
             raise InternalError(
@@ -1196,7 +1194,7 @@ class _Emitter(torch.fx.Interpreter):
         elif target is torch.ops.higher_order.cond:
             return self._emit_control_flow(target, args, kwargs)
 
-        elif target is map_impl:
+        elif target is torch.ops.higher_order.map_impl:
             return self._emit_control_flow(target, args, kwargs)
 
         elif target == executorch_call_delegate:
