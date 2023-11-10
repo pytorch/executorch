@@ -17,7 +17,7 @@ pip install .
 # models in executorch/examples/models.
 # The version in this file will be the correct version for the
 # corresponsing version of the repo.
-NIGHTLY_VERSION=dev20231109
+NIGHTLY_VERSION=dev20231110
 
 TORCH_VERSION=2.2.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
