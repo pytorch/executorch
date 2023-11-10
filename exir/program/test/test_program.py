@@ -293,3 +293,9 @@ class TestProgramManagers(unittest.TestCase):
             ),
             1,
         )
+
+    def test_edge_manager_dialect(self):
+        edge_manager: EdgeProgramManager = to_edge(
+            get_exported_programs(), get_config_methods()
+        )
+        self.assertTrue(edge_manager.exported_program().dialect == "EDGE")
