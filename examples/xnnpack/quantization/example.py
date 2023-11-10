@@ -136,7 +136,7 @@ def main() -> None:
     # See if we have quantized op out variants registered
     has_out_ops = True
     try:
-        _op = torch.ops.quantized_decomposed.add.out
+        _ = torch.ops.quantized_decomposed.add.out
     except AttributeError:
         logging.info("No registered quantized ops")
         has_out_ops = False
