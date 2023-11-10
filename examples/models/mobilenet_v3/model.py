@@ -8,7 +8,6 @@ import logging
 
 import torch
 
-# pyre-ignore
 from torchvision import models
 
 from ..model_base import EagerModelBase
@@ -22,6 +21,7 @@ class MV3Model(EagerModelBase):
         logging.info("Loading mobilenet_v3 model")
         # pyre-ignore
         mv3_small = models.mobilenet_v3_small(
+            # pyre-ignore[16]
             weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1
         )
         logging.info("Loaded mobilenet_v3 model")
