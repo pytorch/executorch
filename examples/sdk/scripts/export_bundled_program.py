@@ -109,7 +109,7 @@ def export_to_bundled_program(
     save_bundled_program(program, method_test_suites, f"{model_name}_bundled.bpte")
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -137,3 +137,7 @@ if __name__ == "__main__":
     )
 
     export_to_bundled_program(args.model_name, args.dir, model, example_inputs)
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

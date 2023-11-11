@@ -48,7 +48,7 @@ def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
     )
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -77,3 +77,7 @@ if __name__ == "__main__":
     )
 
     gen_etrecord(model, example_inputs, args.output_path)
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

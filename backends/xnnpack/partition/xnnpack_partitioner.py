@@ -95,11 +95,50 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         self.ep = ep
         assert len(self.constraints)
 
-    def check_common_constraints(self, node) -> bool:
-        if self.unsupported_modules and "source_fn_stack" in node.meta:
-            return not node.meta["source_fn_stack"][-1][1] in self.unsupported_modules
+    def check_node_has_valid_dtype(self, node):
+        if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
+            return True
+
+        valid_dtypes = {
+            torch.float32,
+            torch.int8,
+            torch.qint8,
+        }
+        if (
+            node.op != "placeholder"
+            and node.op != "call_function"
+            and node.op != "get_attr"
+        ):
+            return False
+
+        # Check inputs are valid dtypes
+        for arg in node.args:
+            if not isinstance(arg, torch.fx.Node):
+                continue
+            arg_val = arg.meta.get("val", None)
+
+            if arg_val is None or isinstance(arg_val, tuple):
+                continue
+
+            if arg_val.dtype not in valid_dtypes:
+                return False
+
+        # Check outputs are valid dtype
+        node_val = node.meta.get("val", None)
+        if node_val is not None:
+            if not isinstance(node_val, tuple):
+                node_val = (node_val,)
+
+            for val in node_val:
+                if val.dtype not in valid_dtypes:
+                    return False
 
         return True
+
+    def check_common_constraints(self, node) -> bool:
+        has_valid_dtypes = self.check_node_has_valid_dtype(node)
+
+        return has_valid_dtypes
 
     @staticmethod
     def check_constraint(node, ep) -> bool:
