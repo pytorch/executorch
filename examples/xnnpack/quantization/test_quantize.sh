@@ -51,6 +51,7 @@ test_cmake_quantization() {
     && mkdir cmake-out \
     && cd cmake-out \
     && retry cmake -DBUCK2="$BUCK" \
+      -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK="$EXECUTORCH_BUILD_XNNPACK" \
       -DREGISTER_QUANTIZED_OPS=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
