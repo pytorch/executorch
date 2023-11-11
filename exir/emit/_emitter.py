@@ -188,6 +188,7 @@ _DelegateDebugIdentifierMap: TypeAlias = Union[
     Dict[int, Tuple[int]], Dict[str, Tuple[int]]
 ]
 
+
 # pyre-ignore[13]: Attribute `node` is never initialized.
 class _Emitter(torch.fx.Interpreter):
     """An abstract interpreter (https://wiki.mozilla.org/Abstract_Interpretation) used to emit the
@@ -352,12 +353,16 @@ class _Emitter(torch.fx.Interpreter):
             ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
         )
 
-        buffer_data = bytes(
-            ctypes.cast(
-                typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                ctypes.POINTER(spec_array_type),
-            ).contents
-        ) if sepc.allocated_memory != 0 else b""
+        buffer_data = (
+            bytes(
+                ctypes.cast(
+                    typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                    ctypes.POINTER(spec_array_type),
+                ).contents
+            )
+            if spec.allocated_memory != 0
+            else b""
+        )
 
         hashed = hashlib.sha256(buffer_data).hexdigest()
 
@@ -1297,7 +1302,6 @@ class _TopLevelEmitter(_Emitter):
             target in self.exported_program.graph_signature.inputs_to_parameters
             or target in self.exported_program.graph_signature.inputs_to_buffers
         ):
-
             fqn = (
                 self.exported_program.graph_signature.inputs_to_parameters[target]
                 if target in self.exported_program.graph_signature.inputs_to_parameters
