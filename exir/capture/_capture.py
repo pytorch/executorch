@@ -134,6 +134,7 @@ def capture(  # noqa: C901
     config: Optional[CaptureConfig] = None,
     constraints: Optional[List[Constraint]] = None,
 ) -> ExirExportedProgram:
+    print("_capture.py: exir capture")
     warnings.warn(
         "This function is now deprecated, please use `torch.export and exir.to_edge` instead. ",
         DeprecationWarning,

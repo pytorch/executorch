@@ -16,6 +16,7 @@ from executorch.exir.tracer import Value
 from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
 
+import os
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=True,
@@ -73,8 +74,10 @@ def export_to_exec_prog(
     core_aten_ep = _to_core_aten(m, example_inputs)
 
     edge_m = _core_aten_to_edge(core_aten_ep, edge_compile_config)
-
+    # print("edge_m size: ", os.path.getsize(edge_m.exported_program()))
     exec_prog = edge_m.to_executorch(backend_config)
+    # .buffer on ExecutorchProgram
+    # print("exec_prog size: ", os.path.getsize(exec_prog))
     return exec_prog
 
 

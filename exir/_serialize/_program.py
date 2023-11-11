@@ -37,6 +37,7 @@ _HEADER_BYTEORDER: Literal["little"] = "little"
 
 def _program_to_json(program: Program) -> str:
     """Returns the JSON representation of the given Program."""
+    print(f"_serialize/_program.py: _program_to_json: program={program}")
     return json.dumps(program, cls=_DataclassEncoder)
 
 
@@ -240,6 +241,7 @@ def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
 def _extract_segments(
     program: Program, segment_alignment: int
 ) -> Tuple[Program, List[bytes]]:
+    print("serialize/_program.py: _extract_segments")
     """Moves data from the Program into a list of segments.
 
     The returned program is a copy of `program`. Program.segments parallels the
@@ -331,6 +333,24 @@ def _extract_segments(
     # Preserve any entries that were not moved into segments.
     program.backend_delegate_data = remaining_inline
 
+    print("serialize/_program.py: moving constant buffers")
+    # Move constant buffers
+    # construct the constant buffer
+    constants_: Buffer = b''
+    for buffer in program.constant_buffer:
+        constants_ += buffer.storage
+    # add constant buffer to segments list
+    program.segments.append(
+        DataSegment(
+            offset = 0, # the first one
+            size = len(constants_),
+        )
+    )
+    segments.append(constants_)
+
+    program.constant_buffer = []
+    print(f"serialize/_program.py: constants {program.constant_buffer}, program.segments {program.segments}")
+    print(f"serialize/_program.py: segments contains: {segments}")
     return (program, segments)
 
 
@@ -341,6 +361,8 @@ def _append_segments(
     segment_table: List[DataSegment],
     base_offset: int,
 ) -> bytes:
+
+    print("_serialize/_program.py: _append_segments")
     """Appends segments to the end of the program data.
 
     Appends each element of `segments` to `program_data`, with '\0' padding to
@@ -378,8 +400,10 @@ def _append_segments(
     # Length of all elements in padded_segments. Only used for assertions.
     current_offset: int = 0
     for i, segment in enumerate([program_data] + segments):
+        print(f"_serialize/_program.py: i {i}, segment {segment}")
         # Add padding if necessary to align the start of this segment.
         pad_length: int = _padding_required(current_offset, alignment)
+        print(f"_serialize/_program.py: offset {current_offset}, alignment {alignment}, pad_length {pad_length}")
         if pad_length > 0:
             padded_segments.append(b"\x00" * pad_length)
             current_offset += pad_length
@@ -448,7 +472,9 @@ def serialize_pte_binary(
         The serialized form of the Program, ready for execution by the runtime.
     """
     # Segment data to be written to the file following the flatbuffer data.
+    print("_program.py: serialize_pte_binary")
     segments: List[bytes] = []
+    extract_segments = False
     if extract_segments:
         # May return a copy of the program to avoid modifying the input.
         program, segments = _extract_segments(
@@ -470,6 +496,7 @@ def serialize_pte_binary(
         input_size=_ExtendedHeader.EXPECTED_LENGTH,
         alignment=result.max_alignment,
     )
+    print(f"_serialize/program.py: padded_header_length = {padded_header_length}, alignment: {result.max_alignment}")
     # Size of the program with the header inserted.
     program_size: int = padded_header_length + len(result.data)
     # Offset to the first segment, or zero if there are no segments.
@@ -504,6 +531,7 @@ def serialize_pte_binary(
     assert eh.segment_base_offset == segment_base_offset
 
     if segments:
+        print(f"_serialize/_program.py: appending segments. program_data {program_data}, segments {segments}, segment_alignment {segment_alignment}, segment_table {program.segments}, base_offset {segment_base_offset}")
         # Add segments to the end of the data, in order, with the appropriate
         # padding.
         program_data = _append_segments(

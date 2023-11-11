@@ -265,6 +265,7 @@ def _program_json_to_flatbuffer(
 
     Returns: The flatbuffer data and associated metadata.
     """
+    print(f"_serialize/_flatbuffer.py: _program_json_to_flatbuffer. program_json: {program_json}")
     with tempfile.TemporaryDirectory() as temp_dir:
         schema_info = _prepare_schema(
             out_dir=temp_dir,
@@ -277,12 +278,14 @@ def _program_json_to_flatbuffer(
 
         with open(json_path, "wb") as json_file:
             json_file.write(program_json.encode("ascii"))
+            print(f"_serialize/_flatbuffer.py: program_json.encode('ascii'): {program_json.encode('ascii')}")
 
         _flatc_compile(temp_dir, schema_info.root_path, json_path)
         with open(output_path, "rb") as output_file:
             return _FlatbufferResult(
                 data=output_file.read(), max_alignment=schema_info.max_alignment
             )
+            print(f"_serialize/_flatbuffer.py: after _flatc_compile: {output_file.read()}")
 
 
 def _program_flatbuffer_to_json(program_flatbuffer: bytes) -> bytes:

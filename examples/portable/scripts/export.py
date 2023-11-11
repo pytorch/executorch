@@ -40,4 +40,6 @@ if __name__ == "__main__":
     )
 
     prog = export_to_exec_prog(model, example_inputs)
+    # prog.buffer
+    # test_emit.py, MLP, just a linear model. bento with executorch_llama
     save_pte_program(prog.buffer, args.model_name)

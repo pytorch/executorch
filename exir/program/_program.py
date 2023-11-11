@@ -259,6 +259,7 @@ class ExirExportedProgram:
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgram":
+        print("_program.py: to_executorch")
         if not self.after_to_edge_passes:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
@@ -307,6 +308,7 @@ class ExecutorchProgram:
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
     ) -> None:
+        print("_program.py: ExecutorchProgram __init__")
         if not exir_exported_program.after_to_edge_passes:
             raise RuntimeError(
                 "Need to call prog.to_edge prior to constructing ExecutorchProgram."
@@ -587,6 +589,7 @@ class MultiMethodExirExportedProgram:
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "MultiMethodExecutorchProgram":
+        print("_program.py: to_executorch 588")
         return multi_method_program_to_executorch(self, config)
 
 

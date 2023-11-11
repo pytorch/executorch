@@ -1160,6 +1160,7 @@ class _Emitter(torch.fx.Interpreter):
         function only executes on control flow subgraphs. Takes the inputs of the subgraph that had
         not previously been emitted and emits them.
         """
+        print("_emitter.py: def placeholder")
         # pyre-fixme[16]: `Optional` has no attribute `__getitem__`.
         value = self.binding_input_values[self.placeholder_count]
         # This indicates that the placeholder wasn't allocated an EValue id before this sub-emitter
