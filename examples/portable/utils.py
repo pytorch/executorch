@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
+import os
 
 from typing import Tuple, Union
 
@@ -78,8 +79,8 @@ def export_to_exec_prog(
     return exec_prog
 
 
-def save_pte_program(buffer: bytes, model_name: str) -> None:
-    filename = f"{model_name}.pte"
+def save_pte_program(buffer: bytes, model_name: str, output_dir: str = "") -> None:
+    filename = os.path.join(output_dir, f"{model_name}.pte")
     try:
         with open(filename, "wb") as file:
             file.write(buffer)

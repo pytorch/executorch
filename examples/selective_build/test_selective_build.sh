@@ -47,7 +47,6 @@ test_buck2_select_ops_in_list() {
     $BUCK run //examples/selective_build:selective_build_test \
         --config=executorch.max_kernel_num=17 \
         --config=executorch.select_ops=list \
-        --config=executorch.dtype_selective_build_lib="//examples/selective_build:select_ops_in_list_lib" \
         -- --model_path=./add_mul.pte
 
     echo "Removing add_mul.pte"
