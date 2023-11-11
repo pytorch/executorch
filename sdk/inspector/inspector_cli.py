@@ -8,7 +8,8 @@ import argparse
 
 from executorch.sdk import Inspector
 
-if __name__ == "__main__":
+
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--etdump_path",
@@ -25,3 +26,7 @@ if __name__ == "__main__":
 
     inspector = Inspector(etdump_path=args.etdump_path, etrecord=args.etrecord_path)
     inspector.print_data_tabular()
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

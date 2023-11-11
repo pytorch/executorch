@@ -11,7 +11,7 @@ python_binary(
     srcs = [
         "test_profiler_e2e.py",
     ],
-    main_module = "executorch.profiler.test.test_profiler_e2e",
+    main_function = "executorch.profiler.test.test_profiler_e2e.main",
     deps = [
         "//executorch/exir:lib",
         "//executorch/exir/_serialize:lib",

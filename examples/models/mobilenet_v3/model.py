@@ -8,8 +8,7 @@ import logging
 
 import torch
 
-# pyre-ignore
-from torchvision.models import mobilenet_v3_small  # @manual
+from torchvision import models
 
 from ..model_base import EagerModelBase
 
@@ -21,7 +20,10 @@ class MV3Model(EagerModelBase):
     def get_eager_model(self) -> torch.nn.Module:
         logging.info("Loading mobilenet_v3 model")
         # pyre-ignore
-        mv3_small = mobilenet_v3_small(pretrained=True)
+        mv3_small = models.mobilenet_v3_small(
+            # pyre-ignore[16]
+            weights=models.MobileNet_V3_Small_Weights.IMAGENET1K_V1
+        )
         logging.info("Loaded mobilenet_v3 model")
         return mv3_small
 
