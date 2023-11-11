@@ -1299,6 +1299,7 @@ class _TopLevelEmitter(_Emitter):
             target in self.exported_program.graph_signature.inputs_to_parameters
             or target in self.exported_program.graph_signature.inputs_to_buffers
         ):
+
             fqn = (
                 self.exported_program.graph_signature.inputs_to_parameters[target]
                 if target in self.exported_program.graph_signature.inputs_to_parameters
