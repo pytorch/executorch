@@ -97,8 +97,8 @@ def define_common_targets():
         deps = [
             ":executorch_aten_ops",
             ":executorch_custom_ops",
-            "//executorch/kernels/portable:operators",
         ],
+        kernel_deps = ["//executorch/kernels/portable:operators"],
         **generated_lib_common_args
     )
 

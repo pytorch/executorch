@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
@@ -14,22 +14,33 @@ using namespace ::testing;
 using exec_aten::ScalarType;
 using torch::executor::ScalarTypeToCppType;
 
-// Add test for specific dtypes when we can run on model file.
-
-TEST(SelectedMobileOpsHeaderTest, UnknownOp) {
+TEST(DtypeSelectiveBuildTest, UnknownOp) {
   ET_EXPECT_DEATH(
       ET_SWITCH_TWO_TYPES(
           Float,
           Int,
           exec_aten::ScalarType::Float,
           ctx,
-          "addmm.out",
+          "unknown.out",
           CTYPE_OUT,
           [&] { return true; }),
       "");
 }
 
-TEST(SelectedMobileOpsHeaderTest, OpWithDtype) {
+TEST(DtypeSelectiveBuildTest, OpWithoutDtype) {
+  ET_EXPECT_DEATH(
+      ET_SWITCH_TWO_TYPES(
+          Float,
+          Int,
+          exec_aten::ScalarType::Int,
+          ctx,
+          "add.out",
+          CTYPE_OUT,
+          [&] { return true; }),
+      "");
+}
+
+TEST(DtypeSelectiveBuildTest, OpWithDtype) {
   ASSERT_EQ(
       ET_SWITCH_TWO_TYPES(
           Float,
@@ -37,16 +48,6 @@ TEST(SelectedMobileOpsHeaderTest, OpWithDtype) {
           exec_aten::ScalarType::Float,
           ctx,
           "add.out",
-          CTYPE_OUT,
-          [&] { return true; }),
-      true);
-  ASSERT_EQ(
-      ET_SWITCH_TWO_TYPES(
-          Float,
-          Int,
-          exec_aten::ScalarType::Int,
-          ctx,
-          "mm.out",
           CTYPE_OUT,
           [&] { return true; }),
       true);

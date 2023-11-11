@@ -21,7 +21,7 @@ Check out `targets.bzl` for demo of 3 selective build APIs:
 
 Other configs:
 - `--config executorch.max_kernel_num=N`: Only allocate memory for the required number of operators. Take this result from `selected_operators.yaml`.
-- `--config executorch.dtype_selective_build_lib=<executorch_generated_lib_name>`: Use dtype selective build. For each op, we register the dtypes that are used. Eg. if the model only uses the float implementation of add, then only the float add will be registered. Pass in the executorch_generated_lib name (see buck2 list example).
+- `--config executorch.dtype_selective_build_lib=<executorch_generated_lib_name>`: Use dtype selective build. For each op, we register the dtypes that are used. Eg. if the model only uses the float implementation of add, then only the float add will be registered. Pass in the executorch_generated_lib name (see buck2 model example in targets.bzl).
 
 ## CMake examples
 
