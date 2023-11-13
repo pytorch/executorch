@@ -52,9 +52,8 @@ class TestInspectorUtils(unittest.TestCase):
             self.assertTrue(isinstance(graphs[EDGE_DIALECT_GRAPH_KEY], FXOperatorGraph))
 
     def test_create_debug_handle_to_op_node_mapping(self):
-        debug_handle_to_op_node_map = {}
         graph, expected_mapping = gen_mock_operator_graph_with_expected_map()
-        create_debug_handle_to_op_node_mapping(graph, debug_handle_to_op_node_map)
+        debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(graph)
 
         self.assertEqual(debug_handle_to_op_node_map, expected_mapping)
 
