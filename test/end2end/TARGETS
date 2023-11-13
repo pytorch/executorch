@@ -3,6 +3,8 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
+oncall("executorch")
+
 python_library(
     name = "exported_module",
     srcs = [
