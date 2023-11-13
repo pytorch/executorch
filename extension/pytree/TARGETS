@@ -6,6 +6,8 @@ load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extensio
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load(":targets.bzl", "define_common_targets")
 
+oncall("executorch")
+
 define_common_targets()
 
 cpp_python_extension(
