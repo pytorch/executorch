@@ -36,6 +36,7 @@ class SoCModel(enum.Enum):
     SM8450 = 1
     SM8475 = 2
     SM8550 = 3
+    SA8295 = 4
 
 
 def qnn_capture_config():
@@ -136,6 +137,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SA8295(Snapdragon SA8295P)
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
         saver: Instead of compiling the model, run QNN Saver. Please check
@@ -153,6 +155,7 @@ def generate_qnn_executorch_compiler_spec(
         SoCModel.SM8450: PyQnnManager.QcomChipset.SM8450,
         SoCModel.SM8475: PyQnnManager.QcomChipset.SM8475,
         SoCModel.SM8550: PyQnnManager.QcomChipset.SM8550,
+        SoCModel.SA8295: PyQnnManager.QcomChipset.SA8295,
     }
     backend_type = CompileSpec(
         "backend_type", bytes([PyQnnManager.QnnExecuTorchBackendType.kHtpBackend])

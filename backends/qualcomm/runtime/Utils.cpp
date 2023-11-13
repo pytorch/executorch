@@ -26,6 +26,11 @@ const std::map<QcomChipset, HtpInfo>& PopulateSocInfoTable() {
         QnnHtpDevice_Arch_t::QNN_HTP_DEVICE_ARCH_V69,
         "SM8475",
         8}},
+      {QcomChipset::SA8295,
+       {QcomChipset::SA8295,
+        QnnHtpDevice_Arch_t::QNN_HTP_DEVICE_ARCH_V68,
+        "SA8295",
+        8}},
   };
   return soc_info_map;
 }

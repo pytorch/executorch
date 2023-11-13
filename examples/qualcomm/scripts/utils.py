@@ -49,6 +49,7 @@ class SimpleADB:
             "SM8550": "73",
             "SM8475": "69",
             "SM8450": "69",
+            "SA8295": "68",
         }
         self.soc_model = arch_table[soc_model]
 
@@ -153,6 +154,7 @@ def build_executorch_binary(
         "SM8550": SoCModel.SM8550,
         "SM8475": SoCModel.SM8475,
         "SM8450": SoCModel.SM8450,
+        "SA8295": SoCModel.SA8295,
     }
 
     QnnPartitioner.set_compiler_spec(

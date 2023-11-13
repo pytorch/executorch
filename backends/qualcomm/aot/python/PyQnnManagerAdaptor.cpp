@@ -41,6 +41,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .value("SM8450", QcomChipset::SM8450)
       .value("SM8475", QcomChipset::SM8475)
       .value("SM8550", QcomChipset::SM8550)
+      .value("SA8295", QcomChipset::SA8295)
       .export_values();
 
   py::enum_<QnnExecuTorchHtpPrecision>(m, "QnnExecuTorchHtpPrecision")
