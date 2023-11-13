@@ -1,0 +1,65 @@
+name: pull_mps
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  gather-models-mps:
+    runs-on: macos-executorch
+    outputs:
+      models: ${{ steps.gather-models-mps.outputs.models }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'true'
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: pip
+      - name: Extract the list of models to test
+        id: gather-models-mps
+        run: |
+          set -eux
+          source .ci/scripts/utils.sh
+          # This is a simple Python script but as it tries to import executorch.examples.models,
+          # it requires a whole bunch of ExecuTorch dependencies on the Docker image
+          install_pip_dependencies
+          install_executorch
+          PYTHONPATH="${PWD}" python -m backends.apple.mps.ci.scripts.gather_test_models_mps
+  test-mps-delegate-macos:
+    name: test-mps-delegate-macos
+    runs-on: macos-executorch
+    needs: gather-models-mps
+    strategy:
+      matrix: ${{ fromJSON(needs.gather-models-mps.outputs.models) }}
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run test ${{ matrix.test }}
+        if: always()
+        run: |
+          cd ..
+          rm -r -f executorch || true
+          cp -a executorch_apple_internal executorch && cd executorch
+          WORKSPACE=$(pwd)
+          pushd "${WORKSPACE}"
+          MODEL_NAME=${{ matrix.model }}
+          BUILD_TOOL=${{ matrix.build-tool }}
+          # Setup MacOS dependencies as there is no Docker support on MacOS atm
+          PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+          PYTHON_EXECUTABLE=python bash backends/apple/mps/install_requirements.sh
+          # Build and test ExecuTorch
+          PYTHON_EXECUTABLE=python bash backends/apple/mps/ci/scripts/test-mps.sh "${MODEL_NAME}" "${BUILD_TOOL}"
+          popd
+      - name: Cleanup test ${{ matrix.test }}
+        if: always()
+        run: |
+          cd .. && mv executorch executorch_apple_internal && cd executorch_apple_internal
