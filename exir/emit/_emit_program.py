@@ -185,10 +185,6 @@ def emit_program(
         emitter.run()
         plans.append(emitter.plan())
 
-        # update list length for future constant deduplication checks
-        emitter.program_state.cached_spec_list_length = len(
-            program_state.allocated_specs
-        )
         debug_handle_map[name] = emitter.debug_handle_map
         method_to_delegate_debug_id_map[
             name
