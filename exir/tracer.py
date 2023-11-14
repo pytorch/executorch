@@ -654,7 +654,6 @@ def dynamo_trace(
     if dynamo_config is None:
         dynamo_config = ExirDynamoConfig()
 
-    # pyre-ignore
     with torchdynamo.config.patch(
         asdict(dynamo_config)
     ), setting_python_recursive_limit(2000):
