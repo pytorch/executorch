@@ -31,6 +31,34 @@ endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
+set(_bundled_program_schema_dir
+     ${EXECUTORCH_ROOT}/sdk/bundled_program/schema)
+
+set(_bundled_program_schema__srcs
+    ${_bundled_program_schema_dir}/bundled_program_schema.fbs
+    ${_bundled_program_schema_dir}/scalar_type.fbs)
+
+# The include directory that will contain the generated schema headers.
+set(_program_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
+
+set(_bundled_program_schema__outputs)
+foreach(fbs_file ${_bundled_program_schema__srcs})
+  string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
+  list(APPEND _bundled_program_schema__outputs
+        "${generated}")
+  message("OUTPUTS: " ${_bundled_program_schema__outputs})
+endforeach()
+
+add_custom_command(
+  OUTPUT ${_bundled_program_schema__outputs}
+  COMMAND
+    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --gen-mutable --scoped-enums -o
+    "${_program_schema__include_dir}/executorch/sdk/bundled_program/schema" ${_bundled_program_schema__srcs}
+  WORKING_DIRECTORY ${EXECUTORCH_ROOT}
+  DEPENDS ${FLATC_EXECUTABLE} ${_bundled_program_schema__srcs}
+  COMMENT "Generating bundled_program headers"
+  VERBATIM)
+
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   #
@@ -42,7 +70,7 @@ set(mps_executor_runner_libs "-framework Foundation"
                               "-weak_framework MetalPerformanceShadersGraph"
                               "-weak_framework Metal")
 list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
+add_executable(mps_executor_runner ${_mps_executor_runner__srcs} ${_bundled_program_schema__outputs})
 target_include_directories(
   mps_executor_runner INTERFACE ${CMAKE_BINARY_DIR}/schema/include/
                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
