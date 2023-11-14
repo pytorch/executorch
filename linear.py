@@ -10,8 +10,10 @@ class M(torch.nn.Module):
   def forward(self, x):
     return self.linear(x)
 
+torch.manual_seed(0)
 m = M()
 inputs = (torch.randn(10, 10),)
+print ("==== Inputs:", inputs)
 
 print("==== exir.capture:")
 # old api
@@ -31,7 +33,7 @@ print(exec_program.program)
 print("==== Print buffer: ")
 print(exec_program.buffer)
 
-filename = "linear_a1.pte"
+filename = "linear_a9.pte"
 print(f"=== write to {filename}")
 with open(filename, "wb") as file:
   file.write(exec_program.buffer)
