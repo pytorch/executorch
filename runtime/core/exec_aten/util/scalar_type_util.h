@@ -25,7 +25,7 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
-
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/platform/assert.h>
 #ifdef USE_ATEN_LIB
 // Note that a lot of the macros/functions defined in this ScalarTypeUtil.h file
@@ -46,6 +46,37 @@ using ScalarType = torch::executor::ScalarType;
 using string_view = torch::executor::string_view;
 } // namespace exec_aten
 #endif
+
+// dummy implementation
+inline constexpr bool should_include_kernel_dtype(
+    const char* operator_name,
+    exec_aten::ScalarType scalar_type
+) {
+  // return false;
+  return ((exec_aten::string_view(operator_name).compare("where.self_out") == 0)
+        && (scalar_type == exec_aten::ScalarType::Float))
+        || ((exec_aten::string_view(operator_name).compare("add.out") == 0)
+        && (scalar_type == exec_aten::ScalarType::Float))
+        || ((exec_aten::string_view(operator_name).compare("mul.out") == 0)
+        && (scalar_type == exec_aten::ScalarType::Float));
+}
+
+namespace torch {
+namespace executor {
+#define ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type)               \
+  do {                                                             \
+    if (!should_include_kernel_dtype(et_switch_name, enum_type)) { \
+      ET_LOG(                                                      \
+          Error,                                                   \
+          "dtype '%" PRId8 "' not selected for operator %s",       \
+          static_cast<int8_t>(enum_type),                          \
+          et_switch_name);                                         \
+      torch::executor::runtime_abort();                            \
+    }                                                              \
+  } while (0)
+
+} // namespace executor
+} // namespace torch
 
 namespace torch {
 namespace executor {
@@ -581,20 +612,20 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 // by ExecuTorch.
 //
 
-#ifdef ET_INTERNAL_CHECK_SELECTIVE_BUILD
+// #ifdef ET_INTERNAL_CHECK_SELECTIVE_BUILD
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
   case enum_type: {                                           \
     ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type);             \
     using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
     return __VA_ARGS__();                                     \
   }
-#else
-#define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
-  case enum_type: {                                           \
-    using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
-    return __VA_ARGS__();                                     \
-  }
-#endif
+// #else
+// #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
+//   case enum_type: {                                           \
+//     using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
+//     return __VA_ARGS__();                                     \
+//   }
+// #endif
 
 #define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...) \
   [&] {                                              \
