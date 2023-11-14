@@ -28,6 +28,7 @@ MODEL_NAME_TO_OPTIONS = {
     "w2l": XNNPACKOptions(False, True),
     "edsr": XNNPACKOptions(True, True),
     "mobilebert": XNNPACKOptions(False, True),
+    "sam": XNNPACKOptions(True, True),
 }
 
 

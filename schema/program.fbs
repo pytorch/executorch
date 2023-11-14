@@ -28,7 +28,7 @@ table Null {}
 // memory and at what offset from its base address.
 table AllocationDetails {
   memory_id:uint;  // ID of the memory where this data needs to be placed.
-  memory_offset:uint;  // Offset (in bytes) w.r.t. the memory base address.
+  memory_offset:ulong;  // Offset (in bytes) w.r.t. the memory base address.
 }
 
 // Indicates the types of shape a Tensor may have, from the point

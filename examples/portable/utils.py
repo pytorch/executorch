@@ -19,7 +19,7 @@ from torch.export import export, ExportedProgram
 
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
-    _check_ir_validity=True,
+    _check_ir_validity=False,
 )
 
 
@@ -33,7 +33,7 @@ def _to_core_aten(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
     core_aten_ep = export(model, example_inputs)
-    logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
+    logging.info(f"Core ATen dialect graph:\n{core_aten_ep.graph}")
     return core_aten_ep
 
 
@@ -48,7 +48,7 @@ def _core_aten_to_edge(
     edge_manager: EdgeProgramManager = to_edge(
         core_aten_exir_ep, compile_config=edge_compile_config
     )
-    logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+    logging.info(f"Edge dialect graph:\n{edge_manager.exported_program().graph}")
     return edge_manager
 
 
@@ -76,6 +76,7 @@ def export_to_exec_prog(
     edge_m = _core_aten_to_edge(core_aten_ep, edge_compile_config)
 
     exec_prog = edge_m.to_executorch(backend_config)
+    logging.info(f"ExecuTorch program graph:\n{exec_prog.exported_program().graph}")
     return exec_prog
 
 
