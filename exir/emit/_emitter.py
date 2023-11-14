@@ -29,6 +29,7 @@ their instructions.
 
 # pyre-strict
 import ctypes
+import hashlib
 import operator
 import typing
 from dataclasses import dataclass, field
@@ -104,9 +105,9 @@ class _ProgramState:
     # as index 0 in the constant_buffer is reserved.
     allocated_specs: List[TensorSpec] = field(default_factory=list)
     # Weights in any arbitrary graph_module only need to compare against weights from previously
-    # emitted graph modules, not any weights emitted from itself. set to len(allocated_specs) after
-    # every method emission.
-    cached_spec_list_length: int = 0
+    # emitted graph modules, not any weights emitted from itself. This should speed up the lookup,
+    # from O(N) to O(1)
+    cached_spec_hash_values: Dict[str, int] = field(default_factory=dict)
     # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
     constant_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
@@ -346,74 +347,34 @@ class _Emitter(torch.fx.Interpreter):
             # For non-constant tensors, constant_buffer = 0.
             return EValue(make_tensor_value(0, allocation_info, spec))
 
-        def _get_buffer_idx(spec: TensorSpec, program_state: _ProgramState) -> int:
-            """Determines where in the program state the constant buffer corresponding to spec is
-            located.
+        # Constant tensor. Reserve a buffer for the constant tensor.
+        spec_array_type = (
+            ctypes.c_char * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
+        )
 
-            Returns the index into the constant buffers list if this spec has been previously
-            allocated, -1 if unseen before. O(N^2) as for every tensor we have to compare it against
-            every tensor previously allocated. Could improve this to O(N) if we hashed the weights.
-            """
-            for i in range(0, program_state.cached_spec_list_length):
-                other_spec = program_state.allocated_specs[i]
+        buffer_data = (
+            bytes(
+                ctypes.cast(
+                    typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
+                    ctypes.POINTER(spec_array_type),
+                ).contents
+            )
+            if spec.allocated_memory != 0
+            else b""
+        )
 
-                # Check for an empty buffer, special cased to avoid nullptr in buffer check.
-                if spec.allocated_memory == 0 and other_spec.allocated_memory == 0:
-                    return i + 1
+        hashed = hashlib.sha256(buffer_data).hexdigest()
 
-                # compare meta data
-                if (
-                    spec.scalar_type == other_spec.scalar_type
-                    and spec.shape == other_spec.shape
-                    and spec.dim_order == other_spec.dim_order
-                    and typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-                    == typing.cast(torch.UntypedStorage, other_spec.storage).nbytes()
-                ):
-                    spec_array_type = (
-                        ctypes.c_char
-                        * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-                    )
-                    other_spec_array_type = (
-                        ctypes.c_char
-                        * typing.cast(torch.UntypedStorage, other_spec.storage).nbytes()
-                    )
-                    # compare data
-                    if bytes(
-                        ctypes.cast(
-                            typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                            ctypes.POINTER(spec_array_type),
-                        ).contents
-                    ) == bytes(
-                        ctypes.cast(
-                            typing.cast(
-                                torch.UntypedStorage, other_spec.storage
-                            ).data_ptr(),
-                            ctypes.POINTER(other_spec_array_type),
-                        ).contents
-                    ):
-                        return i + 1  # +1 because the first buffer location is reserved
-            return -1
-
-        buffer_idx = _get_buffer_idx(spec, self.program_state)
+        buffer_idx = self.program_state.cached_spec_hash_values.get(hashed, -1)
 
         # Haven't seen this constant before
         if buffer_idx == -1:
-            if spec.allocated_memory == 0:
-                buffer = Buffer(storage=b"")
-            else:
-                array_type = (
-                    ctypes.c_char
-                    * typing.cast(torch.UntypedStorage, spec.storage).nbytes()
-                )
-                spec_array = ctypes.cast(
-                    typing.cast(torch.UntypedStorage, spec.storage).data_ptr(),
-                    ctypes.POINTER(array_type),
-                ).contents
-                buffer = Buffer(storage=bytes(spec_array))
-
             # Update buffer_idx to point to the end of the list where we are adding the new buffer.
+            buffer = Buffer(storage=buffer_data)
             buffer_idx = len(self.program_state.constant_buffer)
             self.program_state.allocated_specs.append(spec)
+            # +1 because the first buffer location is reserved
+            self.program_state.cached_spec_hash_values[hashed] = buffer_idx
             self.program_state.constant_buffer.append(buffer)
 
         # For constant tensors, allocation_info = None.
