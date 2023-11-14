@@ -798,13 +798,6 @@ class EdgeProgramManager:
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
 
-        for name, program in edge_programs.items():
-            try:
-                EXIREdgeDialectVerifier()(program.graph_module)
-            except ExportError as e:
-                logging.info(f"Input program {name} is not in aten dialect.")
-                raise e
-
         self._edge_programs = edge_programs
         self._config_methods = constant_methods
 
@@ -831,6 +824,7 @@ class EdgeProgramManager:
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
+        check_ir_validity: bool = True,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -852,14 +846,18 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = program._transform(*passes[name])
-                    EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+                    EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                        new_programs[name].graph_module
+                    )
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = program._transform(*passes)
-                EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+                EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                    new_programs[name].graph_module
+                )
 
         return EdgeProgramManager(
             new_programs,
