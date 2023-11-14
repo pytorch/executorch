@@ -254,12 +254,14 @@ class Program final {
       DataLoader* loader,
       size_t segment_base_offset,
       FreeableBuffer&& program_data,
-      const executorch_flatbuffer::Program* internal_program)
+      const executorch_flatbuffer::Program* internal_program,
+      FreeableBuffer&& constant_segment)
       : program_data_(std::move(program_data)),
         // Don't need the loader if there are no segments.
         loader_(segment_base_offset > 0 ? loader : nullptr),
         internal_program_(internal_program),
-        segment_base_offset_(segment_base_offset) {}
+        segment_base_offset_(segment_base_offset),
+        constant_segment_(std::move(constant_segment)) {}
 
   // Not copyable or assignable.
   Program(const Program& rhs) = delete;
@@ -279,6 +281,9 @@ class Program final {
   /// The offset to the first segment, in bytes. If zero, no segments should
   /// be present in internal_program_.
   size_t segment_base_offset_;
+
+  /// Constant segment data.
+  FreeableBuffer constant_segment_;
 };
 
 } // namespace executor

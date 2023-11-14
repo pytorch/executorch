@@ -269,6 +269,7 @@ def _extract_segments(
     remaining_inline: List[BackendDelegateInlineData] = []
     inline_indices_seen: set[int] = set()
     for plan in program.execution_plan:
+        print("serialize/_program.cpp: _extract_segments: plan ", plan)
         for delegate in plan.delegates:
             if delegate.processed.location != DataLocation.INLINE:
                 raise ValueError(
@@ -338,11 +339,18 @@ def _extract_segments(
     # construct the constant buffer
     constants_: Buffer = b''
     for buffer in program.constant_buffer:
+        print("serialize/_program.py: buffer len ", len(buffer.storage), buffer.storage)
         constants_ += buffer.storage
     # add constant buffer to segments list
+    prev_end = (
+        program.segments[-1].offset + program.segments[-1].size
+        if program.segments
+        else 0
+    )
+    print(f"serialize/_program.py: constant buffer at prev_end {prev_end}, offset {_aligned_size(prev_end, segment_alignment)}")
     program.segments.append(
         DataSegment(
-            offset = 0, # the first one
+            offset=_aligned_size(prev_end, segment_alignment),
             size = len(constants_),
         )
     )

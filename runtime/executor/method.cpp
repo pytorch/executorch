@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <iostream>
+
 #include <executorch/runtime/executor/method.h>
 
 #include <cinttypes>
@@ -506,6 +508,7 @@ Result<Method> Method::load(
 }
 
 Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
+  std::cout << "method.cpp: Method::init" << std::endl;
   EXECUTORCH_SCOPE_PROF("Method::init");
   internal::EventTracerProfileScope event_tracer_profile_scope =
       internal::EventTracerProfileScope(event_tracer_, "Method::init");
@@ -522,15 +525,54 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
   {
     // Parse the elements of the values_ array.
+    std::cout << "method.cpp: Method::init: parse_values" << std::endl;
     Error err = parse_values();
     if (err != Error::Ok) {
       return err;
     }
   }
+/*
+  {
+    // Note: we should do it inside parse_values(), because that is where the constant buffer function is called.
+    // There, we should pass the segment in and retrieve the data.
+    // Or MAYBE, we pass the segment into parse_values() and resolve it there.
+    // Add a second for loop for the values inside the segment? Let's see if it will work outside.
+
+    // Resolve constant buffer
+    print("method.cpp: Method::init: parse_constant_buffer");
+    const auto constant_buffer = serialization_plan_->constant_buffer();
+    // Load the const segment
+    print("method.cpp: Method::init: load_const_segment (idx 0)");
+    static Result<FreeableBuffer> const_segment = LoadSegment(0);
+    // Index into it using the constant buffer
+    // Structure of the constant buffer:
+    for (int i = 0; i < n; i++) {
+      // blah, store the Tensor into values
+      // Get t?
+
+      // serialization_plan_ = ExecutionPlan, which is:
+      // flatbuffer_values= serialization_plan_->values();
+      // auto val = flatbuffer_values->Get(i);
+
+      auto t = deserialization::parseTensor(program_, memory_manager_, val);
+      if (!t.ok()) {
+        ET_LOG(
+          Error,
+          "Failed parsing tensor at index %zu: 0x%" PRIx32,
+          i,
+          static_cast<uint32_t>(t.error()));
+        return t.error();
+      }
+      new (&values_[i]) EValue(t.get());
+      n_value_ = n_value_ + i + 1;
+    }
+  }
+  */
 
   {
     // Resolve delegates
     const auto delegates = serialization_plan_->delegates();
+    std::cout << "method.cpp: Method::init: parse_delegates" << std::endl;
     ET_CHECK(delegates != nullptr);
     size_t n_delegate = delegates->size();
     delegates_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(

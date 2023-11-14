@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <iostream>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 
@@ -41,10 +42,12 @@ static uint8_t* align_pointer(void* ptr, size_t alignment) {
   intptr_t addr = reinterpret_cast<intptr_t>(ptr);
   if ((addr & (alignment - 1)) == 0) {
     // Already aligned.
+    std::cout << "align_pointer 1: addr: " << ptr << ", alignment: " << alignment << std::endl;
     return reinterpret_cast<uint8_t*>(ptr);
   }
   // Bump forward.
   addr = (addr | (alignment - 1)) + 1;
+  std::cout << "align_pointer 2: addr: " << addr << ", alignment: " << alignment << std::endl;
   return reinterpret_cast<uint8_t*>(addr);
 }
 
@@ -119,6 +122,7 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 } // namespace
 
 Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
+  std::cout << "FileDataLoader::Load offset: " << offset << ", size: " << size << std::endl;
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,
@@ -135,6 +139,7 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
 
   // Don't bother allocating/freeing for empty segments.
   if (size == 0) {
+    std::cout << "FileDataLoader::Load empty segment" << std::endl;
     return FreeableBuffer(nullptr, 0, /*free_fn=*/nullptr);
   }
 

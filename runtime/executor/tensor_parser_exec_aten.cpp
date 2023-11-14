@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <iostream>
 #include <executorch/runtime/executor/tensor_parser.h>
 
 #include <executorch/runtime/core/evalue.h>
@@ -57,6 +58,10 @@ __ET_NODISCARD Result<void*> getTensorDataPtr(
   if (s_tensor->constant_buffer_idx() > 0) {
     auto data =
         program->get_constant_buffer_data(s_tensor->constant_buffer_idx());
+    std::cout << "tensor_parser_exec_aten.cpp: tensor data address is: " << data.get() << std::endl;
+    for (int i = 0; i < 10; i++) {
+      std::cout << "tensor_parser_exec_aten.cpp: " << static_cast<int>(*(static_cast<const unsigned char*>(data.get()) + i)) << std::endl;
+    }
     if (!data.ok()) {
       return data.error();
     }
