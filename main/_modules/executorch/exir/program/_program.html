@@ -1110,7 +1110,7 @@
     <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    :func:`to_edge` constructs an EdgeProgramManger from a set of exported programs in</span>
+<span class="sd">    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in</span>
 <span class="sd">    ATen dialect. Upon construction those programs are transformed into edge dialect.</span>
 
 <span class="sd">    Args:</span>
@@ -1198,15 +1198,13 @@
 <div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager">[docs]</a><span class="k">class</span> <span class="nc">EdgeProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify</span>
-<span class="sd">    lowering to ExecuTorch.</span>
+<span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
 
 <span class="sd">    Allows easy applications of transforms across a collection of exported programs</span>
 <span class="sd">    including the delegation of subgraphs.</span>
 
 <span class="sd">    Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="c1"># TODO(T163717152): Link to Edge dialect docs here ^.</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -1363,8 +1361,8 @@
 
 <div class="viewcode-block" id="ExecutorchProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.ExecutorchProgramManager">[docs]</a><span class="k">class</span> <span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Package of one or more :class:&#39;ExportedPrograms&#39; in Execution dialect. Designed to simplify</span>
-<span class="sd">    lowering to ExecuTorch.</span>
+<span class="sd">    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify</span>
+<span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
 
 <span class="sd">    When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect</span>
 <span class="sd">    are used to form the executorch binary (in a process called emission) and then serialized</span>
@@ -1372,8 +1370,6 @@
 
 <span class="sd">    Manages the final link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="c1"># TODO(T163717152): Link to Execution dialect docs here ^.</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
@@ -1383,7 +1379,7 @@
     <span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        End users should not call this constructor directly. Instead, they should use</span>
-<span class="sd">        :func:&#39;to_executorch&#39; to construct an ExecutorchProgramManger.</span>
+<span class="sd">        :func:&#39;to_executorch&#39; to construct an ExecutorchProgramManager.</span>
 
 <span class="sd">        Constructs an ExecutorchProgramManager from a set of exported programs in</span>
 <span class="sd">        execution dialect.</span>

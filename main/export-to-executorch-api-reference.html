@@ -427,7 +427,7 @@
 <dl class="py function">
 <dt class="sig sig-object py" id="exir.to_edge">
 <span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">to_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.to_edge" title="Permalink to this definition">¶</a></dt>
-<dd><p><a class="reference internal" href="#exir.to_edge" title="exir.to_edge"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge()</span></code></a> constructs an EdgeProgramManger from a set of exported programs in
+<dd><p><a class="reference internal" href="#exir.to_edge" title="exir.to_edge"><code class="xref py py-func docutils literal notranslate"><span class="pre">to_edge()</span></code></a> constructs an EdgeProgramManager from a set of exported programs in
 ATen dialect. Upon construction those programs are transformed into edge dialect.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
@@ -447,7 +447,7 @@ ATen dialect. Upon construction those programs are transformed into edge dialect
 <dt class="sig sig-object py" id="exir.EdgeProgramManager">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">EdgeProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#EdgeProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.EdgeProgramManager" title="Permalink to this definition">¶</a></dt>
 <dd><p>Package of one or more <cite>ExportedPrograms</cite> in Edge dialect. Designed to simplify
-lowering to ExecuTorch.</p>
+lowering to ExecuTorch. See: <a class="reference external" href="https://pytorch.org/executorch/stable/ir-exir.html">https://pytorch.org/executorch/stable/ir-exir.html</a></p>
 <p>Allows easy applications of transforms across a collection of exported programs
 including the delegation of subgraphs.</p>
 <p>Manages the second link in the lowering chain of ATen -&gt; Edge -&gt; ExecuTorch.</p>
@@ -547,8 +547,8 @@ transformations applied.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="exir.ExecutorchProgramManager">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">ExecutorchProgramManager</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">execution_programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">config_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">backend_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#ExecutorchProgramManager"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.ExecutorchProgramManager" title="Permalink to this definition">¶</a></dt>
-<dd><p>Package of one or more :class:’ExportedPrograms’ in Execution dialect. Designed to simplify
-lowering to ExecuTorch.</p>
+<dd><p>Package of one or more <cite>ExportedPrograms</cite> in Execution dialect. Designed to simplify
+lowering to ExecuTorch. See: <a class="reference external" href="https://pytorch.org/executorch/stable/ir-exir.html">https://pytorch.org/executorch/stable/ir-exir.html</a></p>
 <p>When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
 are used to form the executorch binary (in a process called emission) and then serialized
 to a buffer.</p>
