@@ -343,6 +343,8 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
+    # TODO(angelayi): Match signature of export serializer
+    # pyre-ignore
     def serialize(
         self, exported_program: torch._export.ExportedProgram
     ) -> Tuple[schema.ExportedProgram, bytes]:
@@ -647,6 +649,8 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
 
 class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
+    # TODO(angelayi): Match signature of export serializer
+    # pyre-ignore
     def deserialize(
         self,
         serialized_exported_program: schema.ExportedProgram,
