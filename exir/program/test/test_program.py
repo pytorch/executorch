@@ -342,7 +342,7 @@ class TestProgramManagers(unittest.TestCase):
 
         from torch._export.verifier import SpecViolationError
 
-        with self.assertRaises(SpecViolationError) as cm:
+        with self.assertRaises(SpecViolationError):
             self._test_edge_dialect_verifier(_use_foo_add)
 
         # This should not raise error
