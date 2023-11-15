@@ -46,7 +46,6 @@ foreach(fbs_file ${_bundled_program_schema__srcs})
   string(REGEX REPLACE "[.]fbs$" "_generated.h" generated "${fbs_file}")
   list(APPEND _bundled_program_schema__outputs
         "${generated}")
-  message("OUTPUTS: " ${_bundled_program_schema__outputs})
 endforeach()
 
 add_custom_command(
