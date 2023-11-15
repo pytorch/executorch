@@ -689,7 +689,7 @@ def to_edge(
     compile_config: Optional[EdgeCompileConfig] = None,
 ) -> "EdgeProgramManager":
     """
-    :func:`to_edge` constructs an EdgeProgramManger from a set of exported programs in
+    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
     ATen dialect. Upon construction those programs are transformed into edge dialect.
 
     Args:
@@ -777,15 +777,13 @@ def to_edge(
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch.
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
 
     Manages the second link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
-
-    # TODO(T163717152): Link to Edge dialect docs here ^.
 
     def __init__(
         self,
@@ -942,8 +940,8 @@ class EdgeProgramManager:
 
 class ExecutorchProgramManager:
     """
-    Package of one or more :class:'ExportedPrograms' in Execution dialect. Designed to simplify
-    lowering to ExecuTorch.
+    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
@@ -951,8 +949,6 @@ class ExecutorchProgramManager:
 
     Manages the final link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
-
-    # TODO(T163717152): Link to Execution dialect docs here ^.
 
     def __init__(
         self,
@@ -962,7 +958,7 @@ class ExecutorchProgramManager:
     ):
         """
         End users should not call this constructor directly. Instead, they should use
-        :func:'to_executorch' to construct an ExecutorchProgramManger.
+        :func:'to_executorch' to construct an ExecutorchProgramManager.
 
         Constructs an ExecutorchProgramManager from a set of exported programs in
         execution dialect.

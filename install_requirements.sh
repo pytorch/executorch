@@ -13,7 +13,7 @@ pip install .
 #
 # Note:
 # When getting a new version of the executorch repo (via clone, fetch, or pull),
-# you may need to re-install a new version for all pytorch dependencies in order to the
+# you may need to re-install a new version for all pytorch dependencies to run the
 # models in executorch/examples/models.
 # The version in this file will be the correct version for the
 # corresponsing version of the repo.
