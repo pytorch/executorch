@@ -23,6 +23,7 @@ from executorch.exir._serialize._flatbuffer import (
 from executorch.exir.schema import (
     BackendDelegateDataReference,
     BackendDelegateInlineData,
+    Buffer,
     DataLocation,
     DataSegment,
     Program,
@@ -331,6 +332,55 @@ def _extract_segments(
     # Preserve any entries that were not moved into segments.
     program.backend_delegate_data = remaining_inline
 
+    # Move constant buffers into segments
+    prev_end = (
+        program.segments[-1].offset + program.segments[-1].size
+        if program.segments
+        else 0
+    )
+    constant_segment_offset = _aligned_size(prev_end, segment_alignment)
+
+    # Fill in constant_buffer
+    new_constant_buffer: List[Buffer] = []
+    # add header, add segment offset
+    header_val: int = 42
+    new_constant_buffer.append(Buffer(storage=header_val.to_bytes(4, 'big')))
+    print(f"_serialize.py/_program.py: header bytes: {header_val.to_bytes(4, 'big')}")
+    new_constant_buffer.append(Buffer(storage=constant_segment_offset.to_bytes(4, 'big')))
+
+    constants_ : Buffer = b''
+    current_offset = 0
+    for buffer in program.constant_buffer:
+        # constants_ += buffer.storage
+        # alignment
+        buffer_length = len(buffer.storage)
+        pad_length = _padding_required(buffer_length, 16)
+        # constant data
+        constants_ += buffer.storage
+        constants_ += b'\x00' * pad_length
+        # indexing data
+        new_constant_buffer.append(Buffer(storage=current_offset.to_bytes(4, 'big')))
+        new_constant_buffer.append(Buffer(storage=(buffer_length + pad_length).to_bytes(4, 'big')))
+
+        current_offset += buffer_length + pad_length
+        print(f"_serialize/_program.py: buffer_length {buffer_length}, pad_length {pad_length}, current_offset {current_offset}")
+
+    print(f"_serialize/_program.py: constants_ {constants_}")
+    # add constant buffer to segments list
+    program.segments.append(
+        DataSegment(
+            offset = constant_segment_offset,
+            size = len(constants_),
+        )
+    )
+    segments.append(constants_)
+    print(f"_serialize/_program.py: program.segments {program.segments}")
+    print(f"_serialize/_program.py: segments contains: {segments}")
+    print(f"_serialize/_program.py: new constant buffer: {new_constant_buffer}")
+
+    # wipe the constant_buffer
+    program.constant_buffer = new_constant_buffer
+    # program.constant_buffer = []
     return (program, segments)
 
 
@@ -447,6 +497,8 @@ def serialize_pte_binary(
     Returns:
         The serialized form of the Program, ready for execution by the runtime.
     """
+    # lfq: toggle this to force extract_segments
+    extract_segments = True
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
     if extract_segments:
@@ -455,6 +507,7 @@ def serialize_pte_binary(
             program=program, segment_alignment=segment_alignment
         )
 
+    print(f"_serialize/_program.py: progam.segments after extraction: {program.segments}")
     # Convert to a standard flatbuffer binary.
     result: _FlatbufferResult = _program_json_to_flatbuffer(
         _program_to_json(program),

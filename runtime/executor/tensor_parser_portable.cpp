@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <iostream>
 #include <executorch/runtime/executor/tensor_parser.h>
 
 #include <executorch/runtime/core/evalue.h>
@@ -112,7 +113,11 @@ Result<torch::executor::Tensor> parseTensor(
     return data_ptr.error();
   }
   tensor_impl->set_data(data_ptr.get());
-
+  std::cout << "tensor_parser_portable.cpp: tensor values" << std::endl;
+  for (int i = 0; i < tensor_impl->numel(); ++i) {
+    std::cout << tensor_impl->data<float>()[i] << ", ";
+  }
+  std::cout << std::endl;
   return torch::executor::Tensor(tensor_impl);
 }
 

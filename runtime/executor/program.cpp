@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <iostream>
+
 #include <executorch/runtime/executor/program.h>
 
 #include <cstddef>
@@ -142,13 +144,39 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
+  // Load constant segment.
+  // Check constant buffer for constant segment index.
+  const auto& constant_buffer = *flatbuffer_program->constant_buffer();
+  uint8_t* header_tag =
+              const_cast<uint8_t*>(constant_buffer[0]->storage()->data());
+  //*static_cast<const unsigned char*>(constant_buffer[0]->storage()->data());
+  auto constant_segment_index = const_cast<uint8_t*>(constant_buffer[1]->storage()->data());
+
+  for (int i = 0; i < 8; i++) {
+    std::cout << "address: " << header_tag + i << ", val: " << *(header_tag + i) << std::endl;
+  }
+  // std::cout << "program.cpp: load program, header_tag: " << header_tag <<",0:" <<  *header_tag << ",1:" << *(header_tag + 1) << ",2:" << *(header_tag + 2) <<",3:" <<  *(header_tag + 3) << std::endl;
+  // std::cout << "program.cpp: load program, constant_segment_index: " << constant_segment_index << std::endl;
+
+  size_t num_segments = flatbuffer_program->segments()->size();
+  std::cout << "program.cpp: load program, num_segments: " << num_segments << std::endl;
+  std::cout << "program.cpp: load program, segment_base_offset: " << segment_base_offset << std::endl;
+
+  const executorch_flatbuffer::DataSegment* segment = flatbuffer_program->segments()->Get(0);
+
+  Result<FreeableBuffer> constant_segment =
+      loader->Load(segment_base_offset + segment->offset(), segment->size());
+  if (!constant_segment.ok()) {
+    return constant_segment.error();
+  }
   // The FreeableBuffer owns the data that flatbuffer_program points into. Also
   // keep a pointer to the loader so it can load more segments when necessary.
   return Program(
       loader,
       segment_base_offset,
       std::move(program_data.get()),
-      flatbuffer_program);
+      flatbuffer_program,
+      std::move(constant_segment.get()));
 }
 
 size_t Program::num_methods() const {
@@ -189,23 +217,56 @@ Result<MethodMeta> Program::method_meta(const char* method_name) const {
   return MethodMeta(plan.get());
 }
 
+// Result<const void*> Program::get_constant_buffer_data(
+//     size_t buffer_index) const {
+//   auto internal_program =
+//       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
+//   size_t size = internal_program->constant_buffer()->size();
+//   ET_CHECK_OR_RETURN_ERROR(
+//       buffer_index < size,
+//       InvalidArgument,
+//       "Constant buffer %zu out of program buffer range %zu",
+//       buffer_index,
+//       size);
+
+//   const auto& constant_buffer = *internal_program->constant_buffer();
+
+//   return static_cast<const void*>(
+//       constant_buffer[buffer_index]->storage()->data());
+// }
+
 Result<const void*> Program::get_constant_buffer_data(
-    size_t buffer_index) const {
-  auto internal_program =
-      static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  size_t size = internal_program->constant_buffer()->size();
-  ET_CHECK_OR_RETURN_ERROR(
-      buffer_index < size,
-      InvalidArgument,
-      "Constant buffer %zu out of program buffer range %zu",
-      buffer_index,
-      size);
+  size_t buffer_index) const {
+  // Calculate using the constant buffer.
+  // First two Buffers are header information; ignore. After that, we go by pairs.
+  // So to get information for buffer index i, we need to look at (i + 1)*2, (i + 1)*2 + 1.
+  // Ok also, what is the 0 index doing again?
+  auto internal_program = static_cast<const executorch_flatbuffer::Program*>(internal_program_);
 
-  const auto& constant_buffer = *internal_program->constant_buffer();
+  std::cout << "program.cpp: get_constant_buffer_data, segment_base_offset: " << segment_base_offset_ << std::endl;
 
-  return static_cast<const void*>(
-      constant_buffer[buffer_index]->storage()->data());
+  // const auto& constant_buffer = *internal_program->constant_buffer();
+
+  // auto offset = static_cast<const void*>(constant_buffer[(buffer_index + 1)*2]->storage()->data()).get();
+  // auto size = static_cast<const void*>(constant_buffer[(buffer_index + 1)*2 + 1]->storage()->data()).get();
+
+  // std::cout << "program.cpp: get_constant_buffer_data, offset: " << offset << " size: " << size << std::endl;
+
+  // std::cout << "program.cpp: get_constant_buffer_data, data vals: " << static_cast<const void*>(constant_segment_.data() + offset) << std::endl;
+  // OK, how do I use the size here?
+  int offset = 0;
+  return static_cast<const void*>(static_cast<const unsigned char*>(constant_segment_.data()) + offset);
 }
+
+// Result<const void*> Program::get_constant_buffer_data(
+//   size_t buffer_index) const {
+//   if (buffer_index == 1) {
+//     return static_cast<const void*>(constant_segment_.data());
+//   } else if (buffer_index == 2) {
+//     return static_cast<const void*>(static_cast<const unsigned char*>(constant_segment_.data()) + 400);
+//   }
+//   return static_cast<const void*>(constant_segment_.data());
+// }
 
 Result<int64_t> Program::get_non_const_buffer_size(
     size_t buffer_index,
