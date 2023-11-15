@@ -8,7 +8,6 @@
 
 import argparse
 import logging
-import sys
 
 import torch._export as export
 
@@ -72,8 +71,6 @@ if __name__ == "__main__":
     model, example_inputs = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
-
-    sys.setrecursionlimit(30000)
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
