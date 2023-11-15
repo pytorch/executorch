@@ -52,12 +52,13 @@ inline constexpr bool should_include_kernel_dtype(
     const char* operator_name,
     exec_aten::ScalarType scalar_type
 ) {
-  // return false;
   return ((exec_aten::string_view(operator_name).compare("where.self_out") == 0)
         && (scalar_type == exec_aten::ScalarType::Float))
         || ((exec_aten::string_view(operator_name).compare("add.out") == 0)
         && (scalar_type == exec_aten::ScalarType::Float))
         || ((exec_aten::string_view(operator_name).compare("mul.out") == 0)
+        && (scalar_type == exec_aten::ScalarType::Float))
+        || ((exec_aten::string_view(operator_name).compare("mm.out") == 0)
         && (scalar_type == exec_aten::ScalarType::Float));
 }
 
@@ -612,20 +613,12 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
 // by ExecuTorch.
 //
 
-// #ifdef ET_INTERNAL_CHECK_SELECTIVE_BUILD
 #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
   case enum_type: {                                           \
     ET_INTERNAL_CHECK_SELECTIVE_BUILD(enum_type);             \
     using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
     return __VA_ARGS__();                                     \
   }
-// #else
-// #define ET_INTERNAL_SWITCH_CASE(enum_type, CTYPE_ALIAS, ...)  \
-//   case enum_type: {                                           \
-//     using CTYPE_ALIAS = ScalarTypeToCppType<enum_type>::type; \
-//     return __VA_ARGS__();                                     \
-//   }
-// #endif
 
 #define ET_INTERNAL_SWITCH(TYPE, CONTEXT, NAME, ...) \
   [&] {                                              \
