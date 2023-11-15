@@ -9,8 +9,8 @@
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 
-#include <map>
 #include <string>
+#include <unordered_map>
 
 #include "HTP/QnnHtpDevice.h"
 namespace torch {
@@ -39,7 +39,8 @@ class HtpInfo {
   size_t m_vtcmSizeinMB;
 };
 
-const std::map<QcomChipset, HtpInfo>& PopulateSocInfoTable();
+HtpInfo GetHtpInfo(const QcomChipset& soc);
+
 } // namespace qnn
 } // namespace executor
 } // namespace torch
