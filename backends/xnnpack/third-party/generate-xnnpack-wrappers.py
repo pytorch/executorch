@@ -50,6 +50,7 @@ WRAPPER_SRC_NAMES = {
     'ALL_NEONBF16_MICROKERNEL_SRCS': "defined(__arm__) || defined(__aarch64__)",
     'ALL_NEONDOT_MICROKERNEL_SRCS': "defined(__arm__) || defined(__aarch64__)",
     'ALL_NEONFMA_MICROKERNEL_SRCS': "defined(__arm__) || defined(__aarch64__)",
+    "PROD_NEONI8MM_MICROKERNEL_SRCS": "defined(__arm__) || defined(__aarch64__)",
     'ALL_NEONFMA_AARCH64_MICROKERNEL_SRCS': "defined(__aarch64__)",
     'ALL_NEONFP16_MICROKERNEL_SRCS':"defined(__arm__) || defined(__aarch64__)",
     'ALL_NEONFP16ARITH_MICROKERNEL_SRCS': "defined(__arm__) || defined(__aarch64__)",
@@ -109,6 +110,7 @@ SRC_NAMES = set([
     "PROD_F16C_MICROKERNEL_SRCS",
     "PROD_AVX512VBMI_MICROKERNEL_SRCS",
     "PROD_NEONFP16ARITH_MICROKERNEL_SRCS",
+    "PROD_NEONI8MM_MICROKERNEL_SRCS",
 
     # new adding libs:
     'ALL_ARMSIMD32_MICROKERNEL_SRCS',

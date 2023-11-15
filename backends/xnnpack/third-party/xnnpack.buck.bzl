@@ -13,6 +13,7 @@ load(
     "AARCH64_ASM_MICROKERNEL_SRCS",
     "ALL_NEONFMA_AARCH64_MICROKERNEL_SRCS",
     "ALL_NEON_AARCH64_MICROKERNEL_SRCS",
+    "PROD_NEONI8MM_MICROKERNEL_SRCS",
     "PROD_AARCH64_NEONFP16ARITH_MICROKERNEL_SRCS",
     "PROD_AVX2_MICROKERNEL_SRCS",
     "PROD_AVX512F_MICROKERNEL_SRCS",
@@ -103,10 +104,66 @@ def define_xnnpack():
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
+        name = "microkernel_configs",
+        srcs = [
+            "XNNPACK/src/configs/argmaxpool-config.c",
+            "XNNPACK/src/configs/avgpool-config.c",
+            "XNNPACK/src/configs/binary-elementwise-config.c",
+            "XNNPACK/src/configs/cmul-config.c",
+            "XNNPACK/src/configs/conv-hwc2chw-config.c",
+            "XNNPACK/src/configs/dwconv-config.c",
+            "XNNPACK/src/configs/dwconv2d-chw-config.c",
+            "XNNPACK/src/configs/gavgpool-config.c",
+            "XNNPACK/src/configs/gavgpool-cw-config.c",
+            "XNNPACK/src/configs/gemm-config.c",
+            "XNNPACK/src/configs/ibilinear-chw-config.c",
+            "XNNPACK/src/configs/ibilinear-config.c",
+            "XNNPACK/src/configs/lut32norm-config.c",
+            "XNNPACK/src/configs/maxpool-config.c",
+            "XNNPACK/src/configs/pavgpool-config.c",
+            "XNNPACK/src/configs/prelu-config.c",
+            "XNNPACK/src/configs/raddstoreexpminusmax-config.c",
+            "XNNPACK/src/configs/reduce-config.c",
+            "XNNPACK/src/configs/rmax-config.c",
+            "XNNPACK/src/configs/spmm-config.c",
+            "XNNPACK/src/configs/transpose-config.c",
+            "XNNPACK/src/configs/unary-elementwise-config.c",
+            "XNNPACK/src/configs/unpool-config.c",
+            "XNNPACK/src/configs/vmulcaddc-config.c",
+            "XNNPACK/src/configs/x8-lut-config.c",
+            "XNNPACK/src/configs/xx-fill-config.c",
+            "XNNPACK/src/configs/xx-pad-config.c",
+            "XNNPACK/src/configs/zip-config.c",
+        ],
+        headers = subdir_glob([
+            ("XNNPACK/src", "**/*.h"),
+            ("XNNPACK/include", "**/*.h")
+        ]),
+        header_namespace = "",
+        compiler_flags = [
+            "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
+        ],
+        preferred_linkage = "static",
+        preprocessor_flags = [
+            "-DXNN_ENABLE_CPUINFO=1",
+            # "-DXNN_ENABLE_JIT=0",
+            "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
+            "-DXNN_ENABLE_GEMM_M_SPECIALIZATION=1",
+            "-DXNN_ENABLE_ARM_I8MM=1",
+            "-DXNN_ENABLE_ARM_DOTPROD",
+        ],
+        exported_deps = [
+            ":interface",
+            ":clog",
+            ":cpuinfo",
+        ],
+    )
+
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
+    native.cxx_library(
         name = "operators",
         srcs = OPERATOR_SRCS + [
             "XNNPACK/src/allocator.c",
-            "XNNPACK/src/binary-elementwise-config.c",
             "XNNPACK/src/cache.c",
             "XNNPACK/src/indirection.c",
             "XNNPACK/src/memory.c",
@@ -135,6 +192,7 @@ def define_xnnpack():
             ":interface",
             ":ukernels_f16c",
             ":cpuinfo",
+            ":microkernel_configs",
         ],
     )
 
@@ -980,6 +1038,48 @@ def define_xnnpack():
         ],
     )
 
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
+    NEON32_I8MM_COMPILER_FLAGS = [
+        "-marm",
+        "-march=armv8.2-a+i8mm+fp16",
+        "-mfpu=neon-fp-armv8",
+    ]
+
+    NEON64_I8MM_COMPILER_FLAGS = [
+        "-march=armv8.2-a+i8mm+fp16"
+    ]
+
+    native.cxx_library(
+        name = "ukernels_neon_i8mm",
+        srcs = select({
+            "DEFAULT": PROD_NEONI8MM_MICROKERNEL_SRCS,
+            "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
+            "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
+        }),
+        headers = subdir_glob([
+            ("XNNPACK/src", "**/*.h"),
+            ("XNNPACK/src", "**/*.c"),
+        ]),
+        header_namespace = "",
+        compiler_flags = [
+            "-O2",
+            "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
+        ] + select({
+            "DEFAULT": NEON64_I8MM_COMPILER_FLAGS,
+            "ovr_config//cpu:arm32": NEON32_I8MM_COMPILER_FLAGS,
+            "ovr_config//cpu:x86_32": [],
+            "ovr_config//cpu:x86_64": [],
+        }),
+        preferred_linkage = "static",
+        preprocessor_flags = [
+            "-DXNN_LOG_LEVEL=0",
+        ],
+        exported_deps = [
+            ":FP16",
+            ":interface",
+        ],
+    )
+
     COMMON_XNNPACK_DEPS = [
         ":operators",
         ":subgraph",
@@ -1013,21 +1113,21 @@ def define_xnnpack():
         ":ukernels_neon_fp16arith_aarch64",
         ":ukernels_neon_dot",
         ":ukernels_neonfma_aarch64",
+        ":ukernels_neon_i8mm",
     ]
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "XNNPACK",
         srcs = [
-            "XNNPACK/src/amalgam/scalar.c",
-            "XNNPACK/src/hardware-config.c",
+            "XNNPACK/src/amalgam/gen/scalar.c",
+            "XNNPACK/src/configs/hardware-config.c",
             "XNNPACK/src/init.c",
             "XNNPACK/src/microparams-init.c",
             "XNNPACK/src/operator-run.c",
             "XNNPACK/src/operators/post-operation.c",
             "XNNPACK/src/params.c",
-            "XNNPACK/src/transpose-config.c",
-            "XNNPACK/src/x8-lut-config.c",
+            "XNNPACK/src/microkernel-utils.c",
         ] + LOGGING_SRCS,
         headers = subdir_glob([
             ("XNNPACK/src", "xnnpack/*.h"),
@@ -1055,9 +1155,13 @@ def define_xnnpack():
             "-DXNN_ENABLE_ASSEMBLY",
             "-DXNN_ENABLE_GEMM_M_SPECIALIZATION",
             "-DXNN_ENABLE_ARM_DOTPROD",
+            "-DXNN_ENABLE_CPUINFO",
+            "-DXNN_ENABLE_DWCONV_MULTIPLASS=1",
+            "-DXNN_ENABLE_ARM_I8MM=1",
         ],
         visibility = ["PUBLIC"],
         exported_deps = [":hot"] + COMMON_XNNPACK_DEPS + [
+            ":microkernel_configs",
             ":pthreadpool",
             ":interface",
             ":cpuinfo",
