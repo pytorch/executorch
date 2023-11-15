@@ -173,6 +173,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                         op.__module__, op.__name__
                     )
                 )
+            if isinstance(op, EdgeOpOverload):
+                self.check_valid_aten_op(op._op)
             if isinstance(op, types.FunctionType):
                 assert op.__name__ in ("alloc",)
 
