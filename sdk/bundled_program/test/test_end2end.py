@@ -27,7 +27,7 @@ from executorch.sdk.bundled_program.serialize import (
 )
 
 from executorch.sdk.bundled_program.util.test_util import (
-    get_common_program,
+    get_common_executorch_program,
     SampleModel,
 )
 
@@ -64,10 +64,10 @@ assert kernel_mode is not None
 
 class BundledProgramE2ETest(unittest.TestCase):
     def test_sample_model_e2e(self):
-        program, method_test_suites = get_common_program()
+        executorch_program, method_test_suites = get_common_executorch_program()
         eager_model = SampleModel()
 
-        bundled_program = create_bundled_program(program, method_test_suites)
+        bundled_program = create_bundled_program(executorch_program, method_test_suites)
 
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
