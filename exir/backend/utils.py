@@ -64,7 +64,9 @@ def is_identical_graph(
     if len(list(graph_left.graph.nodes)) != len(list(graph_right.graph.nodes)):
         return False
     with setting_python_recursive_limit(30000):
-        for node_left, node_right in zip(graph_left.graph.nodes, graph_right.graph.nodes):
+        for node_left, node_right in zip(
+            graph_left.graph.nodes, graph_right.graph.nodes
+        ):
             if not (is_same_node(node_left, node_right)):
                 return False
     return True
