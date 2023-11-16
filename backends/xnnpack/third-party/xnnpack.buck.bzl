@@ -1,45 +1,45 @@
 load("//third-party:glob_defs.bzl", "subdir_glob")
 load(
     ":xnnpack_src_defs.bzl",
+    "JIT_SRCS",
+    "LOGGING_SRCS",
     "OPERATOR_SRCS",
     "SUBGRAPH_SRCS",
-    "LOGGING_SRCS",
-    "XNNPACK_SRCS",
     "TABLE_SRCS",
-    "JIT_SRCS",
+    "XNNPACK_SRCS",
 )
 load(
     ":xnnpack_wrapper_defs.bzl",
-    "PROD_SCALAR_MICROKERNEL_SRCS",
+    "AARCH32_ASM_MICROKERNEL_SRCS",
+    "AARCH64_ASM_MICROKERNEL_SRCS",
     # "PROD_FMA_MICROKERNEL_SRCS", RISC-V not enabled
     "PROD_ARMSIMD32_MICROKERNEL_SRCS",
-    "PROD_FP16ARITH_MICROKERNEL_SRCS",
-    "PROD_NEON_MICROKERNEL_SRCS",
-    "PROD_NEONFP16_MICROKERNEL_SRCS",
-    "PROD_NEONFMA_MICROKERNEL_SRCS",
-    "PROD_NEON_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEONV8_MICROKERNEL_SRCS",
-    "PROD_NEONFP16ARITH_MICROKERNEL_SRCS",
-    "PROD_NEONFP16ARITH_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEONDOT_MICROKERNEL_SRCS",
-    "PROD_NEONDOT_AARCH64_MICROKERNEL_SRCS",
-    "PROD_NEONI8MM_MICROKERNEL_SRCS",
-    "PROD_SSE_MICROKERNEL_SRCS",
-    "PROD_SSE2_MICROKERNEL_SRCS",
-    "PROD_SSSE3_MICROKERNEL_SRCS",
-    "PROD_SSE41_MICROKERNEL_SRCS",
-    "PROD_AVX_MICROKERNEL_SRCS",
-    "PROD_F16C_MICROKERNEL_SRCS",
-    "PROD_XOP_MICROKERNEL_SRCS",
-    "PROD_FMA3_MICROKERNEL_SRCS",
     "PROD_AVX2_MICROKERNEL_SRCS",
     "PROD_AVX512F_MICROKERNEL_SRCS",
     "PROD_AVX512SKX_MICROKERNEL_SRCS",
     "PROD_AVX512VBMI_MICROKERNEL_SRCS",
     "PROD_AVX512VNNI_MICROKERNEL_SRCS",
     "PROD_AVXVNNI_MICROKERNEL_SRCS",
-    "AARCH32_ASM_MICROKERNEL_SRCS",
-    "AARCH64_ASM_MICROKERNEL_SRCS",
+    "PROD_AVX_MICROKERNEL_SRCS",
+    "PROD_F16C_MICROKERNEL_SRCS",
+    "PROD_FMA3_MICROKERNEL_SRCS",
+    "PROD_FP16ARITH_MICROKERNEL_SRCS",
+    "PROD_NEONDOT_AARCH64_MICROKERNEL_SRCS",
+    "PROD_NEONDOT_MICROKERNEL_SRCS",
+    "PROD_NEONFMA_MICROKERNEL_SRCS",
+    "PROD_NEONFP16ARITH_AARCH64_MICROKERNEL_SRCS",
+    "PROD_NEONFP16ARITH_MICROKERNEL_SRCS",
+    "PROD_NEONFP16_MICROKERNEL_SRCS",
+    "PROD_NEONI8MM_MICROKERNEL_SRCS",
+    "PROD_NEONV8_MICROKERNEL_SRCS",
+    "PROD_NEON_AARCH64_MICROKERNEL_SRCS",
+    "PROD_NEON_MICROKERNEL_SRCS",
+    "PROD_SCALAR_MICROKERNEL_SRCS",
+    "PROD_SSE2_MICROKERNEL_SRCS",
+    "PROD_SSE41_MICROKERNEL_SRCS",
+    "PROD_SSE_MICROKERNEL_SRCS",
+    "PROD_SSSE3_MICROKERNEL_SRCS",
+    "PROD_XOP_MICROKERNEL_SRCS",
 )
 
 def define_xnnpack():
@@ -260,7 +260,6 @@ def define_xnnpack():
             "DEFAULT": PROD_FP16ARITH_MICROKERNEL_SRCS,
             "ovr_config//cpu:x86_32": DEFAULT_DUMMY_SRC,
             "ovr_config//cpu:x86_64": DEFAULT_DUMMY_SRC,
-
         }),
         headers = subdir_glob([
             ("XNNPACK/src", "**/*.h"),
@@ -667,8 +666,8 @@ def define_xnnpack():
         name = "ukernels_asm",
         srcs = select({
             "DEFAULT": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm64": AARCH64_ASM_MICROKERNEL_SRCS,
             "ovr_config//cpu:arm32": AARCH32_ASM_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm64": AARCH64_ASM_MICROKERNEL_SRCS,
         }),
         headers = subdir_glob([
             ("XNNPACK/src", "xnnpack/assembly.h"),
@@ -688,7 +687,7 @@ def define_xnnpack():
                     "-marm",
                     "-march=armv8.2-a+dotprod",
                     "-mfpu=neon-fp-armv8",
-                ]
+                ],
             ),
         ],
         compiler_flags = [
@@ -841,7 +840,6 @@ def define_xnnpack():
         "-march=armv8-a",
         "-mfpu=neon-fp-armv8",
     ]
-
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
@@ -1012,7 +1010,7 @@ def define_xnnpack():
     ]
 
     NEON64_I8MM_COMPILER_FLAGS = [
-        "-march=armv8.2-a+i8mm+fp16"
+        "-march=armv8.2-a+i8mm+fp16",
     ]
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
