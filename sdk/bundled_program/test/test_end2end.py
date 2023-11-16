@@ -33,7 +33,6 @@ from executorch.sdk.bundled_program.util.test_util import (
 
 kernel_mode = None  # either aten mode or lean mode
 try:
-    # pyre-ignore[21]
     from executorch.extension.pybindings.portable_lib import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
@@ -46,7 +45,6 @@ except ImportError as e:
     pass
 
 try:
-    # pyre-ignore[21]
     from executorch.extension.pybindings.aten_lib import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
