@@ -371,7 +371,6 @@ class TestEmit(unittest.TestCase):
             return y
 
         def f_2(x: torch.Tensor, mem_format: torch.memory_format) -> torch.Tensor:
-            # pyre-ignore[28] Unexpected keyword argument `memory_format`
             y = x.to(dtype=torch.double, memory_format=mem_format)
             return y
 
