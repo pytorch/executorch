@@ -203,9 +203,7 @@ class TestMPS(unittest.TestCase):
 
         logging.info("  -> Test suites generated successfully")
 
-        bundled_program = create_bundled_program(
-            executorch_program.program, method_test_suites
-        )
+        bundled_program = create_bundled_program(executorch_program, method_test_suites)
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )
