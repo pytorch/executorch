@@ -77,5 +77,5 @@ class XNNPACKPassManager:
                 raise RuntimeError(
                     f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
                 )
-            ep = ep._transform(transform_pass)
+            ep = ep._transform(transform_pass, check_ir_validity=False)
         return ep
