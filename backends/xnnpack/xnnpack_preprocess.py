@@ -39,7 +39,6 @@ from executorch.exir.backend.backend_details import (
 )
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch._export.exported_program import ExportedProgram
-from torch._export.verifier import Verifier
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
 XNN_VALUE_FLAG_EXTERNAL_INPUT = 1
@@ -182,6 +181,7 @@ def generate_node_to_external_map(
                     )
     return node_to_external_map
 
+
 @final
 class XnnpackBackend(BackendDetails):
     @staticmethod
@@ -208,7 +208,9 @@ class XnnpackBackend(BackendDetails):
             ep.equality_constraints,
             copy.deepcopy(ep.module_call_graph),
             ep.example_inputs,
-            verifier=EXIREdgeDialectVerifier(check_edge_ops=False, enable=False, class_only=True),
+            verifier=EXIREdgeDialectVerifier(
+                check_edge_ops=False, enable=False, class_only=True
+            ),
         )
 
         # XNNPACK Delegate Specific Passes
