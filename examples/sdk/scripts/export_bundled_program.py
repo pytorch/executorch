@@ -8,10 +8,15 @@
 
 import argparse
 
-from typing import List
+from typing import List, Union
 
 import torch
-from executorch.exir.schema import Program
+
+from executorch.exir import (
+    ExecutorchProgram,
+    ExecutorchProgramManager,
+    MultiMethodExecutorchProgram,
+)
 from executorch.sdk.bundled_program.config import (
     MethodInputType,
     MethodTestCase,
@@ -28,7 +33,11 @@ from ...portable.utils import export_to_exec_prog
 
 
 def save_bundled_program(
-    program: Program,
+    executorch_program: Union[
+        ExecutorchProgram,
+        MultiMethodExecutorchProgram,
+        ExecutorchProgramManager,
+    ],
     method_test_suites: List[MethodTestSuite],
     output_path: str,
 ):
@@ -41,7 +50,7 @@ def save_bundled_program(
         output_path: Path to save the bundled program.
     """
 
-    bundled_program = create_bundled_program(program, method_test_suites)
+    bundled_program = create_bundled_program(executorch_program, method_test_suites)
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
         bundled_program
     )
@@ -70,10 +79,12 @@ def export_to_bundled_program(
     print("Exporting ET program...")
 
     # pyre-ignore[6]
-    program = export_to_exec_prog(model, example_inputs).executorch_program
+    executorch_program = export_to_exec_prog(model, example_inputs)
 
     print("Creating bundled test cases...")
-    method_names = [method.name for method in program.execution_plan]
+    method_names = [
+        method.name for method in executorch_program.executorch_program.execution_plan
+    ]
 
     # A model could have multiple entry point methods and each of them can have multiple inputs bundled for testing.
     # This example demonstrates a model which has multiple entry point methods, whose name listed in method_names, to which we want
@@ -106,7 +117,9 @@ def export_to_bundled_program(
             )
         )
 
-    save_bundled_program(program, method_test_suites, f"{model_name}_bundled.bpte")
+    save_bundled_program(
+        executorch_program, method_test_suites, f"{model_name}_bundled.bpte"
+    )
 
 
 def main() -> None:

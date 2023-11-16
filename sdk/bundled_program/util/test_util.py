@@ -11,8 +11,7 @@ from typing import List, Tuple
 
 import torch
 
-from executorch.exir import to_edge
-from executorch.exir.schema import Program
+from executorch.exir import ExecutorchProgramManager, to_edge
 from executorch.sdk.bundled_program.config import (
     MethodInputType,
     MethodOutputType,
@@ -229,7 +228,9 @@ def get_random_test_suites_with_eager_model(
     return inputs_per_program, method_test_suites
 
 
-def get_common_program() -> Tuple[Program, List[MethodTestSuite]]:
+def get_common_executorch_program() -> Tuple[
+    ExecutorchProgramManager, List[MethodTestSuite]
+]:
     """Helper function to generate a sample BundledProgram with its config."""
     eager_model = SampleModel()
     # Trace to FX Graph.
@@ -248,7 +249,7 @@ def get_common_program() -> Tuple[Program, List[MethodTestSuite]]:
         for m_name in eager_model.method_names
     }
 
-    program = to_edge(method_graphs).to_executorch().executorch_program
+    executorch_program = to_edge(method_graphs).to_executorch()
 
     _, method_test_suites = get_random_test_suites_with_eager_model(
         eager_model=eager_model,
@@ -258,4 +259,4 @@ def get_common_program() -> Tuple[Program, List[MethodTestSuite]]:
         dtype=torch.int32,
         n_sets_per_plan_test=10,
     )
-    return program, method_test_suites
+    return executorch_program, method_test_suites

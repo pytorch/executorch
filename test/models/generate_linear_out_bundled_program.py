@@ -48,13 +48,10 @@ def main() -> None:
         )
     )
     # Emit in-memory representation.
-    program = exec_prog.program
-
-    # Emit in-memory representation.
-    pretty_print(program)
+    pretty_print(exec_prog.program)
 
     # Serialize to flatbuffer.
-    program.version = 0
+    exec_prog.program.version = 0
 
     # Create test sets
     method_test_cases: List[MethodTestCase] = []
@@ -67,7 +64,7 @@ def main() -> None:
         MethodTestSuite(method_name="forward", test_cases=method_test_cases)
     ]
 
-    bundled_program = create_bundled_program(program, method_test_suites)
+    bundled_program = create_bundled_program(exec_prog, method_test_suites)
     pretty_print(bundled_program)
 
     bundled_program_flatbuffer = serialize_from_bundled_program_to_flatbuffer(
