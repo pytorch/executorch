@@ -209,6 +209,7 @@ def define_xnnpack():
         "-munaligned-access",
     ]
 
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_armsimd32",
         srcs = select({
@@ -252,6 +253,7 @@ def define_xnnpack():
         "-ffinite-math-only",
     ]
 
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_fp16arith",
         srcs = select({
@@ -1013,6 +1015,7 @@ def define_xnnpack():
         "-march=armv8.2-a+i8mm+fp16"
     ]
 
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_neon_i8mm",
         srcs = select({
@@ -1053,6 +1056,7 @@ def define_xnnpack():
         "-mavx512vnni",
     ]
 
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_avx512vnni",
         srcs = select({
@@ -1087,6 +1091,7 @@ def define_xnnpack():
         "-mavxvnni",
     ]
 
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     native.cxx_library(
         name = "ukernels_avxvnni",
         srcs = select({
