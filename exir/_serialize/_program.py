@@ -10,6 +10,8 @@ import copy
 import json
 import re
 
+import ctypes
+
 from dataclasses import dataclass
 from typing import ClassVar, List, Literal, Optional, Tuple
 
@@ -343,14 +345,14 @@ def _extract_segments(
     # Fill in constant_buffer
     new_constant_buffer: List[Buffer] = []
     # add header, add segment offset
-    header_val: int = 42
-    new_constant_buffer.append(Buffer(storage=header_val.to_bytes(4, 'big')))
-    print(f"_serialize.py/_program.py: header bytes: {header_val.to_bytes(4, 'big')}")
-    new_constant_buffer.append(Buffer(storage=constant_segment_offset.to_bytes(4, 'big')))
+    header_val = ctypes.c_uint8(42)
+    new_constant_buffer.append(Buffer(storage=bytes(header_val)))
+    new_constant_buffer.append(Buffer(storage=bytes(ctypes.c_uint8(constant_segment_offset))))
 
     constants_ : Buffer = b''
-    current_offset = 0
+    current_offset : int = 0
     for buffer in program.constant_buffer:
+        print(f"_serialize/_program.py 1: current_offset {current_offset}")
         # constants_ += buffer.storage
         # alignment
         buffer_length = len(buffer.storage)
@@ -359,13 +361,10 @@ def _extract_segments(
         constants_ += buffer.storage
         constants_ += b'\x00' * pad_length
         # indexing data
-        new_constant_buffer.append(Buffer(storage=current_offset.to_bytes(4, 'big')))
-        new_constant_buffer.append(Buffer(storage=(buffer_length + pad_length).to_bytes(4, 'big')))
-
-        current_offset += buffer_length + pad_length
-        print(f"_serialize/_program.py: buffer_length {buffer_length}, pad_length {pad_length}, current_offset {current_offset}")
-
-    print(f"_serialize/_program.py: constants_ {constants_}")
+        new_constant_buffer.append(Buffer(storage=bytes(ctypes.c_uint8(current_offset))))
+        new_constant_buffer.append(Buffer(storage=bytes(ctypes.c_uint8(buffer_length + pad_length))))
+        current_offset = current_offset + buffer_length + pad_length
+        print(f"_serialize/_program.py 2: buffer_length {buffer_length}, pad_length {pad_length}, current_offset {current_offset}")
     # add constant buffer to segments list
     program.segments.append(
         DataSegment(
