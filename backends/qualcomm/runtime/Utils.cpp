@@ -13,6 +13,11 @@ namespace executor {
 namespace qnn {
 const std::unordered_map<QcomChipset, HtpInfo>& PopulateSocInfoTable() {
   static const std::unordered_map<QcomChipset, HtpInfo> soc_info_map{
+      {QcomChipset::SM8650,
+       {QcomChipset::SM8650,
+        QnnHtpDevice_Arch_t::QNN_HTP_DEVICE_ARCH_V75,
+        "SM8650",
+        8}},
       {QcomChipset::SM8550,
        {QcomChipset::SM8550,
         QnnHtpDevice_Arch_t::QNN_HTP_DEVICE_ARCH_V73,

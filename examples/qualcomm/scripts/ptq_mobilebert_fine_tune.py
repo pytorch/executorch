@@ -5,7 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import json
 import os
+from multiprocessing.connection import Client
 
 import numpy as np
 
@@ -42,10 +44,13 @@ def accuracy_per_class(preds, goldens, labels):
     preds_flat = np.argmax(preds, axis=1).flatten()
     goldens_flat = goldens.flatten()
 
+    result = {}
     for golden in np.unique(goldens_flat):
         pred = preds_flat[goldens_flat == golden]
         true = goldens_flat[goldens_flat == golden]
-        print(f"{labels_inverse[golden]}: " f"{len(pred[pred == golden])}/{len(true)}")
+        result.update({labels_inverse[golden]: [len(pred[pred == golden]), len(true)]})
+
+    return result
 
 
 def get_dataset(data_val):
@@ -61,7 +66,7 @@ def get_dataset(data_val):
     return inputs, input_list
 
 
-def get_fine_tuned_mobilebert(artifacts_dir):
+def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight):
     from io import BytesIO
 
     import pandas as pd
@@ -160,33 +165,38 @@ def get_fine_tuned_mobilebert(artifacts_dir):
         optimizer, num_warmup_steps=0, num_training_steps=len(dataloader_train) * epochs
     )
 
-    # start training
-    for epoch in range(1, epochs + 1):
-        loss_train_total = 0
-        print(f"epoch {epoch}")
+    if not pretrained_weight:
+        # start training
+        for epoch in range(1, epochs + 1):
+            loss_train_total = 0
+            print(f"epoch {epoch}")
 
-        for batch in tqdm(dataloader_train):
-            model.zero_grad()
-            inputs = {
-                "input_ids": batch[0],
-                "attention_mask": batch[1],
-                "labels": batch[2],
-            }
-            loss = model(**inputs)[0]
-            loss_train_total += loss.item()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
-            scheduler.step()
+            for batch in tqdm(dataloader_train):
+                model.zero_grad()
+                inputs = {
+                    "input_ids": batch[0],
+                    "attention_mask": batch[1],
+                    "labels": batch[2],
+                }
+                loss = model(**inputs)[0]
+                loss_train_total += loss.item()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                scheduler.step()
 
-        torch.save(
-            model.state_dict(),
-            f"{artifacts_dir}/finetuned_mobilebert_epoch_{epoch}.model",
-        )
+            torch.save(
+                model.state_dict(),
+                f"{artifacts_dir}/finetuned_mobilebert_epoch_{epoch}.model",
+            )
 
     model.load_state_dict(
         torch.load(
-            f"{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model",
+            (
+                f"{artifacts_dir}/finetuned_mobilebert_epoch_{epochs}.model"
+                if pretrained_weight is None
+                else pretrained_weight
+            ),
             map_location=torch.device("cpu"),
         ),
     )
@@ -238,6 +248,25 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help="Location of pretrained weight",
+        default="",
+        type=str,
+    )
+    parser.add_argument(
+        "--ip",
+        help="IPC address for delivering execution result",
+        default="",
+        type=str,
+    )
+    parser.add_argument(
+        "--port",
+        help="IPC port for delivering execution result",
+        default=-1,
+        type=int,
+    )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
     # So maybe it's fine to just use the environment.
@@ -259,7 +288,9 @@ if __name__ == "__main__":
     os.makedirs(args.artifact, exist_ok=True)
 
     pte_filename = "ptq_mb_qnn"
-    model, data_val, batch_size, labels = get_fine_tuned_mobilebert(args.artifact)
+    model, data_val, batch_size, labels = get_fine_tuned_mobilebert(
+        args.artifact, args.pretrained_weight
+    )
     inputs, input_list = get_dataset(data_val)
 
     build_executorch_binary(
@@ -298,8 +329,7 @@ if __name__ == "__main__":
 
     # get torch cpu result
     cpu_preds, true_vals = evaluate(model, data_val)
-    print("\nPyTorch CPU:")
-    accuracy_per_class(cpu_preds, true_vals, labels)
+    cpu_result = accuracy_per_class(cpu_preds, true_vals, labels)
 
     # get QNN HTP result
     htp_preds = []
@@ -310,5 +340,15 @@ if __name__ == "__main__":
         )
         htp_preds.append(result.reshape(batch_size, -1))
 
-    print("\nQNN HTP:")
-    accuracy_per_class(np.concatenate(htp_preds, axis=0), true_vals, labels)
+    htp_result = accuracy_per_class(
+        np.concatenate(htp_preds, axis=0), true_vals, labels
+    )
+
+    if args.ip and args.port != -1:
+        with Client((args.ip, args.port)) as conn:
+            conn.send(json.dumps({"CPU": cpu_result, "HTP": htp_result}))
+    else:
+        for target in zip(["CPU", "HTP"], [cpu_result, htp_result]):
+            print(f"\n[{target[0]}]")
+            for k, v in target[1].items():
+                print(f"{k}: {v[0]}/{v[1]}")
