@@ -243,6 +243,13 @@ class TestXNNPACKQuantized(TestXNNPACK):
             example_inputs,
         )
 
+        self.quantize_and_test_model_with_quantizer(
+            linear,
+            example_inputs,
+            use_reference_representation=True,
+        )
+
+
     def test_xnnpack_multiuse_qconv(self):
         class ReusedInput(torch.nn.Module):
             def __init__(self):
