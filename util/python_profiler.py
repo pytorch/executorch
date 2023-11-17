@@ -1,8 +1,8 @@
 import cProfile, io, pstats
 import logging
 import os
-from pstats import Stats
 import re
+from pstats import Stats
 
 from snakeviz.stats import json_stats, table_rows
 from tornado import template
@@ -15,6 +15,7 @@ except ImportError:
 
 snakeviz_dir = os.path.dirname(os.path.abspath(snakeviz.__file__))
 snakeviz_templates_dir = os.path.join(snakeviz_dir, "templates")
+
 
 def _from_pstat_to_static_html(stats: Stats, html_filename: str):
     """
@@ -55,6 +56,7 @@ def _from_pstat_to_static_html(stats: Stats, html_filename: str):
     html_string = re.sub(RESTR, REPLACE_WITH, html_string)
     with open(html_filename, "w") as f:
         f.write(html_string)
+
 
 class CProfilerFlameGraph:
     def __init__(self, filename: str):
