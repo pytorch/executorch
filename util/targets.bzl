@@ -39,7 +39,7 @@ def define_common_targets():
             ],
         )
 
-    if not runtime.is_oss and is_fbcode:
+    if not runtime.is_oss:
       runtime.python_library(
           name = "python_profiler",
           srcs = [
