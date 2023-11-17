@@ -975,7 +975,6 @@ Error Method::execute_instruction() {
       bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
       if (!jf_result) {
         next_instr_idx = jf_call->destination_instruction();
-        // return Error::Ok;
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
@@ -998,6 +997,10 @@ Error Method::execute_instruction() {
           false,
           "Instruction is not supported. %hhu",
           static_cast<uint8_t>(instruction->instr_args_type()));
+  }
+  // Reset the temp allocator for every instruction.
+  if (memory_manager_->temp_allocator() != nullptr) {
+    memory_manager_->temp_allocator()->reset();
   }
   if (err == Error::Ok) {
     step_state_.instr_idx = next_instr_idx;
