@@ -40,13 +40,13 @@ def define_common_targets():
         )
 
     if not runtime.is_oss:
-      runtime.python_library(
-          name = "python_profiler",
-          srcs = [
-              "python_profiler.py",
-          ],
-          deps = [
-              "fbsource//third-party/pypi/snakeviz:snakeviz",
-              "fbsource//third-party/pypi/tornado:tornado",
-          ],
-      )
+        runtime.python_library(
+            name = "python_profiler",
+            srcs = [
+                "python_profiler.py",
+            ],
+            deps = [
+                "fbsource//third-party/pypi/snakeviz:snakeviz",
+                "fbsource//third-party/pypi/tornado:tornado",
+            ],
+        )
