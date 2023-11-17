@@ -1,18 +1,6 @@
 # Any targets that should be shared between fbcode and xplat must be defined in
 # targets.bzl. This file can contain xplat-only targets.
 
-load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load(":targets.bzl", "define_common_targets")
-
-python_library(
-    name = "python_profiler",
-    srcs = [
-        "python_profiler.py",
-    ],
-    deps = [
-        "fbsource//third-party/pypi/snakeviz:snakeviz",
-        "fbsource//third-party/pypi/tornado:tornado",
-    ],
-)
 
 define_common_targets()
