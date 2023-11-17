@@ -5,6 +5,8 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/extension/pybindings:pybindings.bzl", "ATEN_MODULE_DEPS", "MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB", "MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB", "PORTABLE_MODULE_DEPS", "executorch_pybindings")
 
+oncall("executorch")
+
 # Export this so the internal fb/ subdir can create pybindings with custom internal deps
 # without forking the pybinding source.
 runtime.export_file(

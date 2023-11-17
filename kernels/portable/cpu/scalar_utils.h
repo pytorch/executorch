@@ -12,6 +12,7 @@
 #include <cmath>
 #include <limits>
 
+#include <executorch/kernels/portable/cpu/selective_build.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/portable_type/scalar.h>

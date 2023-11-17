@@ -67,31 +67,35 @@ def gen_graphs_from_etrecord(
     return op_graph_map
 
 
-# TODO: use anonymous function to avoid passing the dict around
-# and move this inside of the OperatorGraphWithStats class
 def create_debug_handle_to_op_node_mapping(
     op_graph: OperatorGraph,
-    debug_handle_to_op_node_map: Dict[int, OperatorNode],
-) -> None:
+) -> Dict[int, OperatorNode]:
     """
     Recursive function to traverse all the operator graph nodes of input op_graph and build a mapping
     from each debug handle to the operator node that contains the debug handle in its metadata.
     """
+    debug_handle_to_op_node_map: Dict[int, OperatorNode] = {}
+
     # Recursively searches through the metadata of nodes
-    for element in op_graph.elements:
-        if isinstance(element, OperatorGraph):
-            create_debug_handle_to_op_node_mapping(element, debug_handle_to_op_node_map)
-        if isinstance(element, OperatorNode) and element.metadata is not None:
-            metadata = element.metadata
-            debug_handle = metadata.get("debug_handle")
-            if debug_handle is not None:
-                existing_entry = debug_handle_to_op_node_map.get(debug_handle)
-                if existing_entry is not None:
-                    raise ValueError(
-                        f"Duplicated debug handle {str(debug_handle)} shared between {element.name} and {existing_entry.name}. "
-                        "No two op nodes of the same graph should have the same debug handle."
-                    )
-                debug_handle_to_op_node_map[debug_handle] = element
+    def _extract_debug_handles(graph: OperatorGraph):
+        for element in op_graph.elements:
+            if isinstance(element, OperatorGraph):
+                _extract_debug_handles(element)
+            if isinstance(element, OperatorNode) and element.metadata is not None:
+                metadata = element.metadata
+                debug_handle = metadata.get("debug_handle")
+                if debug_handle is not None:
+                    existing_entry = debug_handle_to_op_node_map.get(debug_handle)
+                    if existing_entry is not None:
+                        raise ValueError(
+                            f"Duplicated debug handle {str(debug_handle)} shared between {element.name} and {existing_entry.name}. "
+                            "No two op nodes of the same graph should have the same debug handle."
+                        )
+                    debug_handle_to_op_node_map[debug_handle] = element
+
+    # Start traversing
+    _extract_debug_handles(op_graph)
+    return debug_handle_to_op_node_map
 
 
 def gen_etdump_object(etdump_path: Optional[str] = None) -> ETDumpFlatCC:

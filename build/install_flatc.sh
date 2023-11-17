@@ -68,7 +68,7 @@ main() {
         # Build the tool if not already built.
         echo "Building flatc under ${FLATBUFFERS_PATH}..."
         # Generate cache.
-        (rm -rf "${BUILD_DIR}" && mkdir "${BUILD_DIR}" && cd "${BUILD_DIR}" && cmake ..)
+        (rm -rf "${BUILD_DIR}" && mkdir "${BUILD_DIR}" && cd "${BUILD_DIR}" && cmake -DCMAKE_BUILD_TYPE=Release ..)
         # Build.
         (cd "${FLATBUFFERS_PATH}" && cmake --build "${BUILD_DIR}" --target flatc -j9)
 

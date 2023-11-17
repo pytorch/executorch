@@ -397,7 +397,6 @@ class NodeVisitor:
                 dims=((1, 0) + tuple(range(2, const_val.dim())))
             ).contiguous()
         if convert_to_nhwc:
-            # pyre-ignore[28] Unexpected keyword argument `memory_format`
             const_val = const_val.to(memory_format=torch.channels_last)
 
         array_type = ctypes.c_char * const_val.untyped_storage().nbytes()

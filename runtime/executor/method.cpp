@@ -905,6 +905,8 @@ Error Method::execute_instruction() {
       (size_t)instructions->size());
 
   auto instruction = instructions->Get(step_state_.instr_idx);
+  size_t next_instr_idx = step_state_.instr_idx + 1;
+  Error err = Error::Ok;
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
@@ -915,7 +917,7 @@ Error Method::execute_instruction() {
       KernelRuntimeContext context(event_tracer_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
-      Error err = context.failure_state();
+      err = context.failure_state();
       if (err != Error::Ok) {
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
         auto op = serialization_plan_->operators()->Get(op_index);
@@ -937,7 +939,6 @@ Error Method::execute_instruction() {
         // TODO(T153804650): Consider logging the EValues to help with
         // debugging. This is a failure path, and it doesn't matter if it's a
         // little slow. Do the same for DelegateCall errors.
-        return err;
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
@@ -955,7 +956,7 @@ Error Method::execute_instruction() {
           n_delegate_,
           step_state_.instr_idx);
       BackendExecutionContext backend_execution_context(event_tracer_);
-      Error err = delegates_[delegate_idx].Execute(
+      err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
       if (err != Error::Ok) {
@@ -964,7 +965,6 @@ Error Method::execute_instruction() {
             "CALL_DELEGATE execute failed at instruction %zu: 0x%" PRIx32,
             step_state_.instr_idx,
             static_cast<uint32_t>(err));
-        return err;
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
@@ -974,8 +974,8 @@ Error Method::execute_instruction() {
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
       bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
       if (!jf_result) {
-        step_state_.instr_idx = jf_call->destination_instruction();
-        return Error::Ok;
+        next_instr_idx = jf_call->destination_instruction();
+        // return Error::Ok;
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
@@ -999,8 +999,10 @@ Error Method::execute_instruction() {
           "Instruction is not supported. %hhu",
           static_cast<uint8_t>(instruction->instr_args_type()));
   }
-  step_state_.instr_idx += 1;
-  return Error::Ok;
+  if (err == Error::Ok) {
+    step_state_.instr_idx = next_instr_idx;
+  }
+  return err;
 }
 
 Error Method::experimental_reset_execution() {

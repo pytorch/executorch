@@ -1,7 +1,9 @@
-import cProfile, io, pstats
+import cProfile
+import io
 import logging
 import os
 import re
+import pstats
 from pstats import Stats
 
 from snakeviz.stats import json_stats, table_rows

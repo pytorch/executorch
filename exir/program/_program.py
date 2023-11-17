@@ -689,7 +689,7 @@ def to_edge(
     compile_config: Optional[EdgeCompileConfig] = None,
 ) -> "EdgeProgramManager":
     """
-    :func:`to_edge` constructs an EdgeProgramManger from a set of exported programs in
+    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
     ATen dialect. Upon construction those programs are transformed into edge dialect.
 
     Args:
@@ -763,21 +763,14 @@ def to_edge(
         passes = []
         passes.extend(aten_to_edge_passes.passes[-2:])
         edge_program = edge_program._transform(*passes)
-        try:
-            EXIREdgeDialectVerifier(
-                check_edge_ops=config._use_edge_ops, enable=config._check_ir_validity
-            )(edge_program.graph_module)
-        except ExportError as e:
-            logging.info(f"Resultant program {name} is not in edge dialect.")
-            raise e
         edge_programs[name] = edge_program
-    return EdgeProgramManager(edge_programs, constant_methods)
+    return EdgeProgramManager(edge_programs, constant_methods, config)
 
 
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch.
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
@@ -785,22 +778,24 @@ class EdgeProgramManager:
     Manages the second link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
-    # TODO(T163717152): Link to Edge dialect docs here ^.
-
     def __init__(
         self,
         edge_programs: Dict[str, ExportedProgram],
         constant_methods: Optional[Dict[str, Any]] = None,
+        compile_config: Optional[EdgeCompileConfig] = None,
     ):
         """
         Should not be called directly by users. User should use :func:'to_edge' instead.
 
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
-
+        config = compile_config or EdgeCompileConfig()
         for name, program in edge_programs.items():
             try:
-                EXIREdgeDialectVerifier()(program.graph_module)
+                EXIREdgeDialectVerifier(
+                    check_edge_ops=config._use_edge_ops,
+                    enable=config._check_ir_validity,
+                )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
@@ -831,6 +826,8 @@ class EdgeProgramManager:
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
+        check_ir_validity: bool = True,
+        # We should also probably add check_edge_ops here as well
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -852,14 +849,18 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = program._transform(*passes[name])
-                    EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+                    EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                        new_programs[name].graph_module
+                    )
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = program._transform(*passes)
-                EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+                EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                    new_programs[name].graph_module
+                )
 
         return EdgeProgramManager(
             new_programs,
@@ -942,8 +943,8 @@ class EdgeProgramManager:
 
 class ExecutorchProgramManager:
     """
-    Package of one or more :class:'ExportedPrograms' in Execution dialect. Designed to simplify
-    lowering to ExecuTorch.
+    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
@@ -951,8 +952,6 @@ class ExecutorchProgramManager:
 
     Manages the final link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
-
-    # TODO(T163717152): Link to Execution dialect docs here ^.
 
     def __init__(
         self,
@@ -962,7 +961,7 @@ class ExecutorchProgramManager:
     ):
         """
         End users should not call this constructor directly. Instead, they should use
-        :func:'to_executorch' to construct an ExecutorchProgramManger.
+        :func:'to_executorch' to construct an ExecutorchProgramManager.
 
         Constructs an ExecutorchProgramManager from a set of exported programs in
         execution dialect.

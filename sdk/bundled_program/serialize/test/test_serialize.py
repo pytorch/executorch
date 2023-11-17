@@ -8,32 +8,28 @@
 
 import unittest
 
-from executorch.exir.print_program import pretty_print
-
 from executorch.sdk.bundled_program.core import create_bundled_program
 
 from executorch.sdk.bundled_program.serialize import (
     deserialize_from_flatbuffer_to_bundled_program,
     serialize_from_bundled_program_to_flatbuffer,
 )
-from executorch.sdk.bundled_program.util.test_util import get_common_program
+from executorch.sdk.bundled_program.util.test_util import get_common_executorch_program
 
 
 class TestSerialize(unittest.TestCase):
     def test_bundled_program_serialization(self) -> None:
-        program, method_test_suites = get_common_program()
+        executorch_program, method_test_suites = get_common_executorch_program()
 
-        bundled_program = create_bundled_program(program, method_test_suites)
-        pretty_print(bundled_program)
+        bundled_program = create_bundled_program(executorch_program, method_test_suites)
         flat_buffer_bundled_program = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )
-        regenerate_bundled_program = deserialize_from_flatbuffer_to_bundled_program(
-            flat_buffer_bundled_program
+        regenerate_bundled_program_in_schema = (
+            deserialize_from_flatbuffer_to_bundled_program(flat_buffer_bundled_program)
         )
-        pretty_print(regenerate_bundled_program)
         self.assertEqual(
-            bundled_program,
-            regenerate_bundled_program,
+            bundled_program._bundled_program,
+            regenerate_bundled_program_in_schema,
             "Regenerated bundled program mismatches original one",
         )

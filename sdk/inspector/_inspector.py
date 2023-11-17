@@ -25,7 +25,7 @@ import pandas as pd
 import torch
 from executorch.exir import ExportedProgram
 
-from executorch.sdk.debug_format.et_schema import OperatorNode
+from executorch.sdk.debug_format.et_schema import OperatorGraph, OperatorNode
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 from executorch.sdk.etrecord import ETRecord, parse_etrecord
 from executorch.sdk.inspector._inspector_utils import (
@@ -450,11 +450,29 @@ class Inspector:
             etdump, self._source_time_scale, self._target_time_scale
         )
 
-        # No additional data association can be done without ETRecord, so return early
+        # Connect ETRecord to EventBlocks
+        self.op_graph_dict: Optional[Mapping[str, OperatorGraph]] = None
+        self._consume_etrecord()
+
+    def _consume_etrecord(self) -> None:
+        """
+        If an ETRecord is provided, connect it to the EventBlocks and populate the Event metadata.
+
+        Steps:
+            1. Debug Handle Symbolification:
+                For each Event, find the debug_handle counterparts using
+                ETRecord's debug_handle_map and delegate_map
+
+            2. Event Metadata Association:
+                For each Event, populate its metadata from OperatorGraph Nodes,
+                generated from ETRecord. The debug_handle is used to
+                identify the corresponding OperatorGraph Nodes.
+        """
+
         if self._etrecord is None:
             return
 
-        # Use the delegate map from etrecord, associate debug handles with each event
+        # (1) Debug Handle Symbolification
         for event_block in self.event_blocks:
             event_block._gen_resolve_debug_handles(
                 self._etrecord._debug_handle_map[FORWARD],
@@ -463,15 +481,11 @@ class Inspector:
                 else None,
             )
 
-        # Traverse the edge dialect op graph to create mapping from debug_handle to op node
-        # The attribute op_graph_dict exists only to be used by the visualization tool and is not intended to be accessed for any other reasons
+        # (2) Event Metadata Association
         self.op_graph_dict = gen_graphs_from_etrecord(etrecord=self._etrecord)
-        debug_handle_to_op_node_map = {}
-        create_debug_handle_to_op_node_mapping(
+        debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(
             self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
-            debug_handle_to_op_node_map,
         )
-
         for event_block in self.event_blocks:
             for event in event_block.events:
                 event._associate_with_op_graph_nodes(

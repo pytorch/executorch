@@ -462,23 +462,25 @@ struct PyModule final {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     Error status = bundled_program::LoadBundledInput(
         module_->get_method(method_name), bundled_program_ptr, testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "LoadBundledInput failed with status %" PRIu32,
-        status);
+    THROW_IF_ERROR(
+        status, "LoadBundledInput failed with status %" PRIu32, status);
   }
 
   void verify_result_with_bundled_expected_output(
       PyBundledModule& m,
       const string method_name,
-      size_t testset_idx) {
+      size_t testset_idx,
+      double rtol = 1e-5,
+      double atol = 1e-8) {
     const void* bundled_program_ptr = m.get_bundled_program_ptr();
     Error status = bundled_program::VerifyResultWithBundledExpectedOutput(
-        module_->get_method(method_name), bundled_program_ptr, testset_idx);
-    ET_CHECK_MSG(
-        status == Error::Ok,
-        "Result verification failed with status %" PRIu32,
-        status);
+        module_->get_method(method_name),
+        bundled_program_ptr,
+        testset_idx,
+        rtol,
+        atol);
+    THROW_IF_ERROR(
+        status, "Result verification failed with status %" PRIu32, status);
   }
 
   void plan_execute(const string method_name) {
@@ -528,7 +530,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def("load_bundled_input", &PyModule::load_bundled_input)
       .def(
           "verify_result_with_bundled_expected_output",
-          &PyModule::verify_result_with_bundled_expected_output)
+          &PyModule::verify_result_with_bundled_expected_output,
+          py::arg("bundle"),
+          py::arg("method_name"),
+          py::arg("testset_idx"),
+          py::arg("rtol") = 1e-5,
+          py::arg("atol") = 1e-8)
       .def("plan_execute", &PyModule::plan_execute)
       .def("run_method", &PyModule::run_method)
       .def("forward", &PyModule::forward);
