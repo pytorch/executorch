@@ -141,7 +141,7 @@ class Quantize(Stage):
     ) -> None:
         captured_graph = export.capture_pre_autograd_graph(artifact, inputs)
         prepared = prepare_pt2e(captured_graph, self.quantizer)
-        converted = convert_pt2e(prepared)
+        converted = convert_pt2e(prepared, fold_quantize=True)
         self.converted_graph = converted
 
     @property
