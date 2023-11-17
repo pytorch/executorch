@@ -861,10 +861,9 @@ class EdgeProgramManager:
                 EXIREdgeDialectVerifier(enable=check_ir_validity)(
                     new_programs[name].graph_module
                 )
-
+        config = EdgeCompileConfig(_check_ir_validity=check_ir_validity)
         return EdgeProgramManager(
-            new_programs,
-            copy.deepcopy(self._config_methods),
+            new_programs, copy.deepcopy(self._config_methods), config
         )
 
     def to_backend(
@@ -905,8 +904,9 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 new_edge_programs[name] = to_backend(program, partitioner)
 
+        config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
-            new_edge_programs, copy.deepcopy(self._config_methods)
+            new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
     def to_executorch(
