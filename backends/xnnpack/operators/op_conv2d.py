@@ -7,6 +7,7 @@
 from typing import cast, Dict, List
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -56,10 +57,11 @@ class Conv2d(NodeVisitor):
         )  # NHWC input
         kwargs["input1_id"] = vals_to_ids[get_input_node(node, 0)]
 
-        kernel = get_input_node(node, 1).meta["val"]
+        kernel_node = get_input_node(node, 1)
+        kernel_shape = get_shape(kernel_node)
         groups = cast(int, node.args[8])
-        group_input_channels = kernel.shape[1]
-        group_output_channels = int(kernel.shape[0] / groups)
+        group_input_channels = kernel_shape[1]
+        group_output_channels = int(kernel_shape[0] / groups)
 
         # XNNPACK expects the kernel's N and C dimensions to be swapped for
         # Depthwise Convolution, which occurs under the following conditions:
@@ -143,8 +145,8 @@ class Conv2d(NodeVisitor):
         kwargs["padding_right"] = padding[1]
         kwargs["padding_bottom"] = padding[0]
         kwargs["padding_left"] = padding[1]
-        kwargs["kernel_height"] = kernel.shape[2]
-        kwargs["kernel_width"] = kernel.shape[3]
+        kwargs["kernel_height"] = kernel_shape[2]
+        kwargs["kernel_width"] = kernel_shape[3]
         kwargs["subsampling_height"] = stride[0]
         kwargs["subsampling_width"] = stride[1]
         kwargs["dilation_height"] = dilation[0]
