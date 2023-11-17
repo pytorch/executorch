@@ -7,7 +7,7 @@ load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+define_common_targets(is_fbcode = True)
 
 python_unittest(
     name = "gen_supported_features_test",

@@ -12,12 +12,14 @@ import json
 import os
 import tempfile
 
+import executorch.sdk.bundled_program.schema as bp_schema
+
 # @manual=fbsource//third-party/pypi/setuptools:setuptools
 import pkg_resources
 
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import _flatc_compile, _flatc_decompile
-from executorch.sdk.bundled_program.schema import BundledProgram
+from executorch.sdk.bundled_program.core import BundledProgram
 
 # The prefix of schema files used for bundled program
 BUNDLED_PROGRAM_SCHEMA_NAME = "bundled_program_schema"
@@ -33,13 +35,14 @@ def write_schema(d: str, schema_name: str) -> None:
 
 
 def serialize_from_bundled_program_to_json(bundled_program: BundledProgram) -> str:
-    return json.dumps(bundled_program, cls=_DataclassEncoder)
+    return json.dumps(bundled_program._bundled_program, cls=_DataclassEncoder)
 
 
-# from json to Bundled Program
-def deserialize_from_json_to_bundled_program(program_json: bytes) -> BundledProgram:
+def deserialize_from_json_to_bundled_program(
+    program_json: bytes,
+) -> bp_schema.BundledProgram:
     program_json = json.loads(program_json)
-    return _json_to_dataclass(program_json, BundledProgram)
+    return _json_to_dataclass(program_json, bp_schema.BundledProgram)
 
 
 def convert_to_flatbuffer(program_json: str) -> bytes:
@@ -92,8 +95,17 @@ def serialize_from_bundled_program_to_flatbuffer(
     )
 
 
-# from flatbuffer to general program
-def deserialize_from_flatbuffer_to_bundled_program(flatbuffer: bytes) -> BundledProgram:
+# From flatbuffer to bundled program in schema.
+# Please notice here the bundled program is the one in our schema (bp_schema.BundledProgram),
+# not the bundled program user interact with (core.bundled_program).
+# However there're two concerns for current design:
+# 1. the misalignment of serialization input and deserialization out, which may confuse our user.
+# 2. the mis-exposion of schema.bundled_program. all classes in schema should not directly
+#    interact with user, but the deserialization api returns one.
+# TODO(T170042248): Solve the above issues.
+def deserialize_from_flatbuffer_to_bundled_program(
+    flatbuffer: bytes,
+) -> bp_schema.BundledProgram:
     """
     Deserialize a FlatBuffer binary format into a BundledProgram.
 

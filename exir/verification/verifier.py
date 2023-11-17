@@ -173,6 +173,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                         op.__module__, op.__name__
                     )
                 )
+            if isinstance(op, EdgeOpOverload):
+                self.check_valid_aten_op(op._op)
             if isinstance(op, types.FunctionType):
                 assert op.__name__ in ("alloc",)
 
@@ -196,25 +198,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             if self.check_edge_ops:
                 _check_tensors_are_contiguous(gm)
                 _check_tensor_args_matching_op_allowed_dtype(gm)
-
-            # Additionally, edge dialect's operator must have same input dtype
-            for n in gm.graph.nodes:
-                if n.op == "call_function" and isinstance(n.target, OpOverload):
-                    _check_has_fake_tensor(n)
-                    dtypes = set()
-                    for arg in n.args:
-                        if isinstance(arg, torch.Tensor):
-                            dtypes.add(arg.dtype)
-                        if isinstance(arg, torch.fx.Node):
-                            if arg.meta.get("val", None) is None:
-                                raise SpecViolationError(
-                                    f"No metadata 'val' for node {arg}"
-                                )
-                            dtypes.add(arg.meta["val"].dtype)
-                    if len(dtypes) > 1:
-                        raise SpecViolationError(
-                            "Operators of Edge dialect in should work on tensors of same dtype"
-                        )
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:

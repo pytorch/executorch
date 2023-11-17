@@ -157,8 +157,8 @@ method_test_suites = [
 ]
 
 # Step 3: Generate BundledProgram
-program = to_edge(method_graphs).to_executorch().executorch_program
-bundled_program = create_bundled_program(program, method_test_suites)
+executorch_program = to_edge(method_graphs).to_executorch()
+bundled_program = create_bundled_program(executorch_program, method_test_suites)
 
 # Step 4: Serialize BundledProgram to flatbuffer.
 serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(

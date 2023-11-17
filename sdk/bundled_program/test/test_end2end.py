@@ -27,13 +27,12 @@ from executorch.sdk.bundled_program.serialize import (
 )
 
 from executorch.sdk.bundled_program.util.test_util import (
-    get_common_program,
+    get_common_executorch_program,
     SampleModel,
 )
 
 kernel_mode = None  # either aten mode or lean mode
 try:
-    # pyre-ignore[21]
     from executorch.extension.pybindings.portable_lib import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
@@ -46,7 +45,6 @@ except ImportError as e:
     pass
 
 try:
-    # pyre-ignore[21]
     from executorch.extension.pybindings.aten_lib import (
         _load_bundled_program_from_buffer,
         _load_for_executorch_from_buffer,
@@ -64,10 +62,10 @@ assert kernel_mode is not None
 
 class BundledProgramE2ETest(unittest.TestCase):
     def test_sample_model_e2e(self):
-        program, method_test_suites = get_common_program()
+        executorch_program, method_test_suites = get_common_executorch_program()
         eager_model = SampleModel()
 
-        bundled_program = create_bundled_program(program, method_test_suites)
+        bundled_program = create_bundled_program(executorch_program, method_test_suites)
 
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
