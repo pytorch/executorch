@@ -467,7 +467,7 @@ for SDK tooling usage.</p>
 <dd class="field-odd"><ul class="simple">
 <li><p><strong>etrecord_path</strong> – Path to where the <cite>ETRecord</cite> file will be saved to.</p></li>
 <li><p><strong>edge_dialect_program</strong> – <cite>EdgeProgramManager</cite> for this model returned by the call to to_edge()</p></li>
-<li><p><strong>executorch_program</strong> – <cite>ExecutorchProgramManager</cite> for this model returned by the call to <cite>to_executorch()</cite></p></li>
+<li><p><strong>executorch_program</strong> – The ExecuTorch program for this model returned by the call to <cite>to_executorch()</cite> or the <cite>BundledProgram</cite> of this model</p></li>
 <li><p><strong>export_modules</strong><strong>[</strong><strong>Optional</strong><strong>]</strong> – <strong>Should be ignored by OSS users</strong>. A dictionary of graph modules with the key being the user provided name and the
 value being the corresponding exported module. The exported graph modules can be either the
 output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
