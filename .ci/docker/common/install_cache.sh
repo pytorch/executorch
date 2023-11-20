@@ -12,6 +12,23 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
+install_sccache() {
+  echo "Preparing to build sccache from source"
+  apt-get update
+  apt-get install -y cargo
+  echo "Checking out sccache repo"
+  git clone https://github.com/mozilla/sccache
+  pushd sccache
+  echo "Building sccache"
+  cargo build --release
+  cp target/release/sccache /opt/cache/bin
+  echo "Cleaning up"
+  popd
+  rm -rf sccache
+  apt-get remove -y cargo rustc
+  apt-get autoclean && apt-get clean
+}
+
 install_binary() {
   echo "Downloading sccache binary from S3 repo"
   curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache -o /opt/cache/bin/sccache
@@ -29,7 +46,7 @@ ID=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"')
 # https://github.com/pytorch/sccache has started failing mysteriously
 # in which sccache server couldn't start with the following error:
 #   sccache: error: Invalid argument (os error 22)
-install_binary
+install_sccache
 chmod a+x /opt/cache/bin/sccache
 
 function write_sccache_stub() {
