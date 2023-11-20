@@ -17,8 +17,8 @@ from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 
 from torch import Tensor
 from torch.ao.quantization.observer import (
+    HistogramObserver,
     MinMaxObserver,
-    MovingAverageMinMaxObserver,
     PerChannelMinMaxObserver,
 )
 from torch.ao.quantization.quantize_pt2e import (
@@ -126,7 +126,7 @@ def get_default_qnn_ptq_config(
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -167,7 +167,7 @@ def get_16bit_qnn_ptq_config() -> Tuple[QuantizationConfig, QnnQuantizerConfig]:
         quant_min=0,
         quant_max=65535,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
@@ -348,6 +348,7 @@ class QnnQuantizer(Quantizer):
         op_sources = [
             operator.matmul,
             torch.matmul,
+            torch.ops.aten.matmul,
             "matmul",
         ]
 
