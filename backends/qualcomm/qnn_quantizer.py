@@ -206,7 +206,7 @@ def get_ptq_per_channel_weight_config() -> QuantizationConfig:
         quant_min=0,
         quant_max=255,
         qscheme=torch.per_tensor_affine,
-        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
