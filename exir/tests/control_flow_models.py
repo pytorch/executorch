@@ -87,7 +87,7 @@ class FTMapBasic(Module):
         def f(x, y):
             return x + y
 
-        return torch.ops.map(f, xs, y) + xs
+        return torch.ops.higher_order.map(f, xs, y) + xs
 
     def get_random_inputs(self):
         return torch.rand(2, 4), torch.rand(4)
@@ -101,7 +101,7 @@ class FTMapDynShape(Module):
         def f(x, y):
             return x + y
 
-        return torch.ops.map(f, xs, y) + xs
+        return torch.ops.higher_order.map(f, xs, y) + xs
 
     def get_upper_bound_inputs(self):
         return torch.rand(4, 4), torch.rand(4)
