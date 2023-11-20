@@ -8,7 +8,6 @@ import pathlib
 import sys
 
 import executorch.exir as exir
-import torch
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
@@ -46,19 +45,9 @@ def lower_module_to_coreml(module, compute_units):
 
 
 def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
-    class CompositeModule(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.lowered_module = lowered_module
-
-        def forward(self, *args):
-            return self.lowered_module(*args)
-
-    composite_model = CompositeModule()
-    composite_model(*example_inputs)
-
+    lowered_module(*example_inputs)
     exec_prog = (
-        exir.capture(composite_model, example_inputs, _CAPTURE_CONFIG)
+        exir.capture(lowered_module, example_inputs, _CAPTURE_CONFIG)
         .to_edge(_EDGE_COMPILE_CONFIG)
         .to_executorch()
     )
