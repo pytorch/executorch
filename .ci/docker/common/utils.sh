@@ -28,6 +28,24 @@ pip_install() {
   as_ci_user conda run -n "py_${PYTHON_VERSION}" pip install --progress-bar off "$@"
 }
 
+trap_add() {
+  # NB: This function is copied from PyTorch core at
+  # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common_utils.sh
+  trap_add_cmd=$1; shift || fatal "${FUNCNAME[0]} usage error"
+  for trap_add_name in "$@"; do
+    trap -- "$(
+      # helper fn to get existing trap command from output
+      # of trap -p
+      extract_trap_cmd() { printf '%s\n' "$3"; }
+      # print existing trap command with newline
+      eval "extract_trap_cmd $(trap -p "${trap_add_name}")"
+      # print the new trap command
+      printf '%s\n' "${trap_add_cmd}"
+    )" "${trap_add_name}" \
+      || fatal "unable to add to trap ${trap_add_name}"
+  done
+}
+
 init_sccache() {
   # This is the remote cache bucket
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
