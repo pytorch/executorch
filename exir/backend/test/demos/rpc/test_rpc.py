@@ -167,13 +167,13 @@ class TestRPCDemos(unittest.TestCase):
         # First lower to demo backend
         demo_backend_lowered = exported_program
         demo_backend_lowered.exported_program = to_backend(
-            exported_program.exported_program, AddMulPartitionerDemo
+            exported_program.exported_program, AddMulPartitionerDemo()
         )
 
         # Then lower to executor backend
         executor_backend_lowered = demo_backend_lowered
         executor_backend_lowered.exported_program = to_backend(
-            demo_backend_lowered.exported_program, ExecutorBackendPartitioner
+            demo_backend_lowered.exported_program, ExecutorBackendPartitioner()
         )
 
         prog_buffer = executor_backend_lowered.to_executorch()

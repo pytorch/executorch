@@ -6,14 +6,14 @@
 
 import copy
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import torch
 import torch._export
 
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.partitioner import TPartitioner
+from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
@@ -867,7 +867,7 @@ class EdgeProgramManager:
         )
 
     def to_backend(
-        self, partitioner: Union[Type[TPartitioner], Dict[str, Type[TPartitioner]]]
+        self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
     ) -> "EdgeProgramManager":
         """
         Returns a semantically-equivalent program to the one given as input,
@@ -875,15 +875,15 @@ class EdgeProgramManager:
         for delegation as determined by the partitioner.
 
         Args:
-            partitioner: The partitioner can either be a Partitioner subclass, or a
-                dictionary mapping method names to Partitioner subclass. If it is a
+            partitioner: The partitioner can either be a Partitioner subclass instance, or a
+                dictionary mapping method names to Partitioner subclass instance. If it is a
                 Partitioner subclass, all programs in the given EdgeProgramManager
                 will be lowered using the given partitioner. If it is a
                 dictionary, only method names specified in the dictionary will be
                 lowered with the given partitioner.
 
-                The Partitioner subclass is in charge with tagging portions of the
-                input program for delegation. A valid partitioner must have
+                The Partitioner subclass instance is in charge with tagging portions of the
+                input program for delegation. A valid partitioner must return PartitionerResult including valid
                 partition_tags: Dict[str, DelegationSpec], where each key is a tag
                 name and the nodes with same tag will be fused a one subgraph and
                 delegated to backend specififed in delegation spec.

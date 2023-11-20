@@ -639,7 +639,7 @@ class TestBackends(unittest.TestCase):
         # HTAPartitionerDemo's rule.
         program_with_delegates = traced
         program_with_delegates.exported_program = to_backend(
-            traced.exported_program, HTAPartitionerMultiplePatternsDemo
+            traced.exported_program, HTAPartitionerMultiplePatternsDemo()
         )
         program_with_delegates = program_with_delegates.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -754,7 +754,7 @@ class TestBackends(unittest.TestCase):
         # HTAPartitionerDemo's rule.
         traced_with_delegate = traced
         traced_with_delegate.exported_program = to_backend(
-            traced.exported_program, HTAPartitionerOnePatternDemo
+            traced.exported_program, HTAPartitionerOnePatternDemo()
         )
 
         new_res = traced_with_delegate(*inputs)
@@ -849,7 +849,7 @@ class TestBackends(unittest.TestCase):
         ep = exir.capture(m, inputs, get_testing_capture_config()).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
-            ep.exported_program, AddMulPartitionerDemo
+            ep.exported_program, AddMulPartitionerDemo()
         )
         executorch_prog = executorch_prog.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -905,7 +905,7 @@ class TestBackends(unittest.TestCase):
         ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
-            ep.exported_program, AddAttributePartitionerDemo
+            ep.exported_program, AddAttributePartitionerDemo()
         )
         executorch_prog = executorch_prog.to_executorch(
             config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
@@ -967,7 +967,7 @@ class TestBackends(unittest.TestCase):
 
         ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
         with self.assertRaises(AssertionError):
-            _ = to_backend(ep.exported_program, BadPartitioner)
+            _ = to_backend(ep.exported_program, BadPartitioner())
 
     def test_quantized_with_delegate(self) -> None:
         torch.ops.load_library(
@@ -1034,7 +1034,7 @@ class TestBackends(unittest.TestCase):
         ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
-            orig.exported_program, AddMulPartitionerDemo
+            orig.exported_program, AddMulPartitionerDemo()
         )
 
         new_res = partitioned(*inputs)
@@ -1087,7 +1087,7 @@ class TestBackends(unittest.TestCase):
         ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
-            orig.exported_program, AddMulPartitionerDemo
+            orig.exported_program, AddMulPartitionerDemo()
         )
 
         toplevel_lowered = get_lowered_submodules(
@@ -1160,7 +1160,7 @@ class TestBackends(unittest.TestCase):
         ).to_edge()
         partitioned = orig
         partitioned.exported_program = to_backend(
-            orig.exported_program, AddMulPartitionerDemo
+            orig.exported_program, AddMulPartitionerDemo()
         )
 
         new_res = partitioned(*inputs)

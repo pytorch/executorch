@@ -6,7 +6,8 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, NamedTuple, TypeVar
+from types import MappingProxyType
+from typing import Dict, List, NamedTuple, Union
 
 from executorch.exir.backend.backend_details import enforcedmethod
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -53,8 +54,20 @@ class Partitioner(ABC):
         exported_program: An ExportedProgram in Edge dialect to be partitioned for backend delegation.
     """
 
+    def __init__(
+        self,
+        spec: MappingProxyType[Union[str, int, float, bool], object] = MappingProxyType(
+            {}
+        ),
+    ):
+        self._spec = spec
+
     def __call__(self, exported_program: ExportedProgram) -> PartitionResult:
         return self.partition(exported_program)
+
+    @property
+    def spec(self) -> MappingProxyType[Union[str, int, float, bool], object]:
+        return self._spec
 
     @enforcedmethod
     @abstractmethod
@@ -80,8 +93,3 @@ class Partitioner(ABC):
             PartitionResult: includes the tagged graph and the delegation spec to indicate what backend_id and compile_spec is used for each node and the tag created by the backend developers.
         """
         pass
-
-
-# Define Type variables to allow instantiate an instance a subclass of Partitioner
-# in to_backend(edge_exported_program: ExportedProgram, partitioner: Type[TPartitioner])
-TPartitioner = TypeVar("TPartitioner", bound=Partitioner)
