@@ -35,18 +35,33 @@ install_pip_dependencies() {
   pushd .ci/docker || return
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
+  popd || return
+}
 
-  NIGHTLY=$(cat ci_commit_pins/nightly.txt)
+install_torch() {
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+
+  # Clone the Executorch
+  git clone https://github.com/pytorch/pytorch.git
+
+  # Fetch the target commit
+  pushd pytorch
+  git checkout "${TORCH_VERSION}"
+  git submodule update --init --recursive
+
+  # Then build and install PyTorch
+  conda run --no-capture-output python setup.py bdist_wheel
+  pip install "$(echo dist/*.whl)"
+  popd
+}
+
+install_domains() {
   TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
   TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
 
-  pip install --progress-bar off --pre \
-    torch=="${TORCH_VERSION}.${NIGHTLY}" \
-    torchaudio=="${TORCHAUDIO_VERSION}.${NIGHTLY}" \
-    torchvision=="${TORCHVISION_VERSION}.${NIGHTLY}" \
-    --index-url https://download.pytorch.org/whl/nightly/cpu
-  popd || return
+  echo "Install torchvision and torchaudio"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_flatc_from_source() {

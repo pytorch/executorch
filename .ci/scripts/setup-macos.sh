@@ -79,6 +79,8 @@ print_cmake_info() {
 install_buck
 install_conda
 install_pip_dependencies
+install_torch
+install_domains
 print_cmake_info
 install_flatc_from_source
 install_executorch
