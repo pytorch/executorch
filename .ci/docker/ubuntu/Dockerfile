@@ -32,9 +32,6 @@ RUN bash ./install_docs_reqs.sh && rm install_docs_reqs.sh
 # Install conda and other dependencies
 ARG MINICONDA_VERSION
 ARG PYTHON_VERSION
-ARG TORCH_VERSION
-ARG TORCHAUDIO_VERSION
-ARG TORCHVISION_VERSION
 ENV PYTHON_VERSION=$PYTHON_VERSION
 ENV PATH /opt/conda/envs/py_$PYTHON_VERSION/bin:/opt/conda/bin:$PATH
 COPY requirements-ci.txt /opt/conda/
@@ -42,6 +39,19 @@ COPY conda-env-ci.txt /opt/conda/
 COPY ./common/install_conda.sh install_conda.sh
 COPY ./common/utils.sh utils.sh
 RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt /opt/conda/conda-env-ci.txt
+
+# Install compiler cache before building torch
+COPY ./common/install_cache.sh install_cache.sh
+ENV PATH /opt/cache/bin:$PATH
+COPY ./common/utils.sh utils.sh
+RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
+
+ARG TORCH_VERSION
+ARG TORCHAUDIO_VERSION
+ARG TORCHVISION_VERSION
+COPY ./common/install_torch.sh install_torch.sh
+COPY ./common/utils.sh utils.sh
+RUN bash ./install_torch.sh && rm install_torch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed

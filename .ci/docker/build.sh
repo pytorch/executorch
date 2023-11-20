@@ -34,7 +34,6 @@ case "${IMAGE_NAME}" in
     exit 1
 esac
 
-NIGHTLY=$(cat ci_commit_pins/nightly.txt)
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
 TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
@@ -54,9 +53,9 @@ docker build \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
-  --build-arg "TORCH_VERSION=${TORCH_VERSION}.${NIGHTLY}" \
-  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
-  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
+  --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
+  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}" \
+  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \
