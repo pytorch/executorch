@@ -29,6 +29,10 @@ pip_install() {
 }
 
 init_sccache() {
+  # This is the remote cache bucket
+  export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
+  export SCCACHE_S3_KEY_PREFIX=executorch
+
   # NB: This function is adopted from PyTorch core at
   # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common-build.sh
   if which sccache > /dev/null; then

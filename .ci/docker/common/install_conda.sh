@@ -40,11 +40,6 @@ install_pip_dependencies() {
   pushd /opt/conda
   # Install all Python dependencies, including PyTorch
   pip_install -r /opt/conda/requirements-ci.txt
-  pip_install --pre \
-    torch=="${TORCH_VERSION}" \
-    torchaudio=="${TORCHAUDIO_VERSION}" \
-    torchvision=="${TORCHVISION_VERSION}" \
-    --index-url https://download.pytorch.org/whl/nightly/cpu
   popd
 }
 
