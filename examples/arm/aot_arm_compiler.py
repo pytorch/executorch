@@ -133,7 +133,7 @@ if __name__ == "__main__":
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
     if args.delegate is True:
-        edge = edge.to_backend(ArmPartitioner)
+        edge = edge.to_backend(ArmPartitioner())
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch()
