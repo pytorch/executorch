@@ -55,6 +55,9 @@ install_torch() {
   conda run --no-capture-output python setup.py bdist_wheel
   pip install "$(echo dist/*.whl)"
   popd || return
+
+  # Print sccache stats for debugging
+  sccache --show-stats || true
 }
 
 install_domains() {

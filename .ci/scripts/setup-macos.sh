@@ -89,6 +89,7 @@ install_sccache() {
   write_sccache_stub "${TMP_DIR}/clang"
 
   export PATH="${TMP_DIR}:$PATH"
+  sccache --zero-stats || true
 }
 
 # This is the same rpath fix copied from PyTorch macos setup script
