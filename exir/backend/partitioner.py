@@ -7,7 +7,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Dict, List, NamedTuple, Union
+from typing import Dict, List, Mapping, NamedTuple, Union
 
 from executorch.exir.backend.backend_details import enforcedmethod
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -56,9 +56,7 @@ class Partitioner(ABC):
 
     def __init__(
         self,
-        spec: MappingProxyType[Union[str, int, float, bool], object] = MappingProxyType(
-            {}
-        ),
+        spec: Mapping[Union[str, int, float, bool], object] = MappingProxyType({}),
     ):
         self._spec = spec
 
@@ -66,7 +64,7 @@ class Partitioner(ABC):
         return self.partition(exported_program)
 
     @property
-    def spec(self) -> MappingProxyType[Union[str, int, float, bool], object]:
+    def spec(self) -> Mapping[Union[str, int, float, bool], object]:
         return self._spec
 
     @enforcedmethod
