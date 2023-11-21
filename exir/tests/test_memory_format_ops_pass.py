@@ -55,7 +55,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ).run(before.exported_program.graph_module.code)
 
             ep = before.to_edge(
-                config=EdgeCompileConfig(_use_edge_ops=True)
+                config=EdgeCompileConfig(_check_ir_validity=False)
             )  # Only replacing edge_ops
 
             # Run the pass - TODO move this in to_edge passes
