@@ -54,12 +54,12 @@ init_sccache() {
   # NB: This function is adopted from PyTorch core at
   # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common-build.sh
   as_ci_user sccache --stop-server > /dev/null 2>&1 || true
-  rm -f ~/sccache_error.log || true
+  rm -f /tmp/sccache_error.log || true
 
   function sccache_epilogue() {
     echo "::group::Sccache Compilation Log"
     echo '=================== sccache compilation log ==================='
-    cat ~/sccache_error.log || true
+    cat /tmp/sccache_error.log || true
     echo '=========== If your build fails, please take a look at the log above for possible reasons ==========='
     as_ci_user sccache --show-stats
     as_ci_user sccache --stop-server || true
@@ -71,7 +71,7 @@ init_sccache() {
   trap_add sccache_epilogue EXIT
 
   export SCCACHE_IDLE_TIMEOUT=0
-  export SCCACHE_ERROR_LOG=~/sccache_error.log
+  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
   export RUST_LOG=sccache::server=error
 
   # Clear sccache stats before using it

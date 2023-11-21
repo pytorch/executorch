@@ -19,7 +19,7 @@ install_torch() {
   git checkout "${TORCH_VERSION}"
   git submodule update --init --recursive
 
-  chown -R jenkins pytorch
+  chown -R ci-user pytorch
 
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel

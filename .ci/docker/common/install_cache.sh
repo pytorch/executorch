@@ -15,6 +15,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 install_binary() {
   echo "Downloading sccache binary from S3 repo"
   curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache-0.7.3 -o /opt/cache/bin/sccache
+  chmod +x /opt/cache/bin/sccache
 }
 
 mkdir -p /opt/cache/bin
