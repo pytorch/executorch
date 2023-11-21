@@ -67,7 +67,7 @@ if __name__ == "__main__":
     with validation_disabled():
         delegated_program = edge_program
         delegated_program.exported_program = to_backend(
-            edge_program.exported_program, QnnPartitioner
+            edge_program.exported_program, QnnPartitioner()
         )
 
     executorch_program = delegated_program.to_executorch()
