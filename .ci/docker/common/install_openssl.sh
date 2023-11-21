@@ -19,7 +19,7 @@ pushd "${OPENSSL}" || true
 # NOTE: openssl install errors out when built with the -j option
 make -j6; make install_sw
 # Link the ssl libraries to the /usr/lib folder.
-sudo ln -s /opt/openssl/lib/lib* /usr/lib
+ln -s /opt/openssl/lib/lib* /usr/lib
 popd || true
 
 rm -rf "${OPENSSL}"

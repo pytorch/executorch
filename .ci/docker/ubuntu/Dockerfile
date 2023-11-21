@@ -45,11 +45,13 @@ COPY ./common/install_conda.sh install_conda.sh
 COPY ./common/utils.sh utils.sh
 RUN bash ./install_conda.sh && rm install_conda.sh utils.sh /opt/conda/requirements-ci.txt /opt/conda/conda-env-ci.txt
 
-# Install compiler cache before building torch
+# Install sccache before building torch
 COPY ./common/install_cache.sh install_cache.sh
 ENV PATH /opt/cache/bin:$PATH
 COPY ./common/utils.sh utils.sh
 RUN bash ./install_cache.sh && rm install_cache.sh utils.sh
+ENV SCCACHE_BUCKET ossci-compiler-cache-circleci-v2
+ENV SCCACHE_S3_KEY_PREFIX executorch
 
 ARG TORCH_VERSION
 ARG TORCHAUDIO_VERSION
