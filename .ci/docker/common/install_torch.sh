@@ -15,16 +15,16 @@ install_torch() {
   git clone https://github.com/pytorch/pytorch.git
 
   # Fetch the target commit
-  pushd pytorch
+  pushd pytorch || true
   git checkout "${TORCH_VERSION}"
   git submodule update --init --recursive
 
-  chown -R ci-user pytorch
+  chown -R ci-user .
 
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
-  popd
+  popd || true
 }
 
 install_domains() {
