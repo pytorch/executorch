@@ -205,7 +205,7 @@ class TestProgramManagers(unittest.TestCase):
             get_exported_programs(), get_config_methods()
         )
         delegate_manager: EdgeProgramManager = edge_manager.to_backend(
-            AddMulPartitionerDemo
+            AddMulPartitionerDemo()
         )
 
         forward_program = delegate_manager.exported_program("forward")
@@ -267,7 +267,7 @@ class TestProgramManagers(unittest.TestCase):
             get_exported_programs(), get_config_methods()
         )
         delegate_manager: EdgeProgramManager = edge_manager.to_backend(
-            {"forward": AddMulPartitionerDemo}
+            {"forward": AddMulPartitionerDemo()}
         )
 
         forward_program = delegate_manager.exported_program("forward")
