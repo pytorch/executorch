@@ -132,7 +132,7 @@ class Backend1Demo(BackendDetails):
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
         assert isinstance(edge_program, ExportedProgram)
-        partitioned_module = to_backend(edge_program, Backend2PartitionerDemo)
+        partitioned_module = to_backend(edge_program, Backend2PartitionerDemo())
 
         def process(gm):
             processed_bytes = ""
@@ -228,7 +228,7 @@ class TestNestedBackends(unittest.TestCase):
 
         partitioned = orig
         partitioned.exported_program = to_backend(
-            orig.exported_program, Backend1PartitionerDemo
+            orig.exported_program, Backend1PartitionerDemo()
         )
 
         new_res = partitioned(*m.get_example_inputs())[0]

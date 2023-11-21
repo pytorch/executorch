@@ -19,6 +19,9 @@ from executorch.exir.backend.partitioner import (
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
+    ExecutorBackend,
+)
 from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -48,7 +51,7 @@ class ExecutorBackendPartitioner(Partitioner):
 
     def __init__(self) -> None:
         self.op_support = any_chain(AnyOperatorSupport(), AnyDelegateSupport())
-        self.delegation_spec = DelegationSpec("ExecutorBackend", [])
+        self.delegation_spec = DelegationSpec(ExecutorBackend.__name__, [])
 
     def partition(self, edge_exported_program: ExportedProgram) -> PartitionResult:
         partition_tags = {}

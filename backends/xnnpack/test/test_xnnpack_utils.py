@@ -191,11 +191,11 @@ class TestXNNPACK(unittest.TestCase):
         partitioner = None
         if quantized:
             if quantized_dynamic:
-                partitioner = XnnpackDynamicallyQuantizedPartitioner
+                partitioner = XnnpackDynamicallyQuantizedPartitioner()
             else:
-                partitioner = XnnpackPartitioner
+                partitioner = XnnpackPartitioner()
         else:
-            partitioner = XnnpackPartitioner
+            partitioner = XnnpackPartitioner()
 
         if use_partitioner:
             with validation_disabled():

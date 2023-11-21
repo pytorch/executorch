@@ -182,9 +182,9 @@ like:
 
 ```python
 # Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm
-exported_program_backend_1 = to_backend(exported_program, backend_1_parititioner)
+exported_program_backend_1 = to_backend(exported_program, backend_1_parititioner())
 # For the rest of nodes, they will be lowered to backend_2 depending on backend_2_parititioner
-exported_program_backend_1_and_2 = to_backend(exported_program_backend_1, backend_2_parititioner)
+exported_program_backend_1_and_2 = to_backend(exported_program_backend_1, backend_2_parititioner())
 ```
 
 A more concrete example be found

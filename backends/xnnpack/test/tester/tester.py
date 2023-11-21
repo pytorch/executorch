@@ -214,7 +214,7 @@ class RunPasses(Stage):
 @register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
-        self.partitioner = partitioner or XnnpackPartitioner
+        self.partitioner = partitioner or XnnpackPartitioner()
         self.delegate_module = None
 
     def run(self, artifact: ExirExportedProgram, inputs=None):
