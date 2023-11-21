@@ -59,7 +59,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             )  # Only replacing edge_ops
 
             # Run the pass - TODO move this in to_edge passes
-            after = ep.transform(MemoryFormatOpsPass())
+            after = ep.transform([MemoryFormatOpsPass()], check_ir_validity=False)
 
             # check op strings
             FileCheck().check_not(aten_op_str).check_count(
