@@ -13,12 +13,8 @@ set -ex
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 install_binary() {
-  echo "Downloading sccache binary from GitHub"
-  curl --retry 3 "https://github.com/mozilla/sccache/releases/download/v0.7.3/sccache-v0.7.3-x86_64-unknown-linux-musl.tar.gz" -o sccache.tar.gz
-  tar xfz sccache.tar.gz
-
-  cp sccache/sccache /opt/cache/bin/sccache
-  chmod a+x /opt/cache/bin/sccache
+  echo "Downloading sccache binary from S3 repo"
+  curl --retry 3 https://s3.amazonaws.com/ossci-linux/sccache-0.7.3 -o /opt/cache/bin/sccache
 }
 
 mkdir -p /opt/cache/bin
