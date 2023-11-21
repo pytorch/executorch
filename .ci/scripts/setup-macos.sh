@@ -57,6 +57,40 @@ install_buck() {
   fi
 }
 
+function write_sccache_stub() {
+  output=$1
+  binary=$(basename "${output}")
+
+  printf "#!/bin/sh\nif [ \$(ps auxc \$(ps auxc -o ppid \$\$ | grep \$\$ | rev | cut -d' ' -f1 | rev) | tr '\\\\n' ' ' | rev | cut -d' ' -f2 | rev) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${binary}")" "$(which "${binary}")" > "${output}"
+  chmod a+x "${output}"
+}
+
+install_sccache() {
+  SCCACHE_PATH="/usr/local/bin"
+
+  # NB: The function is adopted from PyTorch MacOS build workflow
+  # https://github.com/pytorch/pytorch/blob/main/.github/workflows/_mac-build.yml
+  if ! command -v sccache &> /dev/null; then
+    SCCACHE_VERSION="0.4.1"
+
+    sudo curl --retry 3 "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
+    sudo chmod +x "${LOCAL_PATH}/sccache"
+
+    export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
+    export SCCACHE_S3_KEY_PREFIX=executorch
+  fi
+
+  export PATH="${SCCACHE_PATH}:${PATH}"
+
+  # Create temp directory for sccache shims
+  TMP_DIR=$(mktemp -d)
+  trap 'rm -rfv ${TMP_DIR}' EXIT
+  write_sccache_stub "${TMP_DIR}/clang++"
+  write_sccache_stub "${TMP_DIR}/clang"
+
+  export PATH="${TMP_DIR}:$PATH"
+}
+
 # This is the same rpath fix copied from PyTorch macos setup script
 # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/macos-common.sh
 print_cmake_info() {
@@ -79,6 +113,7 @@ print_cmake_info() {
 install_buck
 install_conda
 install_pip_dependencies
+install_sccache
 install_torch
 install_domains
 print_cmake_info
