@@ -55,11 +55,11 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             ).run(before.exported_program.graph_module.code)
 
             ep = before.to_edge(
-                config=EdgeCompileConfig(_use_edge_ops=True)
+                config=EdgeCompileConfig(_check_ir_validity=False)
             )  # Only replacing edge_ops
 
             # Run the pass - TODO move this in to_edge passes
-            after = ep.transform([MemoryFormatOpsPass()], check_ir_validity=False)
+            after = ep.transform(MemoryFormatOpsPass())
 
             # check op strings
             FileCheck().check_not(aten_op_str).check_count(
