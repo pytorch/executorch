@@ -25,6 +25,12 @@ install_pytorch() {
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
   popd || true
+
+  # Clean up the cloned PyTorch repo to reduce the Docker image size
+  rm -rf pytorch
+
+  # Print sccache stats for debugging
+  as_ci_user sccache --show-stats
 }
 
 install_domains() {

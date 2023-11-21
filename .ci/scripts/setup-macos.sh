@@ -66,8 +66,10 @@ function write_sccache_stub() {
 }
 
 install_sccache() {
-  SCCACHE_PATH="/usr/local/bin"
+  export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
+  export SCCACHE_S3_KEY_PREFIX=executorch
 
+  SCCACHE_PATH="/usr/local/bin"
   # NB: The function is adopted from PyTorch MacOS build workflow
   # https://github.com/pytorch/pytorch/blob/main/.github/workflows/_mac-build.yml
   if ! command -v sccache &> /dev/null; then
@@ -75,9 +77,6 @@ install_sccache() {
 
     sudo curl --retry 3 "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
     sudo chmod +x "${LOCAL_PATH}/sccache"
-
-    export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
-    export SCCACHE_S3_KEY_PREFIX=executorch
   fi
 
   export PATH="${SCCACHE_PATH}:${PATH}"

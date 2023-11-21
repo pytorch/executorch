@@ -50,29 +50,14 @@ init_sccache() {
   # This is the remote cache bucket
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
   export SCCACHE_S3_KEY_PREFIX=executorch
+  export SCCACHE_IDLE_TIMEOUT=0
+  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
+  export RUST_LOG=sccache::server=error
 
   # NB: This function is adopted from PyTorch core at
   # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common-build.sh
   as_ci_user sccache --stop-server > /dev/null 2>&1 || true
-  rm -f /tmp/sccache_error.log || true
-
-  function sccache_epilogue() {
-    echo "::group::Sccache Compilation Log"
-    echo '=================== sccache compilation log ==================='
-    cat /tmp/sccache_error.log || true
-    echo '=========== If your build fails, please take a look at the log above for possible reasons ==========='
-    as_ci_user sccache --show-stats
-    as_ci_user sccache --stop-server || true
-    echo "::endgroup::"
-  }
-
-  # Register the function here so that the error log can be printed even when
-  # sccache fails to start, i.e. timeout error
-  trap_add sccache_epilogue EXIT
-
-  export SCCACHE_IDLE_TIMEOUT=0
-  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
-  export RUST_LOG=sccache::server=error
+  rm -f "${SCCACHE_ERROR_LOG}" || true
 
   # Clear sccache stats before using it
   as_ci_user sccache --zero-stats || true

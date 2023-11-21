@@ -104,7 +104,6 @@ This will result in the following output:
 We have the following custom variables defined in this docset:
 
 - `${executorch_version:buck2}`
-- `${executorch_version:nightly}`
 - `${executorch_version:pytorch}`
 - `${executorch_version:vision}`
 - `${executorch_version:audio}`
