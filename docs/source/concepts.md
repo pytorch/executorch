@@ -61,7 +61,13 @@ An open-source, cross-platform family of tools designed to build, test and packa
 
 ## Codegen
 
-In ExecuTorch, code generation is used to generate the [kernel registration library](./kernel-library-selective-build.md).
+At a high level, codegen performs two tasks; generating the [kernel registration](./kernel-library-custom-aten-kernel.md) library, and optionally running [selective build](#selective-build).
+
+The kernel registration library connects operator names (referenced in the model) with the corresponding kernel implementation (from the kernel library).
+
+The selective build API collects operator information from models and/or other sources and only includes the operators required by them. This can reduce the binary size.
+
+The output of codegen is a set of C++ bindings (various `.h`, `.cpp` files) that glue together the kernel library and the ExecuTorch runtime.
 
 ## [Core ATen Dialect](https://pytorch.org/docs/stable/torch.compiler_ir.html#irs)
 
