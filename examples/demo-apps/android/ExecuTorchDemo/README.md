@@ -168,6 +168,10 @@ cp ./examples/demo-apps/android/jni/libexecutorchdemo.so \
 On the phone or emulator, you can try running the model:
 <img src="_static/img/android_demo_run.png" alt="Android Demo" /><br>
 
+```{note}
+The app is solely a demo to showcase XNNPACK and Qualcomm HTP backends. It is not optimized for performance.
+```
+
 ## Takeaways
 Through this tutorial we've learnt how to build the ExecuTorch runtime library with XNNPACK (or Qualcomm HTP) backend, and expose it to JNI layer to build the Android app running segmentation model.
 
