@@ -578,9 +578,9 @@ delegation. It won’t hold any data.</p>
 parititioners: backend_1_parititioner and backend_2_partitioner, we can run it
 like:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Will first lower nodes to backend_1 depending on the backend_1_parititioner depending on partitioner algorithm</span>
-<span class="n">exported_program_backend_1</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">backend_1_parititioner</span><span class="p">)</span>
+<span class="n">exported_program_backend_1</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">backend_1_parititioner</span><span class="p">())</span>
 <span class="c1"># For the rest of nodes, they will be lowered to backend_2 depending on backend_2_parititioner</span>
-<span class="n">exported_program_backend_1_and_2</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program_backend_1</span><span class="p">,</span> <span class="n">backend_2_parititioner</span><span class="p">)</span>
+<span class="n">exported_program_backend_1_and_2</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">exported_program_backend_1</span><span class="p">,</span> <span class="n">backend_2_parititioner</span><span class="p">())</span>
 </pre></div>
 </div>
 <p>A more concrete example be found

@@ -538,7 +538,7 @@ overloaded <a class="reference external" href="https://github.com/pytorch/execut
 function</a>.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
-    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 </pre></div>
 </div>
@@ -578,7 +578,7 @@ will be inserted into the top-level module and serialized.</p>
 
 <span class="n">core_aten_ep</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span>
 <span class="n">edge</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">core_aten_ep</span><span class="p">)</span>
-<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">AddMulPartitionerDemo</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">AddMulPartitionerDemo</span><span class="p">())</span>
 <span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the flatbuffer to a local file</span>

@@ -429,18 +429,14 @@
 <span class="kn">import</span> <span class="nn">logging</span>
 <span class="kn">from</span> <span class="nn">contextlib</span> <span class="kn">import</span> <span class="n">contextmanager</span>
 <span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">singledispatch</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Type</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Generator</span><span class="p">,</span> <span class="n">List</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_details</span> <span class="kn">import</span> <span class="n">BackendDetails</span><span class="p">,</span> <span class="n">PreprocessResult</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.compile_spec_schema</span> <span class="kn">import</span> <span class="n">CompileSpec</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">Partitioner</span><span class="p">,</span>
-    <span class="n">PartitionResult</span><span class="p">,</span>
-    <span class="n">TPartitioner</span><span class="p">,</span>
-<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span><span class="p">,</span> <span class="n">PartitionResult</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">is_identical_graph</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir.delegate</span> <span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
@@ -682,7 +678,7 @@
 <span class="nd">@to_backend</span><span class="o">.</span><span class="n">register</span>
 <span class="k">def</span> <span class="nf">_</span><span class="p">(</span>
     <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
-    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span>
+    <span class="n">partitioner_instance</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Add overloaded implementations for to_backend:</span>
@@ -691,7 +687,7 @@
 
 <span class="sd">     def to_backend(</span>
 <span class="sd">         edge_program: ExportedProgram,</span>
-<span class="sd">         partitioner: Type[TPartitioner],</span>
+<span class="sd">         partitioner: Partitioner,</span>
 <span class="sd">     ) -&gt; ExportedProgram:</span>
 
 <span class="sd">    Returns a semantically-equivalent program to the one given as input (represented</span>
@@ -701,19 +697,16 @@
 <span class="sd">    Args:</span>
 <span class="sd">        ExportedProgram: Program in Edge dialect.</span>
 
-<span class="sd">        partitioner: An instance of the Partitioner class type, in charge with tagging</span>
-<span class="sd">        portions of the input program for delegation. A valid partitioner must have</span>
-<span class="sd">        partition_tags: Dict[str, DelegationSpec], where each key is a tag name and the nodes</span>
-<span class="sd">        with same tag will be fused a one subgraph and delegated to backend specififed in delegation</span>
-<span class="sd">        spec.</span>
+<span class="sd">        partitioner: An instance of the partitioner, in charge with tagging</span>
+<span class="sd">        portions of the input program for delegation. A valid partitioner must return PartitionerResult</span>
+<span class="sd">        including both tagged exported program and partitioner_tag: Dict[str, DelegationSpec], where each key is a tag name and</span>
+<span class="sd">        the nodes with same tag will be fused a one subgraph and delegated to backend specififed in delegation spec.</span>
 
 
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">copied_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
-    <span class="c1"># Call the partitioner on the given graph module</span>
-    <span class="n">partitioner_instance</span><span class="p">:</span> <span class="n">Partitioner</span> <span class="o">=</span> <span class="n">partitioner</span><span class="p">()</span>
     <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">copied_edge_program</span><span class="p">)</span>
     <span class="n">tagged_exported_program</span> <span class="o">=</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">tagged_exported_program</span>
 
@@ -722,13 +715,13 @@
         <span class="k">assert</span> <span class="n">is_identical_graph</span><span class="p">(</span>
             <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
             <span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The partitioner </span><span class="si">{</span><span class="n">partitioner</span><span class="si">}</span><span class="s2"> should not modify the graph module&quot;</span>
+        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;The partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> should not modify the graph module&quot;</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Disabled validating the partitioner.&quot;</span><span class="p">)</span>
 
     <span class="k">assert</span> <span class="p">(</span>
         <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
+    <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
 
     <span class="n">tagged_graph_module</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
         <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">partitioner_result</span><span class="p">,</span> <span class="n">edge_program</span>

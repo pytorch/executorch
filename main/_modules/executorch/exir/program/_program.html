@@ -427,14 +427,14 @@
 
 <span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch._export</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">TPartitioner</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.capture._config</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.emit</span> <span class="kn">import</span> <span class="n">emit_program</span><span class="p">,</span> <span class="n">EmitterOutput</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
@@ -1288,7 +1288,7 @@
         <span class="p">)</span></div>
 
 <div class="viewcode-block" id="EdgeProgramManager.to_backend"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager.to_backend">[docs]</a>    <span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Type</span><span class="p">[</span><span class="n">TPartitioner</span><span class="p">]]]</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns a semantically-equivalent program to the one given as input,</span>
@@ -1296,15 +1296,15 @@
 <span class="sd">        for delegation as determined by the partitioner.</span>
 
 <span class="sd">        Args:</span>
-<span class="sd">            partitioner: The partitioner can either be a Partitioner subclass, or a</span>
-<span class="sd">                dictionary mapping method names to Partitioner subclass. If it is a</span>
+<span class="sd">            partitioner: The partitioner can either be a Partitioner subclass instance, or a</span>
+<span class="sd">                dictionary mapping method names to Partitioner subclass instance. If it is a</span>
 <span class="sd">                Partitioner subclass, all programs in the given EdgeProgramManager</span>
 <span class="sd">                will be lowered using the given partitioner. If it is a</span>
 <span class="sd">                dictionary, only method names specified in the dictionary will be</span>
 <span class="sd">                lowered with the given partitioner.</span>
 
-<span class="sd">                The Partitioner subclass is in charge with tagging portions of the</span>
-<span class="sd">                input program for delegation. A valid partitioner must have</span>
+<span class="sd">                The Partitioner subclass instance is in charge with tagging portions of the</span>
+<span class="sd">                input program for delegation. A valid partitioner must return PartitionerResult including valid</span>
 <span class="sd">                partition_tags: Dict[str, DelegationSpec], where each key is a tag</span>
 <span class="sd">                name and the nodes with same tag will be fused a one subgraph and</span>
 <span class="sd">                delegated to backend specififed in delegation spec.</span>

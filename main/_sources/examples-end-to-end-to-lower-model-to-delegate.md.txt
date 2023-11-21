@@ -126,7 +126,7 @@ function](https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b0524
 ```python
 def to_backend(
     edge_program: ExportedProgram,
-    partitioner: Type[TPartitioner],
+    partitioner: Partitioner,
 ) -> ExportedProgram:
 ```
 
@@ -168,7 +168,7 @@ model_inputs = (torch.randn(1, 3), torch.randn(1, 3))
 
 core_aten_ep = export(model, model_inputs)
 edge: EdgeProgramManager = to_edge(core_aten_ep)
-edge = edge.to_backend(AddMulPartitionerDemo)
+edge = edge.to_backend(AddMulPartitionerDemo())
 exec_prog = edge.to_executorch()
 
 # Save the flatbuffer to a local file

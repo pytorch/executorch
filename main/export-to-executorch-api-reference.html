@@ -477,14 +477,14 @@ but with portions of each program in the EdgeProgramManager targeted
 for delegation as determined by the partitioner.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>partitioner</strong> – <p>The partitioner can either be a Partitioner subclass, or a
-dictionary mapping method names to Partitioner subclass. If it is a
+<dd class="field-odd"><p><strong>partitioner</strong> – <p>The partitioner can either be a Partitioner subclass instance, or a
+dictionary mapping method names to Partitioner subclass instance. If it is a
 Partitioner subclass, all programs in the given EdgeProgramManager
 will be lowered using the given partitioner. If it is a
 dictionary, only method names specified in the dictionary will be
 lowered with the given partitioner.</p>
-<p>The Partitioner subclass is in charge with tagging portions of the
-input program for delegation. A valid partitioner must have
+<p>The Partitioner subclass instance is in charge with tagging portions of the
+input program for delegation. A valid partitioner must return PartitionerResult including valid
 partition_tags: Dict[str, DelegationSpec], where each key is a tag
 name and the nodes with same tag will be fused a one subgraph and
 delegated to backend specififed in delegation spec.</p>
