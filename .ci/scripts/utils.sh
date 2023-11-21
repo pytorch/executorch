@@ -39,25 +39,29 @@ install_pip_dependencies() {
 }
 
 install_torch() {
+  pushd .ci/docker || return
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+  popd || return
 
   # Clone the Executorch
   git clone https://github.com/pytorch/pytorch.git
 
   # Fetch the target commit
-  pushd pytorch
+  pushd pytorch || return
   git checkout "${TORCH_VERSION}"
   git submodule update --init --recursive
 
   # Then build and install PyTorch
   conda run --no-capture-output python setup.py bdist_wheel
   pip install "$(echo dist/*.whl)"
-  popd
+  popd || return
 }
 
 install_domains() {
+  pushd .ci/docker || return
   TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
   TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
+  popd || return
 
   echo "Install torchvision and torchaudio"
   pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
