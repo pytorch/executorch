@@ -484,7 +484,10 @@
 </div>
 <div class="section" id="codegen">
 <h2>Codegen<a class="headerlink" href="#codegen" title="Permalink to this headline">¶</a></h2>
-<p>In ExecuTorch, code generation is used to generate the <a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">kernel registration library</span></a>.</p>
+<p>At a high level, codegen performs two tasks; generating the <a class="reference internal" href="kernel-library-custom-aten-kernel.html"><span class="doc std std-doc">kernel registration</span></a> library, and optionally running <a class="reference internal" href="#selective-build"><span class="std std-doc">selective build</span></a>.</p>
+<p>The kernel registration library connects operator names (referenced in the model) with the corresponding kernel implementation (from the kernel library).</p>
+<p>The selective build API collects operator information from models and/or other sources and only includes the operators required by them. This can reduce the binary size.</p>
+<p>The output of codegen is a set of C++ bindings (various <code class="docutils literal notranslate"><span class="pre">.h</span></code>, <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files) that glue together the kernel library and the ExecuTorch runtime.</p>
 </div>
 <div class="section" id="core-aten-dialect">
 <h2><a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler_ir.html#irs">Core ATen Dialect</a><a class="headerlink" href="#core-aten-dialect" title="Permalink to this headline">¶</a></h2>
