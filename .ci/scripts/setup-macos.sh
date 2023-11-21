@@ -115,7 +115,7 @@ install_buck
 install_conda
 install_pip_dependencies
 install_sccache
-install_torch
+install_pytorch
 install_domains
 print_cmake_info
 install_flatc_from_source

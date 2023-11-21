@@ -38,7 +38,7 @@ install_pip_dependencies() {
   popd || return
 }
 
-install_torch() {
+install_pytorch() {
   pushd .ci/docker || return
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return

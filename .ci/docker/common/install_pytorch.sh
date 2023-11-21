@@ -10,7 +10,7 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-install_torch() {
+install_pytorch() {
   # Clone the Executorch
   git clone https://github.com/pytorch/pytorch.git
 
@@ -33,5 +33,5 @@ install_domains() {
   pip_install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
-install_torch
+install_pytorch
 install_domains

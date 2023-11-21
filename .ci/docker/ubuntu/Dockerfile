@@ -56,9 +56,9 @@ ENV SCCACHE_S3_KEY_PREFIX executorch
 ARG TORCH_VERSION
 ARG TORCHAUDIO_VERSION
 ARG TORCHVISION_VERSION
-COPY ./common/install_torch.sh install_torch.sh
+COPY ./common/install_pytorch.sh install_pytorch.sh
 COPY ./common/utils.sh utils.sh
-RUN bash ./install_torch.sh && rm install_torch.sh utils.sh
+RUN bash ./install_pytorch.sh && rm install_pytorch.sh utils.sh
 
 ARG LINTRUNNER
 # Install lintrunner if needed
