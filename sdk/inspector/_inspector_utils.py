@@ -78,7 +78,7 @@ def create_debug_handle_to_op_node_mapping(
 
     # Recursively searches through the metadata of nodes
     def _extract_debug_handles(graph: OperatorGraph):
-        for element in op_graph.elements:
+        for element in graph.elements:
             if isinstance(element, OperatorGraph):
                 _extract_debug_handles(element)
             if isinstance(element, OperatorNode) and element.metadata is not None:

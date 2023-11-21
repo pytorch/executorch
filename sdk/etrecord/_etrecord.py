@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import pickle
 from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional, Union
@@ -22,6 +23,11 @@ from executorch.exir import (
 )
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.serde.serialize import deserialize, serialize
+from executorch.sdk.bundled_program.core import BundledProgram
+
+from executorch.sdk.bundled_program.schema.bundled_program_schema import Value
+
+ProgramOutput = List[Value]
 
 
 class ETRecordReservedFileNames(str, Enum):
@@ -30,6 +36,7 @@ class ETRecordReservedFileNames(str, Enum):
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
     DEBUG_HANDLE_MAP_NAME = "debug_handle_map"
     DELEGATE_MAP_NAME = "delegate_map"
+    REFERENCE_OUTPUTS = "reference_outputs"
 
 
 @dataclass
@@ -40,6 +47,7 @@ class ETRecord:
     _delegate_map: Optional[
         Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]
     ] = None
+    _reference_outputs: Optional[Dict[str, List[ProgramOutput]]] = None
 
 
 def _handle_exported_program(
@@ -112,11 +120,34 @@ def _handle_edge_dialect_exported_program(
     )
 
 
+def _get_reference_outputs(
+    bundled_program: BundledProgram,
+) -> Dict[str, List[ProgramOutput]]:
+    """
+    Extracts out the expected outputs from the bundled program, keyed by the method names.
+    """
+    reference_outputs = {}
+    for method_test_suite in bundled_program.method_test_suites:
+        reference_outputs[method_test_suite.method_name] = []
+        for test_case in method_test_suite.test_cases:
+            if not test_case.expected_outputs:
+                raise ValueError(
+                    f"Missing at least one set of expected outputs for method {method_test_suite.method_name}."
+                )
+            reference_outputs[method_test_suite.method_name].append(
+                test_case.expected_outputs
+            )
+    return reference_outputs
+
+
 def generate_etrecord(
     etrecord_path: str,
     edge_dialect_program: Union[EdgeProgramManager, ExirExportedProgram],
     executorch_program: Union[
-        ExecutorchProgram, MultiMethodExecutorchProgram, ExecutorchProgramManager
+        ExecutorchProgram,
+        MultiMethodExecutorchProgram,
+        ExecutorchProgramManager,
+        BundledProgram,
     ],
     export_modules: Optional[
         Dict[
@@ -143,7 +174,7 @@ def generate_etrecord(
     Args:
         etrecord_path: Path to where the `ETRecord` file will be saved to.
         edge_dialect_program: `EdgeProgramManager` for this model returned by the call to to_edge()
-        executorch_program: `ExecutorchProgramManager` for this model returned by the call to `to_executorch()`
+        executorch_program: The ExecuTorch program for this model returned by the call to `to_executorch()` or the `BundledProgram` of this model
         export_modules[Optional]: **Should be ignored by OSS users**. A dictionary of graph modules with the key being the user provided name and the
             value being the corresponding exported module. The exported graph modules can be either the
             output of `torch.export()` or `exir.to_edge()`.
@@ -186,6 +217,16 @@ def generate_etrecord(
         raise RuntimeError(
             f"Unsupported type of edge_dialect_program passed in {type(edge_dialect_program)}."
         )
+
+    # When a BundledProgram is passed in, extract the reference outputs and save in a file
+    if isinstance(executorch_program, BundledProgram):
+        reference_outputs = _get_reference_outputs(executorch_program)
+        etrecord_zip.writestr(
+            ETRecordReservedFileNames.REFERENCE_OUTPUTS,
+            # @lint-ignore PYTHONPICKLEISBAD
+            pickle.dumps(reference_outputs),
+        )
+        executorch_program = executorch_program.executorch_program
 
     etrecord_zip.writestr(
         ETRecordReservedFileNames.DEBUG_HANDLE_MAP_NAME,
@@ -230,6 +271,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
     debug_handle_map = None
     delegate_map = None
     edge_dialect_program = None
+    reference_outputs = None
 
     serialized_exported_program_files = set()
     serialized_state_dict_files = set()
@@ -250,6 +292,11 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
                     ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM
                 ),
                 etrecord_zip.read(f"{entry}_state_dict"),
+            )
+        elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
+            # @lint-ignore PYTHONPICKLEISBAD
+            reference_outputs = pickle.loads(
+                etrecord_zip.read(ETRecordReservedFileNames.REFERENCE_OUTPUTS)
             )
         else:
             if entry.endswith("state_dict"):
@@ -272,4 +319,5 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         graph_map=graph_map,
         _debug_handle_map=debug_handle_map,
         _delegate_map=delegate_map,
+        _reference_outputs=reference_outputs,
     )

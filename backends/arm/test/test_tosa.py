@@ -105,6 +105,6 @@ def export_model(model, inputs, compile_spec):
     model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
     ArmPartitioner.compile_spec = compile_spec
 
-    model_edge = model_edge.to_backend(ArmPartitioner)
+    model_edge = model_edge.to_backend(ArmPartitioner())
     exec_prog = model_edge.to_executorch()
     return model_edge, exec_prog
