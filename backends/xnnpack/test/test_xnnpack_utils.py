@@ -312,6 +312,7 @@ class TestXNNPACK(unittest.TestCase):
         self,
         module,
         example_inputs,
+        use_reference_representation=False,
     ):
         module.eval()
         # program capture
@@ -324,7 +325,10 @@ class TestXNNPACK(unittest.TestCase):
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
         prepared = prepare_pt2e(m, quantizer)
-        converted = convert_pt2e(prepared)
+        converted = convert_pt2e(
+            prepared,
+            use_reference_representation=use_reference_representation
+        )
 
         captured_program = exir.capture(
             converted,

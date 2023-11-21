@@ -301,6 +301,7 @@ class EdgeOpOverload:
     ):
         self._schema = schema
         self._op = op
+        self._ops_with_out_dtype = {}
         self.__name__ = f"{self.namespace}.{self._op.__name__}"
 
     def to_out_variant(self) -> torch._ops.OpOverload:
@@ -323,6 +324,21 @@ class EdgeOpOverload:
         self._out_variant = out_variant
         return out_variant
 
+    def get_op_with_out_dtype(
+        self, out_dtype: torch.dtype
+    ) -> "EdgeOpOverloadWithOutDtype":
+        """Returns an EdgeOpOverloadWithOutDtype object with a predefined out_dtype.
+        Args:
+            out_dtype (torch.dtype): The desired output dtype.
+        Returns:
+            EdgeOpOverloadWithOutDtype: An EdgeOpOverload object with the given out_dtype.
+        """
+        if out_dtype not in self._ops_with_out_dtype:
+            self._ops_with_out_dtype[out_dtype] = EdgeOpOverloadWithOutDtype(
+                self, out_dtype
+            )
+        return self._ops_with_out_dtype[out_dtype]
+
     def __getattr__(self, name):
         if name == "_schema":
             return self._schema
@@ -336,6 +352,52 @@ class EdgeOpOverload:
         return "<EdgeOpOverload: {}>: schema = {}".format(
             self.__name__, self._schema.schema
         )
+
+    __str__ = __repr__
+
+
+class EdgeOpOverloadWithOutDtype(EdgeOpOverload):
+    """OpOverload for edge ops, with preset dtype. Sometimes we want to enforce the
+    operator to return a result with a specific dtype, for example in quantization
+    there exists: torch.ops.higher_order.out_dtype(aten.mm, torch.int32, ...)
+    The semantics is different from regular aten.mm, which gives a tensor with an
+    implementation dependent dtype.
+
+    In Edge dialect we expand out_dtype() higher order op into it's base op, but
+    still wants to preserve the implementation of out_dtype() in __call__().
+
+    Contains API to find the out variant of this operator overload.
+    """
+
+    def __init__(
+        self,
+        op: EdgeOpOverload,
+        out_dtype: torch.dtype,
+    ):
+        super().__init__(op._op, op._schema)
+        self._out_dtype = out_dtype
+
+    def __call__(self, *args, **kwargs):
+        # restore torch.ops.higher_order.out_dtype()
+        return torch.ops.higher_order.out_dtype(
+            self._op, self._out_dtype, *args, **kwargs
+        )
+
+    def __repr__(self):
+        return "<EdgeOpOverload: {}>: schema = {}, preset_out_dtype = {}".format(
+            self.__name__, self._schema.schema, self._out_dtype
+        )
+
+    def __eq__(self, other):
+        """
+        This is slightly hacky. We do this to support equality checks in pattern matcher.
+        If `other` is EdgeOpOverload, only check if it's the same as the parent op.
+        Else make sure everything is the same.
+        """
+        if not isinstance(other, EdgeOpOverloadWithOutDtype):
+            return isinstance(other, EdgeOpOverload) and self._op == other
+        else:
+            return self._op == other._op and self._out_dtype == other._out_dtype
 
     __str__ = __repr__
 
