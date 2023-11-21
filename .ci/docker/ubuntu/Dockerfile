@@ -10,6 +10,11 @@ ENV DEBIAN_FRONTEND noninteractive
 COPY ./common/install_base.sh install_base.sh
 RUN bash ./install_base.sh && rm install_base.sh
 
+COPY ./common/install_openssl.sh install_openssl.sh
+RUN bash ./install_openssl.sh && rm install_openssl.sh
+ENV OPENSSL_ROOT_DIR /opt/openssl
+ENV OPENSSL_DIR /opt/openssl
+
 # Install clang
 ARG CLANG_VERSION
 COPY ./common/install_clang.sh install_clang.sh
