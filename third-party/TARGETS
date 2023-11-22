@@ -288,7 +288,7 @@ prebuilt_cxx_library(
     name = "libtorch",
     shared_lib = ":libtorch_gen[libtorch]",
     exported_preprocessor_flags = [
-        "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
+        "-D_GLIBCXX_USE_CXX11_ABI=1",  # `libtorch` is built from source with CXX11_ABI on by default so any target depends on it need to use the same build config.
         "-I$(location :libtorch_gen[include])",  # include header directories
         "-I$(location :libtorch_gen[include])/torch/csrc/api/include",  # include header directories
     ],
@@ -308,7 +308,7 @@ prebuilt_cxx_library(
     name = "libtorch_python",
     shared_lib = ":libtorch_gen[libtorch_python]",
     exported_preprocessor_flags = [
-        "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
+        "-D_GLIBCXX_USE_CXX11_ABI=1",  # `libtorch` is built from source with CXX11_ABI on by default so any target depends on it need to use the same build config.
         "-I$(location :libtorch_gen[include])",  # include header directories
         "-I$(location :libtorch_gen[include])/torch/csrc/api/include",  # include header directories
     ],

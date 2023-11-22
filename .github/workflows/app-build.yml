@@ -7,6 +7,7 @@ on:
       - release/*
   pull_request:
     paths:
+      - .ci/docker/**
       - .github/workflows/app-build.yml
       - install_requirements.sh
       - backends/apple/**
