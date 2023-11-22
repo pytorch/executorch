@@ -5,7 +5,7 @@ COMPILER_FLAGS = [
 ]
 COMPILER_FLAGS_ATEN = [
     "-std=c++17",
-    "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so gtest needs to be compiled in the same way
+    "-D_GLIBCXX_USE_CXX11_ABI=1",  # `libtorch` is built from source with CXX11_ABI on by default so gtest needs to be compiled in the same way
 ]
 
 # define_gtest_targets
