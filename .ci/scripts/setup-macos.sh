@@ -76,7 +76,7 @@ install_sccache() {
     SCCACHE_VERSION="0.4.1"
 
     sudo curl --retry 3 "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
-    sudo chmod +x "${LOCAL_PATH}/sccache"
+    sudo chmod +x "${SCCACHE_PATH}/sccache"
   fi
 
   export PATH="${SCCACHE_PATH}:${PATH}"
