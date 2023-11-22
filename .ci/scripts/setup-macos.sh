@@ -58,23 +58,24 @@ install_buck() {
 }
 
 function write_sccache_stub() {
-  output=$1
-  binary=$(basename "${output}")
+  OUTPUT=$1
+  BINARY=$(basename "${OUTPUT}")
 
-  printf "#!/bin/sh\nif [ \$(ps auxc \$(ps auxc -o ppid \$\$ | grep \$\$ | rev | cut -d' ' -f1 | rev) | tr '\\\\n' ' ' | rev | cut -d' ' -f2 | rev) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${binary}")" "$(which "${binary}")" > "${output}"
-  chmod a+x "${output}"
+  printf "#!/bin/sh\nif [ \$(ps auxc \$(ps auxc -o ppid \$\$ | grep \$\$ | rev | cut -d' ' -f1 | rev) | tr '\\\\n' ' ' | rev | cut -d' ' -f2 | rev) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${BINARY}")" "$(which "${BINARY}")" > "${OUTPUT}"
+  chmod a+x "${OUTPUT}"
 }
 
 install_sccache() {
   export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
   export SCCACHE_S3_KEY_PREFIX=executorch
+  export SCCACHE_IDLE_TIMEOUT=0
+  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
+  export RUST_LOG=sccache::server=error
 
   SCCACHE_PATH="/usr/local/bin"
   # NB: The function is adopted from PyTorch MacOS build workflow
   # https://github.com/pytorch/pytorch/blob/main/.github/workflows/_mac-build.yml
   if ! command -v sccache &> /dev/null; then
-    SCCACHE_VERSION="0.4.1"
-
     sudo curl --retry 3 "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
     sudo chmod +x "${SCCACHE_PATH}/sccache"
   fi

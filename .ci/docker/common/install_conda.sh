@@ -50,7 +50,7 @@ fix_conda_ubuntu_libstdcxx() {
   #
   # PyTorch sev: https://github.com/pytorch/pytorch/issues/105248
   # Ref: https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
-  if grep -e [12][82].04.[623] /etc/issue >/dev/null; then
+  if grep -e "[12][82].04.[623]" /etc/issue >/dev/null; then
     rm "/opt/conda/envs/py_${PYTHON_VERSION}/lib/libstdc++.so.6"
   fi
 }

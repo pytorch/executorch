@@ -15,7 +15,7 @@ wget -q -O "${OPENSSL}.tar.gz" "https://ossci-linux.s3.amazonaws.com/${OPENSSL}.
 tar xf "${OPENSSL}.tar.gz"
 
 pushd "${OPENSSL}" || true
-./config --prefix=/opt/openssl -d '-Wl,--enable-new-dtags,-rpath,$(LIBRPATH)'
+./config --prefix=/opt/openssl -d "-Wl,--enable-new-dtags,-rpath,$(LIBRPATH)"
 # NOTE: openssl install errors out when built with the -j option
 make -j6; make install_sw
 # Link the ssl libraries to the /usr/lib folder.
