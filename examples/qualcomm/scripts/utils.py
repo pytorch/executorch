@@ -163,7 +163,9 @@ def build_executorch_binary(
             saver=False,
         )
     )
-    edge_prog.exported_program = to_backend(edge_prog.exported_program, QnnPartitioner())
+    edge_prog.exported_program = to_backend(
+        edge_prog.exported_program, QnnPartitioner()
+    )
     edge_prog.exported_program.graph_module.graph.print_tabular()
     exec_prog = edge_prog.to_executorch()
     with open(f"{file_name}.pte", "wb") as file:
