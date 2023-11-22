@@ -17,6 +17,7 @@ PORTABLE_MODULE_DEPS = [
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/util:util",
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    "//executorch/sdk/etdump:etdump_flatcc",
 ] + get_all_cpu_backend_targets()
 
 ATEN_MODULE_DEPS = [
@@ -30,6 +31,7 @@ ATEN_MODULE_DEPS = [
     "//executorch/util:read_file",
     "//executorch/sdk/bundled_program:runtime_aten",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
+    "//executorch/sdk/etdump:etdump_flatcc",
 ]
 
 # Generated lib for all ATen ops with aten kernel used by models in model inventory
