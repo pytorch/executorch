@@ -66,17 +66,9 @@ function write_sccache_stub() {
 }
 
 install_sccache() {
-  if [[ -z "${GITHUB_RUNNER:-}" ]]; then
-    # Use existing S3 cache bucket for self-hosted MacOS runner
-    export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
-    export SCCACHE_S3_KEY_PREFIX=executorch
-  else
-    # TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access
-    # to our infra, so compiler caching needs to be setup differently using GitHub
-    # cache. However, I need to figure out how to set that up for Nova MacOS job
-    return
-  fi
-
+  # Use existing S3 cache bucket for self-hosted MacOS runner
+  export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
+  export SCCACHE_S3_KEY_PREFIX=executorch
   export SCCACHE_IDLE_TIMEOUT=0
   export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
   export RUST_LOG=sccache::server=error
@@ -126,7 +118,14 @@ print_cmake_info() {
 install_buck
 install_conda
 install_pip_dependencies
-install_sccache
+
+# TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access
+# to our infra, so compiler caching needs to be setup differently using GitHub
+# cache. However, I need to figure out how to set that up for Nova MacOS job
+if [[ -z "${GITHUB_RUNNER:-}" ]]; then
+  install_sccache
+fi
+
 install_pytorch_and_domains
 print_cmake_info
 install_flatc_from_source
