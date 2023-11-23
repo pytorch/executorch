@@ -26,6 +26,7 @@ from executorch.exir.schema import (
     DataLocation,
     DataSegment,
     Program,
+    SubsegmentOffsets,
 )
 
 
@@ -238,7 +239,8 @@ def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
 
 
 def _extract_segments(
-    program: Program, segment_alignment: int
+    program: Program, segment_alignment: int,
+    extract_constants: bool
 ) -> Tuple[Program, List[bytes]]:
     """Moves data from the Program into a list of segments.
 
@@ -331,6 +333,47 @@ def _extract_segments(
     # Preserve any entries that were not moved into segments.
     program.backend_delegate_data = remaining_inline
 
+    if extract_constants:
+        # Move constant buffers into segments
+        constants_ : Buffer = b''
+        constant_segment_offsets = []
+        current_offset: int = 0
+        for buffer in program.constant_buffer:
+            buffer_length = len(buffer.storage)
+            pad_length = _padding_required(buffer_length, 16)
+
+            # constant data
+            constants_ += buffer.storage
+            constants_ += b'\x00' * pad_length
+
+            # offsets
+            constant_segment_offsets.append(current_offset)
+            current_offset += buffer_length + pad_length
+
+        # set program.constant_segment
+        program.constant_segment = SubsegmentOffsets(
+            segment_index = len(program.segments),
+            offsets = constant_segment_offsets,
+        )
+        # set program.segments
+        prev_end = (
+            program.segments[-1].offset + program.segments[-1].size
+            if program.segments
+            else 0
+        )
+        constant_segment_offset = _aligned_size(prev_end, segment_alignment)
+        program.segments.append(
+            DataSegment(
+                offset = constant_segment_offset,
+                size = len(constants_),
+            )
+        )
+
+        # append serialized constant data
+        segments.append(constants_)
+        # clear constant_buffer
+        program.constant_buffer = []
+
     return (program, segments)
 
 
@@ -421,6 +464,7 @@ def serialize_pte_binary(
     program: Program,
     *,
     extract_segments: bool = False,
+    extract_constants: bool = False,
     segment_alignment: int = 4096,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
@@ -452,7 +496,9 @@ def serialize_pte_binary(
     if extract_segments:
         # May return a copy of the program to avoid modifying the input.
         program, segments = _extract_segments(
-            program=program, segment_alignment=segment_alignment
+            program=program,
+            segment_alignment=segment_alignment,
+            extract_constants=extract_constants,
         )
 
     # Convert to a standard flatbuffer binary.

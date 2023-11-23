@@ -243,6 +243,10 @@ class DataSegment:
     offset: int
     size: int
 
+@dataclass
+class SubsegmentOffsets:
+    segment_index: int
+    offsets: List[int]
 
 @dataclass
 class Program:
@@ -251,3 +255,4 @@ class Program:
     constant_buffer: List[Buffer]
     backend_delegate_data: List[BackendDelegateInlineData]
     segments: List[DataSegment]
+    constant_segment: SubsegmentOffsets
