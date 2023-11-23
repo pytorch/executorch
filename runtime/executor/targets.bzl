@@ -82,6 +82,7 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/platform:platform",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
                 ":memory_manager",
             ],
             visibility = [

@@ -235,6 +235,12 @@ void ETDumpGen::track_allocation(
   etdump_RunData_events_push_end(&builder);
 }
 
+// TODO : Actual implementation that logs these intermediate values to ETDump.
+void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
+  (void)evalue;
+  (void)evalue_type;
+}
+
 etdump_result ETDumpGen::get_etdump_data() {
   etdump_result result;
   if (etdump_gen_state == ETDumpGen_Adding_Events) {
