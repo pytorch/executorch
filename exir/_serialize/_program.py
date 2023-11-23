@@ -254,7 +254,6 @@ def _extract_segments(
     Returns:
         A tuple of (modified program, list of segment data).
     """
-    print(f"_serialize/_program.py: _extract_segments. program.segments={len(program.segments)}")
     if program.segments:
         raise ValueError(
             f"Program already has {len(program.segments)} segments: "
@@ -335,13 +334,11 @@ def _extract_segments(
     program.backend_delegate_data = remaining_inline
 
     if extract_constants:
-        print("_serialize/_program.py: extracting constants")
         # Move constant buffers into segments
         constants_ : Buffer = b''
         constant_segment_offsets = []
         current_offset: int = 0
         for buffer in program.constant_buffer:
-            print(f"_serialize_program.py: current_offset {current_offset}")
             buffer_length = len(buffer.storage)
             pad_length = _padding_required(buffer_length, 16)
 
@@ -378,7 +375,6 @@ def _extract_segments(
         # clear constant_buffer
         program.constant_buffer = []
 
-    print(f"_serialize/_program.py: \nprogram {program}\nsegments: {segments}")
     return (program, segments)
 
 
@@ -499,8 +495,6 @@ def serialize_pte_binary(
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
 
-    extract_segments = True
-    extract_constants = True
     if extract_segments:
         # May return a copy of the program to avoid modifying the input.
         program, segments = _extract_segments(
