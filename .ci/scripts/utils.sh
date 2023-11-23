@@ -38,7 +38,13 @@ install_pip_dependencies() {
   popd || return
 }
 
-install_pytorch() {
+install_domains() {
+  echo "Install torchvision and torchaudio"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+}
+
+install_pytorch_and_domains() {
   pushd .ci/docker || return
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
@@ -54,21 +60,15 @@ install_pytorch() {
   # Then build and install PyTorch
   conda run --no-capture-output python setup.py bdist_wheel
   pip install "$(echo dist/*.whl)"
-  popd || return
 
+  # Grab the pinned audio and vision commits from PyTorch
+  export TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  install_domains
+
+  popd || return
   # Print sccache stats for debugging
   sccache --show-stats || true
-}
-
-install_domains() {
-  pushd .ci/docker || return
-  TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
-  TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
-  popd || return
-
-  echo "Install torchvision and torchaudio"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
 }
 
 install_flatc_from_source() {

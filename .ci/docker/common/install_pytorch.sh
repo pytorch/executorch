@@ -10,7 +10,13 @@ set -ex
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
-install_pytorch() {
+install_domains() {
+  echo "Install torchvision and torchaudio"
+  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+}
+
+install_pytorch_and_domains() {
   # Clone the Executorch
   git clone https://github.com/pytorch/pytorch.git
 
@@ -24,8 +30,13 @@ install_pytorch() {
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
-  popd || true
 
+  # Grab the pinned audio and vision commits from PyTorch
+  export TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  install_domains
+
+  popd || true
   # Clean up the cloned PyTorch repo to reduce the Docker image size
   rm -rf pytorch
 
@@ -33,11 +44,4 @@ install_pytorch() {
   as_ci_user sccache --show-stats
 }
 
-install_domains() {
-  echo "Install torchvision and torchaudio"
-  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
-  pip_install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
-}
-
-install_pytorch
-install_domains
+install_pytorch_and_domains

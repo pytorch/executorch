@@ -105,8 +105,6 @@ We have the following custom variables defined in this docset:
 
 - `${executorch_version:buck2}`
 - `${executorch_version:pytorch}`
-- `${executorch_version:vision}`
-- `${executorch_version:audio}`
 
 You can use the variables in both regular text and code blocks.
 
