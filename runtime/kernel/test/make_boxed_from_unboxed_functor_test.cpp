@@ -40,7 +40,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, Basic) {
   Kernel my_kernel =
       Kernel::make_boxed_kernel("my_ns::my_op.out", EXECUTORCH_FN(my_op_out));
   ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(my_kernel);
-  // patternlint-disable-next-line clang-diagnostic-unused-variable
+  // @lint-ignore CLANGTIDY
   auto s1 = register_kernels(kernels_array);
   EXPECT_TRUE(hasOpsFn("my_ns::my_op.out"));
 }
@@ -49,7 +49,7 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
   Kernel my_kernel =
       Kernel::make_boxed_kernel("my_ns::set_1.out", EXECUTORCH_FN(set_1_out));
   ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(my_kernel);
-  // patternlint-disable-next-line clang-diagnostic-unused-variable
+  // @lint-ignore CLANGTIDY
   auto s1 = register_kernels(kernels_array);
   EXPECT_TRUE(hasOpsFn("my_ns::set_1.out"));
 
