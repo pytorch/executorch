@@ -70,6 +70,11 @@ install_sccache() {
     # Use existing S3 cache bucket for self-hosted MacOS runner
     export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
     export SCCACHE_S3_KEY_PREFIX=executorch
+  else
+    # TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access
+    # to our infra, so compiler caching needs to be setup differently using GitHub
+    # cache. However, I need to figure out how to set that up for Nova MacOS job
+    return
   fi
 
   export SCCACHE_IDLE_TIMEOUT=0
