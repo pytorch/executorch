@@ -30,6 +30,18 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_test(
+        name = "make_boxed_from_unboxed_functor_test",
+        srcs = [
+            "make_boxed_from_unboxed_functor_test.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/kernel:operator_registry",
+            "//executorch/runtime/kernel:kernel_runtime_context",
+            "//executorch/runtime/core/exec_aten:lib",
+        ],
+    )
+
     et_operator_library(
         name = "executorch_all_ops",
         include_all_operators = True,
