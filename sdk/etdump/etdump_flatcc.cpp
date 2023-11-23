@@ -131,7 +131,7 @@ void ETDumpGen::end_profiling_delegate(
   etdump_ProfileEvent_start(&builder);
   etdump_ProfileEvent_start_time_add(&builder, event_tracer_entry.start_time);
   etdump_ProfileEvent_end_time_add(&builder, end_time);
-  etdump_ProfileEvent_chain_id_add(&builder, chain_id_);
+  etdump_ProfileEvent_chain_index_add(&builder, chain_id_);
   etdump_ProfileEvent_instruction_id_add(&builder, debug_handle_);
   // Delegate debug identifier can either be of a string type or an integer
   // type. If it's a string type then it's a value of type
@@ -172,7 +172,7 @@ void ETDumpGen::log_profiling_delegate(
   etdump_ProfileEvent_start(&builder);
   etdump_ProfileEvent_start_time_add(&builder, start_time);
   etdump_ProfileEvent_end_time_add(&builder, end_time);
-  etdump_ProfileEvent_chain_id_add(&builder, chain_id_);
+  etdump_ProfileEvent_chain_index_add(&builder, chain_id_);
   etdump_ProfileEvent_instruction_id_add(&builder, debug_handle_);
   if (string_id == -1) {
     etdump_ProfileEvent_delegate_debug_id_int_add(
@@ -200,7 +200,7 @@ void ETDumpGen::end_profiling(EventTracerEntry prof_entry) {
   etdump_ProfileEvent_start(&builder);
   etdump_ProfileEvent_start_time_add(&builder, prof_entry.start_time);
   etdump_ProfileEvent_end_time_add(&builder, end_time);
-  etdump_ProfileEvent_chain_id_add(&builder, prof_entry.chain_id);
+  etdump_ProfileEvent_chain_index_add(&builder, prof_entry.chain_id);
   etdump_ProfileEvent_instruction_id_add(&builder, prof_entry.debug_handle);
   if (prof_entry.event_id != -1) {
     etdump_ProfileEvent_name_add(&builder, prof_entry.event_id);

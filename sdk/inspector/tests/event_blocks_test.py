@@ -63,6 +63,7 @@ class TestEventBlock(unittest.TestCase):
         )
         run_data_1 = flatcc.RunData(
             name="run_data_1",
+            bundled_input_index=-1,
             allocators=[],
             events=[
                 flatcc.Event(
@@ -77,6 +78,7 @@ class TestEventBlock(unittest.TestCase):
         )
         run_data_2 = flatcc.RunData(
             name="run_data_2",
+            bundled_input_index=-1,
             allocators=[],
             events=[
                 flatcc.Event(
@@ -95,6 +97,7 @@ class TestEventBlock(unittest.TestCase):
         )
         run_data_3 = flatcc.RunData(
             name="run_data_3",
+            bundled_input_index=-1,
             allocators=[],
             events=[
                 flatcc.Event(
