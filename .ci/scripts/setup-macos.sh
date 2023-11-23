@@ -70,10 +70,6 @@ install_sccache() {
     # Use existing S3 cache bucket for self-hosted MacOS runner
     export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
     export SCCACHE_S3_KEY_PREFIX=executorch
-  else
-    # NB: Unlike our self-hosted runner, GitHub runner doesn't have access to our infra
-    # like S3 bucket, so compiler caching needs to be setup differently using GH cache
-    export SCCACHE_GHA_ENABLED=on
   fi
 
   export SCCACHE_IDLE_TIMEOUT=0
