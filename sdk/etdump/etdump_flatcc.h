@@ -57,6 +57,10 @@ class ETDumpGen : public EventTracer {
       const char* metadata) override;
   virtual void track_allocation(AllocatorID id, size_t size) override;
   virtual AllocatorID track_allocator(const char* name) override;
+  virtual void log_evalue(
+      const EValue& evalue,
+      LoggedEValueType evalue_type =
+          LoggedEValueType::kIntermediateOutput) override;
   etdump_result get_etdump_data();
   size_t get_num_blocks();
 

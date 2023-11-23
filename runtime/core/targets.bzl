@@ -22,9 +22,6 @@ def define_common_targets():
             "array_ref.h",  # TODO(T157717874): Migrate all users to span and then move this to portable_type
             "data_loader.h",
             "error.h",
-            "event_tracer.h",
-            "event_tracer_hooks.h",
-            "event_tracer_hooks_delegate.h",
             "freeable_buffer.h",
             "function_ref.h",
             "result.h",
@@ -34,7 +31,6 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        exported_preprocessor_flags = get_event_tracer_flags(),
         exported_deps = [
             "//executorch/runtime/platform:platform",
         ],
@@ -82,6 +78,24 @@ def define_common_targets():
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 ":tag",
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "event_tracer" + aten_suffix,
+            exported_headers = [
+                "event_tracer.h",
+                "event_tracer_hooks.h",
+                "event_tracer_hooks_delegate.h",
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_preprocessor_flags = get_event_tracer_flags(),
+            exported_deps = [
+                "//executorch/runtime/platform:platform",
+                "//executorch/runtime/core:evalue" + aten_suffix,
             ],
         )
 
