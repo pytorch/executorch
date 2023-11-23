@@ -32,8 +32,11 @@ install_pytorch_and_domains() {
   pip_install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
-  export TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
-  export TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHAUDIO_VERSION
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  export TORCHVISION_VERSION
+
   install_domains
 
   popd || true
