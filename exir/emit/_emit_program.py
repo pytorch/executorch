@@ -28,7 +28,7 @@ from executorch.exir.schema import (
     Int,
     Program,
     String,
-    SubsegmentOffsets
+    SubsegmentOffsets,
 )
 from executorch.exir.tensor import layout_enum, scalar_type_enum
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION

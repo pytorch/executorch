@@ -248,7 +248,6 @@ class SubsegmentOffsets:
     segment_index: int
     offsets: List[int]
 
-
 @dataclass
 class Program:
     version: int

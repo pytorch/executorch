@@ -350,7 +350,6 @@ def _extract_segments(
             constant_segment_offsets.append(current_offset)
             current_offset += buffer_length + pad_length
 
-
         # set program.constant_segment
         program.constant_segment = SubsegmentOffsets(
             segment_index = len(program.segments),
@@ -494,7 +493,6 @@ def serialize_pte_binary(
     """
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
-
     if extract_segments:
         # May return a copy of the program to avoid modifying the input.
         program, segments = _extract_segments(
