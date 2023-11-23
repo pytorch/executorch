@@ -17,6 +17,9 @@
 #include <executorch/runtime/core/function_ref.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/platform.h>
+#if __cplusplus >= 201703L
+#include <executorch/runtime/kernel/make_boxed_from_unboxed_functor.h>
+#endif
 // Debug switch for operator registry
 #if defined(ET_OP_REGISTRY_DEBUG)
 #include <ostream>
@@ -199,6 +202,13 @@ struct Kernel {
 
   explicit Kernel(const char* name, KernelKey key, OpFunction func)
       : name_(name), kernel_key_(key), op_(func) {}
+
+#if __cplusplus >= 201703L
+  template <typename FuncType>
+  static inline Kernel make_boxed_kernel(const char* name, FuncType) {
+    return Kernel(name, WrapUnboxedIntoFunctor<FuncType>::call);
+  }
+#endif
 
   Kernel() {}
 };
