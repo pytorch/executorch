@@ -186,7 +186,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         ) = get_output_quantization_param(model_edge)
 
     model_edge = model_edge.transform((DuplicateDequantNodePass(),))
-    model_edge = model_edge.to_backend(ArmPartitioner)
+    model_edge = model_edge.to_backend(ArmPartitioner())
     exec_prog = model_edge.to_executorch()
 
     # Save ground truth results to file

@@ -251,7 +251,7 @@ TEST_F(ProfilerETDumpTest, VerifyData) {
           etdump_ProfileEvent_name(single_prof_event),
           strlen(etdump_ProfileEvent_name(single_prof_event))),
       "test_event");
-  EXPECT_EQ(etdump_ProfileEvent_chain_id(single_prof_event), 0);
+  EXPECT_EQ(etdump_ProfileEvent_chain_index(single_prof_event), 0);
 
   flatbuffers_string_t allocator_name =
       etdump_Allocator_name(etdump_Allocator_vec_at(allocator_vec, 0));

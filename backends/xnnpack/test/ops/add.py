@@ -25,6 +25,16 @@ class TestAdd(unittest.TestCase):
             z = z + z
             return z
 
+    class AddConstant(torch.nn.Module):
+        def __init__(self, constant):
+            super().__init__()
+            self._constant = constant
+
+        def forward(self, x):
+            out1 = x + self._constant
+            out2 = x + self._constant + self._constant
+            return out1, out2
+
     def test_fp32_add(self):
         inputs = (torch.ones(1), torch.ones(1))
         (
@@ -33,6 +43,23 @@ class TestAdd(unittest.TestCase):
             .check_count({"torch.ops.aten.add.Tensor": 4})
             .to_edge()
             .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_fp32_add_constant(self):
+        inputs = (torch.randn(4, 4, 4),)
+        (
+            Tester(self.AddConstant(torch.ones(4, 4, 4)), inputs)
+            .export()
+            .check_count({"torch.ops.aten.add.Tensor": 3})
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 3})
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
