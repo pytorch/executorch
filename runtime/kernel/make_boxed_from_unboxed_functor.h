@@ -54,19 +54,6 @@ template <class Result, class... Args>
 struct is_function_type<Result(Args...)> : std::true_type {};
 template <class T>
 using is_function_type_t = typename is_function_type<T>::type;
-/**
- * is_instantiation_of<T, I> is true_type iff I is a template instantiation of T
- * (e.g. vector<int> is an instantiation of vector) Example:
- *    is_instantiation_of_t<vector, vector<int>> // true
- *    is_instantiation_of_t<pair, pair<int, string>> // true
- *    is_instantiation_of_t<vector, pair<int, string>> // false
- */
-template <template <class...> class Template, class T>
-struct is_instantiation_of : std::false_type {};
-template <template <class...> class Template, class... Args>
-struct is_instantiation_of<Template, Template<Args...>> : std::true_type {};
-template <template <class...> class Template, class T>
-using is_instantiation_of_t = typename is_instantiation_of<Template, T>::type;
 
 // A compile-time wrapper around a function pointer
 template <class FuncType_, FuncType_* func_ptr_>

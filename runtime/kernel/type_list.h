@@ -5,10 +5,10 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
- ///
- /// \file runtime/kernel/type_list.h
- /// Forked from pytorch/c10/util/TypeList.h
- /// \brief Utilities for working with type lists.
+///
+/// \file runtime/kernel/type_list.h
+/// Forked from pytorch/c10/util/TypeList.h
+/// \brief Utilities for working with type lists.
 #pragma once
 #if __cplusplus < 201703L
 #error "This header requires C++17"
@@ -40,6 +40,19 @@ struct size<typelist<Types...>> final {
   static constexpr size_t value = sizeof...(Types);
 };
 
+/**
+ * is_instantiation_of<T, I> is true_type iff I is a template instantiation of T
+ * (e.g. vector<int> is an instantiation of vector) Example:
+ *    is_instantiation_of_t<vector, vector<int>> // true
+ *    is_instantiation_of_t<pair, pair<int, string>> // true
+ *    is_instantiation_of_t<vector, pair<int, string>> // false
+ */
+template <template <class...> class Template, class T>
+struct is_instantiation_of : std::false_type {};
+template <template <class...> class Template, class... Args>
+struct is_instantiation_of<Template, Template<Args...>> : std::true_type {};
+template <template <class...> class Template, class T>
+using is_instantiation_of_t = typename is_instantiation_of<Template, T>::type;
 
 /// Base template.
 template <size_t Index, class TypeList>
