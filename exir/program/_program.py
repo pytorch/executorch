@@ -275,6 +275,7 @@ class ExirExportedProgram:
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
             extract_segments=config.extract_segments,
+            extract_constants=config.extract_constants,
             segment_alignment=config.segment_alignment,
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
@@ -303,6 +304,7 @@ class ExecutorchProgram:
         exir_exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
         extract_segments: bool,
+        extract_constants: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -316,6 +318,7 @@ class ExecutorchProgram:
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
         self._extract_segments: bool = extract_segments
+        self._extract_constants: bool = extract_constants
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -326,6 +329,7 @@ class ExecutorchProgram:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
                 extract_segments=self._extract_segments,
+                extract_constants=self._extract_constants,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -598,6 +602,7 @@ class MultiMethodExecutorchProgram:
         executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
         extract_segments: bool,
+        extract_constants: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -614,6 +619,7 @@ class MultiMethodExecutorchProgram:
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
         self._extract_segments: bool = extract_segments
+        self._extract_constants: bool = extract_constants
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -625,6 +631,7 @@ class MultiMethodExecutorchProgram:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
                 extract_segments=self._extract_segments,
+                extract_constants=self._extract_constants,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -676,6 +683,7 @@ def multi_method_program_to_executorch(
         executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
         extract_segments=config.extract_segments,
+        extract_constants=config.extract_constants,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
@@ -993,6 +1001,7 @@ class ExecutorchProgramManager:
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
             extract_segments=backend_config.extract_segments,
+            extract_constants=backend_config.extract_constants,
             segment_alignment=backend_config.segment_alignment,
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,
