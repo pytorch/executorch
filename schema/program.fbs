@@ -357,6 +357,17 @@ table DataSegment {
   size: uint64;
 }
 
+// Describes data offsets into a particular segment
+table SubsegmentOffsets {
+  // Index of the segment in Program.segments
+  segment_index: uint64;
+
+  // Subsegment offsets are relative to the segment offset provided in
+  // Program.segments[segment_index].offset
+  // Segments are aligned to 16 by default, or @executorch-tensor-alignment
+  offsets: [uint64];
+}
+
 table Program {
   // Schema version.
   version:uint;
@@ -368,6 +379,7 @@ table Program {
   // Tables of constant data, used for constant Values (e.g.data field of weight tensors).
   // Each constant is assigned an index into the table which are each individually aligned.
   // 0 index is reserved to be pointed to by non-constant Tensors
+  // If this field is non-empty, Program.constant_segment must be empty.
   constant_buffer:[Buffer];
 
   // List of delegate data. Pointed to by BackendDelegateDataReference.
@@ -376,6 +388,10 @@ table Program {
   // List of data segments that follow the Program data in this file, sorted by
   // offset. Elements in this schema can refer to these segments by index.
   segments:[DataSegment];
+
+  // Describes the offsets of each constant tensor, relative to the segment offset.
+  // If this is non-empty, then Program.constant_buffer must be empty.
+  constant_segment: SubsegmentOffsets;
 }
 
 root_type Program;
