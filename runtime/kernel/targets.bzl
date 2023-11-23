@@ -30,7 +30,11 @@ def define_common_targets():
     runtime.cxx_library(
         name = "operator_registry_TWO_KERNELS_TEST_ONLY",
         srcs = ["operator_registry.cpp"],
-        exported_headers = ["operator_registry.h"],
+        exported_headers = [
+            "operator_registry.h",
+            "make_boxed_from_unboxed_functor.h",
+            "type_list.h",
+        ],
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",

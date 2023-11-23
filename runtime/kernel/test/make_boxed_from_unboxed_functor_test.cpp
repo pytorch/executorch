@@ -18,13 +18,13 @@ using RuntimeContext = torch::executor::KernelRuntimeContext;
 using namespace torch::executor;
 
 Tensor& my_op_out(RuntimeContext& ctx, const Tensor& a, Tensor& out) {
-  (void) ctx;
-  (void) a;
+  (void)ctx;
+  (void)a;
   return out;
 }
 
 Tensor& set_1_out(RuntimeContext& ctx, Tensor& out) {
-  (void) ctx;
+  (void)ctx;
   out.mutable_data_ptr<int32_t>()[0] = 1;
   return out;
 }
