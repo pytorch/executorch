@@ -53,10 +53,11 @@ jobs:
         BACKEND=${{ matrix.backend }}
         DEMO_BACKEND_DELEGATION=${{ matrix.demo_backend_delegation }}
 
+        bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test xecutorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
         popd
 
         # TODO(huydhn): Remove this function
@@ -79,11 +80,12 @@ jobs:
         pushd "${WORKSPACE}/pytorch/executorch"
 
         BUILD_TOOL=${{ matrix.build-tool }}
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
+        bash .ci/scripts/setup-conda.sh
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test custom ops
-        PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
         popd
 
         # TODO(huydhn): Remove this function

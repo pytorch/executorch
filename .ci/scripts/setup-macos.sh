@@ -116,7 +116,6 @@ print_cmake_info() {
 # NB: we need buck2 in all cases because cmake build also depends on calling
 # buck2 atm
 install_buck
-install_conda
 install_pip_dependencies
 
 # TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access

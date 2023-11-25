@@ -24,13 +24,6 @@ install_executorch() {
   pip list
 }
 
-install_conda() {
-  pushd .ci/docker || return
-  # Install conda dependencies like flatbuffer
-  conda install -y --file conda-env-ci.txt
-  popd || return
-}
-
 install_pip_dependencies() {
   pushd .ci/docker || return
   # Install all Python dependencies, including PyTorch
@@ -58,7 +51,7 @@ install_pytorch_and_domains() {
   git submodule update --init --recursive
 
   # Then build and install PyTorch
-  conda run --no-capture-output python setup.py bdist_wheel
+  python setup.py bdist_wheel
   pip install "$(echo dist/*.whl)"
 
   # Grab the pinned audio and vision commits from PyTorch
