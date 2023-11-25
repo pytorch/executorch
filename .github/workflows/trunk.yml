@@ -59,6 +59,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
         popd
 
+        # TODO(huydhn): Remove this function
+        pip uninstall -y torch torchvision torchaudio
+
   test-custom-ops-macos:
     name: test-custom-ops-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -83,6 +86,9 @@ jobs:
         PYTHON_EXECUTABLE=python bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
         popd
 
+        # TODO(huydhn): Remove this function
+        pip uninstall -y torch torchvision torchaudio
+
   test-selective-build-macos:
     name: test-selective-build-macos
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -106,6 +112,9 @@ jobs:
         # Build and test selective build
         PYTHON_EXECUTABLE=python bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
         popd
+
+        # TODO(huydhn): Remove this function
+        pip uninstall -y torch torchvision torchaudio
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation

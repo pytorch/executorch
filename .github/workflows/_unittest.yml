@@ -97,3 +97,6 @@ jobs:
         buck2 test runtime/core/... runtime/platform/...
 
         popd
+
+        # TODO(huydhn): Remove this function
+        pip uninstall -y torch torchvision torchaudio
