@@ -235,7 +235,7 @@ if __name__ == "__main__":
         (inputs[0],),
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs,
+        [(input,) for input in inputs],
         custom_annotations=(annotate_forward,),
     )
     # setup required paths accordingly

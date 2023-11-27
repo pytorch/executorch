@@ -63,6 +63,7 @@ jobs:
           - build-tool: buck2
     with:
       runner: macos-m1-12
+      python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -79,7 +80,7 @@ jobs:
 
         # Build //extension/pybindings:portable_lib. Example path:
         # buck-out/v2/gen/root/524f8da68ea2a374/extension/pybindings/__portable_lib__/portable_lib.dylib
-        SO_LIB_DIR=$(buck2 build //extension/pybindings:portable_lib --show-output | cut -d' ' -f2 | xargs dirname)
+        SO_LIB_DIR=$(${CONDA_RUN} buck2 build //extension/pybindings:portable_lib --show-output | cut -d' ' -f2 | xargs dirname)
 
         # Let LD_LIBRARY_PATH include libtorch_python directory
         PYTHON_LIB_DIR=$(${CONDA_RUN} python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
@@ -96,6 +97,6 @@ jobs:
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
-        buck2 test runtime/core/... runtime/platform/...
+        ${CONDA_RUN} buck2 test runtime/core/... runtime/platform/...
 
         popd

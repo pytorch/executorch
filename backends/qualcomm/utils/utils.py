@@ -18,6 +18,10 @@ from executorch.backends.qualcomm.passes.annotate_and_quant_scalar import (
     AnnotateAndQuantScalar,
 )
 from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQuantAttrs
+from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
+    ConvertAddmmmmWithLinear,
+)
+from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
 from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
 from executorch.backends.qualcomm.passes.convert_hardswish import ConvertHardswish
 from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
@@ -27,7 +31,6 @@ from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
-from executorch.backends.transforms.addmm_mm_to_linear import AddmmToLinearTransform
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.fx import passes
 
@@ -61,12 +64,13 @@ def capture_program(
     # apply passes one by one here to avoid IR capture failure
     edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
-    AddmmToLinearTransform()(graph_module)
+    RemoveClone()(graph_module)
+    ConvertAddmmmmWithLinear()(graph_module)
     ConvertHardsigmoid()(graph_module)
     ConvertHardswish()(graph_module)
+    ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
-    RemoveClone()(graph_module)
     LayoutTransform(edge_program)(graph_module)
     AnnotateQuantAttrs(edge_program)(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)

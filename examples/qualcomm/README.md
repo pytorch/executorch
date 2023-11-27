@@ -28,14 +28,22 @@ Please connect an Android phone to the workstation. We use `adb` to communicate 
 If the device is in a remote host, you might want to add `-H` to the `adb`
 commands in the `SimpleADB` class inside [utils.py](utils.py).
 
-
 ## Please use python xxx.py --help for information of each examples.
 
 Some CLI examples here. Please adjust according to your environment:
 
+#### First switch to following folder
+```bash
+cd $EXECUTORCH_ROOT/examples/qualcomm/scripts
+```
+
+#### For MobileNet_v2
 ```bash
 python mobilenet_v2.py -s <device_serial> -m "SM8550" -b path/to/build_android/ -d /path/to/imagenet-mini/val
+```
 
+#### For DeepLab_v3
+```bash
 python deeplab_v3.py -s <device_serial> -m "SM8550" -b path/to/build_android/ --download
 ```
 
