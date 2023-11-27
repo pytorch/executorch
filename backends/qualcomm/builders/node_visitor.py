@@ -13,6 +13,8 @@ import torch
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
+from .qnn_constants import QNN_uint16
+
 from .utils import get_parameter, is_graph_input, is_graph_output, is_parameter
 
 
@@ -23,6 +25,7 @@ QNN_QUANT_TYPE_MAP = {
     # Note that there is no int64 tensor data type in Qnn.
     torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UNDEFINED,
     torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_8,
+    QNN_uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UFIXED_POINT_16,
 }
 QNN_TENSOR_TYPE_MAP = {
     torch.float32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
@@ -31,6 +34,7 @@ QNN_TENSOR_TYPE_MAP = {
     torch.int32: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_32,
     torch.int64: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_INT_64,
     torch.uint8: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_8,
+    QNN_uint16: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16,
     float: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
 }
 
@@ -113,6 +117,8 @@ class NodeVisitor:
                 quant_config["axis"] = quant_attrs["axis"]
 
             quant_config["scale_offset"] = scale_offset
+            quant_config["quant_max"] = quant_attrs["quant_max"]
+            quant_config["quant_min"] = quant_attrs["quant_min"]
             quant_config["dtype"] = quant_attrs["dtype"]
             return PER_CHANNEL_ENCODING_MAPPING[encoding], quant_config
 
@@ -120,11 +126,14 @@ class NodeVisitor:
         quant_config["scale"] = quant_attrs["scale"]
         # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
         quant_config["offset"] = -quant_attrs["zero_point"]
+        # Distinguish what data type the node is
+        quant_config["quant_max"] = quant_attrs["quant_max"]
+        quant_config["quant_min"] = quant_attrs["quant_min"]
         quant_config["dtype"] = quant_attrs["dtype"]
         return PER_TENSOR_ENCODING_MAPPING[encoding], quant_config
 
     def get_quant_tensor_value(
-        self, node: torch.fx.Node, tensor: torch.Tensor
+        self, node: torch.fx.Node, tensor: torch.Tensor, dtype
     ) -> torch.Tensor:
         quant_attrs = node.meta["quant_attrs"]
         encoding = quant_attrs["encoding"]
@@ -136,6 +145,8 @@ class NodeVisitor:
         # per tensor situation
         scale = quant_attrs["scale"]
         offset = quant_attrs["zero_point"]
+        if dtype == PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16:
+            return tensor.div(scale).add(offset).round().to(torch.int32)
         return tensor.div(scale).add(offset).round().to(quant_attrs["dtype"])
 
     def get_tensor_type(
@@ -160,6 +171,32 @@ class NodeVisitor:
 
         return tensor_type
 
+    def get_data_type(
+        self,
+        tensor: torch.Tensor,
+        quant_config: Dict,
+        is_tensor: bool,
+    ) -> PyQnnWrapper.Qnn_TensorType_t:
+        if quant_config and is_tensor:
+            quant_range = quant_config["quant_max"] - quant_config["quant_min"]
+            unsigned = quant_config["quant_min"] >= 0
+            if quant_range <= torch.iinfo(torch.int8).max - torch.iinfo(torch.int8).min:
+                if unsigned:
+                    quant_config["dtype"] = torch.uint8
+                else:
+                    quant_config["dtype"] = torch.int8
+            elif (
+                quant_range
+                <= torch.iinfo(torch.int16).max - torch.iinfo(torch.int16).min
+            ):
+                if unsigned:
+                    quant_config["dtype"] = QNN_uint16
+                else:
+                    quant_config["dtype"] = torch.int16
+            return QNN_QUANT_TYPE_MAP[quant_config["dtype"]]
+        else:
+            return QNN_TENSOR_TYPE_MAP[tensor.dtype]
+
     def define_value(
         self,
         node: torch.fx.Node,
@@ -174,11 +211,7 @@ class NodeVisitor:
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
         tensor_type = self.get_tensor_type(node, tensor_type)
         quant_encoding, quant_configs = self.get_quant_encoding_conf(node)
-
-        if is_tensor and quant_configs:
-            dtype = QNN_QUANT_TYPE_MAP[quant_configs["dtype"]]
-        else:
-            dtype = QNN_TENSOR_TYPE_MAP[tensor.dtype]
+        dtype = self.get_data_type(tensor, quant_configs, is_tensor)
 
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
@@ -194,7 +227,7 @@ class NodeVisitor:
             )
         else:
             if quant_configs:
-                tensor = self.get_quant_tensor_value(node, tensor)
+                tensor = self.get_quant_tensor_value(node, tensor, dtype)
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
                 node.name,
                 tensor_type,

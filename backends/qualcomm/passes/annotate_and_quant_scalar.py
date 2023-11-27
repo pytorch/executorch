@@ -54,10 +54,11 @@ class AnnotateAndQuantScalar(ExportPass):
 
     def _update_scalar_node_attrs(self, node: torch.fx.Node, quant_attrs: Dict) -> Dict:
         val = get_parameter(node, self.edge_program)
+        quant_range = quant_attrs["quant_max"] - quant_attrs["quant_min"]
         # Use 0 as the zero_point for scalar
-        quant_attrs["zero_point"] = 0
-        quant_attrs["scale"] = val.div(
-            quant_attrs["quant_max"] - quant_attrs["quant_min"]
+        quant_attrs["zero_point"] = 0 if val >= 0 else quant_attrs["quant_max"]
+        quant_attrs["scale"] = (
+            val.div(quant_range) if val >= 0 else -val.div(quant_range)
         )
         return quant_attrs
 
