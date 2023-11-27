@@ -36,7 +36,6 @@ from executorch.exir.verification.verifier import (
 )
 from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
-from torch._guards import detect_fake_mode
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
@@ -71,10 +70,7 @@ def lift_constant_tensor_pass(ep):
     graph_signature = ep.graph_signature
     buffers = graph_signature.buffers
 
-    fake_mode = detect_fake_mode(
-        tuple(node.meta["val"] for node in ep.graph.nodes if node.op == "placeholder")
-    )
-
+    fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
     lifted_buffers = []
     for node in ep.graph.nodes:
