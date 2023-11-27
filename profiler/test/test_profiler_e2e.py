@@ -13,7 +13,7 @@ import unittest
 
 import torch
 
-from executorch import exir
+from executorch.exir import to_edge
 
 from executorch.extension.pybindings.portable_lib import (
     _create_profile_block,
@@ -28,6 +28,7 @@ from executorch.profiler.parse_profiler_results import (
     profile_aggregate_framework_tax,
     profile_framework_tax_table,
 )
+from torch.export import export
 
 
 class Module(torch.nn.Module):
@@ -51,9 +52,7 @@ class TestCustomOps(unittest.TestCase):
         # The serialized program file. This must live longer than cls.module,
         # because the C++ pybindings will have a pointer to it. But none of the
         # tests should need to touch it.
-        cls.__buffer: bytes = (
-            exir.capture(model, inputs).to_edge().to_executorch().buffer
-        )
+        cls.__buffer: bytes = to_edge(export(model, inputs)).to_executorch().buffer
 
         cls.module = _load_for_executorch_from_buffer(cls.__buffer)
 
