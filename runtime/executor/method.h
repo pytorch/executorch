@@ -218,6 +218,8 @@ class Method final {
    */
   const EValue& get_output(size_t i) const;
 
+  EventTracer* get_event_tracer();
+
   __ET_DEPRECATED size_t values_size() const;
   __ET_DEPRECATED const EValue& get_value(size_t i) const;
   __ET_DEPRECATED EValue& mutable_value(size_t i);
@@ -333,6 +335,8 @@ class Method final {
       size_t kernel_index,
       InstructionArgs args,
       size_t n_args);
+
+  void log_outputs();
 };
 
 } // namespace executor
