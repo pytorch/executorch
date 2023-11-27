@@ -6,10 +6,12 @@
 
 import dataclasses
 import logging
+import sys
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from typing import (
     Dict,
+    IO,
     List,
     Mapping,
     Optional,
@@ -492,11 +494,15 @@ class Inspector:
                     debug_handle_to_op_node_map=debug_handle_to_op_node_map,
                 )
 
-    def print_data_tabular(self, include_units: bool = True) -> None:
+    def print_data_tabular(
+        self, file: IO[str] = sys.stdout, include_units: bool = True
+    ) -> None:
         """
         Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.
 
         Args:
+            file: Which IO stream to print to. Defaults to stdout.
+                Not used if this is in an IPython environment such as a Jupyter notebook.
             include_units: Whether headers should include units (default true)
 
         Returns:
@@ -529,7 +535,9 @@ class Inspector:
                     "Environment unable to support IPython. Fall back to print()."
                 )
         except:
-            print(tabulate(filtered_df, headers="keys", tablefmt="fancy_grid"))
+            print(
+                tabulate(filtered_df, headers="keys", tablefmt="fancy_grid"), file=file
+            )
 
     # TODO: write unit test
     def find_total_for_module(self, module_name: str) -> float:
