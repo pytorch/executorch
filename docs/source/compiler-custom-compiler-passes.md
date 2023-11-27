@@ -346,7 +346,7 @@ class LargeModel(torch.nn.Module):
     def forward(self, x):
         return torch.ops.aten.addmm.default(self._bias, x, self._weight)
 
-large_model_graph = exir.capture(LargeModel(), large_inputs).to_edge().graph
+large_model_graph = to_edge(export(LargeModel(), large_inputs)).exported_program().graph_module.graph
 
 class PatternModel(torch.nn.Module):
     def __init__(self):
@@ -357,7 +357,7 @@ class PatternModel(torch.nn.Module):
     def forward(self, x):
         return torch.ops.aten.addmm.default(self._bias_1, x, self._weight_1)
 
-pattern_graph = exir.capture(PatternModel(), pattern_inputs).to_edge().graph
+pattern_graph = to_edge(export(PatternModel(), pattern_inputs)).exported_program().graph_module.graph
 
 subgraph_matcher = SubgraphMatcher(pattern_graph)
 match_result = subgraph_matcher.match(large_model_graph)
@@ -515,7 +515,7 @@ class M(torch.nn.Module):
         return x
 
 inputs = (torch.randn(3, 3),)
-edge_graph = exir.capture(M(), inputs).to_edge().graph
+edge_graph = to_edge(export(M(), inputs)).exported_program().graph_module.graph
 print(edge_graph)
 """
 graph():
