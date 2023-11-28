@@ -51,7 +51,7 @@ def get_dataset(data_size, dataset_dir, download):
         if index >= data_size:
             break
         image, target = data
-        inputs.append(image.unsqueeze(0))
+        inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
         input_list += f"input_{index}_0.raw\n"
 

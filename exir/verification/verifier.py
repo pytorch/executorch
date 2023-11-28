@@ -18,7 +18,7 @@ from executorch.exir.verification.arg_validator import (
     RunHigherOrderOperatorError,
 )
 
-from torch._export.verifier import _check_has_fake_tensor, SpecViolationError, Verifier
+from torch._export.verifier import SpecViolationError, Verifier
 from torch._ops import OpOverload
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import ExportedProgram

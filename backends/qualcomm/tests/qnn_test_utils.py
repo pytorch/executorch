@@ -147,7 +147,7 @@ class TestQNN(unittest.TestCase):
         if use_partitioner:
             delegated_program = capture_program(module, sample_inputs)
             delegated_program.exported_program = to_backend(
-                delegated_program.exported_program, QnnPartitioner
+                delegated_program.exported_program, QnnPartitioner()
             )
             exec_prog = delegated_program.to_executorch()
         else:

@@ -69,6 +69,10 @@ class QuantParams:
         self.is_dynamic = is_dynamic
 
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
+        # Do nothing if already quantized by the Quantizer
+        if tensor.dtype == self.dtype:
+            return tensor
+
         if self.per_channel:
             assert (
                 tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
@@ -183,19 +187,22 @@ class QuantParams:
         if not is_dequant(dq):
             return None
 
-        # input of dq is q
-        check_or_raise(is_quant(dq.all_input_nodes[0]), "expected input to dq to be q")
+        # source node for quant params
+        src = dq
 
-        q = dq.all_input_nodes[0]
+        # is input of dq is q?
+        dq_input = dq.all_input_nodes[0]
+        if is_quant(dq_input):
+            src = dq_input
 
         # replace this with pointing to the actual weight value.
         # if no one else uses this weight value then take it out of the toplevel module
         check_or_raise(
-            q.all_input_nodes[0].op in ["get_attr", "placeholder"],
-            f"q->dq->permute_copy not derived from static weight, input to the q node: {q.all_input_nodes[0]}",
+            src.all_input_nodes[0].op in ["get_attr", "placeholder"],
+            f"q->dq->permute_copy not derived from static weight, input to the q or dq (for folded quant) node: {src.all_input_nodes[0]}",
         )
 
-        return cls.from_q_dq_node(q, ep)
+        return cls.from_q_dq_node(src, ep)
 
     @classmethod
     def from_inputs(

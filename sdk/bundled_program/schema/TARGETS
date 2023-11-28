@@ -14,6 +14,7 @@ runtime.python_library(
     ],
     visibility = [
         "//executorch/sdk/bundled_program/...",
+        "//executorch/sdk/etrecord/...",
     ],
     deps = [
         "//executorch/exir:scalar_type",

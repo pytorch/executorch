@@ -24,13 +24,6 @@ install_executorch() {
   pip list
 }
 
-install_conda() {
-  pushd .ci/docker || return
-  # Install conda dependencies like flatbuffer
-  conda install -y --file conda-env-ci.txt
-  popd || return
-}
-
 install_pip_dependencies() {
   pushd .ci/docker || return
   # Install all Python dependencies, including PyTorch

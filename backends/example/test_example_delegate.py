@@ -66,7 +66,7 @@ class TestExampleDelegate(unittest.TestCase):
 
         lowered_export_program = to_backend(
             exported_program.exported_program,
-            ExamplePartitioner,
+            ExamplePartitioner(),
         )
 
         print("After lowering to qnn backend: ")
@@ -98,7 +98,7 @@ class TestExampleDelegate(unittest.TestCase):
 
         lowered_export_program = to_backend(
             exported_program.transform(DuplicateDequantNodePass()).exported_program,
-            ExamplePartitioner,
+            ExamplePartitioner(),
         )
 
         lowered_export_program.graph.print_tabular()

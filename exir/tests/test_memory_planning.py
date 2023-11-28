@@ -479,7 +479,7 @@ class TestMisc(unittest.TestCase):
         )
         with validation_disabled():
             backend_module = to_backend(
-                edge_program.exported_program, QnnpackPartitioner
+                edge_program.exported_program, QnnpackPartitioner()
             )
 
         debug_pass = DebugPass(show_spec=True)

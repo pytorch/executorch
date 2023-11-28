@@ -357,18 +357,12 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
         serialized_range_constraints = export_serialize.serialize_range_constraints(
             exported_program.range_constraints
         )
-        serialized_equality_constraints = (
-            export_serialize.serialize_equality_constraints(
-                exported_program.equality_constraints
-            )
-        )
 
         return (
             schema.ExportedProgram(
                 graph_module=serialized_graph_module,
                 opset_version=self.opset_version,
                 range_constraints=serialized_range_constraints,
-                equality_constraints=serialized_equality_constraints,
                 schema_version=schema.SCHEMA_VERSION,
                 dialect=exported_program.dialect,
             ),
@@ -687,10 +681,6 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             if node.op == "get_attr":
                 state_dict[node.target] = getattr(graph_module, node.target)
 
-        equality_constraints = export_serialize.deserialize_equality_constraints(
-            serialized_exported_program.equality_constraints
-        )
-
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
         ep = exir.ExportedProgram(
@@ -699,10 +689,9 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             sig,
             {},  # TODO(T157676982)
             range_constraints,
-            equality_constraints,
-            module_call_graph,
-            None,
-            load_verifier(serialized_exported_program.dialect),
+            [],
+            module_call_graph=module_call_graph,
+            verifier=load_verifier(serialized_exported_program.dialect),
         )
         ep.graph_module.graph = graph_module.graph
         for name, t in state_dict.items():
