@@ -157,7 +157,7 @@ class TestSerde(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
         ep = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
-        edge = to_backend(ep.exported_program, AddMulPartitionerDemo)
+        edge = to_backend(ep.exported_program, AddMulPartitionerDemo())
         edge_new = deserialize(*serialize(edge))
         self.check_ep(edge, edge_new, inputs)
 

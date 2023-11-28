@@ -37,7 +37,7 @@ class TestBackendDebugHandle(unittest.TestCase):
         ep = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
         executorch_prog = ep
         executorch_prog.exported_program = to_backend(
-            ep.exported_program, AddMulPartitionerDemo
+            ep.exported_program, AddMulPartitionerDemo()
         )
         lowered_nodes = [
             getattr(executorch_prog.exported_program.graph_module, node.target)

@@ -53,7 +53,7 @@ class SizeAnalysisToolTest(unittest.TestCase):
         test_input = torch.ones(size=(4, 7, 5, 6), dtype=torch.float)
 
         edge_program = capture_graph_for_xnnpack(mm, (test_input,))
-        partitioner = XnnpackFloatingPointPartitioner
+        partitioner = XnnpackFloatingPointPartitioner()
 
         with validation_disabled():
             delegated_program = edge_program

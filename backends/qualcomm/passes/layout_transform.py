@@ -187,7 +187,11 @@ class LayoutTransform(ExportPass):
 
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
         for arg in node.args:
-            self.annotate_layout(arg, graph_module, revert_layout=False)
+            if isinstance(arg, list):
+                for arg_node in arg:
+                    self.annotate_layout(arg_node, graph_module, revert_layout=False)
+            else:
+                self.annotate_layout(arg, graph_module, revert_layout=False)
 
         node_users = set(node.users.keys())
         for user in node_users:

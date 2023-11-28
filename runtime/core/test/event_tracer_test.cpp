@@ -83,6 +83,27 @@ class DummyEventTracer : public EventTracer {
     (void)end_time;
     (void)metadata;
   }
+
+  void log_evalue(const EValue& evalue, LoggedEValueType evalue_type) override {
+    logged_evalue_ = evalue;
+    logged_evalue_type_ = evalue_type;
+  }
+
+  EValue logged_evalue() {
+    return logged_evalue_;
+  }
+
+  LoggedEValueType logged_evalue_type() {
+    return logged_evalue_type_;
+  }
+
+  void reset_logged_value() {
+    logged_evalue_ = EValue(false);
+  }
+
+ private:
+  EValue logged_evalue_ = EValue(false);
+  LoggedEValueType logged_evalue_type_;
 };
 
 /**
@@ -145,7 +166,52 @@ TEST(TestEventTracer, SimpleEventTracerTestDelegate) {
   }
 }
 
+TEST(TestEventTracer, SimpleEventTracerTestLogging) {
+  EValue test_eval(true);
+
+  {
+    // By default there should be no logging enabled.
+    DummyEventTracer dummy;
+    event_tracer_log_evalue(&dummy, test_eval);
+    EXPECT_EQ(dummy.logged_evalue().toBool(), false);
+  }
+
+  {
+    // Enable only program outputs to be logged. So event_tracer_log_evalue
+    // should have no effect but event_tracer_log_evalue_output should work.
+    DummyEventTracer dummy;
+    dummy.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kProgramOutputs);
+    event_tracer_log_evalue(&dummy, test_eval);
+    EXPECT_EQ(dummy.logged_evalue().toBool(), false);
+    event_tracer_log_evalue_output(&dummy, test_eval);
+    EXPECT_EQ(dummy.logged_evalue().toBool(), true);
+    EXPECT_EQ(dummy.logged_evalue_type(), LoggedEValueType::kProgramOutput);
+  }
+
+  {
+    // Enable all outputs to be logged. So event_tracer_log_evalue and
+    // event_tracer_log_evalue_output should both work.
+    DummyEventTracer dummy;
+    dummy.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kIntermediateOutputs);
+    event_tracer_log_evalue(&dummy, test_eval);
+    EXPECT_EQ(dummy.logged_evalue().toBool(), true);
+    EXPECT_EQ(
+        dummy.logged_evalue_type(), LoggedEValueType::kIntermediateOutput);
+    dummy.reset_logged_value();
+    event_tracer_log_evalue_output(&dummy, test_eval);
+    EXPECT_EQ(dummy.logged_evalue().toBool(), true);
+    EXPECT_EQ(dummy.logged_evalue_type(), LoggedEValueType::kProgramOutput);
+  }
+
+  // Test with nullptr's to make sure it goes through smoothly.
+  event_tracer_log_evalue(nullptr, test_eval);
+  event_tracer_log_evalue_output(nullptr, test_eval);
+}
+
 } // namespace executor
 } // namespace torch
+
 // TODO : (T163645377) Add more test coverage to log and verify events passed
 // into DummyTracer.

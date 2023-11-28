@@ -87,7 +87,7 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
-    edge = edge.to_backend(XnnpackPartitioner)
+    edge = edge.to_backend(XnnpackPartitioner())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch()

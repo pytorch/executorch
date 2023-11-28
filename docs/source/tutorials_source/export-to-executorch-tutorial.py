@@ -506,7 +506,7 @@ print(exported_program)
 
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 
-delegated_program = to_backend(exported_program, AddMulPartitionerDemo)
+delegated_program = to_backend(exported_program, AddMulPartitionerDemo())
 print("Delegated program")
 print(delegated_program)
 print(delegated_program.graph_module.lowered_module_0.original_module)
@@ -535,7 +535,7 @@ pre_autograd_aten_dialect = capture_pre_autograd_graph(f, example_args)
 aten_dialect: ExportedProgram = export(pre_autograd_aten_dialect, example_args)
 edge_program: EdgeProgramManager = to_edge(aten_dialect)
 exported_program = edge_program.exported_program()
-delegated_program = edge_program.to_backend(AddMulPartitionerDemo)
+delegated_program = edge_program.to_backend(AddMulPartitionerDemo())
 
 print("Delegated program")
 print(delegated_program.exported_program())

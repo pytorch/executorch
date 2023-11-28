@@ -191,11 +191,11 @@ class TestXNNPACK(unittest.TestCase):
         partitioner = None
         if quantized:
             if quantized_dynamic:
-                partitioner = XnnpackDynamicallyQuantizedPartitioner
+                partitioner = XnnpackDynamicallyQuantizedPartitioner()
             else:
-                partitioner = XnnpackPartitioner
+                partitioner = XnnpackPartitioner()
         else:
-            partitioner = XnnpackPartitioner
+            partitioner = XnnpackPartitioner()
 
         if use_partitioner:
             with validation_disabled():
@@ -324,7 +324,7 @@ class TestXNNPACK(unittest.TestCase):
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
         prepared = prepare_pt2e(m, quantizer)
-        converted = convert_pt2e(prepared)
+        converted = convert_pt2e(prepared, fold_quantize=True)
 
         captured_program = exir.capture(
             converted,

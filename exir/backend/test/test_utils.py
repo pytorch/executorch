@@ -45,7 +45,7 @@ T_QuantPerTensor = exir_ops.edge.quantized_decomposed.quantize_per_tensor.defaul
 T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 
 
-class TestPartitioners(unittest.TestCase):
+class TestUtils(unittest.TestCase):
     def test_identical_graph_with_unused_args(self):
         class MyModule(torch.nn.Module):
             def __init__(self):
@@ -276,12 +276,12 @@ class TestPartitioners(unittest.TestCase):
             )
         )
 
-        error_msg = r"Partitioner <class 'executorch.exir.backend.test.test_utils.TestPartitioners.test_invalid_partitioner_without_partitioner.<locals>.InvalidPartitioner'> needs a `partition_tags` field containing a mapping of tags to delegate spec"
+        error_msg = r"needs a `partition_tags` field containing a mapping of tags to delegate spec"
         with self.assertRaisesRegex(
             AssertionError,
             error_msg,
         ):
-            _ = to_backend(exported_program.exported_program, InvalidPartitioner)
+            _ = to_backend(exported_program.exported_program, InvalidPartitioner())
 
     test_lib = Library("test_lib", "DEF")
 
@@ -376,7 +376,9 @@ class TestPartitioners(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
-        edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
+        edge.exported_program = to_backend(
+            edge.exported_program, AddMulPartitionerDemo()
+        )
         edge.dump()
         number_of_cpu_nodes = get_non_lowered_nodes(edge.exported_program.graph)
         # Only sub is not not lowerable
@@ -398,7 +400,9 @@ class TestPartitioners(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
-        edge.exported_program = to_backend(edge.exported_program, AddMulPartitionerDemo)
+        edge.exported_program = to_backend(
+            edge.exported_program, AddMulPartitionerDemo()
+        )
         number_of_delegates = get_delegates(edge.exported_program.graph)
         # there will be 2 delegates: (mm + add) -> sub -> (mm + add)
         self.assertEqual(len(number_of_delegates), 2)

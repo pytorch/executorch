@@ -9,19 +9,20 @@
 #pragma once
 
 #include <executorch/runtime/core/event_tracer.h>
+#include <executorch/runtime/core/memory_allocator.h>
 
 namespace torch {
 namespace executor {
 
 /**
  * BackendExecutionContext will be used to inject run time context.
- * The current plan is to add temp allocator and event tracer (for profiling) as
- * part of the runtime context.
  */
 class BackendExecutionContext final {
  public:
-  BackendExecutionContext(EventTracer* event_tracer = nullptr)
-      : event_tracer_(event_tracer) {}
+  BackendExecutionContext(
+      EventTracer* event_tracer = nullptr,
+      MemoryAllocator* temp_allocator = nullptr)
+      : event_tracer_(event_tracer), temp_allocator_(temp_allocator) {}
 
   /**
    * Returns a pointer to an instance of EventTracer to do profiling/debugging
@@ -32,8 +33,21 @@ class BackendExecutionContext final {
     return event_tracer_;
   }
 
+  /**
+   * Returns a pointer to the address allocated by temp allocator. This
+   * allocator will be reset after every delegate call during execution.
+   */
+  void* allocate(
+      size_t size,
+      size_t alignment = MemoryAllocator::kDefaultAlignment) {
+    // TODO(chenlai): depends on the need, we may expose more functionality for
+    // memory allocation.
+    return temp_allocator_->allocate(size, alignment);
+  }
+
  private:
   EventTracer* event_tracer_ = nullptr;
+  MemoryAllocator* temp_allocator_ = nullptr;
 };
 
 } // namespace executor

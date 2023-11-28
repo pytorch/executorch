@@ -18,41 +18,6 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
 
 
 class TestXNNPACKFloatingPoint(TestXNNPACK):
-    def test_xnnpack_backend_mean_dim(self):
-        class Mean(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.mean(x, (-1, -2), keepdim=True)
-
-        example_inputs = (torch.randn(1, 5, 4, 4),)
-        self.lower_and_test_with_partitioner(Mean(), example_inputs)
-
-    @unittest.expectedFailure
-    def test_xnnpack_backend_mean_dim_unsupported(self):
-        class Mean(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.mean(x, (3), keepdim=True)
-
-        example_inputs = (torch.randn(1, 5, 4, 4),)
-        self.lower_and_test_with_partitioner(Mean(), example_inputs)
-
-    def test_xnnpack_backend_static_transpose(self):
-        class PermuteModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.nchw_to_nhwc = [0, 2, 3, 1]
-
-            def forward(self, x):
-                return torch.permute(x, self.nchw_to_nhwc)
-
-        example_inputs = (torch.randn(1, 1, 4, 4),)
-        self.lower_module_and_test_output(PermuteModule(), example_inputs)
-
     def test_xnnpack_backend_sequential_conv2d(self):
         class TwoConv(torch.nn.Module):
             def __init__(self):
@@ -263,72 +228,6 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
 
             self.lower_and_test_with_partitioner(linear, example_input)
 
-    def test_xnnpack_constant_add(self):
-        class Module(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self._constant = torch.ones(4, 4, 4)
-
-            def forward(self, x):
-                out1 = x + self._constant
-                out2 = x + self._constant + self._constant
-                return out1, out2
-
-        const_module = Module()
-        model_inputs = (torch.randn(4, 4, 4),)
-
-        self.lower_and_test_with_partitioner(const_module, model_inputs)
-
-    def test_xnnpack_backend_add(self):
-        # This test is the simplest test by manually lowering some submodules, we can use paritioner for auto detecting lowerable parts
-        class AddModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = x + y
-                z = z + x
-                z = z + x
-                z = z + z
-                return z
-
-        add_module = AddModule()
-        model_inputs = (torch.ones(1), torch.ones(1))
-
-        self.lower_and_test_with_partitioner(add_module, model_inputs)
-
-    def test_xnnpack_backend_div(self):
-        class DivModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = x / y
-                return z
-
-        div_module = DivModule()
-        model_inputs = (torch.ones(1), torch.ones(1))
-
-        self.lower_and_test_with_partitioner(div_module, model_inputs)
-
-    def test_xnnpack_minimum(self):
-        class MinimumModule(torch.nn.Module):
-            def __init__(
-                self,
-            ):
-                super().__init__()
-                self.minimum_module = torch.minimum
-
-            def forward(self, x, y):
-                return self.minimum_module(x, y)
-
-        module = MinimumModule()
-        model_inputs = (
-            torch.randn(1, 3, 6),
-            torch.randn(1, 3, 6),
-        )
-        self.lower_and_test_with_partitioner(module, model_inputs)
-
     @torch.inference_mode()  # TODO Use  for capturing.
     def test_xnnpack_backend_linear(self):
         in_size = 2
@@ -338,47 +237,6 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         example_input = (torch.randn(in_size, input_size),)
 
         self.lower_and_test_with_partitioner(linear, example_input)
-
-    def test_xnnpack_backend_softmax(self):
-        class SoftMaxModule(torch.nn.Module):
-            def __init__(self, dim):
-                super().__init__()
-                self.softmax = torch.nn.Softmax(dim=dim)
-
-            def forward(self, x):
-                return self.softmax(x)
-
-        # We want to test that for tensor.dim() == 3 i.e. our test tensor,
-        # values for softmax_dim = [-1, 2] passes and rest fails. This is because xnnpack
-        # only supports softmax_dim == -1 i.e. the last dimension.
-        shape = (3, 5, 7)
-        for dim in list(range(len(shape))) + [-1]:
-            model_inputs = (torch.rand(shape),)
-            softmax_module = SoftMaxModule(dim)
-
-            if dim == len(shape) - 1 or dim == -1:
-                self.lower_and_test_with_partitioner(softmax_module, model_inputs)
-            else:
-                with self.assertRaises(RuntimeError):
-                    self.lower_and_test_with_partitioner(softmax_module, model_inputs)
-
-    def test_xnnpack_backend_hardtanh(self):
-        class HardTanhModule(torch.nn.Module):
-            def __init__(self, min_val=-1.0, max_val=1.0):
-                super().__init__()
-                self.hardtanh = torch.nn.Hardtanh(min_val, max_val)
-
-            def forward(self, x):
-                return self.hardtanh(x)
-
-        inputs = [torch.randn(2, 3, 4), torch.randn(7, 5, 2), torch.randn(2, 9)]
-        for test_input in inputs:
-            hardtanh_model = HardTanhModule()
-            self.lower_and_test_with_partitioner(hardtanh_model, (test_input,))
-
-        for test_input in inputs:
-            hardtanh_model = HardTanhModule(-2, 2)
-            self.lower_and_test_with_partitioner(hardtanh_model, (test_input,))
 
     def test_xnnpack_backend_Relu(self):
         class ReluModule(torch.nn.Module):
@@ -746,13 +604,6 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         test_module = TestModule()
         test_module.eval()
         self.lower_and_test_with_partitioner(test_module, example_inputs)
-
-    def test_xnnpack_backend_maximum(self):
-        model_inputs_no_broadcast = (torch.randn(2, 3, 4), torch.randn(2, 3, 4))
-        model_inputs_broadcast = (torch.randn(2, 3, 4), torch.randn(2, 1, 4))
-
-        self.lower_and_test_with_partitioner(torch.maximum, model_inputs_no_broadcast)
-        self.lower_and_test_with_partitioner(torch.maximum, model_inputs_broadcast)
 
     def test_xnnpack_backend_negative(self):
         model_inputs = (torch.randn(1, 3, 3),)

@@ -95,7 +95,7 @@ class TestXnnQnnBackends(unittest.TestCase):
         with validation_disabled():
             module_with_qnnpack_delegate = captured_mod
             module_with_qnnpack_delegate.exported_program = to_backend(
-                captured_mod.exported_program, QnnpackPartitioner
+                captured_mod.exported_program, QnnpackPartitioner()
             )
 
         # Step 3.2: Lower add to xnnpack
@@ -103,7 +103,7 @@ class TestXnnQnnBackends(unittest.TestCase):
             module_with_xnn_and_qnn = module_with_qnnpack_delegate
             module_with_xnn_and_qnn.exported_program = to_backend(
                 module_with_qnnpack_delegate.exported_program,
-                XnnpackFloatingPointPartitioner,
+                XnnpackFloatingPointPartitioner(),
             )
 
         program_with_delegates = module_with_xnn_and_qnn.to_executorch(

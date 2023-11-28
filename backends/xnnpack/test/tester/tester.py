@@ -141,7 +141,7 @@ class Quantize(Stage):
     ) -> None:
         captured_graph = export.capture_pre_autograd_graph(artifact, inputs)
         prepared = prepare_pt2e(captured_graph, self.quantizer)
-        converted = convert_pt2e(prepared)
+        converted = convert_pt2e(prepared, fold_quantize=True)
         self.converted_graph = converted
 
     @property
@@ -214,7 +214,7 @@ class RunPasses(Stage):
 @register_stage
 class Partition(Stage):
     def __init__(self, partitioner: Optional[Partitioner] = None):
-        self.partitioner = partitioner or XnnpackPartitioner
+        self.partitioner = partitioner or XnnpackPartitioner()
         self.delegate_module = None
 
     def run(self, artifact: ExirExportedProgram, inputs=None):
