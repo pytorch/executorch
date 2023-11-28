@@ -24,6 +24,14 @@ dependencies=[
   "zstd",
 ]
 
+[project.optional-dependencies]
+arm=[
+  "ethos_u_vela@git+https://review.mlplatform.org/ml/ethos-u/ethos-u-vela@3.10.0",
+  # tosa_serialization_lib 0.90.0 w/ packaging prerelease
+  "tosa_serialization_lib@git+https://review.mlplatform.org/tosa/serialization_lib@9bb9c4e67b42a1c6b3f3cc93c4f3a345856c010f",
+  "tosa_tools@git+https://review.mlplatform.org/tosa/reference_model@v0.80.0",
+]
+
 [tool.setuptools.package-data]
 "*" = ["*.fbs", "*.yaml"]
 
