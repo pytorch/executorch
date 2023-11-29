@@ -62,7 +62,7 @@ In this tutorial, an example model (shown below) is used to demonstrate.
 
 .. GENERATED FROM PYTHON SOURCE LINES 48-109
 
-.. code-block:: default
+.. code-block:: Python
 
 
     import copy
@@ -153,7 +153,7 @@ In this tutorial, a `Bundled Program` is created from the example model above.
 
 .. GENERATED FROM PYTHON SOURCE LINES 130-171
 
-.. code-block:: default
+.. code-block:: Python
 
 
     import torch
@@ -240,7 +240,7 @@ To visualize all runtime events, call Inspector's ``print_data_tabular``.
 
 .. GENERATED FROM PYTHON SOURCE LINES 203-211
 
-.. code-block:: default
+.. code-block:: Python
 
 
     from executorch.sdk import Inspector
@@ -276,7 +276,7 @@ Below are examples usages, with both ``EventBlock`` and ``DataFrame`` approaches
 
 .. GENERATED FROM PYTHON SOURCE LINES 233-242
 
-.. code-block:: default
+.. code-block:: Python
 
 
     # Set Up
@@ -301,7 +301,7 @@ finding the raw runtime data of an ``addmm.out`` event.
 
 .. GENERATED FROM PYTHON SOURCE LINES 245-258
 
-.. code-block:: default
+.. code-block:: Python
 
 
     for event_block in inspector.event_blocks:
@@ -331,7 +331,7 @@ slowest ``convolution.out`` call.
 
 .. GENERATED FROM PYTHON SOURCE LINES 262-288
 
-.. code-block:: default
+.. code-block:: Python
 
 
     for event_block in inspector.event_blocks:
@@ -373,7 +373,7 @@ If a user wants the total runtime of a module, they can use
 
 .. GENERATED FROM PYTHON SOURCE LINES 291-295
 
-.. code-block:: default
+.. code-block:: Python
 
 
     print(inspector.find_total_for_module("L__self__"))
@@ -418,7 +418,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 3.015 seconds)
+   **Total running time of the script:** (0 minutes 2.938 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:
@@ -427,16 +427,13 @@ Links Mentioned
 
   .. container:: sphx-glr-footer sphx-glr-footer-example
 
+    .. container:: sphx-glr-download sphx-glr-download-jupyter
 
-
+      :download:`Download Jupyter notebook: sdk-integration-tutorial.ipynb <sdk-integration-tutorial.ipynb>`
 
     .. container:: sphx-glr-download sphx-glr-download-python
 
       :download:`Download Python source code: sdk-integration-tutorial.py <sdk-integration-tutorial.py>`
-
-    .. container:: sphx-glr-download sphx-glr-download-jupyter
-
-      :download:`Download Jupyter notebook: sdk-integration-tutorial.ipynb <sdk-integration-tutorial.ipynb>`
 
 
 .. only:: html

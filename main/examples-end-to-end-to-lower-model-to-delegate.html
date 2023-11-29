@@ -463,6 +463,8 @@ that can be loaded by the runtime.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
 <span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
 <span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 
 <span class="c1"># The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend</span>
 <span class="k">class</span> <span class="nc">LowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
@@ -475,13 +477,13 @@ that can be loaded by the runtime.</p>
 <span class="c1"># Convert the lowerable module to Edge IR Representation</span>
 <span class="n">to_be_lowered</span> <span class="o">=</span> <span class="n">LowerableSubModel</span><span class="p">()</span>
 <span class="n">example_input</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
-<span class="n">to_be_lowered_exir_submodule</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">to_be_lowered</span><span class="p">,</span> <span class="n">example_input</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span>
+<span class="n">to_be_lowered_exir_submodule</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">to_be_lowered</span><span class="p">,</span> <span class="n">example_input</span><span class="p">))</span>
 
 <span class="c1"># Import the backend implementation</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">BackendWithCompilerDemo</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="p">[])</span>
+<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(),</span> <span class="p">[])</span>
 </pre></div>
 </div>
 <p>We can serialize the program to a flatbuffer format by directly running:</p>
@@ -521,7 +523,7 @@ module:</p>
 
 <span class="n">composite_model</span> <span class="o">=</span> <span class="n">CompositeModel</span><span class="p">()</span>
 <span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
-<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">exir</span><span class="o">.</span><span class="n">capture</span><span class="p">(</span><span class="n">composite_model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span><span class="o">.</span><span class="n">to_edge</span><span class="p">()</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">composite_model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">))</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="c1"># Save the flatbuffer to a local file</span>
 <span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>

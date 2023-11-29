@@ -1,12 +1,12 @@
 
 :orphan:
 
-.. _sphx_glr_tutorials_sg_execution_times:
+.. _sphx_glr_sg_execution_times:
 
 
 Computation times
 =================
-**00:07.975** total execution time for 2 files **from tutorials**:
+**00:07.975** total execution time for 2 files **from all galleries**:
 
 .. container::
 
@@ -32,9 +32,9 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py` (``export-to-executorch-tutorial.py``)
+   * - :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py` (``tutorials_source/export-to-executorch-tutorial.py``)
      - 00:05.037
      - 0.0
-   * - :ref:`sphx_glr_tutorials_sdk-integration-tutorial.py` (``sdk-integration-tutorial.py``)
+   * - :ref:`sphx_glr_tutorials_sdk-integration-tutorial.py` (``tutorials_source/sdk-integration-tutorial.py``)
      - 00:02.938
      - 0.0

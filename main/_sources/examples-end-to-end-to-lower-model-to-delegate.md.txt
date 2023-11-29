@@ -47,6 +47,8 @@ The following is an example of this flow:
 from executorch.exir.backend.backend_api import to_backend
 import executorch.exir as exir
 import torch
+from torch.export import export
+from executorch.exir import to_edge
 
 # The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend
 class LowerableSubModel(torch.nn.Module):
@@ -59,13 +61,13 @@ class LowerableSubModel(torch.nn.Module):
 # Convert the lowerable module to Edge IR Representation
 to_be_lowered = LowerableSubModel()
 example_input = (torch.ones(1), )
-to_be_lowered_exir_submodule = exir.capture(to_be_lowered, example_input).to_edge()
+to_be_lowered_exir_submodule = to_edge(export(to_be_lowered, example_input))
 
 # Import the backend implementation
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
-lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule.exported_program, [])
+lowered_module = to_backend('BackendWithCompilerDemo', to_be_lowered_exir_submodule.exported_program(), [])
 ```
 
 We can serialize the program to a flatbuffer format by directly running:
@@ -108,7 +110,7 @@ class CompositeModel(torch.nn.Module):
 
 composite_model = CompositeModel()
 model_inputs = (torch.ones(1), )
-exec_prog = exir.capture(composite_model, model_inputs).to_edge().to_executorch()
+exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch()
 
 # Save the flatbuffer to a local file
 save_path = "delegate.pte"
