@@ -41,6 +41,7 @@ jobs:
       fail-fast: false
     with:
       runner: ${{ matrix.runner }}
+      python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
@@ -70,6 +71,7 @@ jobs:
       fail-fast: false
     with:
       runner: macos-m1-12
+      python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -95,6 +97,7 @@ jobs:
       fail-fast: false
     with:
       runner: macos-m1-12
+      python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
@@ -159,6 +162,7 @@ jobs:
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     with:
       runner: macos-13-xlarge
+      python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
