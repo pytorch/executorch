@@ -47,7 +47,7 @@ def define_common_targets():
     """
     runtime.export_file(
         name = ETDUMP_SCHEMA_FLATCC,
-        visibility = ["//executorch/..."],
+        visibility = ["@EXECUTORCH_CLIENTS"],
     )
 
     generate_schema_header_flatcc(
@@ -73,7 +73,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = ETDUMP_STEM_FLATCC,
         srcs = [],
-        visibility = ["//executorch/..."],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
         exported_headers = {
             ETDUMP_SCHEMA_FLATCC_BUILDER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_BUILDER),
             ETDUMP_SCHEMA_FLATCC_READER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_READER),
@@ -104,5 +104,5 @@ def define_common_targets():
                 ":etdump_schema_flatcc",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
             ],
-            visibility = ["//executorch/..."],
+            visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
         )
