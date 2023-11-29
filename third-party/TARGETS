@@ -299,7 +299,7 @@ prebuilt_cxx_library(
     exported_headers = [":libtorch_gen[include]"],
     exported_deps = select({
         "ovr_config//os:macos": [":libc10", ":libtorch_cpu"],
-        "DEFAULT": [":libc10", ":libtorch_cpu", ":libgomp"],
+        "DEFAULT": [":libc10", ":libtorch_cpu"],
     }),
     visibility = ["PUBLIC"],
 )
