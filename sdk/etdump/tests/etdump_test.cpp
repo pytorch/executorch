@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
+#include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -132,6 +134,93 @@ TEST_F(ProfilerETDumpTest, AllocationEvents) {
   EventTracerEntry entry = etdump_gen->start_profiling("test_event", 0, 1);
   etdump_gen->end_profiling(entry);
   etdump_gen->track_allocation(2, 128);
+}
+
+TEST_F(ProfilerETDumpTest, DebugEvent) {
+  testing::TensorFactory<ScalarType::Float> tf;
+  EValue evalue(tf.ones({3, 2}));
+
+  etdump_gen->create_event_block("test_block");
+
+  void* ptr = malloc(2048);
+  Span<uint8_t> buffer((uint8_t*)ptr, 2048);
+
+  etdump_gen->set_debug_buffer(buffer);
+  etdump_gen->log_evalue(evalue);
+  etdump_gen->log_evalue(evalue, LoggedEValueType::kProgramOutput);
+
+  EValue evalue_int((int64_t)5);
+  etdump_gen->log_evalue(evalue_int);
+
+  EValue evalue_double((double)1.5);
+  etdump_gen->log_evalue(evalue_double);
+
+  EValue evalue_bool(true);
+  etdump_gen->log_evalue(evalue_bool);
+
+  etdump_gen->log_evalue(evalue_bool);
+
+  free(ptr);
+}
+
+TEST_F(ProfilerETDumpTest, VerifyLogging) {
+  testing::TensorFactory<ScalarType::Float> tf;
+  EValue evalue(tf.ones({3, 2}));
+
+  etdump_gen->create_event_block("test_block");
+
+  void* ptr = malloc(2048);
+  Span<uint8_t> buffer((uint8_t*)ptr, 2048);
+
+  etdump_gen->set_debug_buffer(buffer);
+  etdump_gen->log_evalue(evalue);
+  etdump_gen->log_evalue(evalue, LoggedEValueType::kProgramOutput);
+
+  etdump_result result = etdump_gen->get_etdump_data();
+  ASSERT_TRUE(result.buf != nullptr);
+  ASSERT_TRUE(result.size != 0);
+
+  size_t size = 0;
+  void* buf = flatbuffers_read_size_prefix(result.buf, &size);
+  etdump_ETDump_table_t etdump =
+      etdump_ETDump_as_root_with_identifier(buf, etdump_ETDump_file_identifier);
+
+  etdump_RunData_vec_t run_data_vec = etdump_ETDump_run_data(etdump);
+  ASSERT_EQ(etdump_RunData_vec_len(run_data_vec), 1);
+
+  etdump_Event_vec_t events =
+      etdump_RunData_events(etdump_RunData_vec_at(run_data_vec, 0));
+  ASSERT_EQ(etdump_Event_vec_len(events), 2);
+
+  etdump_Event_table_t event = etdump_Event_vec_at(events, 0);
+
+  etdump_DebugEvent_table_t single_debug_event =
+      etdump_Event_debug_event(event);
+  etdump_Value_table_t value =
+      etdump_DebugEvent_debug_entry(single_debug_event);
+  ASSERT_EQ(etdump_Value_tensor_is_present(value), true);
+  ASSERT_EQ(etdump_Value_output_is_present(value), false);
+
+  etdump_Tensor_table_t tensor = etdump_Value_tensor(value);
+  executorch_flatbuffer_ScalarType_enum_t scalar_enum =
+      etdump_Tensor_scalar_type(tensor);
+  ASSERT_EQ(scalar_enum, executorch_flatbuffer_ScalarType_FLOAT);
+  flatbuffers_int64_vec_t sizes = etdump_Tensor_sizes(tensor);
+  ASSERT_EQ(flatbuffers_int64_vec_len(sizes), 2);
+  ASSERT_EQ(flatbuffers_int64_vec_at(sizes, 0), 3);
+  ASSERT_EQ(flatbuffers_int64_vec_at(sizes, 1), 2);
+
+  event = etdump_Event_vec_at(events, 1);
+  single_debug_event = etdump_Event_debug_event(event);
+  value = etdump_DebugEvent_debug_entry(single_debug_event);
+  ASSERT_EQ(etdump_Value_tensor_is_present(value), true);
+  ASSERT_EQ(etdump_Value_output_is_present(value), true);
+  etdump_Bool_table_t bool_val = etdump_Value_output_get(value);
+  bool bool_val_from_table = etdump_Bool_bool_val(bool_val);
+  ASSERT_EQ(bool_val_from_table, true);
+
+  free(ptr);
+  free(result.buf);
 }
 
 TEST_F(ProfilerETDumpTest, MultipleBlocksWithEvents) {

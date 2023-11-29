@@ -11,8 +11,8 @@ table Null {}
 
 table Tensor {
   scalar_type:executorch_flatbuffer.ScalarType;
-  sizes:[int];
-  strides:[int];
+  sizes:[long];
+  strides:[long];
   offset:long;
 }
 
