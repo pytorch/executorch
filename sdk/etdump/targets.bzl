@@ -103,6 +103,7 @@ def define_common_targets():
             exported_deps = [
                 ":etdump_schema_flatcc",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
             visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
         )
