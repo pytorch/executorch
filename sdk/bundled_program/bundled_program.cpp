@@ -281,7 +281,7 @@ __ET_NODISCARD Error LoadBundledInput(
             false,
             NotSupported,
             "Data type %hhu not supported",
-            bundled_input->val_type());
+            static_cast<uint8_t>(bundled_input->val_type()));
         break;
       }
     }
@@ -290,7 +290,7 @@ __ET_NODISCARD Error LoadBundledInput(
         status == Error::Ok,
         NotSupported,
         "set_input failed during load bundled inputs with status %" PRIu32,
-        status);
+        static_cast<uint32_t>(status));
   }
 
   return Error::Ok;
@@ -348,7 +348,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
             false,
             NotSupported,
             "Data type %hhd not supported",
-            bundled_expected_output->val_type());
+            static_cast<uint8_t>(bundled_expected_output->val_type()));
         break;
       }
     }
