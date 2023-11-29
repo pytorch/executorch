@@ -14,6 +14,7 @@
 #include <cstdint>
 #include "executorch/runtime/core/event_tracer.h"
 #include "executorch/runtime/platform/platform.h"
+#include "executorch/sdk/etdump/emitter.h"
 
 #define ETDUMP_VERSION 0
 
@@ -34,8 +35,7 @@ struct etdump_result {
 
 class ETDumpGen : public EventTracer {
  public:
-  ETDumpGen();
-
+  ETDumpGen(Span<uint8_t> buffer = {nullptr, (size_t)0});
   ~ETDumpGen() override;
   void clear_builder();
 
@@ -66,6 +66,7 @@ class ETDumpGen : public EventTracer {
   void set_debug_buffer(Span<uint8_t> buffer);
   etdump_result get_etdump_data();
   size_t get_num_blocks();
+  bool is_static_etdump();
 
  private:
   flatcc_builder_t builder;
@@ -74,6 +75,7 @@ class ETDumpGen : public EventTracer {
   size_t debug_buffer_offset = 0;
   int bundled_input_index = -1;
   ETDumpGen_State etdump_gen_state = ETDumpGen_Init;
+  struct etdump_static_allocator alloc;
 
   void check_ready_to_add_events();
   int64_t create_string_entry(const char* name);

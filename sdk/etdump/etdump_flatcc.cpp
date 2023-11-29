@@ -16,10 +16,21 @@
 namespace torch {
 namespace executor {
 
+constexpr size_t max_alloc_buf_size = 128 * 1024;
+
 // Constructor implementation
-ETDumpGen::ETDumpGen() {
-  // Initialize the flatcc builder using the buffer and buffer size
-  flatcc_builder_init(&builder);
+ETDumpGen::ETDumpGen(Span<uint8_t> buffer)
+    : alloc{
+          buffer.data(),
+          buffer.size(),
+          (size_t)((buffer.size() / 4 > max_alloc_buf_size) ? max_alloc_buf_size : buffer.size() / 4),
+      } {
+  // Initialize the flatcc builder using the buffer and buffer size.
+  if (buffer.data() != nullptr) {
+    et_flatcc_custom_init(&builder, &alloc);
+  } else {
+    flatcc_builder_init(&builder);
+  }
   flatbuffers_buffer_start(&builder, etdump_ETDump_file_identifier);
   etdump_ETDump_start_as_root_with_size(&builder);
   etdump_ETDump_version_add(&builder, ETDUMP_VERSION);
@@ -258,7 +269,13 @@ etdump_result ETDumpGen::get_etdump_data() {
   if (num_blocks == 0) {
     result = {nullptr, 0};
   } else {
-    result.buf = flatcc_builder_finalize_aligned_buffer(&builder, &result.size);
+    if (alloc.data) {
+      result.buf = alloc.front_cursor;
+      result.size = alloc.out_size - alloc.front_left;
+    } else {
+      result.buf =
+          flatcc_builder_finalize_aligned_buffer(&builder, &result.size);
+    }
   }
   return result;
 }
@@ -429,6 +446,10 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
 
 size_t ETDumpGen::get_num_blocks() {
   return num_blocks;
+}
+
+bool ETDumpGen::is_static_etdump() {
+  return alloc.data != nullptr;
 }
 
 } // namespace executor
