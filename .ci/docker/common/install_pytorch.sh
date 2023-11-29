@@ -17,7 +17,6 @@ install_domains() {
 }
 
 install_pytorch_and_domains() {
-  # Clone the Executorch
   git clone https://github.com/pytorch/pytorch.git
 
   # Fetch the target commit

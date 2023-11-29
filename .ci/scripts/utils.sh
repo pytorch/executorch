@@ -42,7 +42,6 @@ install_pytorch_and_domains() {
   TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
   popd || return
 
-  # Clone the Executorch
   git clone https://github.com/pytorch/pytorch.git
 
   # Fetch the target commit
