@@ -27,6 +27,7 @@ install_pytorch_and_domains() {
 
   chown -R ci-user .
 
+  export _GLIBCXX_USE_CXX11_ABI=0
   # Then build and install PyTorch
   conda_run python setup.py bdist_wheel
   pip_install "$(echo dist/*.whl)"
