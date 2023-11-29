@@ -20,6 +20,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
+Tensor&
+op_pow_scalar_out(const Scalar& self, const Tensor& exponent, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::pow_outf(context, self, exponent, out);
+}
+
 Tensor& op_pow_tensor_scalar_out(
     const Tensor& self,
     const Scalar& exponent,
@@ -69,6 +75,17 @@ TEST(OpPowTest, TensorScalarSanityCheck) {
   Tensor out = tf.make({2, 2}, {16, 16, 16, 16});
 
   Tensor ret = op_pow_tensor_scalar_out(self, 4, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
+}
+
+TEST(OpPowTest, ScalarSanityCheck) {
+  TensorFactory<ScalarType::Byte> tf;
+  Tensor exp = tf.make({2, 2}, {2, 2, 2, 2});
+  Tensor out = tf.make({2, 2}, {16, 16, 16, 16});
+
+  Tensor ret = op_pow_scalar_out(4, exp, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
