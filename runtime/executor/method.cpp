@@ -1035,7 +1035,7 @@ Error Method::experimental_reset_execution() {
 void Method::log_outputs() {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer_ != nullptr) {
-    if (event_tracer->event_tracer_debug_level() >=
+    if (event_tracer_->event_tracer_debug_level() >=
         EventTracerDebugLogLevel::kProgramOutputs) {
       for (size_t i = 0; i < outputs_size(); i++) {
         internal::event_tracer_log_evalue_output(event_tracer_, get_output(i));

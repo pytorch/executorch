@@ -16,6 +16,7 @@
 #include <ATen/ATen.h>
 #endif // USE_ATEN_LIB
 
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
@@ -292,6 +293,9 @@ __ET_NODISCARD Error LoadBundledInput(
         "set_input failed during load bundled inputs with status %" PRIu32,
         status);
   }
+
+  internal::event_tracer_set_bundled_input_index(
+      method.get_event_tracer(), testset_idx);
 
   return Error::Ok;
 }
