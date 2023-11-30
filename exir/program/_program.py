@@ -928,6 +928,18 @@ class EdgeProgramManager:
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
+                if isinstance(p, SpecPropPass):
+                    # Note that this is a hacky way to get around the fact that
+                    # placeholder nodes corresponding to the parameters of the graph module
+                    # shall not participate in memory planning. It increases runtime memory
+                    # footprint.
+                    # Proper way would be to have ExportPass work with ExportedProgram
+                    # instead of GraphModule. This is because ExportPass should work
+                    # on top of the export artifact of torch.export whichi s ExportedProgram.
+                    # Working with GraphModule does not provide all the information contained
+                    # in the ExportedProgram
+                    # TODO(who?)
+                    p.update_placeholder_tensor_specs(program, new_gm)
             new_prog = copy.deepcopy(program)
             _copy_module(new_prog.graph_module, new_gm)
             execution_programs[name] = new_prog
