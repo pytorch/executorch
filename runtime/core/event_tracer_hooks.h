@@ -198,6 +198,57 @@ inline void event_tracer_track_allocation(
 #endif
 }
 
+/// Log an intermediate value.
+inline void event_tracer_log_evalue(EventTracer* event_tracer, EValue& evalue) {
+#ifdef ET_EVENT_TRACER_ENABLED
+  if (event_tracer) {
+    if (event_tracer->event_tracer_debug_level() >=
+        EventTracerDebugLogLevel::kIntermediateOutputs) {
+      event_tracer->log_evalue(evalue, LoggedEValueType::kIntermediateOutput);
+    }
+  }
+#else //! ET_EVENT_TRACER_ENABLED
+  (void)event_tracer;
+  (void)evalue;
+#endif
+}
+
+/// Log a program output.
+inline void event_tracer_log_evalue_output(
+    EventTracer* event_tracer,
+    const EValue& evalue) {
+#ifdef ET_EVENT_TRACER_ENABLED
+  /*
+   * If debugging via event tracer is enabled but intermediate output logging is
+   * disabled then we want to only log the outputs.
+   */
+  if (event_tracer) {
+    if (event_tracer->event_tracer_debug_level() >=
+        EventTracerDebugLogLevel::kProgramOutputs) {
+      event_tracer->log_evalue(evalue, LoggedEValueType::kProgramOutput);
+    }
+  }
+#else //! ET_EVENT_TRACER_ENABLED
+  (void)event_tracer;
+  (void)evalue;
+#endif
+}
+
+// Set the bundled input index of the current bundled input being used by the
+// method.
+inline void event_tracer_set_bundled_input_index(
+    EventTracer* event_tracer,
+    int bundled_input_index) {
+#ifdef ET_EVENT_TRACER_ENABLED
+  if (event_tracer) {
+    event_tracer->set_bundled_input_index(bundled_input_index);
+  }
+#else //! ET_EVENT_TRACER_ENABLED
+  (void)event_tracer;
+  (void)bundled_input_index;
+#endif
+}
+
 } // namespace internal
 } // namespace executor
 } // namespace torch

@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
+from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 
 from torch import Tensor
@@ -39,6 +40,7 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 __all__ = [
     "QnnQuantizer",
     "get_default_qnn_ptq_config",
+    "get_16bit_qnn_ptq_config",
 ]
 
 QUANT_ANNOTATION_KEY = "quantization_annotation"
@@ -158,9 +160,47 @@ def get_default_qnn_ptq_config(
     return quantization_config, quantizer_configs
 
 
+def get_16bit_qnn_ptq_config() -> Tuple[QuantizationConfig, QnnQuantizerConfig]:
+    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=0,
+        quant_max=65535,
+        qscheme=torch.per_tensor_affine,
+        observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int16,
+        quant_min=-32767,
+        quant_max=32767,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    quantizer_configs = QnnQuantizerConfig(enable_per_channel_conv_quant=False)
+
+    return quantization_config, quantizer_configs
+
+
 def get_ptq_per_channel_weight_config() -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
-
     act_quantization_spec = QuantizationSpec(
         dtype=torch.uint8,
         quant_min=0,
@@ -275,6 +315,7 @@ class QnnQuantizer(Quantizer):
             "sub",
             "mul",
             "div",
+            "truediv",
         ]
 
         quantization_config = self._get_quant_config(op_sources)
@@ -296,6 +337,51 @@ class QnnQuantizer(Quantizer):
             input_act1 = node.args[1]
             if isinstance(input_act1, Node):
                 input_qspec_map[input_act1] = input_act_qspec
+
+            node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=output_act_qspec,
+                _annotated=True,
+            )
+
+    def _annotate_matmul(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = [
+            operator.matmul,
+            torch.matmul,
+            torch.ops.aten.matmul,
+            "matmul",
+        ]
+
+        quantization_config = self._get_quant_config(op_sources)
+        matmul_partitions = get_source_partitions(gm.graph, op_sources)
+        matmul_partitions = list(itertools.chain(*matmul_partitions.values()))
+        for matmul_partition in matmul_partitions:
+            node = matmul_partition.output_nodes[0]
+            if _is_annotated([node]):
+                continue
+
+            input_act_qspec = quantization_config.input_activation
+            output_act_qspec = quantization_config.output_activation
+
+            input_qspec_map = {}
+            input_act0 = node.args[0]
+            if isinstance(input_act0, Node):
+                input_qspec_map[input_act0] = input_act_qspec
+
+            input_act1 = node.args[1]
+            if isinstance(input_act1, Node):
+                # In matmul, QNN_DATATYPE_SFIXED_POINT_16 Input1 must have QNN_DATATYPE_UFIXED_POINT_16 Input0 and must be symmetric quantized.
+                if input_act_qspec.dtype == torch.int32:
+                    input_qspec_map[input_act1] = quantization_config.weight
+                    quantization_annotation = input_act1.meta.get(
+                        QUANT_ANNOTATION_KEY, None
+                    )
+                    if quantization_annotation:
+                        quantization_annotation.output_qspec = (
+                            quantization_config.weight
+                        )
+                else:
+                    input_qspec_map[input_act1] = input_act_qspec
 
             node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
@@ -516,9 +602,9 @@ class QnnQuantizer(Quantizer):
                     input_act_qspec,
                 )
             if bias_node and _is_annotated([bias_node]) is False:
-                _annotate_output_qspec(bias_node, bias_qspec)
+                _annotate_input_qspec_map(act_use_node, bias_node, bias_qspec)
             if _is_annotated([weight_node]) is False:  # type: ignore[list-item]
-                _annotate_output_qspec(weight_node, weight_qspec)
+                _annotate_input_qspec_map(act_use_node, weight_node, weight_qspec)
             if _is_annotated([output_node]) is False:
                 _annotate_output_qspec(output_node, output_act_qspec)
             nodes_to_mark_annotated = list(linear_partition.nodes)
@@ -582,13 +668,32 @@ class QnnQuantizer(Quantizer):
             )
 
     def _annotate_unsqueeze(self, gm: torch.fx.GraphModule) -> None:
-        op_sources = [torch.ops.aten.unsqueeze_copy.default, torch.unsqueeze]
+        op_sources = [
+            torch.ops.aten.unsqueeze_copy.default,
+            torch.unsqueeze,
+            "unsqueeze",
+        ]
         qconfig = self._get_quant_config(op_sources)
-        if qconfig and qconfig != self.global_quant_config:
-            raise NotImplementedError(
-                "Havn't done custom annotation for input_out_obs_sharing_op yet"
+        unsqueeze_partitions = get_source_partitions(gm.graph, op_sources)
+
+        unsqueeze_partitions = list(itertools.chain(*unsqueeze_partitions.values()))
+        for unsqueeze_partition in unsqueeze_partitions:
+            if len(unsqueeze_partition.output_nodes) > 1:
+                raise ValueError("unsqueeze partition has more than one output node")
+            unsqueeze_node = unsqueeze_partition.output_nodes[0]
+            if _is_annotated([unsqueeze_node]):
+                continue
+
+            unsqueeze_input_node = unsqueeze_node.args[0]
+            assert isinstance(unsqueeze_input_node, Node)
+            unsqueeze_input_qspec_map = {}
+            unsqueeze_input_qspec_map[unsqueeze_input_node] = qconfig.input_activation
+
+            unsqueeze_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=unsqueeze_input_qspec_map,
+                output_qspec=qconfig.output_activation,
+                _annotated=True,
             )
-        self._annotate_input_out_obs_sharing_op(op_sources, gm)
 
     def _annotate_flatten(self, gm: torch.fx.GraphModule) -> None:
         op_sources = [torch.ops.aten.flatten.using_ints, torch.flatten]
@@ -706,7 +811,7 @@ class QnnQuantizer(Quantizer):
 
             cat_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
                 input_qspec_map=input_qspec_map,
-                output_qspec=qconfig.output_activation,
+                output_qspec=share_qparams_with_input_act0_qspec,
                 _annotated=True,
             )
 
@@ -733,9 +838,199 @@ class QnnQuantizer(Quantizer):
                 _annotated=True,
             )
 
+    def _annotate_embedding(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = [torch.nn.modules.sparse.Embedding, torch.nn.modules.Embedding]
+        qconfig = self._get_quant_config(op_sources)
+        embedding_partitions = get_source_partitions(gm.graph, op_sources)
+
+        embedding_partitions = list(itertools.chain(*embedding_partitions.values()))
+        for embedding_partition in embedding_partitions:
+            embedding_node = embedding_partition.output_nodes[0]
+
+            weight = embedding_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[weight] = qconfig.input_activation
+
+            embedding_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((weight, embedding_node)),
+                _annotated=True,
+            )
+
+    def _annotate_softmax(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = [torch.nn.Softmax, F.softmax]
+        qconfig = self._get_quant_config(op_sources)
+        softmax_partitions = get_source_partitions(gm.graph, op_sources)
+
+        softmax_partitions = list(itertools.chain(*softmax_partitions.values()))
+        for softmax_partition in softmax_partitions:
+            softmax_node = softmax_partition.output_nodes[0]
+            input_node = softmax_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            softmax_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=qconfig.output_activation,
+                _annotated=True,
+            )
+
+    def _annotate_pad(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = [F.pad]
+        qconfig = self._get_quant_config(op_sources)
+        pad_partitions = get_source_partitions(gm.graph, op_sources)
+
+        pad_partitions = list(itertools.chain(*pad_partitions.values()))
+        for pad_partition in pad_partitions:
+            pad_node = pad_partition.output_nodes[0]
+            input_node = pad_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            pad_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input_node, pad_node)),
+                _annotated=True,
+            )
+
+    def _annotate_reshape(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = [torch.reshape, "reshape"]
+        qconfig = self._get_quant_config(op_sources)
+        reshape_partitions = get_source_partitions(gm.graph, op_sources)
+
+        reshape_partitions = list(itertools.chain(*reshape_partitions.values()))
+        for reshape_partition in reshape_partitions:
+            reshape_node = reshape_partition.output_nodes[0]
+            input_node = reshape_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            reshape_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input_node, reshape_node)),
+                _annotated=True,
+            )
+
+    def _annotate_stride(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = ["stride"]
+        qconfig = self._get_quant_config(op_sources)
+        stride_partitions = get_source_partitions(gm.graph, op_sources)
+
+        stride_partitions = list(itertools.chain(*stride_partitions.values()))
+        for stride_partition in stride_partitions:
+            stride_node = stride_partition.output_nodes[0]
+            input_node = stride_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            stride_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input_node, stride_node)),
+                _annotated=True,
+            )
+
+    def _annotate_get_item(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = [operator.getitem]
+        qconfig = self._get_quant_config(op_sources)
+
+        get_item_partitions = get_source_partitions(gm.graph, op_sources)
+
+        get_item_partitions = list(itertools.chain(*get_item_partitions.values()))
+        for get_item_partition in get_item_partitions:
+            for node in get_item_partition.nodes:
+                quantization_annotation = node.meta.get(QUANT_ANNOTATION_KEY, None)
+                if len(node.args) > 0 and not quantization_annotation:
+                    input_node = node.args[0]
+                    if (
+                        input_node.op == "get_attr"
+                        and getattr(gm, input_node.target).dtype == torch.int64
+                    ):
+                        break
+                    if input_node.meta["val"].dtype == torch.int64:
+                        break
+
+                    input_node_quantization_annotation = input_node.meta.get(
+                        QUANT_ANNOTATION_KEY, None
+                    )
+                    input_qspec_map = {}
+
+                    if not input_node_quantization_annotation:
+                        input_qspec_map[input_node] = qconfig.input_activation
+                    else:
+                        input_qspec_map[input_node] = SharedQuantizationSpec(input_node)
+
+                    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                        input_qspec_map=input_qspec_map,
+                        output_qspec=SharedQuantizationSpec((input_node, node)),
+                        _annotated=True,
+                    )
+
+    def _annotate_view(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = ["view"]
+        qconfig = self._get_quant_config(op_sources)
+        view_partitions = get_source_partitions(gm.graph, op_sources)
+
+        view_partitions = list(itertools.chain(*view_partitions.values()))
+        for view_partition in view_partitions:
+            view_node = view_partition.output_nodes[0]
+            input_node = view_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            view_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input_node, view_node)),
+                _annotated=True,
+            )
+
+    def _annotate_permute(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = ["permute"]
+        qconfig = self._get_quant_config(op_sources)
+        permute_partitions = get_source_partitions(gm.graph, op_sources)
+
+        permute_partitions = list(itertools.chain(*permute_partitions.values()))
+        for permute_partition in permute_partitions:
+            permute_node = permute_partition.output_nodes[0]
+            input_node = permute_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            permute_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input_node, permute_node)),
+                _annotated=True,
+            )
+
+    def _annotate_transpose(self, gm: torch.fx.GraphModule) -> None:
+        op_sources = ["transpose"]
+        qconfig = self._get_quant_config(op_sources)
+        transpose_partitions = get_source_partitions(gm.graph, op_sources)
+
+        transpose_partitions = list(itertools.chain(*transpose_partitions.values()))
+        for transpose_partition in transpose_partitions:
+            transpose_node = transpose_partition.output_nodes[0]
+            input_node = transpose_node.args[0]
+
+            input_qspec_map = {}
+            input_qspec_map[input_node] = qconfig.input_activation
+
+            transpose_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+                input_qspec_map=input_qspec_map,
+                output_qspec=SharedQuantizationSpec((input_node, transpose_node)),
+                _annotated=True,
+            )
+
     def _preprocess(self, model: torch.fx.GraphModule) -> torch.fx.GraphModule:
         model = RemoveClone()(model).graph_module
         model = ConvertHardsigmoid(quantization_capture=True)(model).graph_module
+        model = ReduceDynamicRange()(model).graph_module
         return model
 
     def _annotate_custom_annotation(self, gm: torch.fx.GraphModule) -> None:
@@ -757,9 +1052,19 @@ class QnnQuantizer(Quantizer):
         self._annotate_avgpool2d(model)
         self._annotate_adaptive_avgpool2d(model)
         self._annotate_upsample2d(model)
-        self._annotate_cat(model)
         self._annotate_unsqueeze(model)
         self._annotate_flatten(model)
+        self._annotate_embedding(model)
+        self._annotate_cat(model)
+        self._annotate_softmax(model)
+        self._annotate_pad(model)
+        self._annotate_reshape(model)
+        self._annotate_stride(model)
+        self._annotate_get_item(model)
+        self._annotate_view(model)
+        self._annotate_permute(model)
+        self._annotate_transpose(model)
+        self._annotate_matmul(model)
         self._annotate_custom_annotation(model)
         return model
 

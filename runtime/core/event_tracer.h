@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/platform/platform.h>
 #include <stdlib.h>
 #include <cstdint>
@@ -27,6 +28,8 @@ typedef uint32_t DebugHandle;
 /// Default id's for chain id and debug handle.
 constexpr ChainID kUnsetChainId = -1;
 constexpr DebugHandle kUnsetDebugHandle = 0;
+// Default bundled input index to indicate that it hasn't been set yet.
+constexpr int kUnsetBundledInputIndex = -1;
 
 /// Different types of delegate debug identifiers that are supported currently.
 enum class DelegateDebugIdType {
@@ -39,6 +42,28 @@ enum class DelegateDebugIdType {
   /// identifier i.e. the delegate debug id is a pointer to a string table
   /// managed by the class implementing EventTracer functionality.
   kStr
+};
+
+/// Indicates the type of the EValue that was logged. These values could be
+/// serialized and should not be changed.
+enum class LoggedEValueType {
+  /// Intermediate output from an operator.
+  kIntermediateOutput = 0,
+  /// Output at the program level. This is essentially the output
+  /// of the model.
+  kProgramOutput = 1,
+};
+
+/// Indicates the level of event tracer debug logging. Verbosity of the logging
+/// increases as we go down the enum list.
+enum class EventTracerDebugLogLevel {
+  /// No logging.
+  kNoLogging,
+  /// When set to this only the program level outputs will be logged.
+  kProgramOutputs,
+  /// When set to this all intermediate outputs and program level outputs
+  /// will be logged.
+  kIntermediateOutputs,
 };
 
 /**
@@ -211,6 +236,22 @@ class EventTracer {
   virtual AllocatorID track_allocator(const char* name) = 0;
 
   /**
+   * Log an evalue during the execution of the model. This is useful for
+   * debugging purposes. Model outputs are a special case of this and will
+   * be logged with the output bool enabled.
+   *
+   * Users of this should refer to the chain_id and debug_handle to get the
+   * context for these evalues and their corresponding op.
+   *
+   * @param[in] evalue The value to be logged.
+   * @param[in] evalue_type Indicates what type of output this is logging e.g.
+   * an intermediate output, program output etc.
+   */
+  virtual void log_evalue(
+      const EValue& evalue,
+      LoggedEValueType evalue_type) = 0;
+
+  /**
    * Helper function to set the chain id ands debug handle. Users have two
    * options, the first is that they can directly pass in the chain id and debug
    * handle to start_profiling or they can explicitly set them through this
@@ -242,11 +283,62 @@ class EventTracer {
     debug_handle_ = debug_handle;
   }
 
-  ChainID get_current_chain_id() {
+  /**
+   * When running a program wrapped in a bundled program, log the bundled input
+   * index of the current bundled input being tested out on this method.
+   * If users want to unset the index back to the default value, they can call
+   * this method with kUnsetBundledInputIndex.
+   *
+   * @param[in] bundled_input_index Index of the current input being tested
+   */
+  void set_bundled_input_index(int bundled_input_index) {
+    bundled_input_index_ = bundled_input_index;
+  }
+
+  /**
+   * Return the current bundled input index.
+   */
+  int bundled_input_index() {
+    return bundled_input_index_;
+  }
+
+  /**
+   * Set the level of event tracer debug logging that is desired.
+   *
+   */
+  void set_event_tracer_debug_level(EventTracerDebugLogLevel log_level) {
+    event_tracer_debug_level_ = log_level;
+  }
+
+  /**
+   * Return the current level of event tracer debug logging.
+   */
+  EventTracerDebugLogLevel event_tracer_debug_level() {
+    return event_tracer_debug_level_;
+  }
+
+  /**
+   * Return the current status of intermediate outputs logging mode.
+   */
+  bool intermediate_outputs_logging_status() {
+    return log_intermediate_tensors_;
+  }
+
+  /**
+   * Get the current chain id.
+   *
+   * @return Current chain id.
+   */
+  ChainID current_chain_id() {
     return chain_id_;
   }
 
-  DebugHandle get_current_debug_handle() {
+  /**
+   * Get the current debug handle.
+   *
+   * @return Current debug handle.
+   */
+  DebugHandle current_debug_handle() {
     return debug_handle_;
   }
 
@@ -255,6 +347,11 @@ class EventTracer {
  protected:
   ChainID chain_id_ = kUnsetChainId;
   DebugHandle debug_handle_ = kUnsetDebugHandle;
+  bool event_tracer_enable_debugging_ = false;
+  bool log_intermediate_tensors_ = false;
+  int bundled_input_index_ = kUnsetBundledInputIndex;
+  EventTracerDebugLogLevel event_tracer_debug_level_ =
+      EventTracerDebugLogLevel::kNoLogging;
 };
 
 } // namespace executor

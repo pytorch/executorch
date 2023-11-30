@@ -142,7 +142,7 @@ def export_and_lower_partitioned_graph():
 
     # Lower to backend_with_compiler_demo
     logging.info("Lowering to the demo backend...")
-    edge = edge.to_backend(AddMulPartitionerDemo)
+    edge = edge.to_backend(AddMulPartitionerDemo())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch()
