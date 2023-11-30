@@ -82,5 +82,8 @@ class ETDumpGen : public EventTracer {
   size_t copy_tensor_to_debug_buffer(exec_aten::Tensor tensor);
 };
 
+executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
+    exec_aten::ScalarType tensor_scalar_type);
+
 } // namespace executor
 } // namespace torch
