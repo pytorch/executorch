@@ -1,3 +1,9 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import json
 from dataclasses import dataclass, field
 from typing import List
@@ -6,8 +12,7 @@ import executorch.exir.memory as memory
 import torch
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import get_node_tensor_specs
-from executorch.exir.print_program import _stacktrace_to_framelist
-from executorch.exir.tensor import num_bytes_from_shape_and_dtype, TensorSpec
+from executorch.exir.tensor import num_bytes_from_shape_and_dtype
 from torch._export import ExportedProgram
 
 
@@ -81,9 +86,9 @@ def generate_memory_trace(
     executorch_program_manager: ExecutorchProgramManager, chrome_trace_filename: str
 ):
     """
-    Generate the memory timeline from the given Executorch program.
+    Generate the memory timeline from the given ExecuTorch program.
     Args:
-        executorch_program The Executorch program to be analyzed.
+        executorch_program The ExecuTorch program to be analyzed.
     Returns:
         Chrome trace in JSON format:
         Format:
@@ -105,7 +110,7 @@ def generate_memory_trace(
     root["traceEvents"] = trace_events
 
     tid = 0
-    for i, memory_timeline_event in enumerate(memory_timeline):
+    for memory_timeline_event in memory_timeline:
         start_time = 0
         if memory_timeline_event is None:
             continue

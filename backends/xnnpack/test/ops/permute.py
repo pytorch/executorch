@@ -24,7 +24,7 @@ class TestPermute(unittest.TestCase):
         (
             Tester(self.Permute([0, 2, 3, 1]), inputs)
             .export()
-            .check_count({"torch.ops.aten.permute_copy.default": 1})
+            .check_count({"torch.ops.aten.permute.default": 1})
             .to_edge()
             .check_count(
                 {"executorch_exir_dialects_edge__ops_aten_permute_copy_default": 1}

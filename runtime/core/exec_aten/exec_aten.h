@@ -60,6 +60,7 @@ using ArrayRef = c10::ArrayRef<T>;
 template <typename T>
 using optional = c10::optional<T>;
 using nullopt_t = c10::nullopt_t;
+using c10::nullopt;
 using ScalarType = at::ScalarType;
 using Scalar = c10::Scalar;
 using MemoryFormat = c10::MemoryFormat;
@@ -92,6 +93,7 @@ using ArrayRef = torch::executor::ArrayRef<T>;
 template <typename T>
 using optional = torch::executor::optional<T>;
 using nullopt_t = torch::executor::nullopt_t;
+static constexpr nullopt_t nullopt{0};
 using ScalarType = torch::executor::ScalarType;
 using TensorList = ArrayRef<Tensor>;
 using Scalar = torch::executor::Scalar;
@@ -117,8 +119,6 @@ using quint2x4 = torch::executor::quint2x4;
 using IntArrayRef = torch::executor::IntArrayRef;
 
 #endif // Use executor types
-
-static constexpr nullopt_t nullopt{0};
 
 } // namespace exec_aten
 namespace torch {

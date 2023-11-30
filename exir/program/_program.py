@@ -708,9 +708,7 @@ def to_edge(
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
         # Decompose to Core ATen
-        program = program.run_decompositions(
-            _default_decomposition_table()  # pyre-ignore[6]
-        )
+        program = program.run_decompositions(_default_decomposition_table())
 
         if config._check_ir_validity:
             try:
