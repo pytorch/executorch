@@ -32,6 +32,7 @@ python_unittest(
         "//executorch/sdk:lib",
         "//executorch/sdk/debug_format:base_schema",
         "//executorch/sdk/debug_format:et_schema",
+        "//executorch/sdk/etdump:schema_flatcc",
         "//executorch/sdk/etrecord/tests:etrecord_test_library",
         "//executorch/sdk/inspector:inspector_utils",
     ],
