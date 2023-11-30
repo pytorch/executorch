@@ -508,6 +508,54 @@ class TestMPSUnitOpTesting(TestMPS):
             conv, example_inputs, func_name=inspect.stack()[0].function[5:]
         )
 
+    def test_conv1d(self):
+        example_inputs = (torch.randn(1, 57, 40),)
+        stride = random.randint(1, 4)
+        padding = random.randint(1, 4)
+        conv = torch.nn.Conv1d(57, 20, stride=stride, padding=padding, kernel_size=3, bias=random.choice([True, False]))
+        conv.eval()
+        self.lower_and_test_with_partitioner(
+            conv, example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_conv2d(self):
+        N = 10
+        C = 10
+        H = 4
+        W = 6
+        groups = 2
+        input_memory_format = torch.contiguous_format
+        weight_memory_format = torch.contiguous_format
+        strideX = random.randint(1, 4)
+        strideY = random.randint(1, 4)
+        example_inputs = (torch.randn(N, C, H, W).to(memory_format=input_memory_format), )
+        conv = torch.nn.Conv2d(
+            in_channels=N, out_channels=C, kernel_size=H, groups=groups, stride=(strideX, strideY))
+        conv.weight.data = conv.weight.to(memory_format=weight_memory_format)
+        conv.eval()
+        self.lower_and_test_with_partitioner(
+            conv, example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_conv2d_to_depthwise_conv_3d(self):
+        N = 10
+        C = 10
+        H = 4
+        W = 6
+        groups = 10
+        input_memory_format = torch.contiguous_format
+        weight_memory_format = torch.contiguous_format
+        strideX = random.randint(1, 4)
+        strideY = random.randint(1, 4)
+        example_inputs = (torch.randn(N, C, H, W).to(memory_format=input_memory_format), )
+        conv = torch.nn.Conv2d(
+            in_channels=N, out_channels=C, kernel_size=H, groups=groups, stride=(strideX, strideY))
+        conv.weight.data = conv.weight.to(memory_format=weight_memory_format)
+        conv.eval()
+        self.lower_and_test_with_partitioner(
+            conv, example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
     def test_mps_backend_conv2d_single_int_params(self):
         groups = 1
         stride = 2
