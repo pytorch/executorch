@@ -28,7 +28,7 @@ Once we have the model binary file, then let's run it with the ExecuTorch runtim
 
 ```bash
 # Build the mps_executor_runner
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_MPS=1 -DBUCK2=/tmp/buck2 —trace .. && cd ..)
+(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_MPS=1 -DEXECUTORCH_BUILD_SDK=ON -DBUCK2=/tmp/buck2 —trace .. && cd ..)
 cmake --build cmake-out -j9
 
 # Run the mv2 generated model using the mps_executor_runner
