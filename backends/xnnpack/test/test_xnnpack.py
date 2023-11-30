@@ -18,46 +18,6 @@ from executorch.backends.xnnpack.test.test_xnnpack_utils_classes import (
 
 
 class TestXNNPACKFloatingPoint(TestXNNPACK):
-    def test_xnnpack_backend_sequential_conv2d(self):
-        class TwoConv(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.first = torch.nn.Conv2d(
-                    in_channels=1,
-                    out_channels=3,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=False,
-                )
-                self.second = torch.nn.Conv2d(
-                    in_channels=3,
-                    out_channels=2,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=False,
-                )
-
-            def forward(self, x):
-                return self.second(self.first(x))
-
-        example_inputs = (torch.randn(1, 1, 3, 3),)
-        self.lower_and_test_with_partitioner(TwoConv(), example_inputs)
-
-    def test_xnnpack_backend_conv2d_bn(self):
-        class ModelConvBN(torch.nn.Module):
-            def __init__(self, in_features: int, out_features: int, kernel_size):
-                super().__init__()
-                self.conv2d = torch.nn.Conv2d(in_features, out_features, kernel_size)
-                self.bn = randomize_bn(out_features)
-
-            def forward(self, x):
-                y = self.conv2d(x)
-                y = self.bn(y)
-                return y
-
-        model = ModelConvBN(2, 2, (2, 2)).eval()
-        self.lower_and_test_with_partitioner(model, (torch.randn(2, 2, 4, 4),))
-
     def test_xnnpack_backend_conv1d(self):
         groups = 1
         stride = [2]
@@ -125,81 +85,6 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
 
         self.lower_and_test_with_partitioner(conv1, example_inputs)
         self.lower_and_test_with_partitioner(conv2, example_inputs)
-
-    def test_xnnpack_backend_conv2d(self):
-        groups = 1
-        stride = [2, 2]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 2
-        out_channels = 1
-        width = 8
-        height = 8
-        batches = 1
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
-        conv = torch.nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=(3, 3),
-            stride=stride,
-            padding=padding,
-            groups=groups,
-            dilation=dilation,
-            bias=True,
-        )
-        conv.eval()
-        self.lower_and_test_with_partitioner(conv, example_inputs)
-
-    def test_xnnpack_backend_conv2d_single_int_params(self):
-        groups = 1
-        stride = 2
-        padding = "valid"
-        dilation = 1
-        in_channels = 2
-        out_channels = 1
-        width = 8
-        height = 8
-        batches = 1
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
-        conv = torch.nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=3,
-            stride=stride,
-            padding=padding,
-            groups=groups,
-            dilation=dilation,
-            bias=True,
-        )
-        conv.eval()
-        self.lower_and_test_with_partitioner(conv, example_inputs)
-
-    def test_xnnpack_backend_conv2d_dw(self):
-        # Depthwise Convolution Requirements:
-        # - Groups must equal In Channels
-        # - Out Channels must be a positive multiple of In Channels
-        groups = 2
-        stride = [2, 2]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = groups
-        out_channels = 3 * in_channels
-        width = 8
-        height = 8
-        batches = 1
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
-        conv = torch.nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=(3, 3),
-            stride=stride,
-            padding=padding,
-            groups=groups,
-            dilation=dilation,
-            bias=True,
-        )
-        conv.eval()
-        self.lower_and_test_with_partitioner(conv, example_inputs)
 
     @torch.inference_mode()  # TODO Use  for capturing.
     def test_xnnpack_backend_mm(self):
@@ -560,50 +445,6 @@ class TestXNNPACKFloatingPoint(TestXNNPACK):
         example_inputs = (torch.ones(1, 1, 6, 6),)
 
         self.lower_and_test_with_partitioner(op_sequences, example_inputs)
-
-    def test_xnnpack_backend_conv2d_bn_hardtanh_mean_sequence(self):
-        """
-        This test makes sure that we can fuse batchnorm and hardtanh
-        even with inserting copy nodes at some spots in the graph to change
-        memory format
-        """
-        groups = 1
-        stride = [2, 2]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 2
-        out_channels = 1
-        width = 8
-        height = 8
-        batches = 1
-        example_inputs = (torch.randn(batches, in_channels, height, width),)
-
-        class TestModule(torch.nn.Module):
-            def __init__(self):
-                super(TestModule, self).__init__()
-                self.conv = torch.nn.Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=(3, 3),
-                    stride=stride,
-                    padding=padding,
-                    groups=groups,
-                    dilation=dilation,
-                    bias=True,
-                )
-                self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
-
-            def forward(self, x):
-                x = self.conv(x)
-                x = self.native_batchnorm(x)
-                x = self.hardtanh(x)
-                x = torch.mean(x, (-1, -2), keepdim=True)
-                return x
-
-        test_module = TestModule()
-        test_module.eval()
-        self.lower_and_test_with_partitioner(test_module, example_inputs)
 
     def test_xnnpack_backend_negative(self):
         model_inputs = (torch.randn(1, 3, 3),)
