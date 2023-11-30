@@ -99,6 +99,10 @@ def define_common_targets():
             "emitter.h",
         ],
         exported_external_deps = ["flatccrt"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     for aten_mode in (True, False):

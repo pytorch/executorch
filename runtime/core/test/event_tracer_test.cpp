@@ -65,10 +65,12 @@ class DummyEventTracer : public EventTracer {
   }
 
   void end_profiling_delegate(
-      EventTracerEntry event_tracer_entry,
-      const char* metadata) override {
+      __ET_UNUSED EventTracerEntry event_tracer_entry,
+      __ET_UNUSED const void* metadata,
+      __ET_UNUSED size_t metadata_len) override {
     (void)event_tracer_entry;
     (void)metadata;
+    (void)metadata_len;
   }
 
   void log_profiling_delegate(
@@ -76,12 +78,14 @@ class DummyEventTracer : public EventTracer {
       DebugHandle delegate_debug_id,
       et_timestamp_t start_time,
       et_timestamp_t end_time,
-      const char* metadata = nullptr) override {
+      const void* metadata,
+      size_t metadata_len = 0) override {
     (void)name;
     (void)delegate_debug_id;
     (void)start_time;
     (void)end_time;
     (void)metadata;
+    (void)metadata_len;
   }
 
   void log_evalue(const EValue& evalue, LoggedEValueType evalue_type) override {
