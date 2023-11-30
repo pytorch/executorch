@@ -9,8 +9,6 @@ from types import MappingProxyType
 
 from executorch import exir
 
-from executorch.exir.backend.backend_api import to_backend
-
 from executorch.exir.backend.backend_details import CompileSpec, ExportedProgram
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_pattern_op_partitions,

@@ -286,7 +286,6 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//executorch/exir/backend:backend_api",
         "//executorch/exir/backend:backend_details",
         "//executorch/exir/backend:partitioner",
         "//executorch/exir/backend:utils",

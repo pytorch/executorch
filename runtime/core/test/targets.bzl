@@ -41,7 +41,7 @@ def define_common_targets():
             "event_tracer_test.cpp",
         ],
         deps = [
-            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:event_tracer",
         ],
     )
 

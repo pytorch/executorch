@@ -238,6 +238,8 @@
 
 - op: pixel_shuffle.out
 
+- op: pow.Scalar_out
+
 - op: pow.Tensor_Tensor_out
 
 - op: pow.Tensor_Scalar_out

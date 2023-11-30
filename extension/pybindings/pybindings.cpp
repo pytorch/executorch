@@ -27,6 +27,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/bundled_program/bundled_program.h>
 #include <executorch/sdk/bundled_program/schema/bundled_program_schema_generated.h>
+#include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/read_file.h>
 
 #include <ATen/Functions.h>
@@ -64,8 +65,10 @@ using util::MmapDataLoader;
 
 class Module final {
  public:
-  explicit Module(std::unique_ptr<DataLoader> loader)
-      : loader_(std::move(loader)) {
+  explicit Module(
+      std::unique_ptr<DataLoader> loader,
+      std::unique_ptr<ETDumpGen> tracer = nullptr)
+      : loader_(std::move(loader)), event_tracer_(std::move(tracer)) {
     runtime_init();
     Result<Program> program = Program::load(
         loader_.get(), Program::Verification::InternalConsistency);
@@ -110,8 +113,8 @@ class Module final {
       // It's safe to use the same memory manager for all modules because
       // we can guarantee that only one will be executing at a time.
       // Everything in this module runs on a single thread.
-      Result<Method> method =
-          program_->load_method(name, memory_->mem_manager());
+      Result<Method> method = program_->load_method(
+          name, memory_->mem_manager(), event_tracer_.get());
       THROW_IF_ERROR(
           method.error(),
           "loading method %s failed with error 0x%" PRIx32,
@@ -183,6 +186,14 @@ class Module final {
     return *methods_[method_name].get();
   }
 
+  bool has_etdump() {
+    return static_cast<bool>(event_tracer_);
+  }
+
+  ETDumpGen& etdump() {
+    return *event_tracer_;
+  }
+
  private:
   /// A wrapper/util class for executorch memory allocations/manager.
   class Memory {
@@ -237,17 +248,21 @@ class Module final {
   std::unique_ptr<DataLoader> loader_; // program_ points to this.
   std::unique_ptr<const Program> program_; // methods_ entries points to this.
   std::unordered_map<std::string, std::unique_ptr<Method>> methods_;
+  std::unique_ptr<ETDumpGen> event_tracer_;
 };
 
-inline std::unique_ptr<Module> load_from_buffer(
-    const void* ptr,
-    size_t ptr_len) {
+inline std::unique_ptr<Module>
+load_from_buffer(const void* ptr, size_t ptr_len, bool enable_etdump) {
   EXECUTORCH_SCOPE_PROF("load_from_buffer");
   auto loader = std::make_unique<BufferDataLoader>(ptr, ptr_len);
-  return std::make_unique<Module>(std::move(loader));
+  return std::make_unique<Module>(
+      std::move(loader),
+      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr);
 }
 
-inline std::unique_ptr<Module> load_from_file(const std::string& path) {
+inline std::unique_ptr<Module> load_from_file(
+    const std::string& path,
+    bool enable_etdump) {
   EXECUTORCH_SCOPE_PROF("load_from_file");
 
   Result<MmapDataLoader> res = MmapDataLoader::from(
@@ -259,7 +274,9 @@ inline std::unique_ptr<Module> load_from_file(const std::string& path) {
       res.error());
 
   auto loader = std::make_unique<MmapDataLoader>(std::move(res.get()));
-  return std::make_unique<Module>(std::move(loader));
+  return std::make_unique<Module>(
+      std::move(loader),
+      enable_etdump ? std::make_unique<torch::executor::ETDumpGen>() : nullptr);
 }
 
 static constexpr size_t kDEFAULT_BUNDLED_INPUT_POOL_SIZE = 16 * 1024U;
@@ -306,16 +323,18 @@ struct PyBundledModule final {
 };
 
 struct PyModule final {
-  explicit PyModule(const py::bytes& buffer)
+  explicit PyModule(const py::bytes& buffer, bool enable_etdump)
       : module_(torch::executor::load_from_buffer(
             buffer.cast<std::string_view>().data(),
-            py::len(buffer))) {}
+            py::len(buffer),
+            enable_etdump)) {}
 
-  explicit PyModule(const void* ptr, size_t ptr_len)
-      : module_(torch::executor::load_from_buffer(ptr, ptr_len)) {}
+  explicit PyModule(const void* ptr, size_t ptr_len, bool enable_etdump)
+      : module_(
+            torch::executor::load_from_buffer(ptr, ptr_len, enable_etdump)) {}
 
-  explicit PyModule(const std::string& path)
-      : module_(torch::executor::load_from_file(path)) {}
+  explicit PyModule(const std::string& path, bool enable_etdump)
+      : module_(torch::executor::load_from_file(path, enable_etdump)) {}
 
   PyModule(const PyModule&) = delete;
   PyModule& operator=(const PyModule&) = delete;
@@ -323,16 +342,22 @@ struct PyModule final {
   PyModule& operator=(PyModule&&) = default;
 
   // Module is only valid as long as the python buffer is alive.
-  static std::unique_ptr<PyModule> load_from_buffer(const py::bytes& buffer) {
-    return std::make_unique<PyModule>(buffer);
+  static std::unique_ptr<PyModule> load_from_buffer(
+      const py::bytes& buffer,
+      bool enable_etdump) {
+    return std::make_unique<PyModule>(buffer, enable_etdump);
   }
-  static std::unique_ptr<PyModule> load_from_file(const std::string& path) {
-    return std::make_unique<PyModule>(path);
+  static std::unique_ptr<PyModule> load_from_file(
+      const std::string& path,
+      bool enable_etdump) {
+    return std::make_unique<PyModule>(path, enable_etdump);
   }
 
   static std::unique_ptr<PyModule> load_from_bundled_program(
-      PyBundledModule& m) {
-    return std::make_unique<PyModule>(m.get_program_ptr(), m.get_program_len());
+      PyBundledModule& m,
+      bool enable_etdump) {
+    return std::make_unique<PyModule>(
+        m.get_program_ptr(), m.get_program_len(), enable_etdump);
   }
 
   py::list run_method(
@@ -455,6 +480,29 @@ struct PyModule final {
     return run_method("forward", inputs);
   }
 
+  py::list forward_single_input(const torch::Tensor& inputTensor) {
+    py::list py_list;
+    py_list.append(py::cast(inputTensor));
+    return run_method("forward", py_list);
+  }
+
+  bool has_etdump() {
+    return module_->has_etdump();
+  }
+
+  void write_etdump_result_to_file(const std::string& path) {
+    if (!has_etdump()) {
+      throw std::runtime_error("No etdump found");
+    }
+    etdump_result result = module_->etdump().get_etdump_data();
+    if (result.buf != nullptr && result.size > 0) {
+      FILE* f = fopen(path.c_str(), "w+");
+      fwrite((uint8_t*)result.buf, 1, result.size, f);
+      fclose(f);
+      free(result.buf);
+    }
+  }
+
   void load_bundled_input(
       PyBundledModule& m,
       const string method_name,
@@ -502,15 +550,21 @@ void create_profile_block(const std::string& name) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
-  m.def("_load_for_executorch", PyModule::load_from_file, py::arg("path"));
+  m.def(
+      "_load_for_executorch",
+      PyModule::load_from_file,
+      py::arg("path"),
+      py::arg("enable_etdump") = false);
   m.def(
       "_load_for_executorch_from_buffer",
       &PyModule::load_from_buffer,
-      py::arg("buffer"));
+      py::arg("buffer"),
+      py::arg("enable_etdump") = false);
   m.def(
       "_load_for_executorch_from_bundled_program",
       &PyModule::load_from_bundled_program,
-      py::arg("ptr"));
+      py::arg("ptr"),
+      py::arg("enable_etdump") = false);
   m.def(
       "_load_bundled_program_from_buffer",
       &PyBundledModule::load_from_buffer,
@@ -538,7 +592,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("atol") = 1e-8)
       .def("plan_execute", &PyModule::plan_execute)
       .def("run_method", &PyModule::run_method)
-      .def("forward", &PyModule::forward);
+      .def("forward", &PyModule::forward)
+      .def("has_etdump", &PyModule::has_etdump)
+      .def(
+          "write_etdump_result_to_file", &PyModule::write_etdump_result_to_file)
+      .def("__call__", &PyModule::forward)
+      .def("__call__", &PyModule::forward_single_input);
 
   py::class_<PyBundledModule>(m, "BundledModule");
 }
