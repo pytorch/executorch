@@ -219,6 +219,32 @@ Tensor& quantize_per_tensor_tensor_args_out(
       input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
 
+Tensor& quantize_per_channel_out(
+    RuntimeContext& context,
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t axis,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  (void)context;
+  torch::executor::Error err = resize_tensor(out, input.sizes());
+  ET_CHECK_MSG(
+    err == torch::executor::Error::Ok,
+    "Failed to resize out Tensor in quantize_per_channel_out");
+
+  ET_CHECK_MSG(
+      axis < input.dim(),
+      "Expecting axis to be smaller than %zd",
+      input.dim());
+
+  check_quantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+
+
+}
+
 } // namespace native
 } // namespace executor
 } // namespace torch
