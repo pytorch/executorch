@@ -49,4 +49,6 @@ def define_common_targets():
                 "fbsource//third-party/pypi/snakeviz:snakeviz",
                 "fbsource//third-party/pypi/tornado:tornado",
             ],
+            visibility = ["@EXECUTORCH_CLIENTS"],
+            _is_external_target = True,
         )

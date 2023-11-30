@@ -47,7 +47,7 @@ def define_common_targets():
     """
     runtime.export_file(
         name = ETDUMP_SCHEMA_FLATCC,
-        visibility = ["//executorch/..."],
+        visibility = ["@EXECUTORCH_CLIENTS"],
     )
 
     generate_schema_header_flatcc(
@@ -73,7 +73,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = ETDUMP_STEM_FLATCC,
         srcs = [],
-        visibility = ["//executorch/..."],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
         exported_headers = {
             ETDUMP_SCHEMA_FLATCC_BUILDER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_BUILDER),
             ETDUMP_SCHEMA_FLATCC_READER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_READER),
@@ -84,6 +84,20 @@ def define_common_targets():
             FLATBUFFERS_COMMON_BUILDER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, FLATBUFFERS_COMMON_BUILDER),
             FLATBUFFERS_COMMON_READER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, FLATBUFFERS_COMMON_READER),
         },
+        exported_external_deps = ["flatccrt"],
+    )
+
+    runtime.cxx_library(
+        name = "etdump_emitter",
+        srcs = [
+            "emitter.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+        ],
+        exported_headers = [
+            "emitter.h",
+        ],
         exported_external_deps = ["flatccrt"],
     )
 
@@ -102,7 +116,12 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":etdump_schema_flatcc",
+                ":etdump_emitter",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
-            visibility = ["//executorch/..."],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
         )

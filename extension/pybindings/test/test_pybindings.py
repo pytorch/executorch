@@ -35,4 +35,4 @@ from executorch.extension.pybindings.test.make_test import make_test
 
 class PybindingsTest(unittest.TestCase):
     def test(self):
-        make_test(self, _load_for_executorch_from_buffer)
+        make_test(self, _load_for_executorch_from_buffer)(self)
