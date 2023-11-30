@@ -34,13 +34,14 @@ from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
-
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
 from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
+
+from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
@@ -479,6 +480,7 @@ aten_to_edge_passes = PassManager(
         SymToTensorPass(),
         RemoveMixedTypeOperators(),
         RemoveNoopPass(),
+        RemoveAssertAsyncPass(),
         dead_code_elimination_pass,
         DebugHandleGeneratorPass(),
     ]
