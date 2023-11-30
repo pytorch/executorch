@@ -280,7 +280,9 @@ class TestEmit(unittest.TestCase):
 
         deboxed_int_list = []
         for item in program.execution_plan[0].values[5].val.items:  # pyre-ignore[16]
-            deboxed_int_list.append(program.execution_plan[0].values[item].val.int_val)  # pyre-ignore[16]
+            deboxed_int_list.append(
+                program.execution_plan[0].values[item].val.int_val  # pyre-ignore[16]
+            )
 
         self.assertEqual(IntList(deboxed_int_list), IntList([2, 0, 1]))
 
@@ -331,7 +333,8 @@ class TestEmit(unittest.TestCase):
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 4  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
+            4,
         )
 
     def test_model_out(self) -> None:
@@ -357,10 +360,12 @@ class TestEmit(unittest.TestCase):
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 2)
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 4  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
+            4,
         )
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[1].instr_args.args), 5  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[1].instr_args.args),  # pyre-ignore[16]
+            5,
         )
 
     def test_stacktrace(self) -> None:
@@ -382,7 +387,11 @@ class TestEmit(unittest.TestCase):
         # Check the mul operator's stack trace contains f -> g -> h
         self.assertTrue(
             "return torch.mul(x, torch.randn(3, 2))"
-            in program.execution_plan[0].chains[0].stacktrace[1].items[-1].context  # pyre-ignore[16]
+            in program.execution_plan[0]  # pyre-ignore[16]
+            .chains[0]
+            .stacktrace[1]
+            .items[-1]
+            .context
         )
         self.assertEqual(
             program.execution_plan[0].chains[0].stacktrace[1].items[-1].name, "f"
@@ -432,7 +441,8 @@ class TestEmit(unittest.TestCase):
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 4  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
+            4,
         )
 
     def test_emit_multiple_out(self) -> None:
@@ -442,7 +452,8 @@ class TestEmit(unittest.TestCase):
         x = (torch.randn(10),)
         program = to_edge(export(f, x)).to_executorch().executorch_program
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 8  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
+            8,
         )
 
     # Non contiguous tensors are not supported in ExecuTorch
@@ -477,10 +488,12 @@ class TestEmit(unittest.TestCase):
         )
 
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args), 3  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
+            3,
         )
         self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[1].instr_args.args), 4  # pyre-ignore[16]
+            len(program.execution_plan[0].chains[0].instructions[1].instr_args.args),  # pyre-ignore[16]
+            4,
         )
 
     def test_optional_float_list(self) -> None:
@@ -526,7 +539,9 @@ class TestEmit(unittest.TestCase):
             if not isinstance(inst.instr_args, KernelCall):
                 continue
 
-            op = program.execution_plan[0].operators[inst.instr_args.op_index].name  # pyre-ignore[16]
+            op = (
+                program.execution_plan[0].operators[inst.instr_args.op_index].name  # pyre-ignore[16]
+            )
 
             if "mm" in op:
                 num_mm += 1
@@ -560,13 +575,19 @@ class TestEmit(unittest.TestCase):
         # generate the tensor on which this iteration will operate on.
         self.assertEqual(
             op_table[
-                program.execution_plan[0].chains[0].instructions[0].instr_args.op_index  # pyre-ignore[16]
+                program.execution_plan[0]  # pyre-ignore[16]
+                .chains[0]
+                .instructions[0]
+                .instr_args.op_index
             ].name,
             "aten::sym_size",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0].chains[0].instructions[1].instr_args.op_index  # pyre-ignore[16]
+                program.execution_plan[0]  # pyre-ignore[16]
+                .chains[0]
+                .instructions[1]
+                .instr_args.op_index
             ].name,
             "aten::select_copy",
         )
@@ -578,19 +599,28 @@ class TestEmit(unittest.TestCase):
         # We check here that both of these have been generated.
         self.assertEqual(
             op_table[
-                program.execution_plan[0].chains[0].instructions[-5].instr_args.op_index  # pyre-ignore[16]
+                program.execution_plan[0]  # pyre-ignore[16]
+                .chains[0]
+                .instructions[-5]
+                .instr_args.op_index
             ].name,
             "executorch_prim::et_copy_index",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0].chains[0].instructions[-4].instr_args.op_index  # pyre-ignore[16]
+                program.execution_plan[0]  # pyre-ignore[16]
+                .chains[0]
+                .instructions[-4]
+                .instr_args.op_index
             ].name,
             "executorch_prim::add",
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0].chains[0].instructions[-3].instr_args.op_index  # pyre-ignore[16]
+                program.execution_plan[0]  # pyre-ignore[16]
+                .chains[0]
+                .instructions[-3]
+                .instr_args.op_index
             ].name,
             "executorch_prim::eq",
         )
@@ -604,7 +634,10 @@ class TestEmit(unittest.TestCase):
         )
         self.assertEqual(
             op_table[
-                program.execution_plan[0].chains[0].instructions[-1].instr_args.op_index  # pyre-ignore[16]
+                program.execution_plan[0]  # pyre-ignore[16]
+                .chains[0]
+                .instructions[-1]
+                .instr_args.op_index
             ].name,
             "executorch_prim::sub",
         )
@@ -1020,7 +1053,9 @@ class TestEmit(unittest.TestCase):
         # this triggers the actual emission of the graph
         program = program_mul._emitter_output.program
         node = None
-        program.execution_plan[0].chains[0].instructions[0].instr_args.op_index  # pyre-ignore[16]
+        program.execution_plan[0].chains[0].instructions[  # pyre-ignore[16]
+            0
+        ].instr_args.op_index
 
         # Find the multiplication node in the graph that was emitted.
         for node in program_mul.exported_program().graph.nodes:
@@ -1171,7 +1206,9 @@ class TestEmit(unittest.TestCase):
         exec_prog._emitter_output.program
         self.assertIsNotNone(exec_prog.delegate_map)
         self.assertIsNotNone(exec_prog.delegate_map.get("forward"))
-        self.assertIsNotNone(exec_prog.delegate_map.get("forward").get(0))  # pyre-ignore[16]
+        self.assertIsNotNone(
+            exec_prog.delegate_map.get("forward").get(0)  # pyre-ignore[16]
+        )
         self.assertEqual(
             exec_prog.delegate_map.get("forward").get(0).get("name"),
             "BackendWithCompilerDemo",
