@@ -33,8 +33,7 @@ MPSGraphExecutable* loadExecutable(
   size_t num_bytes) {
   ExirMPSGraphPackage* exirMPSGraphPackage = (ExirMPSGraphPackage*)buffer_pointer;
   NSData *new_manifest_plist_data = [NSData dataWithBytes:exirMPSGraphPackage->data length:exirMPSGraphPackage->model_0_offset];
-  NSData *new_model_0_data = [NSData dataWithBytes:exirMPSGraphPackage->data + exirMPSGraphPackage->model_0_offset length:exirMPSGraphPackage->model_1_offset - exirMPSGraphPackage->model_0_offset];
-  NSData *new_model_1_data = [NSData dataWithBytes:exirMPSGraphPackage->data + exirMPSGraphPackage->model_1_offset length:exirMPSGraphPackage->total_bytes - sizeof(ExirMPSGraphPackage) - exirMPSGraphPackage->model_1_offset];
+  NSData *new_model_0_data = [NSData dataWithBytes:exirMPSGraphPackage->data + exirMPSGraphPackage->model_0_offset length:exirMPSGraphPackage->total_bytes - sizeof(ExirMPSGraphPackage) - exirMPSGraphPackage->model_0_offset];
 
   NSError* error = nil;
   NSString* packageName = [NSString stringWithUTF8String:(
@@ -52,14 +51,12 @@ MPSGraphExecutable* loadExecutable(
 
   NSString* manifestFileStr = [NSString stringWithFormat:@"%@/manifest.plist", dataFileNSStr];
   NSString* model0FileStr = [NSString stringWithFormat:@"%@/model_0.mpsgraph", dataFileNSStr];
-  NSString* model1FileStr = [NSString stringWithFormat:@"%@/model_1.mpsgraph", dataFileNSStr];
 
   NSFileManager *fileManager= [NSFileManager defaultManager];
   [fileManager createDirectoryAtPath:dataFileNSStr withIntermediateDirectories:NO attributes:nil error:&error];
 
   [new_manifest_plist_data writeToFile:manifestFileStr options:NSDataWritingAtomic error:&error];
   [new_model_0_data writeToFile:model0FileStr options:NSDataWritingAtomic error:&error];
-  [new_model_1_data writeToFile:model1FileStr options:NSDataWritingAtomic error:&error];
 
   NSURL *bundleURL = [NSURL fileURLWithPath:dataFileNSStr];
   MPSGraphCompilationDescriptor *compilationDescriptor = [MPSGraphCompilationDescriptor new];

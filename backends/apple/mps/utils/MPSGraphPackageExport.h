@@ -10,7 +10,6 @@
 struct ExirMPSGraphPackage {
   int64_t manifest_plist_offset;
   int64_t model_0_offset;
-  int64_t model_1_offset;
   int64_t total_bytes;
   uint8_t data[];
 };
