@@ -24,6 +24,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
     Bool,
+    DelegateCall,
     EValue,
     ExecutionPlan,
     Int,
@@ -320,6 +321,14 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(program.execution_plan[0].values[8].val, String("right"))
         self.assertEqual(program.execution_plan[0].values[9].val, Null())
 
+    def _assertCallLength(self, program: Program, idx: int, expected_len: int) -> None:
+        instr_args = program.execution_plan[0].chains[0].instructions[idx].instr_args
+
+        if isinstance(instr_args, KernelCall) or isinstance(instr_args, DelegateCall):
+            self.assertEqual(len(instr_args.args), expected_len)
+        else:
+            self.assertTrue(False)
+
     def test_out(self) -> None:
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             z = y.clone()
@@ -332,10 +341,7 @@ class TestEmit(unittest.TestCase):
         )
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
-            4,
-        )
+        self._assertCallLength(program, 0, 4)
 
     def test_model_out(self) -> None:
         class Module_out(torch.nn.Module):
@@ -359,14 +365,8 @@ class TestEmit(unittest.TestCase):
         program = to_edge(export(model_out, inputs)).to_executorch().executorch_program
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 2)
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
-            4,
-        )
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[1].instr_args.args),  # pyre-ignore[16]
-            5,
-        )
+        self._assertCallLength(program, 0, 4)
+        self._assertCallLength(program, 1, 5)
 
     def test_stacktrace(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
@@ -440,10 +440,7 @@ class TestEmit(unittest.TestCase):
         )
 
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
-            4,
-        )
+        self._assertCallLength(program, 0, 4)
 
     def test_emit_multiple_out(self) -> None:
         def f(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -451,10 +448,7 @@ class TestEmit(unittest.TestCase):
 
         x = (torch.randn(10),)
         program = to_edge(export(f, x)).to_executorch().executorch_program
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
-            8,
-        )
+        self._assertCallLength(program, 0, 8)
 
     # Non contiguous tensors are not supported in ExecuTorch
     @unittest.expectedFailure
@@ -486,15 +480,8 @@ class TestEmit(unittest.TestCase):
             .to_executorch()
             .executorch_program
         )
-
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[0].instr_args.args),  # pyre-ignore[16]
-            3,
-        )
-        self.assertEqual(
-            len(program.execution_plan[0].chains[0].instructions[1].instr_args.args),  # pyre-ignore[16]
-            4,
-        )
+        self._assertCallLength(program, 0, 3)
+        self._assertCallLength(program, 1, 4)
 
     def test_optional_float_list(self) -> None:
         class M(torch.nn.Module):
@@ -540,7 +527,9 @@ class TestEmit(unittest.TestCase):
                 continue
 
             op = (
-                program.execution_plan[0].operators[inst.instr_args.op_index].name  # pyre-ignore[16]
+                program.execution_plan[0]
+                .operators[inst.instr_args.op_index]  # pyre-ignore[16]
+                .name
             )
 
             if "mm" in op:
