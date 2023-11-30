@@ -50,5 +50,11 @@ int et_flatcc_custom_init(
     flatcc_builder_t* builder,
     struct etdump_static_allocator* alloc);
 
+int etdump_static_allocator_builder_init(
+    flatcc_builder_t* builder,
+    struct etdump_static_allocator* alloc);
+
+void etdump_static_allocator_reset(struct etdump_static_allocator* alloc);
+
 } // namespace executor
 } // namespace torch
