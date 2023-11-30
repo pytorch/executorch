@@ -61,6 +61,23 @@ DEFINE_bool(
     false,
     "Print the output of the ET model to stdout, if needs.");
 
+DEFINE_bool(dump_outputs, false, "Dump outputs to etdump file");
+
+DEFINE_bool(
+    dump_intermediate_outputs,
+    false,
+    "Dump intermediate outputs to etdump file.");
+
+DEFINE_string(
+    debug_output_path,
+    "debug_output.bin",
+    "Path to dump debug outputs to.");
+
+DEFINE_int32(
+    debug_buffer_size,
+    262144, // 256 KB
+    "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
+
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
 
@@ -199,6 +216,18 @@ int main(int argc, char** argv) {
       method.error());
   ET_LOG(Info, "Method loaded.");
 
+  void* debug_buffer = malloc(FLAGS_debug_buffer_size);
+  if (FLAGS_dump_intermediate_outputs) {
+    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
+    etdump_gen.set_debug_buffer(buffer);
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kIntermediateOutputs);
+  } else if (FLAGS_dump_outputs) {
+    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
+    etdump_gen.set_debug_buffer(buffer);
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kProgramOutputs);
+  }
   // Prepare the inputs.
   exec_aten::ArrayRef<void*> inputs;
   // Use the inputs embedded in the bundled program.
@@ -263,6 +292,13 @@ int main(int argc, char** argv) {
         status);
     ET_LOG(Info, "Model verified successfully.");
   }
+
+  if (FLAGS_dump_outputs || FLAGS_dump_intermediate_outputs) {
+    FILE* f = fopen(FLAGS_debug_output_path.c_str(), "w+");
+    fwrite((uint8_t*)debug_buffer, 1, FLAGS_debug_buffer_size, f);
+    fclose(f);
+  }
+  free(debug_buffer);
 
   return 0;
 }
