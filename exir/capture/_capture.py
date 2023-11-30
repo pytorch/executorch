@@ -169,7 +169,7 @@ def capture(  # noqa: C901
                 )
 
             ep = export(f, args, constraints=constraints)
-            ep = ep.run_decompositions(_default_decomposition_table())  # pyre-ignore[6]
+            ep = ep.run_decompositions(_default_decomposition_table())
             ep = ep._transform(ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ExirExportedProgram(ep, False)
