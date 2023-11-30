@@ -334,8 +334,11 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[0].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[0]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             4,
         )
 
@@ -363,14 +366,20 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 2)
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[0].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[0]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             4,
         )
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[1].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[1]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             5,
         )
 
@@ -448,8 +457,11 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(program.execution_plan[0].chains[0].instructions), 1)
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[0].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[0]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             4,
         )
 
@@ -461,8 +473,11 @@ class TestEmit(unittest.TestCase):
         program = to_edge(export(f, x)).to_executorch().executorch_program
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[0].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[0]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             8,
         )
 
@@ -499,14 +514,20 @@ class TestEmit(unittest.TestCase):
 
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[0].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[0]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             3,
         )
         self.assertEqual(
             len(
-                program.execution_plan[0].chains[0].instructions[1].instr_args.args
-            ),  # pyre-ignore[16]
+                program.execution_plan[0]
+                .chains[0]
+                .instructions[1]
+                .instr_args.args  # pyre-ignore[16]
+            ),
             4,
         )
 
@@ -555,8 +576,8 @@ class TestEmit(unittest.TestCase):
 
             op = (
                 program.execution_plan[0]
-                .operators[inst.instr_args.op_index]
-                .name  # pyre-ignore[16]
+                .operators[inst.instr_args.op_index]  # pyre-ignore[16]
+                .name
             )
 
             if "mm" in op:
