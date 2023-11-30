@@ -31,6 +31,7 @@ from executorch.exir.schema import (
     DataSegment,
     ExecutionPlan,
     Program,
+    SubsegmentOffsets,
 )
 from executorch.exir.tests.common import get_test_program
 
@@ -188,6 +189,7 @@ class TestProgram(unittest.TestCase):
                 BackendDelegateInlineData(data=b"AA delegate [0,0] data"),
             ],
             segments=[],
+            constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
         )
 
         # Demonstrate which data each delegate points to.
