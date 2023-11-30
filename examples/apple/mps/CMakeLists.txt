@@ -46,7 +46,7 @@ add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 target_include_directories(
   mps_executor_runner INTERFACE ${CMAKE_BINARY_DIR}/schema/include/
                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
-target_link_libraries(mps_executor_runner program_schema
+target_link_libraries(mps_executor_runner bundled_program program_schema
                                           ${_executor_runner_libs}
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
