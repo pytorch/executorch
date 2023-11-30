@@ -122,10 +122,15 @@ runtime.python_test(
     name = "test_xnnpack_ops",
     srcs = glob([
         "ops/*.py",
-    ]),
+    ]) + [
+        "test_xnnpack_utils.py",
+    ],
     deps = [
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
     ],
     external_deps = [
         "libtorch",
