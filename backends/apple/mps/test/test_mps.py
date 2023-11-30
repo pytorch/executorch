@@ -88,10 +88,12 @@ def run_model(
 
     m = m.eval()
 
-    m = export.capture_pre_autograd_graph(m, m_inputs)
+    pre_autograd_graph = export.capture_pre_autograd_graph(m, m_inputs)
 
     logging.info("Step 2: EXIR capturing of original module...")
-    edge = exir.capture(m, m_inputs, _CAPTURE_CONFIG).to_edge(_EDGE_COMPILE_CONFIG)
+    edge = exir.capture(pre_autograd_graph, m_inputs, _CAPTURE_CONFIG).to_edge(
+        _EDGE_COMPILE_CONFIG
+    )
 
     if dump_non_lowered_module:
         dump_executorch_program_info(edge=edge, module_info="Non-lowered")
@@ -133,9 +135,7 @@ def run_model(
     method_test_suites = [
         MethodTestSuite(
             method_name="forward",
-            test_cases=[
-                MethodTestCase(inputs=m_inputs, expected_outputs=model(*m_inputs))
-            ],
+            test_cases=[MethodTestCase(inputs=m_inputs, expected_outputs=m(*m_inputs))],
         )
     ]
 
