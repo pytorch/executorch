@@ -1349,6 +1349,18 @@
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
                 <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
                 <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+                <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="n">SpecPropPass</span><span class="p">):</span>
+                    <span class="c1"># Note that this is a hacky way to get around the fact that</span>
+                    <span class="c1"># placeholder nodes corresponding to the parameters of the graph module</span>
+                    <span class="c1"># shall not participate in memory planning. It increases runtime memory</span>
+                    <span class="c1"># footprint.</span>
+                    <span class="c1"># Proper way would be to have ExportPass work with ExportedProgram</span>
+                    <span class="c1"># instead of GraphModule. This is because ExportPass should work</span>
+                    <span class="c1"># on top of the export artifact of torch.export whichi s ExportedProgram.</span>
+                    <span class="c1"># Working with GraphModule does not provide all the information contained</span>
+                    <span class="c1"># in the ExportedProgram</span>
+                    <span class="c1"># TODO(who?)</span>
+                    <span class="n">p</span><span class="o">.</span><span class="n">update_placeholder_tensor_specs</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
             <span class="n">new_prog</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
             <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_prog</span>
