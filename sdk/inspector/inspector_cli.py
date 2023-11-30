@@ -21,10 +21,19 @@ def main() -> None:
         required=False,
         help="Provide an optional ETRecord file path.",
     )
+    parser.add_argument(
+        "--buffer_path",
+        required=False,
+        help="Provide an optional buffer file path.",
+    )
 
     args = parser.parse_args()
 
-    inspector = Inspector(etdump_path=args.etdump_path, etrecord=args.etrecord_path)
+    inspector = Inspector(
+        etdump_path=args.etdump_path,
+        etrecord=args.etrecord_path,
+        buffer_path=args.buffer_path,
+    )
     inspector.print_data_tabular()
 
 
