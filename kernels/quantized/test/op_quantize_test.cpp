@@ -8,10 +8,10 @@
 
 #include <executorch/kernels/quantized/NativeFunctions.h> // Declares the operator
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
@@ -115,14 +115,18 @@ TEST(OpQuantizeOutTest, QuantizePerChannel) {
   Tensor out = tfo.zeros({3, 2});
   // 4 / 0.5 + 127
   // 4 / 1 + 63
-  Tensor expected = tfo.make({3, 2}, {
-    135, 67,
-    135, 67,
-    135, 67
-  });
+  Tensor expected = tfo.make({3, 2}, {135, 67, 135, 67, 135, 67});
   torch::executor::RuntimeContext context = {};
   quantize_per_channel_out(
-      context, input, scale, zero_point, 1, quant_min, quant_max, ScalarType::Byte, out);
+      context,
+      input,
+      scale,
+      zero_point,
+      1,
+      quant_min,
+      quant_max,
+      ScalarType::Byte,
+      out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }
