@@ -338,6 +338,8 @@ Tensor& quantize_per_channel_out(
   }
 #undef CALCULATE_FLOAT_TYPE
 #undef QUANTIZE_IMPL
+
+  return out;
 }
 
 } // namespace native
