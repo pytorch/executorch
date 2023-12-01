@@ -200,3 +200,14 @@ def define_common_targets(is_fbcode = False):
                 "ET_MODULE_ADD_MUL_PATH": "$(location fbcode//executorch/test/models:exported_delegated_programs[ModuleAddMul.pte])",
             },
         )
+
+        runtime.cxx_test(
+            name = "memory_manager_test",
+            srcs = [
+                "memory_manager_test.cpp",
+            ],
+            deps = [
+                "//executorch/runtime/core:memory_allocator",
+                "//executorch/runtime/executor:memory_manager",
+            ],
+        )
