@@ -12,6 +12,9 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <unordered_map>
 
+#pragma clang diagnostic ignored "-Wmissing-prototypes"
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+
 namespace torch {
 namespace executor {
 namespace xnnpack {

@@ -13,6 +13,8 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <memory>
 
+#pragma clang diagnostic ignored "-Wglobal-constructors"
+
 namespace torch {
 namespace executor {
 
