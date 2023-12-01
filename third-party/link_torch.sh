@@ -43,7 +43,10 @@ for SUBPATH in $FILES; do
   then
       ln -s "$LIB/$SUBPATH" "$OUT"
   else
-      echo "Error: $LIB/$SUBPATH doesn't exist"
-      exit 1
+      # NB: If a path doesn't exist, it's ok to skip it here. This is to handle the case
+      # of optional PyTorch dependencies like libgomp. They are part of PyTorch nightly
+      # wheel (from CentOS), but are not needed when building PyTorch from source
+      # (from system libgomp)
+      echo "Warning: $LIB/$SUBPATH doesn't exist, skipping..."
   fi
 done
