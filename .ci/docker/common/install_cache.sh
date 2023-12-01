@@ -19,7 +19,6 @@ install_binary() {
 }
 
 mkdir -p /opt/cache/bin
-mkdir -p /opt/cache/lib
 sed -e 's|PATH="\(.*\)"|PATH="/opt/cache/bin:\1"|g' -i /etc/environment
 export PATH="/opt/cache/bin:$PATH"
 
@@ -33,6 +32,23 @@ function write_sccache_stub() {
   BINARY=$1
   printf "#!/bin/sh\nif [ \$(env -u LD_PRELOAD ps -p \$PPID -o comm=) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${BINARY}")" "$(which "${BINARY}")" > "/opt/cache/bin/${BINARY}"
   chmod a+x "/opt/cache/bin/${BINARY}"
+}
+
+init_sccache() {
+  # This is the remote cache bucket
+  export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
+  export SCCACHE_S3_KEY_PREFIX=executorch
+  export SCCACHE_IDLE_TIMEOUT=0
+  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
+  export RUST_LOG=sccache::server=error
+
+  # NB: This function is adopted from PyTorch core at
+  # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common-build.sh
+  as_ci_user sccache --stop-server > /dev/null 2>&1 || true
+  rm -f "${SCCACHE_ERROR_LOG}" || true
+
+  # Clear sccache stats before using it
+  as_ci_user sccache --zero-stats || true
 }
 
 write_sccache_stub cc

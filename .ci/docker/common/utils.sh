@@ -27,20 +27,3 @@ conda_run() {
 pip_install() {
   as_ci_user conda run -n "py_${PYTHON_VERSION}" pip install --progress-bar off "$@"
 }
-
-init_sccache() {
-  # This is the remote cache bucket
-  export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
-  export SCCACHE_S3_KEY_PREFIX=executorch
-  export SCCACHE_IDLE_TIMEOUT=0
-  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
-  export RUST_LOG=sccache::server=error
-
-  # NB: This function is adopted from PyTorch core at
-  # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/common-build.sh
-  as_ci_user sccache --stop-server > /dev/null 2>&1 || true
-  rm -f "${SCCACHE_ERROR_LOG}" || true
-
-  # Clear sccache stats before using it
-  as_ci_user sccache --zero-stats || true
-}
