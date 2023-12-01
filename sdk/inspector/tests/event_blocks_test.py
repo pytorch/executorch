@@ -51,6 +51,8 @@ class TestEventBlock(unittest.TestCase):
             instruction_id,
             delegate_debug_id_int,
             delegate_debug_id_str,
+            # pyre-fixme[6]: For 6th argument expected `Optional[bytes]` but got
+            #  `Optional[str]`.
             delegate_debug_metadata,
             start_time=time[0],
             end_time=time[1],
