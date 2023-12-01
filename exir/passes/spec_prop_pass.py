@@ -36,6 +36,26 @@ class SpecPropPass(ExportPass):
             attr.data,
         )
 
+    def update_placeholder_tensor_specs(
+        self,
+        exported_program: torch._export.ExportedProgram,
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        """
+        Update the tensor specs for all placeholder nodes such that
+        placeholders that are parameters are marked as constant.
+        """
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            if "spec" not in node.meta:
+                raise RuntimeError(f"Placeholder node {node} missing meta['spec']")
+            spec = node.meta["spec"]
+            if isinstance(node.target, str) and (
+                node.target in exported_program.graph_signature.inputs_to_parameters
+            ):
+                spec.const = True
+
     # pyre-ignore
     def placeholder(self, name: str, arg, meta):
         meta["spec"] = make_spec(arg)

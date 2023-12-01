@@ -27,6 +27,7 @@ from executorch.exir.schema import (
     Program,
     ScalarType,
     String,
+    SubsegmentOffsets,
     Tensor,
     TensorShapeDynamism,
 )
@@ -80,6 +81,7 @@ def get_test_program() -> Program:
         constant_buffer=[Buffer(storage=b"")],
         backend_delegate_data=[],
         segments=[],
+        constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
     )
 
 

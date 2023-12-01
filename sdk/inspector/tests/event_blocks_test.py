@@ -11,7 +11,13 @@ from typing import List, Optional, Tuple, Union
 import executorch.sdk.etdump.schema_flatcc as flatcc
 from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC, ProfileEvent
 from executorch.sdk.inspector import Event, EventBlock, PerfData
-from executorch.sdk.inspector._inspector import DelegateMetadata, ProfileEventSignature
+from executorch.sdk.inspector._inspector import (
+    DelegateMetadata,
+    EventSignature,
+    InstructionEvent,
+    InstructionEventSignature,
+    ProfileEventSignature,
+)
 
 
 class TestEventBlock(unittest.TestCase):
@@ -54,15 +60,15 @@ class TestEventBlock(unittest.TestCase):
     def _get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
         """
         Helper for getting a sample ETDumpFlatCC object with 3 RunData:
-        - run_data_1 has a signature with just profile_1
-        - run_data_2 has the same signature with run_data_1, but differnt times
-        - run_data_3 has a signature with both (profile_1, profile_2)
+        - run_data_1 has signature_a with just profile_1
+        - run_data_2 has the same signature with run_data_1, but different times
+        - run_data_3 has signature_b with both (profile_1, profile_2)
         """
         profile_event_1 = TestEventBlock._gen_sample_profile_event(
             name="profile_1", instruction_id=1, time=(0, 1), delegate_debug_id=100
         )
         run_data_1 = flatcc.RunData(
-            name="run_data_1",
+            name="signature_a",
             bundled_input_index=-1,
             allocators=[],
             events=[
@@ -77,7 +83,7 @@ class TestEventBlock(unittest.TestCase):
             name="profile_1", instruction_id=1, time=(2, 4), delegate_debug_id=100
         )
         run_data_2 = flatcc.RunData(
-            name="run_data_2",
+            name="signature_a",
             bundled_input_index=-1,
             allocators=[],
             events=[
@@ -96,7 +102,7 @@ class TestEventBlock(unittest.TestCase):
             name="profile_2", instruction_id=2, time=(7, 8), delegate_debug_id=100
         )
         run_data_3 = flatcc.RunData(
-            name="run_data_3",
+            name="signature_b",
             bundled_input_index=-1,
             allocators=[],
             events=[
@@ -133,9 +139,10 @@ class TestEventBlock(unittest.TestCase):
 
         # One EventBlock should have 1 event with 2 iterations
         # The other EventBlock should have 2 events with 1 iterations
-        run_counts = {
-            (len(block.events), len(block.events[0].perf_data.raw)) for block in blocks
-        }
+        run_counts = set()
+        for block in blocks:
+            if (perf_data := block.events[0].perf_data) is not None:
+                run_counts.add((len(block.events), len(perf_data.raw)))
         self.assertSetEqual(run_counts, {(1, 2), (2, 1)})
 
     def test_inspector_event_generation(self) -> None:
@@ -168,14 +175,18 @@ class TestEventBlock(unittest.TestCase):
             )
 
             # Test Signature Generation
-            signature = ProfileEventSignature._gen_from_event(profile_event)
+            profile_signature = ProfileEventSignature._gen_from_event(profile_event)
             expected_signature = ProfileEventSignature(
                 name,
                 instruction_id,
                 delegate_debug_id_int,
                 delegate_debug_id_str,
             )
-            self.assertEqual(signature, expected_signature)
+            self.assertEqual(profile_signature, expected_signature)
+
+            event_signature = EventSignature(
+                instruction_id=instruction_id, profile_event_signature=profile_signature
+            )
 
             # Test Event Generation
             durations = [10, 20, 30]
@@ -190,8 +201,17 @@ class TestEventBlock(unittest.TestCase):
                 )
                 for index, time in enumerate(durations)
             ]
-            event = Event._gen_from_profile_events(
-                signature, profile_events, scale_factor=scale_factor
+            instruction_events = [
+                InstructionEvent(
+                    signature=InstructionEventSignature(
+                        instruction_id=instruction_id, chain_index=0
+                    ),
+                    profile_events=[profile_event],
+                )
+                for profile_event in profile_events
+            ]
+            event = Event._gen_from_inference_events(
+                event_signature, instruction_events, scale_factor=scale_factor
             )
 
             is_delegated = delegate_debug_id is not None
@@ -203,7 +223,7 @@ class TestEventBlock(unittest.TestCase):
                 delegate_debug_identifier=delegate_debug_id,
                 is_delegated_op=is_delegated,
                 delegate_debug_metadatas=delegate_debug_metadatas,
-                _instruction_id=signature.instruction_id,
+                _instruction_id=event_signature.instruction_id,
             )
             self.assertEqual(event, expected_event)
 
@@ -230,8 +250,22 @@ class TestEventBlock(unittest.TestCase):
             """
             Helper function to generate an Event given a set of ProfileEvents
             """
-            signature = ProfileEventSignature._gen_from_event(events[0])
-            return Event._gen_from_profile_events(signature, events)
+            profile_event = events[0]
+            profile_signature = ProfileEventSignature._gen_from_event(profile_event)
+            event_signature = EventSignature(
+                profile_event.instruction_id, profile_signature
+            )
+            instruction_events = [
+                InstructionEvent(
+                    signature=InstructionEventSignature(
+                        instruction_id=profile_event.instruction_id,
+                        chain_index=profile_event.chain_index,
+                    ),
+                    profile_events=[event],
+                )
+                for event in events
+            ]
+            return Event._gen_from_inference_events(event_signature, instruction_events)
 
         # Create Test Data
 

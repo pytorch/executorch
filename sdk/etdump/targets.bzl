@@ -87,6 +87,24 @@ def define_common_targets():
         exported_external_deps = ["flatccrt"],
     )
 
+    runtime.cxx_library(
+        name = "etdump_emitter",
+        srcs = [
+            "emitter.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+        ],
+        exported_headers = [
+            "emitter.h",
+        ],
+        exported_external_deps = ["flatccrt"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
         runtime.cxx_library(
@@ -102,7 +120,12 @@ def define_common_targets():
             ],
             exported_deps = [
                 ":etdump_schema_flatcc",
+                ":etdump_emitter",
                 "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
             ],
-            visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
         )

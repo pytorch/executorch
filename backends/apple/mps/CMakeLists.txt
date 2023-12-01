@@ -1,6 +1,6 @@
 #
-#  Copyright (c) 2023 Apple Inc. All rights reserved.
-#  Provided subject to the LICENSE file in the top level directory.
+# Copyright (c) 2023 Apple Inc. All rights reserved. Provided subject to the
+# LICENSE file in the top level directory.
 #
 
 cmake_minimum_required(VERSION 3.19)
@@ -25,6 +25,6 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 list(TRANSFORM _mps_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(mpsdelegate ${_mps_backend__srcs})
-target_link_libraries(mpsdelegate PRIVATE ${_executor_runner_libs})
-target_include_directories(mpsdelegate
-                           PUBLIC ${_common_include_directories})
+target_link_libraries(mpsdelegate PRIVATE baundled_program
+                                          ${_executor_runner_libs})
+target_include_directories(mpsdelegate PUBLIC ${_common_include_directories})

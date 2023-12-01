@@ -480,6 +480,12 @@ struct PyModule final {
     return run_method("forward", inputs);
   }
 
+  py::list forward_single_input(const torch::Tensor& inputTensor) {
+    py::list py_list;
+    py_list.append(py::cast(inputTensor));
+    return run_method("forward", py_list);
+  }
+
   bool has_etdump() {
     return module_->has_etdump();
   }
@@ -589,8 +595,9 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
       .def("forward", &PyModule::forward)
       .def("has_etdump", &PyModule::has_etdump)
       .def(
-          "write_etdump_result_to_file",
-          &PyModule::write_etdump_result_to_file);
+          "write_etdump_result_to_file", &PyModule::write_etdump_result_to_file)
+      .def("__call__", &PyModule::forward)
+      .def("__call__", &PyModule::forward_single_input);
 
   py::class_<PyBundledModule>(m, "BundledModule");
 }

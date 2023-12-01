@@ -109,5 +109,11 @@
   ],
   "segments": [
 
-  ]
+  ],
+  "constant_segment": {
+    "segment_index": 0,
+    "offsets": [
+
+    ]
+  }
 }

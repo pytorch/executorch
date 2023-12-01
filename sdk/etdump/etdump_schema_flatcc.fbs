@@ -11,8 +11,8 @@ table Null {}
 
 table Tensor {
   scalar_type:executorch_flatbuffer.ScalarType;
-  sizes:[int];
-  strides:[int];
+  sizes:[long];
+  strides:[long];
   offset:long;
 }
 
@@ -104,8 +104,8 @@ table ProfileEvent {
   // String based delegate debug identifier.
   delegate_debug_id_str:string;
 
-  // Delegate debug metadata free form string.
-  delegate_debug_metadata:string;
+  // Delegate debug metadata bytes.
+  delegate_debug_metadata:[ubyte];
 
   // Time at which this event started. Could be in units of time or CPU cycles.
   start_time:ulong;
