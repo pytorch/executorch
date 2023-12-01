@@ -11,6 +11,10 @@ on:
     branches:
       - main
       - release/*
+    paths:
+      - .ci/docker/**
+      - .github/workflows/docker-builds.yml
+      - requirements-lintrunner.txt
   schedule:
     - cron: 1 3 * * 3
 

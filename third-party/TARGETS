@@ -262,7 +262,6 @@ runtime.genrule(
             "libtorch": ["libtorch.so"],
             "libc10": ["libc10.so"],
             "libtorch_cpu": ["libtorch_cpu.so"],
-            "libgomp": ["libgomp-a34b3233.so.1"],
             "libtorch_python": ["libtorch_python.so"],
             "include": ["include"],
         },
@@ -286,11 +285,6 @@ prebuilt_cxx_library(
 )
 
 prebuilt_cxx_library(
-    name = "libgomp",
-    shared_lib = ":libtorch_gen[libgomp]",
-)
-
-prebuilt_cxx_library(
     name = "libtorch",
     shared_lib = ":libtorch_gen[libtorch]",
     exported_preprocessor_flags = [
@@ -305,7 +299,7 @@ prebuilt_cxx_library(
     exported_headers = [":libtorch_gen[include]"],
     exported_deps = select({
         "ovr_config//os:macos": [":libc10", ":libtorch_cpu"],
-        "DEFAULT": [":libc10", ":libtorch_cpu", ":libgomp"],
+        "DEFAULT": [":libc10", ":libtorch_cpu"],
     }),
     visibility = ["PUBLIC"],
 )

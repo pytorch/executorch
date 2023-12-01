@@ -40,14 +40,22 @@ install_pip_dependencies() {
   pushd /opt/conda
   # Install all Python dependencies, including PyTorch
   pip_install -r /opt/conda/requirements-ci.txt
-  pip_install --pre \
-    torch=="${TORCH_VERSION}" \
-    torchaudio=="${TORCHAUDIO_VERSION}" \
-    torchvision=="${TORCHVISION_VERSION}" \
-    --index-url https://download.pytorch.org/whl/nightly/cpu
   popd
+}
+
+fix_conda_ubuntu_libstdcxx() {
+  # WARNING: This is a HACK from PyTorch core to be able to build PyTorch on 22.04.
+  # The issue still exists with the latest conda 23.10.0-1 at the time of writing
+  # (2023/11/16).
+  #
+  # PyTorch sev: https://github.com/pytorch/pytorch/issues/105248
+  # Ref: https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
+  if grep -e "[12][82].04.[623]" /etc/issue >/dev/null; then
+    rm "/opt/conda/envs/py_${PYTHON_VERSION}/lib/libstdc++.so.6"
+  fi
 }
 
 install_miniconda
 install_python
 install_pip_dependencies
+fix_conda_ubuntu_libstdcxx
