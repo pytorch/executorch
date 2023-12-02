@@ -55,7 +55,11 @@ class MemoryManager final {
       MemoryAllocator* temp_allocator = nullptr)
       : method_allocator_(method_allocator),
         planned_memory_(planned_memory),
-        temp_allocator_(temp_allocator) {}
+        temp_allocator_(temp_allocator) {
+    ET_CHECK_MSG(
+        method_allocator != temp_allocator,
+        "method allocator cannot be the same as temp allocator");
+  }
 
   /**
    * DEPRECATED: Use the constructor without `constant_allocator` instead.
