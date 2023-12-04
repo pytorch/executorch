@@ -276,10 +276,11 @@ Tensor& quantize_per_channel_out(
   // a list contains all dimensions except axis
   int64_t dims[input.dim() - 1];
   for (int64_t i = 0; i < input.dim() - 1; i++) {
-    if (i < axis)
+    if (i < axis) {
       dims[i] = i;
-    else
+    } else {
       dims[i] = i - 1;
+    }
   }
   const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
