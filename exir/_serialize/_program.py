@@ -237,7 +237,7 @@ def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
     return None
 
 
-def _extract_segments(
+def _extract_delegate_segments(
     program: Program, segment_alignment: int
 ) -> Tuple[Program, List[bytes]]:
     """Moves data from the Program into a list of segments.
@@ -420,7 +420,7 @@ def _append_segments(
 def serialize_pte_binary(
     program: Program,
     *,
-    extract_segments: bool = False,
+    extract_delegate_segments: bool = False,
     segment_alignment: int = 4096,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
@@ -429,9 +429,9 @@ def serialize_pte_binary(
 
     Args:
         program: The Program to serialize.
-        extract_segments: Whether to move certain data blobs from the Program
-            into separate segments, rather than encoding those blobs in the
-            flatbuffer data. When true, will also:
+        extract_delegate_segments: Whether to move delegate data blobs from the
+            Program into separate segments, rather than encoding those blobs
+            in the flatbuffer data. When true, will also:
             - Add an extended header to the output, containing the program size
               and the starting segment offset.
             - Update the Program.segments field with the offsets and lengths
@@ -449,9 +449,9 @@ def serialize_pte_binary(
     """
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
-    if extract_segments:
+    if extract_delegate_segments:
         # May return a copy of the program to avoid modifying the input.
-        program, segments = _extract_segments(
+        program, segments = _extract_delegate_segments(
             program=program, segment_alignment=segment_alignment
         )
 
@@ -461,7 +461,7 @@ def serialize_pte_binary(
         constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
     )
-    if not extract_segments:
+    if not extract_delegate_segments:
         return result.data
 
     # Size of the header to insert. Its size is padded to the largest

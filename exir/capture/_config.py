@@ -47,10 +47,10 @@ class ExecutorchBackendConfig:
     )
     emit_stacktrace: bool = False
 
-    # Whether to move certain data blobs from the Program into separate
+    # Whether to move delegate data blobs from the Program into separate
     # segments, rather than encoding those blobs in the flatbuffer data.
     # This makes it possible to free those blobs at runtime.
-    extract_segments: bool = False
+    extract_delegate_segments: bool = False
 
     # When extracting segments, the starting offset of each segment will be
     # aligned to this value (in bytes). When using mmap() to load segments, this
