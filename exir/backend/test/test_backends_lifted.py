@@ -67,14 +67,14 @@ from torch.testing import FileCheck
 
 
 def vary_segments(test_method):
-    """A decorator that calls the test method with `extract_segments` set to
+    """A decorator that calls the test method with `extract_delegate_segments` set to
     True and False.
 
     Decorated test methods must expect a boolean parameter named
-    `extract_segments`, and they should pass that value to to_executorch() like:
+    `extract_delegate_segments`, and they should pass that value to to_executorch() like:
 
         m.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+            config=exir.ExecutorchBackendConfig(extract_delegate_segments=extract_delegate_segments)
         )
 
     This will cause the delegate data blobs to be extracted from the program and
@@ -83,12 +83,12 @@ def vary_segments(test_method):
     """
 
     def wrapper(self):
-        for extract_segments in [False, True]:
+        for extract_delegate_segments in [False, True]:
             # subTest will create a different top-level test entry for each
             # value, whose full names have a suffix like
-            # "(extract_segments=True)".
-            with self.subTest(extract_segments=extract_segments):
-                test_method(self, extract_segments=extract_segments)
+            # "(extract_delegate_segments=True)".
+            with self.subTest(extract_delegate_segments=extract_delegate_segments):
+                test_method(self, extract_delegate_segments=extract_delegate_segments)
 
     return wrapper
 
@@ -142,7 +142,7 @@ class TestBackends(unittest.TestCase):
         # program = to_edge(export(graph_module)).to_exectorch()._emitter_output.program
 
     @vary_segments
-    def test_backend_with_compiler(self, extract_segments: bool):
+    def test_backend_with_compiler(self, extract_delegate_segments: bool):
         class SinModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -175,7 +175,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            )
         )
         graph_module = exec_prog.exported_program().graph_module
 
@@ -234,7 +236,7 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_lowered_add_mul(self, extract_segments: bool):
+    def test_lowered_add_mul(self, extract_delegate_segments: bool):
         class AddMulModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -268,7 +270,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            )
         )
         buff = exec_prog.buffer
 
@@ -283,7 +287,7 @@ class TestBackends(unittest.TestCase):
             torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
         )
 
-    def run_model_in_unsupported_backend(self, extract_segments: bool):
+    def run_model_in_unsupported_backend(self, extract_delegate_segments: bool):
         class SinModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -315,7 +319,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         buff = exec_prog.buffer
@@ -325,15 +331,19 @@ class TestBackends(unittest.TestCase):
         _load_for_executorch_from_buffer(buff)
 
     @vary_segments
-    def test_backend_with_compiler_out_of_range(self, extract_segments: bool):
+    def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
             "loading method forward failed with error 0x12",
         ):
-            self.run_model_in_unsupported_backend(extract_segments=extract_segments)
+            self.run_model_in_unsupported_backend(
+                extract_delegate_segments=extract_delegate_segments
+            )
 
     @vary_segments
-    def test_backend_with_compiler_delegate_and_operator(self, extract_segments: bool):
+    def test_backend_with_compiler_delegate_and_operator(
+        self, extract_delegate_segments: bool
+    ):
         # Test includes both delegates and operator
         # import the backend implementation
         from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -374,7 +384,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         graph_module = exec_prog.exported_program().graph_module
         program = exec_prog._emitter_output.program
@@ -474,7 +486,7 @@ class TestBackends(unittest.TestCase):
 
     @vary_segments
     def test_backend_with_compiler_delegate_and_operator_with_two_modules(
-        self, extract_segments: bool
+        self, extract_delegate_segments: bool
     ):
         # the submodule runs in a specific backend. In this example, `BackendWithCompilerDemo` backend
         class LowerableSubModel(torch.nn.Module):
@@ -527,7 +539,9 @@ class TestBackends(unittest.TestCase):
         composite_model(*model_inputs)
 
         exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         flatbuffer = exec_prog.buffer
 
@@ -549,7 +563,7 @@ class TestBackends(unittest.TestCase):
 
     @vary_segments
     def test_partition_delegate_graph_with_multiple_patterns(
-        self, extract_segments: bool
+        self, extract_delegate_segments: bool
     ):
         class CompositeModel(torch.nn.Module):
             def __init__(self, _weight):
@@ -596,7 +610,9 @@ class TestBackends(unittest.TestCase):
                 _check_ir_validity=False,
             ),
         ).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
@@ -605,7 +621,9 @@ class TestBackends(unittest.TestCase):
             HTAPartitionerMultiplePatternsDemo()
         )
         program_with_delegates = program_with_delegates.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         new_res = program_with_delegates.exported_program()(*inputs)
@@ -665,7 +683,9 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_partition_delegate_graph_with_one_patterns(self, extract_segments: bool):
+    def test_partition_delegate_graph_with_one_patterns(
+        self, extract_delegate_segments: bool
+    ):
         class CompositeModel(torch.nn.Module):
             def __init__(self, _weight):
                 super().__init__()
@@ -714,7 +734,9 @@ class TestBackends(unittest.TestCase):
                 _check_ir_validity=False,
             ),
         ).to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
@@ -728,7 +750,9 @@ class TestBackends(unittest.TestCase):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         program_with_delegates = traced_with_delegate.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         # TODO(T143084047): Currently not retraceable
@@ -741,7 +765,7 @@ class TestBackends(unittest.TestCase):
         # ))
 
         # program_with_delegates = graph_module_with_delegate.to_executorch(
-        #     config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        #     config=exir.ExecutorchBackendConfig(extract_delegate_segments=extract_delegate_segments),
         # )
 
         new_res = program_with_delegates.exported_program()(*inputs)
@@ -801,7 +825,7 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_add_mul_partitioner(self, extract_segments: bool):
+    def test_add_mul_partitioner(self, extract_delegate_segments: bool):
         class Model(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -822,7 +846,9 @@ class TestBackends(unittest.TestCase):
         executorch_prog = ep
         executorch_prog = executorch_prog.to_backend(AddMulPartitionerDemo())
         executorch_prog = executorch_prog.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         new_res = executorch_prog.exported_program().graph_module(*inputs)
@@ -847,7 +873,7 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_partitioner_with_attributes(self, extract_segments: bool):
+    def test_partitioner_with_attributes(self, extract_delegate_segments: bool):
         """
         check that parameters that are lowered are correctly moved into the sub
         program, rather than being retained and passed as inputs.
@@ -876,7 +902,9 @@ class TestBackends(unittest.TestCase):
         executorch_prog = ep
         executorch_prog = executorch_prog.to_backend(AddAttributePartitionerDemo())
         executorch_prog = executorch_prog.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         # Check the delegated submodules
