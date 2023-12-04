@@ -386,6 +386,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 ep.exported_program.module_call_graph,
                 ep.exported_program.example_inputs,
                 verifier=get_aten_verifier(enable=config._check_ir_validity),
+                tensor_constants=ep.exported_program.tensor_constants,
             ),
             False,
         )
@@ -425,6 +426,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             enable=config._check_ir_validity,
             class_only=True,
         ),
+        tensor_constants=new_ep.exported_program.tensor_constants,
     )
     new_ep.after_to_edge_passes = True
     return new_ep
@@ -753,6 +755,7 @@ def to_edge(
                 enable=config._check_ir_validity,
                 class_only=True,
             ),
+            tensor_constants=edge_program.tensor_constants,
         )
         passes = []
         passes.extend(aten_to_edge_passes.passes[-2:])
