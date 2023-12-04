@@ -22,12 +22,15 @@ _QUANT_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
+        _aten_mode_deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util_aten",
+        ],
     ),
 )
 
 def define_common_targets():
     for op in _QUANT_OPS:
-        define_op_target(aten_mode_needed = False, **op)
+        define_op_target(is_aten_op = False, **op)
 
     quant_op_targets = [":{}".format(op["name"]) for op in _QUANT_OPS]
 

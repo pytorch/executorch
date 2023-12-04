@@ -158,13 +158,16 @@ def define_common_targets():
     )
 
     # Utility functions that can be used by operators that perform reduction
-    runtime.cxx_library(
-        name = "reduce_util",
-        srcs = ["reduce_util.cpp"],
-        exported_headers = ["reduce_util.h"],
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-        ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
-    )
+    for aten_mode in [True, False]:
+        suffix = "_aten" if aten_mode else ""
+        runtime.cxx_library(
+            name = "reduce_util{}".format(suffix),
+            srcs = ["reduce_util.cpp"],
+            exported_headers = ["reduce_util.h"],
+            deps = [
+                "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
+                "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
+            ],
+            exported_preprocessor_flags = ["-DUSE_ATEN_MODE"] if aten_mode else [],
+            visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        )

@@ -14,7 +14,7 @@ MY_ATEN_COMPLIANT_OPS = (
 
 def define_common_targets():
     for op in MY_ATEN_COMPLIANT_OPS:
-        define_op_target(aten_mode_needed = False, **op)
+        define_op_target(is_aten_op = True, **op)
 
     all_op_targets = [":{}".format(op["name"]) for op in MY_ATEN_COMPLIANT_OPS]
 
