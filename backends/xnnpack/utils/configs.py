@@ -32,7 +32,7 @@ def get_xnnpack_executorch_backend_config(
     additional_passes = additional_passes if additional_passes else []
     return exir.ExecutorchBackendConfig(
         passes=additional_passes,
-        extract_segments=True,
+        extract_delegate_segments=True,
     )
 
 

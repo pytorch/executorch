@@ -282,7 +282,7 @@ class TestProgram(unittest.TestCase):
         deserializing, even when it contains an extended header.
         """
         program = get_test_program()
-        pte_data = serialize_pte_binary(program, extract_segments=True)
+        pte_data = serialize_pte_binary(program, extract_delegate_segments=True)
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -329,7 +329,7 @@ class TestProgram(unittest.TestCase):
 
         # Extract the blobs into segments during serialization.
         pte_data = serialize_pte_binary(
-            program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
+            program, extract_delegate_segments=True, segment_alignment=SEGMENT_ALIGNMENT
         )
 
         # The input Program should not have been modified.
@@ -443,7 +443,7 @@ class TestProgram(unittest.TestCase):
 
         # Extract the blobs into segments should succeeed.
         pte_data = serialize_pte_binary(
-            program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
+            program, extract_delegate_segments=True, segment_alignment=SEGMENT_ALIGNMENT
         )
         self.assertGreater(len(pte_data), 16)
 
@@ -455,7 +455,9 @@ class TestProgram(unittest.TestCase):
         # Should cause serialization to fail.
         with self.assertRaises(ValueError):
             serialize_pte_binary(
-                program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
+                program,
+                extract_delegate_segments=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
             )
 
 
