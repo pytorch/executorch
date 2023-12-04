@@ -308,7 +308,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         serialized_state_dict_file = f"{serialized_file}_state_dict"
         assert (
             serialized_state_dict_file in serialized_state_dict_files
-        ), "Could not find corresponding state dict file for {serialized_file}."
+        ), f"Could not find corresponding state dict file for {serialized_file}."
         graph_map[serialized_file] = deserialize(
             etrecord_zip.read(serialized_file),
             etrecord_zip.read(serialized_state_dict_file),
