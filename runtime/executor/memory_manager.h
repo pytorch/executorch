@@ -74,11 +74,11 @@ class MemoryManager final {
       __attribute__((unused)) MemoryAllocator* constant_allocator,
       HierarchicalAllocator* non_constant_allocator,
       MemoryAllocator* runtime_allocator,
-      MemoryAllocator* kernel_temporary_allocator)
+      MemoryAllocator* temporary_allocator)
       : MemoryManager(
             /*method_allocator=*/runtime_allocator,
             /*planned_memory=*/non_constant_allocator,
-            /*temp_allocator=*/kernel_temporary_allocator) {}
+            /*temp_allocator=*/temporary_allocator) {}
 
   /**
    * Returns the allocator that the runtime will use to allocate internal
