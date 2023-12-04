@@ -1,7 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
-def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False):
+def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
     """Registers an implementation of an operator overload group.
 
     An operator overload group is a set of operator overloads with a common
@@ -39,6 +39,8 @@ def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = Fals
             third-party deps outside of //executorch. Should only be used by
             targets under //executorch/kernels/optimized, which can benefit
             from third-party optimization libraries.
+        _aten_mode_deps: List of deps to add to the cxx_library() when building
+            for ATen mode.
     """
 
     # Note that this doesn't actually define the target, but helps register
@@ -48,6 +50,7 @@ def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = Fals
         "deps": deps,
         "name": name,
         "_allow_third_party_deps": _allow_third_party_deps,
+        "_aten_mode_deps": _aten_mode_deps,
     }
 
 def _enforce_deps(deps, name, allow_third_party_deps):
