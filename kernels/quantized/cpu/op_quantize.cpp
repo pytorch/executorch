@@ -222,7 +222,6 @@ Tensor& quantize_per_tensor_tensor_args_out(
 }
 
 Tensor& quantize_per_channel_out(
-    RuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -231,7 +230,6 @@ Tensor& quantize_per_channel_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  (void)context;
   torch::executor::Error err = resize_tensor(out, input.sizes());
 
   // normalize axis
@@ -343,6 +341,20 @@ Tensor& quantize_per_channel_out(
   return out;
 }
 
+Tensor& quantize_per_channel_out(
+    RuntimeContext& context,
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t axis,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  (void)context;
+  return quantize_per_channel_out(
+      input, scale, zero_point, axis, quant_min, quant_max, dtype, out);
+}
 } // namespace native
 } // namespace executor
 } // namespace torch
