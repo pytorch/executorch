@@ -52,6 +52,12 @@ class ExecutorchBackendConfig:
     # This makes it possible to free those blobs at runtime.
     extract_delegate_segments: bool = False
 
+    # Whether to extract constants from the Program into separate segments,
+    # rather than encoding those constants in the flatbuffer data.
+    # This reduces the memory overhead of creating the .pte file for models with
+    # large constant data.
+    extract_constant_segment: bool = False
+
     # When extracting segments, the starting offset of each segment will be
     # aligned to this value (in bytes). When using mmap() to load segments, this
     # should be a multiple of the OS page size.
