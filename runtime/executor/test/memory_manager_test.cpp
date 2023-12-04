@@ -61,7 +61,7 @@ TEST(MemoryManagerTest, DEPRECATEDCtor) {
       /*constant_allocator=*/&const_allocator,
       /*non_constant_allocator=*/&planned_memory,
       /*runtime_allocator=*/&method_allocator,
-      /*kernel_temporary_allocator=*/&temp_allocator);
+      /*temporary_allocator=*/&temp_allocator);
 
   EXPECT_EQ(mm.method_allocator(), &method_allocator);
   EXPECT_EQ(mm.planned_memory(), &planned_memory);
@@ -77,7 +77,7 @@ TEST(MemoryManagerTest, DeprecatedCtorWithSameAllocator) {
           /*constant_allocator=*/&const_allocator,
           /*non_constant_allocator=*/&planned_memory,
           /*runtime_allocator=*/&method_allocator,
-          /*kernel_temporary_allocator=*/&method_allocator),
+          /*temp_allocator=*/&method_allocator),
       "");
 }
 
