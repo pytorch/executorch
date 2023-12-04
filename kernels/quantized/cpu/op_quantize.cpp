@@ -238,8 +238,8 @@ Tensor& quantize_per_channel_out(
   ET_CHECK_MSG(
       tensor_has_dim(input, axis),
       "axis %zd is not legal it should be -input.dim() <= axis < input.dim() %zd",
-      axis,
-      input.dim());
+      ssize_t(axis),
+      ssize_t(input.dim()));
 
   if (axis < 0) {
     axis += nonzero_dim(input);
