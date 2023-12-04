@@ -116,17 +116,8 @@ TEST(OpQuantizeOutTest, QuantizePerChannel) {
   // 4 / 0.5 + 127
   // 4 / 1 + 63
   Tensor expected = tfo.make({3, 2}, {135, 67, 135, 67, 135, 67});
-  torch::executor::RuntimeContext context = {};
   quantize_per_channel_out(
-      context,
-      input,
-      scale,
-      zero_point,
-      1,
-      quant_min,
-      quant_max,
-      ScalarType::Byte,
-      out);
+      input, scale, zero_point, 0, quant_min, quant_max, ScalarType::Byte, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }

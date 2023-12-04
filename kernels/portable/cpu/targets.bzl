@@ -831,9 +831,9 @@ def define_common_targets(is_fbcode = False):
 
     # Define build targets for all operators registered in the tables above.
     for op in _ATEN_OPS:
-        define_op_target(is_aten_op = True, **op)
+        define_op_target(aten_mode_needed = False, **op)
     for op in _CUSTOM_OPS:
-        define_op_target(is_aten_op = False, **op)
+        define_op_target(aten_mode_needed = True, **op)
 
     custom_op_targets = [":{}".format(op["name"]) for op in _CUSTOM_OPS]
 

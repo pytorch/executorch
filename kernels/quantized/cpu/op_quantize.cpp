@@ -237,9 +237,9 @@ Tensor& quantize_per_channel_out(
   // normalize axis
   ET_CHECK_MSG(
       tensor_has_dim(input, axis),
-      "axis %zd is not legal it should be -input.dim() < axis < input.dim() %zd",
-      ssize_t(axis),
-      ssize_t(input.dim()));
+      "axis %zd is not legal it should be -input.dim() <= axis < input.dim() %zd",
+      axis,
+      input.dim());
 
   if (axis < 0) {
     axis += nonzero_dim(input);
@@ -284,11 +284,11 @@ Tensor& quantize_per_channel_out(
   const double* scale_data = scale.const_data_ptr<double>();
   const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
 
-  optional<ArrayRef<int64_t>> optional_dim_list{
-      ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
+  exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
+      exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
 
   // Actual quantization logic
-  // in_data is the pointer to the data of the tensor
+  // input, out are the input and output tensors
   // channel_ix is the index along the axis dimension. 0 <= channel_ix <
   // input.size(axis).
   //   i.e. if the tensor has shape (N,C,H,W), axis being 1, then channel_ix

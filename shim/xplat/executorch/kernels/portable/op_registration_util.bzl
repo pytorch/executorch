@@ -134,14 +134,14 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         link_whole = True,
     )
 
-def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_deps = False):
+def define_op_target(name, deps, android_deps, aten_mode_needed, _allow_third_party_deps = False):
     """Possibly defines cxx_library targets for the named operator group.
 
     Args:
         name: The base name of the target; e.g., "op_add"
         deps: List of deps for the targets.
         android_deps: List of fbandroid_platform_deps for the target.
-        is_aten_op: True if the operator overload group is ATen-compatible.
+        aten_mode_needed: True if the ops need to build with ATen Tensor in addition to ExecuTorch Tensor.
         _allow_third_party_deps: If True, the op is allowed to depend on
             third-party deps outside of //executorch. Should only be used by
             targets under //executorch/kernels/optimized.
@@ -149,7 +149,7 @@ def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_de
 
     # If this is a custom op, define a target that builds it with at::Tensor
     # so that it can be imported into a host PyTorch environment for authoring.
-    if not is_aten_op:
+    if aten_mode_needed:
         define_op_library(
             name = name,
             deps = deps,
