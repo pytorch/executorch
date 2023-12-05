@@ -155,7 +155,7 @@ def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_de
     if not is_aten_op:
         define_op_library(
             name = name,
-            deps = deps + _aten_mode_deps,
+            deps = _aten_mode_deps if _aten_mode_deps else deps,
             android_deps = android_deps,
             aten_target = True,
             _allow_third_party_deps = _allow_third_party_deps,
