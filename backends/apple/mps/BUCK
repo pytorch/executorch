@@ -4,8 +4,14 @@
 #
 
 # Any targets that should be shared between fbcode and xplat must be defined in
-# targets.bzl. This file can contain fbcode-only targets.
+# targets.bzl. This file can contain xplat-only targets.
 
-
+load("@fbsource//tools/build_defs:default_platform_defs.bzl", "APPLE")
 load(":targets.bzl", "define_common_targets")
-define_common_targets(is_fbcode = True)
+
+oncall("executorch")
+
+define_common_targets(
+    is_xplat = True,
+    platforms = [APPLE],
+)

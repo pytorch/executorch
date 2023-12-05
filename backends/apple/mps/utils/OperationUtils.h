@@ -13,6 +13,7 @@
 #include <torch/torch.h>
 #else
 #include <executorch/backends/apple/mps/runtime/MPSDevice.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #endif
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>

@@ -119,7 +119,7 @@ deps = [
 
 [targets.mps_backend]
 buck_targets = [
-  "//backends/apple/mps:mps_backend",
+  "//backends/apple/mps:mps",
 ]
 filters = [
   "(.mm|.cpp)$",
