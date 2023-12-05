@@ -352,6 +352,71 @@ def _extract_constant_segment(
     return bytes(constant_segment_data), constant_segment_offsets
 
 
+def _extract_segments(
+    program: Program,
+    extract_delegate_segments: bool,
+    extract_constant_segment: bool,
+    segment_alignment: int,
+    constant_tensor_alignment: int,
+) -> Tuple[Program, List[bytes]]:
+    """Extracts constant and/or delegate data from a given Program into separate segments.
+
+    Args:
+        program: The Program to extract segments from.
+        extract_delegate_segments: Whether to extract delegate data blobs from the program.
+        extract_constant_segment: Whether to extract constant data from the program.
+        segment_alignment: Alignment in bytes. The starting offset of each
+            segment will be aligned to this value in the output data.
+        constant_tensor_alignment: Alignment in bytes. The starting offset of each tensor
+            in the constant segment will be aligned to this value.
+    Returns:
+        A tuple of (modified program, list of segment data).
+    Raises:
+        ValueError, if the program already contains segments.
+    """
+    if program.segments:
+        raise ValueError(
+            f"Program already has {len(program.segments)} segments: "
+            + f"{repr(program.segments)}"
+        )
+
+    # Don't modify the original program.
+    # TODO(T144120904): Could avoid yet more huge copies with a more shallow
+    # copy, reusing the actual data blobs.
+    program = copy.deepcopy(program)
+
+    # Segment data to be written to the file following the flatbuffer data.
+    segments: List[bytes] = []
+
+    if extract_constant_segment:
+        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
+            program.constant_buffer, tensor_alignment=constant_tensor_alignment
+        )
+
+        if constant_segment_data:
+            # Append constant_segment_data to the list of segments if non-empty.
+            segments.append(constant_segment_data)
+            # Append constant_segment offset to the list of DataSegments. Added as the
+            # first segment here, but it's not mandatory that the constant segment be
+            # the first one in the file.
+            program.segments.append(
+                DataSegment(offset=0, size=len(constant_segment_data))
+            )
+
+            # Fill in constant_segment offsets and clear the constant buffer; only one of
+            # constant_segment and constant_buffer should be non-empty.
+            program.constant_segment = SubsegmentOffsets(
+                segment_index=0, offsets=constant_segment_offsets
+            )
+            program.constant_buffer = []
+
+    if extract_delegate_segments:
+        _extract_delegate_segments(
+            program, segments=segments, segment_alignment=segment_alignment
+        )
+    return program, segments
+
+
 def _append_segments(
     program_data: bytes,
     segments: List[bytes],
@@ -474,44 +539,16 @@ def serialize_pte_binary(
 
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
+
+    # Extract constant segment and delegate segments, if requested.
     if extract_constant_segment or extract_delegate_segments:
-        if program.segments:
-            raise ValueError(
-                f"Program already has {len(program.segments)} segments: "
-                + f"{repr(program.segments)}"
-            )
-
-        # Don't modify the original program.
-        # TODO(T144120904): Could avoid yet more huge copies with a more shallow
-        # copy, reusing the actual data blobs.
-        program = copy.deepcopy(program)
-
-        if extract_constant_segment:
-            constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-                program.constant_buffer, tensor_alignment=constant_tensor_alignment
-            )
-
-            if constant_segment_data:
-                # Append constant_segment to the list of segments if non-empty.
-                segments.append(constant_segment_data)
-                # Append constant_segment offset to the list of DataSegments. Added as the
-                # first segment here, but it's not mandatory that the constant segment be
-                # the first one in the file.
-                program.segments.append(
-                    DataSegment(offset=0, size=len(constant_segment_data))
-                )
-
-                # Fill in constant_segment offsets and clear the constant buffer; only one of
-                # constant_segment and constant_buffer should be non-empty.
-                program.constant_segment = SubsegmentOffsets(
-                    segment_index=0, offsets=constant_segment_offsets
-                )
-                program.constant_buffer = []
-
-        if extract_delegate_segments:
-            _extract_delegate_segments(
-                program, segments=segments, segment_alignment=segment_alignment
-            )
+        program, segments = _extract_segments(
+            program=program,
+            extract_delegate_segments=extract_delegate_segments,
+            extract_constant_segment=extract_constant_segment,
+            segment_alignment=segment_alignment,
+            constant_tensor_alignment=constant_tensor_alignment,
+        )
 
     # Convert to a standard flatbuffer binary.
     result: _FlatbufferResult = _program_json_to_flatbuffer(
