@@ -40,9 +40,9 @@ from executorch.sdk.inspector._inspector_utils import (
     FORWARD,
     gen_etdump_object,
     gen_graphs_from_etrecord,
-    InferenceOutput,
     inflate_runtime_output,
     is_debug_output,
+    ProgramOutput,
     RESERVED_FRAMEWORK_EVENT_NAMES,
     TIME_SCALE_DICT,
     TimeScale,
@@ -298,7 +298,7 @@ class Event:
     delegate_backend_name: Optional[str] = None
     delegate_debug_metadatas: List[str] = dataclasses.field(default_factory=list)
 
-    debug_data: List[InferenceOutput] = dataclasses.field(default_factory=list)
+    debug_data: ProgramOutput = dataclasses.field(default_factory=list)
     _instruction_id: Optional[int] = None
 
     @staticmethod
@@ -489,7 +489,8 @@ class EventBlock:
     source_time_scale: TimeScale = TimeScale.NS
     target_time_scale: TimeScale = TimeScale.MS
     bundled_input_index: Optional[int] = None
-    run_output: Optional[List[InferenceOutput]] = None
+    run_output: Optional[ProgramOutput] = None
+    reference_output: Optional[ProgramOutput] = None
 
     def to_dataframe(self, include_units: bool = False) -> pd.DataFrame:
         """
@@ -584,7 +585,7 @@ class EventBlock:
         @dataclass
         class GroupedRunInstances:
             events: OrderedDict[EventSignature, List[InstructionEvent]]
-            run_output: List[InferenceOutput]
+            run_output: ProgramOutput
 
         run_groups: Mapping[RunSignature, GroupedRunInstances] = defaultdict(
             lambda: GroupedRunInstances(OrderedDict(), [])
@@ -634,7 +635,7 @@ class EventBlock:
                 run_signature_events.setdefault(event_signature, []).append(event)
 
             # Populate (or Verify if already populated) Run Outputs
-            run_outputs: List[InferenceOutput] = EventBlock._collect_run_outputs(
+            run_outputs: ProgramOutput = EventBlock._collect_run_outputs(
                 run_events, output_buffer
             )
             if len(existing_run_outputs := run_groups[run_signature].run_output) == 0:
@@ -651,7 +652,7 @@ class EventBlock:
             run_group: OrderedDict[
                 EventSignature, List[InstructionEvent]
             ] = grouped_run_instance.events
-            run_outputs: List[InferenceOutput] = grouped_run_instance.run_output
+            run_outputs: ProgramOutput = grouped_run_instance.run_output
 
             # Construct the Events
             events: List[Event] = [
@@ -678,9 +679,9 @@ class EventBlock:
     @staticmethod
     def _collect_run_outputs(
         events: List[flatcc.Event], output_buffer: Optional[bytes] = None
-    ) -> List[InferenceOutput]:
+    ) -> ProgramOutput:
         """
-        Given a list of events, search the events for InferenceOutputs marked
+        Given a list of events, search the events for ProgramOutputs (aka lists of InferenceOutputs) marked
         as run outputs
         """
 
@@ -824,6 +825,10 @@ class Inspector:
 
         # Connect ETRecord to EventBlocks
         self.op_graph_dict: Optional[Mapping[str, OperatorGraph]] = None
+
+        # _consume_etrecord() will populate the _reference_outputs dict
+        # Key str is method name; value is list of ProgramOutputs because of list of test cases
+        self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -839,6 +844,11 @@ class Inspector:
                 For each Event, populate its metadata from OperatorGraph Nodes,
                 generated from ETRecord. The debug_handle is used to
                 identify the corresponding OperatorGraph Nodes.
+
+            3. Reference Outputs Extraction:
+                If there're reference outputs saved in ETRecord, assign each reference output to the corresponding
+                EventBlock based on the method name (currently assumes only "forward") and the
+                bundled_input_index of the EventBlock.
         """
 
         if self._etrecord is None:
@@ -863,6 +873,17 @@ class Inspector:
                 event._associate_with_op_graph_nodes(
                     debug_handle_to_op_node_map=debug_handle_to_op_node_map,
                 )
+
+        # (3) Reference Outputs Extraction
+        if self._etrecord._reference_outputs is not None:
+            self._reference_outputs = self._etrecord._reference_outputs
+            # Associate each reference output to the corresponding event block
+            for event_block in self.event_blocks:
+                index = event_block.bundled_input_index
+                if index is not None:
+                    event_block.reference_output = self._reference_outputs[FORWARD][
+                        index
+                    ]
 
     def print_data_tabular(
         self, file: IO[str] = sys.stdout, include_units: bool = True
@@ -930,7 +951,8 @@ class Inspector:
                         continue
                     found = any(module_name in key for key in hierarchy.keys())
                     if found:
-                        total += event.perf_data.avg
+                        if event.perf_data is not None:
+                            total += event.perf_data.avg
                         break
         return total
 

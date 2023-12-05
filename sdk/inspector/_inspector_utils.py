@@ -65,6 +65,7 @@ TIME_SCALE_DICT = {
 
 # Model Debug Output
 InferenceOutput: TypeAlias = Union[torch.Tensor, int, float, str, bool, None]
+ProgramOutput: TypeAlias = List[InferenceOutput]
 
 
 def inflate_runtime_output(
@@ -150,7 +151,7 @@ def find_populated_event(event: flatcc.Event) -> Union[ProfileEvent, DebugEvent]
 
 # TODO: Optimize by verifying prior to inflating the tensors
 def verify_debug_data_equivalence(
-    existing_data: List[InferenceOutput], new_data: List[InferenceOutput]
+    existing_data: ProgramOutput, new_data: ProgramOutput
 ) -> None:
     """
     Verify that the lists of inference_outputs are equivalent
