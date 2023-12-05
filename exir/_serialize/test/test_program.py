@@ -26,15 +26,25 @@ from executorch.exir.schema import (
     BackendDelegate,
     BackendDelegateDataReference,
     BackendDelegateInlineData,
+    Buffer,
     ContainerMetadata,
     DataLocation,
     DataSegment,
     ExecutionPlan,
     Program,
+    SubsegmentOffsets,
 )
 from executorch.exir.tests.common import get_test_program
 
 SEGMENT_ALIGNMENT: int = 4096
+
+CONSTANT_TENSOR_ALIGNMENT: int = 16
+
+
+def add_constant_data(program: Program, blobs: Sequence[bytes]) -> None:
+    """Adds the provided constant data blobs to the program."""
+    for blob in blobs:
+        program.constant_buffer.append(Buffer(storage=blob))
 
 
 def add_delegate_data(
@@ -124,6 +134,141 @@ class TestProgram(unittest.TestCase):
         if diff:
             self.fail(msg="Programs are not equal\n" + diff)
 
+    def get_and_validate_extended_header(self, pte_data: bytes) -> _ExtendedHeader:
+        """When an extended header is expected, check that it exists and is valid.
+        Does not check correctness of the contents."""
+        eh = _get_extended_header(pte_data)
+        self.assertIsNotNone(eh)
+        self.assertTrue(eh.is_valid())
+        self.assertLess(eh.program_size, len(pte_data))
+        return eh
+
+    def constant_segment_with_tensor_alignment(
+        self, constant_tensor_alignment: int
+    ) -> None:
+        """Utility to test constant segment with varying alignment.
+        Args:
+            constant_tensor_alignment: Alignment of constant tensor data.
+                Must be a multiple of 2.
+                Must be > 8 for the purposes of the test, which checks +- 3 bytes on the edges of each tensor.
+        """
+        # Create a program with some constant tensor data.
+        program = get_test_program()
+        blobs = (
+            b"",  # Empty tensor.
+            self.gen_blob_data(constant_tensor_alignment // 2, b"\x10\x11\x01"),
+            self.gen_blob_data(constant_tensor_alignment - 1, b"\x20\x22\x02"),
+            self.gen_blob_data(constant_tensor_alignment, b"\x30\x33\x03"),
+            self.gen_blob_data(constant_tensor_alignment + 1, b"\x40\x44\x04"),
+        )
+        add_constant_data(program, blobs)
+
+        # Extract blobs into constant segment during serialization.
+        pte_data = serialize_pte_binary(
+            program,
+            extract_constant_segment=True,
+            segment_alignment=SEGMENT_ALIGNMENT,
+            constant_tensor_alignment=constant_tensor_alignment,
+        )
+
+        # The input Program should not be modified.
+        self.assertEqual(program.segments, [])
+
+        # Extended header should be present in the serialized data.
+        eh = self.get_and_validate_extended_header(pte_data)
+
+        # Segment offset should be non-zero since there are segments. It
+        # should point past the end of the program data, but not beyond
+        # the end of the file.
+        self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
+        self.assertLess(eh.segment_base_offset, len(pte_data))
+
+        # Peek inside the actual flatbuffer data to see the segments.
+        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+
+        # The constant tensor data should appear as the only segment.
+        self.assertEqual(len(program_with_segments.segments), 1)
+
+        # The constant buffer should appear now as a constant segment.
+        segment_table: List[DataSegment] = program_with_segments.segments
+        self.assertEqual(len(segment_table), 1)
+        # Tensor sizes
+        # - tensor[0]: 0
+        # - tensors[1,2,3]: constant_tensor_alignment
+        # - tensor[4]: constant_tensor_alignment + 1 (no padding on the last tensor)
+        self.assertEqual(
+            segment_table[0].size,
+            constant_tensor_alignment * 3 + (constant_tensor_alignment + 1),
+        )
+
+        # Check constant_segment index and offsets.
+        subsegment_offsets: SubsegmentOffsets = program_with_segments.constant_segment
+        self.assertEqual(subsegment_offsets.segment_index, 0)
+        self.assertEqual(
+            subsegment_offsets.offsets,
+            [
+                0,  # Start at offset 0.
+                0,  # tensor[0] is empty.
+                constant_tensor_alignment,  # tensor[1] has size constant_tensor_alignment // 2. Round up.
+                constant_tensor_alignment
+                * 2,  # tensor[2] has size constant_tensor_alignment - 1. Round up.
+                constant_tensor_alignment
+                * 3,  # tensor[3] has size constant_tensor_alignment. No padding needed.
+            ],
+        )
+
+        # Check constant_buffer is empty, because the data was moved into the segment.
+        self.assertEqual(len(program_with_segments.constant_buffer), 0)
+
+        # Check segment data.
+        offsets = subsegment_offsets.offsets
+        segment_data: bytes = pte_data[eh.segment_base_offset :]
+
+        # tensor[1]: padding.
+        self.assertEqual(
+            segment_data[offsets[1] : offsets[1] + 3],
+            # Tensor data.
+            b"\x10\x11\x11",
+        )
+        self.assertEqual(
+            segment_data[
+                offsets[1]
+                + constant_tensor_alignment // 2 : offsets[1]
+                + constant_tensor_alignment // 2
+                + 3
+            ],
+            # Padding.
+            b"\x00\x00\x00",
+        )
+
+        # tensor[3]: no padding.
+        self.assertEqual(
+            segment_data[offsets[4] - 3 : offsets[4] + 3],
+            # End of tensor 3.
+            b"\x33\x33\x03"
+            # Start of tensor 4.
+            + b"\x40\x44\x44",
+        )
+
+        # tensor[4]: no padding for last tensor.
+        self.assertEqual(
+            segment_data[
+                offsets[4]
+                + constant_tensor_alignment
+                - 3 : offsets[4]
+                + constant_tensor_alignment
+                + 1
+            ],
+            b"\x44\x44\x44\x04",
+        )
+
+        # The final segment should not point past the end of the file.
+        self.assertLessEqual(
+            segment_table[-1].offset + segment_table[-1].size,
+            len(pte_data),
+            f"{segment_table}",
+        )
+
     def test_canonicalize_delegate_indices(self) -> None:
         def make_execution_plan(
             name: str, delegates: List[BackendDelegate]
@@ -188,6 +333,7 @@ class TestProgram(unittest.TestCase):
                 BackendDelegateInlineData(data=b"AA delegate [0,0] data"),
             ],
             segments=[],
+            constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
         )
 
         # Demonstrate which data each delegate points to.
@@ -280,7 +426,7 @@ class TestProgram(unittest.TestCase):
         deserializing, even when it contains an extended header.
         """
         program = get_test_program()
-        pte_data = serialize_pte_binary(program, extract_segments=True)
+        pte_data = serialize_pte_binary(program, extract_delegate_segments=True)
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -327,7 +473,7 @@ class TestProgram(unittest.TestCase):
 
         # Extract the blobs into segments during serialization.
         pte_data = serialize_pte_binary(
-            program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
+            program, extract_delegate_segments=True, segment_alignment=SEGMENT_ALIGNMENT
         )
 
         # The input Program should not have been modified.
@@ -338,10 +484,7 @@ class TestProgram(unittest.TestCase):
         )
 
         # Extended header should be present in the serialized data.
-        eh = _get_extended_header(pte_data)
-        self.assertIsNotNone(eh)
-        self.assertTrue(eh.is_valid())
-        self.assertLess(eh.program_size, len(pte_data))
+        eh = self.get_and_validate_extended_header(pte_data)
         # Segment offset should be non-zero since there are segments. It
         # should point past the end of the program data, but not beyond
         # the end of the file.
@@ -441,7 +584,7 @@ class TestProgram(unittest.TestCase):
 
         # Extract the blobs into segments should succeeed.
         pte_data = serialize_pte_binary(
-            program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
+            program, extract_delegate_segments=True, segment_alignment=SEGMENT_ALIGNMENT
         )
         self.assertGreater(len(pte_data), 16)
 
@@ -453,8 +596,171 @@ class TestProgram(unittest.TestCase):
         # Should cause serialization to fail.
         with self.assertRaises(ValueError):
             serialize_pte_binary(
-                program, extract_segments=True, segment_alignment=SEGMENT_ALIGNMENT
+                program,
+                extract_delegate_segments=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
             )
+
+    def test_constant_segment_tensor_alignment_16(self) -> None:
+        self.constant_segment_with_tensor_alignment(16)
+
+    def test_constant_segment_tensor_alignment_128(self) -> None:
+        self.constant_segment_with_tensor_alignment(128)
+
+    def test_constant_segment_tensor_alignment_non_power_of_2_fails(self) -> None:
+        # Create a program with some constant tensor data.
+        program = get_test_program()
+        program.constant_buffer.append(Buffer(storage=b"12345"))
+
+        constant_tensor_alignment: int = 14
+        # Extract blobs into constant segment during serialization.
+        # Expect failure as tensor alignment 14 is not a power of 2.
+        with self.assertRaises(ValueError):
+            serialize_pte_binary(
+                program,
+                extract_constant_segment=True,
+                segment_alignment=SEGMENT_ALIGNMENT,
+                constant_tensor_alignment=constant_tensor_alignment,
+            )
+
+    def test_constant_segment_and_delegate_segment(self) -> None:
+        # Create a program with some constant tensor data and delegate data blobs.
+        program = get_test_program()
+        constant_blobs = (
+            self.gen_blob_data(CONSTANT_TENSOR_ALIGNMENT // 2, b"\x10\x11\x01"),
+            self.gen_blob_data(CONSTANT_TENSOR_ALIGNMENT + 1, b"\x20\x22\x02"),
+        )
+        delegate_blobs = (
+            self.gen_blob_data(SEGMENT_ALIGNMENT // 2, b"\x30\x33\x03"),
+            self.gen_blob_data(SEGMENT_ALIGNMENT + 1, b"\x40\x44\x04"),
+        )
+
+        add_constant_data(program, constant_blobs)
+        add_delegate_data(program, program.execution_plan[0], delegate_blobs)
+
+        # Extract the blobs into segments during serialization.
+        pte_data = serialize_pte_binary(
+            program,
+            extract_delegate_segments=True,
+            extract_constant_segment=True,
+            segment_alignment=SEGMENT_ALIGNMENT,
+            constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
+        )
+
+        # The input Program should not be modified.
+        self.assertEqual(program.segments, [])
+        self.assertEqual(
+            program.execution_plan[0].delegates[0].processed.location,
+            DataLocation.INLINE,
+        )
+
+        # Extended header should be present in the serialized data.
+        eh = self.get_and_validate_extended_header(pte_data)
+
+        # Segment offset should be non-zero since there are segments. It
+        # should point past the end of the program data, but not beyond
+        # the end of the file.
+        self.assertGreaterEqual(eh.segment_base_offset, eh.program_size)
+        self.assertLess(eh.segment_base_offset, len(pte_data))
+
+        # Peek inside the actual flatbuffer data to see the segments.
+        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+
+        # Segment table should contain a constant segment and the delegate blobs.
+        segment_table: List[DataSegment] = program_with_segments.segments
+        self.assertEqual(len(segment_table), len(delegate_blobs) + 1)
+        self.assertEqual(segment_table[0].offset, 0)
+        # segment_table[0] is the constant segment, which
+        # contains a couple of tensors with sizes:
+        # - tensor[0] = CONSTANT_TENSOR_ALIGNMENT
+        # - tensor[1] = CONSTANT_TENSOR_ALIGNMENT + 1 (no padding on last tensor)
+        self.assertEqual(segment_table[0].size, CONSTANT_TENSOR_ALIGNMENT * 2 + 1)
+        self.assertEqual(segment_table[1].offset, SEGMENT_ALIGNMENT)
+        self.assertEqual(segment_table[1].size, SEGMENT_ALIGNMENT // 2)
+        self.assertEqual(segment_table[2].offset, SEGMENT_ALIGNMENT * 2)
+        self.assertEqual(segment_table[2].size, SEGMENT_ALIGNMENT + 1)
+
+        # Check constant_segment index and offsets.
+        subsegment_offsets: SubsegmentOffsets = program_with_segments.constant_segment
+        self.assertEqual(subsegment_offsets.segment_index, 0)
+        self.assertEqual(
+            subsegment_offsets.offsets,
+            [
+                0,  # Start at offset 0.
+                16,  # tensor[0] has size CONSTANT_TENSOR_ALIGNMENT. No padding required.
+            ],
+        )
+
+        # Check constant_buffer is empty, because the data was moved into the segment.
+        self.assertEqual(len(program_with_segments.constant_buffer), 0)
+
+        # The first segment should begin at zero; i.e., at the segment base
+        # offset.
+        self.assertEqual(segment_table[0].offset, 0, f"{segment_table}")
+        # The final segment should not point past the end of the file.
+        self.assertLessEqual(
+            segment_table[-1].offset + segment_table[-1].size,
+            len(pte_data),
+            f"{segment_table}",
+        )
+
+        # Check the segment base offset boundary.
+        segment_base_offset = eh.segment_base_offset
+        self.assertEqual(
+            pte_data[segment_base_offset - 2 : segment_base_offset + 3],
+            # Padding before the first segment.
+            b"\x00\x00"
+            # First few bytes of the first segment.
+            + b"\x10\x11\x11",
+        )
+
+        # Now that we've shown that the base offset is correct, slice off the
+        # front so that all segment offsets are relative to zero.
+        segment_data: bytes = pte_data[segment_base_offset:]
+
+        # Check segment[0] for constants.
+        offsets = subsegment_offsets.offsets
+        # Check tensor[0]: padding at the end.
+        self.assertEqual(
+            segment_data[0 : offsets[1]],
+            # Tensor data.
+            b"\x10\x11\x11\x11\x11\x11\x11\x01"
+            # Padding.
+            + b"\x00\x00\x00\x00\x00\x00\x00\x00",
+        )
+
+        # Check tensor[1]: padding at CONSTANT_TENSOR_ALIGNMENT.
+        self.assertEqual(
+            segment_data[
+                offsets[1]
+                + CONSTANT_TENSOR_ALIGNMENT
+                - 3 : offsets[1]
+                + CONSTANT_TENSOR_ALIGNMENT
+                + 3
+            ],
+            # Tensor data.
+            b"\x22\x22\x22"
+            # Padding.
+            + b"\x02\x00\x00",
+        )
+
+        # Check segment[0] and segment[1] border.
+        self.assertEqual(
+            segment_data[segment_table[1].offset - 3 : segment_table[1].offset + 3],
+            # Padding for segment[0].
+            b"\x00\x00\x00"
+            # Start of segment[1].
+            + b"\x30\x33\x33",
+        )
+
+        # Check segment[1] and segment[2] border.
+        self.assertEqual(
+            segment_data[segment_table[2].offset - 3 : segment_table[2].offset + 3],
+            # Padding for segment[1].
+            b"\x00\x00\x00"
+            # Start of segment[2].
+            + b"\x40\x44\x44",
+        )
 
 
 # Common data for extended header tests. The two example values should produce

@@ -244,7 +244,7 @@ class TestProgramManagers(unittest.TestCase):
         self.assertEqual(
             len(
                 delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_segments=True)
+                    ExecutorchBackendConfig(extract_delegate_segments=True)
                 )
                 ._emitter_output.program.execution_plan[0]
                 .delegates
@@ -254,7 +254,7 @@ class TestProgramManagers(unittest.TestCase):
         self.assertEqual(
             len(
                 delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_segments=True)
+                    ExecutorchBackendConfig(extract_delegate_segments=True)
                 )
                 ._emitter_output.program.execution_plan[1]
                 .delegates

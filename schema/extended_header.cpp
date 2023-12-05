@@ -14,6 +14,8 @@
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 
+#pragma clang diagnostic ignored "-Wdeprecated"
+
 namespace torch {
 namespace executor {
 
