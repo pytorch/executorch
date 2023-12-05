@@ -474,8 +474,7 @@ def serialize_pte_binary(
 
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
-    extract_segments = extract_constant_segment or extract_delegate_segments
-    if extract_segments:
+    if extract_constant_segment or extract_delegate_segments:
         if program.segments:
             raise ValueError(
                 f"Program already has {len(program.segments)} segments: "
@@ -521,7 +520,8 @@ def serialize_pte_binary(
         delegate_alignment=delegate_alignment,
     )
 
-    if not extract_segments:
+    # If there are no segments present, do not insert the extended header.
+    if not segments:
         return result.data
 
     # Size of the header to insert. Its size is padded to the largest

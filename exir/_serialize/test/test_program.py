@@ -421,24 +421,28 @@ class TestProgram(unittest.TestCase):
         flatbuffer_from_py = serialize_pte_binary(program)
         self.assert_programs_equal(program, deserialize_pte_binary(flatbuffer_from_py))
 
-    def test_round_trip_with_header_no_segments(self) -> None:
-        """Tests that a Program remains the same after serializing and
-        deserializing, even when it contains an extended header.
+    def test_round_trip_no_segments_and_no_header(self) -> None:
+        """Tests that a Program serialized with extract_delegate_segments=True
+        or extract_constant_segment=True, when there are no segments, does not
+        contain an extended header, constant segment, or delegate segments. Confirm
+        that a Program remains the same after serializing and deserializing.
         """
         program = get_test_program()
-        pte_data = serialize_pte_binary(program, extract_delegate_segments=True)
+        pte_data = serialize_pte_binary(
+            program, extract_delegate_segments=True, extract_constant_segment=True
+        )
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
         self.assert_file_magic_present(pte_data)
 
-        # Extended header should be present.
+        # Extended header should not be present when no segments are created.
         eh = _get_extended_header(pte_data)
-        self.assertIsNotNone(eh)
-        self.assertTrue(eh.is_valid())
-        self.assertEqual(eh.program_size, len(pte_data))
-        # Zero when there are no segments.
-        self.assertEqual(eh.segment_base_offset, 0)
+        self.assertIsNone(eh)
+
+        # Peek inside the flatbuffer data to confirm that there are no segments.
+        program_with_segments = _json_to_program(_program_flatbuffer_to_json(pte_data))
+        self.assertEqual(program_with_segments.segments, [])
 
         # Convert back.
         program2 = deserialize_pte_binary(pte_data)
