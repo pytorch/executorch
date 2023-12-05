@@ -48,6 +48,27 @@ test_cmake_custom_op_1() {
   cmake-out/executor_runner --model_path="./${model_name}.pte"
 }
 
+test_cmake_custom_op_mps() {
+  local model_name='custom_ops_mps'
+  echo "Exporting ${model_name}.pte"
+  ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}"
+  # should save file custom_ops_1.pte
+  (rm -rf cmake-out \
+    && mkdir cmake-out \
+    && cd cmake-out \
+    && retry cmake -DBUCK2=$BUCK2 \
+        -DREGISTER_EXAMPLE_CUSTOM_OP=3 \
+        -DEXECUTORCH_BUILD_MPS=1 \
+        -DEXECUTORCH_BUILD_SDK=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+
+  echo 'Building executor_runner'
+  cmake --build cmake-out -j9
+
+  echo 'Running executor_runner'
+  cmake-out/executor_runner --model_path="./${model_name}.pte"
+}
+
 test_buck2_custom_op_2() {
   local model_name='custom_ops_2'
 
@@ -119,6 +140,7 @@ if [[ $1 == "cmake" ]];
 then
   test_cmake_custom_op_1
   test_cmake_custom_op_2
+  test_cmake_custom_op_mps
 elif [[ $1 == "buck2" ]];
 then
   test_buck2_custom_op_1
