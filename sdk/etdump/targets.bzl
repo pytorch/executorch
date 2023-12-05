@@ -35,7 +35,7 @@ def generate_schema_header_flatcc(rule_name, srcs, headers, default_headers):
             "-o ${OUT}",
             "${SRCS}",
             # Let our infra know that the file was generated.
-            " ".join(["&& echo '// @''generated' >> ${OUT}/" + header for header in headers]),
+            " ".join(["&& echo // @" + "generated >> ${OUT}/" + header for header in headers]),
         ]),
     )
 
