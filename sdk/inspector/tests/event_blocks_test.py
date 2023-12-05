@@ -199,7 +199,9 @@ class TestEventBlock(unittest.TestCase):
                     instruction_id,
                     (0, time),
                     delegate_debug_id,
-                    delegate_debug_metadatas[index],
+                    delegate_debug_metadatas[index]
+                    if delegate_debug_id is not None
+                    else None,
                 )
                 for index, time in enumerate(durations)
             ]
@@ -224,10 +226,32 @@ class TestEventBlock(unittest.TestCase):
                 ),
                 delegate_debug_identifier=delegate_debug_id,
                 is_delegated_op=is_delegated,
-                delegate_debug_metadatas=delegate_debug_metadatas,
+                _delegate_debug_metadatas=delegate_debug_metadatas
+                if is_delegated
+                else [],
                 _instruction_id=event_signature.instruction_id,
             )
             self.assertEqual(event, expected_event)
+
+            # Test delegate_debug_metadata_parsing
+            if is_delegated:
+                expected_event = Event(
+                    name=str(delegate_debug_id) if is_delegated else name,
+                    perf_data=PerfData(
+                        [float(duration) / scale_factor for duration in durations]
+                    ),
+                    delegate_debug_identifier=delegate_debug_id,
+                    is_delegated_op=is_delegated,
+                    _delegate_debug_metadatas=delegate_debug_metadatas,
+                    _instruction_id=event_signature.instruction_id,
+                    _delegate_metadata_parser=lambda metadatas: {
+                        "joined": "-".join(metadatas)
+                    },
+                )
+                self.assertEqual(
+                    expected_event.delegate_debug_metadatas,
+                    {"joined": "-".join(delegate_debug_metadatas)},
+                )
 
         # Non Delegated
         _test_profile_event_generation("non-delegate", 1)
