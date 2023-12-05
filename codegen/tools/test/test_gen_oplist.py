@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import json
 import os
 import tempfile
 import unittest
@@ -78,6 +79,35 @@ class TestGenOpList(unittest.TestCase):
             output_path,
             None,
             {"aten::add": ["default"], "aten::mul": ["default"]},
+            False,
+        )
+
+    @patch("executorch.codegen.tools.gen_oplist._dump_yaml")
+    def test_gen_op_list_with_root_ops_and_dtypes(
+        self,
+        mock_dump_yaml: NonCallableMock,
+    ) -> None:
+        output_path = os.path.join(self.temp_dir.name, "output.yaml")
+        ops_dict = {
+            "aten::add": ["v1/3;0,1|3;0,1|3;0,1|3;0,1", "v1/6;0,1|6;0,1|6;0,1|6;0,1"],
+            "aten::mul": [],
+        }
+        args = [
+            f"--output_path={output_path}",
+            f"--ops_dict={json.dumps(ops_dict)}",
+        ]
+        gen_oplist.main(args)
+        mock_dump_yaml.assert_called_once_with(
+            ["aten::add", "aten::mul"],
+            output_path,
+            None,
+            {
+                "aten::add": [
+                    "v1/3;0,1|3;0,1|3;0,1|3;0,1",
+                    "v1/6;0,1|6;0,1|6;0,1|6;0,1",
+                ],
+                "aten::mul": ["default"],
+            },
             False,
         )
 
