@@ -166,15 +166,17 @@ class EventTracer {
    *
    * @param[in] event_tracer_entry The EventTracerEntry returned by a call to
    * start_profiling_delegate().
-   * @param[in] metadata Optional free-form metadata associated with the
-   * delegate event. This should be a null terminated ASCII string. Users
-   * calling this interface do not need to keep the memory pointed to by this
-   * pointer around. The string must be copied over into internal memory during
-   * this call.
+   * @param[in] metadata Optional data relevant to the execution that the user
+   * wants to log along with this event. Pointer to metadata doesn't need to be
+   * valid after the call to this function. The contents and format of the data
+   * are transparent to the event tracer. It will just pipe along the data and
+   * make it available for the user again in the post-processing stage.
+   * @param[in] metadata_len Length of the metadata buffer.
    */
   virtual void end_profiling_delegate(
       EventTracerEntry event_tracer_entry,
-      const char* metadata = nullptr) = 0;
+      const void* metadata = nullptr,
+      size_t metadata_len = 0) = 0;
 
   /**
    * Some delegates get access to the profiling details only after the complete
@@ -196,15 +198,18 @@ class EventTracer {
    * @param[in] end_time The timestamp when the delegate event finished.
    * @param[in] metadata Optional data relevant to the execution that the user
    * wants to log along with this event. Pointer to metadata doesn't need to be
-   * valid after the call to this function. This should be a null terminated
-   * ASCII string.
+   * valid after the call to this function. The contents and format of the data
+   * are transparent to the event tracer. It will just pipe along the data and
+   * make it available for the user again in the post-processing stage.
+   * @param[in] metadata_len Length of the metadata buffer.
    */
   virtual void log_profiling_delegate(
       const char* name,
       DebugHandle delegate_debug_index,
       et_timestamp_t start_time,
       et_timestamp_t end_time,
-      const char* metadata = nullptr) = 0;
+      const void* metadata = nullptr,
+      size_t metadata_len = 0) = 0;
 
   /**
    * End the profiling of the event identified by prof_entry

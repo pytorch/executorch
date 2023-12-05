@@ -4,13 +4,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import math
 from enum import Enum
-from typing import Dict, Mapping, Optional
+from typing import Dict, List, Mapping, Optional, Tuple, TypeAlias, Union
+
+import executorch.sdk.etdump.schema_flatcc as flatcc
+
+import torch
 
 from executorch.sdk.debug_format.base_schema import OperatorNode
 
 from executorch.sdk.debug_format.et_schema import FXOperatorGraph, OperatorGraph
-from executorch.sdk.etdump.schema_flatcc import ETDumpFlatCC
+from executorch.sdk.etdump.schema_flatcc import (
+    DebugEvent,
+    ETDumpFlatCC,
+    ProfileEvent,
+    ScalarType,
+    Tensor,
+    Value,
+    ValueType,
+)
 
 from executorch.sdk.etdump.serialize import deserialize_from_etdump_flatcc
 from executorch.sdk.etrecord import ETRecord
@@ -48,6 +61,126 @@ TIME_SCALE_DICT = {
     TimeScale.S: 1,
     TimeScale.CYCLES: 1,
 }
+
+
+# Model Debug Output
+InferenceOutput: TypeAlias = Union[torch.Tensor, int, float, str, bool, None]
+
+
+def inflate_runtime_output(
+    value: Value, output_buffer: Optional[bytes]
+) -> InferenceOutput:
+    """
+    Parse the given ETDump Value object into an InferenceOutput object
+    """
+
+    def get_scalar_type_size(scalar_type: ScalarType) -> Tuple[torch.dtype, int]:
+        """
+        Return the size of the scalar type in bytes
+        """
+        match scalar_type:
+            case ScalarType.INT:
+                return (torch.int, 4)
+            case ScalarType.BOOL:
+                return (torch.bool, 1)
+            case ScalarType.FLOAT:
+                return (torch.float, 4)
+            case ScalarType.DOUBLE:
+                return (torch.double, 8)
+            case ScalarType.LONG:
+                return (torch.long, 8)
+            case _:
+                raise RuntimeError(
+                    f"Unsupported scalar type in get_scalar_type_size : {scalar_type}"
+                )
+
+    # Given a ETDump Tensor object and offset, extract into a torch.Tensor
+    def parse_tensor_value(tensor: Optional[Tensor]) -> torch.Tensor:
+        if output_buffer is None:
+            raise ValueError("Empty buffer provided. Cannot deserialize tensors.")
+        if tensor is None or tensor.offset is None:
+            raise ValueError("Tensor cannot be None")
+
+        torch_dtype, dtype_size = get_scalar_type_size(tensor.scalar_type)
+        tensor_bytes_size = math.prod(tensor.sizes) * dtype_size
+
+        if tensor.offset is None:
+            raise ValueError("Tensor offset cannot be None")
+
+        return torch.frombuffer(
+            output_buffer[tensor.offset : tensor.offset + tensor_bytes_size],
+            dtype=torch_dtype,
+        ).view(tensor.sizes)
+
+    match value.val:
+        case ValueType.INT.value:
+            if value.int_value is None:
+                raise ValueError("Expected Int value, `None` provided")
+            return value.int_value.int_val
+        case ValueType.BOOL.value:
+            if value.bool_value is None:
+                raise ValueError("Expected Bool value, `None` provided")
+            return value.bool_value.bool_val
+        case ValueType.FLOAT.value:
+            if value.float_value is None:
+                raise ValueError("Expected Float value, `None` provided")
+            return value.float_value.float_val
+        case ValueType.DOUBLE.value:
+            if value.double_value is None:
+                raise ValueError("Expected Double value, `None` provided")
+            return value.double_value.double_val
+        case ValueType.TENSOR.value:
+            return parse_tensor_value(value.tensor)
+
+
+def find_populated_event(event: flatcc.Event) -> Union[ProfileEvent, DebugEvent]:
+    """
+    Given a ETDump Event object, find the populated event
+
+    Raise an error if no populated event can be found
+    """
+    if event.profile_event is not None:
+        return event.profile_event
+
+    if event.debug_event is not None:
+        return event.debug_event
+
+    raise ValueError("Unable to find populated event")
+
+
+# TODO: Optimize by verifying prior to inflating the tensors
+def verify_debug_data_equivalence(
+    existing_data: List[InferenceOutput], new_data: List[InferenceOutput]
+) -> None:
+    """
+    Verify that the lists of inference_outputs are equivalent
+
+    Raises an corresponding errors if they are not
+    """
+    assert len(existing_data) == len(
+        new_data
+    ), "Unequal debug data length encountered. Expected to be equal."
+
+    for (output_a, output_b) in zip(existing_data, new_data):
+        assert isinstance(
+            output_a, type(output_b)
+        ), "Debug Data Types are different. Expected to be equal."
+
+        if isinstance(output_a, torch.Tensor):
+            assert bool(
+                torch.all(output_a == output_b)
+            ), "Tensors Debug Data is different. Expected to be equal."
+        else:
+            assert (
+                output_a == output_b
+            ), "Scalar Debug Data is different. Expected to be equal"
+
+
+def is_debug_output(value: Value) -> bool:
+    """
+    Returns True if the given flatcc.Value is a debug output
+    """
+    return value.output is not None and value.output.bool_val
 
 
 def gen_graphs_from_etrecord(
