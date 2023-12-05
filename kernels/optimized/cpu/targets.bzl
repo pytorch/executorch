@@ -27,7 +27,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_gelu",
         deps = select({
             "DEFAULT": [],
-            "ovr_config//runtime:fbcode-arm64": [
+            "ovr_config//cpu:arm64": [
                 "fbsource//third-party/sleef:sleef_arm",
             ],
         }),
@@ -44,7 +44,7 @@ _OPTIMIZED_ATEN_OPS = (
             "DEFAULT": [
                 "//executorch/kernels/portable/cpu/util:activation_ops_util",
             ],
-            "ovr_config//runtime:fbcode-arm64": [
+            "ovr_config//cpu:arm64": [
                 "//executorch/kernels/portable/cpu/util:activation_ops_util",
                 "fbsource//third-party/sleef:sleef_arm",
             ],

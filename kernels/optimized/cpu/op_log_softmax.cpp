@@ -93,9 +93,9 @@ void log_softmax_kernel(const Tensor& input, int64_t dim, Tensor& out) {
 
       temp_sum = std::log(temp_sum);
 
-      for (auto d = 0; d < dim_size; ++d) {
-        output_data[d * dim_stride] =
-            input_data[d * dim_stride] - max_input - temp_sum;
+      for (auto dd = 0; dd < dim_size; ++dd) {
+        output_data[dd * dim_stride] =
+            input_data[dd * dim_stride] - max_input - temp_sum;
       }
     }
   }
