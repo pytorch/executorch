@@ -18,7 +18,7 @@ cpp_python_extension(
         "//executorch/sdk/etdump/...",
     ],
     deps = [
-        "fbsource//arvr/third-party/pybind11:pybind11",
+        "fbsource//third-party/pybind11/2.6.2:pybind11",
         "fbsource//third-party/flatbuffers:flatc_library",
     ],
 )
