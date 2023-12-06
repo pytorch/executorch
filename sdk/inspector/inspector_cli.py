@@ -7,6 +7,7 @@
 import argparse
 
 from executorch.sdk import Inspector
+from executorch.sdk.inspector._inspector_utils import compare_results
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
         required=False,
         help="Provide an optional buffer file path.",
     )
+    parser.add_argument("--compare_results", action="store_true")
 
     args = parser.parse_args()
 
@@ -35,6 +37,14 @@ def main() -> None:
         buffer_path=args.buffer_path,
     )
     inspector.print_data_tabular()
+    if args.compare_results:
+        for event_block in inspector.event_blocks:
+            if event_block.name == "Execute":
+                compare_results(
+                    reference_output=event_block.reference_output,
+                    run_output=event_block.run_output,
+                    plot=True,
+                )
 
 
 if __name__ == "__main__":

@@ -239,3 +239,157 @@ def gen_etdump_object(etdump_path: Optional[str] = None) -> ETDumpFlatCC:
     with open(etdump_path, "rb") as buff:
         etdump = deserialize_from_etdump_flatcc(buff.read())
         return etdump
+
+
+def plot_metric(result: List[float], metric_name: str):
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # Clear the current figure, otherwise this plot will be on top of previous plots
+    plt.clf()
+    plt.figure(figsize=(8, 6))
+
+    x_axis = np.arange(len(result))
+    bars = plt.bar(x_axis, result, width=0.5)
+    plt.grid(True, which="major", axis="y")
+    num_ticks = len(x_axis) if len(x_axis) > 5 else 5
+    interval = 1 if num_ticks < 20 else 5
+    plt.xticks(list(range(num_ticks))[::interval])
+    plt.xlabel("Output value index")
+    plt.ylabel(metric_name)
+    plt.title(f"Metric {metric_name}")
+
+    # Add value annotations to each bar
+    for bar, value in zip(bars, result):
+        plt.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            str(value),
+            ha="center",
+            va="bottom",
+        )
+
+    max_value = max(result) * 1.25
+    min_value = min(result) * 1.25
+
+    # Cosine similarity has range [-1, 1], so we set y-axis limits accordingly.
+    if metric_name == "cosine_similarity":
+        max_value = 1.0
+        if min_value >= 0:
+            min_value = 0
+        else:
+            min_value = -1.0
+
+    plt.ylim(min(0, min_value), max(0, max_value))
+
+    plt.savefig(f"{metric_name}_output_plot.png")  # Save the plot to a file
+    plt.show()
+
+
+def calculate_mse(ref_values: ProgramOutput, values: ProgramOutput):
+    def mean_squared_error(a: torch.Tensor, b: torch.Tensor):
+        return round((torch.pow((a - b).to(torch.float32), 2)).mean().item(), 2)
+
+    results = []
+    for ref_value, value in zip(ref_values, values):
+        # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
+        if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
+            results.append(mean_squared_error(ref_value, value))
+        else:
+            results.append(None)
+
+    return results
+
+
+def calculate_snr(ref_values: ProgramOutput, values: ProgramOutput):
+    def signal_to_noise(signal: torch.Tensor, noise: torch.Tensor):
+        signal = signal.type(torch.float32)
+        noise = noise.type(torch.float32)
+        signal_power = torch.mean(torch.pow(signal, 2))
+        noise_power = torch.mean(torch.pow(noise, 2))
+        snr = 10 * torch.log10(signal_power / noise_power)
+        return round(snr.item(), 2)
+
+    results = []
+    for ref_value, value in zip(ref_values, values):
+        # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
+        if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
+            diff = ref_value - value
+            snr = signal_to_noise(ref_value, diff)
+            results.append(snr)
+        else:
+            results.append(None)
+
+    return results
+
+
+def calculate_cosine_similarity(ref_values: ProgramOutput, values: ProgramOutput):
+    def cosine_similarity(tensor1: torch.Tensor, tensor2: torch.Tensor):
+        # Ensure that the tensors have the same shape
+        if tensor1.shape != tensor2.shape:
+            raise ValueError("Input tensors must have the same shape")
+
+        # Calculate the dot product
+        dot_product = torch.sum(tensor1 * tensor2)
+
+        # Calculate the magnitudes
+        magnitude1 = torch.sqrt(torch.sum(torch.pow(tensor1, 2)))
+        magnitude2 = torch.sqrt(torch.sum(torch.pow(tensor2, 2)))
+
+        # Calculate the cosine similarity
+        similarity = dot_product / (magnitude1 * magnitude2)
+
+        return round(similarity.item(), 2)  # Convert the result to a Python float
+
+    results = []
+    for ref_value, value in zip(ref_values, values):
+        # TODO T171811011: extend the implementation of each metrics function to support value types other than tensor type
+        if isinstance(ref_value, torch.Tensor) and isinstance(value, torch.Tensor):
+            results.append(cosine_similarity(ref_value, value))
+        else:
+            results.append(None)
+
+    return results
+
+
+def compare_results(
+    reference_output: ProgramOutput,
+    run_output: ProgramOutput,
+    metrics: Optional[List[str]] = None,
+    plot: bool = False,
+) -> Dict[str, List[float]]:
+    """
+    Compares the results of two runs and returns a dictionary of metric names -> lists of metric values. This list matches
+    the reference output & run output lists, so essentially we compare each pair of values in those two lists.
+
+    Args:
+        reference_output: Reference program output.
+        run_output: Program output to compare with reference output.
+        metrics: List of requested metric names. Defaults to all available metrics.
+        plot: Whether to plot the results.
+
+    Returns:
+        Dictionary of metric names to lists of float values.
+    """
+
+    results = {}
+    metrics_functions = {
+        "snr": calculate_snr,
+        "mse": calculate_mse,
+        "cosine_similarity": calculate_cosine_similarity,
+    }
+    for supported_metric in metrics_functions:
+        if metrics is None or supported_metric in metrics:
+            result = metrics_functions[supported_metric](reference_output, run_output)
+            results[supported_metric] = result
+
+            if plot:
+                plot_metric(result, supported_metric)
+            else:
+                print(supported_metric)
+                print("-" * 20)
+                for index, value in enumerate(result):
+                    print(f"{index:<5}{value:>8.5f}")
+                print("\n")
+
+    return results
