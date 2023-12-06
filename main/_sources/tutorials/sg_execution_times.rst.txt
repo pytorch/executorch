@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**00:07.553** total execution time for 2 files **from tutorials**:
+**00:07.153** total execution time for 2 files **from tutorials**:
 
 .. container::
 
@@ -33,8 +33,8 @@ Computation times
      - Time
      - Mem (MB)
    * - :ref:`sphx_glr_tutorials_export-to-executorch-tutorial.py` (``export-to-executorch-tutorial.py``)
-     - 00:05.701
+     - 00:05.357
      - 0.0
    * - :ref:`sphx_glr_tutorials_sdk-integration-tutorial.py` (``sdk-integration-tutorial.py``)
-     - 00:01.852
+     - 00:01.796
      - 0.0
