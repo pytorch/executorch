@@ -7,14 +7,12 @@ oncall("executorch")
 cpp_unittest(
     name = "cpptest",
     srcs = ["test_pytree.cpp"],
-    supports_static_listing = True,
     deps = ["//executorch/extension/pytree:pytree"],
 )
 
 cpp_unittest(
     name = "function_ref_test",
     srcs = ["function_ref_test.cpp"],
-    supports_static_listing = True,
     deps = ["//executorch/extension/pytree:pytree"],
 )
 
