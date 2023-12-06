@@ -22,6 +22,12 @@
     - arg_meta: null
       kernel_name: torch::executor::dequantize_per_tensor_tensor_args_out
 
+- func: quantized_decomposed::quantize_per_channel.out(Tensor input, Tensor scales, Tensor zero_points, int axis, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::quantize_per_channel_out
+
 - func: quantized_decomposed::embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)
   variants: function
   kernels:
