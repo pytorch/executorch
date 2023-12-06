@@ -1,7 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
-def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False):
+def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
     """Registers an implementation of an operator overload group.
 
     An operator overload group is a set of operator overloads with a common
@@ -39,6 +39,8 @@ def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = Fals
             third-party deps outside of //executorch. Should only be used by
             targets under //executorch/kernels/optimized, which can benefit
             from third-party optimization libraries.
+        _aten_mode_deps: List of deps to add to the cxx_library() when building
+            for ATen mode.
     """
 
     # Note that this doesn't actually define the target, but helps register
@@ -48,6 +50,7 @@ def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = Fals
         "deps": deps,
         "name": name,
         "_allow_third_party_deps": _allow_third_party_deps,
+        "_aten_mode_deps": _aten_mode_deps,
     }
 
 def _enforce_deps(deps, name, allow_third_party_deps):
@@ -134,7 +137,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         link_whole = True,
     )
 
-def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_deps = False):
+def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_deps = False, _aten_mode_deps = []):
     """Possibly defines cxx_library targets for the named operator group.
 
     Args:
@@ -152,7 +155,7 @@ def define_op_target(name, deps, android_deps, is_aten_op, _allow_third_party_de
     if not is_aten_op:
         define_op_library(
             name = name,
-            deps = deps,
+            deps = _aten_mode_deps if _aten_mode_deps else deps,
             android_deps = android_deps,
             aten_target = True,
             _allow_third_party_deps = _allow_third_party_deps,

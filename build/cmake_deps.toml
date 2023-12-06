@@ -24,6 +24,7 @@ excludes = [
 deps = [
   "executorch",
   "portable_kernels",
+  "quantized_kernels",
 ]
 
 [targets.executorch]
@@ -56,6 +57,22 @@ buck_targets = [
   # //kernels/portable:operators would be more appropriate, but buck2 doesn't
   # think it has any "inputs" since its srcs list is empty.
   "//kernels/portable:generated_lib_all_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  # Exclude the codegen templates, which are picked up because the buck target
+  # is the generated_lib and not the unwrapped set of kernels.
+  "^codegen/templates",
+]
+deps = [
+  "executorch",
+]
+
+[targets.quantized_kernels]
+buck_targets = [
+  "//kernels/quantized:generated_lib",
 ]
 filters = [
   ".cpp$",
