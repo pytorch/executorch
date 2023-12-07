@@ -9,18 +9,21 @@
 
 # Selective build. See codegen/tools/gen_oplist.py for how to use these
 # arguments.
-function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
+function(gen_selected_ops ops_schema_yaml root_ops ops_dict include_all_ops)
   set(_oplist_yaml ${CMAKE_CURRENT_BINARY_DIR}/selected_operators.yaml)
   file(GLOB_RECURSE _codegen_tools_srcs "${EXECUTORCH_ROOT}/codegen/tools/*.py")
 
   set(_gen_oplist_command "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_oplist
                           --output_path=${_oplist_yaml})
-
   if(ops_schema_yaml)
     list(APPEND _gen_oplist_command --ops_schema_yaml_path="${ops_schema_yaml}")
   endif()
   if(root_ops)
     list(APPEND _gen_oplist_command --root_ops="${root_ops}")
+  endif()
+  if(ops_dict)
+    # Use single quotes; dictionary key-values are wrapped in double quotes.
+    list(APPEND _gen_oplist_command --ops_dict='${ops_dict}')
   endif()
   if(include_all_ops)
     list(APPEND _gen_oplist_command --include_all_operators)
@@ -28,11 +31,31 @@ function(gen_selected_ops ops_schema_yaml root_ops include_all_ops)
 
   message("Command - ${_gen_oplist_command}")
   add_custom_command(
-    COMMENT "Generating selected_operators.yaml for custom ops"
-    OUTPUT ${_oplist_yaml}
-    COMMAND ${_gen_oplist_command}
-    DEPENDS ${ops_schema_yaml} ${_codegen_tools_srcs}
+  COMMENT "Generating selected_operators.yaml for custom ops"
+  OUTPUT ${_oplist_yaml}
+  COMMAND ${_gen_oplist_command}
+  DEPENDS ${ops_schema_yaml} ${_codegen_tools_srcs}
+  WORKING_DIRECTORY ${EXECUTORCH_ROOT})
+
+  # If using ops_dict or model API, generate selected_op_variants.h for dtype information.
+  # Model is not implemented yet (T162337788).
+  #if(ops_dict)
+  message("Codegen.cmake: gen_selected_ops: generating selected_op_variants with ops_dict:" ${ops_dict})
+  set(_selected_op_variants_path ${CMAKE_CURRENT_BINARY_DIR}/selected_op_variants.h)
+  set(_gen_op_variants_command
+      "${PYTHON_EXECUTABLE}" -m codegen.tools.gen_selected_op_variants
+      --output_dir=${CMAKE_CURRENT_BINARY_DIR}
+      --yaml_file_path=${_oplist_yaml})
+
+  message("Command - ${_gen_op_variants_command}")
+  add_custom_command(
+    COMMENT "Generating selected_op_variants.h for dtype selective build"
+    OUTPUT ${_selected_op_variants_path}
+    COMMAND ${_gen_op_variants_command}
+    DEPENDS ${_oplist_yaml} ${_codegen_tools_srcs} ${ops_schema_yaml}
+    VERBOSE
     WORKING_DIRECTORY ${EXECUTORCH_ROOT})
+  #endif()
 
 endfunction()
 
@@ -60,10 +83,13 @@ function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
       ${CMAKE_CURRENT_BINARY_DIR}/Functions.h
       ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
 
+  # ${CMAKE_CURRENT_BINARY_DIR}/selected_op_variants.h
+
   if(functions_yaml)
     list(APPEND _gen_command --functions-yaml-path=${functions_yaml})
   endif()
   if(custom_ops_yaml)
+    message("Codegen.bzl: custom_ops_yaml: " ${custom_ops_yaml})
     list(APPEND _gen_command --custom-ops-yaml-path=${custom_ops_yaml})
     list(
       APPEND
@@ -73,6 +99,7 @@ function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
       ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h)
   endif()
 
+  # message("Codegen.cmake _gen_command_sources: " ${_gen_command_sources})
   add_custom_command(
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}

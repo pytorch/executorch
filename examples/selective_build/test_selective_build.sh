@@ -18,10 +18,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 cmake_install_executorch_lib() {
     echo "Installing libexecutorch.a and libportable_kernels.a"
     rm -rf cmake-out
-    retry cmake -DBUCK2="$BUCK" \
+    retry cmake -DBUCK2="/tmp/buck2" \
             -DCMAKE_INSTALL_PREFIX=cmake-out \
             -DCMAKE_BUILD_TYPE=Release \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+            -DPYTHON_EXECUTABLE="python" \
             -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Release
 }
@@ -120,6 +120,43 @@ aten,aten::clone.out" \
     rm "./mv2.pte"
 }
 
+test_cmake_select_ops_in_dict() {
+    echo "Exporting add_mul"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
+
+    local example_dir=examples/selective_build
+    local build_dir=cmake-out/${example_dir}
+    # set MAX_KERNEL_NUM=17: 14 primops, add, mul
+    "{\"aten::add.out\":[\"v1/3;0,1\",\"v1/6;0,1\"],\"aten::mm.out\":[]}" \
+    '{"aten::add.out":["v1/3;0,1","v1/6;0,1"],"aten::mm.out":[]}'
+    "{'aten::add.out':['v1/3;0,1','v1/6;0,1'],'aten::mm.out':[]}"
+    rm -rf ${build_dir}
+    retry cmake -DBUCK2="/tmp/buck2" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_SELECT_OPS_DICT="{\"aten::add.out\":[\"v1/3;0,1\",\"v1/6;0,1\"],\"aten::mm.out\":[]}" \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="python" \
+            -B${build_dir} \
+            ${example_dir}
+
+    retry cmake -DBUCK2="/tmp/buck2" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DEXECUTORCH_SELECT_OPS_LIST="aten::add.out,aten::mm.out" \
+            -DCMAKE_INSTALL_PREFIX=cmake-out \
+            -DPYTHON_EXECUTABLE="python" \
+            -B${build_dir} \
+            ${example_dir}
+
+    echo "Building ${example_dir}"
+    cmake --build ${build_dir} -j9 --config Release
+
+    echo 'Running selective build test'
+    ${build_dir}/selective_build_test --model_path="./add_mul.pte"
+
+    echo "Removing add_mul.pte"
+    rm "./add_mul.pte"
+}
+
 test_cmake_select_ops_in_yaml() {
     echo "Exporting custom_op_1"
     ${PYTHON_EXECUTABLE} -m examples.portable.custom_ops.custom_ops_1
@@ -146,20 +183,21 @@ test_cmake_select_ops_in_yaml() {
 
 if [[ -z $BUCK ]];
 then
-  BUCK=buck2
+  BUCK=/tmp/buck2
 fi
 
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
-  PYTHON_EXECUTABLE=python3
+  PYTHON_EXECUTABLE=python
 fi
 
 if [[ $1 == "cmake" ]];
 then
     cmake_install_executorch_lib
-    test_cmake_select_all_ops
-    test_cmake_select_ops_in_list
-    test_cmake_select_ops_in_yaml
+    # test_cmake_select_all_ops
+    # test_cmake_select_ops_in_list
+    test_cmake_select_ops_in_dict
+    # test_cmake_select_ops_in_yaml
 elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops

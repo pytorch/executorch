@@ -116,12 +116,15 @@ In CMakeLists.txt we have the following logic:
 ```cmake
 set(_kernel_lib)
 if(SELECT_ALL_OPS)
-  gen_selected_ops("" "" "${SELECT_ALL_OPS}")
+  gen_selected_ops("" "" "" "${SELECT_ALL_OPS}")
 elseif(SELECT_OPS_LIST)
-  gen_selected_ops("" "${SELECT_OPS_LIST}" "")
+  gen_selected_ops("" "${SELECT_OPS_LIST}" "" "")
+
+elseif (SELECT_OPS_DICT)
+  gen_selected_ops("" "" "${SELECT_OPS_DICT}" "")
 elseif(SELECT_OPS_YAML)
  set(_custom_ops_yaml ${EXECUTORCH_ROOT}/examples/portable/custom_ops/custom_ops.yaml)
-  gen_selected_ops("${_custom_ops_yaml}" "" "")
+  gen_selected_ops("${_custom_ops_yaml}" "" "" "")
 endif()
 ```
 Then when calling CMake, we can do:

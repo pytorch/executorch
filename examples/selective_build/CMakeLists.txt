@@ -97,6 +97,7 @@ endif()
 gen_selected_ops(
   "${_custom_ops_yaml}"
   "${EXECUTORCH_SELECT_OPS_LIST}"
+  "${EXECUTORCH_SELECT_OPS_DICT}"
   "${EXECUTORCH_SELECT_ALL_OPS}")
 
 generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml

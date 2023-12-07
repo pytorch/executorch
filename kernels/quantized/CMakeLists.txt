@@ -37,7 +37,7 @@ file(GLOB_RECURSE _quantized_kernels__srcs
      "${CMAKE_CURRENT_SOURCE_DIR}/cpu/*.cpp")
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in quantized.yaml
-gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/quantized.yaml" "" "")
+gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/quantized.yaml" "" "" "")
 # Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels("" ${CMAKE_CURRENT_SOURCE_DIR}/quantized.yaml)
 message("Generated files ${gen_command_sources}")

@@ -39,9 +39,9 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime).
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
-  gen_selected_ops("" "my_ops::mul3.out" "")
+  gen_selected_ops("" "my_ops::mul3.out" "" "")
 elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
-  gen_selected_ops("" "my_ops::mul4.out" "")
+  gen_selected_ops("" "my_ops::mul4.out" "" "")
 endif()
 # Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels("" ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
