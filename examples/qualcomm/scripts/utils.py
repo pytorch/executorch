@@ -13,8 +13,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_quantizer import (
-    get_16bit_qnn_ptq_config,
-    get_default_qnn_ptq_config,
+    get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
 )
 from executorch.backends.qualcomm.utils.utils import (
@@ -136,12 +136,10 @@ def build_executorch_binary(
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
         if use_16bit_quant:
-            quant_annotation_config = get_16bit_qnn_ptq_config()
+            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
         else:
-            quant_annotation_config = get_default_qnn_ptq_config(
-                enable_per_channel_conv_quant=True
-            )
-        quantizer.set_global_op_quant_config(quant_annotation_config)
+            quantizer.set_bit8_op_quant_config(get_default_8bit_qnn_ptq_config())
 
         captured_model = torch._export.capture_pre_autograd_graph(model, inputs)
         annotated_model = prepare_pt2e(captured_model, quantizer)
@@ -150,6 +148,7 @@ def build_executorch_binary(
         for data in dataset:
             annotated_model(*data)
         quantized_model = convert_pt2e(annotated_model)
+
         edge_prog = capture_program(quantized_model, inputs)
     else:
         edge_prog = capture_program(model, inputs)

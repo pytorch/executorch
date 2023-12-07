@@ -514,6 +514,6 @@ def get_node_visitors(*args) -> Dict[str, NodeVisitor]:
     for target, visitor in _node_visitor_dict.items():
         assert callable(
             visitor
-        ), f"Expeting a callable class, but got {visitor} of type {type(visitor)}"
+        ), f"Expecting a callable class, but got {visitor} of type {type(visitor)}"
         node_visitors[target] = visitor(*args)
     return node_visitors

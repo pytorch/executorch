@@ -23,9 +23,11 @@ from executorch.exir._serialize._flatbuffer import (
 from executorch.exir.schema import (
     BackendDelegateDataReference,
     BackendDelegateInlineData,
+    Buffer,
     DataLocation,
     DataSegment,
     Program,
+    SubsegmentOffsets,
 )
 
 
@@ -237,33 +239,17 @@ def _get_extended_header(program_data: bytes) -> Optional[_ExtendedHeader]:
     return None
 
 
-def _extract_segments(
-    program: Program, segment_alignment: int
-) -> Tuple[Program, List[bytes]]:
-    """Moves data from the Program into a list of segments.
-
-    The returned program is a copy of `program`. Program.segments parallels the
-    returned list of buffers.
+def _extract_delegate_segments(
+    program: Program, segments: List[bytes], segment_alignment: int
+) -> None:
+    """The input program and segments list are modified in place.
 
     Args:
-        program: The program to extract segments from.
+        program: The program to extract segments from. Modified in-place.
+        segments: A list to which extracted segments will be appended. Modified in-place.
         segment_alignment: Alignment in bytes. The starting offset of each
             segment will be aligned to this value.
-    Returns:
-        A tuple of (modified program, list of segment data).
     """
-    if program.segments:
-        raise ValueError(
-            f"Program already has {len(program.segments)} segments: "
-            + f"{repr(program.segments)}"
-        )
-
-    # Don't modify the original program.
-    # TODO(T144120904): Could avoid yet more huge copies with a more shallow
-    # copy, reusing the actual data blobs.
-    program = copy.deepcopy(program)
-
-    segments: List[bytes] = []
     remaining_inline: List[BackendDelegateInlineData] = []
     inline_indices_seen: set[int] = set()
     for plan in program.execution_plan:
@@ -331,7 +317,104 @@ def _extract_segments(
     # Preserve any entries that were not moved into segments.
     program.backend_delegate_data = remaining_inline
 
-    return (program, segments)
+
+def _extract_constant_segment(
+    constant_buffer: List[Buffer],
+    tensor_alignment: int,
+) -> Tuple[bytes, List[int]]:
+    """Copies the tensors from the provided list into a single buffer and tracks the offsets
+    of each tensor.
+
+        constant_buffer: list of Buffers from which to extract constants from. Not modified.
+        tensor_alignment: Alignment in bytes. The starting offset of each tensor in the
+            constant segment will be aligned to this value. Default to 16.
+
+    Returns:
+        A tuple of (constant segment, list of offsets for each tensor in the segment)
+    """
+    constant_segment_data: bytearray = bytearray()
+    constant_segment_offsets: List[int] = []
+    current_offset: int = 0
+    for i in range(len(constant_buffer)):
+        buffer = constant_buffer[i]
+        buffer_length = len(buffer.storage)
+        pad_length = _padding_required(buffer_length, tensor_alignment)
+
+        # Append each constant buffer to the constant segment.
+        constant_segment_data += buffer.storage
+        # Add padding for all but the last tensor.
+        if i < len(constant_buffer) - 1:
+            constant_segment_data += b"\x00" * pad_length
+
+        # Append constant data offset.
+        constant_segment_offsets.append(current_offset)
+        current_offset += buffer_length + pad_length
+    return bytes(constant_segment_data), constant_segment_offsets
+
+
+def _extract_segments(
+    program: Program,
+    extract_delegate_segments: bool,
+    extract_constant_segment: bool,
+    segment_alignment: int,
+    constant_tensor_alignment: int,
+) -> Tuple[Program, List[bytes]]:
+    """Extracts constant and/or delegate data from a given Program into separate segments.
+
+    Args:
+        program: The Program to extract segments from.
+        extract_delegate_segments: Whether to extract delegate data blobs from the program.
+        extract_constant_segment: Whether to extract constant data from the program.
+        segment_alignment: Alignment in bytes. The starting offset of each
+            segment will be aligned to this value in the output data.
+        constant_tensor_alignment: Alignment in bytes. The starting offset of each tensor
+            in the constant segment will be aligned to this value.
+    Returns:
+        A tuple of (modified program, list of segment data).
+    Raises:
+        ValueError, if the program already contains segments.
+    """
+    if program.segments:
+        raise ValueError(
+            f"Program already has {len(program.segments)} segments: "
+            + f"{repr(program.segments)}"
+        )
+
+    # Don't modify the original program.
+    # TODO(T144120904): Could avoid yet more huge copies with a more shallow
+    # copy, reusing the actual data blobs.
+    program = copy.deepcopy(program)
+
+    # Segment data to be written to the file following the flatbuffer data.
+    segments: List[bytes] = []
+
+    if extract_constant_segment:
+        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
+            program.constant_buffer, tensor_alignment=constant_tensor_alignment
+        )
+
+        if constant_segment_data:
+            # Append constant_segment_data to the list of segments if non-empty.
+            segments.append(constant_segment_data)
+            # Append constant_segment offset to the list of DataSegments. Added as the
+            # first segment here, but it's not mandatory that the constant segment be
+            # the first one in the file.
+            program.segments.append(
+                DataSegment(offset=0, size=len(constant_segment_data))
+            )
+
+            # Fill in constant_segment offsets and clear the constant buffer; only one of
+            # constant_segment and constant_buffer should be non-empty.
+            program.constant_segment = SubsegmentOffsets(
+                segment_index=0, offsets=constant_segment_offsets
+            )
+            program.constant_buffer = []
+
+    if extract_delegate_segments:
+        _extract_delegate_segments(
+            program, segments=segments, segment_alignment=segment_alignment
+        )
+    return program, segments
 
 
 def _append_segments(
@@ -420,7 +503,8 @@ def _append_segments(
 def serialize_pte_binary(
     program: Program,
     *,
-    extract_segments: bool = False,
+    extract_delegate_segments: bool = False,
+    extract_constant_segment: bool = False,
     segment_alignment: int = 4096,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
@@ -429,13 +513,15 @@ def serialize_pte_binary(
 
     Args:
         program: The Program to serialize.
-        extract_segments: Whether to move certain data blobs from the Program
-            into separate segments, rather than encoding those blobs in the
-            flatbuffer data. When true, will also:
+        extract_delegate_segments: Whether to move delegate data blobs from the
+            Program into separate segments, rather than encoding those blobs
+            in the flatbuffer data. When true, will also:
             - Add an extended header to the output, containing the program size
               and the starting segment offset.
             - Update the Program.segments field with the offsets and lengths
               of each segment.
+        extract_constant_segment: Whether to move the constant data from the Program
+            into a separate segment.
         segment_alignment: Alignment in bytes. The starting offset of each
             segment will be aligned to this value in the output data.
         constant_tensor_alignment: If provided, the minimum alignment of tensor
@@ -447,12 +533,21 @@ def serialize_pte_binary(
     Returns:
         The serialized form of the Program, ready for execution by the runtime.
     """
+    # Default tensor alignment.
+    if constant_tensor_alignment is None:
+        constant_tensor_alignment = 16
+
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
-    if extract_segments:
-        # May return a copy of the program to avoid modifying the input.
+
+    # Extract constant segment and delegate segments, if requested.
+    if extract_constant_segment or extract_delegate_segments:
         program, segments = _extract_segments(
-            program=program, segment_alignment=segment_alignment
+            program=program,
+            extract_delegate_segments=extract_delegate_segments,
+            extract_constant_segment=extract_constant_segment,
+            segment_alignment=segment_alignment,
+            constant_tensor_alignment=constant_tensor_alignment,
         )
 
     # Convert to a standard flatbuffer binary.
@@ -461,7 +556,9 @@ def serialize_pte_binary(
         constant_tensor_alignment=constant_tensor_alignment,
         delegate_alignment=delegate_alignment,
     )
-    if not extract_segments:
+
+    # If there are no segments present, do not insert the extended header.
+    if not segments:
         return result.data
 
     # Size of the header to insert. Its size is padded to the largest

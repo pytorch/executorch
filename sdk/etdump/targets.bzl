@@ -35,7 +35,7 @@ def generate_schema_header_flatcc(rule_name, srcs, headers, default_headers):
             "-o ${OUT}",
             "${SRCS}",
             # Let our infra know that the file was generated.
-            " ".join(["&& echo '// @''generated' >> ${OUT}/" + header for header in headers]),
+            " ".join(["&& echo // @" + "generated >> ${OUT}/" + header for header in headers]),
         ]),
     )
 
@@ -99,6 +99,10 @@ def define_common_targets():
             "emitter.h",
         ],
         exported_external_deps = ["flatccrt"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     for aten_mode in (True, False):

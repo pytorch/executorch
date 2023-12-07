@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import json
 import os
 import sys
 from enum import IntEnum
@@ -213,7 +214,14 @@ def main(args: List[Any]) -> None:
     )
     parser.add_argument(
         "--root_ops",
-        help="A comma separated list of root operators used by the model",
+        help=("A comma separated list of root operators used by the model"),
+        required=False,
+    )
+    parser.add_argument(
+        "--ops_dict",
+        help=(
+            "A json object containing operators and their associated dtype and dim order"
+        ),
         required=False,
     )
     parser.add_argument(
@@ -229,6 +237,7 @@ def main(args: List[Any]) -> None:
         options.model_file_path
         or options.ops_schema_yaml_path
         or options.root_ops
+        or options.ops_dict
         or options.include_all_operators
     ), "Need to provide either model_file_path or ops_schema_yaml_path or root_ops or include_all_operators."
     op_set = set()
@@ -239,6 +248,14 @@ def main(args: List[Any]) -> None:
         et_kernel_metadata = merge_et_kernel_metadata(
             et_kernel_metadata, {op: ["default"] for op in op_set}
         )
+    if options.ops_dict:
+        ops_and_metadata = json.loads(options.ops_dict)
+        for op, metadata in ops_and_metadata.items():
+            op_set.update({op})
+            op_metadata = metadata if len(metadata) > 0 else ["default"]
+            et_kernel_metadata = merge_et_kernel_metadata(
+                et_kernel_metadata, {op: op_metadata}
+            )
     if options.model_file_path:
         assert os.path.isfile(
             options.model_file_path

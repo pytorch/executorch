@@ -136,12 +136,10 @@ EventTracerEntry ETDumpGen::start_profiling_delegate(
 
 void ETDumpGen::end_profiling_delegate(
     EventTracerEntry event_tracer_entry,
-    const char* metadata) {
+    const void* metadata,
+    size_t metadata_len) {
   et_timestamp_t end_time = et_pal_current_ticks();
   check_ready_to_add_events();
-
-  int64_t string_id_metadata =
-      metadata == nullptr ? -1 : create_string_entry(metadata);
 
   // Start building the ProfileEvent entry.
   etdump_ProfileEvent_start(&builder);
@@ -160,12 +158,9 @@ void ETDumpGen::end_profiling_delegate(
     etdump_ProfileEvent_delegate_debug_id_str_add(
         &builder, event_tracer_entry.event_id);
   }
-  // String metadata is optional and if a nullptr is passed in then we don't
-  // add anything.
-  if (string_id_metadata != -1) {
-    etdump_ProfileEvent_delegate_debug_metadata_add(
-        &builder, string_id_metadata);
-  }
+  flatbuffers_uint8_vec_ref_t vec_ref = flatbuffers_uint8_vec_create_pe(
+      &builder, (const uint8_t*)metadata, metadata_len);
+  etdump_ProfileEvent_delegate_debug_metadata_add(&builder, vec_ref);
   etdump_ProfileEvent_ref_t id = etdump_ProfileEvent_end(&builder);
   etdump_RunData_events_push_start(&builder);
   etdump_Event_profile_event_add(&builder, id);
@@ -177,14 +172,13 @@ void ETDumpGen::log_profiling_delegate(
     DebugHandle delegate_debug_index,
     et_timestamp_t start_time,
     et_timestamp_t end_time,
-    const char* metadata) {
+    const void* metadata,
+    size_t metadata_len) {
   ET_CHECK_MSG(
       (name == nullptr) ^ (delegate_debug_index == -1),
       "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
   check_ready_to_add_events();
   int64_t string_id = name != nullptr ? create_string_entry(name) : -1;
-  int64_t string_id_metadata =
-      metadata == nullptr ? -1 : create_string_entry(metadata);
   etdump_ProfileEvent_start(&builder);
   etdump_ProfileEvent_start_time_add(&builder, start_time);
   etdump_ProfileEvent_end_time_add(&builder, end_time);
@@ -196,10 +190,9 @@ void ETDumpGen::log_profiling_delegate(
   } else {
     etdump_ProfileEvent_delegate_debug_id_str_add(&builder, string_id);
   }
-  if (string_id_metadata != -1) {
-    etdump_ProfileEvent_delegate_debug_metadata_add(
-        &builder, string_id_metadata);
-  }
+  flatbuffers_uint8_vec_ref_t vec_ref = flatbuffers_uint8_vec_create_pe(
+      &builder, (const uint8_t*)metadata, metadata_len);
+  etdump_ProfileEvent_delegate_debug_metadata_add(&builder, vec_ref);
   etdump_ProfileEvent_ref_t id = etdump_ProfileEvent_end(&builder);
   etdump_RunData_events_push_start(&builder);
   etdump_Event_profile_event_add(&builder, id);
@@ -327,12 +320,11 @@ size_t ETDumpGen::copy_tensor_to_debug_buffer(exec_aten::Tensor tensor) {
   }
   uint8_t* offset_ptr =
       alignPointer(debug_buffer.data() + debug_buffer_offset, 64);
+  debug_buffer_offset = (offset_ptr - debug_buffer.data()) + tensor.nbytes();
   ET_CHECK_MSG(
-      (((size_t)(offset_ptr - debug_buffer.data()) + tensor.nbytes()) <=
-       debug_buffer.size()),
+      debug_buffer_offset <= debug_buffer.size(),
       "Ran out of space to store intermediate outputs.");
   memcpy(offset_ptr, tensor.const_data_ptr(), tensor.nbytes());
-  debug_buffer_offset += tensor.nbytes();
   return (size_t)(offset_ptr - debug_buffer.data());
 }
 

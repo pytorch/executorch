@@ -304,16 +304,12 @@ def make_alloc_node(
 class ToOutVarPass(PassBase):
     def __init__(self, ignore_to_out_var_failure: bool = False) -> None:
         self.ignore_to_out_var_failure = ignore_to_out_var_failure
-        self.missing_out_vars: Set[str] = set()
-
-    def ensures(self, graph_module: torch.fx.GraphModule) -> None:
-        if (not self.ignore_to_out_var_failure) and len(self.missing_out_vars) > 0:
-            raise RuntimeError(f"Missing out variants: {self.missing_out_vars}")
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         """
         Converts all of the functions to contain an out variant if it does not exist
         """
+        missing_out_vars: Set[str] = set()
 
         def get_submodule(node: torch.fx.Node) -> torch.fx.GraphModule:
             assert node.op == "get_attr"
@@ -372,7 +368,7 @@ class ToOutVarPass(PassBase):
                 logging.info(
                     f"Failed converting '{target}' to its out variant with error: '{e}'"
                 )
-                self.missing_out_vars.add(op_name)
+                missing_out_vars.add(op_name)
                 continue
 
             assert out_var_target
@@ -418,6 +414,8 @@ class ToOutVarPass(PassBase):
             node.target = out_var_target
             node.kwargs = out_var_kwargs
 
+        if (not self.ignore_to_out_var_failure) and len(missing_out_vars) > 0:
+            raise RuntimeError(f"Missing out variants: {missing_out_vars}")
         return PassResult(graph_module, True)
 
 

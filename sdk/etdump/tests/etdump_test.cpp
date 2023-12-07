@@ -393,28 +393,33 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
     etdump_gen[i]->create_event_block("test_block");
 
     // Event 0
-    etdump_gen[i]->log_profiling_delegate(nullptr, 276, 1, 2, nullptr);
+    etdump_gen[i]->log_profiling_delegate(nullptr, 276, 1, 2, nullptr, 0);
     // Event 1
-    etdump_gen[i]->log_profiling_delegate(nullptr, 278, 1, 2, "test_metadata");
+    const char* metadata = "test_metadata";
+    etdump_gen[i]->log_profiling_delegate(
+        nullptr, 278, 1, 2, metadata, strlen(metadata) + 1);
     EventTracerEntry entry = etdump_gen[i]->start_profiling_delegate(
         "test_event", static_cast<torch::executor::DebugHandle>(-1));
     EXPECT_NE(entry.delegate_event_id_type, DelegateDebugIdType::kNone);
     // Event 2
-    etdump_gen[i]->end_profiling_delegate(entry, "test_metadata");
+    etdump_gen[i]->end_profiling_delegate(
+        entry, metadata, strlen(metadata) + 1);
     // Event 3
     etdump_gen[i]->log_profiling_delegate(
         "test_event",
         static_cast<torch::executor::DebugHandle>(-1),
         1,
         2,
-        nullptr);
+        nullptr,
+        0);
     // Event 4
     etdump_gen[i]->log_profiling_delegate(
         "test_event",
         static_cast<torch::executor::DebugHandle>(-1),
         1,
         2,
-        "test_metadata");
+        metadata,
+        strlen(metadata) + 1);
 
     // Only a valid name or delegate debug index should be passed in. If valid
     // entries are passed in for both then the test should assert out.
@@ -422,7 +427,8 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         etdump_gen[i]->start_profiling_delegate("test_event", 1),
         "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
     ET_EXPECT_DEATH(
-        etdump_gen[i]->log_profiling_delegate("test_event", 1, 1, 2, nullptr),
+        etdump_gen[i]->log_profiling_delegate(
+            "test_event", 1, 1, 2, nullptr, 0),
         "Only name or delegate_debug_index can be valid. Check DelegateMappingBuilder documentation for more details.");
     ET_EXPECT_DEATH(
         etdump_gen[i]->end_profiling(entry),
@@ -456,11 +462,11 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         etdump_ProfileEvent_delegate_debug_id_int(
             etdump_Event_profile_event(event)),
         276);
-    flatbuffers_string_t debug_metadata_name =
+    flatbuffers_uint8_vec_t debug_metadata_name =
         etdump_ProfileEvent_delegate_debug_metadata(
             etdump_Event_profile_event(event));
     // Event 0 should have an empty delegate_debug_metadata string.
-    EXPECT_EQ(debug_metadata_name, nullptr);
+    EXPECT_EQ(flatbuffers_uint8_vec_len(debug_metadata_name), 0);
 
     // Event 1
     event = etdump_Event_vec_at(event_vec, 1);
@@ -473,7 +479,9 @@ TEST_F(ProfilerETDumpTest, LogDelegateEvents) {
         etdump_Event_profile_event(event));
     // Check for the correct delegate_debug_metadata string
     EXPECT_EQ(
-        std::string(debug_metadata_name, strlen(debug_metadata_name)),
+        std::string(
+            (char*)debug_metadata_name,
+            flatbuffers_uint8_vec_len(debug_metadata_name) - 1),
         "test_metadata");
 
     // Event 2
