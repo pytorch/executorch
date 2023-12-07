@@ -23,7 +23,7 @@ def main() -> None:
         help="Provide an optional ETRecord file path.",
     )
     parser.add_argument(
-        "--buffer_path",
+        "--debug_buffer_path",
         required=False,
         help="Provide an optional buffer file path.",
     )
@@ -34,7 +34,7 @@ def main() -> None:
     inspector = Inspector(
         etdump_path=args.etdump_path,
         etrecord=args.etrecord_path,
-        buffer_path=args.buffer_path,
+        debug_buffer_path=args.debug_buffer_path,
     )
     inspector.print_data_tabular()
     if args.compare_results:
