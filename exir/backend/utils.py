@@ -245,7 +245,8 @@ class DelegateMappingBuilder:
 
     def insert_delegate_mapping_entry(
         self,
-        nodes: Union[Node, List[Node]],
+        nodes: Optional[Union[Node, List[Node]]] = None,
+        handles: Optional[Union[int, List[int]]] = None,
         identifier: Optional[Union[int, str]] = None,
     ) -> Union[int, str]:
         """
@@ -260,8 +261,11 @@ class DelegateMappingBuilder:
 
         Args:
             nodes (Union[Node, List[Node]]): A (list of) Node(s)
+            handles (Union[int, List[int]]): A (list of) debug handle(s)
             identifier (Optional[Union[int, str]]):
                 Debug identifier corresponding to the Node(s)
+
+        Note: Exactly one of nodes and handles must be provided
 
         Returns:
             Union[int, str]:
@@ -279,6 +283,12 @@ class DelegateMappingBuilder:
                 "This delegate debug identifier was already inserted. Duplicate delegate debug identifiers are not allowed."
             )
 
+        # Check for exactly one of nodes and handles being populated
+        if not ((nodes is not None) ^ (handles is not None)):
+            raise Exception(
+                "Only one of nodes or handles must be provided. Either both were provided or neither were provided. Failed to add or update entry."
+            )
+
         # Resolve Identifier
         if identifier is None:
             if self._generated_identifiers:
@@ -289,13 +299,18 @@ class DelegateMappingBuilder:
                     "No identifier provided. Failed to add or update entry."
                 )
 
-        # Get all debug handles found in the nodes
-        # Note that missing debug handles are not surfaced
-        new_debug_handles = {
-            handle
-            for node in (nodes if isinstance(nodes, List) else [nodes])
-            if (handle := node.meta.get("debug_handle")) is not None
-        }
+        if nodes is not None:
+            # Get all debug handles found in the nodes
+            # Note that missing debug handles are not surfaced
+            new_debug_handles = {
+                handle
+                for node in (nodes if isinstance(nodes, List) else [nodes])
+                if (handle := node.meta.get("debug_handle")) is not None
+            }
+        else:
+            new_debug_handles = (
+                set(handles) if isinstance(handles, (tuple, List)) else {handles}
+            )
 
         # pyre-ignore Warning from Union[int, st] keys
         self._debug_handle_map[identifier].update(new_debug_handles)
