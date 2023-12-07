@@ -44,7 +44,7 @@ class TestDelegate(unittest.TestCase):
         )
 
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            return torch.ops.executorch_call_delegate(lowered_module, x, y)
+            return torch.ops.higher_order.executorch_call_delegate(lowered_module, x, y)
 
         orig_res = f(*inputs)
         gm = exir.capture(
@@ -55,7 +55,7 @@ class TestDelegate(unittest.TestCase):
             ),
         )
         FileCheck().check("lowered_module_0").check(
-            "torch.ops.executorch_call_delegate"
+            "torch.ops.higher_order.executorch_call_delegate"
         ).run(gm.exported_program.graph_module.code)
         self.assertTrue(torch.allclose(orig_res, gm(*inputs)))
 
@@ -77,7 +77,7 @@ class TestDelegate(unittest.TestCase):
         # Check that there exists a call_delegate, representing the call to the
         # delegated function
         FileCheck().check("lowered_module_0").check(
-            "torch.ops.executorch_call_delegate"
+            "torch.ops.higher_order.executorch_call_delegate"
         ).run(graph_module.code)
 
         # Check that there does not exist an add node (from the non-delegated
@@ -90,7 +90,7 @@ class TestDelegate(unittest.TestCase):
         for node in graph_module.graph.nodes:
             if (
                 node.op == "call_function"
-                and node.target == torch.ops.executorch_call_delegate
+                and node.target == torch.ops.higher_order.executorch_call_delegate
             ):
                 # Check that the first argument is the lowered backend module
                 # (which we got from a getattr)

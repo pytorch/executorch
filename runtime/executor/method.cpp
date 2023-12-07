@@ -905,6 +905,8 @@ Error Method::execute_instruction() {
       (size_t)instructions->size());
 
   auto instruction = instructions->Get(step_state_.instr_idx);
+  size_t next_instr_idx = step_state_.instr_idx + 1;
+  Error err = Error::Ok;
   switch (instruction->instr_args_type()) {
     case executorch_flatbuffer::InstructionArguments::KernelCall: {
       EXECUTORCH_SCOPE_PROF("OPERATOR_CALL");
@@ -915,7 +917,7 @@ Error Method::execute_instruction() {
       KernelRuntimeContext context(event_tracer_);
       auto args = chain.argument_lists_[step_state_.instr_idx];
       chain.kernels_[step_state_.instr_idx](context, args.data());
-      Error err = context.failure_state();
+      err = context.failure_state();
       if (err != Error::Ok) {
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
         auto op = serialization_plan_->operators()->Get(op_index);
@@ -937,7 +939,6 @@ Error Method::execute_instruction() {
         // TODO(T153804650): Consider logging the EValues to help with
         // debugging. This is a failure path, and it doesn't matter if it's a
         // little slow. Do the same for DelegateCall errors.
-        return err;
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::DelegateCall: {
@@ -955,7 +956,7 @@ Error Method::execute_instruction() {
           n_delegate_,
           step_state_.instr_idx);
       BackendExecutionContext backend_execution_context(event_tracer_);
-      Error err = delegates_[delegate_idx].Execute(
+      err = delegates_[delegate_idx].Execute(
           backend_execution_context,
           chain.argument_lists_[step_state_.instr_idx].data());
       if (err != Error::Ok) {
@@ -964,8 +965,21 @@ Error Method::execute_instruction() {
             "CALL_DELEGATE execute failed at instruction %zu: 0x%" PRIx32,
             step_state_.instr_idx,
             static_cast<uint32_t>(err));
-        return err;
       }
+
+      // Log all the arguments of the delegate call. Ideally we'd only like to
+      // log the outputs of the delegate, but currently we cannot know from the
+      // arguments which are the inputs and which are the outputs, so we just
+      // log everything. This will be changed in the future when the inputs and
+      // ouputs are separate lists.
+#ifdef ET_EVENT_TRACER_ENABLED
+      for (size_t i = 0;
+           i < chain.argument_lists_[step_state_.instr_idx].size();
+           i++) {
+        EValue* arg = chain.argument_lists_[step_state_.instr_idx].data()[i];
+        internal::event_tracer_log_evalue(event_tracer_, *arg);
+      }
+#endif
     } break;
     case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
@@ -974,8 +988,7 @@ Error Method::execute_instruction() {
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
       bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
       if (!jf_result) {
-        step_state_.instr_idx = jf_call->destination_instruction();
-        return Error::Ok;
+        next_instr_idx = jf_call->destination_instruction();
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
@@ -999,8 +1012,14 @@ Error Method::execute_instruction() {
           "Instruction is not supported. %hhu",
           static_cast<uint8_t>(instruction->instr_args_type()));
   }
-  step_state_.instr_idx += 1;
-  return Error::Ok;
+  // Reset the temp allocator for every instruction.
+  if (memory_manager_->temp_allocator() != nullptr) {
+    memory_manager_->temp_allocator()->reset();
+  }
+  if (err == Error::Ok) {
+    step_state_.instr_idx = next_instr_idx;
+  }
+  return err;
 }
 
 Error Method::experimental_reset_execution() {
@@ -1010,6 +1029,20 @@ Error Method::experimental_reset_execution() {
       "Cannot reset until EndOfMethod has been reached.");
   step_state_ = StepState{0, 0};
   return Error::Ok;
+}
+
+// Log all the outputs of this method to the event tracer.
+void Method::log_outputs() {
+#ifdef ET_EVENT_TRACER_ENABLED
+  if (event_tracer_ != nullptr) {
+    if (event_tracer_->event_tracer_debug_level() >=
+        EventTracerDebugLogLevel::kProgramOutputs) {
+      for (size_t i = 0; i < outputs_size(); i++) {
+        internal::event_tracer_log_evalue_output(event_tracer_, get_output(i));
+      }
+    }
+  }
+#endif
 }
 
 Error Method::experimental_step() {
@@ -1053,6 +1086,7 @@ Error Method::experimental_step() {
   if (step_state_.instr_idx == num_instructions) {
     step_state_.instr_idx = 0;
     step_state_.chain_idx += 1;
+    log_outputs();
   }
   return Error::Ok;
 }
@@ -1096,6 +1130,9 @@ Error Method::execute() {
       }
     }
   }
+
+  log_outputs();
+
   // TODO(jakeszwe, dbort): Decide on calling execute back to back without
   // going through the reset api first.
   return experimental_reset_execution();
@@ -1154,6 +1191,10 @@ const EValue& Method::get_output(size_t i) const {
 
 EValue& Method::mutable_output(size_t i) {
   return mutable_value(get_output_index(i));
+}
+
+EventTracer* Method::get_event_tracer() {
+  return event_tracer_;
 }
 
 Method::~Method() {

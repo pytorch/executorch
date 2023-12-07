@@ -17,16 +17,6 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
-        name = "selected_mobile_ops_header_test",
-        srcs = ["selected_mobile_ops_header_test.cpp"],
-        deps = [
-            "//executorch/runtime/core/exec_aten/util:scalar_type_util_TEST_ONLY",
-            "//executorch/runtime/core/portable_type:portable_type",
-        ],
-        preprocessor_flags = ["-DEXECUTORCH_SELECTIVE_BUILD_DTYPE"],
-    )
-
-    runtime.cxx_test(
         name = "tensor_util_test",
         srcs = ["tensor_util_test.cpp"],
         deps = [

@@ -95,8 +95,10 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
     import itertools
 
     from executorch.backends.qualcomm.qnn_quantizer import (
-        _is_annotated,
         get_ptq_per_channel_weight_config,
+    )
+    from executorch.backends.qualcomm.qnn_quantizer_utils import (
+        _is_annotated,
         QUANT_ANNOTATION_KEY,
     )
     from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation
@@ -235,7 +237,7 @@ if __name__ == "__main__":
         (inputs[0],),
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs,
+        [(input,) for input in inputs],
         custom_annotations=(annotate_forward,),
     )
     # setup required paths accordingly

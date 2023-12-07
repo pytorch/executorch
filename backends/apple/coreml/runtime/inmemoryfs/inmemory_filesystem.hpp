@@ -13,7 +13,8 @@
 #include <string>
 #include <system_error>
 
-#include "memory_buffer.hpp"
+#include <inmemory_filesystem_metadata.hpp>
+#include <memory_buffer.hpp>
 
 namespace inmemoryfs {
 
@@ -46,6 +47,9 @@ public:
         modificationTime(time(0))
         {}
     };
+    
+    using MetadataReader = std::function<void(const InMemoryFileSystemMetadata&, std::ostream&)>;
+    using MetadataWriter = std::function<std::optional<InMemoryFileSystemMetadata>(std::istream&)>;
     
     /// A class representing an in-memory node. This could either be a file node or a directory node.
     class InMemoryNode {
@@ -245,7 +249,7 @@ public:
     /// @param error   On failure, error is populated with the failure reason.
     /// @retval The `InMemoryFileSystem` instance if the construction succeeded otherwise `nullptr`.
     static std::unique_ptr<InMemoryFileSystem> make(const std::string& path,
-                                                    std::error_code& error);
+                                                    std::error_code& error) noexcept;
     
     /// Serializes the item at the specified path and writes it to the stream.
     ///
@@ -254,24 +258,30 @@ public:
     ///
     /// @param canonical_path  The path components from the root.
     /// @param alignment  The offset alignment where an item is written to the stream.
+    /// @param metadata_writer The function to use when writing the filesystem metadata.
     /// @param ostream   The output stream.
     void serialize(const std::vector<std::string>& canonical_path,
                    size_t alignment,
-                   std::ostream& ostream);
+                   const MetadataReader& metadata_writer,
+                   std::ostream& ostream) const noexcept;
     
     /// Computes the size of the buffer that would be needed to serialized the item at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
     /// @param alignment  The offset alignment where an item is written to the stream.
+    /// @param metadata_writer The function to use when writing the filesystem metadata.
     /// @retval The size of the buffer that will be needed to write the item at the specified path.
     size_t get_serialization_size(const std::vector<std::string>& canonical_path,
-                                  size_t alignment);
+                                  size_t alignment,
+                                  const MetadataReader& metadata_writer) const noexcept;
     
     /// Constructs an `InMemoryFileSystem` instance from the buffer contents.
     ///
     /// @param buffer  The memory buffer.
+    /// @param metadata_reader The function to use when reading the filesystem metadata.
     /// @retval The constructed `InMemoryFileSystem` or `nullptr` if the deserialization failed.
-    static std::unique_ptr<InMemoryFileSystem> make(const std::shared_ptr<MemoryBuffer>& buffer);
+    static std::unique_ptr<InMemoryFileSystem> make(const std::shared_ptr<MemoryBuffer>& buffer,
+                                                    const MetadataWriter& metadata_reader) noexcept;
     
 private:
     const std::unique_ptr<InMemoryNode> root_;

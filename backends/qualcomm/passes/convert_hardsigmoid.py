@@ -65,7 +65,7 @@ class ConvertHardsigmoid(ExportPass):
                         else torch.ops.aten.hardswish.default
                     )
                     hardswish_node = graph.create_node(
-                        "call_function", hardswish_op, tuple(input_node)
+                        "call_function", hardswish_op, (input_node,)
                     )
                     with graph.inserting_after(hardswish_node):
                         # if op came from quantization capture, the hardswish node
@@ -88,7 +88,7 @@ class ConvertHardsigmoid(ExportPass):
                             div_node = graph.create_node(
                                 "call_function",
                                 div_op,
-                                tuple(hardswish_node, input_node),
+                                (hardswish_node, input_node),
                             )
                             users = output_node.users.copy()
                             for user in users:

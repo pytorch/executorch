@@ -18,8 +18,8 @@ MODEL_NAME_TO_OPTIONS = {
     "add": XNNPACKOptions(True, True),
     "add_mul": XNNPACKOptions(True, True),
     "dl3": XNNPACKOptions(True, True),
-    "ic3": XNNPACKOptions(False, True),
-    "ic4": XNNPACKOptions(False, True),
+    "ic3": XNNPACKOptions(True, True),
+    "ic4": XNNPACKOptions(True, True),
     "mv2": XNNPACKOptions(True, True),
     "mv3": XNNPACKOptions(True, True),
     "resnet18": XNNPACKOptions(True, True),
@@ -27,7 +27,7 @@ MODEL_NAME_TO_OPTIONS = {
     "vit": XNNPACKOptions(False, True),
     "w2l": XNNPACKOptions(False, True),
     "edsr": XNNPACKOptions(True, True),
-    "mobilebert": XNNPACKOptions(True, False),
+    "mobilebert": XNNPACKOptions(False, True),
 }
 
 

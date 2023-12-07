@@ -6,16 +6,11 @@
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
+
 import torch
-from executorch.backends.qualcomm.builders.node_visitor import (
-    NodeVisitor,
-    register_node_visitor,
-)
-from executorch.backends.qualcomm.utils.qnn_constants import (
-    OpResizeBilinear,
-    QNN_OP_PACKAGE_NAME_QTI_AISW,
-)
-from executorch.backends.qualcomm.utils.utils import get_input_node
+
+from .node_visitor import NodeVisitor, register_node_visitor
+from .qnn_constants import OpResizeBilinear, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
@@ -30,16 +25,16 @@ class ResizeBilinear(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        input_node = get_input_node(node, 0)
-        input_tensor, use_memo = self.get_tensor_shape(input_node, node)
+        input_node = node.args[0]
+        input_tensor = self.get_tensor(input_node, node)
         input_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers if use_memo else {},
+            nodes_to_wrappers,
         )
 
-        output_tensor, _ = self.get_tensor_shape(node, node)
+        output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
             node,
             output_tensor,

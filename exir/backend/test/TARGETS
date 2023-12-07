@@ -277,3 +277,23 @@ python_unittest(
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
+
+python_unittest(
+    name = "test_partitioner",
+    srcs = [
+        "test_partitioner.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:backend_details",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_partitioner",
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_preprocess",
+        "//executorch/exir/tests:models",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+)

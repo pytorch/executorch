@@ -15,13 +15,11 @@ from typing import List
 from unittest.mock import patch
 
 from executorch.exir import ExportedProgram
+from executorch.sdk import generate_etrecord, parse_etrecord
 from executorch.sdk.debug_format.et_schema import OperatorNode
-from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 from executorch.sdk.etrecord.tests.etrecord_test import TestETRecord
 
-from executorch.sdk.inspector import inspector
-
-from executorch.sdk.inspector.inspector import Event, EventBlock, Inspector, PerfData
+from executorch.sdk.inspector import _inspector, Event, EventBlock, Inspector, PerfData
 
 
 OP_TYPE = "aten::add"
@@ -54,13 +52,13 @@ class TestInspector(unittest.TestCase):
     def test_inspector_constructor(self):
         # Create a context manager to patch functions called by Inspector.__init__
         with patch.object(
-            inspector, "parse_etrecord", return_value=None
+            _inspector, "parse_etrecord", return_value=None
         ) as mock_parse_etrecord, patch.object(
-            inspector, "gen_etdump_object", return_value=None
+            _inspector, "gen_etdump_object", return_value=None
         ) as mock_gen_etdump, patch.object(
             EventBlock, "_gen_from_etdump"
         ) as mock_gen_from_etdump, patch.object(
-            inspector, "gen_graphs_from_etrecord"
+            _inspector, "gen_graphs_from_etrecord"
         ) as mock_gen_graphs_from_etrecord:
             # Call the constructor of Inspector
             Inspector(
@@ -77,10 +75,14 @@ class TestInspector(unittest.TestCase):
 
     def test_inspector_print_data_tabular(self):
         # Create a context manager to patch functions called by Inspector.__init__
-        with patch.object(inspector, "parse_etrecord", return_value=None), patch.object(
-            inspector, "gen_etdump_object", return_value=None
-        ), patch.object(EventBlock, "_gen_from_etdump"), patch.object(
-            inspector, "gen_graphs_from_etrecord"
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
+        ), patch.object(
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
         ):
             # Call the constructor of Inspector
             inspector_instance = Inspector(
@@ -183,12 +185,16 @@ class TestInspector(unittest.TestCase):
 
     def test_inspector_get_exported_program(self):
         # Create a context manager to patch functions called by Inspector.__init__
-        with patch.object(inspector, "parse_etrecord", return_value=None), patch.object(
-            inspector, "gen_etdump_object", return_value=None
-        ), patch.object(EventBlock, "_gen_from_etdump"), patch.object(
-            inspector, "gen_graphs_from_etrecord"
+        with patch.object(
+            _inspector, "parse_etrecord", return_value=None
         ), patch.object(
-            inspector, "create_debug_handle_to_op_node_mapping"
+            _inspector, "gen_etdump_object", return_value=None
+        ), patch.object(
+            EventBlock, "_gen_from_etdump"
+        ), patch.object(
+            _inspector, "gen_graphs_from_etrecord"
+        ), patch.object(
+            _inspector, "create_debug_handle_to_op_node_mapping"
         ):
             # Call the constructor of Inspector
             inspector_instance = Inspector(

@@ -30,7 +30,7 @@ class BackendInitContext final {
   }
 
  private:
-  MemoryAllocator* runtime_allocator_;
+  MemoryAllocator* runtime_allocator_ = nullptr;
 };
 
 } // namespace executor

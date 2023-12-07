@@ -358,10 +358,6 @@ int main(int argc, char** argv) {
   HierarchicalAllocator non_const_allocator(
       non_const_allocators.size(), non_const_allocators.data());
 
-  // Allocator for bundled input.
-  MemoryAllocator bundled_input_allocator{
-      MemoryAllocator(kBundledAllocatorPoolSize, bundled_allocator_pool)};
-
   // The constant allocator is not currently used. Please initialize with a
   // zero-sized allocator.
   MemoryAllocator const_allocator{MemoryAllocator(0, nullptr)};
@@ -406,8 +402,6 @@ int main(int argc, char** argv) {
     status = torch::executor::bundled_program::LoadBundledInput(
         *method,
         file_data->data(),
-        &bundled_input_allocator,
-        method_name,
         FLAGS_testset_idx);
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -489,8 +483,6 @@ int main(int argc, char** argv) {
     status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
         *method,
         file_data->data(),
-        &bundled_input_allocator,
-        method_name,
         FLAGS_testset_idx,
         rtol,
         atol

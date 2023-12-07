@@ -122,3 +122,13 @@ def broadcastShapes(shape1, shape2):
             ), "broadcastShape::broadcast shape mismatch"
 
     return broadcasted_shape
+
+
+""" TOSA reshape returns a tensor with the same type/values as the input.
+    No data conversion happens during a reshape operation. """
+
+
+def buildReshape(tosa_fb, input_name, new_shape, output_name):
+    attr = ts.TosaSerializerAttribute()
+    attr.ReshapeAttribute(new_shape)
+    tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)

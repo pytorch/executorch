@@ -36,6 +36,7 @@ def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
         run_data=[
             flatcc.RunData(
                 name="test_block",
+                bundled_input_index=-1,
                 allocators=[
                     flatcc.Allocator(
                         name="test_allocator",
@@ -45,11 +46,11 @@ def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
                     flatcc.Event(
                         profile_event=flatcc.ProfileEvent(
                             name="test_profile_event",
-                            chain_id=1,
+                            chain_index=1,
                             instruction_id=1,
                             delegate_debug_id_str="",
                             delegate_debug_id_int=-1,
-                            delegate_debug_metadata="",
+                            delegate_debug_metadata=bytes(),
                             start_time=1001,
                             end_time=2002,
                         ),
@@ -59,11 +60,11 @@ def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
                     flatcc.Event(
                         profile_event=flatcc.ProfileEvent(
                             name="test_profile_event_delegated",
-                            chain_id=1,
+                            chain_index=1,
                             instruction_id=1,
                             delegate_debug_id_str="",
                             delegate_debug_id_int=13,
-                            delegate_debug_metadata="",
+                            delegate_debug_metadata=bytes(),
                             start_time=1001,
                             end_time=2002,
                         ),
@@ -82,14 +83,22 @@ def get_sample_etdump_flatcc() -> flatcc.ETDumpFlatCC:
                         profile_event=None,
                         allocation_event=None,
                         debug_event=flatcc.DebugEvent(
-                            chain_idx=1,
-                            debug_handle=0,
-                            debug_entries=[
-                                flatcc.Value(
-                                    val=flatcc.ValueType.TENSOR.value,
+                            chain_index=1,
+                            instruction_id=0,
+                            debug_entry=flatcc.Value(
+                                val=flatcc.ValueType.TENSOR.value,
+                                tensor=flatcc.Tensor(
+                                    scalar_type=flatcc.ScalarType.INT,
+                                    sizes=[1],
+                                    strides=[1],
                                     offset=12345,
-                                )
-                            ],
+                                ),
+                                int_value=flatcc.Int(1),
+                                float_value=flatcc.Float(1.0),
+                                double_value=flatcc.Double(1.0),
+                                bool_value=flatcc.Bool(False),
+                                output=flatcc.Bool(True),
+                            ),
                         ),
                     ),
                 ],

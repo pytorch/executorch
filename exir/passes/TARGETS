@@ -27,7 +27,6 @@ python_library(
         ":sym_shape_eval_pass",
         ":sym_to_tensor_pass",
         "//caffe2:torch",
-        "//caffe2/functorch:functorch_src",
         "//executorch/exir:common",
         "//executorch/exir:control_flow",
         "//executorch/exir:delegate",
@@ -74,6 +73,16 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:pass_base",
+    ],
+)
+
+python_library(
+    name = "constant_prop_pass",
+    srcs = [
+        "constant_prop_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 

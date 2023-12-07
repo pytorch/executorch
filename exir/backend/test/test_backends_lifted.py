@@ -9,6 +9,7 @@ from typing import Dict, List
 
 import executorch.exir as exir
 import torch
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import LoweredBackendModule, to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
@@ -61,23 +62,19 @@ from torch.ao.quantization.quantize_fx import (
     _convert_to_reference_decomposed_fx,
     prepare_fx,
 )
-from torch.export import ExportedProgram
+from torch.export import export, ExportedProgram
 from torch.testing import FileCheck
 
 
-def get_testing_capture_config():
-    return exir.CaptureConfig(enable_aot=True, _unlift=False)
-
-
 def vary_segments(test_method):
-    """A decorator that calls the test method with `extract_segments` set to
+    """A decorator that calls the test method with `extract_delegate_segments` set to
     True and False.
 
     Decorated test methods must expect a boolean parameter named
-    `extract_segments`, and they should pass that value to to_executorch() like:
+    `extract_delegate_segments`, and they should pass that value to to_executorch() like:
 
         m.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+            config=exir.ExecutorchBackendConfig(extract_delegate_segments=extract_delegate_segments)
         )
 
     This will cause the delegate data blobs to be extracted from the program and
@@ -86,12 +83,12 @@ def vary_segments(test_method):
     """
 
     def wrapper(self):
-        for extract_segments in [False, True]:
+        for extract_delegate_segments in [False, True]:
             # subTest will create a different top-level test entry for each
             # value, whose full names have a suffix like
-            # "(extract_segments=True)".
-            with self.subTest(extract_segments=extract_segments):
-                test_method(self, extract_segments=extract_segments)
+            # "(extract_delegate_segments=True)".
+            with self.subTest(extract_delegate_segments=extract_delegate_segments):
+                test_method(self, extract_delegate_segments=extract_delegate_segments)
 
     return wrapper
 
@@ -132,22 +129,20 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
         expected_res = sin_module(*model_inputs)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
 
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program, []
+            "BackendWithCompilerDemo", edgeir_m.exported_program(), []
         )
         new_res = lowered_sin_module(*model_inputs)
 
         self.assertTrue(torch.allclose(new_res, expected_res))
 
         # TODO(tkaruturi): emitting single LoweredBackendModule
-        # program = exir.capture(graph_module).to_edge().to_exectorch().program
+        # program = to_edge(export(graph_module)).to_exectorch()._emitter_output.program
 
     @vary_segments
-    def test_backend_with_compiler(self, extract_segments: bool):
+    def test_backend_with_compiler(self, extract_delegate_segments: bool):
         class SinModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -159,13 +154,11 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program(), compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -181,14 +174,12 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
-            .to_edge()
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
             )
         )
-        graph_module = exec_prog.dump_graph_module()
+        graph_module = exec_prog.exported_program().graph_module
 
         # Check that there is not an aten.sin node.
         self.assertTrue(
@@ -198,7 +189,9 @@ class TestBackends(unittest.TestCase):
 
         # Check that there exists a call_delegate, representing the call to the
         # delegated function
-        FileCheck().check("torch.ops.executorch_call_delegate").run(graph_module.code)
+        FileCheck().check("torch.ops.higher_order.executorch_call_delegate").run(
+            graph_module.code
+        )
         lowered_submodules = get_lowered_submodules(graph_module)
         self.assertEqual(len(lowered_submodules), 1)
 
@@ -207,7 +200,7 @@ class TestBackends(unittest.TestCase):
                 # Check that first arg is lowered_module_{unique_id}
                 self.assertEqual(node.args[0].target, "lowered_module_0")
 
-        program = exec_prog.program
+        program = exec_prog._emitter_output.program
 
         # Check the program can be printed
         print_program(program)
@@ -243,7 +236,7 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_lowered_add_mul(self, extract_segments: bool):
+    def test_lowered_add_mul(self, extract_delegate_segments: bool):
         class AddMulModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -255,13 +248,13 @@ class TestBackends(unittest.TestCase):
 
         add_mul_module = AddMulModule()
         model_inputs = (torch.ones(2, 2), 2 * torch.ones(2, 2), 3 * torch.ones(2, 2))
-        edge_graph_module = exir.capture(
-            add_mul_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edge_graph_module = to_edge(export(add_mul_module, model_inputs))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_add_mul = to_backend(
-            "BackendWithCompilerDemo", edge_graph_module.exported_program, compile_specs
+            "BackendWithCompilerDemo",
+            edge_graph_module.exported_program(),
+            compile_specs,
         )
 
         class CompositeModule(torch.nn.Module):
@@ -276,13 +269,9 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
-            .to_edge(
-                exir.EdgeCompileConfig(_use_edge_ops=True, _check_ir_validity=True)
-            )
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments)
+        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
             )
         )
         buff = exec_prog.buffer
@@ -298,7 +287,7 @@ class TestBackends(unittest.TestCase):
             torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
         )
 
-    def run_model_in_unsupported_backend(self, extract_segments: bool):
+    def run_model_in_unsupported_backend(self, extract_delegate_segments: bool):
         class SinModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -309,13 +298,11 @@ class TestBackends(unittest.TestCase):
         sin_module = SinModule()
         # the backend only  accepts shape <= 4
         model_inputs = (torch.ones(6),)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program(), compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -331,12 +318,10 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
-            .to_edge()
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
-            )
+        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         buff = exec_prog.buffer
@@ -346,15 +331,19 @@ class TestBackends(unittest.TestCase):
         _load_for_executorch_from_buffer(buff)
 
     @vary_segments
-    def test_backend_with_compiler_out_of_range(self, extract_segments: bool):
+    def test_backend_with_compiler_out_of_range(self, extract_delegate_segments: bool):
         with self.assertRaisesRegex(
             RuntimeError,
             "loading method forward failed with error 0x12",
         ):
-            self.run_model_in_unsupported_backend(extract_segments=extract_segments)
+            self.run_model_in_unsupported_backend(
+                extract_delegate_segments=extract_delegate_segments
+            )
 
     @vary_segments
-    def test_backend_with_compiler_delegate_and_operator(self, extract_segments: bool):
+    def test_backend_with_compiler_delegate_and_operator(
+        self, extract_delegate_segments: bool
+    ):
         # Test includes both delegates and operator
         # import the backend implementation
         from executorch.exir.backend.test.backend_with_compiler_demo import (
@@ -372,13 +361,11 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            "BackendWithCompilerDemo", edgeir_m.exported_program, compile_specs
+            "BackendWithCompilerDemo", edgeir_m.exported_program(), compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -396,15 +383,13 @@ class TestBackends(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
-            .to_edge()
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
-            )
+        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
-        graph_module = exec_prog.dump_graph_module()
-        program = exec_prog.program
+        graph_module = exec_prog.exported_program().graph_module
+        program = exec_prog._emitter_output.program
         buff = exec_prog.buffer
 
         # Check that there is not an aten.sin node.
@@ -415,7 +400,9 @@ class TestBackends(unittest.TestCase):
 
         # Check that there exists a call_delegate op, representing the call to the
         # delegated function
-        FileCheck().check("torch.ops.executorch_call_delegate").run(graph_module.code)
+        FileCheck().check("torch.ops.higher_order.executorch_call_delegate").run(
+            graph_module.code
+        )
 
         for node in graph_module.graph.nodes:
             if node.op == "call_function" and node.target == executorch_call_delegate:
@@ -465,16 +452,14 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
         error_msg = r"call_function aten.cos.default is not supported in backend BackendWithCompilerDemo"
 
         with self.assertRaisesRegex(
             RuntimeError,
             error_msg,
         ):
-            _ = to_backend("BackendWithCompilerDemo", edgeir_m.exported_program, [])
+            _ = to_backend("BackendWithCompilerDemo", edgeir_m.exported_program(), [])
 
     def test_backend_with_compiler_backend_not_found_exception(self):
         class SinModule(torch.nn.Module):
@@ -488,20 +473,20 @@ class TestBackends(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, get_testing_capture_config()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
         error_msg = r"Backend FakeBackendWithCompilerDemo was not found."
 
         with self.assertRaisesRegex(
             NotImplementedError,
             error_msg,
         ):
-            _ = to_backend("FakeBackendWithCompilerDemo", edgeir_m.exported_program, [])
+            _ = to_backend(
+                "FakeBackendWithCompilerDemo", edgeir_m.exported_program(), []
+            )
 
     @vary_segments
     def test_backend_with_compiler_delegate_and_operator_with_two_modules(
-        self, extract_segments: bool
+        self, extract_delegate_segments: bool
     ):
         # the submodule runs in a specific backend. In this example, `BackendWithCompilerDemo` backend
         class LowerableSubModel(torch.nn.Module):
@@ -514,15 +499,13 @@ class TestBackends(unittest.TestCase):
         # sin_module is an nn.Module
         to_be_lowered = LowerableSubModel()
         example_input = (torch.ones(1),)
-        to_be_lowered_exir_submodule = exir.capture(
-            to_be_lowered, example_input, get_testing_capture_config()
-        ).to_edge()
+        to_be_lowered_exir_submodule = to_edge(export(to_be_lowered, example_input))
 
         max_value = example_input[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_module = to_backend(
             "BackendWithCompilerDemo",
-            to_be_lowered_exir_submodule.exported_program,
+            to_be_lowered_exir_submodule.exported_program(),
             compile_specs,
         )
 
@@ -555,12 +538,10 @@ class TestBackends(unittest.TestCase):
         # Verify the input works with eager module
         composite_model(*model_inputs)
 
-        exec_prog = (
-            exir.capture(composite_model, model_inputs, get_testing_capture_config())
-            .to_edge()
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
-            )
+        exec_prog = to_edge(export(composite_model, model_inputs)).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         flatbuffer = exec_prog.buffer
 
@@ -582,7 +563,7 @@ class TestBackends(unittest.TestCase):
 
     @vary_segments
     def test_partition_delegate_graph_with_multiple_patterns(
-        self, extract_segments: bool
+        self, extract_delegate_segments: bool
     ):
         class CompositeModel(torch.nn.Module):
             def __init__(self, _weight):
@@ -616,39 +597,45 @@ class TestBackends(unittest.TestCase):
         composite_m = CompositeModel(3)
         orig_res = composite_m(*inputs)
 
-        traced = exir.capture(
-            composite_m, inputs, get_testing_capture_config()
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        traced = to_edge(
+            export(composite_m, inputs),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
 
-        program_without_delegates = (
-            exir.capture(CompositeModel(3), inputs)
-            .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
-            )
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
-            )
+        program_without_delegates = to_edge(
+            export(CompositeModel(3), inputs),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            ),
+        ).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
         program_with_delegates = traced
-        program_with_delegates.exported_program = to_backend(
-            traced.exported_program, HTAPartitionerMultiplePatternsDemo
+        program_with_delegates = program_with_delegates.to_backend(
+            HTAPartitionerMultiplePatternsDemo()
         )
         program_with_delegates = program_with_delegates.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
-        new_res = program_with_delegates.dump_exported_program()(*inputs)
+        new_res = program_with_delegates.exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         # Check the backend delegate
         self.check_backend_delegate(
-            program=program_with_delegates.program,
-            delegate=program_with_delegates.program.execution_plan[0].delegates[0],
+            program=program_with_delegates._emitter_output.program,
+            delegate=program_with_delegates._emitter_output.program.execution_plan[
+                0
+            ].delegates[0],
             expected_id=QnnBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
@@ -659,7 +646,9 @@ class TestBackends(unittest.TestCase):
             len(
                 [
                     op
-                    for op in program_with_delegates.program.execution_plan[0].operators
+                    for op in program_with_delegates._emitter_output.program.execution_plan[
+                        0
+                    ].operators
                     if op.name == "aten::sub"
                 ]
             ),
@@ -671,7 +660,9 @@ class TestBackends(unittest.TestCase):
             len(
                 [
                     op
-                    for op in program_with_delegates.program.execution_plan[0].operators
+                    for op in program_with_delegates._emitter_output.program.execution_plan[
+                        0
+                    ].operators
                     if op.name == "aten::convolution"
                 ]
             ),
@@ -683,7 +674,7 @@ class TestBackends(unittest.TestCase):
             len(
                 [
                     op
-                    for op in program_without_delegates.program.execution_plan[
+                    for op in program_without_delegates._emitter_output.program.execution_plan[
                         0
                     ].operators
                     if op.name == "aten::convolution"
@@ -692,7 +683,9 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_partition_delegate_graph_with_one_patterns(self, extract_segments: bool):
+    def test_partition_delegate_graph_with_one_patterns(
+        self, extract_delegate_segments: bool
+    ):
         class CompositeModel(torch.nn.Module):
             def __init__(self, _weight):
                 super().__init__()
@@ -725,63 +718,66 @@ class TestBackends(unittest.TestCase):
         composite_m = CompositeModel(3)
         orig_res = composite_m(*inputs)
 
-        traced = exir.capture(
-            composite_m,
-            inputs,
-            get_testing_capture_config(),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True))
+        traced = to_edge(
+            export(composite_m, inputs),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _use_edge_ops=True
+            ),
+        )
 
-        program_without_delegates = (
-            exir.capture(
+        program_without_delegates = to_edge(
+            export(
                 CompositeModel(3),
                 (input_x, input_h, input_c),
-                get_testing_capture_config(),
-            )
-            .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
-            )
-            .to_executorch(
-                config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
-            )
+            ),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False,
+            ),
+        ).to_executorch(
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
         # after this step, part of the graph will be lowered to backend, depending on
         # HTAPartitionerDemo's rule.
         traced_with_delegate = traced
-        traced_with_delegate.exported_program = to_backend(
-            traced.exported_program, HTAPartitionerOnePatternDemo
+        traced_with_delegate = traced_with_delegate.to_backend(
+            HTAPartitionerOnePatternDemo()
         )
 
-        new_res = traced_with_delegate(*inputs)
+        new_res = traced_with_delegate.exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         program_with_delegates = traced_with_delegate.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         # TODO(T143084047): Currently not retraceable
         # Retracing is not needed, but keeping this here to make sure the result
         # of to_backend is retraceable
-        # graph_module_with_delegate = exir.capture(
+        # graph_module_with_delegate = to_edge(export(
         #     traced_with_delegate,
         #     (input_x, input_h, input_c),
-        #     get_testing_capture_config(),
-        # ).to_edge()
+        #
+        # ))
 
         # program_with_delegates = graph_module_with_delegate.to_executorch(
-        #     config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+        #     config=exir.ExecutorchBackendConfig(extract_delegate_segments=extract_delegate_segments),
         # )
 
-        new_res = program_with_delegates.dump_exported_program()(*inputs)
+        new_res = program_with_delegates.exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
         # Check the backend delegate
         self.check_backend_delegate(
-            program=program_with_delegates.program,
-            delegate=program_with_delegates.program.execution_plan[0].delegates[0],
+            program=program_with_delegates._emitter_output.program,
+            delegate=program_with_delegates._emitter_output.program.execution_plan[
+                0
+            ].delegates[0],
             expected_id=QnnBackend.__name__,
             expected_processed=b"imqnncompiled",
         )
@@ -792,7 +788,9 @@ class TestBackends(unittest.TestCase):
             len(
                 [
                     op
-                    for op in program_with_delegates.program.execution_plan[0].operators
+                    for op in program_with_delegates._emitter_output.program.execution_plan[
+                        0
+                    ].operators
                     if op.name == "aten::sub"
                 ]
             ),
@@ -804,7 +802,9 @@ class TestBackends(unittest.TestCase):
             len(
                 [
                     op
-                    for op in program_with_delegates.program.execution_plan[0].operators
+                    for op in program_with_delegates._emitter_output.program.execution_plan[
+                        0
+                    ].operators
                     if op.name == "aten::convolution"
                 ]
             ),
@@ -816,7 +816,7 @@ class TestBackends(unittest.TestCase):
             len(
                 [
                     op
-                    for op in program_without_delegates.program.execution_plan[
+                    for op in program_without_delegates._emitter_output.program.execution_plan[
                         0
                     ].operators
                     if op.name == "aten::convolution"
@@ -825,7 +825,7 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_add_mul_partitioner(self, extract_segments: bool):
+    def test_add_mul_partitioner(self, extract_delegate_segments: bool):
         class Model(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -842,20 +842,20 @@ class TestBackends(unittest.TestCase):
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
         orig_res = m(*inputs)
 
-        ep = exir.capture(m, inputs, get_testing_capture_config()).to_edge()
+        ep = to_edge(export(m, inputs))
         executorch_prog = ep
-        executorch_prog.exported_program = to_backend(
-            ep.exported_program, AddMulPartitionerDemo
-        )
+        executorch_prog = executorch_prog.to_backend(AddMulPartitionerDemo())
         executorch_prog = executorch_prog.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
-        new_res = executorch_prog.dump_graph_module()(*inputs)
+        new_res = executorch_prog.exported_program().graph_module(*inputs)
         self.assertTrue(torch.allclose(new_res[0], orig_res))
 
         counter = 0
-        for node in executorch_prog.dump_graph_module().graph.nodes:
+        for node in executorch_prog.exported_program().graph_module.graph.nodes:
             if node.op == "get_attr":
                 self.assertEqual(node.target, f"lowered_module_{counter}")
                 counter += 1
@@ -873,7 +873,7 @@ class TestBackends(unittest.TestCase):
         )
 
     @vary_segments
-    def test_partitioner_with_attributes(self, extract_segments: bool):
+    def test_partitioner_with_attributes(self, extract_delegate_segments: bool):
         """
         check that parameters that are lowered are correctly moved into the sub
         program, rather than being retained and passed as inputs.
@@ -898,18 +898,18 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)
-        ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
+        ep = to_edge(export(Model(), inputs))
         executorch_prog = ep
-        executorch_prog.exported_program = to_backend(
-            ep.exported_program, AddAttributePartitionerDemo
-        )
+        executorch_prog = executorch_prog.to_backend(AddAttributePartitionerDemo())
         executorch_prog = executorch_prog.to_executorch(
-            config=exir.ExecutorchBackendConfig(extract_segments=extract_segments),
+            config=exir.ExecutorchBackendConfig(
+                extract_delegate_segments=extract_delegate_segments
+            ),
         )
 
         # Check the delegated submodules
         lowered_backends = get_lowered_backend_modules(
-            executorch_prog.dump_graph_module()
+            executorch_prog.exported_program().graph_module
         )
         self.assertEqual(len(lowered_backends), 2)
         for backend in lowered_backends:
@@ -921,7 +921,7 @@ class TestBackends(unittest.TestCase):
 
         executorch_prog.buffer
 
-        new_res = executorch_prog.dump_graph_module()(*inputs)
+        new_res = executorch_prog.exported_program().graph_module(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
     def test_bad_partitioner(self):
@@ -961,9 +961,9 @@ class TestBackends(unittest.TestCase):
                     partition_tags=partition_tags,
                 )
 
-        ep = exir.capture(Model(), inputs, get_testing_capture_config()).to_edge()
+        ep = to_edge(export(Model(), inputs))
         with self.assertRaises(AssertionError):
-            _ = to_backend(ep.exported_program, BadPartitioner)
+            _ = ep.to_backend(BadPartitioner())
 
     def test_quantized_with_delegate(self) -> None:
         torch.ops.load_library(
@@ -986,20 +986,17 @@ class TestBackends(unittest.TestCase):
         )
 
         # fails to trace here
-        converted_linear_gm = exir.capture(
-            converted_linear,
-            example_inputs,
-            exir.CaptureConfig(
-                enable_aot=True,
-                _unlift=True,
+        converted_linear_gm = to_edge(
+            export(
+                converted_linear,
+                example_inputs,
             ),
-        ).to_edge(
-            exir.EdgeCompileConfig(
+            compile_config=exir.EdgeCompileConfig(
                 _check_ir_validity=False,
-            )
+            ),
         )
         FileCheck().check_count("quantize_per_tensor_default", 3).check("addmm").run(
-            converted_linear_gm.exported_program.graph_module.code
+            converted_linear_gm.exported_program().graph_module.code
         )
 
     def test_partition_with_control_flow(self) -> None:
@@ -1023,21 +1020,20 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
-        orig = exir.capture(
-            f,
-            inputs,
-            get_testing_capture_config(),
-        ).to_edge()
-        partitioned = orig
-        partitioned.exported_program = to_backend(
-            orig.exported_program, AddMulPartitionerDemo
+        orig = to_edge(
+            export(
+                f,
+                inputs,
+            )
         )
+        partitioned = orig
+        partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
-        new_res = partitioned(*inputs)
+        new_res = partitioned.exported_program()(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
         toplevel_lowered = get_lowered_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("executorch_exir_dialects_edge__ops_aten_add_Tensor").run(
@@ -1046,7 +1042,7 @@ class TestBackends(unittest.TestCase):
 
         # Toplevel module only has the cond submodules
         partitioned_submodules = get_control_flow_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(partitioned_submodules), 2)
 
@@ -1076,18 +1072,17 @@ class TestBackends(unittest.TestCase):
 
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
-        orig = exir.capture(
-            f,
-            inputs,
-            get_testing_capture_config(),
-        ).to_edge()
-        partitioned = orig
-        partitioned.exported_program = to_backend(
-            orig.exported_program, AddMulPartitionerDemo
+        orig = to_edge(
+            export(
+                f,
+                inputs,
+            )
         )
+        partitioned = orig
+        partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
         toplevel_lowered = get_lowered_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("executorch_exir_dialects_edge__ops_aten_mm_default").run(
@@ -1096,7 +1091,7 @@ class TestBackends(unittest.TestCase):
 
         # Toplevel module only has the map submodule
         partitioned_submodules = get_control_flow_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(partitioned_submodules), 1)
 
@@ -1107,7 +1102,7 @@ class TestBackends(unittest.TestCase):
             map_fn_lowered[0][1].original_module.graph_module.code
         )
 
-        new_res = partitioned(*inputs)
+        new_res = partitioned.exported_program()(*inputs)
 
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
@@ -1149,21 +1144,20 @@ class TestBackends(unittest.TestCase):
         )
 
         orig_res = f(*inputs)
-        orig = exir.capture(
-            f,
-            inputs,
-            get_testing_capture_config(),
-        ).to_edge()
-        partitioned = orig
-        partitioned.exported_program = to_backend(
-            orig.exported_program, AddMulPartitionerDemo
+        orig = to_edge(
+            export(
+                f,
+                inputs,
+            )
         )
+        partitioned = orig
+        partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
-        new_res = partitioned(*inputs)
+        new_res = partitioned.exported_program()(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
         toplevel_lowered = get_lowered_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(toplevel_lowered), 1)
         FileCheck().check("executorch_exir_dialects_edge__ops_aten_mm_default").run(
@@ -1172,7 +1166,7 @@ class TestBackends(unittest.TestCase):
 
         # Toplevel module only has the map submodule
         partitioned_submodules = get_control_flow_submodules(
-            partitioned.exported_program.graph_module
+            partitioned.exported_program().graph_module
         )
         self.assertEqual(len(partitioned_submodules), 1)
 
@@ -1216,9 +1210,9 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
-        edge_prog = exir.capture(f, inputs, get_testing_capture_config()).to_edge()
+        edge_prog = to_edge(export(f, inputs))
         lowered_gm = to_backend(
-            BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
+            BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
 
         class ComposedM(torch.nn.Module):
@@ -1229,8 +1223,8 @@ class TestBackends(unittest.TestCase):
             def forward(self, x: List[torch.Tensor]):
                 return self.lowered(x)
 
-        gm = exir.capture(ComposedM(), inputs, get_testing_capture_config()).to_edge()
-        gm(*inputs)
+        gm = to_edge(export(ComposedM(), inputs))
+        gm.exported_program()(*inputs)
 
     def test_dict_input(self):
         def f(x: Dict[str, torch.Tensor]):
@@ -1238,9 +1232,9 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = exir.capture(f, inputs, get_testing_capture_config()).to_edge()
+        edge_prog = to_edge(export(f, inputs))
         lowered_gm = to_backend(
-            BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
+            BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
 
         class ComposedM(torch.nn.Module):
@@ -1251,5 +1245,5 @@ class TestBackends(unittest.TestCase):
             def forward(self, x: List[torch.Tensor]):
                 return self.lowered(x)
 
-        gm = exir.capture(ComposedM(), inputs, get_testing_capture_config()).to_edge()
-        gm(*inputs)
+        gm = to_edge(export(ComposedM(), inputs))
+        gm.exported_program()(*inputs)

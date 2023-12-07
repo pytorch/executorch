@@ -28,6 +28,26 @@ from executorch.extension.pybindings.portable_lib import (
 )
 from torch.export import export, ExportedProgram
 
+from torch.library import impl, Library
+
+lib = Library("test_op", "DEF")
+
+# Fake a operator for testing.
+# This operator takes two tensors as input and returns the first one.
+lib.define("foo(Tensor self, Tensor other) -> Tensor")
+
+
+@impl(lib, "foo", "CPU")
+def foo(a, b):
+    # do nothing and return a.
+    return a + b
+
+
+@impl(lib, "foo", "Meta")
+def foo_meta(a, b):
+    # do nothing and return a.
+    return torch.empty_like(a)
+
 
 def get_exported_programs() -> Dict[str, ExportedProgram]:
     def forward(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -185,7 +205,7 @@ class TestProgramManagers(unittest.TestCase):
             get_exported_programs(), get_config_methods()
         )
         delegate_manager: EdgeProgramManager = edge_manager.to_backend(
-            AddMulPartitionerDemo
+            AddMulPartitionerDemo()
         )
 
         forward_program = delegate_manager.exported_program("forward")
@@ -224,7 +244,7 @@ class TestProgramManagers(unittest.TestCase):
         self.assertEqual(
             len(
                 delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_segments=True)
+                    ExecutorchBackendConfig(extract_delegate_segments=True)
                 )
                 ._emitter_output.program.execution_plan[0]
                 .delegates
@@ -234,7 +254,7 @@ class TestProgramManagers(unittest.TestCase):
         self.assertEqual(
             len(
                 delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_segments=True)
+                    ExecutorchBackendConfig(extract_delegate_segments=True)
                 )
                 ._emitter_output.program.execution_plan[1]
                 .delegates
@@ -247,7 +267,7 @@ class TestProgramManagers(unittest.TestCase):
             get_exported_programs(), get_config_methods()
         )
         delegate_manager: EdgeProgramManager = edge_manager.to_backend(
-            {"forward": AddMulPartitionerDemo}
+            {"forward": AddMulPartitionerDemo()}
         )
 
         forward_program = delegate_manager.exported_program("forward")
@@ -293,3 +313,37 @@ class TestProgramManagers(unittest.TestCase):
             ),
             1,
         )
+
+    def test_edge_manager_dialect(self):
+        edge_manager: EdgeProgramManager = to_edge(
+            get_exported_programs(), get_config_methods()
+        )
+        self.assertTrue(edge_manager.exported_program().dialect == "EDGE")
+
+    def _test_edge_dialect_verifier(self, callable, validate_ir=True):
+        from executorch.exir import EdgeCompileConfig
+
+        edge_compile_config = EdgeCompileConfig(
+            _check_ir_validity=validate_ir,
+        )
+        # pre-autograd export. eventually this will become torch.export
+        one = torch.ones(1, dtype=torch.float)
+        two = torch.ones(1, dtype=torch.int32)
+        inputs = (
+            one,
+            two,
+        )
+        exported_foo = export(callable, inputs)
+        _ = to_edge(exported_foo, compile_config=edge_compile_config)
+
+    def test_edge_dialect_custom_op(self):
+        def _use_foo_add(a: torch.Tensor, b: torch.Tensor):
+            return torch.ops.test_op.foo(a, b)
+
+        from torch._export.verifier import SpecViolationError
+
+        with self.assertRaises(SpecViolationError):
+            self._test_edge_dialect_verifier(_use_foo_add)
+
+        # This should not raise error
+        self._test_edge_dialect_verifier(_use_foo_add, False)

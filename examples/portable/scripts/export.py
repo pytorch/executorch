@@ -18,7 +18,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m",
@@ -26,6 +26,7 @@ if __name__ == "__main__":
         required=True,
         help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
     )
+    parser.add_argument("-o", "--output_dir", default=".", help="output directory")
 
     args = parser.parse_args()
 
@@ -40,4 +41,8 @@ if __name__ == "__main__":
     )
 
     prog = export_to_exec_prog(model, example_inputs)
-    save_pte_program(prog.buffer, args.model_name)
+    save_pte_program(prog.buffer, args.model_name, args.output_dir)
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

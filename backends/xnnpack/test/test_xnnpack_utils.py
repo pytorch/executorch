@@ -97,7 +97,9 @@ def randomize_bn(num_features: int, dimensionality: int = 2) -> torch.nn.Module:
     return bn
 
 
-def save_bundled_program(representative_inputs, program, ref_output, output_path):
+def save_bundled_program(
+    representative_inputs, executorch_program, ref_output, output_path
+):
     niter = 1
 
     print("generating bundled program inputs / outputs")
@@ -116,7 +118,7 @@ def save_bundled_program(representative_inputs, program, ref_output, output_path
     ]
 
     print("creating bundled program...")
-    bundled_program = create_bundled_program(program, method_test_suites)
+    bundled_program = create_bundled_program(executorch_program, method_test_suites)
 
     print("serializing bundled program...")
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
@@ -189,11 +191,11 @@ class TestXNNPACK(unittest.TestCase):
         partitioner = None
         if quantized:
             if quantized_dynamic:
-                partitioner = XnnpackDynamicallyQuantizedPartitioner
+                partitioner = XnnpackDynamicallyQuantizedPartitioner()
             else:
-                partitioner = XnnpackPartitioner
+                partitioner = XnnpackPartitioner()
         else:
-            partitioner = XnnpackPartitioner
+            partitioner = XnnpackPartitioner()
 
         if use_partitioner:
             with validation_disabled():
@@ -230,7 +232,7 @@ class TestXNNPACK(unittest.TestCase):
         if dump_bundled_program:
             save_bundled_program(
                 representative_inputs=sample_inputs,
-                program=executorch_program.program,
+                executorch_program=executorch_program,
                 ref_output=ref_output,
                 output_path=f"/tmp/xnnpack_test_{randint(1, 99999)}",
             )
@@ -322,7 +324,7 @@ class TestXNNPACK(unittest.TestCase):
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
         prepared = prepare_pt2e(m, quantizer)
-        converted = convert_pt2e(prepared)
+        converted = convert_pt2e(prepared, fold_quantize=True)
 
         captured_program = exir.capture(
             converted,
@@ -442,7 +444,7 @@ class TestXNNPACK(unittest.TestCase):
 
             save_bundled_program(
                 representative_inputs=example_inputs,
-                program=executorch_program.program,
+                executorch_program=executorch_program,
                 ref_output=ref_output,
                 output_path=filename,
             )

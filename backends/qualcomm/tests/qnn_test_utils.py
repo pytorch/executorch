@@ -13,10 +13,7 @@ from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 
-from executorch.backends.qualcomm.qnn_quantizer import (
-    get_default_qnn_ptq_config,
-    QnnQuantizer,
-)
+from executorch.backends.qualcomm.qnn_quantizer import QnnQuantizer
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_qnn_executorch_compiler_spec,
@@ -37,12 +34,7 @@ def get_qdq_module(
 
     quantizer = QnnQuantizer()
     quantizer.add_custom_quant_annotations(custom_quant_annotations)
-    quant_annotation_config = get_default_qnn_ptq_config()
-    if is_conv_per_channel:
-        quant_annotation_config = get_default_qnn_ptq_config(
-            enable_per_channel_conv_quant=True
-        )
-    quantizer.set_global_op_quant_config(quant_annotation_config)
+    quantizer.set_per_channel_quant(is_conv_per_channel)
 
     prepared = prepare_pt2e(m, quantizer)
     prepared(*inputs)
@@ -73,7 +65,7 @@ def save_model_and_expected_output(
         input_name = f"input_{idx}.raw"
         inp.detach().numpy().tofile(input_name)
         input_list += input_name + " "
-    input_list += "\n"
+    input_list = input_list.strip() + "\n"
     with open("input_list.txt", "w") as file:
         file.write(input_list)
 
@@ -147,7 +139,7 @@ class TestQNN(unittest.TestCase):
         if use_partitioner:
             delegated_program = capture_program(module, sample_inputs)
             delegated_program.exported_program = to_backend(
-                delegated_program.exported_program, QnnPartitioner
+                delegated_program.exported_program, QnnPartitioner()
             )
             exec_prog = delegated_program.to_executorch()
         else:

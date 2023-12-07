@@ -8,18 +8,14 @@ import copy
 import logging
 from contextlib import contextmanager
 from functools import singledispatch
-from typing import Generator, List, Type
+from typing import Generator, List
 
 import torch
 
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
-from executorch.exir.backend.partitioner import (
-    Partitioner,
-    PartitionResult,
-    TPartitioner,
-)
+from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.utils import is_identical_graph
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
@@ -261,7 +257,7 @@ def _partition_and_lower(
 @to_backend.register
 def _(
     edge_program: ExportedProgram,
-    partitioner: Type[TPartitioner],
+    partitioner_instance: Partitioner,
 ) -> ExportedProgram:
     """
     Add overloaded implementations for to_backend:
@@ -270,7 +266,7 @@ def _(
 
      def to_backend(
          edge_program: ExportedProgram,
-         partitioner: Type[TPartitioner],
+         partitioner: Partitioner,
      ) -> ExportedProgram:
 
     Returns a semantically-equivalent program to the one given as input (represented
@@ -280,19 +276,16 @@ def _(
     Args:
         ExportedProgram: Program in Edge dialect.
 
-        partitioner: An instance of the Partitioner class type, in charge with tagging
-        portions of the input program for delegation. A valid partitioner must have
-        partition_tags: Dict[str, DelegationSpec], where each key is a tag name and the nodes
-        with same tag will be fused a one subgraph and delegated to backend specififed in delegation
-        spec.
+        partitioner: An instance of the partitioner, in charge with tagging
+        portions of the input program for delegation. A valid partitioner must return PartitionerResult
+        including both tagged exported program and partitioner_tag: Dict[str, DelegationSpec], where each key is a tag name and
+        the nodes with same tag will be fused a one subgraph and delegated to backend specififed in delegation spec.
 
 
     Returns:
         ExportedProgram: The input program, with some portions targeted for delegation.
     """
     copied_edge_program = copy.deepcopy(edge_program)
-    # Call the partitioner on the given graph module
-    partitioner_instance: Partitioner = partitioner()
     partitioner_result = partitioner_instance(copied_edge_program)
     tagged_exported_program = partitioner_result.tagged_exported_program
 
@@ -301,13 +294,13 @@ def _(
         assert is_identical_graph(
             tagged_exported_program.graph_module,
             edge_program.graph_module,
-        ), f"The partitioner {partitioner} should not modify the graph module"
+        ), f"The partitioner {partitioner_instance} should not modify the graph module"
     else:
         logging.warning("Disabled validating the partitioner.")
 
     assert (
         partitioner_result.partition_tags is not None
-    ), f"Partitioner {partitioner} needs a `partition_tags` field containing a mapping of tags to delegate spec"
+    ), f"Partitioner {partitioner_instance} needs a `partition_tags` field containing a mapping of tags to delegate spec"
 
     tagged_graph_module = _partition_and_lower(
         tagged_exported_program.graph_module, partitioner_result, edge_program
@@ -326,4 +319,6 @@ def _(
         copy.deepcopy(edge_program.range_constraints),
         copy.deepcopy(edge_program.equality_constraints),
         copy.deepcopy(edge_program.module_call_graph),
+        None,
+        edge_program.verifier,
     )

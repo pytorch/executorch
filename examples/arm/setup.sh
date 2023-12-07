@@ -167,7 +167,7 @@ function setup_tosa_reference_model() {
     # errors for the early codebase
     cd "${root_dir}"
     if [[ ! -e reference_model ]]; then
-        git clone https://git.mlplatform.org/tosa/reference_model.git -b v0.80.0
+        git clone https://review.mlplatform.org/tosa/reference_model -b v0.80.0
         cd reference_model
         git submodule update --init --recursive
         cd ..
@@ -189,7 +189,7 @@ function setup_vela() {
     #
     cd "${root_dir}"
     if [[ ! -e ethos-u-vela ]]; then
-        git clone https://git.mlplatform.org/ml/ethos-u/ethos-u-vela.git
+        git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
         base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
         patch_repo

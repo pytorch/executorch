@@ -25,3 +25,19 @@ runtime.python_library(
         "//executorch/exir/backend:backend_details",
     ],
 )
+
+runtime.python_library(
+    name = "xnnpack_delegate",
+    srcs = [
+        "__init__.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        ":xnnpack_preprocess",
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+    ],
+)

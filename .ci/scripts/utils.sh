@@ -24,29 +24,47 @@ install_executorch() {
   pip list
 }
 
-install_conda() {
-  pushd .ci/docker || return
-  # Install conda dependencies like flatbuffer
-  conda install -y --file conda-env-ci.txt
-  popd || return
-}
-
 install_pip_dependencies() {
   pushd .ci/docker || return
   # Install all Python dependencies, including PyTorch
   pip install --progress-bar off -r requirements-ci.txt
-
-  NIGHTLY=$(cat ci_commit_pins/nightly.txt)
-  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-  TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
-  TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
-
-  pip install --progress-bar off --pre \
-    torch=="${TORCH_VERSION}.${NIGHTLY}" \
-    torchaudio=="${TORCHAUDIO_VERSION}.${NIGHTLY}" \
-    torchvision=="${TORCHVISION_VERSION}.${NIGHTLY}" \
-    --index-url https://download.pytorch.org/whl/nightly/cpu
   popd || return
+}
+
+install_domains() {
+  echo "Install torchvision and torchaudio"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/audio.git@${TORCHAUDIO_VERSION}"
+  pip install --no-use-pep517 --user "git+https://github.com/pytorch/vision.git@${TORCHVISION_VERSION}"
+}
+
+install_pytorch_and_domains() {
+  pushd .ci/docker || return
+  TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
+  popd || return
+
+  git clone https://github.com/pytorch/pytorch.git
+
+  # Fetch the target commit
+  pushd pytorch || return
+  git checkout "${TORCH_VERSION}"
+  git submodule update --init --recursive
+
+  export _GLIBCXX_USE_CXX11_ABI=0
+  # Then build and install PyTorch
+  python setup.py bdist_wheel
+  pip install "$(echo dist/*.whl)"
+
+  # Grab the pinned audio and vision commits from PyTorch
+  TORCHAUDIO_VERSION=$(cat .github/ci_commit_pins/audio.txt)
+  export TORCHAUDIO_VERSION
+  TORCHVISION_VERSION=$(cat .github/ci_commit_pins/vision.txt)
+  export TORCHVISION_VERSION
+
+  install_domains
+
+  popd || return
+  # Print sccache stats for debugging
+  sccache --show-stats || true
 }
 
 install_flatc_from_source() {
@@ -81,7 +99,7 @@ build_executorch_runner_cmake() {
   pushd "${CMAKE_OUTPUT_DIR}" || return
   # This command uses buck2 to gather source files and buck2 could crash flakily
   # on MacOS
-  retry cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" ..
+  retry cmake -DBUCK2=buck2 -DPYTHON_EXECUTABLE="${PYTHON_EXECUTABLE}" -DCMAKE_BUILD_TYPE=Release ..
   popd || return
 
   if [ "$(uname)" == "Darwin" ]; then

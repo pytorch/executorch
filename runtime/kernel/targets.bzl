@@ -50,12 +50,12 @@ def define_common_targets():
                 "//executorch/kernels/...",
                 "//executorch/runtime/executor/...",
                 "//executorch/runtime/kernel/...",
-                "//executorch/runtime/core/exec_aten/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/platform:platform",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
                 # TODO(T147221312): This will eventually depend on exec_aten
                 # once KernelRuntimeContext support tensor resizing, which is
                 # why this target supports aten mode.

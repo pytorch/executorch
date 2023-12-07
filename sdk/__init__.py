@@ -4,12 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from executorch.sdk.etrecord._etrecord import (
-    ETRecord,
-    generate_etrecord,
-    parse_etrecord,
-)
+import executorch.sdk.inspector as inspector
+from executorch.sdk.etrecord import ETRecord, generate_etrecord, parse_etrecord
+from executorch.sdk.inspector import Inspector
 
-from executorch.sdk.inspector.inspector import Inspector, TimeScale
-
-__all__ = ["ETRecord", "generate_etrecord", "parse_etrecord", "Inspector", "TimeScale"]
+__all__ = ["ETRecord", "Inspector", "generate_etrecord", "parse_etrecord", "inspector"]

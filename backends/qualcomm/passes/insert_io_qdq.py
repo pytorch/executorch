@@ -6,6 +6,8 @@
 from typing import Dict
 
 import torch
+
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -26,8 +28,9 @@ class InsertIOQDQ(ExportPass):
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default: exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
     }
 
-    def __init__(self):
+    def __init__(self, edge_program: torch.export.ExportedProgram):
         super(InsertIOQDQ, self).__init__()
+        self.edge_program = edge_program
 
     def _ceate_args(self, target: torch.fx.node.Target, quant_attrs: Dict):
         ret = []
@@ -46,38 +49,62 @@ class InsertIOQDQ(ExportPass):
         graph_module: torch.fx.GraphModule,
         node: torch.fx.node,
         target: torch.fx.node.Target,
+    ) -> torch.fx.node:
+        quant_attrs = node.meta.get("quant_attrs")
+        inserted_node = graph_module.graph.create_node(
+            "call_function",
+            target,
+            (node, *self._ceate_args(target, quant_attrs)),
+        )
+        meta_val = node.meta["val"]
+        if target in self.q_dq_map:
+            inserted_node.meta["quant_attrs"] = node.meta.pop("quant_attrs")
+            meta_val = meta_val.to(quant_attrs["dtype"])
+
+        inserted_node.meta["val"] = meta_val
+        return inserted_node
+
+    def _insert_quant_node(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.node,
+        target: torch.fx.node.Target,
     ) -> None:
         with graph_module.graph.inserting_after(node):
             users = list(node.users.keys())
-            quant_attrs = node.meta.get("quant_attrs")
-            inserted_node = graph_module.graph.create_node(
-                "call_function",
-                target,
-                (node, *self._ceate_args(target, quant_attrs)),
-            )
-            meta_val = node.meta["val"]
-            if target in self.q_dq_map:
-                inserted_node.meta["quant_attrs"] = node.meta.pop("quant_attrs")
-                meta_val = meta_val.to(quant_attrs["dtype"])
-
-            inserted_node.meta["val"] = meta_val
+            inserted_node = self._insert_node(graph_module, node, target)
             for user in users:
                 user.replace_input_with(node, inserted_node)
+
+    def _insert_dequant_node(
+        self,
+        graph_module: torch.fx.GraphModule,
+        node: torch.fx.node,
+        target: torch.fx.node.Target,
+    ) -> None:
+        with graph_module.graph.inserting_after(node):
+            users = list(node.users.keys())
+            inserted_node = self._insert_node(graph_module, node, target)
+            for user in users:
+                if user.op == "output":
+                    user.replace_input_with(node, inserted_node)
 
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
             # insert q after input
-            if n.op == "placeholder" and n.meta.get("quant_attrs"):
-                self._insert_node(graph_module, n, n.meta["quant_attrs"]["encoding"])
+            if (
+                n.op == "placeholder"
+                and n.meta.get("quant_attrs")
+                and not is_parameter(n, self.edge_program)
+            ):
+                self._insert_quant_node(
+                    graph_module, n, n.meta["quant_attrs"]["encoding"]
+                )
 
             # insert dq before output
             users = list(n.users.keys())
-            if (
-                n.meta.get("quant_attrs")
-                and len(users) == 1
-                and users[0].op == "output"
-            ):
-                self._insert_node(
+            if n.meta.get("quant_attrs") and any(user.op == "output" for user in users):
+                self._insert_dequant_node(
                     graph_module, n, self.q_dq_map[n.meta["quant_attrs"]["encoding"]]
                 )
 

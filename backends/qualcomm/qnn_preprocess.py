@@ -4,22 +4,24 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
-
 import logging
 from typing import final, List
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
-from executorch.backends.qualcomm.passes import qnn_compiler_passes
 
+from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
+    ConvertAddmmmmWithLinear,
+)
+from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
-
 from executorch.exir.backend.backend_details import (
     BackendDetails,
     CompileSpec,
     PreprocessResult,
 )
+from executorch.exir.passes import PassManager
 from torch._export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
@@ -39,17 +41,22 @@ class QnnBackend(BackendDetails):
         qnn_manager = PyQnnManager.QnnManager(option)
         qnn_manager.Init()
 
-        edge_ir_copy = copy.deepcopy(edge_program.graph_module)
-
         # QNN Delegate Specific Passes
-        pass_result = qnn_compiler_passes(edge_ir_copy)
+        qnn_compiler_passes = PassManager(
+            passes=[
+                ConvertAddmmmmWithLinear(),
+                InsertIOQDQ(edge_program),
+                LayoutTransform(edge_program, insert_permute=True),
+            ]
+        )
+
+        pass_result = qnn_compiler_passes(edge_program.graph_module)
         assert pass_result is not None
-        graph_module = pass_result.graph_module
 
         nodes_to_wrappers = {}
-        node_visitors = get_node_visitors(graph_module)
+        node_visitors = get_node_visitors(edge_program)
         py_op_wrapper_list = []
-        for node in graph_module.graph.nodes:
+        for node in pass_result.graph_module.graph.nodes:
             if node.op == "call_function":
                 logger.info(f"Visiting: {node}, {node.target.__name__}")
                 if node.target.__name__ in node_visitors:

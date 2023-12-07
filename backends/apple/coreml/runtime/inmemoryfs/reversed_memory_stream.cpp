@@ -98,11 +98,9 @@ std::streamsize ReversedIMemoryStreamBuf::xsgetn(char* s, std::streamsize n) {
         return std::streamsize(0);
     }
     std::ptrdiff_t offset = current_ - start_;
+    std::ptrdiff_t pos = buffer_->size() - 1 - offset;
     for (std::streamsize i = 0; i < n; i++) {
-        offset = offset + i;
-        // offset from the end
-        std::ptrdiff_t offsetFromEnd = buffer_->size() - offset - 1;
-        s[i] = start_[offsetFromEnd];
+        s[i] = start_[pos - i];
     }
     current_ += n;
     setg(start_, current_, current_);

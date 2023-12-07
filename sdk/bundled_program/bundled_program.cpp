@@ -16,6 +16,7 @@
 #include <ATen/ATen.h>
 #endif // USE_ATEN_LIB
 
+#include <executorch/runtime/core/event_tracer_hooks.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
@@ -28,9 +29,9 @@ namespace bundled_program {
 
 namespace {
 
-#ifdef USE_ATEN_LIB
-
 #define kMaxDim 16
+
+#ifdef USE_ATEN_LIB
 
 // Create an aten tensor with same content using bundled tensor
 at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
@@ -53,9 +54,7 @@ at::Tensor tensor_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
 
 #else // !USE_ATEN_LIB
 // Create a tensorimpl with same content using bundled tensor
-TensorImpl impl_like(
-    bundled_program_flatbuffer::Tensor* bundled_tensor,
-    MemoryAllocator* runtime_allocator) {
+TensorImpl impl_like(bundled_program_flatbuffer::Tensor* bundled_tensor) {
   ScalarType scalar_type =
       static_cast<ScalarType>(bundled_tensor->scalar_type());
   ssize_t dim = bundled_tensor->sizes()->size();
@@ -63,15 +62,12 @@ TensorImpl impl_like(
   void* data = bundled_tensor->mutable_data()->data();
   exec_aten::DimOrderType* dim_order =
       bundled_tensor->mutable_dim_order()->data();
-  exec_aten::StridesType* strides =
-      ET_TRY_ALLOCATE_LIST_OR(runtime_allocator, exec_aten::StridesType, dim, {
-        ET_CHECK_MSG(false, "Failed to allocate memory for strides");
-      });
-  auto status =
-      torch::executor::dim_order_to_stride(sizes, dim_order, dim, strides);
-  ET_CHECK_MSG(
-      status == Error::Ok, "dim_order_to_stride returned invalid status");
 
+  // The strides of created tensorimpl will only be actually used when
+  // comparsion (`tensor_are_close` below). To eliminate the usage of memory
+  // allocator, here we set the initial strides as null and reconstruct the
+  // stride array as temporary varible when comparsion.
+  exec_aten::StridesType* strides = nullptr;
   return TensorImpl(scalar_type, dim, sizes, data, dim_order, strides);
 }
 #endif
@@ -119,18 +115,40 @@ bool data_is_close(
 }
 
 bool tensors_are_close(
-    const Tensor& a,
-    const Tensor& b,
+    const Tensor& bundled_tensor,
+    const Tensor& method_output_tensor,
     double rtol,
     double atol) {
-  if (a.scalar_type() != b.scalar_type() || a.sizes() != b.sizes()) {
+  if (bundled_tensor.scalar_type() != method_output_tensor.scalar_type() ||
+      bundled_tensor.sizes() != method_output_tensor.sizes()) {
     return false;
   }
 
+#ifdef USE_ATEN_LIB
+
+  ET_CHECK_MSG(
+      bundled_tensor.strides() == method_output_tensor.strides(),
+      "The two inputs of `tensors_are_close` function shall have same strides");
+
+#else // !USE_ATEN_LIB
+
+  // Contruct stride array for bundled tensor based on its dim order since
+  // strides of bundled_tensor in lean mode is null.
+  exec_aten::StridesType strides[kMaxDim] = {0};
+  auto status = torch::executor::dim_order_to_stride(
+      bundled_tensor.sizes().data(),
+      bundled_tensor.dim_order().data(),
+      bundled_tensor.dim(),
+      strides);
+  ET_CHECK_MSG(
+      status == Error::Ok, "dim_order_to_stride returned invalid status");
+
   // TODO(T132992348): support comparison between tensors of different strides
   ET_CHECK_MSG(
-      a.strides() == b.strides(),
+      ArrayRef<exec_aten::StridesType>(strides, bundled_tensor.dim()) ==
+          method_output_tensor.strides(),
       "The two inputs of `tensors_are_close` function shall have same strides");
+#endif
 
   // Since the two tensors have same shape and strides, any two elements that
   // share same index from underlying data perspective will also share same
@@ -140,35 +158,39 @@ bool tensors_are_close(
   // So we can just compare the two underlying data sequentially to figure out
   // if the two tensors are same.
 
-  if (a.nbytes() == 0) {
+  if (bundled_tensor.nbytes() == 0) {
     // Note that this case is important. It's valid for a zero-size tensor to
     // have a null data pointer, but in some environments it's invalid to pass a
     // null pointer to memcmp() even when the size is zero.
     return true;
-  } else if (a.scalar_type() == ScalarType::Float) {
+  } else if (bundled_tensor.scalar_type() == ScalarType::Float) {
     return data_is_close<float>(
-        a.const_data_ptr<float>(),
-        b.const_data_ptr<float>(),
-        a.numel(),
+        bundled_tensor.const_data_ptr<float>(),
+        method_output_tensor.const_data_ptr<float>(),
+        bundled_tensor.numel(),
         rtol,
         atol);
-  } else if (a.scalar_type() == ScalarType::Double) {
+  } else if (bundled_tensor.scalar_type() == ScalarType::Double) {
     return data_is_close<double>(
-        a.const_data_ptr<double>(),
-        b.const_data_ptr<double>(),
-        a.numel(),
+        bundled_tensor.const_data_ptr<double>(),
+        method_output_tensor.const_data_ptr<double>(),
+        bundled_tensor.numel(),
         rtol,
         atol);
   } else {
     // Non-floating-point types can be compared bitwise.
-    return memcmp(a.const_data_ptr(), b.const_data_ptr(), a.nbytes()) == 0;
+    return memcmp(
+               bundled_tensor.const_data_ptr(),
+               method_output_tensor.const_data_ptr(),
+               bundled_tensor.nbytes()) == 0;
   }
 }
 
 Result<bundled_program_flatbuffer::BundledMethodTestSuite*>
 get_method_test_suite(
     const bundled_program_flatbuffer::BundledProgram* bundled_program,
-    const char* method_name) {
+    Method& method) {
+  const char* method_name = method.method_meta().name();
   auto method_test_suites = bundled_program->method_test_suites();
   for (size_t i = 0; i < method_test_suites->size(); i++) {
     auto m_test = method_test_suites->GetMutableObject(i);
@@ -186,8 +208,6 @@ get_method_test_suite(
 __ET_NODISCARD Error LoadBundledInput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
-    MemoryAllocator* memory_allocator,
-    const char* method_name,
     size_t testset_idx) {
   ET_CHECK_OR_RETURN_ERROR(
       bundled_program_flatbuffer::BundledProgramBufferHasIdentifier(
@@ -197,7 +217,7 @@ __ET_NODISCARD Error LoadBundledInput(
 
   auto method_test = get_method_test_suite(
       bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr),
-      method_name);
+      method);
 
   if (!method_test.ok()) {
     return method_test.error();
@@ -225,16 +245,17 @@ __ET_NODISCARD Error LoadBundledInput(
 #ifdef USE_ATEN_LIB
         Tensor t = tensor_like(bundled_input_tensor);
 #else // !USE_ATEN_LIB
-        TensorImpl impl = impl_like(bundled_input_tensor, memory_allocator);
+        TensorImpl impl = impl_like(bundled_input_tensor);
         Tensor t = Tensor(&impl);
 #endif
         // Use t to create EValue as Method's input.
         e_input = EValue(t);
-        // Setting input like this a bit problematic because
-        // tensor that EValue is storing has pointer to tensorIml.
-        // This pointer is from the stack of this function whose lifetime
-        // is not beyond this function.
-        // TODO(T148052964): use runtime allocator to allocate `TensorImpl impl`
+        // Setting input like this is safe because the `set_input` function only
+        // copies the underlying data blob of TensorImpl impl into the method,
+        // not the pointer of impl, Tensor t or even the Evalue e_input. So
+        // their lifetime will not impact the safety. Also there's a specific
+        // memory space with enough lifetime holding the underlying data blob,
+        // so the lifetime of the data blob is not an issue.
         status = method.set_input(e_input, input_idx);
         break;
       }
@@ -273,14 +294,15 @@ __ET_NODISCARD Error LoadBundledInput(
         status);
   }
 
+  internal::event_tracer_set_bundled_input_index(
+      method.get_event_tracer(), testset_idx);
+
   return Error::Ok;
 }
 
 __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
     Method& method,
     serialized_bundled_program* bundled_program_ptr,
-    MemoryAllocator* memory_allocator,
-    const char* method_name,
     size_t testset_idx,
     double rtol,
     double atol) {
@@ -292,7 +314,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
 
   auto method_test = get_method_test_suite(
       bundled_program_flatbuffer::GetBundledProgram(bundled_program_ptr),
-      method_name);
+      method);
 
   if (!method_test.ok()) {
     return method_test.error();
@@ -316,8 +338,7 @@ __ET_NODISCARD Error VerifyResultWithBundledExpectedOutput(
 #ifdef USE_ATEN_LIB
         Tensor t = tensor_like(bundled_expected_output_tensor);
 #else // !USE_ATEN_LIB
-        TensorImpl impl =
-            impl_like(bundled_expected_output_tensor, memory_allocator);
+        TensorImpl impl = impl_like(bundled_expected_output_tensor);
         Tensor t = Tensor(&impl);
 #endif
         ET_CHECK_OR_RETURN_ERROR(

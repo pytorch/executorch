@@ -32,6 +32,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
@@ -275,9 +276,12 @@ class TestPasses(unittest.TestCase):
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         )
 
-        new_prog = edge_prog.transform(SpecPropPass(), ToOutVarPass())
-        graph_module = new_prog.exported_program.graph_module
-        for node in graph_module.graph.nodes:
+        new_prog = edge_prog.transform(SpecPropPass())
+
+        new_gm_res = ToOutVarPass()(new_prog.exported_program.graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+        for node in new_gm.graph.nodes:
             if node.op == "call_function" and node.target in [
                 torch.ops.DO_NOT_USE_TEST_ONLY.foo.out,
                 torch.ops.my_awesome_3rdparty_ns.awesome_op.out,
@@ -288,7 +292,10 @@ class TestPasses(unittest.TestCase):
                 self.assertIs(out1_node.target, memory.alloc)
                 self.assertIs(node.kwargs["out2"], None)
 
-        new_prog = new_prog.transform(MemoryPlanningPass())
+        new_gm_res = MemoryPlanningPass()(new_gm)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+        new_prog.exported_program.graph_module.graph = new_gm.graph
         emit_program(new_prog.exported_program)
 
     def test_to_out_variant_singleon_tensor_list(self) -> None:
@@ -307,10 +314,11 @@ class TestPasses(unittest.TestCase):
         prog = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
             EdgeCompileConfig(_check_ir_validity=False)
         )  # TODO(larryliu): fix split_copy
-        new_prog = prog.transform(ToOutVarPass())
-        graph_module = new_prog.exported_program.graph_module
+        new_gm_res = ToOutVarPass()(prog.exported_program.graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
 
-        for nd in graph_module.graph.nodes:
+        for nd in new_gm.graph.nodes:
             if nd.target is exir_ops.edge.aten.split_copy.Tensor_out:
                 break
 
@@ -337,9 +345,11 @@ class TestPasses(unittest.TestCase):
         prog = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
             EdgeCompileConfig(_check_ir_validity=False)
         )  # TODO(larryliu): fix topk
+        new_gm_res = ToOutVarPass()(prog.exported_program.graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
 
-        prog = prog.transform(ToOutVarPass())
-        for nd in prog.exported_program.graph_module.graph.nodes:
+        for nd in new_gm.graph.nodes:
             if nd.target is torch.ops.aten.topk.values:
                 break
 
@@ -465,47 +475,6 @@ class TestPasses(unittest.TestCase):
                 for arg in node.args + tuple(node.kwargs.values()):
                     self.assertFalse(isinstance(arg, float))
 
-    def test_lift_scalar_tensor(self) -> None:
-        class FooWithBuffer(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.register_buffer("buffer", torch.zeros(42))
-
-            def forward(self, x):
-                return x.cos() + self.buffer.sum() + torch.tensor(4) + 4
-
-        ep = exir.capture(
-            FooWithBuffer(), (torch.ones(6, 2),), exir.CaptureConfig(enable_aot=True)
-        )
-        new_ep = ep.transform(ScalarToTensorPass()).exported_program
-        self.assertTrue(
-            len([node for node in new_ep.graph.nodes if node.op == "get_attr"])
-        )
-        new_ep = lift_constant_tensor_pass(new_ep)
-
-        self.assertEqual(
-            len([node for node in new_ep.graph.nodes if node.op == "placeholder"]),
-            4,
-        )
-        for node in new_ep.graph.nodes:
-            self.assertTrue(node.op != "get_attr")
-
-        edge_ep = exir.capture(
-            FooWithBuffer(), (torch.ones(6, 2),), exir.CaptureConfig(enable_aot=True)
-        ).to_edge()
-        self.assertEqual(
-            len(
-                [
-                    node
-                    for node in edge_ep.exported_program.graph.nodes
-                    if node.op == "placeholder"
-                ]
-            ),
-            4,
-        )
-        for node in edge_ep.exported_program.graph.nodes:
-            self.assertTrue(node.op != "get_attr")
-
     def test_remove_mixed_types_symfloats(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             return torch.nn.functional.interpolate(
@@ -629,13 +598,19 @@ class TestPasses(unittest.TestCase):
         passes = [
             SpecPropPass(),
             HintBasedSymShapeEvalPass(),
-            ToOutVarPass(),
-            MemoryPlanningPass("greedy"),
         ]
         new_prog = prog.transform(*passes)
-        gm = new_prog.exported_program.graph_module
+
+        new_gm_res = ToOutVarPass()(new_prog.exported_program.graph_module)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+
+        new_gm_res = MemoryPlanningPass("greedy")(new_gm)
+        self.assertIsNotNone(new_gm_res)
+        new_gm = new_gm_res.graph_module
+
         alloc_nodes = []
-        for subgm in gm.modules():
+        for subgm in new_gm.modules():
             if isinstance(subgm, torch.fx.GraphModule):
                 for node in subgm.graph.nodes:
                     if node.target == memory.alloc:
@@ -674,10 +649,10 @@ class TestPasses(unittest.TestCase):
             ),
         ).exported_program.graph_module
 
-        self.assertTrue(torch.ops.aten._linalg_check_errors.default in collect_ops(gm))
+        self.assertTrue(torch.ops.aten.sub.Tensor in collect_ops(gm))
         dead_code_elimination_pass(gm)
         gm.print_readable()
-        self.assertFalse(torch.ops.aten._linalg_check_errors.default in collect_ops(gm))
+        self.assertFalse(torch.ops.aten.sub.Tensor in collect_ops(gm))
 
     def test_propagate_dynamic_shape(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
@@ -1057,3 +1032,84 @@ class TestPasses(unittest.TestCase):
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
         ).run(gm.code)
+
+    def test_constant_prop_pass_for_add(self) -> None:
+        def add(x: torch.Tensor) -> torch.Tensor:
+            return x + 3
+
+        edge = exir.capture(add, (torch.ones(1),), exir.CaptureConfig(enable_aot=True))
+        edge = edge.transform(ScalarToTensorPass(), RemoveMixedTypeOperators())
+        edge.exported_program = lift_constant_tensor_pass(edge.exported_program)
+
+        # Check there is a lifted tensor followed by a to_copy node
+        FileCheck().check("_lifted_tensor_constant0").check(
+            "torch.ops.aten._to_copy.default"
+        ).run(edge.exported_program.graph_module.code)
+
+        new_ep = constant_prop_pass(edge.exported_program)
+
+        # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
+        FileCheck().check_not("_lifted_tensor_constant").check(
+            "_prop_tensor_constant1"
+        ).check_not("torch.ops.aten._to_copy.default").run(new_ep.graph_module.code)
+
+    def test_constant_prop_pass_for_parameter(self) -> None:
+        def count_additions(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (node.target == torch.ops.aten.add.Tensor) for node in gm.graph.nodes
+            )
+
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.a = torch.nn.Parameter(torch.ones(1, 2, 3))
+
+            def forward(self, x):
+                b = self.a + self.a
+                c = torch.cat([self.a, b])
+                return (c + c) + x
+
+        edge = exir.capture(
+            M(),
+            (torch.zeros(2, 2, 3),),
+            exir.CaptureConfig(enable_aot=True),
+        )
+        self.assertEqual(count_additions(edge.exported_program.graph_module), 3)
+        edge.exported_program = constant_prop_pass(edge.exported_program)
+        self.assertEqual(count_additions(edge.exported_program.graph_module), 1)
+
+    def test_constant_prop_pass_for_control_flow(self) -> None:
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(3, 3)
+
+            def t(self, val):
+                return val + 1
+
+            def f(self, val):
+                return val - 1
+
+            def true_fn(self, val):
+                return self.linear(val) + self.t(val)
+
+            def false_fn(self, val):
+                return self.linear(val) - self.f(val)
+
+            def forward(self, pred, x):
+                return torch.ops.higher_order.cond(
+                    pred, self.true_fn, self.false_fn, [x]
+                )
+
+        mod = Module()
+        x = torch.randn([3, 3])
+        pred = torch.tensor(x[0][0].item() < 0)
+        edge = exir.capture(mod, (pred, x), config=exir.CaptureConfig(enable_aot=True))
+        error_msg = r"constant_prop_pass for control flow is not supported yet."
+
+        # TODO(chenlai): enable constant prop pass for control flow
+        with self.assertRaisesRegex(
+            RuntimeError,
+            error_msg,
+        ):
+            _ = constant_prop_pass(edge.exported_program)

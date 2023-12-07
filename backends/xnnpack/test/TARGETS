@@ -1,9 +1,9 @@
-load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
 define_common_targets()
 
-python_unittest(
+runtime.python_test(
     name = "test_xnnpack",
     srcs = [
         "test_xnnpack.py",
@@ -16,7 +16,6 @@ python_unittest(
     ],
     tags = ["long_running"],
     deps = [
-        "//caffe2:torch",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -30,9 +29,12 @@ python_unittest(
         "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/bundled_program/serialize:lib",
     ],
+    external_deps = [
+        "libtorch",
+    ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "test_xnnpack_quantized",
     srcs = [
         "test_xnnpack_quantized.py",
@@ -44,7 +46,6 @@ python_unittest(
     ],
     tags = ["long_running"],
     deps = [
-        "//caffe2:torch",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -59,9 +60,12 @@ python_unittest(
         "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/bundled_program/serialize:lib",
     ],
+    external_deps = [
+        "libtorch",
+    ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "test_xnnpack_quantized_models",
     srcs = [
         "test_xnnpack_quantized_models.py",
@@ -73,7 +77,6 @@ python_unittest(
     ],
     tags = ["long_running"],
     deps = [
-        "//caffe2:torch",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
@@ -88,9 +91,12 @@ python_unittest(
         "//executorch/sdk/bundled_program/serialize:lib",
         "//pytorch/vision:torchvision",
     ],
+    external_deps = [
+        "libtorch",
+    ],
 )
 
-python_unittest(
+runtime.python_test(
     name = "test_xnnpack_passes",
     srcs = glob([
         "passes/*.py",
@@ -99,7 +105,6 @@ python_unittest(
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
-        "//caffe2:torch",
         "//executorch/backends/xnnpack/passes:xnnpack_passes",
         "//executorch/backends/xnnpack/test/tester:tester",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
@@ -108,21 +113,31 @@ python_unittest(
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
     ],
-)
-
-python_unittest(
-    name = "test_xnnpack_ops",
-    srcs = glob([
-        "ops/*.py",
-    ]),
-    deps = [
-        "//caffe2:torch",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/xnnpack/test/tester:tester",
+    external_deps = [
+        "libtorch",
     ],
 )
 
-python_unittest(
+runtime.python_test(
+    name = "test_xnnpack_ops",
+    srcs = glob([
+        "ops/*.py",
+    ]) + [
+        "test_xnnpack_utils.py",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk/bundled_program/serialize:lib",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+runtime.python_test(
     name = "test_xnnpack_models",
     srcs = glob([
         "models/*.py",
@@ -131,8 +146,11 @@ python_unittest(
     deps = [
         "fbsource//third-party/pypi/timm:timm",
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
-        "//caffe2:torch",
+        "fbsource//third-party/pypi/transformers:transformers",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
         "//pytorch/vision:torchvision",  # @manual
+    ],
+    external_deps = [
+        "libtorch",
     ],
 )

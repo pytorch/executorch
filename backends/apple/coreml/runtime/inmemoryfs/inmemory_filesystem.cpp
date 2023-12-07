@@ -20,7 +20,6 @@ namespace filesystem = std::experimental::filesystem;
 }
 #endif
 
-#include <json.hpp>
 #include <reversed_memory_stream.hpp>
 
 namespace {
@@ -252,26 +251,6 @@ bool write_node(InMemoryFileSystem::InMemoryNode* node,
             return write_file_node(static_cast<InMemoryFileNode*>(node), dst_path, error);
     }
 }
-} // namespace
-
-namespace inmemoryfs {
-using json = nlohmann::json;
-
-void to_json(json& j, const MemoryRegion& region) { j = json { { "offset", region.offset }, { "size", region.size } }; }
-
-void from_json(const json& j, MemoryRegion& region) {
-    j.at("offset").get_to(region.offset);
-    j.at("size").get_to(region.size);
-}
-
-void to_json(json& j, const InMemoryFileSystem::Attributes& attributes) {
-    j = json { { "modificationTime", toString(attributes.modificationTime) } };
-}
-
-void from_json(const json& j, InMemoryFileSystem::Attributes& attributes) {
-    const std::string& modificationTime = j.at("modificationTime");
-    attributes.modificationTime = toTime(modificationTime);
-}
 
 struct Attributes {
     time_t creation_time;
@@ -279,68 +258,50 @@ struct Attributes {
 
     inline Attributes() noexcept : creation_time(time(0)), modification_time(time(0)) { }
 };
-} // namespace inmemoryfs
-
-namespace serdes {
-using json = nlohmann::json;
-
-struct FlattenedInMemoryNodeKeys {
-    constexpr static std::string_view kName = "name";
-    constexpr static std::string_view kDataRegion = "dataRegion";
-    constexpr static std::string_view kChildren = "children";
-    constexpr static std::string_view kKind = "kind";
-};
 
 struct FlattenedInMemoryNode {
-    std::string name;
-    InMemoryFileSystem::InMemoryNode::Kind kind;
-    InMemoryFileSystem::Attributes attributes;
-    std::unordered_map<std::string, size_t> children;
-    MemoryRegion data_region;
+    InMemoryNodeMetadata metadata;
     InMemoryFileNode* file_node = nullptr;
+
+    FlattenedInMemoryNode(InMemoryNodeMetadata metadata) noexcept : metadata(std::move(metadata)) { }
+
+    FlattenedInMemoryNode() noexcept { }
 
     static std::vector<FlattenedInMemoryNode> flatten(InMemoryFileSystem::InMemoryNode* node,
                                                       size_t alignment) noexcept;
 
     static std::unique_ptr<InMemoryFileSystem::InMemoryNode>
     unflatten(const std::vector<FlattenedInMemoryNode>& nodes, const std::shared_ptr<MemoryBuffer>& data) noexcept;
-
-private:
-    static void populate(InMemoryFileSystem::InMemoryNode* node,
-                         std::unordered_map<InMemoryFileSystem::InMemoryNode*, size_t>& node_to_index_map,
-                         size_t alignment,
-                         std::vector<FlattenedInMemoryNode>& result) noexcept;
-
-    static size_t get_next_offset(const std::vector<FlattenedInMemoryNode>& nodes) noexcept;
 };
 
-size_t FlattenedInMemoryNode::get_next_offset(const std::vector<FlattenedInMemoryNode>& nodes) noexcept {
+size_t next_offset_to_write(const std::vector<FlattenedInMemoryNode>& nodes) noexcept {
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
-        if (it->kind == InMemoryFileSystem::InMemoryNode::Kind::File) {
-            return it->data_region.get_length() + 1;
+        const auto& metadata = it->metadata;
+        if (metadata.kind == static_cast<int>(InMemoryFileSystem::InMemoryNode::Kind::File)) {
+            return metadata.data_region.get_length() + 1;
         }
     }
 
     return 0;
 }
 
-void FlattenedInMemoryNode::populate(InMemoryFileSystem::InMemoryNode* node,
-                                     std::unordered_map<InMemoryFileSystem::InMemoryNode*, size_t>& node_to_index_map,
-                                     size_t alignment,
-                                     std::vector<FlattenedInMemoryNode>& result) noexcept {
+void populate(InMemoryFileSystem::InMemoryNode* node,
+              std::unordered_map<InMemoryFileSystem::InMemoryNode*, size_t>& node_to_index_map,
+              size_t alignment,
+              std::vector<FlattenedInMemoryNode>& result) noexcept {
     FlattenedInMemoryNode flattened_node;
-    flattened_node.name = node->name();
-    flattened_node.kind = node->kind();
+    auto& flattened_node_metadata = flattened_node.metadata;
+    flattened_node_metadata.name = node->name();
+    flattened_node_metadata.kind = static_cast<size_t>(node->kind());
     switch (node->kind()) {
         case InMemoryFileSystem::InMemoryNode::Kind::File: {
             size_t index = result.size();
             InMemoryFileNode* file_node = static_cast<InMemoryFileNode*>(node);
-            size_t offset = align(FlattenedInMemoryNode::get_next_offset(result), alignment);
+            size_t offset = align(next_offset_to_write(result), alignment);
             auto buffer = file_node->getBuffer();
             size_t size = buffer->size();
-            flattened_node.data_region = MemoryRegion(offset, size);
+            flattened_node_metadata.data_region = MemoryRegion(offset, size);
             flattened_node.file_node = file_node;
-            result.emplace_back(std::move(flattened_node));
             node_to_index_map[node] = index;
             break;
         }
@@ -348,13 +309,14 @@ void FlattenedInMemoryNode::populate(InMemoryFileSystem::InMemoryNode* node,
             InMemoryDirectoryNode* directory_node = static_cast<InMemoryDirectoryNode*>(node);
             for (const auto& [key, item]: directory_node->get_items()) {
                 populate(item.get(), node_to_index_map, alignment, result);
-                flattened_node.children[key] = node_to_index_map[item.get()];
+                flattened_node_metadata.child_name_to_indices_map[key] = node_to_index_map[item.get()];
             }
             node_to_index_map[node] = result.size();
-            result.emplace_back(std::move(flattened_node));
             break;
         }
     }
+
+    result.emplace_back(std::move(flattened_node));
 }
 
 std::vector<FlattenedInMemoryNode> FlattenedInMemoryNode::flatten(InMemoryFileSystem::InMemoryNode* node,
@@ -377,11 +339,12 @@ FlattenedInMemoryNode::unflatten(const std::vector<FlattenedInMemoryNode>& flatt
     nodes.reserve(flattened_nodes.size());
     for (size_t index = 0; index < flattened_nodes.size(); index++) {
         const FlattenedInMemoryNode& flattened_node = flattened_nodes[index];
-        auto name = flattened_node.name;
-        auto attributes = flattened_node.attributes;
-        switch (flattened_node.kind) {
+        const auto& flattened_node_metadata = flattened_node.metadata;
+        auto name = flattened_node_metadata.name;
+        auto attributes = InMemoryFileSystem::Attributes();
+        switch (static_cast<InMemoryFileSystem::InMemoryNode::Kind>(flattened_node_metadata.kind)) {
             case InMemoryFileSystem::InMemoryNode::Kind::File: {
-                auto region = flattened_node.data_region;
+                auto region = flattened_node_metadata.data_region;
                 std::shared_ptr sliced_buffer = buffer->slice(region);
                 if (!sliced_buffer) {
                     return nullptr;
@@ -393,8 +356,8 @@ FlattenedInMemoryNode::unflatten(const std::vector<FlattenedInMemoryNode>& flatt
             }
             case InMemoryFileSystem::InMemoryNode::Kind::Directory: {
                 std::unordered_map<std::string, std::unique_ptr<InMemoryFileSystem::InMemoryNode>> items;
-                items.reserve(flattened_node.children.size());
-                for (const auto& [name, index]: flattened_node.children) {
+                items.reserve(flattened_node_metadata.child_name_to_indices_map.size());
+                for (const auto& [name, index]: flattened_node_metadata.child_name_to_indices_map) {
                     auto moveIt = std::make_move_iterator(nodes.begin() + index);
                     items[name] = *moveIt;
                 }
@@ -409,65 +372,30 @@ FlattenedInMemoryNode::unflatten(const std::vector<FlattenedInMemoryNode>& flatt
     return std::move(nodes.back());
 }
 
-void to_json(json& j, const FlattenedInMemoryNode& flattened_node) {
-    j = json { { FlattenedInMemoryNodeKeys::kName, flattened_node.name },
-               { FlattenedInMemoryNodeKeys::kDataRegion, flattened_node.data_region },
-               { FlattenedInMemoryNodeKeys::kChildren, flattened_node.children },
-               { FlattenedInMemoryNodeKeys::kKind, static_cast<int>(flattened_node.kind) } };
+InMemoryFileSystemMetadata get_metadatas(std::vector<FlattenedInMemoryNode> flattened_nodes) {
+    std::vector<InMemoryNodeMetadata> node_metadatas;
+    node_metadatas.reserve(flattened_nodes.size());
+    std::transform(std::make_move_iterator(flattened_nodes.begin()),
+                   std::make_move_iterator(flattened_nodes.end()),
+                   std::back_inserter(node_metadatas),
+                   [](FlattenedInMemoryNode&& flattened_node) { return std::move(flattened_node.metadata); });
+
+    return InMemoryFileSystemMetadata { .nodes = std::move(node_metadatas) };
 }
 
-void from_json(const json& j, FlattenedInMemoryNode& flattened_node) {
-    if (j.contains(FlattenedInMemoryNodeKeys::kName)) {
-        j.at(FlattenedInMemoryNodeKeys::kName).get_to(flattened_node.name);
-    }
-    if (j.contains(FlattenedInMemoryNodeKeys::kDataRegion)) {
-        j.at(FlattenedInMemoryNodeKeys::kDataRegion).get_to(flattened_node.data_region);
-    }
-    if (j.contains(FlattenedInMemoryNodeKeys::kChildren)) {
-        j.at(FlattenedInMemoryNodeKeys::kChildren).get_to(flattened_node.children);
-    }
-    if (j.contains(FlattenedInMemoryNodeKeys::kKind)) {
-        j.at(FlattenedInMemoryNodeKeys::kKind).get_to(flattened_node.kind);
-    }
+std::vector<FlattenedInMemoryNode> get_flattened_nodes(std::vector<InMemoryNodeMetadata> node_metadatas) {
+    std::vector<FlattenedInMemoryNode> flattened_nodes;
+    flattened_nodes.reserve(node_metadatas.size());
+    std::transform(
+        std::make_move_iterator(node_metadatas.begin()),
+        std::make_move_iterator(node_metadatas.end()),
+        std::back_inserter(flattened_nodes),
+        [](InMemoryNodeMetadata&& node_metadata) { return FlattenedInMemoryNode(std::move(node_metadata)); });
+
+    return flattened_nodes;
 }
 
-struct InMemoryNodeMetaDataKeys {
-    constexpr static std::string_view kNodes = "nodes";
-};
-
-struct InMemoryNodeMetaData {
-    std::vector<FlattenedInMemoryNode> nodes;
-
-    std::string json_string();
-    void writeToStream(std::ostream& ostream);
-};
-
-void to_json(json& j, const InMemoryNodeMetaData& metadata) {
-    j = json { { InMemoryNodeMetaDataKeys::kNodes, metadata.nodes } };
-}
-
-void from_json(const json& j, InMemoryNodeMetaData& metadata) {
-    if (j.contains(InMemoryNodeMetaDataKeys::kNodes)) {
-        j.at(InMemoryNodeMetaDataKeys::kNodes).get_to(metadata.nodes);
-    }
-}
-
-std::string InMemoryNodeMetaData::json_string() {
-    json value;
-    to_json(value, *this);
-    std::stringstream ss;
-    ss << value;
-    std::string metadataStr = ss.str();
-    return metadataStr;
-}
-
-void InMemoryNodeMetaData::writeToStream(std::ostream& ostream) {
-    std::string jsonStr = json_string();
-    // reverse it for writing
-    std::reverse(jsonStr.begin(), jsonStr.end());
-    ostream << jsonStr;
-}
-} // namespace serdes
+} // namespace
 
 namespace inmemoryfs {
 
@@ -690,7 +618,7 @@ bool InMemoryFileSystem::write_item_to_disk(const std::vector<std::string>& cano
     return result;
 }
 
-std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::string& path, std::error_code& error) {
+std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::string& path, std::error_code& error) noexcept {
     std::filesystem::path file_path(path);
     auto status = std::filesystem::exists(file_path, error);
     if (!status || error) {
@@ -718,64 +646,66 @@ std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::string& 
 
 void InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_path,
                                    size_t alignment,
-                                   std::ostream& stream) {
-    using namespace serdes;
+                                   const MetadataReader& metadata_writer,
+                                   std::ostream& stream) const noexcept {
     auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
     if (!node) {
         return;
     }
 
-    auto nodes = FlattenedInMemoryNode::flatten(node, alignment);
-    for (const auto& node: nodes) {
-        if (node.file_node == nullptr) {
+    auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
+    for (const auto& flattened_node: flattened_nodes) {
+        if (flattened_node.file_node == nullptr) {
             continue;
         }
-        auto region = node.data_region;
-        auto buffer = node.file_node->getBuffer();
+        const auto& flattened_node_metadata = flattened_node.metadata;
+        auto region = flattened_node_metadata.data_region;
+        auto buffer = flattened_node.file_node->getBuffer();
         auto start = static_cast<char*>(buffer->data());
         stream.seekp(region.offset);
         stream.write(start, region.size);
     }
 
-    auto metadata = InMemoryNodeMetaData { .nodes = std::move(nodes) };
-    metadata.writeToStream(stream);
+    auto fs_metadata = get_metadatas(std::move(flattened_nodes));
+    // Serialize metadata at the end of the stream.
+    metadata_writer(fs_metadata, stream);
 }
 
-size_t InMemoryFileSystem::get_serialization_size(const std::vector<std::string>& canonical_path, size_t alignment) {
-    using namespace serdes;
+size_t InMemoryFileSystem::get_serialization_size(const std::vector<std::string>& canonical_path,
+                                                  size_t alignment,
+                                                  const MetadataReader& metadata_writer) const noexcept {
 
     auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
     if (!node) {
         return 0;
     }
 
-    auto nodes = FlattenedInMemoryNode::flatten(node, alignment);
+    auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
     size_t length = 0;
-    for (const auto& node: nodes) {
-        auto region = node.data_region;
+    for (const auto& flattened_node: flattened_nodes) {
+        auto region = flattened_node.metadata.data_region;
         length = std::max(region.get_length(), length);
     }
-    auto metadata = InMemoryNodeMetaData { .nodes = std::move(nodes) };
-    const auto& str = metadata.json_string();
-    length += str.length();
+
+    auto fs_metadata = get_metadatas(std::move(flattened_nodes));
+    std::stringstream stream;
+    metadata_writer(fs_metadata, stream);
+    length += stream.str().length();
 
     return length;
 }
 
-std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::shared_ptr<MemoryBuffer>& buffer) {
-    using namespace serdes;
-
+std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::shared_ptr<MemoryBuffer>& buffer,
+                                                             const MetadataWriter& metadata_reader) noexcept {
     // read metadata from the end of the stream
     auto istream = ReversedIMemoryStream(buffer);
-    json metadata_json;
-    nlohmann::detail::json_sax_dom_parser<json> sdp(metadata_json, true);
-    if (!json::sax_parse(istream, &sdp, nlohmann::detail::input_format_t::json, false)) {
+    auto fs_metadata = metadata_reader(istream);
+    if (!fs_metadata) {
         return nullptr;
     }
 
-    InMemoryNodeMetaData metadata;
-    from_json(metadata_json, metadata);
-    auto rootNode = FlattenedInMemoryNode::unflatten(metadata.nodes, buffer);
+    auto flattened_nodes = get_flattened_nodes(std::move(fs_metadata.value().nodes));
+    auto rootNode = FlattenedInMemoryNode::unflatten(flattened_nodes, buffer);
     if (!rootNode) {
         return nullptr;
     }

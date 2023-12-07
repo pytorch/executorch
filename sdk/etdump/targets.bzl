@@ -35,7 +35,7 @@ def generate_schema_header_flatcc(rule_name, srcs, headers, default_headers):
             "-o ${OUT}",
             "${SRCS}",
             # Let our infra know that the file was generated.
-            " ".join(["&& echo '// @''generated' >> ${OUT}/" + header for header in headers]),
+            " ".join(["&& echo // @" + "generated >> ${OUT}/" + header for header in headers]),
         ]),
     )
 
@@ -47,7 +47,7 @@ def define_common_targets():
     """
     runtime.export_file(
         name = ETDUMP_SCHEMA_FLATCC,
-        visibility = ["//executorch/..."],
+        visibility = ["@EXECUTORCH_CLIENTS"],
     )
 
     generate_schema_header_flatcc(
@@ -73,7 +73,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = ETDUMP_STEM_FLATCC,
         srcs = [],
-        visibility = ["//executorch/..."],
+        visibility = ["//executorch/...", "@EXECUTORCH_CLIENTS"],
         exported_headers = {
             ETDUMP_SCHEMA_FLATCC_BUILDER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_BUILDER),
             ETDUMP_SCHEMA_FLATCC_READER: ":{}[{}]".format(ETDUMP_GEN_RULE_NAME_FLATCC, ETDUMP_SCHEMA_FLATCC_READER),
@@ -88,19 +88,44 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "etdump_flatcc",
+        name = "etdump_emitter",
         srcs = [
-            "etdump_flatcc.cpp",
-        ],
-        exported_headers = [
-            "etdump_flatcc.h",
+            "emitter.cpp",
         ],
         deps = [
-            "//executorch/runtime/platform:platform",
-        ],
-        exported_deps = [
-            ":etdump_schema_flatcc",
             "//executorch/runtime/core:core",
         ],
-        visibility = ["//executorch/..."],
+        exported_headers = [
+            "emitter.h",
+        ],
+        exported_external_deps = ["flatccrt"],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
+
+    for aten_mode in (True, False):
+        aten_suffix = "_aten" if aten_mode else ""
+        runtime.cxx_library(
+            name = "etdump_flatcc" + aten_suffix,
+            srcs = [
+                "etdump_flatcc.cpp",
+            ],
+            exported_headers = [
+                "etdump_flatcc.h",
+            ],
+            deps = [
+                "//executorch/runtime/platform:platform",
+            ],
+            exported_deps = [
+                ":etdump_schema_flatcc",
+                ":etdump_emitter",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:scalar_type_util" + aten_suffix,
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )

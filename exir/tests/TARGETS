@@ -212,6 +212,7 @@ python_unittest(
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:const_prop_pass",
+        "//executorch/exir/passes:constant_prop_pass",
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:remove_assert_async_pass",
@@ -358,7 +359,7 @@ python_binary(
     srcs = [
         "test_fixtures.py",
     ],
-    main_module = "executorch.exir.tests.test_fixtures",
+    main_function = "executorch.exir.tests.test_fixtures.generate_json_fixtures",
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
         ":lib",

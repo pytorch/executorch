@@ -95,11 +95,50 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         self.ep = ep
         assert len(self.constraints)
 
-    def check_common_constraints(self, node) -> bool:
-        if self.unsupported_modules and "source_fn_stack" in node.meta:
-            return not node.meta["source_fn_stack"][-1][1] in self.unsupported_modules
+    def check_node_has_valid_dtype(self, node):
+        if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
+            return True
+
+        valid_dtypes = {
+            torch.float32,
+            torch.int8,
+            torch.qint8,
+        }
+        if (
+            node.op != "placeholder"
+            and node.op != "call_function"
+            and node.op != "get_attr"
+        ):
+            return False
+
+        # Check inputs are valid dtypes
+        for arg in node.args:
+            if not isinstance(arg, torch.fx.Node):
+                continue
+            arg_val = arg.meta.get("val", None)
+
+            if arg_val is None or isinstance(arg_val, tuple):
+                continue
+
+            if arg_val.dtype not in valid_dtypes:
+                return False
+
+        # Check outputs are valid dtype
+        node_val = node.meta.get("val", None)
+        if node_val is not None:
+            if not isinstance(node_val, tuple):
+                node_val = (node_val,)
+
+            for val in node_val:
+                if val.dtype not in valid_dtypes:
+                    return False
 
         return True
+
+    def check_common_constraints(self, node) -> bool:
+        has_valid_dtypes = self.check_node_has_valid_dtype(node)
+
+        return has_valid_dtypes
 
     @staticmethod
     def check_constraint(node, ep) -> bool:
@@ -668,50 +707,76 @@ class XnnpackPartitioner(Partitioner):
         For each input node, walk up and pull necessary quant/attr nodes in the partition
         """
         nodes = set()
+
+        def is_param(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and is_param_node(ep, node)
+
+        def is_q(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and node.target in self._Q_OPS
+
+        def is_dq(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and node.target in self._DQ_OPS
+
+        def is_qparam(node) -> bool:
+            return isinstance(node, torch.fx.Node) and node.target in self._QPARAM_OPS
+
+        def is_getitem(node) -> bool:
+            return (
+                isinstance(node, torch.fx.Node)
+                and node.op == "call_function"
+                and node.target == operator.getitem
+            )
+
         for inp in input_nodes:
-            if inp.target in self._DQ_OPS:
-                # dequant node
-                nodes.add(inp)
+            if is_dq(ep, inp):
+                dq = inp
+
+                # Possible graph we want to partition
+                #                  op(...)
+                #                     ^
+                #                     |
+                #                     dq(0,   1, 2)
+                #                        ^    ^  ^
+                #                        |    |  |
+                #                        q(0, 1, 2) # optional, only when not folded by the quantizer
+                #                          ^  ^  ^
+                #                          |  |  |
+                # parameter ---------------'  |  |
+                #                  [choose_qparams --> get_item(s)]  # optional, only with dynamic quant
+                # per_channel_zp* ------------'  |
+                # per_channel_scale* ------------'
+
+                # The dequant node
+                nodes.add(dq)
 
                 # possible per_channel scale/zp for the dequant node args{1, 2}
                 for i in [1, 2]:
-                    node = inp.args[i]
-                    if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
+                    node = dq.args[i]
+                    if is_param(ep, node):
                         nodes.add(node)
 
-                # quant node
-                q_prod = inp.args[0]
-                assert (
-                    isinstance(q_prod, torch.fx.Node) and q_prod.target in self._Q_OPS
-                )
-                nodes.add(q_prod)
+                # is it quant or param node?
+                prod = dq.args[0]
 
-                # possible weight for the quant node arg{0}
-                node = q_prod.args[0]
-                if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
-                    nodes.add(node)
+                assert is_q(ep, prod) or is_param(
+                    ep, prod
+                ), f"Expecting quant or param node as an input to a dq node, but got {prod.target} for {prod} node"
 
-                # possible nodes for quant node args{1, 2}
-                for i in [1, 2]:
-                    node = q_prod.args[i]
-                    # possible choose_qparam
-                    if (
-                        isinstance(node, torch.fx.Node)
-                        and node.op == "call_function"
-                        and node.target == operator.getitem
-                    ):
-                        parent = node.args[0]
-                        if (
-                            isinstance(parent, torch.fx.Node)
-                            and parent.op == "call_function"
-                            and parent.target in self._QPARAM_OPS
-                        ):
+                nodes.add(prod)
+
+                if is_q(ep, prod):
+                    # possible nodes for quant node args{0, 1, 2}: 0: weight, 1: scale, 2: zero_point
+                    for i in [0, 1, 2]:
+                        node = prod.args[i]  # pyre-ignore
+
+                        # possible choose_qparam
+                        if is_getitem(node) and is_qparam(node.args[0]):
                             nodes.add(node)
-                            nodes.add(parent)
+                            nodes.add(node.args[0])
 
-                    # possible per_channel scale/zp for the quant node
-                    elif isinstance(node, torch.fx.Node) and is_param_node(ep, node):
-                        nodes.add(node)
+                        # weights or possible per_channel scale/zp for the quant node
+                        elif is_param(ep, node):
+                            nodes.add(node)
         return list(nodes)
 
     def get_output_deps(

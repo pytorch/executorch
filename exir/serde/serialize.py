@@ -37,6 +37,7 @@ from executorch.exir.serde.schema import (
 )
 from torch._export.serde.schema import GraphSignature
 from torch._export.serde.serialize import SerializeError
+from torch._export.verifier import load_verifier
 from torch.export.exported_program import (
     ExportGraphSignature,
     ModuleCallEntry,
@@ -342,6 +343,8 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
 
 
 class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
+    # TODO(angelayi): Match signature of export serializer
+    # pyre-ignore
     def serialize(
         self, exported_program: torch._export.ExportedProgram
     ) -> Tuple[schema.ExportedProgram, bytes]:
@@ -354,20 +357,14 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
         serialized_range_constraints = export_serialize.serialize_range_constraints(
             exported_program.range_constraints
         )
-        serialized_equality_constraints = (
-            export_serialize.serialize_equality_constraints(
-                exported_program.equality_constraints
-            )
-        )
 
         return (
             schema.ExportedProgram(
                 graph_module=serialized_graph_module,
                 opset_version=self.opset_version,
                 range_constraints=serialized_range_constraints,
-                equality_constraints=serialized_equality_constraints,
                 schema_version=schema.SCHEMA_VERSION,
-                example_inputs=None,
+                dialect=exported_program.dialect,
             ),
             export_serialize.serialize_torch_artifact(gm_serializer.state_dict),
         )
@@ -646,6 +643,8 @@ class GraphModuleDeserializer(export_serialize.GraphModuleDeserializer):
 
 
 class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
+    # TODO(angelayi): Match signature of export serializer
+    # pyre-ignore
     def deserialize(
         self,
         serialized_exported_program: schema.ExportedProgram,
@@ -682,19 +681,22 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             if node.op == "get_attr":
                 state_dict[node.target] = getattr(graph_module, node.target)
 
-        equality_constraints = export_serialize.deserialize_equality_constraints(
-            serialized_exported_program.equality_constraints
-        )
-
-        return exir.ExportedProgram(
+        dummy_g = torch.fx.Graph()
+        dummy_g.output(())
+        ep = exir.ExportedProgram(
             state_dict,
-            graph_module.graph,
+            dummy_g,
             sig,
             {},  # TODO(T157676982)
             range_constraints,
-            equality_constraints,
-            module_call_graph,
+            [],
+            module_call_graph=module_call_graph,
+            verifier=load_verifier(serialized_exported_program.dialect),
         )
+        ep.graph_module.graph = graph_module.graph
+        for name, t in state_dict.items():
+            setattr(ep.graph_module, name, t)
+        return ep
 
 
 def serialize(

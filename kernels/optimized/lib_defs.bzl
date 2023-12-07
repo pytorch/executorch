@@ -112,7 +112,6 @@ def define_libs():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        # TODO(ssjia): Link with Accelerate for Apple builds
         fbandroid_platform_preprocessor_flags = [
             (
                 "^android-arm64.*$",
@@ -128,6 +127,13 @@ def define_libs():
                     "fbsource//third-party/openblas:openblas",
                 ],
             ),
+        ],
+        fbobjc_exported_preprocessor_flags = [
+            "-DET_BUILD_WITH_BLAS",
+            "-DET_BUILD_FOR_APPLE",
+        ],
+        fbobjc_frameworks = [
+            "Accelerate",
         ],
         exported_deps = [
             "//executorch/kernels/optimized:libutils",

@@ -7,7 +7,7 @@ load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+define_common_targets(is_fbcode = True)
 
 python_unittest(
     name = "gen_supported_features_test",
@@ -23,7 +23,7 @@ python_binary(
     srcs = [
         "test_case_gen.py",
     ],
-    main_module = "executorch.kernels.test.test_case_gen",
+    main_function = "executorch.kernels.test.test_case_gen.main",
     deps = [
         "//caffe2:torch",
     ],
@@ -34,7 +34,7 @@ python_binary(
     srcs = [
         "summarize_supported_features.py",
     ],
-    main_module = "executorch.kernels.test.summarize_supported_features",
+    main_function = "executorch.kernels.test.summarize_supported_features.make_md_table",
     deps = [
         "fbsource//third-party/pypi/pyyaml:pyyaml",
     ],

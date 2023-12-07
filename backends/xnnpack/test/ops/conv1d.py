@@ -7,6 +7,7 @@
 import unittest
 
 import torch
+from executorch.backends.xnnpack.test.test_xnnpack_utils import randomize_bn
 
 from executorch.backends.xnnpack.test.tester import Tester
 
@@ -38,21 +39,72 @@ class TestConv1d(unittest.TestCase):
         def forward(self, x):
             return self.conv1d(x)
 
-    def test_conv1d(self):
-        inputs = (torch.randn(1, 2, 4),)
+    class Conv1dBatchNormSequential(torch.nn.Module):
+        def __init__(self):
+            groups = 1
+            stride = [1]
+            padding = [1]
+            dilation = [1]
+            in_channels = 2
+            out_channels = 2
+            kernel_size = (3,)
+
+            super().__init__()
+            self.conv1 = torch.nn.Conv1d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                groups=groups,
+                dilation=dilation,
+                bias=True,
+            )
+            self.bn1 = randomize_bn(num_features=in_channels, dimensionality=1)
+            self.conv2 = torch.nn.Conv1d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                groups=groups,
+                dilation=dilation,
+                bias=True,
+            )
+            self.bn2 = randomize_bn(num_features=in_channels, dimensionality=1)
+
+        def forward(self, x):
+            y = self.conv1(x)
+            y = self.bn1(y)
+            z = self.conv2(y)
+            z = self.bn2(z)
+            z = torch.add(y, z)
+            return z
+
+    def _test_conv1d(self, module, inputs, conv_count):
         (
-            Tester(self.Conv1d(), inputs)
+            Tester(module, inputs)
             .export()
-            .check_count({"torch.ops.aten.convolution.default": 1})
+            .check_count({"torch.ops.aten.convolution.default": conv_count})
             .to_edge()
             .check_count(
-                {"executorch_exir_dialects_edge__ops_aten_convolution_default": 1}
+                {
+                    "executorch_exir_dialects_edge__ops_aten_convolution_default": conv_count
+                }
             )
             .partition()
             .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
-            .check_count({"torch.ops.executorch_call_delegate": 1})
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
             .run_method()
             .compare_outputs()
         )
+
+    def test_conv1d(self):
+        inputs = (torch.randn(1, 2, 4),)
+        self._test_conv1d(self.Conv1d(), inputs, 1)
+
+    def test_conv1d_batchnorm_seq(self):
+        inputs = (torch.randn(1, 2, 4),)
+        self._test_conv1d(self.Conv1dBatchNormSequential(), inputs, 2)

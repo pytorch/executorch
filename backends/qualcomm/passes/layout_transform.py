@@ -7,6 +7,8 @@ import _operator
 from typing import List, Tuple
 
 import torch
+
+from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.sym_util import eval_shape
@@ -76,8 +78,11 @@ class LayoutTransform(ExportPass):
             old_layout, new_layout = new_layout, old_layout
         return tuple(old_layout.find(x) for x in new_layout)
 
-    def __init__(self, insert_permute=False):
+    def __init__(
+        self, edge_program: torch.export.ExportedProgram, insert_permute=False
+    ):
         super(LayoutTransform, self).__init__()
+        self.edge_program = edge_program
         self.insert_permute = insert_permute
 
     def mark_as_transformed(self, node: torch.fx.Node) -> None:
@@ -129,6 +134,7 @@ class LayoutTransform(ExportPass):
                     and not isinstance(node.meta["val"], tuple)
                     and len(node.meta["val"].shape) == 0
                 ),
+                is_parameter(node, self.edge_program),
             ]
         ):
             return True
@@ -181,7 +187,11 @@ class LayoutTransform(ExportPass):
 
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
         for arg in node.args:
-            self.annotate_layout(arg, graph_module, revert_layout=False)
+            if isinstance(arg, list):
+                for arg_node in arg:
+                    self.annotate_layout(arg_node, graph_module, revert_layout=False)
+            else:
+                self.annotate_layout(arg, graph_module, revert_layout=False)
 
         node_users = set(node.users.keys())
         for user in node_users:

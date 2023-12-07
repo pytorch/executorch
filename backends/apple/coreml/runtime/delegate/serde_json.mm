@@ -7,8 +7,11 @@
 
 #import <serde_json.h>
 
-namespace  {
+#import <asset.h>
+#import <objc_json_serde.h>
+#import <metadata.h>
 
+namespace  {
 struct FileInfoKeys {
     constexpr static std::string_view kRelativePath = "relativePath";
     constexpr static std::string_view kSizeKey = "sizeInBytes";
@@ -31,86 +34,119 @@ struct ModelMetadataKeys {
     constexpr static std::string_view kInputNamesKey = "inputNames";
     constexpr static std::string_view kOutputNamesKey = "outputNames";
 };
-} //namespace
+}
 
 namespace executorchcoreml {
+namespace serde {
+namespace json {
 
-using json = nlohmann::json;
+template <>
+struct JSONSerde<executorchcoreml::FileInfo> {
+    static id to_json(const executorchcoreml::FileInfo& file_info) {
+        return @{
+            to_string(FileInfoKeys::kRelativePath) : to_json_value(file_info.relative_path),
+            to_string(FileInfoKeys::kSizeKey) : to_json_value(file_info.size_in_bytes),
+            to_string(FileInfoKeys::kLastModificationTimeIntervalKey) :to_json_value(file_info.last_modification_time_interval)
+        };
+    }
+    
+    static void from_json(id json, executorchcoreml::FileInfo& file_info) {
+        NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
+        if (!json_dict) {
+            return;
+        }
+        
+        from_json_value(json_dict[to_string(FileInfoKeys::kRelativePath)], file_info.relative_path);
+        from_json_value(json_dict[to_string(FileInfoKeys::kSizeKey)], file_info.size_in_bytes);
+        from_json_value(json_dict[to_string(FileInfoKeys::kLastModificationTimeIntervalKey)], file_info.last_modification_time_interval);
+    }
+};
 
-void to_json(json& j, const FileInfo& info) {
-    j = json{
-        {FileInfoKeys::kRelativePath, info.relative_path},
-        {FileInfoKeys::kSizeKey, info.size_in_bytes},
-        {FileInfoKeys::kLastModificationTimeIntervalKey, info.last_modification_time_interval},
-    };
+
+template <>
+struct JSONSerde<executorchcoreml::PackageInfo> {
+    static id to_json(const executorchcoreml::PackageInfo& package_info) {
+        return @{
+            to_string(PackageInfoKeys::kNameKey) : to_json_value(package_info.name),
+            to_string(PackageInfoKeys::kFileInfosKey) : to_json_value(package_info.file_infos)
+        };
+    }
+    
+    static void from_json(id json, executorchcoreml::PackageInfo& package_info) {
+        NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
+        if (!json_dict) {
+            return;
+        }
+        
+        from_json_value(json_dict[to_string(PackageInfoKeys::kNameKey)], package_info.name);
+        from_json_value(json_dict[to_string(PackageInfoKeys::kFileInfosKey)], package_info.file_infos);
+    }
+};
+
+template <>
+struct JSONSerde<executorchcoreml::Asset> {
+    static id to_json(const executorchcoreml::Asset& asset) {
+        return @{
+            to_string(ModelAssetKeys::kIdentifierKey) : to_json_value(asset.identifier),
+            to_string(ModelAssetKeys::kPathKey) : to_json_value(asset.path),
+            to_string(ModelAssetKeys::kPackageInfoKey) : to_json_value(asset.package_info)
+        };
+    }
+    
+    static void from_json(id json, executorchcoreml::Asset& asset) {
+        NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
+        if (!json_dict) {
+            return;
+        }
+        
+        from_json_value(json_dict[to_string(ModelAssetKeys::kIdentifierKey)], asset.identifier);
+        from_json_value(json_dict[to_string(ModelAssetKeys::kPathKey)], asset.path);
+        from_json_value(json_dict[to_string(ModelAssetKeys::kPackageInfoKey)], asset.package_info);
+    }
+};
+
+template <>
+struct JSONSerde<executorchcoreml::ModelMetadata> {
+    static id to_json(const executorchcoreml::ModelMetadata& metadata) {
+        return @{
+            to_string(ModelMetadataKeys::kIdentifierKey) : to_json_value(metadata.identifier),
+            to_string(ModelMetadataKeys::kInputNamesKey) : to_json_value(metadata.input_names),
+            to_string(ModelMetadataKeys::kOutputNamesKey) :to_json_value(metadata.output_names)
+        };
+    }
+    
+    static void from_json(id json, executorchcoreml::ModelMetadata& metadata) {
+        NSDictionary<NSString *, id> *json_dict = SAFE_CAST(json, NSDictionary);
+        if (!json_dict) {
+            return;
+        }
+        
+        from_json_value(json_dict[to_string(ModelMetadataKeys::kIdentifierKey)], metadata.identifier);
+        from_json_value(json_dict[to_string(ModelMetadataKeys::kInputNamesKey)], metadata.input_names);
+        from_json_value(json_dict[to_string(ModelMetadataKeys::kOutputNamesKey)], metadata.output_names);
+    }
+};
+
+std::string to_json_string(const Asset& asset) {
+    id json = JSONSerde<Asset>::to_json(asset);
+    return to_json_string(json);
 }
 
-void from_json(const json& j, FileInfo& info) {
-    if (j.contains(FileInfoKeys::kRelativePath)) {
-        j.at(FileInfoKeys::kRelativePath).get_to(info.relative_path);
-    }
-    if (j.contains(FileInfoKeys::kSizeKey)) {
-        j.at(FileInfoKeys::kSizeKey).get_to(info.size_in_bytes);
-    }
-    if (j.contains(FileInfoKeys::kLastModificationTimeIntervalKey)) {
-        j.at(FileInfoKeys::kLastModificationTimeIntervalKey).get_to(info.last_modification_time_interval);
-    }
+void from_json_string(const std::string& json_string, Asset& asset) {
+    id json = to_json_object(json_string);
+    JSONSerde<Asset>::from_json(json, asset);
 }
 
-void to_json(json& j, const PackageInfo& info) {
-    j = json{
-        {PackageInfoKeys::kNameKey, info.name},
-        {PackageInfoKeys::kFileInfosKey, info.file_infos}
-    };
+std::string to_json_string(const ModelMetadata& metdata) {
+    id json = JSONSerde<ModelMetadata>::to_json(metdata);
+    return to_json_string(json);
 }
 
-void from_json(const json& j, PackageInfo& info) {
-    if (j.contains(PackageInfoKeys::kNameKey)) {
-        j.at(PackageInfoKeys::kNameKey).get_to(info.name);
-    }
-    if (j.contains(PackageInfoKeys::kFileInfosKey)) {
-        j.at(PackageInfoKeys::kFileInfosKey).get_to(info.file_infos);
-    }
+void from_json_string(const std::string& json_string, ModelMetadata& metadata) {
+    id json = to_json_object(json_string);
+    JSONSerde<ModelMetadata>::from_json(json, metadata);
 }
 
-void to_json(json& j, const Asset& asset) {
-    j = json{
-        {ModelAssetKeys::kIdentifierKey, asset.identifier},
-        {ModelAssetKeys::kPathKey, asset.path},
-        {ModelAssetKeys::kPackageInfoKey, asset.package_info}
-    };
-}
-
-void from_json(const json& j, Asset& asset) {
-    if (j.contains(ModelAssetKeys::kIdentifierKey)) {
-        j.at(ModelAssetKeys::kIdentifierKey).get_to(asset.identifier);
-    }
-    if (j.contains(ModelAssetKeys::kPathKey)) {
-        j.at(ModelAssetKeys::kPathKey).get_to(asset.path);
-    }
-    if (j.contains(ModelAssetKeys::kPackageInfoKey)) {
-        j.at(ModelAssetKeys::kPackageInfoKey).get_to(asset.package_info);
-    }
-}
-
-void to_json(json& j, const ModelMetadata& metadata) {
-    j = json{
-        {ModelMetadataKeys::kIdentifierKey, metadata.identifier},
-        {ModelMetadataKeys::kInputNamesKey, metadata.input_names},
-        {ModelMetadataKeys::kOutputNamesKey, metadata.output_names}
-    };
-}
-
-void from_json(const json& j, ModelMetadata& metadata) {
-    if (j.contains(ModelMetadataKeys::kIdentifierKey)) {
-        j.at(ModelMetadataKeys::kIdentifierKey).get_to(metadata.identifier);
-    }
-    if (j.contains(ModelMetadataKeys::kInputNamesKey)) {
-        j.at(ModelMetadataKeys::kInputNamesKey).get_to(metadata.input_names);
-    }
-    if (j.contains(ModelMetadataKeys::kOutputNamesKey)) {
-        j.at(ModelMetadataKeys::kOutputNamesKey).get_to(metadata.output_names);
-    }
-}
-
+} // namespace json
+} // namespace serde
 } // namespace executorchcoreml

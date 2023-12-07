@@ -6,7 +6,6 @@ def get_all_cpu_backend_targets():
     """
     return [
         "//executorch/backends/xnnpack:xnnpack_backend",
-        "//executorch/backends/fb/qnnpack:qnnpack_backend",
     ]
 
 def get_all_cpu_aot_and_backend_targets():
@@ -18,6 +17,4 @@ def get_all_cpu_aot_and_backend_targets():
     return [
         "//executorch/backends/xnnpack:xnnpack_preprocess",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/fb/qnnpack:qnnpack_preprocess",
-        "//executorch/backends/fb/qnnpack/partition:qnnpack_partitioner",
     ] + get_all_cpu_backend_targets()

@@ -22,6 +22,7 @@ def define_cpuinfo_and_clog():
             "cpuinfo-wrappers/linux/multiline.c",
             "cpuinfo-wrappers/linux/processors.c",
             "cpuinfo-wrappers/linux/smallfile.c",
+            "cpuinfo-wrappers/log.c",
             "cpuinfo-wrappers/mach/topology.c",
             "cpuinfo-wrappers/x86/cache/descriptor.c",
             "cpuinfo-wrappers/x86/cache/deterministic.c",

@@ -10,10 +10,16 @@ import tempfile
 import unittest
 
 import executorch.exir.tests.models as models
+import torch
 from executorch import exir
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
+from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
+from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
-from executorch.sdk.etrecord._etrecord import ETRecordReservedFileNames
+from executorch.sdk.etrecord._etrecord import (
+    _get_reference_outputs,
+    ETRecordReservedFileNames,
+)
 from torch.export import export
 
 
@@ -30,6 +36,34 @@ class TestETRecord(unittest.TestCase):
         edge_output_copy = copy.deepcopy(edge_output)
         et_output = edge_output.to_executorch()
         return (captured_output_copy, edge_output_copy, et_output)
+
+    def get_test_model_with_bundled_program(self):
+        f = models.BasicSinMax()
+        inputs = [f.get_random_inputs() for _ in range(2)]
+        m_name = "forward"
+
+        method_test_suites = [
+            MethodTestSuite(
+                method_name=m_name,
+                test_cases=[
+                    MethodTestCase(
+                        inputs=inp, expected_outputs=getattr(f, m_name)(*inp)
+                    )
+                    for inp in inputs
+                ],
+            )
+        ]
+        captured_output = exir.capture(f, inputs[0], exir.CaptureConfig())
+        captured_output_copy = copy.deepcopy(captured_output)
+        edge_output = captured_output.to_edge(
+            # TODO(gasoon): Remove _use_edge_ops=False once serde is fully migrated to Edge ops
+            exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=False)
+        )
+        edge_output_copy = copy.deepcopy(edge_output)
+        et_output = edge_output.to_executorch()
+
+        bundled_program = create_bundled_program(et_output, method_test_suites)
+        return (captured_output_copy, edge_output_copy, bundled_program)
 
     def get_test_model_with_manager(self):
         f = models.BasicSinMax()
@@ -80,6 +114,34 @@ class TestETRecord(unittest.TestCase):
             self.assertEqual(
                 etrecord._debug_handle_map,
                 json.loads(json.dumps(et_output.debug_handle_map)),
+            )
+
+    def test_etrecord_generation_with_bundled_program(self):
+        (
+            captured_output,
+            edge_output,
+            bundled_program,
+        ) = self.get_test_model_with_bundled_program()
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            generate_etrecord(
+                tmpdirname + "/etrecord.bin",
+                edge_output,
+                bundled_program,
+                {
+                    "aten_dialect_output": captured_output,
+                },
+            )
+            etrecord = parse_etrecord(tmpdirname + "/etrecord.bin")
+
+            expected = etrecord._reference_outputs
+            actual = _get_reference_outputs(bundled_program)
+            # assertEqual() gives "RuntimeError: Boolean value of Tensor with more than one value is ambiguous" when comparing tensors,
+            # so we use torch.equal() to compare the tensors one by one.
+            self.assertTrue(
+                torch.equal(expected["forward"][0][0], actual["forward"][0][0])
+            )
+            self.assertTrue(
+                torch.equal(expected["forward"][1][0], actual["forward"][1][0])
             )
 
     def test_etrecord_generation_with_manager(self):

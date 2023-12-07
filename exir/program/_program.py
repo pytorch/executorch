@@ -6,14 +6,14 @@
 
 import copy
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
 import torch
 import torch._export
 
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.partitioner import TPartitioner
+from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.emit import emit_program, EmitterOutput
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
@@ -32,16 +32,31 @@ from executorch.exir.tracer import _default_decomposition_table
 from executorch.exir.verification.verifier import (
     EXIRATenDialectVerifier,
     EXIREdgeDialectVerifier,
+    get_aten_verifier,
 )
 from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
-from torch._guards import detect_fake_mode
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+def _copy_module(new_prog, new_gm):
+    new_prog.meta.update(new_gm.meta)
+    new_prog.graph = new_gm.graph
+    submodules = [name for name, _ in new_prog.named_children()]
+    for name in submodules:
+        delattr(new_prog, name)
+    for name, mod in new_gm.named_children():
+        setattr(new_prog, name, mod)
+    for node in new_gm.graph.nodes:
+        if node.op == "get_attr":
+            t = getattr(new_gm, node.target, None)
+            if isinstance(t, torch.Tensor):
+                setattr(new_prog, node.target, t)
 
 
 def lift_constant_tensor_pass(ep):
@@ -55,10 +70,7 @@ def lift_constant_tensor_pass(ep):
     graph_signature = ep.graph_signature
     buffers = graph_signature.buffers
 
-    fake_mode = detect_fake_mode(
-        tuple(node.meta["val"] for node in ep.graph.nodes if node.op == "placeholder")
-    )
-
+    fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
     lifted_buffers = []
     for node in ep.graph.nodes:
@@ -131,6 +143,7 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
         equality_constraints,
         module_call_graph,
         example_inputs,
+        verifier,
     ):
         super().__init__(
             root,
@@ -141,8 +154,8 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
             equality_constraints,
             module_call_graph,
             example_inputs,
+            verifier,
         )
-        self._dialect = "HACKED_ATEN"
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         import torch._export.error as error
@@ -245,20 +258,24 @@ class ExirExportedProgram:
         if not self.after_to_edge_passes:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
-        ep = self.exported_program
-        new_prog = ep._transform(*edge_to_executorch_passes(config))
-        new_prog = ExirExportedProgram(new_prog, self.after_to_edge_passes)
+        new_gm = self.exported_program.graph_module
+        for p in edge_to_executorch_passes(config):
+            new_gm_res = p(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
+        new_prog = ExirExportedProgram(
+            copy.deepcopy(self.exported_program), self.after_to_edge_passes
+        )
+        _copy_module(new_prog.exported_program.graph_module, new_gm)
         executorch_prog = ExecutorchProgram(
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
-            extract_segments=config.extract_segments,
+            extract_delegate_segments=config.extract_delegate_segments,
             segment_alignment=config.segment_alignment,
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
         )
-        executorch_prog.graph_module.meta.update(
-            new_prog.exported_program.graph_module.meta
-        )
+        executorch_prog.graph_module.meta.update(new_gm.meta)
         executorch_prog.graph_module.meta.update(
             self.exported_program.graph_module.meta
         )
@@ -281,7 +298,7 @@ class ExecutorchProgram:
         self,
         exir_exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
-        extract_segments: bool,
+        extract_delegate_segments: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -294,7 +311,7 @@ class ExecutorchProgram:
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
-        self._extract_segments: bool = extract_segments
+        self._extract_delegate_segments: bool = extract_delegate_segments
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -304,7 +321,7 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
-                extract_segments=self._extract_segments,
+                extract_delegate_segments=self._extract_delegate_segments,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -356,6 +373,23 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             )
             raise
 
+    dialect = ep.exported_program.dialect
+    if dialect == "ATEN":
+        ep = ExirExportedProgram(
+            ExportedProgram(
+                ep.exported_program.graph_module,
+                ep.exported_program.graph_module.graph,
+                ep.exported_program.graph_signature,
+                ep.exported_program.state_dict,
+                ep.exported_program.range_constraints,
+                ep.exported_program.equality_constraints,
+                ep.exported_program.module_call_graph,
+                ep.exported_program.example_inputs,
+                verifier=get_aten_verifier(enable=config._check_ir_validity),
+                tensor_constants=ep.exported_program.tensor_constants,
+            ),
+            False,
+        )
     # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
     # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
@@ -364,16 +398,23 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     post_op_replace_passes = aten_to_edge_passes.passes[-2:]
 
     new_ep = copy.deepcopy(ep).transform(*pre_op_replace_passes)
-    if new_ep.exported_program.dialect == "ATEN":
+    if dialect == "ATEN":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
+    new_gm = new_ep.exported_program.graph_module
     if config._use_edge_ops:
-        new_ep = new_ep.transform(OpReplacePass())
+        new_gm_res = OpReplacePass()(new_gm)
+        assert new_gm_res is not None
+        new_gm = new_gm_res.graph_module
 
-    new_ep = new_ep.transform(*post_op_replace_passes)
+    for p in post_op_replace_passes:
+        new_gm_res = p(new_gm)
+        assert new_gm_res is not None
+        new_gm = new_gm_res.graph_module
+
     new_ep.exported_program = ExportedProgram(
-        new_ep.exported_program.graph_module,
-        new_ep.exported_program.graph,
+        new_gm,
+        new_gm.graph,
         new_ep.exported_program.graph_signature,
         new_ep.exported_program.state_dict,
         new_ep.exported_program.range_constraints,
@@ -385,12 +426,8 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             enable=config._check_ir_validity,
             class_only=True,
         ),
+        tensor_constants=new_ep.exported_program.tensor_constants,
     )
-    if config._check_ir_validity:
-        # TODO(zhxchen17) Remove this call after we turn on verifier in ctor.
-        EXIREdgeDialectVerifier(check_edge_ops=config._use_edge_ops)(
-            new_ep.exported_program.graph_module
-        )
     new_ep.after_to_edge_passes = True
     return new_ep
 
@@ -558,7 +595,7 @@ class MultiMethodExecutorchProgram:
         self,
         executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
-        extract_segments: bool,
+        extract_delegate_segments: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -574,7 +611,7 @@ class MultiMethodExecutorchProgram:
             executorch_dialect_program.prim_getters(),
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
-        self._extract_segments: bool = extract_segments
+        self._extract_delegate_segments: bool = extract_delegate_segments
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -585,7 +622,7 @@ class MultiMethodExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
-                extract_segments=self._extract_segments,
+                extract_delegate_segments=self._extract_delegate_segments,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -623,10 +660,20 @@ def multi_method_program_to_executorch(
 ) -> MultiMethodExecutorchProgram:
     config = config or ExecutorchBackendConfig()
     passes = edge_to_executorch_passes(config)
+    res = {}
+    for method_name, prog in edge_dialect_program._method_to_program.items():
+        new_prog = copy.deepcopy(prog)
+        gm = prog.exported_program.graph_module
+        for p in passes:
+            gm_res = p(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+        _copy_module(new_prog.exported_program.graph_module, gm)
+        res[method_name] = new_prog
     return MultiMethodExecutorchProgram(
-        executorch_dialect_program=edge_dialect_program.transform(*passes),
+        executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
-        extract_segments=config.extract_segments,
+        extract_delegate_segments=config.extract_delegate_segments,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
@@ -640,7 +687,7 @@ def to_edge(
     compile_config: Optional[EdgeCompileConfig] = None,
 ) -> "EdgeProgramManager":
     """
-    :func:`to_edge` constructs an EdgeProgramManger from a set of exported programs in
+    :func:`to_edge` constructs an EdgeProgramManager from a set of exported programs in
     ATen dialect. Upon construction those programs are transformed into edge dialect.
 
     Args:
@@ -663,9 +710,7 @@ def to_edge(
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
         # Decompose to Core ATen
-        program = program.run_decompositions(
-            _default_decomposition_table()  # pyre-ignore[6]
-        )
+        program = program.run_decompositions(_default_decomposition_table())
 
         if config._check_ir_validity:
             try:
@@ -673,8 +718,6 @@ def to_edge(
             except ExportError as e:
                 logging.info(f"Input program {name} is not in ATen dialect.")
                 raise e
-
-        op_replace_pass = [OpReplacePass()] if config._use_edge_ops else []
 
         # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
         # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
@@ -686,24 +729,45 @@ def to_edge(
             ReplaceViewOpsWithViewCopyOpsPass()
         )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
         passes.extend(aten_to_edge_passes.passes[:-2])
-        passes.extend(op_replace_pass)
+        gm = program.graph_module
+        edge_program = program
+        for p in passes:
+            gm_res = p(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+
+        if config._use_edge_ops:
+            gm_res = OpReplacePass()(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+
+        edge_program = ExportedProgram(
+            root=gm,
+            graph=gm.graph,
+            graph_signature=edge_program.graph_signature,
+            state_dict=edge_program.state_dict,
+            range_constraints=edge_program.range_constraints,
+            equality_constraints=edge_program.equality_constraints,
+            module_call_graph=edge_program.module_call_graph,
+            example_inputs=edge_program.example_inputs,
+            verifier=EXIREdgeDialectVerifier(
+                check_edge_ops=config._use_edge_ops,
+                enable=config._check_ir_validity,
+                class_only=True,
+            ),
+            tensor_constants=edge_program.tensor_constants,
+        )
+        passes = []
         passes.extend(aten_to_edge_passes.passes[-2:])
-        edge_program = program._transform(*passes)
-        try:
-            EXIREdgeDialectVerifier(
-                check_edge_ops=config._use_edge_ops, enable=config._check_ir_validity
-            )(edge_program.graph_module)
-        except ExportError as e:
-            logging.info(f"Resultant program {name} is not in edge dialect.")
-            raise e
+        edge_program = edge_program._transform(*passes)
         edge_programs[name] = edge_program
-    return EdgeProgramManager(edge_programs, constant_methods)
+    return EdgeProgramManager(edge_programs, constant_methods, config)
 
 
 class EdgeProgramManager:
     """
     Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify
-    lowering to ExecuTorch.
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
 
     Allows easy applications of transforms across a collection of exported programs
     including the delegation of subgraphs.
@@ -711,22 +775,24 @@ class EdgeProgramManager:
     Manages the second link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
-    # TODO(T163717152): Link to Edge dialect docs here ^.
-
     def __init__(
         self,
         edge_programs: Dict[str, ExportedProgram],
         constant_methods: Optional[Dict[str, Any]] = None,
+        compile_config: Optional[EdgeCompileConfig] = None,
     ):
         """
         Should not be called directly by users. User should use :func:'to_edge' instead.
 
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
-
+        config = compile_config or EdgeCompileConfig()
         for name, program in edge_programs.items():
             try:
-                EXIREdgeDialectVerifier()(program.graph_module)
+                EXIREdgeDialectVerifier(
+                    check_edge_ops=config._use_edge_ops,
+                    enable=config._check_ir_validity,
+                )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
@@ -757,6 +823,8 @@ class EdgeProgramManager:
     def transform(
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
+        check_ir_validity: bool = True,
+        # We should also probably add check_edge_ops here as well
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -778,22 +846,25 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = program._transform(*passes[name])
-                    EXIREdgeDialectVerifier()(new_programs[name].graph_module)
+                    EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                        new_programs[name].graph_module
+                    )
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = program._transform(*passes)
-                EXIREdgeDialectVerifier()(new_programs[name].graph_module)
-
+                EXIREdgeDialectVerifier(enable=check_ir_validity)(
+                    new_programs[name].graph_module
+                )
+        config = EdgeCompileConfig(_check_ir_validity=check_ir_validity)
         return EdgeProgramManager(
-            new_programs,
-            copy.deepcopy(self._config_methods),
+            new_programs, copy.deepcopy(self._config_methods), config
         )
 
     def to_backend(
-        self, partitioner: Union[Type[TPartitioner], Dict[str, Type[TPartitioner]]]
+        self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
     ) -> "EdgeProgramManager":
         """
         Returns a semantically-equivalent program to the one given as input,
@@ -801,15 +872,15 @@ class EdgeProgramManager:
         for delegation as determined by the partitioner.
 
         Args:
-            partitioner: The partitioner can either be a Partitioner subclass, or a
-                dictionary mapping method names to Partitioner subclass. If it is a
+            partitioner: The partitioner can either be a Partitioner subclass instance, or a
+                dictionary mapping method names to Partitioner subclass instance. If it is a
                 Partitioner subclass, all programs in the given EdgeProgramManager
                 will be lowered using the given partitioner. If it is a
                 dictionary, only method names specified in the dictionary will be
                 lowered with the given partitioner.
 
-                The Partitioner subclass is in charge with tagging portions of the
-                input program for delegation. A valid partitioner must have
+                The Partitioner subclass instance is in charge with tagging portions of the
+                input program for delegation. A valid partitioner must return PartitionerResult including valid
                 partition_tags: Dict[str, DelegationSpec], where each key is a tag
                 name and the nodes with same tag will be fused a one subgraph and
                 delegated to backend specififed in delegation spec.
@@ -830,8 +901,9 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 new_edge_programs[name] = to_backend(program, partitioner)
 
+        config = EdgeCompileConfig(_check_ir_validity=False)
         return EdgeProgramManager(
-            new_edge_programs, copy.deepcopy(self._config_methods)
+            new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
     def to_executorch(
@@ -852,7 +924,25 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
-            new_prog = program._transform(*edge_to_executorch_passes(config))
+            new_gm = program.graph_module
+            for p in edge_to_executorch_passes(config):
+                new_gm_res = p(new_gm)
+                assert new_gm_res is not None
+                new_gm = new_gm_res.graph_module
+                if isinstance(p, SpecPropPass):
+                    # Note that this is a hacky way to get around the fact that
+                    # placeholder nodes corresponding to the parameters of the graph module
+                    # shall not participate in memory planning. It increases runtime memory
+                    # footprint.
+                    # Proper way would be to have ExportPass work with ExportedProgram
+                    # instead of GraphModule. This is because ExportPass should work
+                    # on top of the export artifact of torch.export whichi s ExportedProgram.
+                    # Working with GraphModule does not provide all the information contained
+                    # in the ExportedProgram
+                    # TODO(who?)
+                    p.update_placeholder_tensor_specs(program, new_gm)
+            new_prog = copy.deepcopy(program)
+            _copy_module(new_prog.graph_module, new_gm)
             execution_programs[name] = new_prog
 
         return ExecutorchProgramManager(
@@ -862,8 +952,8 @@ class EdgeProgramManager:
 
 class ExecutorchProgramManager:
     """
-    Package of one or more :class:'ExportedPrograms' in Execution dialect. Designed to simplify
-    lowering to ExecuTorch.
+    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify
+    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html
 
     When the ExecutorchProgramManager is constructed the ExportedPrograms in execution dialect
     are used to form the executorch binary (in a process called emission) and then serialized
@@ -871,8 +961,6 @@ class ExecutorchProgramManager:
 
     Manages the final link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
-
-    # TODO(T163717152): Link to Execution dialect docs here ^.
 
     def __init__(
         self,
@@ -882,7 +970,7 @@ class ExecutorchProgramManager:
     ):
         """
         End users should not call this constructor directly. Instead, they should use
-        :func:'to_executorch' to construct an ExecutorchProgramManger.
+        :func:'to_executorch' to construct an ExecutorchProgramManager.
 
         Constructs an ExecutorchProgramManager from a set of exported programs in
         execution dialect.
@@ -913,7 +1001,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output to a buffer
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
-            extract_segments=backend_config.extract_segments,
+            extract_delegate_segments=backend_config.extract_delegate_segments,
             segment_alignment=backend_config.segment_alignment,
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,

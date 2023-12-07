@@ -7,9 +7,6 @@ MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB = [
 ]
 
 PORTABLE_MODULE_DEPS = [
-    "//caffe2:ATen",
-    "//caffe2:torch",
-    "//caffe2:torch_extension",
     "//executorch/runtime/kernel:operator_registry",
     "//executorch/runtime/executor:program",
     "//executorch/sdk/bundled_program/schema:bundled_program_schema_fbs",
@@ -20,6 +17,7 @@ PORTABLE_MODULE_DEPS = [
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/util:util",
     "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    "//executorch/sdk/etdump:etdump_flatcc",
 ] + get_all_cpu_backend_targets()
 
 ATEN_MODULE_DEPS = [
@@ -32,10 +30,8 @@ ATEN_MODULE_DEPS = [
     "//executorch/extension/memory_allocator:malloc_memory_allocator",
     "//executorch/util:read_file",
     "//executorch/sdk/bundled_program:runtime_aten",
-    "//caffe2:torch",
-    "//caffe2:torch_extension",
-    "//caffe2:ATen",
     "//executorch/runtime/executor/test:test_backend_compiler_lib_aten",
+    "//executorch/sdk/etdump:etdump_flatcc",
 ]
 
 # Generated lib for all ATen ops with aten kernel used by models in model inventory
@@ -44,7 +40,7 @@ MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
     "//executorch/kernels/aten:generated_lib_aten",
 ]
 
-def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = []):
+def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
     runtime.cxx_python_extension(
         name = python_module_name,
         srcs = [
@@ -52,6 +48,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ] + srcs,
         types = types,
         base_module = "executorch.extension.pybindings",
+        compiler_flags = compiler_flags,
         preprocessor_flags = [
             "-DEXECUTORCH_PYTHON_MODULE_NAME={}".format(python_module_name),
         ],
@@ -61,6 +58,7 @@ def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibilit
         ] + cppdeps,
         external_deps = [
             "pybind11",
+            "libtorch_python",
         ],
         use_static_deps = True,
         _is_external_target = bool(visibility != ["//executorch/..."]),

@@ -13,7 +13,8 @@ import numpy as np
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_quantizer import (
-    get_default_qnn_ptq_config,
+    get_default_16bit_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
 )
 from executorch.backends.qualcomm.utils.utils import (
@@ -128,23 +129,26 @@ def build_executorch_binary(
     file_name,
     dataset,
     use_fp16=False,
+    use_16bit_quant=False,
     custom_annotations=(),
 ):
     if not use_fp16:
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
-        quant_annotation_config = get_default_qnn_ptq_config(
-            enable_per_channel_conv_quant=True
-        )
-        quantizer.set_global_op_quant_config(quant_annotation_config)
+        if use_16bit_quant:
+            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+        else:
+            quantizer.set_bit8_op_quant_config(get_default_8bit_qnn_ptq_config())
 
         captured_model = torch._export.capture_pre_autograd_graph(model, inputs)
         annotated_model = prepare_pt2e(captured_model, quantizer)
         print("Quantizing the model...")
         # calibration
         for data in dataset:
-            annotated_model(data)
+            annotated_model(*data)
         quantized_model = convert_pt2e(annotated_model)
+
         edge_prog = capture_program(quantized_model, inputs)
     else:
         edge_prog = capture_program(model, inputs)
@@ -163,7 +167,9 @@ def build_executorch_binary(
             saver=False,
         )
     )
-    edge_prog.exported_program = to_backend(edge_prog.exported_program, QnnPartitioner)
+    edge_prog.exported_program = to_backend(
+        edge_prog.exported_program, QnnPartitioner()
+    )
     edge_prog.exported_program.graph_module.graph.print_tabular()
     exec_prog = edge_prog.to_executorch()
     with open(f"{file_name}.pte", "wb") as file:

@@ -37,6 +37,7 @@ from executorch.exir.backend.backend_details import (
     CompileSpec,
     PreprocessResult,
 )
+from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch._export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
@@ -189,6 +190,28 @@ class XnnpackBackend(BackendDetails):
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
         ep = copy.deepcopy(edge_program)
+        # Need to wrap EP here because xnnpack does addmm to linear
+        # transforms. This makes resulting graph not aten comliant
+        # as aten.linear is not a core aten op.
+        # Ideal fix would be to have XNNPACK verifier that bypass
+        # most checks but the base Verifier itself has some strict changes
+        # and to bypass those, we would basicallyy copy what EdgeDialectVerifier
+        # does. So for now instead of copy pasting that, just instantiate
+        # EdgeDialectVerifier, but disable it.
+        # TODO (task link) to implement NullVerifier or something similar
+        ep = ExportedProgram(
+            ep.graph_module,
+            ep.graph,
+            ep.graph_signature,
+            ep.state_dict,
+            ep.range_constraints,
+            ep.equality_constraints,
+            copy.deepcopy(ep.module_call_graph),
+            ep.example_inputs,
+            verifier=EXIREdgeDialectVerifier(
+                check_edge_ops=False, enable=False, class_only=True
+            ),
+        )
 
         # XNNPACK Delegate Specific Passes
         ep = XNNPACKPassManager(ep).transform()

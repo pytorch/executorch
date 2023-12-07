@@ -6,7 +6,7 @@ oncall("executorch")
 python_library(
     name = "inspector",
     srcs = [
-        "inspector.py",
+        "_inspector.py",
     ],
     deps = [
         "fbsource//third-party/pypi/ipython:ipython",
@@ -14,7 +14,6 @@ python_library(
         "fbsource//third-party/pypi/pandas:pandas",
         "fbsource//third-party/pypi/tabulate:tabulate",
         ":inspector_utils",
-        "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/sdk/debug_format:et_schema",
         "//executorch/sdk/etdump:schema_flatcc",
@@ -24,9 +23,11 @@ python_library(
 
 python_binary(
     name = "inspector_cli",
+    main_function = ".inspector_cli.main",
     main_src = "inspector_cli.py",
     deps = [
-        ":inspector",
+        ":inspector_utils",
+        "//executorch/sdk:lib",
     ],
 )
 
@@ -36,10 +37,22 @@ python_library(
         "_inspector_utils.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/matplotlib:matplotlib",
+        "fbsource//third-party/pypi/numpy:numpy",
+        "//caffe2:torch",
         "//executorch/sdk/debug_format:base_schema",
         "//executorch/sdk/debug_format:et_schema",
         "//executorch/sdk/etdump:schema_flatcc",
         "//executorch/sdk/etdump:serialize",
         "//executorch/sdk/etrecord:etrecord",
+    ],
+)
+
+python_library(
+    name = "lib",
+    srcs = ["__init__.py"],
+    deps = [
+        ":inspector",
+        ":inspector_utils",
     ],
 )

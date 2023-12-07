@@ -127,7 +127,7 @@ class BasicSinMax(nn.Module):
         super().__init__()
 
     def forward(self, x: Tensor) -> Tensor:
-        return torch.sin(x).max()
+        return torch.sin(x)
 
     def get_random_inputs(self) -> Tuple[Tensor]:
         return (torch.randn(100),)

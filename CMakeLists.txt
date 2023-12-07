@@ -87,10 +87,11 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
-# -Os: Optimize for size. -ffunction-sections -fdata-sections: breaks function
-# and data into sections so they can be properly gc'd. -s: strip symbols
+# -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
+# data into sections so they can be properly gc'd. -s: strip symbol.
+# -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-Os -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-O2 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -135,8 +136,8 @@ option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
        "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
 
 # Build mps_executor_runner which depends on MPSGraph framework
-option(EXECUTORCH_BUILD_MPS
-       "Build mps_executor_runner which depends on MPS" OFF)
+option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
+       OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -197,17 +198,14 @@ endif()
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
 # cross-compiling, but some required tools that would have been built need to be
 # provided directly (via, for example, FLATC_EXECUTABLE).
-cmake_dependent_option(
-  EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets." ON
-  "NOT CMAKE_TOOLCHAIN_IOS" OFF)
-
+cmake_dependent_option(EXECUTORCH_BUILD_HOST_TARGETS "Build host-only targets."
+                       ON "NOT CMAKE_TOOLCHAIN_IOS" OFF)
 
 #
 # flatc: Flatbuffer commandline tool to generate .h files from .fbs files
 #
-cmake_dependent_option(
-  EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
-  "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF)
+cmake_dependent_option(EXECUTORCH_BUILD_FLATC "Build the flatc executable." ON
+                       "NOT FLATC_EXECUTABLE;EXECUTORCH_BUILD_HOST_TARGETS" OFF)
 
 if(EXECUTORCH_BUILD_FLATC)
   if(FLATC_EXECUTABLE)
@@ -273,26 +271,25 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 # gflags: Commandline flag host library.
 #
 cmake_dependent_option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
-  EXECUTORCH_BUILD_HOST_TARGETS OFF)
+                       EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_GFLAGS)
   add_subdirectory(third-party/gflags)
 endif()
 
-
-# Install `executorch` library as well as `executorch-config.cmake`
-# under ${CMAKE_INSTALL_PREFIX}/
+# Install `executorch` library as well as `executorch-config.cmake` under
+# ${CMAKE_INSTALL_PREFIX}/
 install(
   TARGETS executorch
   DESTINATION lib
-  INCLUDES DESTINATION ${_common_include_directories}
-)
+  INCLUDES
+  DESTINATION ${_common_include_directories})
 install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 
 #
 # executor_runner: Host tool that demonstrates program execution.
 #
-cmake_dependent_option(EXECUTORCH_BUILD_EXECUTOR_RUNNER
-  "Build the executor_runner executable" ON
+cmake_dependent_option(
+  EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
@@ -321,6 +318,15 @@ endif()
 # Add Android demo app JNI subdirectory
 if(EXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/demo-apps/android/jni)
+endif()
+
+if(EXECUTORCH_BUILD_SDK)
+  set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+      ON
+      CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
@@ -361,8 +367,7 @@ if(EXECUTORCH_BUILD_COREML)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
   else()
     message(
-      FATAL_ERROR "executorch: Building CoreML delegate requires iOS toolchain"
-    )
+      FATAL_ERROR "executorch: Building CoreML delegate requires iOS toolchain")
   endif()
 endif()
 
@@ -374,12 +379,6 @@ endif()
 # Add size test subdirectory
 if(EXECUTORCH_BUILD_SIZE_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
-endif()
-
-if(EXECUTORCH_BUILD_SDK)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
 if(EXECUTORCH_BUILD_EXAMPLES)

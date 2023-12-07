@@ -315,6 +315,7 @@ def exir_custom_ops_aot_lib(
             supports_python_dlopen = True,
             platforms = platforms,
             compiler_flags = compiler_flags,
+            force_static = False,
         )
 
 def executorch_generated_lib(
@@ -437,15 +438,15 @@ def executorch_generated_lib(
         platforms = platforms,
     )
 
-    # genrule to generate selected_mobile_ops.h from selected_operators.yaml above
+    # genrule to generate selected_op_variants.h from selected_operators.yaml above
     oplist_header_name = name + "_et_op_dtype_gen"
     runtime.genrule(
         name = oplist_header_name,
         macros_only = False,
-        cmd = ("$(exe //executorch/codegen/tools:gen_selected_mobile_ops) " +
+        cmd = ("$(exe //executorch/codegen/tools:gen_selected_op_variants) " +
                "--yaml_file_path $(location :{}[selected_operators.yaml]) " +
                "--output_dir $OUT").format(oplist_dir_name),
-        outs = {"selected_mobile_ops": ["selected_mobile_ops.h"]},
+        outs = {"selected_op_variants": ["selected_op_variants.h"]},
         default_outs = ["."],
         platforms = platforms,
         visibility = visibility,
@@ -471,7 +472,7 @@ def executorch_generated_lib(
     # along with headers declaring custom ops `Functions.h`, `NativeFunctions.h` and `UnboxingFunctions.h`.
     header_lib = name + "_headers"
     if header_lib in libs:
-        libs[header_lib]["headers"]["selected_mobile_ops.h"] = ":{}[selected_mobile_ops]".format(oplist_header_name)
+        libs[header_lib]["headers"]["selected_op_variants.h"] = ":{}[selected_op_variants]".format(oplist_header_name)
         runtime.cxx_library(
             name = header_lib,
             srcs = [],

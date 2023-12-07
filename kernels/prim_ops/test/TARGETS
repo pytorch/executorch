@@ -22,7 +22,6 @@ cpp_unittest(
     srcs = [
         "prim_ops_test.cpp",
     ],
-    supports_static_listing = True,
     deps = [
         "//executorch/kernels/prim_ops:prim_ops_registry",  # @manual
         "//executorch/runtime/core:evalue",  # @manual

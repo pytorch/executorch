@@ -32,6 +32,10 @@
 		C94D510C2ABDF84F00AF47FD /* serde_json.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFB02AA123E9001CC178 /* serde_json.mm */; };
 		C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560942AABFDCE005F8126 /* libsqlite3.tbd */; };
 		C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560902AABF982005F8126 /* Accelerate.framework */; };
+		C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */ = {isa = PBXBuildFile; fileRef = C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */; };
+		C97716D52AF41B2E00FC0DAC /* json_key_value_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */; };
+		C97716DA2AF44CFA00FC0DAC /* json_util.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C97716D82AF44CFA00FC0DAC /* json_util.cpp */; };
+		C97716DD2AF44E7B00FC0DAC /* objc_json_serde.mm in Sources */ = {isa = PBXBuildFile; fileRef = C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */; };
 		C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C98551982AD2542D009143F9 /* mv3_coreml_all.pte */; };
 		C985519F2AD2542D009143F9 /* mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C98551992AD2542D009143F9 /* mul_coreml_all.bin */; };
 		C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C985519A2AD2542D009143F9 /* add_coreml_all.bin */; };
@@ -88,12 +92,22 @@
 		C96560902AABF982005F8126 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
 		C96560922AABF992005F8126 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
 		C96560942AABFDCE005F8126 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib/libsqlite3.tbd; sourceTree = DEVELOPER_DIR; };
-		C96560982AAC0075005F8126 /* libgflags_nothreads_debug.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libgflags_nothreads_debug.a; path = ../libraries/libgflags_nothreads_debug.a; sourceTree = "<group>"; };
 		C96560A32AAC0DCF005F8126 /* executorchcoreml_tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = executorchcoreml_tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C96560B12AAF7CC2005F8126 /* multiarray.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = multiarray.mm; path = ../delegate/multiarray.mm; sourceTree = "<group>"; };
 		C96560B22AAF9EA7005F8126 /* inmemory_filesystem_py.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = inmemory_filesystem_py.cpp; path = ../inmemoryfs/inmemory_filesystem_py.cpp; sourceTree = "<group>"; };
 		C9670FF92A82F0C800E7D441 /* MLMultiArray_Copy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MLMultiArray_Copy.h; path = ../delegate/MLMultiArray_Copy.h; sourceTree = "<group>"; };
 		C9670FFA2A82F0C800E7D441 /* MLMultiArray_Copy.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = MLMultiArray_Copy.mm; path = ../delegate/MLMultiArray_Copy.mm; sourceTree = "<group>"; };
+		C97716A82AE857C900FC0DAC /* inmemory_filesystem_metadata.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem_metadata.hpp; path = ../inmemoryfs/inmemory_filesystem_metadata.hpp; sourceTree = "<group>"; };
+		C97716AA2AE85D4700FC0DAC /* inmemory_filesystem_metadata_keys.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem_metadata_keys.hpp; path = ../inmemoryfs/inmemory_filesystem_metadata_keys.hpp; sourceTree = "<group>"; };
+		C97716B02AE9BBBA00FC0DAC /* inmemory_filesystem_utils.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = inmemory_filesystem_utils.cpp; path = ../inmemoryfs/inmemory_filesystem_utils.cpp; sourceTree = "<group>"; };
+		C97716B12AE9BBBA00FC0DAC /* inmemory_filesystem_utils.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem_utils.hpp; path = ../inmemoryfs/inmemory_filesystem_utils.hpp; sourceTree = "<group>"; };
+		C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = inmemory_filesystem_utils.mm; path = ../inmemoryfs/inmemory_filesystem_utils.mm; sourceTree = "<group>"; };
+		C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = json_key_value_store.cpp; path = ../kvstore/json_key_value_store.cpp; sourceTree = "<group>"; };
+		C97716D82AF44CFA00FC0DAC /* json_util.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = json_util.cpp; path = ../util/json_util.cpp; sourceTree = "<group>"; };
+		C97716D92AF44CFA00FC0DAC /* json_util.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = json_util.hpp; path = ../util/json_util.hpp; sourceTree = "<group>"; };
+		C97716DB2AF44D9A00FC0DAC /* objc_json_serde.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = objc_json_serde.h; path = ../util/objc_json_serde.h; sourceTree = "<group>"; };
+		C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = objc_json_serde.mm; path = ../util/objc_json_serde.mm; sourceTree = "<group>"; };
+		C97716DE2AF44FC400FC0DAC /* objc_safe_cast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = objc_safe_cast.h; path = ../util/objc_safe_cast.h; sourceTree = "<group>"; };
 		C98551982AD2542D009143F9 /* mv3_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mv3_coreml_all.pte; path = ../test/models/mv3_coreml_all.pte; sourceTree = "<group>"; };
 		C98551992AD2542D009143F9 /* mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mul_coreml_all.bin; path = ../test/models/mul_coreml_all.bin; sourceTree = "<group>"; };
 		C985519A2AD2542D009143F9 /* add_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_coreml_all.bin; path = ../test/models/add_coreml_all.bin; sourceTree = "<group>"; };
@@ -154,6 +168,7 @@
 		C95266222A7E05FB0016283E = {
 			isa = PBXGroup;
 			children = (
+				C97716D72AF44BCA00FC0DAC /* util */,
 				C9E7D7AE2AB6C0C000CCAE5D /* models */,
 				C9E7D7852AB3F99A00CCAE5D /* test */,
 				C9D3DEFF2A9FD150001CC178 /* kvstore */,
@@ -212,6 +227,9 @@
 			children = (
 				C95266442A7E06760016283E /* inmemory_filesystem.hpp */,
 				C95266452A7E06760016283E /* inmemory_filesystem.cpp */,
+				C97716B12AE9BBBA00FC0DAC /* inmemory_filesystem_utils.hpp */,
+				C97716B02AE9BBBA00FC0DAC /* inmemory_filesystem_utils.cpp */,
+				C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */,
 				C96560B22AAF9EA7005F8126 /* inmemory_filesystem_py.cpp */,
 				C95266402A7E06760016283E /* memory_buffer.hpp */,
 				C95266472A7E06760016283E /* memory_buffer.cpp */,
@@ -219,6 +237,8 @@
 				C95266412A7E06760016283E /* memory_stream.cpp */,
 				C95266462A7E06760016283E /* reversed_memory_stream.hpp */,
 				C95266422A7E06760016283E /* reversed_memory_stream.cpp */,
+				C97716A82AE857C900FC0DAC /* inmemory_filesystem_metadata.hpp */,
+				C97716AA2AE85D4700FC0DAC /* inmemory_filesystem_metadata_keys.hpp */,
 			);
 			name = inmemoryfs;
 			sourceTree = "<group>";
@@ -239,11 +259,22 @@
 			children = (
 				C96560942AABFDCE005F8126 /* libsqlite3.tbd */,
 				C96560922AABF992005F8126 /* CoreML.framework */,
-				C96560982AAC0075005F8126 /* libgflags_nothreads_debug.a */,
 				C96560902AABF982005F8126 /* Accelerate.framework */,
 				C965608D2AABF72A005F8126 /* libexecutorch.a */,
 			);
 			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		C97716D72AF44BCA00FC0DAC /* util */ = {
+			isa = PBXGroup;
+			children = (
+				C97716D92AF44CFA00FC0DAC /* json_util.hpp */,
+				C97716D82AF44CFA00FC0DAC /* json_util.cpp */,
+				C97716DB2AF44D9A00FC0DAC /* objc_json_serde.h */,
+				C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */,
+				C97716DE2AF44FC400FC0DAC /* objc_safe_cast.h */,
+			);
+			name = util;
 			sourceTree = "<group>";
 		};
 		C9D3DEFF2A9FD150001CC178 /* kvstore */ = {
@@ -254,6 +285,7 @@
 				C9D3DF092A9FD16F001CC178 /* sqlite_error.cpp */,
 				C9D3DF022A9FD16E001CC178 /* sqlite_error.hpp */,
 				C9D3DF042A9FD16E001CC178 /* json_key_value_store.hpp */,
+				C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */,
 				C9D3DF082A9FD16F001CC178 /* key_value_store.hpp */,
 				C9D3DF052A9FD16E001CC178 /* key_value_store.cpp */,
 				C9D3DF002A9FD16E001CC178 /* statement.hpp */,
@@ -371,15 +403,19 @@
 				C94D50E72ABDF80D00AF47FD /* sqlite_error.cpp in Sources */,
 				C94D50FC2ABDF83500AF47FD /* ETCoreMLAsset.mm in Sources */,
 				C94D51062ABDF84400AF47FD /* ETCoreMLLogging.mm in Sources */,
+				C97716D52AF41B2E00FC0DAC /* json_key_value_store.cpp in Sources */,
 				C94D50F22ABDF82200AF47FD /* reversed_memory_stream.cpp in Sources */,
 				C94D51022ABDF83E00AF47FD /* ETCoreMLModelManager.mm in Sources */,
 				C94D50F42ABDF82500AF47FD /* asset.mm in Sources */,
+				C97716DA2AF44CFA00FC0DAC /* json_util.cpp in Sources */,
 				C94D51042ABDF84100AF47FD /* ETCoreMLStrings.mm in Sources */,
 				C9E7D7932AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm in Sources */,
+				C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */,
 				C9E7D7922AB3F9BF00CCAE5D /* DatabaseTests.mm in Sources */,
 				C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */,
 				C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */,
 				C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */,
+				C97716DD2AF44E7B00FC0DAC /* objc_json_serde.mm in Sources */,
 				C94D51082ABDF84800AF47FD /* MLModel_Prewarm.mm in Sources */,
 				C94D50F02ABDF81F00AF47FD /* memory_stream.cpp in Sources */,
 				C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */,
@@ -532,8 +568,9 @@
 					"$(SRCROOT)/../delegate",
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
 					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../util",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";
@@ -560,8 +597,9 @@
 					"$(SRCROOT)/../delegate",
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
-					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
 					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../util",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";

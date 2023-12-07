@@ -7,14 +7,30 @@
 import enum
 import sys
 
-from typing import cast, List, Tuple
+from typing import List, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
-
 import executorch.exir as exir
 
 import torch
-from executorch.backends.qualcomm.passes import qnn_partitioner_passes
+
+from executorch.backends.qualcomm.passes.annotate_and_quant_scalar import (
+    AnnotateAndQuantScalar,
+)
+from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQuantAttrs
+from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
+    ConvertAddmmmmWithLinear,
+)
+from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
+from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
+from executorch.backends.qualcomm.passes.convert_hardswish import ConvertHardswish
+from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
+    ConvertInterpolateWithUpsample2D,
+)
+from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
+from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
+from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.fx import passes
 
@@ -26,7 +42,7 @@ class SoCModel(enum.Enum):
 
 
 def qnn_capture_config():
-    return exir.CaptureConfig(pt2_mode=True, enable_aot=True, _unlift=True)
+    return exir.CaptureConfig(enable_aot=True)
 
 
 def qnn_edge_config() -> exir.EdgeCompileConfig:
@@ -37,22 +53,35 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
 ) -> exir.ExirExportedProgram:
-    edge_prog = exir.capture(
+    ex_prog = exir.capture(
         module,
         inputs,
         qnn_capture_config(),
     ).to_edge(qnn_edge_config())
-    return edge_prog.transform(qnn_partitioner_passes)
+
+    # currently ExirExportedProgram.transform does not accept
+    # changes of input number which was caused by FoldQDQ
+    # apply passes one by one here to avoid IR capture failure
+    edge_program = ex_prog.exported_program
+    graph_module = edge_program.graph_module
+    RemoveClone()(graph_module)
+    ConvertAddmmmmWithLinear()(graph_module)
+    ConvertHardsigmoid()(graph_module)
+    ConvertHardswish()(graph_module)
+    ConvertBmmToMatmul()(graph_module)
+    ConvertInterpolateWithUpsample2D()(graph_module)
+    I64toI32(edge_program)(graph_module)
+    LayoutTransform(edge_program)(graph_module)
+    AnnotateQuantAttrs(edge_program)(graph_module)
+    AnnotateAndQuantScalar(edge_program)(graph_module)
+    FoldQDQ()(graph_module)
+    return ex_prog
 
 
 def draw_graph(title, path, graph_module: torch.fx.GraphModule):
     graph = passes.graph_drawer.FxGraphDrawer(graph_module, title)
     with open(f"{path}/{title}.svg", "wb") as f:
         f.write(graph.get_dot_graph().create_svg())
-
-
-def get_input_node(node: torch.fx.Node, input_index: int) -> torch.fx.Node:
-    return cast(torch.fx.Node, node.args[input_index])
 
 
 def generate_qnn_executorch_option(

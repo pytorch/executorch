@@ -45,7 +45,7 @@ def get_dataset(dataset_path, data_size):
         if index >= data_size:
             break
         feature, target = data
-        inputs.append(feature)
+        inputs.append((feature,))
         targets.append(target)
         input_list += f"input_{index}_0.raw\n"
 

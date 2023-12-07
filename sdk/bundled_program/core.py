@@ -6,7 +6,8 @@
 
 import ctypes
 import typing
-from typing import Dict, List, Sequence, Type
+from dataclasses import dataclass
+from typing import Dict, List, Sequence, Type, Union
 
 import executorch.exir.schema as core_schema
 
@@ -14,8 +15,13 @@ import executorch.sdk.bundled_program.schema as bp_schema
 
 import torch
 import torch.fx
-from executorch.exir._serialize import _serialize_pte_binary
 
+from executorch.exir import (
+    ExecutorchProgram,
+    ExecutorchProgramManager,
+    MultiMethodExecutorchProgram,
+)
+from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
 from executorch.sdk.bundled_program.config import ConfigValue, MethodTestSuite
 
@@ -28,6 +34,29 @@ supported_program_type_table: Dict[Type[core_schema.KernelTypes], ConfigValue] =
     core_schema.Double: float,
     core_schema.Bool: bool,
 }
+
+
+@dataclass
+class BundledProgram:
+    """
+    User should not create an instance of BundledProgram directly. Instead, use `create_bundled_program` API.
+
+    Bundled program contains all information needed to execute and verify the program on device.
+
+    Attributes:
+        method_test_suites: All test suites for verifying methods.
+        executorch_program: ExecutorchProgram-like variable for the program to be verified, including
+                            ExecutorchProgram, MultiMethodExecutorchProgram or ExecutorchProgramManager.
+        _bundled_program: information will be serialized into a binary format.
+    """
+
+    executorch_program: Union[
+        ExecutorchProgram,
+        MultiMethodExecutorchProgram,
+        ExecutorchProgramManager,
+    ]
+    method_test_suites: Sequence[MethodTestSuite]
+    _bundled_program: bp_schema.BundledProgram
 
 
 def emit_bundled_tensor(
@@ -61,11 +90,11 @@ def emit_bundled_tensor(
 
 
 def emit_prim(val: ConfigValue, bundled_values: List[bp_schema.Value]):
-    if type(val) == int:
+    if type(val) is int:
         bundled_values.append(bp_schema.Value(val=bp_schema.Int(int_val=val)))
-    elif type(val) == bool:
+    elif type(val) is bool:
         bundled_values.append(bp_schema.Value(val=bp_schema.Bool(bool_val=val)))
-    elif type(val) == float:
+    elif type(val) is float:
         bundled_values.append(bp_schema.Value(val=bp_schema.Double(double_val=val)))
     else:
         assert 0, "Unsupported primitive type received."
@@ -198,7 +227,7 @@ def assert_valid_bundle(
             for j in range(len(cur_plan_test_inputs)):
                 assert (
                     type(cur_plan_test_inputs[j])
-                    == supported_program_type_table[
+                    is supported_program_type_table[
                         type(get_program_input(program, program_plan_id, j))
                     ]
                 ), "The type {}-th input in {}-th test set of {}-th execution plan does not meet Program's requirement: expected {} but get {}".format(
@@ -212,7 +241,7 @@ def assert_valid_bundle(
                 )
 
                 # type of tensor input should match execution plan
-                if type(cur_plan_test_inputs[j]) == torch.Tensor:
+                if type(cur_plan_test_inputs[j]) is torch.Tensor:
                     # pyre-fixme[16]: Undefined attribute [16]: Item `bool` of `typing.Union[bool, float, int, torch._tensor.Tensor]`
                     # has no attribute `dtype`.
                     assert cur_plan_test_inputs[j].dtype == get_input_dtype(
@@ -227,7 +256,7 @@ def assert_valid_bundle(
                     bool,
                     float,
                 ):
-                    assert type(cur_plan_test_inputs[j]) == get_input_type(
+                    assert type(cur_plan_test_inputs[j]) is get_input_type(
                         program, program_plan_id, j
                     ), "The input primitive dtype shall be {}, but now is {}".format(
                         get_input_type(program, program_plan_id, j),
@@ -237,7 +266,7 @@ def assert_valid_bundle(
             # Check if bundled expected output in the current exeution plan test share same type as output in Program
             for j in range(len(cur_plan_test_expected_outputs)):
                 assert (
-                    type(cur_plan_test_expected_outputs[j]) == torch.Tensor
+                    type(cur_plan_test_expected_outputs[j]) is torch.Tensor
                 ), "The {}-th expected output shall be a tensor, but now is {}".format(
                     j, type(cur_plan_test_expected_outputs[j])
                 )
@@ -254,9 +283,13 @@ def assert_valid_bundle(
 
 
 def create_bundled_program(
-    program: core_schema.Program,
+    executorch_program: Union[
+        ExecutorchProgram,
+        MultiMethodExecutorchProgram,
+        ExecutorchProgramManager,
+    ],
     method_test_suites: Sequence[MethodTestSuite],
-) -> bp_schema.BundledProgram:
+) -> BundledProgram:
     """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
 
     Args:
@@ -266,6 +299,13 @@ def create_bundled_program(
     Returns:
         The `BundledProgram` variable contains given ExecuTorch program and test cases.
     """
+    if isinstance(executorch_program, ExecutorchProgramManager):
+        program = executorch_program.executorch_program
+    elif isinstance(executorch_program, ExecutorchProgram):
+        program = executorch_program.program
+    else:
+        assert isinstance(executorch_program, MultiMethodExecutorchProgram)
+        program = executorch_program.program
 
     method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name)
 
@@ -288,7 +328,7 @@ def create_bundled_program(
             ].expected_outputs
 
             for input_val in cur_plan_test_inputs:
-                if type(input_val) == torch.Tensor:
+                if type(input_val) is torch.Tensor:
                     emit_bundled_tensor(
                         TensorSpec.from_tensor(input_val, const=True),
                         inputs,
@@ -300,7 +340,7 @@ def create_bundled_program(
                     )
             for expected_output_tensor in cur_plan_test_expected_outputs:
                 assert (
-                    type(expected_output_tensor) == torch.Tensor
+                    type(expected_output_tensor) is torch.Tensor
                 ), "Only tensor outputs are currently supported."
                 emit_bundled_tensor(
                     TensorSpec.from_tensor(expected_output_tensor, const=True),
@@ -321,8 +361,12 @@ def create_bundled_program(
 
     program_bytes: bytes = _serialize_pte_binary(program)
 
-    return bp_schema.BundledProgram(
-        version=BUNDLED_PROGRAM_SCHEMA_VERSION,
-        method_test_suites=bundled_method_test_suites,
-        program=program_bytes,
+    return BundledProgram(
+        executorch_program=executorch_program,
+        method_test_suites=method_test_suites,
+        _bundled_program=bp_schema.BundledProgram(
+            version=BUNDLED_PROGRAM_SCHEMA_VERSION,
+            method_test_suites=bundled_method_test_suites,
+            program=program_bytes,
+        ),
     )

@@ -8,8 +8,6 @@
 import argparse
 import logging
 
-import torch
-
 import torch._export as export
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
@@ -70,17 +68,9 @@ if __name__ == "__main__":
 
     logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
 
-    class WrappedModule(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.mps_module = lowered_module
-
-        def forward(self, *input_args):
-            return self.mps_module(*input_args)
-
     executorch_program = (
         exir.capture(
-            WrappedModule(),
+            lowered_module,
             example_inputs,
             exir.CaptureConfig(enable_aot=True, _unlift=True),
         )
@@ -102,9 +92,7 @@ if __name__ == "__main__":
             )
         ]
 
-        bundled_program = create_bundled_program(
-            executorch_program.program, method_test_suites
-        )
+        bundled_program = create_bundled_program(executorch_program, method_test_suites)
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )

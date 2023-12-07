@@ -11,6 +11,7 @@ from functools import lru_cache
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -62,9 +63,12 @@ def is_identical_graph(
     # is not the same.
     if len(list(graph_left.graph.nodes)) != len(list(graph_right.graph.nodes)):
         return False
-    for node_left, node_right in zip(graph_left.graph.nodes, graph_right.graph.nodes):
-        if not (is_same_node(node_left, node_right)):
-            return False
+    with setting_python_recursive_limit(30000):
+        for node_left, node_right in zip(
+            graph_left.graph.nodes, graph_right.graph.nodes
+        ):
+            if not (is_same_node(node_left, node_right)):
+                return False
     return True
 
 
@@ -190,6 +194,17 @@ def get_non_lowered_nodes(graph: torch.fx.Graph) -> List[torch.fx.Node]:
         if node.op == "call_function"
         and node.target != executorch_call_delegate
         and (not _get_item_from_executorch_call_delegate(node))
+    ]
+
+
+def get_delegates(graph: torch.fx.Graph) -> List[torch.fx.Node]:
+    """
+    Returns the list of delegates from the graph.
+    """
+    return [
+        node
+        for node in graph.nodes
+        if node.op == "get_attr" and node.name.startswith("lowered_module_")
     ]
 
 

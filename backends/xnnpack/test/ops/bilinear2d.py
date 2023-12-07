@@ -86,7 +86,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .check(self.ops)
             .partition()
             .check_not(self.ops)
-            .check_count({"torch.ops.executorch_call_delegate": 1})
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
             .run_method()
@@ -102,7 +102,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .check(self.ops)
             .partition()
             .check_not(self.ops)
-            .check_count({"torch.ops.executorch_call_delegate": 1})
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
             .run_method()
@@ -127,5 +127,5 @@ class TestUpsampleBilinear2d(unittest.TestCase):
                     "executorch_exir_dialects_edge__ops_aten__upsample_bilinear2d_aa_default": 2
                 }
             )
-            .check_not(["torch.ops.executorch_call_delegate"])
+            .check_not(["torch.ops.higher_order.executorch_call_delegate"])
         )

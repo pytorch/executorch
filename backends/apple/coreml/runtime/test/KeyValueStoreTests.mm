@@ -14,6 +14,12 @@
 namespace {
 using json = nlohmann::json;
 
+struct Entry;
+
+void to_json(json& j, const Entry& entry) noexcept;
+
+void from_json(const json& j, Entry& entry) noexcept;
+
 struct Entry {
     inline Entry(std::string identifier, size_t count) noexcept
     :identifier(std::move(identifier)), count(count)
@@ -23,18 +29,31 @@ struct Entry {
     :identifier(""), count(0)
     {}
     
+    inline std::string to_json_string() const noexcept {
+        json j;
+        to_json(j, *this);
+        std::stringstream ss;
+        ss << j;
+        return ss.str();
+    }
+    
+    inline void from_json_string(const std::string& json_string) noexcept {
+        auto j = json::parse(json_string);
+        from_json(j, *this);
+    }
+    
     std::string identifier;
     size_t count;
 };
 
-void to_json(json& j, const Entry& entry) {
+void to_json(json& j, const Entry& entry) noexcept {
     j = json{
         {"identifier", entry.identifier},
         {"count", entry.count}
     };
 }
 
-void from_json(const json& j, Entry& entry) {
+void from_json(const json& j, Entry& entry) noexcept {
     j.at("identifier").get_to(entry.identifier);
     j.at("count").get_to(entry.count);
 }

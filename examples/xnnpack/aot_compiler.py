@@ -13,9 +13,6 @@ import torch._export as export
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
-    convert_scalars_to_attrs,
-)
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -79,7 +76,6 @@ if __name__ == "__main__":
     if args.quantize:
         logging.info("Quantizing Model...")
         # TODO(T165162973): This pass shall eventually be folded into quantizer
-        model = convert_scalars_to_attrs(model)
         model = quantize(model, example_inputs)
 
     edge = export_to_edge(
@@ -91,7 +87,7 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
-    edge = edge.to_backend(XnnpackPartitioner)
+    edge = edge.to_backend(XnnpackPartitioner())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch()

@@ -44,7 +44,7 @@ class TestQNNFloatingPoint(TestQNN):
                 )
 
             def forward(self, x):
-                return self.first(x)
+                return self.second(self.first(x))
 
         instance = TwoConv()
         example_inputs = (torch.ones([1, 1, 3, 3]),)
@@ -119,22 +119,6 @@ class TestQNNFloatingPoint(TestQNN):
             instance, example_inputs, is_fp16=True
         )
         model_name = "qnn_mean_dim_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_addmm(self):
-        class Addmm(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y, z):
-                return torch.ops.aten.addmm.default(x, y, z)
-
-        instance = Addmm()
-        example_inputs = (torch.ones([5]), torch.ones([3, 4]), torch.ones([4, 5]))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_addmm_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
     def test_qnn_backend_linear(self):
@@ -456,7 +440,7 @@ class TestQNNFloatingPoint(TestQNN):
                 return x.type(torch.IntTensor)
 
         instance = Cast()
-        example_inputs = (torch.randn((9, 4, 5, 3)),)
+        example_inputs = (10 * torch.rand((9, 4, 5, 3)),)
         buffer = self.lower_module_and_test_output(
             instance, example_inputs, is_fp16=True
         )
@@ -473,9 +457,6 @@ class TestQNNFloatingPoint(TestQNN):
                 return self.sub(x, y)
 
         instance = Sub()
-        example_inputs = (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3))
-        self.lower_module_and_test_output(instance, example_inputs)
-
         example_inputs = (
             torch.ones([2, 5, 1, 3]),
             torch.ones([4, 1]),
@@ -496,7 +477,6 @@ class TestQNNFloatingPoint(TestQNN):
                 return self.ceil(x)
 
         instance = Ceil()
-
         example_inputs = (torch.randn([2, 5, 1, 3]),)
         buffer = self.lower_module_and_test_output(
             instance, example_inputs, is_fp16=True
@@ -516,7 +496,9 @@ class TestQNNFloatingPoint(TestQNN):
         instance = Sub()
         example_inputs = (torch.ones([28], dtype=torch.float32),)
         buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
+            instance,
+            example_inputs,
+            is_fp16=True,
         )
         model_name = "qnn_sub_constant_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
@@ -561,7 +543,7 @@ class TestQNNFloatingPoint(TestQNN):
                 self.avgPool = torch.nn.AvgPool2d(
                     kernel_size=(2, 2),
                     padding=(1, 1),
-                    stride=(2, 2),
+                    stride=(1, 1),
                     count_include_pad=False,
                 )
 
@@ -587,9 +569,6 @@ class TestQNNFloatingPoint(TestQNN):
                 return self.div(x, y)
 
         instance = Div()
-        example_inputs = (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3))
-        self.lower_module_and_test_output(instance, example_inputs)
-
         example_inputs = (
             torch.randn([2, 5, 1, 3]),
             torch.randn([4, 1]),
@@ -665,19 +644,18 @@ class TestQNNFloatingPoint(TestQNN):
         model_name = "qnn_bmm_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
+    @unittest.expectedFailure
     def test_qnn_backend_embedding(self):
         class Embedding(torch.nn.Module):
             def __init__(self):
                 super().__init__()
                 self.embedding = torch.nn.Embedding(10, 3)
-                # self.embedding.weight = torch.nn.Parameter(
-                #     10 * torch.ones(self.embedding.weight.size())
-                # )
 
             def forward(self, x):
                 return self.embedding(x)
 
         instance = Embedding()
+        # QNN does not support int64 datatype
         example_inputs = (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),)
         buffer = self.lower_module_and_test_output(
             instance, example_inputs, is_fp16=True
@@ -722,7 +700,7 @@ class TestQNNFloatingPoint(TestQNN):
     def test_qnn_backend_mobilebert(self):
         instance = MobileBertModelExample().get_eager_model().eval()
         example_inputs = MobileBertModelExample().get_example_inputs()
-        # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
+        # TODO: Due to triggering maximum recursion depth exceeded, need to check it.
         disable_validation()
         buffer = self.lower_module_and_test_output(
             instance, example_inputs, is_fp16=True
@@ -811,7 +789,7 @@ class TestQNNFloatingPoint(TestQNN):
 
 
 @unittest.skip("skip this for now until e2e test is enabled")
-class TestQNNINT8(TestQNN):
+class TestQNNQuantized(TestQNN):
     def test_qnn_backend_ptq_sequential_conv2d(self):
         class TwoConv(torch.nn.Module):
             def __init__(self):
@@ -1095,6 +1073,21 @@ class TestQNNINT8(TestQNN):
         model_name = "ptq_qnn_hardsigmoid_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
+    def test_qnn_backend_ptq_bmm(self):
+        class Bmm(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.matmul(x, y)
+
+        instance = Bmm()
+        example_inputs = (
+            torch.randn([4, 8, 32]),
+            torch.randn([4, 32, 8]),
+        )
+        quant_instance = get_qdq_module(instance, example_inputs)
+        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
+        model_name = "ptq_qnn_bmm_model"
+        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+
     def test_qnn_backend_ptq_mean_dim(self):
         class MeanDim(torch.nn.Module):
             def __init__(self):
@@ -1124,31 +1117,6 @@ class TestQNNINT8(TestQNN):
         quant_instance = get_qdq_module(instance, example_inputs)
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_pixel_shuffle_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_home_made_pixel_shuffle(self):
-        class MyPixelShuffle(torch.nn.Module):
-            def __init__(self, factor: int):
-                super(MyPixelShuffle, self).__init__()
-                self.factor = factor
-
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                n, c, w, h = x.shape
-                c_out = c // (self.factor * self.factor)
-                w_out = w * self.factor
-                h_out = h * self.factor
-
-                return (
-                    x.reshape([n, c_out, self.factor, self.factor, w, h])
-                    .permute((0, 1, 4, 2, 5, 3))
-                    .reshape([n, c_out, w_out, h_out])
-                )
-
-        instance = MyPixelShuffle(2)
-        example_inputs = (torch.ones([2, 4, 3, 3]),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_home_made_pixel_shuffle_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
     def test_qnn_backend_ptq_mobilenet_v2(self):
@@ -1188,7 +1156,7 @@ class TestQNNINT8(TestQNN):
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
     def test_qnn_backend_ptq_edsr(self):
-        from executorch.examples.backend.qualcomm.edsr import annotate_forward
+        from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 
         model = EdsrModel()
         instance = model.get_eager_model().eval()
@@ -1201,6 +1169,19 @@ class TestQNNINT8(TestQNN):
         )
         buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
         model_name = "ptq_qnn_edsr_model"
+        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+
+    def test_qnn_backend_ptq_mobilebert(self):
+        instance = MobileBertModelExample().get_eager_model().eval()
+        example_inputs = MobileBertModelExample().get_example_inputs()
+        quant_instance = get_qdq_module(instance, example_inputs)
+        # TODO: Due to triggering maximum recursion depth exceeded, need to check it.
+        disable_validation()
+        buffer = self.lower_module_and_test_output(
+            quant_instance,
+            example_inputs,
+        )
+        model_name = "ptq_qnn_mobilebert_model"
         save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
 

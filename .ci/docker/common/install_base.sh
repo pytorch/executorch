@@ -22,7 +22,8 @@ install_ubuntu() {
     vim \
     unzip \
     gdb \
-    rsync
+    rsync \
+    libssl-dev
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean

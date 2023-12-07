@@ -12,6 +12,7 @@ endif()
 # inmemoryfs sources
 set(INMEMORYFS_SOURCES
   runtime/inmemoryfs/inmemory_filesystem.cpp
+  runtime/inmemoryfs/inmemory_filesystem_utils.mm
   runtime/inmemoryfs/memory_buffer.cpp
   runtime/inmemoryfs/memory_stream.cpp
   runtime/inmemoryfs/reversed_memory_stream.cpp
@@ -20,6 +21,7 @@ set(INMEMORYFS_SOURCES
 # kvstore sources
 set(KVSTORE_SOURCES
   runtime/kvstore/database.cpp
+  runtime/kvstore/json_key_value_store.cpp
   runtime/kvstore/sqlite_error.cpp
   runtime/kvstore/key_value_store.cpp
   runtime/kvstore/statement.cpp
@@ -42,6 +44,12 @@ set(DELEGATE_SOURCES
   runtime/delegate/serde_json.mm
 )
 
+# util sources
+set(UTIL_SOURCES
+  runtime/util/json_util.cpp
+  runtime/util/objc_json_serde.mm
+)
+
 # Define the delegate library
 add_library(coremldelegate)
 target_sources(
@@ -49,6 +57,7 @@ target_sources(
   ${INMEMORYFS_SOURCES}
   ${KVSTORE_SOURCES}
   ${DELEGATE_SOURCES}
+  ${UTIL_SOURCES}
 )
 target_include_directories(
   coremldelegate PRIVATE
@@ -68,7 +77,7 @@ target_include_directories(
 )
 target_include_directories(
   coremldelegate PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/nlohmann_json/single_include/nlohmann
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/util
 )
 target_include_directories(
   coremldelegate PRIVATE
@@ -83,7 +92,6 @@ target_link_libraries(
 target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
 target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
 target_compile_options(coremldelegate PRIVATE "-fno-rtti")
-target_compile_definitions(coremldelegate PRIVATE JSON_NOEXCEPTION=1)
 
 set(
   TARGET coremldelegate

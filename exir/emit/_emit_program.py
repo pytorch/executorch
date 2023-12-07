@@ -28,6 +28,7 @@ from executorch.exir.schema import (
     Int,
     Program,
     String,
+    SubsegmentOffsets,
 )
 from executorch.exir.tensor import layout_enum, scalar_type_enum
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
@@ -185,10 +186,6 @@ def emit_program(
         emitter.run()
         plans.append(emitter.plan())
 
-        # update list length for future constant deduplication checks
-        emitter.program_state.cached_spec_list_length = len(
-            program_state.allocated_specs
-        )
         debug_handle_map[name] = emitter.debug_handle_map
         method_to_delegate_debug_id_map[
             name
@@ -208,5 +205,7 @@ def emit_program(
             backend_delegate_data=program_state.backend_delegate_data,
             # Segments may be added at serialization time.
             segments=[],
+            # Subsegment offsets may be added at serialization time.
+            constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
         ),
     )

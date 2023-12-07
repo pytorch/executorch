@@ -21,10 +21,7 @@ from docutils import nodes
 
 version_file_names = [
     "buck2.txt",
-    "nightly.txt",
     "pytorch.txt",
-    "audio.txt",
-    "vision.txt",
 ]
 
 variables = {}
