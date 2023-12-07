@@ -55,7 +55,11 @@ class MemoryManager final {
       MemoryAllocator* temp_allocator = nullptr)
       : method_allocator_(method_allocator),
         planned_memory_(planned_memory),
-        temp_allocator_(temp_allocator) {}
+        temp_allocator_(temp_allocator) {
+    ET_CHECK_MSG(
+        method_allocator != temp_allocator,
+        "method allocator cannot be the same as temp allocator");
+  }
 
   /**
    * DEPRECATED: Use the constructor without `constant_allocator` instead.
@@ -70,11 +74,11 @@ class MemoryManager final {
       __attribute__((unused)) MemoryAllocator* constant_allocator,
       HierarchicalAllocator* non_constant_allocator,
       MemoryAllocator* runtime_allocator,
-      MemoryAllocator* kernel_temporary_allocator)
+      MemoryAllocator* temporary_allocator)
       : MemoryManager(
             /*method_allocator=*/runtime_allocator,
             /*planned_memory=*/non_constant_allocator,
-            /*temp_allocator=*/kernel_temporary_allocator) {}
+            /*temp_allocator=*/temporary_allocator) {}
 
   /**
    * Returns the allocator that the runtime will use to allocate internal

@@ -33,7 +33,7 @@ inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
 }
 
 void check_dim_list_is_valid(
-    const Tensor& in,
+    const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     const auto& reduce_dims = dim_list.value();
@@ -73,7 +73,9 @@ bool check_dim_in_dim_list(
 /**
  * Returns the product of the sizes of all reduction dims.
  */
-size_t get_reduced_dim_product(const Tensor& in, const optional<int64_t>& dim) {
+size_t get_reduced_dim_product(
+    const Tensor& in,
+    const exec_aten::optional<int64_t>& dim) {
   if (in.dim() == 0) {
     return 1;
   }
@@ -93,7 +95,7 @@ size_t get_reduced_dim_product(const Tensor& in, const optional<int64_t>& dim) {
  */
 size_t get_reduced_dim_product(
     const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list) {
+    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
   if (in.dim() == 0) {
     return 1;
   }
@@ -116,7 +118,9 @@ size_t get_reduced_dim_product(
  * Returns the number of elements of the output of reducing `in`
  * over `dim`.
  */
-size_t get_out_numel(const Tensor& in, const optional<int64_t>& dim) {
+size_t get_out_numel(
+    const Tensor& in,
+    const exec_aten::optional<int64_t>& dim) {
   size_t out_numel = 1;
   if (dim.has_value()) {
     const auto dim_val = dim.value();
@@ -141,7 +145,7 @@ size_t get_out_numel(const Tensor& in, const optional<int64_t>& dim) {
  */
 size_t get_out_numel(
     const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list) {
+    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
   size_t out_numel = 1;
   if (dim_list.has_value() && dim_list.value().size() != 0) {
     for (size_t d = 0; d < in.dim(); ++d) {
@@ -159,7 +163,7 @@ size_t get_out_numel(
  */
 size_t get_init_index(
     const Tensor& in,
-    const optional<int64_t>& dim,
+    const exec_aten::optional<int64_t>& dim,
     const size_t out_ix) {
   if (!dim.has_value()) {
     return 0;

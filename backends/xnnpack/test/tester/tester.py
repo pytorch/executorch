@@ -314,6 +314,8 @@ class Tester:
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
     ):
+        module.eval()
+
         self.original_module = module
         self.inputs = inputs
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))

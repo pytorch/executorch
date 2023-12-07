@@ -95,8 +95,10 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
     import itertools
 
     from executorch.backends.qualcomm.qnn_quantizer import (
-        _is_annotated,
         get_ptq_per_channel_weight_config,
+    )
+    from executorch.backends.qualcomm.qnn_quantizer_utils import (
+        _is_annotated,
         QUANT_ANNOTATION_KEY,
     )
     from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation

@@ -73,7 +73,7 @@ def export_module_to_program(
     module_class: Type[nn.Module],
     *,
     backend_id: str,
-    extract_segments: bool,
+    extract_delegate_segments: bool,
     constant_tensor_alignemnt: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
     method: str = "forward",
@@ -112,7 +112,7 @@ def export_module_to_program(
         .to_edge()
         .to_executorch(
             config=exir.ExecutorchBackendConfig(
-                extract_segments=extract_segments,
+                extract_delegate_segments=extract_delegate_segments,
                 constant_tensor_alignment=constant_tensor_alignemnt,
                 delegate_alignment=delegate_alignment,
             )
@@ -169,8 +169,8 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
-        for extract_segments in (True, False):
-            suffix = "" if extract_segments else "-nosegments"
+        for extract_delegate_segments in (True, False):
+            suffix = "" if extract_delegate_segments else "-nosegments"
             # Create files with the default alignment, and a large alignment.
             # This alignment should be so large that it's extremely unlikely for
             # the data to accidentally be aligned to it in the default case.
@@ -182,7 +182,7 @@ def main() -> None:
                         export_module_to_program(
                             module_class,
                             backend_id=args.backend_id,
-                            extract_segments=extract_segments,
+                            extract_delegate_segments=extract_delegate_segments,
                             delegate_alignment=delegate_alignment,
                         )
                     )

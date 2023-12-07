@@ -105,7 +105,8 @@ struct TensorMeta {
  *                              "v<version>/<tensor_meta>|<tensor_meta>...\xff"
  * Size: Up to 307               1    1    1     (18     +1) * 16
  *           Assuming max number of tensors is 16               ^
- * Version is v0 for now
+ * Kernel key version is v0 for now. If the kernel key format changes,
+ * update the version to avoid breaking pre-existing kernel keys.
  * Example: v0/0x07;0x00 0x01 0x02 0x03 \xff
  * The kernel key has only one tensor: a double tensor with dimension 0, 1, 2, 3
  *

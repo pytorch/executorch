@@ -102,7 +102,7 @@ class LoweredBackendModule(torch.nn.Module):
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
         self,
-        extract_segments: bool = False,
+        extract_delegate_segments: bool = False,
         segment_alignment: int = 4096,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -112,7 +112,7 @@ class LoweredBackendModule(torch.nn.Module):
         """
         out = _serialize_pte_binary(
             program=self.program(),
-            extract_segments=extract_segments,
+            extract_delegate_segments=extract_delegate_segments,
             segment_alignment=segment_alignment,
             constant_tensor_alignment=constant_tensor_alignment,
             delegate_alignment=delegate_alignment,

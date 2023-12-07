@@ -270,7 +270,7 @@ class ExirExportedProgram:
         executorch_prog = ExecutorchProgram(
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
-            extract_segments=config.extract_segments,
+            extract_delegate_segments=config.extract_delegate_segments,
             segment_alignment=config.segment_alignment,
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
@@ -298,7 +298,7 @@ class ExecutorchProgram:
         self,
         exir_exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
-        extract_segments: bool,
+        extract_delegate_segments: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -311,7 +311,7 @@ class ExecutorchProgram:
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
-        self._extract_segments: bool = extract_segments
+        self._extract_delegate_segments: bool = extract_delegate_segments
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -321,7 +321,7 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
-                extract_segments=self._extract_segments,
+                extract_delegate_segments=self._extract_delegate_segments,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -386,6 +386,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 ep.exported_program.module_call_graph,
                 ep.exported_program.example_inputs,
                 verifier=get_aten_verifier(enable=config._check_ir_validity),
+                tensor_constants=ep.exported_program.tensor_constants,
             ),
             False,
         )
@@ -425,6 +426,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             enable=config._check_ir_validity,
             class_only=True,
         ),
+        tensor_constants=new_ep.exported_program.tensor_constants,
     )
     new_ep.after_to_edge_passes = True
     return new_ep
@@ -593,7 +595,7 @@ class MultiMethodExecutorchProgram:
         self,
         executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
-        extract_segments: bool,
+        extract_delegate_segments: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -609,7 +611,7 @@ class MultiMethodExecutorchProgram:
             executorch_dialect_program.prim_getters(),
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
-        self._extract_segments: bool = extract_segments
+        self._extract_delegate_segments: bool = extract_delegate_segments
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -620,7 +622,7 @@ class MultiMethodExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
-                extract_segments=self._extract_segments,
+                extract_delegate_segments=self._extract_delegate_segments,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -671,7 +673,7 @@ def multi_method_program_to_executorch(
     return MultiMethodExecutorchProgram(
         executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
-        extract_segments=config.extract_segments,
+        extract_delegate_segments=config.extract_delegate_segments,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
@@ -753,6 +755,7 @@ def to_edge(
                 enable=config._check_ir_validity,
                 class_only=True,
             ),
+            tensor_constants=edge_program.tensor_constants,
         )
         passes = []
         passes.extend(aten_to_edge_passes.passes[-2:])
@@ -998,7 +1001,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output to a buffer
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
-            extract_segments=backend_config.extract_segments,
+            extract_delegate_segments=backend_config.extract_delegate_segments,
             segment_alignment=backend_config.segment_alignment,
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,

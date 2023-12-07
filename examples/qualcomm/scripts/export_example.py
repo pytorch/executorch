@@ -3,7 +3,7 @@ import argparse
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_quantizer import (
-    get_default_qnn_ptq_config,
+    get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
 )
 from executorch.backends.qualcomm.utils.utils import (
@@ -41,8 +41,8 @@ if __name__ == "__main__":
 
     # Get quantizer
     quantizer = QnnQuantizer()
-    quant_config = get_default_qnn_ptq_config(enable_per_channel_conv_quant=False)
-    quantizer.set_global_op_quant_config(quant_config)
+    quant_config = get_default_8bit_qnn_ptq_config()
+    quantizer.set_bit8_op_quant_config(quant_config)
 
     # Typical pytorch 2.0 quantization flow
     m = torch._export.capture_pre_autograd_graph(model.eval(), example_inputs)

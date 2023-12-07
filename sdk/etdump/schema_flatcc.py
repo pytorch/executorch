@@ -106,7 +106,7 @@ class ProfileEvent:
     instruction_id: int
     delegate_debug_id_int: Optional[int]
     delegate_debug_id_str: Optional[str]
-    delegate_debug_metadata: Optional[str]
+    delegate_debug_metadata: Optional[bytes]
     start_time: int
     end_time: int
 

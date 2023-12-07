@@ -44,18 +44,19 @@ def _get_module_hierarchy(node: torch.fx.Node) -> str:
 
 def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]:
     """
-    Create a list of TensorAllocationInfo from the given nodes.
-    The returned list is sorted by the memory id of each allocation info.
+    Creates a memory timlines, where each step in the timeline is a list of active
+    allocations at that timestep.
     """
     nodes = graph.nodes
     memory_timeline = [None] * len(nodes)
     for i, node in enumerate(nodes):
+        if node.target == memory.alloc:
+            continue
         tensor_specs = get_node_tensor_specs(node)
         if tensor_specs is None:
             continue
-        if node.target == memory.alloc:
-            continue
         for tensor_spec in tensor_specs:
+            # TODO: Make use of mem_id in the allocation info
             if tensor_spec is None or tensor_spec.mem_id is None or tensor_spec.const:
                 continue
             start, end = tensor_spec.lifetime
