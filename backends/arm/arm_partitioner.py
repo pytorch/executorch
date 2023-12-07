@@ -1,10 +1,16 @@
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 import operator
 import os
-from typing import final
+from typing import final, List
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -47,9 +53,10 @@ class TOSASupportedOperators(OperatorSupportBase):
 
 @final
 class ArmPartitioner(Partitioner):
-    compile_spec = []
+    compile_spec: List[CompileSpec]
 
-    def __init__(self) -> None:
+    def __init__(self, compile_spec: List[CompileSpec]) -> None:
+        self.compile_spec = compile_spec
         self.delegation_spec = DelegationSpec(ArmBackend.__name__, self.compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:

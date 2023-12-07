@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -103,8 +103,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
 def export_model(model, inputs, compile_spec):
     model_capture = export(model, inputs)
     model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
-    ArmPartitioner.compile_spec = compile_spec
 
-    model_edge = model_edge.to_backend(ArmPartitioner())
+    model_edge = model_edge.to_backend(ArmPartitioner(compile_spec))
     exec_prog = model_edge.to_executorch()
     return model_edge, exec_prog

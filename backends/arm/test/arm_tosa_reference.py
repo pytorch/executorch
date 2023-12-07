@@ -173,8 +173,6 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     model_capture = export(model, inputs)
     model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
 
-    ArmPartitioner.compile_spec = compile_spec
-
     if profile == TosaProfile.BI:
         (
             input_quantization_scales,
@@ -185,7 +183,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             output_quantization_zp,
         ) = get_output_quantization_param(model_edge)
 
-    model_edge = model_edge.to_backend(ArmPartitioner())
+    model_edge = model_edge.to_backend(ArmPartitioner(compile_spec))
     exec_prog = model_edge.to_executorch(
         config=ExecutorchBackendConfig(extract_constant_segment=False)
     )
