@@ -707,15 +707,18 @@
 <div class="breathe-sectiondef docutils container">
 <p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-functions">Public Functions</p>
 <dl class="cpp function">
-<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t">
-<span id="_CPPv3NK5torch8executor7Program24get_constant_buffer_dataE6size_t"></span><span id="_CPPv2NK5torch8executor7Program24get_constant_buffer_dataE6size_t"></span><span id="torch::executor::Program::get_constant_buffer_data__sC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a4b9942f9ab81392999c05497519cab3f"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">get_constant_buffer_data</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">buffer_idx</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t" title="Permalink to this definition">¶</a><br /></dt>
-<dd><p>Get the constant buffer inside <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> with index buffer_idx </p>
+<dt class="sig sig-object cpp" id="_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t">
+<span id="_CPPv3NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t"></span><span id="_CPPv2NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t"></span><span id="torch::executor::Program::get_constant_buffer_data__s.sC"></span><span class="target" id="classtorch_1_1executor_1_1Program_1a8c78da773d197b3d97e05b0ac1933509"></span><span class="n"><span class="pre">Result</span></span><span class="p"><span class="pre">&lt;</span></span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">&gt;</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">get_constant_buffer_data</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">buffer_idx</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">nbytes</span></span><span class="sig-paren">)</span><span class="w"> </span><span class="k"><span class="pre">const</span></span><a class="headerlink" href="#_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t" title="Permalink to this definition">¶</a><br /></dt>
+<dd><p>Get the constant buffer inside <a class="reference internal" href="#classtorch_1_1executor_1_1Program"><span class="std std-ref">Program</span></a> with index buffer_idx. </p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>buffer_idx</strong> – <strong>[in]</strong> the index of the buffer in the constant_buffer </p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>buffer_idx</strong> – <strong>[in]</strong> the index of the buffer in the constant_buffer. </p></li>
+<li><p><strong>nbytes</strong> – <strong>[in]</strong> the number of bytes to read from the buffer. </p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns</dt>
-<dd class="field-even"><p>The buffer with corresponding index </p>
+<dd class="field-even"><p>The buffer with corresponding index. </p>
 </dd>
 </dl>
 </dd></dl>
