@@ -852,7 +852,7 @@ class Inspector:
         etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
-        buffer_path: Optional[str] = None,
+        debug_buffer_path: Optional[str] = None,
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
@@ -866,7 +866,7 @@ class Inspector:
             etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
-            buffer_path: Buffer file path referenced by ETDump
+            debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
             delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event
 
         Returns:
@@ -893,8 +893,8 @@ class Inspector:
 
         # Create EventBlocks from ETDump
         etdump = gen_etdump_object(etdump_path=etdump_path)
-        if buffer_path is not None:
-            with open(buffer_path, "rb") as f:
+        if debug_buffer_path is not None:
+            with open(debug_buffer_path, "rb") as f:
                 output_buffer = f.read()
         else:
             output_buffer = None
