@@ -968,18 +968,24 @@ class TestPasses(unittest.TestCase):
                     return ops.backend.DO_NOT_USE_TEST_ONLY.add_relu2.default(x, y)
 
                 subgraph_rewriter.replace_pattern(graph_module, pattern, replacement)
-                return PassResult(graph_module, True)
+                return super().call(graph_module)
 
         lowered_prog = prog.to_edge(
             EdgeCompileConfig(
                 _check_ir_validity=False,
                 _use_edge_ops=False,  # doesn't work with it enabled
             ),
-        ).transform(AddReluFusionPass(), EdgeToBackendOpsPass())
+        )
+        add_relu_res = AddReluFusionPass()(lowered_prog.exported_program.graph_module)
+        assert add_relu_res is not None
+        add_relu_gm = add_relu_res.graph_module
+        backend_res = EdgeToBackendOpsPass()(add_relu_gm)
+        assert backend_res is not None
+        backend_gm = backend_res.graph_module
 
         FileCheck().check(
             "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu2_default"
-        ).run(lowered_prog.exported_program.graph_module.code)
+        ).run(backend_gm.code)
 
     def test_remove_assert_pass(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:

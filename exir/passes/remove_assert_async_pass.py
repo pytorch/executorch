@@ -8,21 +8,27 @@
 
 import torch
 
-from executorch.exir.pass_base import ExportPass, PassResult
+from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
-class RemoveAssertAsyncPass(ExportPass):
+class RemoveAssertAsyncPass(PassBase):
     """
     Temporary pass to remove all the assert async ops until runtime decides to address it.
     """
 
-    # pyre-ignore
-    def call_operator(self, op, args, kwargs, meta):
-        if op == torch.ops.aten._assert_async.msg:
-            return
-        return super().call_operator(op, args, kwargs, meta)
-
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
-        gm, modified = super().call(graph_module)
-        gm.graph.eliminate_dead_code()
-        return PassResult(gm, modified)
+        for module in graph_module.modules():
+            if not isinstance(module, torch.fx.GraphModule):
+                continue
+
+            for node in module.graph.nodes:
+                if (
+                    node.op == "call_function"
+                    and node.target == torch.ops.aten._assert_async.msg
+                ):
+                    module.graph.erase_node(node)
+
+            module.recompile()
+            module.graph.eliminate_dead_code()
+
+        return PassResult(graph_module, True)
