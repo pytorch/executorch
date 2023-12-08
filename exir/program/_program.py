@@ -437,6 +437,9 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     passes: List[PassType] = [
         *config.passes,
         SpecPropPass(),
+        # ExecuTorch backend ops are unable to handle unbacked symints. So after
+        # this pass, passes cannot be Interpreter-based, because it will fail if
+        # there exists an unbacked symint operation.
         EdgeToBackendOpsPass(),
         RemoveAssertAsyncPass(),
         config.sym_shape_eval_pass,
