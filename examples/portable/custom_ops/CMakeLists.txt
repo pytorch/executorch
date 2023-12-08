@@ -114,5 +114,7 @@ gen_operators_lib("custom_ops_lib" custom_kernels executorch)
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_executable(custom_ops_executor_runner ${_executor_runner__srcs})
-target_link_libraries(custom_ops_executor_runner custom_ops_lib executorch gflags)
-target_compile_options(custom_ops_executor_runner PUBLIC ${_common_compile_options})
+target_link_libraries(custom_ops_executor_runner
+                      custom_ops_lib executorch gflags)
+target_compile_options(custom_ops_executor_runner
+                       PUBLIC ${_common_compile_options})
