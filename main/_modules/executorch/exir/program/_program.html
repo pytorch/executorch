@@ -858,6 +858,9 @@
     <span class="n">passes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">passes</span><span class="p">,</span>
         <span class="n">SpecPropPass</span><span class="p">(),</span>
+        <span class="c1"># ExecuTorch backend ops are unable to handle unbacked symints. So after</span>
+        <span class="c1"># this pass, passes cannot be Interpreter-based, because it will fail if</span>
+        <span class="c1"># there exists an unbacked symint operation.</span>
         <span class="n">EdgeToBackendOpsPass</span><span class="p">(),</span>
         <span class="n">RemoveAssertAsyncPass</span><span class="p">(),</span>
         <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
