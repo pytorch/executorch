@@ -8,7 +8,7 @@ from executorch.backends.arm.tosa_quant_utils import (
     isQuantArg,
     q_op,
 )
-from executorch.backends.arm.tosa_utils import getNodeArgs
+from executorch.backends.arm.tosa_utils import getNodeArgs, is_bias_node_for_addmm
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch._export.exported_program import ExportedProgram
 
@@ -42,10 +42,7 @@ def process_placeholder(
                 parameter_values_quantized,
                 name=out,
             )
-        elif (
-            consumer_node.target == exir_ops.edge.aten.addmm.default
-            and list(consumer_node.users)[0].target == q_op
-        ):
+        elif is_bias_node_for_addmm(node):
             (
                 _,
                 input_node,
@@ -53,17 +50,22 @@ def process_placeholder(
             ) = consumer_node.all_input_nodes
             weight_node = weight_node_permuted.all_input_nodes[0]
 
-            input_node_scale, _ = getQuantNodeArgs(input_node)
+            # input_node_scale, _ = getQuantNodeArgs(input_node)
+            if input_node.target == exir_ops.edge.aten.view_copy.default:
+                input_node_scale, _ = getQuantNodeArgs(input_node.all_input_nodes[0])
+            else:
+                input_node_scale, _ = getQuantNodeArgs(input_node)
+
             weight_node_scale, weight_node_zp = getQuantNodeArgs(weight_node)
 
-            parameter_values_quantized = (
+            bias_values_quantized = (
                 parameter_values / (input_node_scale * weight_node_scale)
             ).astype(np.int32)
 
             tosa_graph.addConst(
                 inputs[0].shape,
                 ts.DType.INT32,
-                parameter_values_quantized,
+                bias_values_quantized,
                 name=out,
             )
         elif (
