@@ -12,6 +12,8 @@
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump_flatcc.h>
+#include <executorch/sdk/etdump/etdump_schema_flatcc_builder.h>
+#include <executorch/sdk/etdump/etdump_schema_flatcc_reader.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <cstdint>
 #include <cstring>
