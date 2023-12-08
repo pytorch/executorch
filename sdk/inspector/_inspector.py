@@ -867,7 +867,8 @@ class Inspector:
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
             debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
-            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event
+            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
+                    (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]]
 
         Returns:
             None
