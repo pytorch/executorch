@@ -5,9 +5,10 @@
 
 Specifically, it makes associating runtime information (such as profiling results) through delegated graphs difficult. Delegate Debug Identifiers provides a framework through which delegate authors can propagate this information and utilize it for post run analysis.
 
-The preparation is broken down into two stages:
+The preparation is broken down into three stages:
 - **Ahead-of-time (AOT)**: Delegate authors generate a __Debug Handle Map__.
 - **Runtime**: Delegate authors log using the __Delegate Debug Identifiers__ registered AOT in the __Debug Handle Map__.
+- **Deserialization**: Delegate authors provide a parser for custom metadata in delegate events.
 
 ## Ahead-of-Time
 Delegate authors propagate what transformations occur in a lowered backend by returning a **Debug Handle Map** from the backend implementation.
@@ -55,12 +56,13 @@ builder = DelegateMappingBuilder(generated_identifiers=True)
 With **manual identifiers**, users pass in a **Delegate Debug Identifier** when creating entries.
 With **generated identifiers**, the builder will auto-assign a **Delegate Debug Identifier**.
 
-To add an entry to the **Debug Handle Map**, use `insert_delegate_mapping_entry`. It takes `fx.Node(s)` to associate and an optional **Delegate Debug Identifier** (used for the manual identifiers). The identifier recorded is returned from the call.
+To add an entry to the **Debug Handle Map**, use `insert_delegate_mapping_entry`. It associates one of `fx.Node(s)` or debug handles(s) (sourced from node.meta["debug_handle"]) to an optional **Delegate Debug Identifier** (used for the manual identifiers). The identifier recorded is returned from the call.
 
 ```python
 def insert_delegate_mapping_entry(
     self,
-    nodes: Union[fx.Node, List[fx.Node]],
+    nodes: Optional[Union[Node, List[Node]]] = None,
+    handles: Optional[Union[int, List[int]]] = None,
     identifier: Optional[Union[int, str]] = None,
 ) -> Union[int, str]:
 ```
@@ -101,7 +103,8 @@ Optionally, additional runtime `metadata` can also be logged at this point.
 void event_tracer_end_profiling_delegate(
     EventTracer* event_tracer,
     EventTracerEntry event_tracer_entry,
-    const char* metadata = nullptr)
+    const void* metadata = nullptr,
+    size_t metadata_len = 0)
 ```
 
 ### Post-Time Logging
@@ -116,6 +119,34 @@ void event_tracer_log_profiling_delegate(
     DebugHandle delegate_debug_id,
     et_timestamp_t start_time,
     et_timestamp_t end_time,
-    const char* metadata = nullptr)
+    const void* metadata = nullptr,
+    size_t metadata_len = 0)
 ```
 A demo of the runtime code can be found [here](https://github.com/pytorch/executorch/blob/main/runtime/executor/test/test_backend_with_delegate_mapping.cpp).
+
+
+## Surfacing custom metadata from delegate events
+
+As seen in the runtime logging API's above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the [Inspector API](./sdk-inspector.rst).
+
+Users can pass a metadata parser when creating an instance of the Inspector. The parser is a callable that deserializes the data and returns a list of strings or a dictionary containing key-value pairs. The deserialized data is then added back to the corresponding event in the event block for user consumption. Here's an example of how to write this parser:
+
+NOTE: The input to the deserializer is a list where each entry is a series of bytes (essentially each entry is an immutable bytearray). Users are expected to iterate over this list, deserialize each entry and then return it in the expected format which is either a list of strings, or a dict.
+
+```python
+Inspector(
+    etdump_path=etdump_path,
+    # Optional
+    etrecord=etrecord_path,
+    # Optional, only needed if debugging was enabled.
+    buffer_path=buffer_path,
+    delegate_metadata_parser=parse_delegate_metadata
+)
+
+
+def parse_delegate_metadata(delegate_metadatas: List[bytes]) -> Union[List[str], Dict[str, Any]]:
+    metadata_str = []
+    for metadata_bytes in delegate_metadatas:
+        metadata_str += str(metadata_bytes)
+    return metadata_str
+```
