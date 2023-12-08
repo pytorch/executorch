@@ -48,6 +48,7 @@ function(executorch_print_configuration_summary)
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
   message(STATUS "  EXECUTORCH_BUILD_XNNPACK : ${EXECUTORCH_BUILD_XNNPACK}")
   message(STATUS "  EXECUTORCH_BUILD_MPS     : ${EXECUTORCH_BUILD_MPS}")
+  message(STATUS "  EXECUTORCH_BUILD_SDK     : ${EXECUTORCH_BUILD_SDK}")
 endfunction()
 
 # This is the funtion to use -Wl, --whole-archive to link static library NB:

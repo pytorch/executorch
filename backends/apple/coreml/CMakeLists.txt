@@ -83,6 +83,8 @@ target_include_directories(
   coremldelegate PRIVATE
   ${EXECUTORCH_ROOT}/..
 )
+target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
+
 
 target_link_libraries(
   coremldelegate PRIVATE

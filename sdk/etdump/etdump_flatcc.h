@@ -9,14 +9,13 @@
 #pragma once
 
 #include <executorch/runtime/core/span.h>
-#include <executorch/sdk/etdump/etdump_schema_flatcc_builder.h>
-#include <executorch/sdk/etdump/etdump_schema_flatcc_reader.h>
 #include <cstdint>
 #include "executorch/runtime/core/event_tracer.h"
 #include "executorch/runtime/platform/platform.h"
-#include "executorch/sdk/etdump/emitter.h"
 
 #define ETDUMP_VERSION 0
+
+struct flatcc_builder;
 
 namespace torch {
 namespace executor {
@@ -31,6 +30,38 @@ enum ETDumpGen_State {
 struct etdump_result {
   void* buf;
   size_t size;
+};
+
+struct etdump_static_allocator {
+  etdump_static_allocator() {}
+
+  void
+  set_buffer(uint8_t* buffer, size_t total_buf_size, size_t alloc_buf_size) {
+    data = buffer;
+    data_size = alloc_buf_size;
+    allocated = 0;
+    out_size = total_buf_size - alloc_buf_size;
+    front_cursor = &buffer[alloc_buf_size];
+    front_left = out_size / 2;
+  }
+
+  // Pointer to backing buffer to allocate from.
+  uint8_t* data{nullptr};
+
+  // Size of backing buffer.
+  size_t data_size{0};
+
+  // Current allocation offset.
+  size_t allocated{0};
+
+  // Size of build buffer.
+  size_t out_size{0};
+
+  // Pointer to front of build buffer.
+  uint8_t* front_cursor{nullptr};
+
+  // Bytes left in front of front_cursor.
+  size_t front_left{0};
 };
 
 class ETDumpGen : public EventTracer {
@@ -71,7 +102,7 @@ class ETDumpGen : public EventTracer {
   bool is_static_etdump();
 
  private:
-  flatcc_builder_t builder;
+  struct flatcc_builder* builder;
   size_t num_blocks = 0;
   Span<uint8_t> debug_buffer;
   size_t debug_buffer_offset = 0;
@@ -83,9 +114,6 @@ class ETDumpGen : public EventTracer {
   int64_t create_string_entry(const char* name);
   size_t copy_tensor_to_debug_buffer(exec_aten::Tensor tensor);
 };
-
-executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
-    exec_aten::ScalarType tensor_scalar_type);
 
 } // namespace executor
 } // namespace torch
