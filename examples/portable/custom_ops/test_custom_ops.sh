@@ -21,7 +21,7 @@ test_buck2_custom_op_1() {
   # should save file custom_ops_1.pte
 
   echo 'Running executor_runner'
-  $BUCK2 run //examples/portable/executor_runner:executor_runner \
+  $BUCK run //examples/portable/executor_runner:executor_runner \
       --config=executorch.register_custom_op=1 -- --model_path="./${model_name}.pte"
   # should give correct result
 
@@ -34,31 +34,34 @@ test_cmake_custom_op_1() {
   echo "Exporting ${model_name}.pte"
   ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}"
   # should save file custom_ops_1.pte
-  (rm -rf cmake-out \
-    && mkdir cmake-out \
-    && cd cmake-out \
-    && retry cmake -DBUCK2=$BUCK2 \
+  local example_dir=examples/portable/custom_ops
+  local build_dir=cmake-out/${example_dir}
+  rm -rf ${build_dir}
+  retry cmake \
         -DREGISTER_EXAMPLE_CUSTOM_OP=1 \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${build_dir} \
+        ${example_dir}
 
-  echo 'Building executor_runner'
-  cmake --build cmake-out -j9
+  echo "Building ${example_dir}"
+  cmake --build ${build_dir} -j9 --config Release
 
-  echo 'Running executor_runner'
-  cmake-out/executor_runner --model_path="./${model_name}.pte"
+  echo 'Running custom_ops_executor_runner'
+  ${build_dir}/custom_ops_executor_runner --model_path="./${model_name}.pte"
 }
 
 test_buck2_custom_op_2() {
   local model_name='custom_ops_2'
 
   echo 'Building custom ops shared library'
-  SO_LIB=$($BUCK2 build //examples/portable/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
+  SO_LIB=$($BUCK build //examples/portable/custom_ops:custom_ops_aot_lib_2 --show-output | grep "buck-out" | cut -d" " -f2)
 
   echo "Exporting ${model_name}.pte"
   ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}" --so_library="$SO_LIB"
   # should save file custom_ops_2.pte
 
-  $BUCK2 run //examples/portable/executor_runner:executor_runner \
+  $BUCK run //examples/portable/executor_runner:executor_runner \
       --config=executorch.register_custom_op=2 -- --model_path="./${model_name}.pte"
   # should give correct result
   echo "Removing ${model_name}.pte"
@@ -83,26 +86,28 @@ get_shared_lib_ext() {
 test_cmake_custom_op_2() {
   local model_name='custom_ops_2'
   SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
-  CMAKE_PREFIX_PATH="${SITE_PACKAGES}/torch"
+  CMAKE_PREFIX_PATH="$PWD/cmake-out/lib/cmake/ExecuTorch;${SITE_PACKAGES}/torch"
 
-  (rm -rf cmake-out \
-    && mkdir cmake-out \
-    && cd cmake-out \
-    && retry cmake -DBUCK2=$BUCK2 \
-      -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
-      -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-      -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
+  local example_dir=examples/portable/custom_ops
+  local build_dir=cmake-out/${example_dir}
+  rm -rf ${build_dir}
+  retry cmake \
+        -DREGISTER_EXAMPLE_CUSTOM_OP=2 \
+        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -B${build_dir} \
+        ${example_dir}
 
-  echo 'Building executor_runner'
-  cmake --build cmake-out -j4
+  echo "Building ${example_dir}"
+  cmake --build ${build_dir} -j9 --config Release
 
   EXT=$(get_shared_lib_ext)
   echo "Exporting ${model_name}.pte"
   ${PYTHON_EXECUTABLE} -m "examples.portable.custom_ops.${model_name}" --so_library="cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib$EXT"
   # should save file custom_ops_2.pte
 
-  echo 'Running executor_runner'
-  cmake-out/executor_runner "--model_path=./${model_name}.pte"
+  echo 'Running custom_ops_executor_runner'
+  ${build_dir}/custom_ops_executor_runner --model_path="./${model_name}.pte"
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]];
@@ -110,13 +115,14 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
-if [[ -z $BUCK2 ]];
+if [[ -z $BUCK ]];
 then
-  BUCK2=buck2
+  BUCK=buck2
 fi
 
 if [[ $1 == "cmake" ]];
 then
+  cmake_install_executorch_lib
   test_cmake_custom_op_1
   test_cmake_custom_op_2
 elif [[ $1 == "buck2" ]];

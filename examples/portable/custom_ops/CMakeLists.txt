@@ -15,6 +15,7 @@
 # (`executor_runner` in this example) and it is ready to run models containing
 # that custom op.
 cmake_minimum_required(VERSION 3.19)
+project(custom_ops_example)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
@@ -35,6 +36,42 @@ endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+find_package(executorch CONFIG REQUIRED)
+find_package(
+  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
+)
+
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+
+# ------------------------------ OPTIONS BEGIN -------------------------------
+# Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
+# custom ops at all. Custom ops are defined in
+# `examples/portable/custom_ops/custom_ops_1.py` and
+# `examples/portable/custom_ops/custom_ops_2.cpp`.
+option(
+  REGISTER_EXAMPLE_CUSTOM_OP
+  "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
+  or no custom op at all." OFF)
+# ------------------------------- OPTIONS END --------------------------------
+
+#
+# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+#
+set(
+  EXECUTORCH_SRCS_FILE
+  "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
+)
+
+extract_sources(${EXECUTORCH_SRCS_FILE})
+
+include(${EXECUTORCH_SRCS_FILE})
+
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime).
@@ -73,3 +110,9 @@ target_link_libraries(custom_kernels PRIVATE executorch)
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
 gen_operators_lib("custom_ops_lib" custom_kernels executorch)
+
+list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
+
+add_executable(custom_ops_executor_runner ${_executor_runner__srcs})
+target_link_libraries(custom_ops_executor_runner custom_ops_lib executorch gflags)
+target_compile_options(custom_ops_executor_runner PUBLIC ${_common_compile_options})
