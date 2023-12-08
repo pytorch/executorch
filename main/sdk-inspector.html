@@ -42,7 +42,7 @@
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="SDK Delegate Integration" href="sdk-delegate-integration.html" />
-    <link rel="prev" title="Profiling Models in ExecuTorch" href="sdk-profiling.html" />
+    <link rel="prev" title="Debugging Models in ExecuTorch" href="sdk-debugging.html" />
 
 
   <!-- Google Tag Manager -->
@@ -341,6 +341,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
@@ -457,7 +458,8 @@ and optional ETRecord path.</p>
 <li><p><strong>source_time_scale</strong> – The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.</p></li>
 <li><p><strong>target_time_scale</strong> – The target time scale to which the users want their performance data converted to. Defaults to MS.</p></li>
 <li><p><strong>debug_buffer_path</strong> – Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.</p></li>
-<li><p><strong>delegate_metadata_parser</strong> – Optional function to parse delegate metadata from an Profiling Event</p></li>
+<li><p><strong>delegate_metadata_parser</strong> – Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
+(delegate_metadata_list: List[bytes]) -&gt; Union[List[str], Dict[str, Any]]</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns</dt>
@@ -610,7 +612,7 @@ table. This command produces the identical table output as calling the
         <a href="sdk-delegate-integration.html" class="btn btn-neutral float-right" title="SDK Delegate Integration" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="sdk-profiling.html" class="btn btn-neutral" title="Profiling Models in ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="sdk-debugging.html" class="btn btn-neutral" title="Debugging Models in ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   

@@ -341,6 +341,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
@@ -429,10 +430,11 @@
 <li><p>For example, if two different operator fusions were to occur within a delegate, post processing wouldn’t be able to separate the two transformations.</p></li>
 </ul>
 <p>Specifically, it makes associating runtime information (such as profiling results) through delegated graphs difficult. Delegate Debug Identifiers provides a framework through which delegate authors can propagate this information and utilize it for post run analysis.</p>
-<p>The preparation is broken down into two stages:</p>
+<p>The preparation is broken down into three stages:</p>
 <ul class="simple">
 <li><p><strong>Ahead-of-time (AOT)</strong>: Delegate authors generate a <strong>Debug Handle Map</strong>.</p></li>
 <li><p><strong>Runtime</strong>: Delegate authors log using the <strong>Delegate Debug Identifiers</strong> registered AOT in the <strong>Debug Handle Map</strong>.</p></li>
+<li><p><strong>Deserialization</strong>: Delegate authors provide a parser for custom metadata in delegate events.</p></li>
 </ul>
 <div class="section" id="ahead-of-time">
 <h2>Ahead-of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this headline">¶</a></h2>
@@ -474,10 +476,11 @@
 </div>
 <p>With <strong>manual identifiers</strong>, users pass in a <strong>Delegate Debug Identifier</strong> when creating entries.
 With <strong>generated identifiers</strong>, the builder will auto-assign a <strong>Delegate Debug Identifier</strong>.</p>
-<p>To add an entry to the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">insert_delegate_mapping_entry</span></code>. It takes <code class="docutils literal notranslate"><span class="pre">fx.Node(s)</span></code> to associate and an optional <strong>Delegate Debug Identifier</strong> (used for the manual identifiers). The identifier recorded is returned from the call.</p>
+<p>To add an entry to the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">insert_delegate_mapping_entry</span></code>. It associates one of <code class="docutils literal notranslate"><span class="pre">fx.Node(s)</span></code> or debug handles(s) (sourced from node.meta[“debug_handle”]) to an optional <strong>Delegate Debug Identifier</strong> (used for the manual identifiers). The identifier recorded is returned from the call.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">insert_delegate_mapping_entry</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
-    <span class="n">nodes</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]],</span>
+    <span class="n">nodes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Node</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">handles</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">identifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
 </pre></div>
@@ -511,7 +514,8 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="n">event_tracer_end_profiling_delegate</span><span class="p">(</span>
 <span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
 <span class="w">    </span><span class="n">EventTracerEntry</span><span class="w"> </span><span class="n">event_tracer_entry</span><span class="p">,</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">)</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">,</span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">metadata_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -525,10 +529,34 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 <span class="w">    </span><span class="n">DebugHandle</span><span class="w"> </span><span class="n">delegate_debug_id</span><span class="p">,</span>
 <span class="w">    </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">start_time</span><span class="p">,</span>
 <span class="w">    </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">end_time</span><span class="p">,</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">)</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">,</span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">metadata_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>A demo of the runtime code can be found <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/executor/test/test_backend_with_delegate_mapping.cpp">here</a>.</p>
+</div>
+</div>
+<div class="section" id="surfacing-custom-metadata-from-delegate-events">
+<h2>Surfacing custom metadata from delegate events<a class="headerlink" href="#surfacing-custom-metadata-from-delegate-events" title="Permalink to this headline">¶</a></h2>
+<p>As seen in the runtime logging API’s above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>.</p>
+<p>Users can pass a metadata parser when creating an instance of the Inspector. The parser is a callable that deserializes the data and returns a list of strings or a dictionary containing key-value pairs. The deserialized data is then added back to the corresponding event in the event block for user consumption. Here’s an example of how to write this parser:</p>
+<p>NOTE: The input to the deserializer is a list where each entry is a series of bytes (essentially each entry is an immutable bytearray). Users are expected to iterate over this list, deserialize each entry and then return it in the expected format which is either a list of strings, or a dict.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">Inspector</span><span class="p">(</span>
+    <span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
+    <span class="c1"># Optional</span>
+    <span class="n">etrecord</span><span class="o">=</span><span class="n">etrecord_path</span><span class="p">,</span>
+    <span class="c1"># Optional, only needed if debugging was enabled.</span>
+    <span class="n">buffer_path</span><span class="o">=</span><span class="n">buffer_path</span><span class="p">,</span>
+    <span class="n">delegate_metadata_parser</span><span class="o">=</span><span class="n">parse_delegate_metadata</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">parse_delegate_metadata</span><span class="p">(</span><span class="n">delegate_metadatas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">metadata_str</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">metadata_bytes</span> <span class="ow">in</span> <span class="n">delegate_metadatas</span><span class="p">:</span>
+        <span class="n">metadata_str</span> <span class="o">+=</span> <span class="nb">str</span><span class="p">(</span><span class="n">metadata_bytes</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">metadata_str</span>
+</pre></div>
 </div>
 </div>
 </div>
@@ -591,6 +619,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 <li><a class="reference internal" href="#post-time-logging">Post-Time Logging</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#surfacing-custom-metadata-from-delegate-events">Surfacing custom metadata from delegate events</a></li>
 </ul>
 </li>
 </ul>

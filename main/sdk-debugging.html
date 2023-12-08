@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Kernel Registration &mdash; ExecuTorch main documentation</title>
+  <title>Debugging Models in ExecuTorch &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -41,8 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Kernel Library Selective Build" href="kernel-library-selective-build.html" />
-    <link rel="prev" title="Overview of ExecuTorch’s Kernel Libraries" href="kernel-library-overview.html" />
+    <link rel="next" title="Inspector APIs" href="sdk-inspector.html" />
+    <link rel="prev" title="Profiling Models in ExecuTorch" href="sdk-profiling.html" />
 
 
   <!-- Google Tag Manager -->
@@ -323,9 +323,9 @@
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul class="current">
+<ul>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
@@ -335,13 +335,13 @@
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
@@ -385,13 +385,13 @@
       </li>
 
         
-      <li>Kernel Registration</li>
+      <li>Debugging Models in ExecuTorch</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/kernel-library-custom-aten-kernel.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/sdk-debugging.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -423,188 +423,91 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="kernel-registration">
-<h1>Kernel Registration<a class="headerlink" href="#kernel-registration" title="Permalink to this headline">¶</a></h1>
-<div class="section" id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
-<p>At the last stage of <a class="reference internal" href="export-overview.html"><span class="doc std std-doc">ExecuTorch model exporting</span></a>, we lower the operators in the dialect to the <em>out variants</em> of the <a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">core ATen operators</span></a>. Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual <em>kernels</em>, i.e., the C++ functions that do the heavy-lifting calculations and return results.</p>
-<p>Portable kernel library is the in-house default kernel library, it’s easy to use and portable for most of the target backends. However it’s not optimized for performance, because it’s not specialized for any certain target. Therefore we provide kernel registration APIs for ExecuTorch users to easily register their own optimized kernels.</p>
-</div>
-<div class="section" id="design-principles">
-<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this headline">¶</a></h2>
-<p><strong>What do we support?</strong> On the operator coverage side, the kernel registration APIs allow users to register kernels for all core ATen ops as well as custom ops, as long as the custom ops schemas are specified.</p>
-<p>Notice that we also support _partial kernels, _for example the kernel only supports a subset of tensor dtypes and/or dim orders.</p>
-<p><strong>Kernel contract</strong>: kernels need to comply with the following requirements:</p>
+  <div class="section" id="debugging-models-in-executorch">
+<h1>Debugging Models in ExecuTorch<a class="headerlink" href="#debugging-models-in-executorch" title="Permalink to this headline">¶</a></h1>
+<p>With the ExecuTorch SDK, users can debug their models for numerical inaccurcies and extract model outputs from their device to do quality analysis (such as Signal-to-Noise, Mean square error etc.).</p>
+<p>Currently, ExecuTorch supports the following debugging flows:</p>
 <ul class="simple">
-<li><p>Match the calling convention derived from operator schema. The kernel registration API will generate headers for the custom kernels as references.</p></li>
-<li><p>Satisfy the dtype constraints defined in edge dialect. For tensors with certain dtypes as arguments, the result of a custom kernel needs to match  the expected dtypes. The constraints are available in edge dialect ops.</p></li>
-<li><p>Gives correct result. We will provide a testing framework to automatically test the custom kernels.</p></li>
-</ul>
-</div>
-<div class="section" id="high-level-architecture">
-<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this headline">¶</a></h2>
-<p><img alt="" src="_images/kernel-library-custom-aten-kernel.png" /></p>
-<p>ExecuTorch users are asked to provide:</p>
-<ol class="arabic simple">
-<li><p>the custom kernel library with C++ implementations</p></li>
-<li><p>a yaml file associated with the library that describes what operators are being implemented by this library. For partial kernels, the yaml file also contains information on the dtypes and dim orders supported by the  kernel. More details in the API section.</p></li>
-</ol>
-<div class="section" id="workflow">
-<h3>Workflow<a class="headerlink" href="#workflow" title="Permalink to this headline">¶</a></h3>
-<p>At build time, the yaml files associated with kernel libraries will be passed to the <em>kernel resolver</em> along with the model op info (see selective build doc) and the outcome is a mapping between a combination of operator names and tensor metadata, to kernel symbols. Then codegen tools will use this mapping to generate C++ bindings that connect the kernels to ExecuTorch runtime. ExecuTorch users need to link this generated library into their application to use these kernels.</p>
-<p>At static object initialization time, kernels will be registered into the ExecuTorch kernel registry.</p>
-<p>At runtime initialization stage, ExecuTorch will use the operator name and argument metadata as a key to lookup for the kernels. For example, with “aten::add.out” and inputs being float tensors with dim order (0, 1, 2, 3), ExecuTorch will go into the kernel registry and lookup for a kernel that matches the name and the input metadata.</p>
-</div>
-</div>
-<div class="section" id="apis">
-<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h2>
-<p>There are two sets of APIs: yaml files that describe kernel - operator mappings and codegen tools to consume these mappings.</p>
-<div class="section" id="yaml-entry-for-core-aten-op-out-variant">
-<h3>Yaml Entry for Core ATen Op Out Variant<a class="headerlink" href="#yaml-entry-for-core-aten-op-out-variant" title="Permalink to this headline">¶</a></h3>
-<p>Top level attributes:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">op</span></code> (if the operator appears in <code class="docutils literal notranslate"><span class="pre">native_functions.yaml</span></code>) or <code class="docutils literal notranslate"><span class="pre">func</span></code> for custom operator. The value for this key needs to be the full operator name (including overload name) for <code class="docutils literal notranslate"><span class="pre">op</span></code> key, or a full operator schema (namespace, operator name, operator overload name and schema string), if we are describing a custom operator. For schema syntax please refer to this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">instruction</a>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kernels</span></code>: defines kernel information. It consists of <code class="docutils literal notranslate"><span class="pre">arg_meta</span></code> and <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>, which are bound together to describe “for input tensors with these metadata, use this kernel”.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">type_alias</span></code>(optional): we are giving aliases to possible dtype options. <code class="docutils literal notranslate"><span class="pre">T0:</span> <span class="pre">[Double,</span> <span class="pre">Float]</span></code> means <code class="docutils literal notranslate"><span class="pre">T0</span></code> can be one of <code class="docutils literal notranslate"><span class="pre">Double</span></code> or <code class="docutils literal notranslate"><span class="pre">Float</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">dim_order_alias</span></code>(optional): similar to <code class="docutils literal notranslate"><span class="pre">type_alias</span></code>, we are giving names to possible dim order options.</p></li>
-</ul>
-<p>Attributes under <code class="docutils literal notranslate"><span class="pre">kernels</span></code>:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">arg_meta</span></code>: a list of “tensor arg name” entries. The values for these keys are dtypes and dim orders aliases, that are implemented by the corresponding <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>. This being <code class="docutils literal notranslate"><span class="pre">null</span></code> means the kernel will be used for all types of input.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">kernel_name</span></code>: the expected name of the C++ function that will implement this operator. You can put whatever you want to here, but you should follow the convention of replacing the <code class="docutils literal notranslate"><span class="pre">.</span></code> in the overload name with an underscore, and lowercasing all characters. In this example, <code class="docutils literal notranslate"><span class="pre">add.out</span></code> uses the C++ function named <code class="docutils literal notranslate"><span class="pre">add_out</span></code>. <code class="docutils literal notranslate"><span class="pre">add.Scalar_out</span></code> would become <code class="docutils literal notranslate"><span class="pre">add_scalar_out</span></code>, with a lowercase <code class="docutils literal notranslate"><span class="pre">S</span></code>. We support namespace for kernels, but note that we will be inserting a <code class="docutils literal notranslate"><span class="pre">native::</span></code> to the last level of namespace. So <code class="docutils literal notranslate"><span class="pre">custom::add_out</span></code> in the <code class="docutils literal notranslate"><span class="pre">kernel_name</span></code> will point to <code class="docutils literal notranslate"><span class="pre">custom::native::add_out</span></code>.</p></li>
-</ul>
-<p>Some examples of operator entry:</p>
-<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
-<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
-<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
-</pre></div>
-</div>
-<p>An out variant of a core ATen operator with a default kernel</p>
-<p>ATen operator with a dtype/dim order specialized kernel (works for <code class="docutils literal notranslate"><span class="pre">Double</span></code> dtype and dim order needs to be (0, 1, 2, 3))</p>
-<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">op</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">add.out</span>
-<span class="w">  </span><span class="nt">type_alias</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">T0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Double</span><span class="p p-Indicator">]</span>
-<span class="w">  </span><span class="nt">dim_order_alias</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">D0</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[[</span><span class="nv">0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">2</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">3</span><span class="p p-Indicator">]]</span>
-<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">self</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">other</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="w"> </span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">out</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">T0</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">D0</span><span class="p p-Indicator">]</span>
-<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::add_out</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="custom-ops-yaml-entry">
-<h3>Custom Ops Yaml Entry<a class="headerlink" href="#custom-ops-yaml-entry" title="Permalink to this headline">¶</a></h3>
-<p>For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section. So instead of <code class="docutils literal notranslate"><span class="pre">op</span></code> we use <code class="docutils literal notranslate"><span class="pre">func</span></code> with the operator schema. As an example, here’s a yaml entry for a custom op:</p>
-<div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">func</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
-<span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">arg_meta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
-<span class="w">      </span><span class="nt">kernel_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">torch::executor::allclose_out</span>
-</pre></div>
-</div>
-<p>The <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section is the same as the one defined in core ATen ops. For operator schema, we are reusing the DSL defined in this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">README.md</a>, with a few differences:</p>
-<div class="section" id="out-variants-only">
-<h4>Out variants only<a class="headerlink" href="#out-variants-only" title="Permalink to this headline">¶</a></h4>
-<p>ExecuTorch only supports out-style operators, where:</p>
-<ul class="simple">
-<li><p>The caller provides the output Tensor or Tensor list in the final position with the name <code class="docutils literal notranslate"><span class="pre">out</span></code>.</p></li>
-<li><p>The C++ function modifies and returns the same <code class="docutils literal notranslate"><span class="pre">out</span></code> argument.</p>
+<li><p>Extraction of model level outputs via ETDump.</p></li>
+<li><p>Extraction of intermediate outputs (outside of delegates) via ETDump:</p>
 <ul>
-<li><p>If the return type in the YAML file is <code class="docutils literal notranslate"><span class="pre">()</span></code> (which maps to void), the C++ function should still modify <code class="docutils literal notranslate"><span class="pre">out</span></code> but does not need to return anything.</p></li>
+<li><p>Linking of these intermediate outputs back to the eager model python code.</p></li>
 </ul>
 </li>
-<li><p>The <code class="docutils literal notranslate"><span class="pre">out</span></code> argument must be keyword-only, which means it needs to follow an argument named <code class="docutils literal notranslate"><span class="pre">*</span></code> like in the <code class="docutils literal notranslate"><span class="pre">add.out</span></code> example below.</p></li>
-<li><p>Conventionally, these out operators are named using the pattern <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;.out</span></code> or <code class="docutils literal notranslate"><span class="pre">&lt;name&gt;.&lt;overload&gt;_out</span></code>.</p></li>
 </ul>
-<p>Since all output values are returned via an <code class="docutils literal notranslate"><span class="pre">out</span></code> parameter, ExecuTorch ignores the actual C++ function return value. But, to be consistent, functions should always return <code class="docutils literal notranslate"><span class="pre">out</span></code> when the return type is non-<code class="docutils literal notranslate"><span class="pre">void</span></code>.</p>
-</div>
-<div class="section" id="can-only-return-tensor-or">
-<h4>Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code><a class="headerlink" href="#can-only-return-tensor-or" title="Permalink to this headline">¶</a></h4>
-<p>ExecuTorch only supports operators that return a single <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>, or the unit type <code class="docutils literal notranslate"><span class="pre">()</span></code> (which maps to <code class="docutils literal notranslate"><span class="pre">void</span></code>). It does not support returning any other types, including lists, optionals, tuples, or scalars like <code class="docutils literal notranslate"><span class="pre">bool</span></code>.</p>
-</div>
-<div class="section" id="supported-argument-types">
-<h4>Supported argument types<a class="headerlink" href="#supported-argument-types" title="Permalink to this headline">¶</a></h4>
-<p>ExecuTorch does not support all of the argument types that core PyTorch supports. Here’s a list of the argument types we currently support:</p>
+<div class="section" id="steps-to-debug-a-model-in-executorch">
+<h2>Steps to debug a model in ExecuTorch<a class="headerlink" href="#steps-to-debug-a-model-in-executorch" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="runtime">
+<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<p>For a real example reflecting the steps below, please refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp">sdk_example_runner.cpp</a>.</p>
+<ol class="arabic">
+<li><p>[Optional] Generate an <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while exporting your model. When provided, this enables users to link profiling information back to the eager model source code (with stack traces and module hierarchy).</p></li>
+<li><p>Integrate <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump generation</span></a> into the runtime and set the debugging level by configuring the <code class="docutils literal notranslate"><span class="pre">ETDumpGen</span></code> object. Then, provide an additional buffer to which intermediate outputs and program outputs will be written. Currently we support two levels of debugging:</p>
 <ul class="simple">
-<li><p>Tensor</p></li>
-<li><p>int</p></li>
-<li><p>bool</p></li>
-<li><p>float</p></li>
-<li><p>str</p></li>
-<li><p>Scalar</p></li>
-<li><p>ScalarType</p></li>
-<li><p>MemoryFormat</p></li>
-<li><p>Device</p></li>
-<li><p>Optional<Type></p></li>
-<li><p>List<Type></p></li>
-<li><p>List&lt;Optional<Type>&gt;</p></li>
-<li><p>Optional&lt;List<Type>&gt;</p></li>
+<li><p>Program level outputs</p></li>
 </ul>
-</div>
-</div>
-<div class="section" id="build-tool-macros">
-<h3>Build Tool Macros<a class="headerlink" href="#build-tool-macros" title="Permalink to this headline">¶</a></h3>
-<p>We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on both CMake and Buck2.</p>
-<div class="section" id="cmake">
-<h4>CMake<a class="headerlink" href="#cmake" title="Permalink to this headline">¶</a></h4>
-<p><code class="docutils literal notranslate"><span class="pre">generate_bindings_for_kernels(functions_yaml,</span> <span class="pre">custom_ops_yaml)</span></code> takes a yaml file for core ATen op out variants and also a yaml file for custom ops, generate C++ bindings for kernel registration. It also depends on the selective build artifact generated by <code class="docutils literal notranslate"><span class="pre">gen_selected_ops()</span></code>, see selective build doc for more information. Then <code class="docutils literal notranslate"><span class="pre">gen_operators_lib</span></code> will package those bindings to be a C++ library. As an example:</p>
-<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># SELECT_OPS_LIST: aten::add.out,aten::mm.out</span>
-<span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
-
-<span class="c"># Look for functions.yaml associated with portable libs and generate C++ bindings</span>
-<span class="nb">generate_bindings_for_kernels</span><span class="p">(</span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/kernels/portable/functions.yaml</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
-
-<span class="c"># Prepare a C++ library called &quot;generated_lib&quot; with _kernel_lib being the portable library, executorch is a dependency of it.</span>
-<span class="nb">gen_operators_lib</span><span class="p">(</span><span class="s2">&quot;generated_lib&quot;</span><span class="w"> </span><span class="o">${</span><span class="nv">_kernel_lib</span><span class="o">}</span><span class="w"> </span><span class="s">executorch</span><span class="p">)</span>
-
-<span class="c"># Link &quot;generated_lib&quot; into the application:</span>
-<span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">executorch_binary</span><span class="w"> </span><span class="s">generated_lib</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">Span</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buffer</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">debug_buffer</span><span class="p">,</span><span class="w"> </span><span class="n">debug_buffer_size</span><span class="p">);</span>
+<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_debug_buffer</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_event_tracer_debug_level</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracerDebugLogLevel</span><span class="o">::</span><span class="n">kIntermediateOutputs</span><span class="p">);</span>
 </pre></div>
 </div>
-</div>
-<div class="section" id="buck2">
-<h4>Buck2<a class="headerlink" href="#buck2" title="Permalink to this headline">¶</a></h4>
-<p><code class="docutils literal notranslate"><span class="pre">executorch_generated_lib</span></code> is the macro that takes the yaml files and depends on the selective build macro <code class="docutils literal notranslate"><span class="pre">et_operator_library</span></code>. For an example:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Yaml file for kernel library</span>
-<span class="n">export_file</span><span class="p">(</span>
-  <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;functions.yaml&quot;</span>
-<span class="p">)</span>
-
-<span class="c1"># Kernel library</span>
-<span class="n">cxx_library</span><span class="p">(</span>
-  <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;add_kernel&quot;</span><span class="p">,</span>
-  <span class="n">srcs</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;add.cpp&quot;</span><span class="p">],</span>
-<span class="p">)</span>
-
-<span class="c1"># Selective build artifact, it allows all operators to be registered</span>
-<span class="n">et_operator_library</span><span class="p">(</span>
-  <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;all_ops&quot;</span><span class="p">,</span>
-  <span class="n">include_all_ops</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="c1"># Select all ops in functions.yaml</span>
-<span class="p">)</span>
-
-<span class="c1"># Prepare a generated_lib</span>
-<span class="n">executorch_generated_lib</span><span class="p">(</span>
-  <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;generated_lib&quot;</span><span class="p">,</span>
-  <span class="n">functions_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;:functions.yaml&quot;</span><span class="p">,</span>
-  <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">&quot;:all_ops&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;:add_kernel&quot;</span><span class="p">,</span>
-  <span class="p">],</span>
-<span class="p">)</span>
-
-<span class="c1"># Link generated_lib to ExecuTorch binary</span>
-<span class="n">cxx_binary</span><span class="p">(</span>
- <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;executorch_bin&quot;</span><span class="p">,</span>
- <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
-  <span class="s2">&quot;:generated_lib&quot;</span><span class="p">,</span>
- <span class="p">],</span>
-<span class="p">)</span>
-
+<ul class="simple">
+<li><p>Intermediate outputs of executed (non-delegated) operations (will include the program level outputs too)</p></li>
+</ul>
+<div class="highlight-none notranslate highlight-C++"><div class="highlight"><pre><span></span><span class="n">Span</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buffer</span><span class="p">((</span><span class="kt">uint8_t</span><span class="o">*</span><span class="p">)</span><span class="n">debug_buffer</span><span class="p">,</span><span class="w"> </span><span class="n">debug_buffer_size</span><span class="p">);</span>
+<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_debug_buffer</span><span class="p">(</span><span class="n">buffer</span><span class="p">);</span>
+<span class="n">etdump_gen</span><span class="p">.</span><span class="n">set_event_tracer_debug_level</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracerDebugLogLevel</span><span class="o">::</span><span class="n">kProgramOutputs</span><span class="p">);</span>
 </pre></div>
 </div>
+</li>
+<li><p>Build the runtime with the pre-processor flag that enables tracking of debug events. Instructions are in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump documentation</span></a>.</p></li>
+<li><p>Run your model and dump out the ETDump buffer as described <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">here</span></a>. (Do so similarly for the debug buffer if configured above)</p></li>
+</ol>
+</div>
+<div class="section" id="accessing-the-debug-outputs-post-run-using-the-inspector-api-s">
+<h3>Accessing the debug outputs post run using the Inspector API’s<a class="headerlink" href="#accessing-the-debug-outputs-post-run-using-the-inspector-api-s" title="Permalink to this headline">¶</a></h3>
+<p>Once a model has been run, using the generated ETDump and debug buffers, users can leverage the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API’s</span></a> to inspect these debug outputs.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
+
+<span class="c1"># Create an Inspector instance with etdump and the debug buffer.</span>
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
+            <span class="n">buffer_path</span> <span class="o">=</span> <span class="n">buffer_path</span><span class="p">,</span>
+            <span class="c1"># etrecord is optional, if provided it&#39;ll link back</span>
+            <span class="c1"># the runtime events to the eager model python source code.</span>
+            <span class="n">etrecord</span> <span class="o">=</span> <span class="n">etrecord_path</span><span class="p">)</span>
+
+<span class="c1"># Accessing program outputs is as simple as this:</span>
+<span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">event_blocks</span><span class="o">.</span><span class="n">run_output</span><span class="p">)</span>
+
+<span class="c1"># Accessing intermediate outputs from each event (an event here is essentially an instruction that executed in the runtime).</span>
+<span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">event</span> <span class="ow">in</span> <span class="n">event_block</span><span class="o">.</span><span class="n">events</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">debug_data</span><span class="p">)</span>
+            <span class="c1"># If an ETRecord was provided by the user during Inspector initialization, users</span>
+            <span class="c1"># can print the stacktraces and module hierarchy of these events.</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">stack_traces</span><span class="p">)</span>
+            <span class="nb">print</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">module_hierarchy</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>We’ve also provided a simple set of utilities that let users perform quality analysis of their model outputs with respect to a set of reference outputs (possibly from the eager mode model).</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk.inspector._inspector_utils</span> <span class="kn">import</span> <span class="n">compare_results</span>
+
+<span class="c1"># Run a simple quality analysis between the model outputs sourced from the</span>
+<span class="c1"># runtime and a set of reference outputs.</span>
+<span class="c1">#</span>
+<span class="c1"># Setting plot to True will result in the quality metrics being graphed</span>
+<span class="c1"># and displayed (when run from a notebook) and will be written out to the</span>
+<span class="c1"># filesystem. A dictionary will always be returned which will contain the</span>
+<span class="c1"># results.</span>
+<span class="k">for</span> <span class="n">event_block</span> <span class="ow">in</span> <span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">event_block</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Execute&quot;</span><span class="p">:</span>
+        <span class="n">compare_results</span><span class="p">(</span><span class="n">event_blocks</span><span class="o">.</span><span class="n">run_output</span><span class="p">,</span> <span class="n">ref_outputs</span><span class="p">,</span> <span class="n">plot</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
 </div>
 </div>
 </div>
@@ -618,10 +521,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="kernel-library-selective-build.html" class="btn btn-neutral float-right" title="Kernel Library Selective Build" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="sdk-inspector.html" class="btn btn-neutral float-right" title="Inspector APIs" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="kernel-library-overview.html" class="btn btn-neutral" title="Overview of ExecuTorch’s Kernel Libraries" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="sdk-profiling.html" class="btn btn-neutral" title="Profiling Models in ExecuTorch" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -655,26 +558,10 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Kernel Registration</a><ul>
-<li><a class="reference internal" href="#overview">Overview</a></li>
-<li><a class="reference internal" href="#design-principles">Design Principles</a></li>
-<li><a class="reference internal" href="#high-level-architecture">High Level Architecture</a><ul>
-<li><a class="reference internal" href="#workflow">Workflow</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#apis">APIs</a><ul>
-<li><a class="reference internal" href="#yaml-entry-for-core-aten-op-out-variant">Yaml Entry for Core ATen Op Out Variant</a></li>
-<li><a class="reference internal" href="#custom-ops-yaml-entry">Custom Ops Yaml Entry</a><ul>
-<li><a class="reference internal" href="#out-variants-only">Out variants only</a></li>
-<li><a class="reference internal" href="#can-only-return-tensor-or">Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code></a></li>
-<li><a class="reference internal" href="#supported-argument-types">Supported argument types</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#build-tool-macros">Build Tool Macros</a><ul>
-<li><a class="reference internal" href="#cmake">CMake</a></li>
-<li><a class="reference internal" href="#buck2">Buck2</a></li>
-</ul>
-</li>
+<li><a class="reference internal" href="#">Debugging Models in ExecuTorch</a><ul>
+<li><a class="reference internal" href="#steps-to-debug-a-model-in-executorch">Steps to debug a model in ExecuTorch</a><ul>
+<li><a class="reference internal" href="#runtime">Runtime</a></li>
+<li><a class="reference internal" href="#accessing-the-debug-outputs-post-run-using-the-inspector-api-s">Accessing the debug outputs post run using the Inspector API’s</a></li>
 </ul>
 </li>
 </ul>

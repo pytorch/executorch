@@ -341,6 +341,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Prerequisite | ETDump - ExecuTorch Dump</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
@@ -457,7 +458,7 @@
 </pre></div>
 </div>
 <ol class="arabic" start="4">
-<li><p><em><strong>Compile</strong></em> your binary with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime.</p>
+<li><p><em><strong>Compile</strong></em> your binary with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime.</p>
 <p>i). <em><strong>Buck</strong></em></p>
 <p>In Buck, users simply depend on the etdump target which is:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="o">//</span><span class="n">executorch</span><span class="o">/</span><span class="n">sdk</span><span class="o">/</span><span class="n">etdump</span><span class="p">:</span><span class="n">etdump_flatcc</span>
