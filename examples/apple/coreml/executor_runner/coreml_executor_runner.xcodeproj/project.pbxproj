@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		38626BB42B225A560059413D /* libflatccrt.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38626BB32B225A560059413D /* libflatccrt.a */; };
+		38626BB52B225A890059413D /* libetdump.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 38626BAF2B21C98F0059413D /* libetdump.a */; };
 		C94D51592ACF4BFC00AF47FD /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94D51582ACF4BFC00AF47FD /* main.mm */; };
 		C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D515C2ACFCBA000AF47FD /* libexecutorch.a */; };
 		C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */; };
@@ -28,6 +30,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		38626BAF2B21C98F0059413D /* libetdump.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libetdump.a; path = libraries/libetdump.a; sourceTree = "<group>"; };
+		38626BB12B2233FC0059413D /* libetdump_with_flatccrt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libetdump_with_flatccrt.a; path = "../cmake-out/sdk/libetdump_with_flatccrt.a"; sourceTree = "<group>"; };
+		38626BB32B225A560059413D /* libflatccrt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libflatccrt.a; path = "../../../../third-party/flatcc/lib/libflatccrt.a"; sourceTree = "<group>"; };
 		C94D514E2ACF4B9300AF47FD /* coreml_executor_runner */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = coreml_executor_runner; sourceTree = BUILT_PRODUCTS_DIR; };
 		C94D51582ACF4BFC00AF47FD /* main.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		C94D515C2ACFCBA000AF47FD /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = libraries/libexecutorch.a; sourceTree = "<group>"; };
@@ -42,6 +47,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				38626BB52B225A890059413D /* libetdump.a in Frameworks */,
+				38626BB42B225A560059413D /* libflatccrt.a in Frameworks */,
 				C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */,
 				C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */,
 				C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */,
@@ -73,6 +80,9 @@
 		C94D51602ACFCBBA00AF47FD /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				38626BB32B225A560059413D /* libflatccrt.a */,
+				38626BB12B2233FC0059413D /* libetdump_with_flatccrt.a */,
+				38626BAF2B21C98F0059413D /* libetdump.a */,
 				C94D51652ACFCBCB00AF47FD /* Accelerate.framework */,
 				C94D51632ACFCBC500AF47FD /* CoreML.framework */,
 				C94D515C2ACFCBA000AF47FD /* libexecutorch.a */,
