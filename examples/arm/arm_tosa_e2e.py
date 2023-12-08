@@ -16,9 +16,6 @@ from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
 from executorch.exir import to_edge
 
-from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
-    DuplicateDequantNodePass,
-)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -41,6 +38,7 @@ SUPPORTED_BI_TEST_LIST = [
     "simple_add",
     "simple_add_broadcast",
     "simple_linear",
+    "simple_linear_rank4",
     "simple_conv2d_3x3_1x3x256x256_stride1",
     "simple_conv2d_1x1_1x2x128x128_stride1",
     "simple_conv2d_2x2_1x1x14x14_stride2",
@@ -173,6 +171,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     # Export model
     model_capture = export(model, inputs)
     model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
+
     ArmPartitioner.compile_spec = compile_spec
 
     if profile == TosaProfile.BI:
@@ -185,7 +184,6 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             output_quantization_zp,
         ) = get_output_quantization_param(model_edge)
 
-    model_edge = model_edge.transform((DuplicateDequantNodePass(),))
     model_edge = model_edge.to_backend(ArmPartitioner())
     exec_prog = model_edge.to_executorch()
 

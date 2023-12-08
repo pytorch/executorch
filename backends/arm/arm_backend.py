@@ -19,7 +19,11 @@ from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import isQuantNode
-from executorch.backends.arm.tosa_utils import dbg_fail, dbg_tosa_dump
+from executorch.backends.arm.tosa_utils import (
+    dbg_fail,
+    dbg_tosa_dump,
+    is_permute_node_before_addmm,
+)
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._export.exported_program import ExportedProgram
@@ -74,7 +78,9 @@ class ArmBackend(BackendDetails):
                 # Add output to TOSA graph
                 tosa_graph.currRegion.currBasicBlock.addTensor(
                     output.name,
-                    output.shape,
+                    inputs[0].shape
+                    if is_permute_node_before_addmm(node)
+                    else output.shape,
                     ts.DType.INT8 if is_quant_node else output.dtype,
                 )
 
