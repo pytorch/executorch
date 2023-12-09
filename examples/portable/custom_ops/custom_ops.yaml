@@ -13,3 +13,8 @@
   kernels:
     - arg_meta: null
       kernel_name: custom::mul4_out_impl # custom_op_2.cpp
+
+- func: my_ops::mps_softshrink.out(Tensor input, float lambd, *, Tensor(a!) output) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: custom::mps_softshrink_out_impl

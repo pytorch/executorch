@@ -36,12 +36,15 @@ endif()
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
+message(REGISTER_EXAMPLE_CUSTOM_OP)
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime).
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
   gen_selected_ops("" "my_ops::mul3.out" "")
 elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   gen_selected_ops("" "my_ops::mul4.out" "")
+elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 3)
+  gen_selected_ops("" "my_ops::mps_softshrink.out" "")
 endif()
 # Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels("" ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
@@ -66,6 +69,8 @@ if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1)
   set(kernel_sources ${CMAKE_CURRENT_LIST_DIR}/custom_ops_1_out.cpp)
 elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   set(kernel_sources ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp)
+elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 3)
+  set(kernel_sources ${CMAKE_CURRENT_LIST_DIR}/custom_ops_mps_out.mm)
 endif()
 
 add_library(custom_kernels ${kernel_sources})
