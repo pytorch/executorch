@@ -189,6 +189,7 @@ Topics in this section will help you get started with ExecuTorch.
    sdk-etrecord
    sdk-etdump
    sdk-profiling
+   sdk-debugging
    sdk-inspector
    sdk-delegate-integration
    sdk-tutorial
