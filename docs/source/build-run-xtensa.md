@@ -133,11 +133,26 @@ In order to run the CMake build, you need the path to the following:
 
 ```bash
 cd executorch
-mkdir cmake-xt
-cd cmake-xt
-cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=../examples/xtensa/xtensa.cmake -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 -DFLATC_EXECUTABLE="$(which flatc)" -DEXECUTORCH_BUILD_XTENSA_EXAMPLE=1 -DNN_LIB_BASE_DIR=<path_to_nnlib_cloned_in_step_2>  ..
-cd ..
-cmake --build cmake-xt -j8 -t xtensa_executorch_example
+rm -rf cmake-out
+# prebuild and install executorch library
+cmake -DBUCK2=buck2 \
+    -DCMAKE_INSTALL_PREFIX=cmake-out \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DPYTHON_EXECUTABLE=python3 \
+    -Bcmake-out .
+
+cmake --build cmake-out -j8 --target install --config Debug
+# build xtensa runner
+cmake -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_TOOLCHAIN_FILE=../examples/xtensa/xtensa.cmake \
+    -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> \
+    -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 \
+    -DFLATC_EXECUTABLE="$(which flatc)" \
+    -DNN_LIB_BASE_DIR=<path_to_nnlib_cloned_in_step_2> \
+    -Bcmake-out/examples/xtensa \
+    examples/xtensa
+
+cmake --build cmake-out/examples/xtensa -j8 -t xtensa_executorch_example
 ```
 
 After having succesfully run the above step you should see two binary files in their CMake output directory.
