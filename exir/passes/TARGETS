@@ -93,7 +93,6 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/exir:pass_base",
     ],
 )
 
@@ -218,7 +217,6 @@ python_library(
     deps = [
         ":prim_ops_py_registry",
         "//caffe2:torch",
-        "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
     ],
 )
