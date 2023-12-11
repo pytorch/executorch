@@ -119,6 +119,9 @@ option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
 
+# Build dataloader library
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+       "Build the extension/data_loader directory" OFF)
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -259,7 +262,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch
+  TARGETS executorch portable_ops_lib
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories})
@@ -299,12 +302,8 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-       "Build the extension/data_loader directory" OFF)
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
 endif()
