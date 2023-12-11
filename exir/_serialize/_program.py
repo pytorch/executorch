@@ -611,6 +611,7 @@ def serialize_pte_binary(
             base_offset=segment_base_offset,
         )
 
+    print(f"serialize_pte_binary: segments {segments}, program.segments {program.segments}")
     return program_data
 
 

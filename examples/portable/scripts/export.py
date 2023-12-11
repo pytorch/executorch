@@ -12,6 +12,7 @@ import logging
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
 from ..utils import export_to_exec_prog, save_pte_program
+from executorch.exir.capture._config import ExecutorchBackendConfig
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -40,7 +41,9 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    prog = export_to_exec_prog(model, example_inputs)
+    #prog = export_to_exec_prog(model, example_inputs)
+    prog = export_to_exec_prog(model, example_inputs, backend_config=ExecutorchBackendConfig(extract_constant_segment=True))
+
     save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
 

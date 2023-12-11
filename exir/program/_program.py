@@ -271,6 +271,7 @@ class ExirExportedProgram:
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
             extract_delegate_segments=config.extract_delegate_segments,
+            extract_constant_segment=config.extract_constant_segment,
             segment_alignment=config.segment_alignment,
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
@@ -602,6 +603,7 @@ class MultiMethodExecutorchProgram:
         executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
         extract_delegate_segments: bool,
+        extract_constant_segment: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -618,6 +620,7 @@ class MultiMethodExecutorchProgram:
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
         self._extract_delegate_segments: bool = extract_delegate_segments
+        self._extract_constant_segment: bool = extract_constant_segment
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -629,6 +632,7 @@ class MultiMethodExecutorchProgram:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
                 extract_delegate_segments=self._extract_delegate_segments,
+                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -680,6 +684,7 @@ def multi_method_program_to_executorch(
         executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
         extract_delegate_segments=config.extract_delegate_segments,
+        extract_constant_segment=config.extract_constant_segment,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
