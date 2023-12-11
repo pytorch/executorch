@@ -17,15 +17,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 cmake_install_executorch_sdk_lib() {
   echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-out
-            # -DCMAKE_BUILD_TYPE=Release \
 
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_SDK=ON \
+          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install
-  # --config Release
+  cmake --build cmake-out -j9 --target install --config Release
 }
 
 test_cmake_sdk_example_runner() {
@@ -37,13 +37,13 @@ test_cmake_sdk_example_runner() {
   rm -rf ${build_dir}
   retry cmake \
         -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+        -DCMAKE_BUILD_TYPE=Release \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${build_dir} \
         ${example_dir}
 
   echo "Building ${example_dir}"
-  cmake --build ${build_dir} -j9
-  # --config Release
+  cmake --build ${build_dir} -j9 --config Release
 
   echo 'Running sdk_example_runner'
   ${build_dir}/sdk_example_runner --bundled_program_path="./mv2_bundled.bpte"

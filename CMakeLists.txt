@@ -87,6 +87,13 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
+option(EXECUTORCH_ENABLE_EVENT_TRACER
+       "Build with ET_EVENT_TRACER_ENABLED=ON"
+       OFF)
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  add_definitions(-DET_EVENT_TRACER_ENABLED)
+endif()
+
 # -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.

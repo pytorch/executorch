@@ -52,7 +52,14 @@ class Conv2dVisitor(NodeVisitor):
         pad_attr = [val for val in pad.special for _ in (0, 1)]
         stride_attr = stride.special
         dilation_attr = dilation.special
-        attr.ConvAttribute(pad_attr, stride_attr, dilation_attr, 0, 0)
+        attr.ConvAttribute(
+            pad=pad_attr,
+            stride=stride_attr,
+            dilation=dilation_attr,
+            input_zp=0,
+            weight_zp=0,
+            local_bound=False,
+        )
 
         # Non-bias case.
         if len(node.all_input_nodes) == 2:

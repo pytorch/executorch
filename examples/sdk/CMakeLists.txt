@@ -68,6 +68,6 @@ target_link_libraries(
   gflags
   etdump
   extension_data_loader
-  flatcc_d
+  flatcc
   bundled_program
   portable_ops_lib)
