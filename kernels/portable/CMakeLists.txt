@@ -59,3 +59,5 @@ target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 # portable_ops_lib: Register portable_ops_lib ops kernels into Executorch
 # runtime
 gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+
+install(TARGETS portable_kernels DESTINATION lib)

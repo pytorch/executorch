@@ -262,7 +262,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch portable_ops_lib
+  TARGETS executorch
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories})
