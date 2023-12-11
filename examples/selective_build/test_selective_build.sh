@@ -42,6 +42,21 @@ test_buck2_select_ops_in_list() {
     rm "./add_mul.pte"
 }
 
+test_buck2_select_ops_in_dict() {
+    echo "Exporting add_mul"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
+
+    echo "Running selective build test"
+    # select ops and their dtypes using the dictionary API.
+    $BUCK run //examples/selective_build:selective_build_test \
+        --config=executorch.select_ops=dict \
+        --config=executorch.dtype_selective_build_lib=//examples/selective_build:select_ops_in_dict_lib \
+        -- --model_path=./add_mul.pte
+
+    echo "Removing add_mul.pte"
+    rm "./add_mul.pte"
+}
+
 test_buck2_select_ops_from_yaml() {
     echo "Exporting custom_op_1"
     ${PYTHON_EXECUTABLE} -m examples.portable.custom_ops.custom_ops_1
@@ -153,5 +168,6 @@ elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
     test_buck2_select_ops_in_list
+    test_buck2_select_ops_in_dict
     test_buck2_select_ops_from_yaml
 fi
