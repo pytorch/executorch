@@ -118,7 +118,6 @@ option(EXECUTORCH_BUILD_XNNPACK
 option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
-option(EXECUTORCH_BUILD_EXAMPLES "Build the ExecuTorch examples.")
 option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
        "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
 
@@ -354,10 +353,6 @@ endif()
 # Add size test subdirectory
 if(EXECUTORCH_BUILD_SIZE_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
-endif()
-
-if(EXECUTORCH_BUILD_EXAMPLES)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
 endif()
 
 if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)
