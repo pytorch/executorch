@@ -45,6 +45,27 @@ def define_common_targets():
         ],
     )
 
+    # Select a dictionary of ops with kernel metadata
+    et_operator_library(
+        name = "select_ops_in_dict",
+        ops_dict = {
+            "aten::add.out": ["v1/3;0,1", "v1/6;0,1"],  # int, float
+            "aten::mm.out": [],  # all dtypes
+        },
+    )
+
+    executorch_generated_lib(
+        name = "select_ops_in_dict_lib",
+        functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
+        kernel_deps = [
+            "//executorch/kernels/portable:operators",
+        ],
+        deps = [
+            ":select_ops_in_dict",
+        ],
+        visibility = ["//executorch/..."],
+    )
+
     # Select all ops from a yaml file
     et_operator_library(
         name = "select_ops_from_yaml",
@@ -95,6 +116,8 @@ def define_common_targets():
         lib.append(":select_all_lib")
     elif select_ops == "list":
         lib.append(":select_ops_in_list_lib")
+    elif select_ops == "dict":
+        lib.append(":select_ops_in_dict_lib")
     elif select_ops == "yaml":
         lib.append(":select_ops_from_yaml_lib")
     elif select_ops == "model":

@@ -192,6 +192,10 @@ def _target_needs_patch(target):
 def _patch_target_for_env(target):
     return target.replace("//executorch/", "//", 1)
 
+def _struct_to_json(object):
+    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
+    return native.json.encode(object)
+
 env = struct(
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     cxx_binary = native.cxx_binary,
@@ -228,6 +232,7 @@ env = struct(
     remove_platform_specific_args = _remove_platform_specific_args,
     remove_unsupported_kwargs = _remove_unsupported_kwargs,
     resolve_external_dep = _resolve_external_dep,
+    struct_to_json = _struct_to_json,
     target_needs_patch = _target_needs_patch,
     EXTERNAL_DEP_FALLTHROUGH = _EXTERNAL_DEP_FALLTHROUGH,
 )
