@@ -17,21 +17,41 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
+project(size_test)
+
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+# Find prebuilt executorch library
+find_package(executorch CONFIG REQUIRED)
+
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+
+#
+# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+#
+set(
+  EXECUTORCH_SRCS_FILE
+  "${CMAKE_CURRENT_BINARY_DIR}/../executorch_srcs.cmake"
+)
+
+extract_sources(${EXECUTORCH_SRCS_FILE})
+
+include(${EXECUTORCH_SRCS_FILE})
+
 # Since extract_sources.py is not returning absolute values, we need to patch
-# the source paths. TODO(larryliu0820): Fix this
-set(_updated_size_test__srcs)
-foreach(_src ${_size_test__srcs})
-  list(APPEND _updated_size_test__srcs "${EXECUTORCH_ROOT}/${_src}")
-endforeach()
+# the source paths.
+list(TRANSFORM _size_test__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 #
 # size_test: minimal binary with no ops and no delegate backend
 #
 # TODO(larryliu0820): Add EXECUTORCH_BUILD_EXECUTABLES to not build executable
 # when we cross compile to ios
-add_executable(size_test ${_updated_size_test__srcs})
+add_executable(size_test ${_size_test__srcs})
 target_link_libraries(size_test executorch)
 if(CMAKE_BUILD_TYPE EQUAL "Release")
   target_link_options(size_test PRIVATE "LINKER:--gc-sections")

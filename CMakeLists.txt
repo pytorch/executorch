@@ -347,10 +347,5 @@ if(EXECUTORCH_BUILD_COREML)
   endif()
 endif()
 
-# Add size test subdirectory
-if(EXECUTORCH_BUILD_SIZE_TEST)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
-endif()
-
 # Print all summary
 executorch_print_configuration_summary()
