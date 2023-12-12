@@ -601,11 +601,13 @@ class TestXNNPACKQuantized(TestXNNPACK):
             example_inputs,
         )
 
+    @unittest.skip("Dynamic Per Tensor Quantization is not supported yet")
     def test_xnnpack_dqlinear_mm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
         )
 
+    @unittest.skip("Dynamic Per Tensor Quantization is not supported yet")
     def test_xnnpack_dqlinear_addmm_per_tensor(self):
         self._test_xnnpack_dqlinear(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=True
@@ -623,11 +625,13 @@ class TestXNNPACKQuantized(TestXNNPACK):
             use_bias=True,
         )
 
+    @unittest.skip("Dynamic Per Tensor Quantization is not supported yet")
     def test_xnnpack_dqlinear_partitioner_mm_per_tensor(self):
         self._test_xnnpack_dqlinear_with_partitioner(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=False
         )
 
+    @unittest.skip("Dynamic Per Tensor Quantization is not supported yet")
     def test_xnnpack_dqlinear_partitioner_addmm_per_tensor(self):
         self._test_xnnpack_dqlinear_with_partitioner(
             weight_qconfig=weight_observer_range_neg_127_to_127, use_bias=True
