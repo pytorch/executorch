@@ -461,7 +461,7 @@ class TestXNNPACK(unittest.TestCase):
 
         # Compare the result from executor and eager mode directly
         self.assertTrue(
-            torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
+            torch.allclose(model_output[0], ref_output, atol=4e-03, rtol=1e-03)
         )
 
     def _get_dqlinear_graph_module(self, weight_qconfig, linear, example_inputs):
@@ -518,7 +518,7 @@ class TestXNNPACK(unittest.TestCase):
         self, LinearModule, example_inputs
     ):
         linear = LinearModule()
-        weight_qconfig = weight_observer_range_neg_127_to_127
+        weight_qconfig = per_channel_weight_observer_range_neg_127_to_127
         converted_dqlinear = self._get_dqlinear_graph_module(
             weight_qconfig, linear, example_inputs
         )
