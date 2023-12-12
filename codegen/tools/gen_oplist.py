@@ -249,6 +249,7 @@ def main(args: List[Any]) -> None:
             et_kernel_metadata, {op: ["default"] for op in op_set}
         )
     if options.ops_dict:
+        print("gen_oplist.py: options.ops_dict:", options.ops_dict)
         ops_and_metadata = json.loads(options.ops_dict)
         for op, metadata in ops_and_metadata.items():
             op_set.update({op})

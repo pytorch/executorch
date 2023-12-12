@@ -211,9 +211,9 @@ class Llama2Model(EagerModelBase):
             **params,
         )
         self.model_ = Transformer(model_args)
-        self.model_.load_state_dict(
-            checkpoint, strict=False
-        )  # self.model_ = Transformer(gptconf)
+        # self.model_.load_state_dict(
+        #     checkpoint, strict=False
+        # )  # self.model_ = Transformer(gptconf)
 
     # @staticmethod
     def get_eager_model(self):

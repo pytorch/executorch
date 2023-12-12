@@ -98,11 +98,12 @@ def write_selected_op_variants(yaml_file_path: str, output_dir: str) -> None:
 
 
 def main(argv: List[Any]) -> None:
+    print("gen_selected_op_variants.py: main args: ", argv)
     parser = argparse.ArgumentParser(description="Generate operator lists")
     parser.add_argument(
         "--yaml-file-path",
         "--yaml_file_path",
-        help=("The directory where selected_operators.yaml was generated)"),
+        help=("The directory where selected_operators.yaml was generated"),
         required=True,
     )
     parser.add_argument(
@@ -116,8 +117,10 @@ def main(argv: List[Any]) -> None:
     )
 
     options = parser.parse_args(argv)
+    print("gen_selected_op_variants.py, writing to file: ", options.output_dir)
     write_selected_op_variants(options.yaml_file_path, options.output_dir)
 
 
 if __name__ == "__main__":
+    print("gen_selected_op_variants.h, main")
     main(sys.argv[1:])
