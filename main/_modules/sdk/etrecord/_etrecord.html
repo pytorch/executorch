@@ -449,6 +449,8 @@
 
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.schema.bundled_program_schema</span> <span class="kn">import</span> <span class="n">Value</span>
 
+<span class="kn">from</span> <span class="nn">torch._export.serde.serialize</span> <span class="kn">import</span> <span class="n">SerializedArtifact</span>
+
 <span class="n">ProgramOutput</span> <span class="o">=</span> <span class="n">List</span><span class="p">[</span><span class="n">Value</span><span class="p">]</span>
 
 
@@ -476,10 +478,13 @@
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span> <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">ep</span><span class="p">:</span> <span class="n">ExportedProgram</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">)</span>
-    <span class="n">serialized_ep</span><span class="p">,</span> <span class="n">serialized_state_dict</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span>
-    <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">serialized_ep</span><span class="p">)</span>
+    <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
     <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">,</span> <span class="n">serialized_state_dict</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span>
+    <span class="p">)</span>
+    <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">module_name</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">,</span> <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">state_dict</span>
     <span class="p">)</span>
 
 
@@ -530,15 +535,16 @@
 <span class="k">def</span> <span class="nf">_handle_edge_dialect_exported_program</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span> <span class="n">edge_dialect_exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="n">serialized_ep</span><span class="p">,</span> <span class="n">serialized_state_dict</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">edge_dialect_exported_program</span><span class="p">)</span>
+    <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">serialize</span><span class="p">(</span><span class="n">edge_dialect_exported_program</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="nb">bytes</span><span class="p">)</span>
 
     <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
         <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="p">,</span>
-        <span class="n">serialized_ep</span><span class="p">,</span>
+        <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">writestr</span><span class="p">(</span>
         <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">,</span>
-        <span class="n">serialized_state_dict</span><span class="p">,</span>
+        <span class="n">serialized_artifact</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
     <span class="p">)</span>
 
 
@@ -709,12 +715,14 @@
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">ETRECORD_IDENTIFIER</span><span class="p">:</span>
             <span class="k">continue</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span><span class="p">:</span>
-            <span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="n">deserialize</span><span class="p">(</span>
+            <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">SerializedArtifact</span><span class="p">(</span>
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span>
                     <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">EDGE_DIALECT_EXPORTED_PROGRAM</span>
                 <span class="p">),</span>
                 <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">entry</span><span class="si">}</span><span class="s2">_state_dict&quot;</span><span class="p">),</span>
+                <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
             <span class="p">)</span>
+            <span class="n">edge_dialect_program</span> <span class="o">=</span> <span class="n">deserialize</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="p">)</span>
         <span class="k">elif</span> <span class="n">entry</span> <span class="o">==</span> <span class="n">ETRecordReservedFileNames</span><span class="o">.</span><span class="n">REFERENCE_OUTPUTS</span><span class="p">:</span>
             <span class="c1"># @lint-ignore PYTHONPICKLEISBAD</span>
             <span class="n">reference_outputs</span> <span class="o">=</span> <span class="n">pickle</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span>
@@ -731,10 +739,12 @@
         <span class="k">assert</span> <span class="p">(</span>
             <span class="n">serialized_state_dict_file</span> <span class="ow">in</span> <span class="n">serialized_state_dict_files</span>
         <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Could not find corresponding state dict file for </span><span class="si">{</span><span class="n">serialized_file</span><span class="si">}</span><span class="s2">.&quot;</span>
-        <span class="n">graph_map</span><span class="p">[</span><span class="n">serialized_file</span><span class="p">]</span> <span class="o">=</span> <span class="n">deserialize</span><span class="p">(</span>
+        <span class="n">serialized_artifact</span> <span class="o">=</span> <span class="n">SerializedArtifact</span><span class="p">(</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">serialized_file</span><span class="p">),</span>
             <span class="n">etrecord_zip</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">serialized_state_dict_file</span><span class="p">),</span>
+            <span class="sa">b</span><span class="s2">&quot;&quot;</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="n">graph_map</span><span class="p">[</span><span class="n">serialized_file</span><span class="p">]</span> <span class="o">=</span> <span class="n">deserialize</span><span class="p">(</span><span class="n">serialized_artifact</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">ETRecord</span><span class="p">(</span>
         <span class="n">edge_dialect_program</span><span class="o">=</span><span class="n">edge_dialect_program</span><span class="p">,</span>
