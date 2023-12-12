@@ -130,6 +130,7 @@ then
   test_buck2_custom_op_1
   test_buck2_custom_op_2
 else
+  cmake_install_executorch_lib
   test_cmake_custom_op_1
   test_cmake_custom_op_2
   test_buck2_custom_op_1
