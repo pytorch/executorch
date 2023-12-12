@@ -640,7 +640,7 @@ class _Emitter(torch.fx.Interpreter):
             selcect_copy op # if not continue. return add_tensor
         """
         assert isinstance(
-            subemitter_binding_output_values, list
+            subemitter_binding_output_values, (list, tuple)
         ), f"Expect a list for subemitter_binding_output_values for map. Got {subemitter_binding_output_values}."
 
         if len(subemitter_binding_output_values) != 1:
