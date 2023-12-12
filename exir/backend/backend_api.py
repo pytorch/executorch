@@ -28,6 +28,7 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.pass_base import ExportPass
+from torch._export.utils import is_buffer, is_param
 from torch.export import ExportedProgram
 
 
@@ -157,6 +158,15 @@ def _partition_and_lower(
         node_list = []
         for node in tagged_graph_module.graph.nodes:
             if node.meta.get("delegation_tag", "") == tag:
+                if node.op == "output":
+                    raise RuntimeError(f"output node {node} should not be tagged")
+                if node.op == "placeholder":
+                    if not is_param(owning_program, node) and not is_buffer(
+                        owning_program, node
+                    ):
+                        raise RuntimeError(
+                            f"placeholder node for non-params and non-buffer should not be tagged: {node} "
+                        )
                 node_list.append(node)
 
         if len(node_list) == 0:
