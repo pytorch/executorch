@@ -664,12 +664,12 @@ ContainerHandle<T, Aux> unflatten(const TreeSpec<Aux>& spec, T* leaves) {
     refresh_leaves_num(spec);
   }
   return clone(spec, leaves);
-};
+}
 
 template <typename T, typename Aux = Empty>
 ContainerHandle<T, Aux> unflatten(const StrTreeSpec& spec, T* leaves) {
   return unflatten(from_str<Aux>(spec), leaves);
-};
+}
 
 template <typename T, typename Aux>
 void flatten_internal(const ContainerHandle<T, Aux>& tree, const T** leaves) {
