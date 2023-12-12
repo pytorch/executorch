@@ -23,11 +23,6 @@ namespace executor {
 namespace xnnpack {
 namespace delegate {
 
-struct XNNShape {
-  size_t num_dims;
-  size_t dim[XNN_MAX_TENSOR_DIMS];
-};
-
 class XNNExecutor {
  private:
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
@@ -38,9 +33,10 @@ class XNNExecutor {
   std::vector<uint32_t> external_id_args_;
   bool is_sorted_args_list_ = false;
   std::vector<xnn_external_value> externals_;
-  std::vector<uint32_t> qinputs_;
+  std::map<uint32_t, Tensor> qinputs_;
+  bool needs_resize_output = false;
 
-  Error set_external_input(uint32_t id, Tensor* input, struct XNNShape* shape);
+  Error set_external_input(uint32_t id, Tensor* input);
 
   // XNNPACK Profiling
   // Used to hold profiling data
@@ -98,15 +94,20 @@ class XNNExecutor {
     return output_ids_.size();
   }
 
-  inline void addDynamicQinput(uint32_t id) {
-    qinputs_.emplace_back(id);
+  inline bool needsResizeOutput() {
+    return needs_resize_output;
   }
 
-  __ET_NODISCARD Error set_inputs(
-      std::vector<Tensor*>& inputs,
-      std::vector<Tensor*>& outputs,
-      std::vector<struct XNNShape>& input_shapes,
-      std::vector<struct XNNShape>& output_shapes) {
+  inline void setNeedsResizeOutput() {
+    needs_resize_output = true;
+  }
+
+  inline void addDynamicQinput(uint32_t id, TensorImpl* qinput) {
+    qinputs_.insert({id, Tensor(qinput)});
+  }
+
+  __ET_NODISCARD Error
+  set_inputs(std::vector<Tensor*>& inputs, std::vector<Tensor*>& outputs) {
     externals_.clear();
 
     ET_CHECK_OR_RETURN_ERROR(
@@ -117,7 +118,7 @@ class XNNExecutor {
         inputs.size());
 
     for (int i = 0; i < inputs.size(); i++) {
-      auto err = set_external_input(input_ids_[i], inputs[i], &input_shapes[i]);
+      auto err = set_external_input(input_ids_[i], inputs[i]);
       ET_CHECK_OR_RETURN_ERROR(
           err == Error::Ok, Internal, "Failed to set_external_input");
     }
@@ -129,16 +130,8 @@ class XNNExecutor {
         outputs.size());
 
     for (int i = 0; i < outputs.size(); i++) {
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-      externals_.emplace_back(xnn_external_value{
-          output_ids_[i],
-          outputs[i]->mutable_data_ptr<float>(),
-          static_cast<size_t>(output_shapes[i].num_dims),
-          output_shapes[i].dim});
-#else
       externals_.emplace_back(xnn_external_value{
           output_ids_[i], outputs[i]->mutable_data_ptr<float>()});
-#endif
     }
 
     return Error::Ok;
@@ -171,41 +164,37 @@ class XNNExecutor {
 
   /** Resize output tensor to support dynamic input shapes */
   __ET_NODISCARD Error resizeOutput(
-      exec_aten::Tensor* output_tensor,
-      struct XNNShape* output_shape) const {
-    const size_t n_dim = output_tensor->dim();
-
-    // Rank can't change
-    if (n_dim != output_shape->num_dims) {
+      const exec_aten::Tensor* input_tensor,
+      exec_aten::Tensor* output_tensor) const {
+    if (!needs_resize_output) {
       ET_LOG(
           Error,
-          "Found output shape with a different number of dimensions than the output tensor. Expected: %zu, Actual: %zu",
-          n_dim,
-          output_shape->num_dims);
+          "Attempted to resize output tensor when resizing is not needed by XNNExecutor");
       return Error::NotSupported;
     }
 
-    // Early exit?
-    bool same_shape = true;
-    for (size_t i = 0; (i < n_dim) && same_shape; i++) {
-      same_shape = (output_tensor->size(i) == output_shape->dim[i]);
+    const size_t n_dim = output_tensor->dim() - 1;
+
+    bool same_outer_shape = true;
+    for (size_t i = 0; (i < n_dim) && same_outer_shape; i++) {
+      same_outer_shape = (output_tensor->size(i) == input_tensor->size(i));
     }
-    if (same_shape) {
+    if (same_outer_shape) {
+      // Output tensor shape is already compatible with input; Don't resize
       return Error::Ok;
     }
 
     exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
     for (size_t i = 0; i < n_dim; i++) {
-      expected_output_size[i] =
-          static_cast<exec_aten::SizesType>(output_shape->dim[i]);
+      expected_output_size[i] = input_tensor->size(i);
     }
+    expected_output_size[n_dim] = output_tensor->size(n_dim);
 
     exec_aten::ArrayRef<exec_aten::SizesType> output_size{
         expected_output_size, static_cast<size_t>(output_tensor->dim())};
 
     // Ok to dereference pointer here because resize_tensor takes in a tensor
     // and not a tensor&
-    ET_LOG(Debug, "Resizing output tensor to a new shape");
     Error err = resize_tensor(*output_tensor, output_size);
     if (err != Error::Ok) {
       ET_LOG(Error, "Failed to resize output tensor for XNNExecutor");
