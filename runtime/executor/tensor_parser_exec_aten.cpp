@@ -55,8 +55,8 @@ __ET_NODISCARD Result<void*> getTensorDataPtr(
     size_t nbytes,
     HierarchicalAllocator* allocator) {
   if (s_tensor->constant_buffer_idx() > 0) {
-    auto data =
-        program->get_constant_buffer_data(s_tensor->constant_buffer_idx());
+    auto data = program->get_constant_buffer_data(
+        s_tensor->constant_buffer_idx(), nbytes);
     if (!data.ok()) {
       return data.error();
     }
