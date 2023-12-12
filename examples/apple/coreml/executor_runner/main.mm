@@ -16,9 +16,9 @@
 #import <executorch/runtime/executor/method.h>
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/log.h>
-#import <executorch/runtime/platform/profiler.h>
 #import <executorch/runtime/platform/runtime.h>
 #import <executorch/util/util.h>
+#import <executorch/sdk/etdump/etdump_flatcc.h>
 
 #import <coreml_backend/delegate.h>
 
@@ -37,9 +37,13 @@ namespace {
 
 struct Args {
     std::string model_path;
-    std::string prof_result_path = "prof_result.bin";
+    std::string etdump_path = "etdump.etdp";
+    std::string debug_buffer_path = "debug_buffer.bin";
+    size_t debug_buffer_size = 1024 * 1024;
     size_t iterations = 1;
     bool purge_models_cache = false;
+    bool dump_model_outputs = false;
+    bool dump_intermediate_outputs = false;
 
     Args(NSDictionary<NSString *, NSString *> *params) {
         {
@@ -49,9 +53,15 @@ struct Args {
             }
         }
         {
-            NSString *value = SAFE_CAST(params[@"--prof_result_path"], NSString);
+            NSString *value = SAFE_CAST(params[@"--etdump_path"], NSString);
             if (value.length > 0) {
-                prof_result_path = value.UTF8String;
+                etdump_path = value.UTF8String;
+            }
+        }
+        {
+            NSString *value = SAFE_CAST(params[@"--debug_buffer_path"], NSString);
+            if (value.length > 0) {
+                debug_buffer_path = value.UTF8String;
             }
         }
         {
@@ -61,9 +71,27 @@ struct Args {
             }
         }
         {
+            NSString *value = SAFE_CAST(params[@"--debug_buffer_size"], NSString);
+            if (value.length > 0) {
+                debug_buffer_size = value.integerValue;
+            }
+        }
+        {
             NSString *value = SAFE_CAST(params[@"--purge_models_cache"], NSString);
             if (value.length > 0) {
                 purge_models_cache = value.boolValue;
+            }
+        }
+        {
+            NSString *value = SAFE_CAST(params[@"--dump_intermediate_outputs"], NSString);
+            if (value.length > 0) {
+                dump_intermediate_outputs = value.boolValue;
+            }
+        }
+        {
+            NSString *value = SAFE_CAST(params[@"--dump_model_outputs"], NSString);
+            if (value.length > 0) {
+                dump_model_outputs = value.boolValue;
             }
         }
     }
@@ -74,7 +102,7 @@ NSString *clean_string(NSString *value) {
 }
 
 NSSet<NSString *> *all_keys() {
-    return [NSSet setWithObjects:@"--model_path", @"--iterations", @"--purge_models_cache", @"--prof_result_path", nil];
+    return [NSSet setWithObjects:@"--model_path", @"--iterations", @"--purge_models_cache", @"--etdump_path", @"--debug_buffer_path", @"--debug_buffer_size", @"--dump_intermediate_outputs", @"--dump_model_outputs", nil];
 }
 
 Args parse_command_line_args(NSArray<NSString *> *args) {
@@ -191,17 +219,6 @@ double calculate_mean(const std::vector<double>& durations) {
     return std::accumulate(durations.begin(), durations.end(), 0.0)/durations.size();
 }
 
-void dump_profile_data(const std::string& prof_result_path) {
-    // Dump the profiling data to the specified file.
-    torch::executor::prof_result_t prof_result;
-    EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-    if (prof_result.num_bytes != 0) {
-      FILE* ptr = fopen(prof_result_path.c_str(), "w+");
-      fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
-      fclose(ptr);
-    }
-}
-
 Error execute_method(Method *method, size_t n, std::vector<double>& durations) {
     Error status = Error::Ok;
     durations.reserve(static_cast<size_t>(n));
@@ -252,8 +269,24 @@ int main(int argc, char * argv[]) {
         HierarchicalAllocator planned_allocator(Span<Span<uint8_t>>(reinterpret_cast<Span<uint8_t> *>(spans.data()), spans.size()));
         MemoryManager memory_manager(&method_allocator, &planned_allocator);
 
+        ETDumpGen *etdump_gen = new ETDumpGen();
+        Buffer debug_buffer(args.debug_buffer_size, 0);
+        if (args.dump_intermediate_outputs) {
+            ET_LOG(Info, "Dumping intermediate outputs");
+            Span<uint8_t> buffer(debug_buffer.data(), debug_buffer.size());
+            etdump_gen->set_debug_buffer(buffer);
+            etdump_gen->set_event_tracer_debug_level(
+                EventTracerDebugLogLevel::kIntermediateOutputs);
+        } else if (args.dump_model_outputs) {
+            ET_LOG(Info, "Dumping model outputs");
+            Span<uint8_t> buffer(debug_buffer.data(), debug_buffer.size());
+            etdump_gen->set_debug_buffer(buffer);
+            etdump_gen->set_event_tracer_debug_level(
+                EventTracerDebugLogLevel::kProgramOutputs);
+        }
+
         auto load_start_time = std::chrono::steady_clock::now();
-        auto method = program->load_method(method_name.get().c_str(), &memory_manager);
+        auto method = program->load_method(method_name.get().c_str(), &memory_manager, (EventTracer *)etdump_gen);
         auto load_duration = std::chrono::steady_clock::now() - load_start_time;
         ET_LOG(Info, "Load duration = %f",std::chrono::duration<double, std::milli>(load_duration).count());
 
@@ -276,7 +309,19 @@ int main(int argc, char * argv[]) {
         status = method->get_outputs(outputs, method->outputs_size());
         ET_CHECK(status == Error::Ok);
 
-        dump_profile_data(args.prof_result_path);
+        etdump_result result = etdump_gen->get_etdump_data();
+        if (result.size != 0) {
+            ET_LOG(Info, "Size = %zu", result.size);
+            FILE *ptr = fopen(args.etdump_path.c_str(), "wb");
+            fwrite(result.buf, 1, result.size, ptr);
+            fclose(ptr);
+            if (args.dump_intermediate_outputs || args.dump_model_outputs) {
+                FILE *ptr = fopen(args.debug_buffer_path.c_str(), "wb");
+                fwrite(debug_buffer.data(), 1, debug_buffer.size(), ptr);
+                fclose(ptr);
+            }
+        }
+
         util::FreeInputs(inputs);
         return 0;
     }
