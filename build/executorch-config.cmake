@@ -31,7 +31,7 @@ set_target_properties(
 )
 target_include_directories(portable_kernels INTERFACE ${_root})
 
-set(lib_list etdump bundled_program extension_data_loader flatcc_d)
+set(lib_list etdump bundled_program extension_data_loader flatcc)
 foreach(lib ${lib_list})
     # Name of the variable which stores result of the find_library search
     set(lib_var "LIB_${lib}")
