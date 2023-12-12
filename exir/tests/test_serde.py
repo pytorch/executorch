@@ -49,15 +49,15 @@ class TestSerde(unittest.TestCase):
     # pyre-ignore
     def check_serde(self, m, inputs) -> None:
         aten = export(m, inputs)
-        aten_new = deserialize(*serialize(aten))
+        aten_new = deserialize(serialize(aten))
         self.check_ep(aten, aten_new, inputs)
 
         edge = to_edge(aten)
-        edge_new = deserialize(*serialize(edge.exported_program()))
+        edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
 
         executorch = edge.to_executorch().exported_program()
-        executorch_new = deserialize(*serialize(executorch))
+        executorch_new = deserialize(serialize(executorch))
         with torch.no_grad():
             self.check_ep(executorch, executorch_new, inputs)
 
@@ -137,7 +137,7 @@ class TestSerde(unittest.TestCase):
         composite_model(*model_inputs)
 
         edge = to_edge(export(composite_model, model_inputs))
-        edge_new = deserialize(*serialize(edge.exported_program()))
+        edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, model_inputs)
 
     def test_delegate_partitioner(self) -> None:
@@ -158,7 +158,7 @@ class TestSerde(unittest.TestCase):
 
         ep = to_edge(export(m, inputs))
         edge = ep.to_backend(AddMulPartitionerDemo())
-        edge_new = deserialize(*serialize(edge.exported_program()))
+        edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
 
     def test_meta_stack_trace_module_hierarchy(self) -> None:
@@ -185,7 +185,7 @@ class TestSerde(unittest.TestCase):
                 )
 
         metadata_serde = ()
-        edge_new = deserialize(*serialize(edge.exported_program()))
+        edge_new = deserialize(serialize(edge.exported_program()))
         for node in edge_new.graph_module.graph.nodes:
             if "convolution" in str(node.target):
                 metadata_serde = (
