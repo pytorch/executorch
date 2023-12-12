@@ -41,5 +41,5 @@ if [[ -z $PYTHON_EXECUTABLE ]]; then
   PYTHON_EXECUTABLE=python3
 fi
 
-# cmake_install_executorch_lib
+cmake_install_executorch_lib
 test_cmake_size_test
