@@ -329,10 +329,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
-option(EXECUTORCH_BUILD_MPS "Build the backends/apple/mps directory" OFF)
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/apple/mps)
 endif()
 
 # Build CoreML backend

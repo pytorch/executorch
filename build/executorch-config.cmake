@@ -31,14 +31,14 @@ set_target_properties(
 )
 target_include_directories(portable_kernels INTERFACE ${_root})
 
-set(lib_list etdump bundled_program extension_data_loader flatcc_d)
+set(lib_list etdump bundled_program extension_data_loader flatcc mpsdelegate)
 foreach(lib ${lib_list})
     # Name of the variable which stores result of the find_library search
     set(lib_var "LIB_${lib}")
     find_library(${lib_var} ${lib} HINTS "${_root}")
     if(NOT ${lib_var})
         message("${lib} library is not found.
-            If needed rebuild with EXECUTORCH_BUILD_SDK=ON")
+            If needed rebuild with the proper options in CMakeLists.txt")
     else()
         add_library(${lib} STATIC IMPORTED)
         set_target_properties(
