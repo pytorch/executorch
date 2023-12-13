@@ -319,6 +319,7 @@ endif()
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/qualcomm)
 endif()
 
 # Build Arm Baremetal backend
