@@ -9,6 +9,8 @@
 import argparse
 import logging
 
+from executorch.exir.capture._config import ExecutorchBackendConfig
+
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
 from ..utils import export_to_exec_prog, save_pte_program
@@ -27,7 +29,7 @@ def main() -> None:
         help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
-
+    parser.add_argument("-c", "--constant_segment", default=True, help="whether or not to store constants in a separate segment")
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -40,7 +42,8 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    prog = export_to_exec_prog(model, example_inputs)
+    config=ExecutorchBackendConfig(extract_constant_segment=args.constant_segment)
+    prog = export_to_exec_prog(model, example_inputs, backend_config=config)
     save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
 
