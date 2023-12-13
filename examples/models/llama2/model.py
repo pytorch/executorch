@@ -199,7 +199,7 @@ class Llama2Model(EagerModelBase):
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
         checkpoint = torch.load(
-            Path(ckpt_dir) / "demo_rand_params.pth", map_location=device
+            Path(ckpt_dir) / "consolidated.00.pth", map_location=device
         )
         with open(Path(ckpt_dir) / "demo_config.json", "r") as f:
             params = json.loads(f.read())
@@ -211,9 +211,9 @@ class Llama2Model(EagerModelBase):
             **params,
         )
         self.model_ = Transformer(model_args)
-        self.model_.load_state_dict(
-            checkpoint, strict=False
-        )  # self.model_ = Transformer(gptconf)
+        # self.model_.load_state_dict(
+        #     checkpoint, strict=False
+        # )  # self.model_ = Transformer(gptconf)
 
     # @staticmethod
     def get_eager_model(self):
