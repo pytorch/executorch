@@ -104,14 +104,6 @@ option(REGISTER_QUANTIZED_OPS
 
 option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 
-# Option to register op list
-option(EXECUTORCH_SELECT_OPS_LIST "Register the following list of ops" OFF)
-
-# Do not enable select all ops if any of the other select options is on.
-if(EXECUTORCH_SELECT_OPS_LIST OR EXECUTORCH_SELECT_OPS_YAML)
-  set(EXECUTORCH_SELECT_ALL_OPS OFF)
-endif()
-
 # Build xnn_executor_runner which depends on XNNPACK
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
