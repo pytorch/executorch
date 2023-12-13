@@ -30,3 +30,20 @@ set_target_properties(
     portable_kernels PROPERTIES IMPORTED_LOCATION "${PORTABLE_KERNELS_PATH}"
 )
 target_include_directories(portable_kernels INTERFACE ${_root})
+
+set(lib_list etdump bundled_program extension_data_loader flatcc_d)
+foreach(lib ${lib_list})
+    # Name of the variable which stores result of the find_library search
+    set(lib_var "LIB_${lib}")
+    find_library(${lib_var} ${lib} HINTS "${_root}")
+    if(NOT ${lib_var})
+        message("${lib} library is not found.
+            If needed rebuild with EXECUTORCH_BUILD_SDK=ON")
+    else()
+        add_library(${lib} STATIC IMPORTED)
+        set_target_properties(
+            ${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}"
+        )
+        target_include_directories(${lib} INTERFACE ${_root})
+    endif()
+endforeach()

@@ -87,6 +87,13 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
+option(EXECUTORCH_ENABLE_EVENT_TRACER
+       "Build with ET_EVENT_TRACER_ENABLED=ON"
+       OFF)
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  add_definitions(-DET_EVENT_TRACER_ENABLED)
+endif()
+
 # -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
@@ -119,6 +126,9 @@ option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
 
+# Build dataloader library
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+       "Build the extension/data_loader directory" OFF)
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -299,12 +309,8 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-       "Build the extension/data_loader directory" OFF)
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
 endif()
