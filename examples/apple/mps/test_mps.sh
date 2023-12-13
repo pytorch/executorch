@@ -14,21 +14,23 @@ source "$(dirname "${BASH_SOURCE[0]}")/../../../.ci/scripts/utils.sh"
 cmake_install_executorch_sdk_lib() {
   echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-out
+        #   -DCMAKE_BUILD_TYPE=Release \
 
   retry cmake -DBUCK2="$BUCK" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
-          -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_SDK=ON \
           -DEXECUTORCH_BUILD_MPS=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
-  cmake --build cmake-out -j9 --target install --config Release
+  cmake --build cmake-out -j9 --target install
+#   --config Release
 }
 
 test_cmake_mps() {
     echo "Exporting MobilenetV2"
     # ${PYTHON_EXECUTABLE} -m examples.apple.mps.scripts.mps_example --model_name="mv2" --bundled
+        # -DCMAKE_BUILD_TYPE=Release \
 
     local example_dir=examples/apple/mps
     local build_dir=cmake-out/${example_dir}
@@ -37,13 +39,13 @@ test_cmake_mps() {
     rm -rf ${build_dir}
     retry cmake \
         -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-        -DCMAKE_BUILD_TYPE=Release \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -B${build_dir} \
         ${example_dir}
 
       echo "Building ${example_dir}"
-  cmake --build ${build_dir} -j9 --config Release
+  cmake --build ${build_dir} -j9
+#    --config Release
 
   echo 'Running mps_executor_runner'
   ${build_dir}/mps_executor_runner --bundled_program=True --model_path="./mv2_mps_bundled.pte"

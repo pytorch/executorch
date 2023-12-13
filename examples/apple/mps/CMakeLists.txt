@@ -84,6 +84,7 @@ target_include_directories(
                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 target_link_libraries(mps_executor_runner bundled_program
                                           executorch gflags
+                                          mpsdelegate
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
 endif()
