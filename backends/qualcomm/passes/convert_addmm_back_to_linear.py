@@ -7,6 +7,9 @@ from collections import Counter
 from typing import List
 
 import torch
+from executorch.backends.transforms.addmm_mm_to_linear import (
+    apply_addmm_mm_to_linear_transform,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload as edge_op
 from executorch.exir.pass_base import ExportPass, PassResult
@@ -17,6 +20,10 @@ from torch.fx.passes.utils.source_matcher_utils import (
 
 
 class ConvertAddmmmmWithLinear(ExportPass):
+    """
+    Handle missing quantization tag for addmm op after decomposing
+    """
+
     q_ops = {
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
@@ -30,13 +37,20 @@ class ConvertAddmmmmWithLinear(ExportPass):
 
     view_copy = exir_ops.edge.aten.view_copy.default
     permute_copy = exir_ops.edge.aten.permute_copy.default
+    expand_copy = exir_ops.edge.aten.expand_copy.default
     linear = exir_ops.edge.aten.linear.default
+    add = exir_ops.edge.aten.add.Tensor
     addmm = exir_ops.edge.aten.addmm.default
+    bmm = exir_ops.edge.aten.bmm.default
     mm = exir_ops.edge.aten.mm.default
 
     addmm_patterns = [
         {view_copy: 2, permute_copy: 1, addmm: 1},
         {permute_copy: 1, addmm: 1},
+    ]
+
+    bmm_patterns = [
+        {view_copy: 3, permute_copy: 1, expand_copy: 2, add: 1, bmm: 1},
     ]
 
     def __init__(self):
@@ -101,6 +115,26 @@ class ConvertAddmmmmWithLinear(ExportPass):
             for user in addmm_node.users.copy():
                 user.replace_input_with(addmm_node, linear_node)
 
+    def _convert_bmm(self, gm: torch.fx.GraphModule, src_partition: SourcePartition):
+        output = src_partition.output_nodes[0]
+        bmm_node = [n for n in src_partition.nodes if n.target == self.bmm][0]
+        add_node = [n for n in src_partition.nodes if n.target == self.add][0]
+
+        # weight -> expand_copy -> view_copy -> input of bmm
+        weight_node = bmm_node.args[1].args[0].args[0].args[0]
+        # input -> expand_copy -> view_copy -> input of bmm
+        input_node = bmm_node.args[0].args[0].args[0]
+        bias_node = add_node.args[1]
+        args = (input_node, weight_node, bias_node)
+
+        with gm.graph.inserting_before(output):
+            linear_node = gm.graph.create_node("call_function", self.linear, args)
+            linear_node.meta = add_node.meta
+            last_dim = linear_node.meta["val"].shape[-1]
+            linear_node.meta["val"] = linear_node.meta["val"].reshape(-1, last_dim)
+            for user in add_node.users.copy():
+                user.replace_input_with(add_node, linear_node)
+
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
         partitions = get_source_partitions(graph, [torch.nn.Linear])
@@ -112,10 +146,14 @@ class ConvertAddmmmmWithLinear(ExportPass):
                 if op_cnt in self.addmm_patterns:
                     self._convert_addmm(graph_module, src_partition)
 
+                if op_cnt in self.bmm_patterns:
+                    self._convert_bmm(graph_module, src_partition)
+
                 # TODO Add the corresponding pattern/rewritting for mm case once we found one
                 if any(n.target == self.mm for n in src_partition.nodes):
                     raise AssertionError("find a mm to linear case")
-
+        # We could not use get_source_partitions because it is the same source for MultiheadAttention
+        graph = apply_addmm_mm_to_linear_transform(graph)
         graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)
