@@ -29,7 +29,11 @@ def main() -> None:
         help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
-    parser.add_argument("-c", "--constant_segment", default=True, help="whether or not to store constants in a separate segment")
+    parser.add_argument(
+        "-c",
+        "--constant_segment",
+        default=True,
+        help="whether or not to store constants in a separate segment")
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -42,7 +46,7 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    config=ExecutorchBackendConfig(extract_constant_segment=args.constant_segment)
+    config = ExecutorchBackendConfig(extract_constant_segment=args.constant_segment)
     prog = export_to_exec_prog(model, example_inputs, backend_config=config)
     save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
