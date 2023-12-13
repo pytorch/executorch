@@ -27,9 +27,27 @@ python3 -m examples.apple.mps.scripts.mps_example --help
 Once we have the model binary file, then let's run it with the ExecuTorch runtime using the `mps_executor_runner`.
 
 ```bash
+# Build and install executorch
+cmake -DBUCK2="$BUCK" \
+          -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEXECUTORCH_BUILD_SDK=ON \
+          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+          -Bcmake-out .
+cmake --build cmake-out -j9 --target install --config Release
 # Build the mps_executor_runner
-(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_MPS=1 -DEXECUTORCH_BUILD_SDK=ON -DBUCK2=/tmp/buck2 —trace .. && cd ..)
-cmake --build cmake-out -j9
+CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
+# build mps_executor_runner
+rm -rf cmake-out/examples/apple/mps
+cmake \
+    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+    -Bcmake-out/examples/apple/mps \
+    examples/apple/mps
+
+cmake --build cmake-out/examples/apple/mps -j9 --config Release
 
 # Run the mv2 generated model using the mps_executor_runner
 ./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv2_mps_bundled.pte --bundled_program
