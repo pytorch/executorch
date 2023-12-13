@@ -251,9 +251,6 @@ class MPSGraphModule {
   std::vector<MPSGraphTensor*> outputTensors_;
   std::vector<MPSGraphTensor*> inputTensors_;
   MPSGraphExecutable* executable_;
-
-  id<MTLDevice> device_;
-  id<MTLCommandQueue> commandQueue_;
 };
 
 } // namespace mps

@@ -14,8 +14,6 @@ MPSGraphModule::MPSGraphModule() {
   "MPS Executorch backend is supported only from macOS 14.0 and above.");
 
   mpsGraph = [MPSGraph new];
-  device_ = MTLCreateSystemDefaultDevice();
-  commandQueue_ = [device_ newCommandQueue];
 }
 
 MPSGraphModule::~MPSGraphModule() {
@@ -95,7 +93,7 @@ MPSGraphModule::compileMPSGraphExecutable() {
     [targetTensors addObject:outputTensor];
   });
 
-  MPSGraphExecutable *exec = [mpsGraph compileWithDevice:[MPSGraphDevice deviceWithMTLDevice:device_]
+  MPSGraphExecutable *exec = [mpsGraph compileWithDevice:nil
                                                    feeds:feeds
                                            targetTensors:targetTensors
                                         targetOperations:nil
@@ -111,7 +109,6 @@ std::vector<uint8_t> MPSGraphModule::serialize() {
 
   std::string name = "mpsgraphmodule_" + std::to_string(arc4random_uniform(INT_MAX));
   std::string mpsgraphpackagePath = dataFolder + name + ".mpsgraphpackage";
-
   NSString *mpsgraphpackageFileStr = [NSString stringWithUTF8String:mpsgraphpackagePath.c_str()];
   NSURL *bundleURL = [NSURL fileURLWithPath:mpsgraphpackageFileStr];
 
@@ -122,28 +119,23 @@ std::vector<uint8_t> MPSGraphModule::serialize() {
 
   NSString* mpsgraphpackage_manifest_file = [NSString stringWithUTF8String:(mpsgraphpackagePath + "/manifest.plist").c_str()];
   NSString* mpsgraphpackage_model_0_file = [NSString stringWithUTF8String:(mpsgraphpackagePath + "/model_0.mpsgraph").c_str()];
-  NSString* mpsgraphpackage_model_1_file = [NSString stringWithUTF8String:(mpsgraphpackagePath + "/model_1.mpsgraph").c_str()];
 
   NSURL* manifestPlistURL = [NSURL fileURLWithPath:mpsgraphpackage_manifest_file];
   NSURL* model0URL = [NSURL fileURLWithPath:mpsgraphpackage_model_0_file];
-  NSURL* model1URL = [NSURL fileURLWithPath:mpsgraphpackage_model_1_file];
 
   NSData* manifest_plist_data = [NSData dataWithContentsOfURL:manifestPlistURL];
   NSData* model_0_data = [NSData dataWithContentsOfURL:model0URL];
-  NSData* model_1_data = [NSData dataWithContentsOfURL:model1URL];
 
-  int64_t total_package_size = sizeof(ExirMPSGraphPackage) + [manifest_plist_data length] + [model_0_data length] + [model_1_data length];
+  int64_t total_package_size = sizeof(ExirMPSGraphPackage) + [manifest_plist_data length] + [model_0_data length];
   ExirMPSGraphPackage *exirMPSGraphPackage = (ExirMPSGraphPackage*)malloc(total_package_size);
   assert(exirMPSGraphPackage != nil);
 
   exirMPSGraphPackage->manifest_plist_offset = 0;
   exirMPSGraphPackage->model_0_offset = [manifest_plist_data length];
-  exirMPSGraphPackage->model_1_offset = exirMPSGraphPackage->model_0_offset + [model_0_data length];
   exirMPSGraphPackage->total_bytes = total_package_size;
 
   memcpy(exirMPSGraphPackage->data, [manifest_plist_data bytes], [manifest_plist_data length]);
   memcpy(exirMPSGraphPackage->data + exirMPSGraphPackage->model_0_offset, [model_0_data bytes], [model_0_data length]);
-  memcpy(exirMPSGraphPackage->data + exirMPSGraphPackage->model_1_offset, [model_1_data bytes], [model_1_data length]);
 
   std::vector<uint8_t> data((uint8_t*)exirMPSGraphPackage, (uint8_t*)exirMPSGraphPackage + total_package_size);
   free(exirMPSGraphPackage);
