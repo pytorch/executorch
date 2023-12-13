@@ -118,9 +118,6 @@ option(EXECUTORCH_BUILD_XNNPACK
 option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
-option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
-       "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
-
 # Build mps_executor_runner which depends on MPSGraph framework
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
@@ -353,10 +350,6 @@ endif()
 # Add size test subdirectory
 if(EXECUTORCH_BUILD_SIZE_TEST)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
-endif()
-
-if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/xtensa)
 endif()
 
 # Print all summary
