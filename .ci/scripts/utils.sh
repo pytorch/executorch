@@ -120,3 +120,14 @@ build_executorch_runner() {
     exit 1
   fi
 }
+
+cmake_install_executorch_lib() {
+  echo "Installing libexecutorch.a and libportable_kernels.a"
+  rm -rf cmake-out
+  retry cmake -DBUCK2="$BUCK" \
+          -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+          -Bcmake-out .
+  cmake --build cmake-out -j9 --target install --config Release
+}
