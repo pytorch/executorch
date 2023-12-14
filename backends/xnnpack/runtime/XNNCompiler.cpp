@@ -205,42 +205,45 @@ Error defineTensor(
 
       switch (dq_datatype) {
         case xnn_datatype::xnn_datatype_qint8: {
-          status = xnn_define_quantized_tensor_value(
+          // HACK TO Maintain FC/BC for ASR this will be removed after 01/2024
+
+          // When encountering a dynamically quantized tensor via dq_datatype,
+          // which is the old flow for serializing dynamically quantized linear.
+          // We replace the definition of a single tensor with a new dynamic
+          // Quantization pattern. We change the pattern from:
+          //     serialized_qd_input
+          //           to
+          // (fp32_input --> convert --> qdint8_input)
+
+          status = xnn_define_dynamically_quantized_tensor_value(
               /*subgraph=*/subgraph_ptr,
-              /*datatype=*/dq_datatype,
-              /*zero_point=*/0, /* Fake Zero Point */
-              /*scale=*/1.0, /* Fake Scale */
+              /*datatype=*/xnn_datatype_qdint8,
+              /*num_dims=*/tensor_value->num_dims(),
+              /*num_nonbatch_dims=*/1, // This is always for fully connected
+              /*dims=*/dims_data.data(),
+              /*external_id=*/XNN_INVALID_VALUE_ID, // always internal value id
+              /*flags=*/0, // this is netiher external input or output
+              /*id_out=*/&id);
+
+          // this is the FP32 external value that is dynamically quantized
+          uint32_t fp32_id;
+          status = xnn_define_tensor_value(
+              /*subgraph=*/subgraph_ptr,
+              /*datatype=*/xnn_datatype_fp32, // always fp32
               /*num_dims=*/tensor_value->num_dims(),
               /*dims=*/dims_data.data(),
               /*data=*/buffer_ptr,
               /*external_id=*/tensor_value->external_id(),
               /*flags=*/tensor_value->flags(),
-              /*id_out=*/&id);
+              /*id_out=*/&fp32_id);
+          executor->addDynamicQinput(fp32_id);
 
-          // TODO DD
-          // Refactor this into,
-          // Tensor = createTensor<dtype>(allocator, tensor_value);
-
-          std::vector<exec_aten::SizesType> input_shape =
-              flatbufferDimsToVector<exec_aten::SizesType>(
-                  tensor_value->dims());
-          auto qinput_tensor = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
-              runtime_allocator, TensorImpl);
-          new (qinput_tensor) TensorImpl(
-              ScalarType::QInt8,
-              input_shape.size(),
-              input_shape.data(),
-              /*data=*/nullptr);
-
-          // Add post padding to make xnnpack happy
-          constexpr size_t post_pad_bytes = XNN_EXTRA_BYTES;
-          void* qinput_storage = ET_ALLOCATE_OR_RETURN_ERROR(
-              runtime_allocator,
-              sizeof_scalar_type(ScalarType::QInt8) * qinput_tensor->numel() +
-                  post_pad_bytes);
-          qinput_tensor->set_data(static_cast<int8_t*>(qinput_storage));
-
-          executor->addDynamicQinput(id, qinput_tensor);
+          // Define dynamic conversion from fp32 to qdint8
+          status = xnn_define_convert(
+              /*subgraph=*/subgraph_ptr,
+              /*input_id=*/fp32_id,
+              /*output_id=*/id,
+              /*flags=*/0);
           break;
         }
         default:
@@ -1513,9 +1516,18 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
 #ifdef ENABLE_XNNPACK_PROFILING
   executor->init_profiler();
 #endif
-
-  for (auto old_id : *flatbuffer_graph->input_ids()) {
-    executor->input_ids_.emplace_back(remapped_ids.at(old_id));
+  // HACK FOR FC/BC this is only to support old dq_datatype
+  if (executor->qinputs_.size() > 0) {
+    // qinputs_ is only set when using the old dq linear path. At which point
+    // We need to overide the input_ids_ This workse based off the assumption
+    // old dqlinear path will be single node single input delegate
+    for (uint32_t id : executor->qinputs_) {
+      executor->input_ids_.emplace_back(id);
+    }
+  } else {
+    for (auto old_id : *flatbuffer_graph->input_ids()) {
+      executor->input_ids_.emplace_back(remapped_ids.at(old_id));
+    }
   }
   // External ids need to be in order for wiring with args
   std::sort(executor->input_ids_.begin(), executor->input_ids_.end());
@@ -1537,7 +1549,6 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
           "DQLinear should have at least one input and exactly one output");
       return Error::NotSupported;
     }
-    executor->setNeedsResizeOutput();
 #else
     ET_LOG(Error, "DQ Linear is not supported");
     return Error::NotSupported;
