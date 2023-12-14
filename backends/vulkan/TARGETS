@@ -1,5 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 runtime.cxx_library(
     name = "vulkan_backend_lib",
     srcs = [
