@@ -182,7 +182,9 @@ def _partition_and_lower_one_graph_module(
     for tag, delegation_spec in partition_result.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
-        node_list = _get_node_list_with_same_tag(tagged_graph_module, tag)
+        node_list = _get_node_list_with_same_tag(
+            tagged_graph_module, tag, owning_program
+        )
 
         if len(node_list) == 0:
             logging.debug(f"Did not find any nodes for tag {tag}")
