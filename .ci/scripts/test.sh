@@ -48,9 +48,10 @@ test_model() {
     cd examples/third-party/llama
     pip install -e .
     cd ../../..
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama
+  else
+    "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
   fi
-
-  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
