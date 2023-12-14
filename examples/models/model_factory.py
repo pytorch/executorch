@@ -17,7 +17,9 @@ class EagerModelFactory:
     """
 
     @staticmethod
-    def create_model(module_name, model_class_name) -> Tuple[torch.nn.Module, Any]:
+    def create_model(
+        module_name, model_class_name, **kwargs
+    ) -> Tuple[torch.nn.Module, Any]:
         """
         Create an instance of a model class that implements EagerModelBase and retrieve related data.
 
@@ -38,7 +40,7 @@ class EagerModelFactory:
 
         if hasattr(module, model_class_name):
             model_class = getattr(module, model_class_name)
-            model = model_class()
+            model = model_class(**kwargs)
             return model.get_eager_model(), model.get_example_inputs()
 
         raise ValueError(
