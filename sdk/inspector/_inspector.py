@@ -7,6 +7,7 @@
 import dataclasses
 import logging
 import sys
+import warnings
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from functools import cached_property
@@ -899,6 +900,10 @@ class Inspector:
                 output_buffer = f.read()
         else:
             output_buffer = None
+            warnings.warn(
+                "Output Buffer not found. Tensor Debug Data will not be available.",
+                stacklevel=1,
+            )
 
         self.event_blocks = EventBlock._gen_from_etdump(
             etdump,
