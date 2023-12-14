@@ -193,15 +193,15 @@ class Transformer(nn.Module):
 
 
 class Llama2Model(EagerModelBase):
-    def __init__(self):
+    def __init__(self, **kwargs):
         ckpt_dir = Path(__file__).absolute().parent
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
         checkpoint = torch.load(
-            Path(ckpt_dir) / "demo_rand_params.pth", map_location=device
+            Path(ckpt_dir) / kwargs["checkpoint"], map_location=device
         )
-        with open(Path(ckpt_dir) / "demo_config.json", "r") as f:
+        with open(Path(ckpt_dir) / kwargs["params"], "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128
         max_batch_size = 1
