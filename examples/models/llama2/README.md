@@ -14,8 +14,8 @@ Please note that the models are subject to the [acceptable use policy](https://g
 
 # Notes
 1. This example is to show the feasibility of exporting a Llama2 model in ExecuTorch. There is no guarantee for performance.
-2. It's targeted to a reasonable size for edge devices. Depending on the model size, the memory usage of exporting the model can be high. Please see [GitHub issue: Improve memory usage in EXIR emitter](https://github.com/pytorch/executorch/issues/885).
-3. The provided check point, demo_rand_params.pth is a dummy checkpoint with random parameters. It does not provide meaningful results. It's only for the purpose of demonstration and fast iterations.
+2. The provided checkpoint, demo_rand_params.pth is a dummy checkpoint with random parameters. It does not provide meaningful results. It's only for the purpose of demonstration and fast iterations.  Use the options `--checkpoint <checkpoint>` and `--params <params>` for custom checkpoints.
+
 
 # Limitations
 This example tries to reuse the Python code, with modifications to make it compatible with current ExecuTorch:
@@ -29,4 +29,5 @@ This example tries to reuse the Python code, with modifications to make it compa
 1. Follow the [tutorial](https://pytorch.org/executorch/stable/getting-started-setup) to set up ExecuTorch
 2. `cd examples/third-party/llama`
 3. `pip install -e .`
-4. Go back to `executorch` root, run `python3 -m examples.portable.scripts.export --model_name="llama2"`. The exported program, llama2.pte would be saved in current directory
+4. Go back to `executorch` root, run `python3 -m examples.models.llama2.export_llama`. The exported program, llama2.pte would be saved in current directory using the dummy checkpoint.
+5. Llama2 pretrained parameters can be downloaded [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) and run with `python3 -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json>`.
