@@ -97,12 +97,15 @@ def inflate_runtime_output(
 
     # Given a ETDump Tensor object and offset, extract into a torch.Tensor
     def parse_tensor_value(tensor: Optional[Tensor]) -> torch.Tensor:
-        if output_buffer is None:
-            raise ValueError("Empty buffer provided. Cannot deserialize tensors.")
         if tensor is None or tensor.offset is None:
             raise ValueError("Tensor cannot be None")
 
         torch_dtype, dtype_size = get_scalar_type_size(tensor.scalar_type)
+
+        if output_buffer is None:
+            # Empty buffer provided. Cannot deserialize tensors.
+            return torch.zeros(tensor.sizes, dtype=torch_dtype)
+
         tensor_bytes_size = math.prod(tensor.sizes) * dtype_size
 
         if tensor.offset is None:
