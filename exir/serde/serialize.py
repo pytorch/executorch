@@ -681,7 +681,9 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             range_constraints,
             [],
             module_call_graph=module_call_graph,
-            verifier=load_verifier(serialized_artifact.exported_program.dialect),  # pyre-ignore
+            verifier=load_verifier(
+                serialized_artifact.exported_program.dialect  # pyre-ignore
+            ),
         )
         exported_program.graph_module.graph = graph_module.graph
         exported_program._graph_signature = res.signature
