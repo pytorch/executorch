@@ -12,7 +12,6 @@ load(
     ":xnnpack_wrapper_defs.bzl",
     "AARCH32_ASM_MICROKERNEL_SRCS",
     "AARCH64_ASM_MICROKERNEL_SRCS",
-    # "PROD_FMA_MICROKERNEL_SRCS", RISC-V not enabled
     "PROD_ARMSIMD32_MICROKERNEL_SRCS",
     "PROD_AVX2_MICROKERNEL_SRCS",
     "PROD_AVX512F_MICROKERNEL_SRCS",
@@ -26,6 +25,8 @@ load(
     "PROD_FP16ARITH_MICROKERNEL_SRCS",
     "PROD_NEONDOT_AARCH64_MICROKERNEL_SRCS",
     "PROD_NEONDOT_MICROKERNEL_SRCS",
+    "PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS",
+    "PROD_NEONDOTFP16ARITH_AARCH64_MICROKERNEL_SRCS",
     "PROD_NEONFMA_MICROKERNEL_SRCS",
     "PROD_NEONFP16ARITH_AARCH64_MICROKERNEL_SRCS",
     "PROD_NEONFP16ARITH_MICROKERNEL_SRCS",
@@ -959,6 +960,45 @@ def define_xnnpack():
         ],
     )
 
+    NEONDOTFP16ARITH_COMPILER_FLAGS = [
+        "-marm",
+        "-march=armv8.2-a+dotprod+fp16",
+        "-mfpu=neon-fp-armv8",
+    ]
+
+    NEONDOTFP16ARITH_AARCH64_COMPILER_FLAGS = [
+        "-march=armv8.2-a+dotprod+fp16"
+    ]
+
+    native.cxx_library(
+        name = "ukernels_neondotfp16arith",
+        srcs = select({
+            "DEFAULT": DEFAULT_DUMMY_SRC,
+            "ovr_config//cpu:arm32": PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS,
+            "ovr_config//cpu:arm64": PROD_NEONDOTFP16ARITH_AARCH64_MICROKERNEL_SRCS + PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS,
+        }),
+        headers = subdir_glob([
+            ("XNNPACK/src", "**/*.h"),
+            ("XNNPACK/src", "**/*.c"),
+        ]),
+        header_namespace = "",
+        compiler_flags = [
+            "-O2",
+            "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
+        ] + select({
+            "ovr_config//cpu:arm32": NEONDOTFP16ARITH_COMPILER_FLAGS,
+            "ovr_config//cpu:arm64": NEONDOTFP16ARITH_AARCH64_COMPILER_FLAGS,
+        }),
+        preferred_linkage = "static",
+        preprocessor_flags = [
+            "-DXNN_LOG_LEVEL=0",
+        ],
+        exported_deps = [
+            ":FP16",
+            ":interface",
+        ],
+    )
+
     NEON64_DOT_COMPILER_FLAGS = ["-march=armv8.2-a+dotprod"]
 
     NEON32_DOT_COMPILER_FLAGS = [
@@ -1156,6 +1196,7 @@ def define_xnnpack():
         ":ukernels_neon_fp16arith",
         ":ukernels_neon_dot",
         ":ukernels_neon_i8mm",
+        ":ukernels_neondotfp16arith",
     ]
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
