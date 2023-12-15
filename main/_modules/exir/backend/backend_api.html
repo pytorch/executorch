@@ -569,27 +569,44 @@
         <span class="n">_ENABLE_VALIDATION</span> <span class="o">=</span> <span class="n">existing_setting</span>
 
 
-<span class="k">def</span> <span class="nf">_partition_and_lower</span><span class="p">(</span>
+<span class="k">def</span> <span class="nf">_get_node_list_with_same_tag</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">tag</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">Node</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return a list of nodes with the same tag.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">node_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;output node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> should not be tagged&quot;</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="n">is_param</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_buffer</span><span class="p">(</span>
+                    <span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span>
+                <span class="p">):</span>
+                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                        <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params and non-buffer should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
+                    <span class="p">)</span>
+            <span class="n">node_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">node_list</span>
+
+
+<span class="k">def</span> <span class="nf">_partition_and_lower_one_graph_module</span><span class="p">(</span>
     <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
     <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
     <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">delegation_spec</span> <span class="ow">in</span> <span class="n">partition_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
         <span class="c1"># Create partition with nodes containing this tag. There should only be</span>
         <span class="c1"># one contained submodule per tag</span>
-        <span class="n">node_list</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
-                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
-                    <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;output node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> should not be tagged&quot;</span><span class="p">)</span>
-                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
-                    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_param</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_buffer</span><span class="p">(</span>
-                        <span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span>
-                    <span class="p">):</span>
-                        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                            <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params and non-buffer should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
-                        <span class="p">)</span>
-                <span class="n">node_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
+        <span class="n">node_list</span> <span class="o">=</span> <span class="n">_get_node_list_with_same_tag</span><span class="p">(</span>
+            <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">owning_program</span>
+        <span class="p">)</span>
 
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">node_list</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
             <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Did not find any nodes for tag </span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -665,9 +682,24 @@
                 <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
         <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">recompile</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">tagged_graph_module</span>
+
+
+<span class="k">def</span> <span class="nf">_partition_and_lower</span><span class="p">(</span>
+    <span class="n">tagged_graph_module</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">,</span>
+    <span class="n">partition_result</span><span class="p">:</span> <span class="n">PartitionResult</span><span class="p">,</span>
+    <span class="n">owning_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Partitions the graph module into submodules based on tags, and then lowered the nodes with the same tag as one lowered module, including the submodule from control flow</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">partitioned_module</span> <span class="o">=</span> <span class="n">_partition_and_lower_one_graph_module</span><span class="p">(</span>
+        <span class="n">tagged_graph_module</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span>
+    <span class="p">)</span>
 
     <span class="c1"># Recursively partition and lower for submodules</span>
-    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_node</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">tagged_graph_module</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">submod</span><span class="p">,</span> <span class="n">_node</span> <span class="ow">in</span> <span class="n">get_control_flow_submodules</span><span class="p">(</span><span class="n">partitioned_module</span><span class="p">):</span>
         <span class="n">partitioned_submodule</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
             <span class="n">submod</span><span class="p">,</span> <span class="n">partition_result</span><span class="p">,</span> <span class="n">owning_program</span>
         <span class="p">)</span>
