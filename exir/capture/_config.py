@@ -10,7 +10,7 @@ from typing import List, Optional
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
-from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
 from executorch.exir.tracer import ExirDynamoConfig
 from torch.fx._compatibility import compatibility
 
@@ -70,4 +70,4 @@ class ExecutorchBackendConfig:
     # If provided, the minimum alignment of delegate data in the program. Must
     # be a power of 2. If not provided, uses the value in the schema file.
     delegate_alignment: Optional[int] = None
-    sym_shape_eval_pass: PassType = ConstraintBasedSymShapeEvalPass()
+    sym_shape_eval_pass: PassType = HintBasedSymShapeEvalPass()
