@@ -158,7 +158,6 @@ excludes = [
 deps = [
   "xnnpack_backend",
   "portable_kernels",
-  "quantized_kernels",
 ]
 
 [targets.xnnpack_backend]
