@@ -48,8 +48,7 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    config = ExecutorchBackendConfig(extract_constant_segment=args.constant_segment)
-    prog = export_to_exec_prog(model, example_inputs, backend_config=config)
+    prog = export_to_exec_prog(model, example_inputs, backend_config=ExecutorchBackendConfig(extract_constant_segment=True))
     save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
 
