@@ -7,7 +7,7 @@
 import logging
 import os
 
-from typing import Tuple, Union
+from typing import Tuple, Union, Optional, Dict, Any
 
 import executorch.exir as exir
 
@@ -26,13 +26,14 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 def _to_core_aten(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
+    dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
 ) -> ExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
     if not isinstance(model, torch.fx.GraphModule):
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
-    core_aten_ep = export(model, example_inputs)
+    core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
     logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
     return core_aten_ep
 
@@ -64,6 +65,7 @@ def export_to_edge(
 def export_to_exec_prog(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
+    dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
 ) -> ExecutorchProgramManager:

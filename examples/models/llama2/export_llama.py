@@ -8,7 +8,7 @@
 
 import argparse
 import logging
-
+import torch
 from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from ...portable.utils import export_to_exec_prog, save_pte_program
@@ -36,9 +36,11 @@ def main() -> None:
         "llama2", "Llama2Model", checkpoint=args.checkpoint, params=args.params
     )
 
+    dim_tokens = torch.export.Dim("dim_tokens", max=model.params.max_seq_len)
     prog = export_to_exec_prog(
         model,
         example_inputs,
+        dynamic_shapes={"tokens": {1: dim_tokens}},
         backend_config=ExecutorchBackendConfig(extract_constant_segment=True),
     )
 
