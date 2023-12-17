@@ -29,7 +29,7 @@ namespace executor {
 // Build targets can choose to override this, which will consequently have
 // the effect of increasing/decreasing the profiling buffer size.
 #ifndef MAX_MEM_PROFILE_EVENTS
-#define MAX_MEM_PROFILE_EVENTS 1024
+#define MAX_MEM_PROFILE_EVENTS 80960
 #endif
 // By default we support profiling only upto 16 allocators. If users
 // have more allocators than these then they can override this during
