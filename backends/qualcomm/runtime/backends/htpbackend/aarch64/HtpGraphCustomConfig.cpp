@@ -10,7 +10,8 @@ namespace torch {
 namespace executor {
 namespace qnn {
 std::vector<QnnGraph_CustomConfig_t>
-HtpGraphCustomConfig::CreateGraphCustomConfig() {
+HtpGraphCustomConfig::CreateGraphCustomConfig(
+    const HtpInfo& /*qcom_target_soc_info*/) {
   return {};
 }
 } // namespace qnn
