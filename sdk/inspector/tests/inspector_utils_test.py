@@ -81,6 +81,18 @@ class TestInspectorUtils(unittest.TestCase):
                     strides=[1],
                     offset=12345,
                 ),
+                tensor_list=[
+                    flatcc.TensorList(
+                        tensors=[
+                            flatcc.Tensor(
+                                scalar_type=flatcc.ScalarType.INT,
+                                sizes=[1],
+                                strides=[1],
+                                offset=12345,
+                            )
+                        ]
+                    )
+                ],
                 int_value=flatcc.Int(1),
                 float_value=flatcc.Float(1.0),
                 double_value=flatcc.Double(1.0),

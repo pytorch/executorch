@@ -36,13 +36,18 @@ table String {
   string_val:string;
 }
 
-enum ValueType : byte { Null, Int, Bool, Float, Double, Tensor, String,}
+table TensorList {
+  tensors:[Tensor];
+}
+
+enum ValueType : byte { Null, Int, Bool, Float, Double, Tensor, TensorList, String,}
 
 // This table is only necessary because flatbuffer can't support a list of
 // union elements directly, they need to be wrapped in a table.
 table Value {
     val:ValueType;
     tensor:Tensor;
+    tensor_list:TensorList;
     int_value:Int;
     float_value:Float;
     double_value:Double;
