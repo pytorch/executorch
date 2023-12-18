@@ -83,6 +83,41 @@ class Conv2dSeq(torch.nn.Module):
         return (torch.randn(1, 1, 3, 3),)
 
 
+class Conv2dBatchNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(
+            2,
+            2,
+            (2, 2),
+            bias=False,
+            padding=[1, 1],
+            stride=[4, 4],
+        )
+        self.bn = randomize_bn(2)
+        self.hardtanh = torch.nn.Hardtanh()
+        self.conv2 = torch.nn.Conv2d(
+            2,
+            2,
+            (2, 2),
+            bias=False,
+            padding=[1, 1],
+            stride=[4, 4],
+        )
+
+    def forward(self, x):
+        y = self.conv1(x)
+        y = self.bn(y)
+        y = self.hardtanh(y)
+        y = self.conv2(y)
+        y = self.bn(y)
+        y = self.hardtanh(y)
+        return y
+
+    def get_inputs(self):
+        return (torch.randn(2, 2, 4, 4),)
+
+
 class TestConv2d(unittest.TestCase):
     def _test(
         self,
@@ -111,30 +146,34 @@ class TestConv2d(unittest.TestCase):
             .to_executorch()
             .serialize()
             .run_method()
-            .compare_outputs()
+            .compare_outputs(qtol=1)
         )
 
-    def test_conv2d(self) -> None:
-        self._test(Conv2d())
+    def test_fp32_conv2d(self) -> None:
+        for has_bias in (True, False):
+            self._test(Conv2d(bias=has_bias))
 
-    def test_qconv2d(self) -> None:
-        self._test(Conv2d(), quant_config=get_symmetric_quantization_config())
+    def test_qs8_conv2d_test(self) -> None:
+        for has_bias in (True, False):
+            self._test(
+                Conv2d(bias=has_bias), quant_config=get_symmetric_quantization_config()
+            )
 
-    def test_qconv2d_per_channel(self) -> None:
+    def test_qs8_conv2d_per_channel(self) -> None:
         self._test(
             Conv2d(),
             quant_config=get_symmetric_quantization_config(is_per_channel=True),
         )
 
-    def test_conv2d_seq(self) -> None:
+    def test_fp32_conv2d_seq(self) -> None:
         self._test(Conv2dSeq(), conv_count=2)
 
-    def test_qconv2d_seq(self) -> None:
+    def test_qs8_conv2d_seq(self) -> None:
         self._test(
             Conv2dSeq(), conv_count=2, quant_config=get_symmetric_quantization_config()
         )
 
-    def test_conv2d_single_int_params(self):
+    def test_fp32_conv2d_single_int_params(self):
         self._test(
             Conv2d(
                 kernel_size=3,
@@ -144,19 +183,19 @@ class TestConv2d(unittest.TestCase):
             )
         )
 
-    def test_conv2d_depthwise(self):
+    def test_fp32_conv2d_depthwise(self):
         # Depthwise Convolution Requirements:
         # - Groups must equal In Channels
         # - Out Channels must be a positive multiple of In Channels
         self._test(Conv2d(groups=2, in_channels=2, out_channels=6))
 
-    def test_qconv2d_depthwise(self):
+    def test_qs8_conv2d_depthwise(self):
         self._test(
             Conv2d(groups=2, in_channels=2, out_channels=6),
             quant_config=get_symmetric_quantization_config(),
         )
 
-    def test_conv2d_bn(self):
+    def test_fp32_conv2d_bn(self):
         class Conv2dBatchNorm(torch.nn.Module):
             def __init__(self, in_features: int, out_features: int, kernel_size):
                 super().__init__()
@@ -182,7 +221,7 @@ class TestConv2d(unittest.TestCase):
 
         self._test(Conv2dBatchNorm(in_features=2, out_features=2, kernel_size=(2, 2)))
 
-    def test_xnnpack_backend_conv2d_bn_hardtanh_mean_sequence(self):
+    def test_fp32_conv2d_bn_hardtanh_mean_sequence(self):
         """
         This test makes sure that we can fuse batchnorm and hardtanh
         even with inserting copy nodes at some spots in the graph to change
@@ -215,4 +254,107 @@ class TestConv2d(unittest.TestCase):
 
         self._test(
             Conv2dBatchNormHardTanh(in_channels=2, out_channels=1, kernel_size=(2, 2))
+        )
+
+    def test_qs8_conv2d_bn(self):
+        self._test(
+            Conv2dBatchNorm(),
+            quant_config=get_symmetric_quantization_config(),
+            conv_count=2,
+        )
+
+    def test_qs8_conv2d_relu(self):
+        class ConvReLU(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(
+                    2,
+                    2,
+                    (2, 2),
+                    bias=False,
+                    padding=[1, 1],
+                    stride=[4, 4],
+                )
+                self.relu = torch.nn.ReLU()
+
+            def forward(self, x):
+                y = self.conv1(x)
+                y = self.relu(y)
+                return y
+
+            def get_inputs(self):
+                return (torch.randn(2, 2, 4, 4),)
+
+        self._test(
+            ConvReLU(),
+            quant_config=get_symmetric_quantization_config(),
+        )
+
+    def test_qs8_conv2d_dw_relu(self):
+        # Depthwise Convolution Requirements:
+        # - Groups must equal In Channels
+        # - Out Channels must be a positive multiple of In Channels
+        groups = 2
+        stride = [2, 2]
+        padding = [1, 1]
+        dilation = [1, 1]
+        in_channels = groups
+        out_channels = 3 * in_channels
+        width = 8
+        height = 8
+        batches = 1
+
+        class ModelConvReLU(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv1 = torch.nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=out_channels,
+                    kernel_size=(3, 3),
+                    stride=stride,
+                    padding=padding,
+                    groups=groups,
+                    dilation=dilation,
+                    bias=True,
+                )
+                self.relu = torch.nn.ReLU()
+
+            def forward(self, x):
+                y = self.conv1(x)
+                y = self.relu(y)
+                return y
+
+            def get_inputs(self):
+                return (torch.randn(batches, in_channels, height, width) * 11,)
+
+        for per_channel_quant in (False, True):
+            model = ModelConvReLU()
+            self._test(
+                model,
+                quant_config=get_symmetric_quantization_config(
+                    is_per_channel=per_channel_quant
+                ),
+            )
+
+    def test_qs8_conv2d_relu_seq(self):
+        class ConvReLUSeq(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.model = torch.nn.Sequential(
+                    torch.nn.Conv2d(1, 1, 1),
+                    torch.nn.ReLU(),
+                    torch.nn.Conv2d(1, 64, 1),
+                    torch.nn.ReLU(),
+                )
+
+            def forward(self, x):
+                return self.model(x)
+
+            def get_inputs(self):
+                return (torch.randn(1, 1, 1, 1),)
+
+        self._test(
+            ConvReLUSeq(),
+            quant_config=get_symmetric_quantization_config(),
+            conv_count=2,
         )

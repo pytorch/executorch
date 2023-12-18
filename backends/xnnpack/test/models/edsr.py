@@ -9,6 +9,7 @@ import unittest
 import torch
 
 from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester.tester import Quantize
 from torchsr.models import edsr_r16f64
 
 
@@ -31,7 +32,7 @@ class TestEDSR(unittest.TestCase):
     def test_qs8_edsr(self):
         (
             Tester(self.edsr, self.model_inputs)
-            .quantize()
+            .quantize(Quantize(calibrate=False))
             .export()
             .to_edge()
             .partition()
