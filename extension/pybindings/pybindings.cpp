@@ -550,6 +550,12 @@ struct PyModule final {
       fwrite((uint8_t*)result.buf, 1, result.size, f);
       fclose(f);
       free(result.buf);
+    } else {
+      ET_LOG(
+          Info,
+          "No etdump data found, try rebuilding with "
+          "the CMake option EXECUTORCH_ENABLE_EVENT_TRACER or with "
+          "buck run --config executorch.event_tracer_enabled=true");
     }
   }
 
