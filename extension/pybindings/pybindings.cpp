@@ -135,7 +135,9 @@ class Module final {
   /// outputs.
   std::vector<EValue> run_method(
       const std::string& method_name,
-      const std::vector<EValue>& args) {
+      const std::vector<EValue>& args,
+      const std::optional<std::vector<Span<uint8_t>>>& output_storages =
+          std::nullopt) {
     auto& method = methods_[method_name];
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
@@ -159,6 +161,27 @@ class Module final {
     c10::impl::ExcludeDispatchKeyGuard no_autograd(
         c10::autograd_dispatch_keyset);
 #endif
+    if (output_storages) {
+      if (output_storages->size() != method->outputs_size()) {
+        THROW_IF_ERROR(
+            Error(),
+            "number of output storages %zu does not match number of outputs %zu",
+            output_storages->size(),
+            method->outputs_size());
+      }
+      for (size_t i = 0; i < output_storages->size(); ++i) {
+        Error output_status = method->set_output_data_ptr(
+            (*output_storages)[i].data(), (*output_storages)[i].size(), i);
+        if (output_status != Error::Ok) {
+          // This can error if the outputs are already pre-allocated. Ignore
+          // this error because it doesn't affect correctness, but log it.
+          ET_LOG(
+              Error,
+              "ignoring error from set_output_data_ptr(): 0x%" PRIx32,
+              output_status);
+        }
+      }
+    }
     Error execute_status = method->execute();
     THROW_IF_ERROR(
         execute_status,
@@ -443,7 +466,34 @@ struct PyModule final {
       }
     }
 
-    auto outputs = module_->run_method(method_name, cpp_inputs);
+    const auto& method = module_->get_method(method_name);
+    const auto num_outputs = method.outputs_size();
+    // These output storages will not be used if the Executorch program already
+    // pre-allocated output space. That is represented by an error from
+    // set_output_data_ptr.
+    std::vector<std::unique_ptr<uint8_t[]>> output_storages(num_outputs);
+    std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
+    for (size_t i = 0; i < num_outputs; ++i) {
+      const auto& output_tensor_meta =
+          method.method_meta().output_tensor_meta(i);
+      if (!output_tensor_meta.ok()) {
+        // If the output isn't a tensor it won't have a tensor meta.
+        ET_LOG(
+            Info,
+            "Tensor meta doesn't exist for output %zu, error is 0x%" PRIx32
+            ", skipping allocating storage",
+            i,
+            output_tensor_meta.error());
+        output_storage_spans[i] = Span<uint8_t>();
+        continue;
+      }
+      const size_t output_size = output_tensor_meta.get().nbytes();
+      std::unique_ptr<uint8_t[]> output(new uint8_t[output_size]);
+      output_storage_spans[i] = Span<uint8_t>(output.get(), output_size);
+      output_storages[i] = std::move(output);
+    }
+    auto outputs =
+        module_->run_method(method_name, cpp_inputs, output_storage_spans);
 
     // Retrieve outputs
     const auto outputs_size = outputs.size();
@@ -500,6 +550,12 @@ struct PyModule final {
       fwrite((uint8_t*)result.buf, 1, result.size, f);
       fclose(f);
       free(result.buf);
+    } else {
+      ET_LOG(
+          Info,
+          "No etdump data found, try rebuilding with "
+          "the CMake option EXECUTORCH_ENABLE_EVENT_TRACER or with "
+          "buck run --config executorch.event_tracer_enabled=true");
     }
   }
 

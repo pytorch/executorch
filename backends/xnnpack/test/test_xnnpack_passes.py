@@ -10,15 +10,12 @@ from typing import Optional
 import torch
 from executorch import exir
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
-from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
-from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_capture_config
 from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass import (
     DuplicateDequantNodePass,
 )
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from torch.ao.quantization.backend_config.executorch import (
     get_executorch_backend_config,
@@ -134,90 +131,3 @@ class TestXNNPackPasses(unittest.TestCase):
             7,
             exactly=True,
         ).run(postpass_ep.exported_program.graph_module.code)
-
-    def test_convert_to_linear(self):
-        in_sizes = [1, 4, 4]
-        input_sizes = [4, 37, 17]
-        output_sizes = [4, 17, 37]
-        bias_vals = [True, True, False]
-
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            for i, _ in enumerate(in_sizes):
-                in_size = int(in_sizes[i])
-                input_size = int(input_sizes[i])
-                output_size = int(output_sizes[i])
-                linear = torch.nn.Linear(
-                    input_size, output_size, bias=bias_vals[i]
-                ).eval()
-                example_input = (torch.randn(in_size, input_size),)
-
-                self.capture_and_test_pass(
-                    linear,
-                    example_input,
-                    [ConvertToLinearPass],
-                    1,
-                    expected_node="executorch_exir_dialects_edge__ops_aten_linear_default",
-                    enable_aot=enable_aot,
-                    unlift=unlift,
-                )
-
-    def test_tag_implicit_q_dq_pass(self):
-        class TestModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                x = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
-                    x, 0.12345, 0, -127, 127, torch.int8
-                )
-                x = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
-                    x, 0.12345, 0, -127, 127, torch.int8
-                )
-                x = torch.add(x, x)
-                x = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
-                    x, 0.12345, 0, -127, 127, torch.int8
-                )
-                x = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
-                    x, 0.12345, 0, -127, 127, torch.int8
-                )
-                x = torch.mul(x, x)
-                x = exir_ops.edge.quantized_decomposed.quantize_per_tensor.default(
-                    x, 0.12345, 0, -127, 127, torch.int8
-                )
-                x = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default(
-                    x, 0.12345, 0, -127, 127, torch.int8
-                )
-                x = torch.add(x, x)
-                x = torch.mul(x, x)
-                return x
-
-        test_model = TestModule()
-        test_model.eval()
-
-        sample_inputs = (torch.randn(2, 3),)
-
-        for enable_aot, unlift in [(False, None), (True, True), (True, False)]:
-            tag_pass = [TagImplicitQDqPass]
-            edge_program = self.capture_and_test_pass(
-                test_model,
-                sample_inputs,
-                tag_pass,
-                enable_aot=enable_aot,
-                unlift=unlift,
-            )
-            tagged_graph = edge_program.graph_module.graph
-
-            # The six tagged nodes are:
-            # 1) The dq of the first add input
-            # 2) The dq of the second add input
-            # 3) The q of the add output
-            # 4) The dq of the first mul input
-            # 5) The dq of the second mul input
-            # 6) The q of the mul output
-            self.assertEqual(
-                sum(
-                    node.meta.get(TagImplicitQDqPass.IS_IMPLICIT_Q_DQ_TAG, False)
-                    for node in tagged_graph.nodes
-                ),
-                6,
-            )

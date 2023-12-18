@@ -320,19 +320,19 @@ class Tester:
         self.inputs = inputs
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
-            self._stage_name(Quantize): [self._stage_name(Export)],
-            self._stage_name(Export): [
-                self._stage_name(ToEdge),
+            self.stage_name(Quantize): [self.stage_name(Export)],
+            self.stage_name(Export): [
+                self.stage_name(ToEdge),
             ],
-            self._stage_name(ToEdge): [
-                self._stage_name(Partition),
-                self._stage_name(RunPasses),
+            self.stage_name(ToEdge): [
+                self.stage_name(Partition),
+                self.stage_name(RunPasses),
             ],
-            self._stage_name(RunPasses): [self._stage_name(Partition)],
+            self.stage_name(RunPasses): [self.stage_name(Partition)],
             # TODO Make this Stage optional
-            self._stage_name(Partition): [self._stage_name(ToExecutorch)],
-            self._stage_name(ToExecutorch): [self._stage_name(Serialize)],
-            self._stage_name(Serialize): [],
+            self.stage_name(Partition): [self.stage_name(ToExecutorch)],
+            self.stage_name(ToExecutorch): [self.stage_name(Serialize)],
+            self.stage_name(Serialize): [],
         }
         assert all(
             stage in self.pipeline for stage in self.stages
@@ -348,12 +348,12 @@ class Tester:
         self.stage_output = None
 
     @staticmethod
-    def _stage_name(stage) -> str:
+    def stage_name(stage) -> str:
         t = stage if isinstance(stage, type) else type(stage)
         return t.__qualname__
 
     def _pre(self, stage):
-        name: str = self._stage_name(stage)
+        name: str = self.stage_name(stage)
         assert isinstance(name, str) and name in self.stages and not self.stages[name]
 
         last_artifact = self.original_module
@@ -366,7 +366,7 @@ class Tester:
         return last_artifact
 
     def _post(self, stage):
-        name = self._stage_name(stage)
+        name = self.stage_name(stage)
         assert name in self.stages
         self.stages[name] = stage
 
@@ -432,7 +432,7 @@ class Tester:
     ):
         inputs_to_run = inputs or self.inputs
         # Reference Output
-        self.reference_output = self.stages[self._stage_name(Export)].run_artifact(
+        self.reference_output = self.stages[self.stage_name(Export)].run_artifact(
             inputs_to_run
         )
 
