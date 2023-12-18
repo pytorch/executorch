@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import os
 import subprocess
 import sys
@@ -139,6 +140,8 @@ def build_executorch_binary(
     use_fp16=False,
     use_16bit_quant=False,
     custom_annotations=(),
+    skip_node_id_set=None,
+    skip_node_op_set=None,
 ):
     if not use_fp16:
         quantizer = QnnQuantizer()
@@ -174,7 +177,9 @@ def build_executorch_binary(
             soc_model=arch_table[soc_model],
             debug=False,
             saver=False,
-        )
+        ),
+        skip_node_id_set,
+        skip_node_op_set,
     )
     edge_prog.exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
     edge_prog.exported_program.graph_module.graph.print_tabular()
@@ -232,3 +237,107 @@ def segmentation_metrics(predictions, targets, classes):
     miou = np.mean(iou)
     cls_iou = dict(zip(classes, iou))
     return (pa, mpa, miou, cls_iou)
+
+
+def setup_common_args_and_variables():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "-m",
+        "--model",
+        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "-b",
+        "--build_folder",
+        help="path to cmake binary directory for android, e.g., /path/to/build_android",
+        type=str,
+        required=True,
+    )
+
+    parser.add_argument(
+        "-H",
+        "--host",
+        help="hostname where android device is connected.",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "--ip",
+        help="IPC address for delivering execution result",
+        default="",
+        type=str,
+    )
+
+    parser.add_argument(
+        "--port",
+        help="IPC port for delivering execution result",
+        default=-1,
+        type=int,
+    )
+
+    parser.add_argument(
+        "-S",
+        "--skip_delegate_node_ids",
+        help="If specified, skip delegation for the specified node based on node ids. Node ids should be seperated by comma. e.g., aten_relu_default_10,aten_relu_default_2",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "-f",
+        "--skip_delegate_node_ops",
+        help="If specified, skip delegation for the specified op. Node ops should be seperated by comma. e.g., aten.add.Tensor,aten.relu.default",
+        default=None,
+        type=str,
+    )
+
+    parser.add_argument(
+        "-c",
+        "--compile_only",
+        help="If specified, only compile the model.",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "-s",
+        "--device",
+        help="serial number for android device communicated via ADB.",
+        type=str,
+    )
+
+    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
+    # So maybe it's fine to just use the environment.
+    if "QNN_SDK_ROOT" not in os.environ:
+        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
+    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+
+    if "LD_LIBRARY_PATH" not in os.environ:
+        print(
+            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
+            "not found happen, please follow setup.md to set environment."
+        )
+    else:
+        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
+
+    return parser
+
+
+def parse_skip_delegation_node(args):
+    skip_node_id_set = set()
+    skip_node_op_set = set()
+
+    if args.skip_delegate_node_ids is not None:
+        skip_node_id_set = set(map(str, args.skip_delegate_node_ids.split(",")))
+        print("Skipping following node ids: ", skip_node_id_set)
+
+    if args.skip_delegate_node_ops is not None:
+        skip_node_op_set = set(map(str, args.skip_delegate_node_ops.split(",")))
+        print("Skipping following node ops: ", skip_node_op_set)
+
+    return skip_node_id_set, skip_node_op_set
