@@ -8,6 +8,7 @@
 #pragma once
 
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
+#include <executorch/backends/qualcomm/runtime/Utils.h>
 
 #include <memory>
 #include <vector>
@@ -22,7 +23,8 @@ class HtpGraphCustomConfig {
       const QnnExecuTorchHtpBackendOptions& htp_options)
       : htp_options_(htp_options) {}
 
-  std::vector<QnnGraph_CustomConfig_t> CreateGraphCustomConfig();
+  std::vector<QnnGraph_CustomConfig_t> CreateGraphCustomConfig(
+      const HtpInfo& qcom_target_soc_info);
 
  private:
   QnnHtpGraph_CustomConfig_t* AllocGraphCustomConfig() {

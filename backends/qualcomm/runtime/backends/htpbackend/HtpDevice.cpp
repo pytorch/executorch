@@ -8,14 +8,31 @@
 
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
-#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpUtils.h>
 
 #include "Saver/QnnSaverCommon.h"
 
 namespace torch {
 namespace executor {
 namespace qnn {
+
+// constexpr config values
+constexpr const int kSleepMinLatency = 40;
+constexpr const int kSleepLowLatency = 100;
+constexpr const int kSleepMediumLatency = 1000;
+constexpr const int kSleepHighLatency = 2000;
+constexpr const int kDcvsDisable = 0;
+constexpr const int kDcvsEnable = 1;
+
+// default rpc control latency - 100 us
+constexpr const int kRpcControlLatency = 100;
+// default rpc polling time for high power modes - 9999 us
+constexpr const int kRpcPollingTimeHighPower = 9999;
+// default rpc polling time for low power modes - 0 us
+constexpr const int kRpcPollingTimeLowPower = 0;
+
+// the number of Rpc Polling config
 constexpr const int kNumRpcPollingPowerConfigs = 2;
+
 namespace {
 template <typename... Args>
 Qnn_ErrorHandle_t HtpPerfInfraStubForSaver(Args... args) {
@@ -286,27 +303,14 @@ QnnHtpDevice_CustomConfig_t* HtpDevice::AllocDeviceCustomConfig() {
 Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
   std::vector<QnnDevice_CustomConfig_t> ret;
   QnnHtpDevice_CustomConfig_t* p_custom_config = nullptr;
+  HtpInfo qcom_target_soc_info;
 
-  const std::map<QcomChipset, HtpInfo>& soc_info_table = PopulateSocInfoTable();
-  auto soc_pair = soc_info_table.find(htp_options_.soc_model);
-  if (soc_pair == soc_info_table.end()) {
-    QcomChipset default_soc_model = QcomChipset::SM8550;
-    QNN_EXECUTORCH_LOG(
-        kLogLevelWarn,
-        "[Qnn ExecuTorch] Failed to get soc info for "
-        "soc model %d. Using default soc_model=%d",
-        htp_options_.soc_model,
-        default_soc_model);
-
-    qcom_target_soc_info_ = soc_info_table.find(default_soc_model)->second;
-  } else {
-    qcom_target_soc_info_ = soc_pair->second;
-  }
+  qcom_target_soc_info = GetHtpInfo(htp_options_.soc_model);
 
   p_custom_config = AllocDeviceCustomConfig();
   p_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_ARCH;
   p_custom_config->arch.deviceId = 0;
-  p_custom_config->arch.arch = qcom_target_soc_info_.m_htpArch;
+  p_custom_config->arch.arch = qcom_target_soc_info.m_htpArch;
   ret.push_back(static_cast<QnnDevice_CustomConfig_t>(p_custom_config));
 
   switch (htp_options_.pd_session) {
@@ -324,7 +328,7 @@ Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
 
   const std::vector<QnnDevice_PlatformInfo_t*>& device_platform_info =
       htp_device_platform_info_config_->CreateDevicePlatformInfo(
-          qcom_target_soc_info_);
+          qcom_target_soc_info);
 
   uint32_t num_custom_configs = ret.size() + device_platform_info.size();
   device_config_.resize(num_custom_configs);
