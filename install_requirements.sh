@@ -37,5 +37,8 @@ pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
 
+SEGMENT_ANYTHING_VERSION=1.0
+pip install --force-reinstall --pre segment-anything==${SEGMENT_ANYTHING_VERSION}
+
 # Install flatc dependency
 bash build/install_flatc.sh

@@ -25,6 +25,7 @@ MODEL_NAME_TO_MODEL = {
     "ic4": ("inception_v4", "InceptionV4Model"),
     "resnet18": ("resnet", "ResNet18Model"),
     "resnet50": ("resnet", "ResNet50Model"),
+    "sam": ("sam", "SegmentAnythingModel"),
 }
 
 __all__ = [

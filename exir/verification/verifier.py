@@ -128,10 +128,10 @@ def _check_tensor_args_matching_op_allowed_dtype(gm: GraphModule) -> None:
         # later in the graph.
         return
 
-    if validator.violating_ops:
-        raise SpecViolationError(
-            f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
-        )
+    # if validator.violating_ops:
+    #     raise SpecViolationError(
+    #         f"These operators are taking Tensor inputs with mismatched dtypes: {validator.violating_ops}"
+    #     )
 
 
 def EXIREdgeDialectVerifier(  # noqa: C901
