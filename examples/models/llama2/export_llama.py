@@ -27,9 +27,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
     parser.add_argument(
-        "-c", "--checkpoint", default=ckpt_dir / "consolidated.00.pth", help="checkpoint.pth"
+        "-c",
+        "--checkpoint",
+        default=ckpt_dir / "consolidated.00.pth",
+        help="checkpoint.pth",
     )
-    parser.add_argument("-p", "--params", default=ckpt_dir / "params.json", help="config.json")
+    parser.add_argument(
+        "-p", "--params", default=ckpt_dir / "params.json", help="config.json"
+    )
 
     args = parser.parse_args()
 
