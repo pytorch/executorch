@@ -10,11 +10,7 @@
 
 import json
 import math
-<<<<<<< HEAD
 from dataclasses import dataclass
-from pathlib import Path
-=======
->>>>>>> c8c98d0e ([llama2] Add dynamic shape support)
 from typing import Optional, Tuple
 
 import torch
@@ -289,7 +285,7 @@ class Llama2Model(EagerModelBase):
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128

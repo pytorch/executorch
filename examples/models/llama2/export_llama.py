@@ -12,17 +12,6 @@ from pathlib import Path
 
 import torch
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
-
-from torch._subclasses import fake_tensor
-from torch.fx.experimental.symbolic_shapes import (
-    ConstraintViolationError,
-    DimDynamic,
-    ShapeEnv,
-    StatelessSymbolicContext,
-    StrictMinMaxConstraint,
-)
-from torch.utils._sympy.value_ranges import ValueRanges
 
 from ...portable.utils import export_to_edge, save_pte_program
 
@@ -38,9 +27,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
     parser.add_argument(
-        "-c", "--checkpoint", default="consolidated.00.pth", help="checkpoint.pth"
+        "-c", "--checkpoint", default=ckpt_dir / "consolidated.00.pth", help="checkpoint.pth"
     )
-    parser.add_argument("-p", "--params", default="params.json", help="config.json")
+    parser.add_argument("-p", "--params", default=ckpt_dir / "params.json", help="config.json")
 
     args = parser.parse_args()
 
@@ -50,7 +39,7 @@ def main() -> None:
 
     dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
-    edge_manager: EdgeProgramManager = export_to_edge(
+    edge_manager = export_to_edge(
         model,
         example_inputs,
         dynamic_shapes={"tokens": {1: dim}},
