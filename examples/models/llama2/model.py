@@ -285,7 +285,8 @@ class Llama2Model(EagerModelBase):
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
-        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        # flake8: noqa: TOR102
+        checkpoint = torch.load(checkpoint_path, map_location=device)
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128
