@@ -468,7 +468,7 @@ struct PyModule final {
 
     const auto& method = module_->get_method(method_name);
     const auto num_outputs = method.outputs_size();
-    // These output storages will not be used if the Executorch program already
+    // These output storages will not be used if the ExecuTorch program already
     // pre-allocated output space. That is represented by an error from
     // set_output_data_ptr.
     std::vector<std::unique_ptr<uint8_t[]>> output_storages(num_outputs);
