@@ -64,7 +64,9 @@ TIME_SCALE_DICT = {
 
 
 # Model Debug Output
-InferenceOutput: TypeAlias = Union[torch.Tensor, int, float, str, bool, None]
+InferenceOutput: TypeAlias = Union[
+    torch.Tensor, List[torch.Tensor], int, float, str, bool, None
+]
 ProgramOutput: TypeAlias = List[InferenceOutput]
 
 
@@ -135,6 +137,10 @@ def inflate_runtime_output(
             return value.double_value.double_val
         case ValueType.TENSOR.value:
             return parse_tensor_value(value.tensor)
+        case ValueType.TENSOR_LIST.value:
+            if value.tensor_list is None:
+                raise ValueError("Expected TensorList value, `None` provided")
+            return [parse_tensor_value(t) for t in value.tensor_list.tensors]
 
 
 def find_populated_event(event: flatcc.Event) -> Union[ProfileEvent, DebugEvent]:

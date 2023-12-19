@@ -12,6 +12,7 @@
 #include <flatcc/flatcc_types.h>
 #include <stdio.h>
 #include <string.h>
+#include "executorch/runtime/core/exec_aten/exec_aten.h"
 #include "executorch/runtime/core/exec_aten/util/scalar_type_util.h"
 #include "executorch/runtime/platform/assert.h"
 #include "executorch/sdk/etdump/emitter.h"
@@ -20,6 +21,7 @@ namespace torch {
 namespace executor {
 
 namespace {
+
 executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
     exec_aten::ScalarType tensor_scalar_type) {
   switch (tensor_scalar_type) {
@@ -45,6 +47,33 @@ executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
           "This ScalarType = %hhd is not yet supported in ETDump",
           tensor_scalar_type);
   }
+}
+
+etdump_Tensor_ref_t add_tensor_entry(
+    flatcc_builder_t* builder,
+    const exec_aten::Tensor& tensor,
+    long offset) {
+  etdump_Tensor_start(builder);
+
+  etdump_Tensor_scalar_type_add(
+      builder, get_flatbuffer_scalar_type(tensor.scalar_type()));
+  etdump_Tensor_sizes_start(builder);
+
+  for (auto dim : tensor.sizes()) {
+    int64_t cast_dim = static_cast<int64_t>(dim);
+    etdump_Tensor_sizes_push(builder, &cast_dim);
+  }
+  etdump_Tensor_sizes_end(builder);
+
+  etdump_Tensor_strides_start(builder);
+  for (auto dim : tensor.strides()) {
+    int64_t cast_dim = static_cast<int64_t>(dim);
+    etdump_Tensor_strides_push(builder, &cast_dim);
+  }
+  etdump_Tensor_strides_end(builder);
+  etdump_Tensor_offset_add(builder, offset);
+
+  return etdump_Tensor_end(builder);
 }
 
 static uint8_t* alignPointer(void* ptr, size_t alignment) {
@@ -361,28 +390,8 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
     case Tag::Tensor: {
       exec_aten::Tensor tensor = evalue.toTensor();
       long offset = copy_tensor_to_debug_buffer(tensor);
-
-      etdump_Tensor_start(builder);
-
-      etdump_Tensor_scalar_type_add(
-          builder, get_flatbuffer_scalar_type(tensor.scalar_type()));
-      etdump_Tensor_sizes_start(builder);
-
-      for (auto dim : tensor.sizes()) {
-        int64_t cast_dim = static_cast<int64_t>(dim);
-        etdump_Tensor_sizes_push(builder, &cast_dim);
-      }
-      etdump_Tensor_sizes_end(builder);
-
-      etdump_Tensor_strides_start(builder);
-      for (auto dim : tensor.strides()) {
-        int64_t cast_dim = static_cast<int64_t>(dim);
-        etdump_Tensor_strides_push(builder, &cast_dim);
-      }
-      etdump_Tensor_strides_end(builder);
-      etdump_Tensor_offset_add(builder, offset);
-
-      etdump_Tensor_ref_t tensor_ref = etdump_Tensor_end(builder);
+      etdump_Tensor_ref_t tensor_ref =
+          add_tensor_entry(builder, tensor, offset);
 
       etdump_Value_start(builder);
       etdump_Value_val_add(builder, etdump_ValueType_Tensor);
@@ -394,7 +403,31 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
       auto value_ref = etdump_Value_end(builder);
 
       etdump_DebugEvent_debug_entry_add(builder, value_ref);
+      break;
+    }
 
+    case Tag::ListTensor: {
+      exec_aten::ArrayRef<exec_aten::Tensor> tensors = evalue.toTensorList();
+      etdump_Tensor_vec_start(builder);
+      for (size_t i = 0; i < tensors.size(); ++i) {
+        long offset = copy_tensor_to_debug_buffer(tensors[i]);
+        etdump_Tensor_vec_push(
+            builder, add_tensor_entry(builder, tensors[i], offset));
+      }
+      etdump_Tensor_vec_ref_t tensor_vec_ref = etdump_Tensor_vec_end(builder);
+      etdump_TensorList_ref_t tensor_list_ref =
+          etdump_TensorList_create(builder, tensor_vec_ref);
+
+      etdump_Value_start(builder);
+      etdump_Value_val_add(builder, etdump_ValueType_TensorList);
+      etdump_Value_tensor_list_add(builder, tensor_list_ref);
+      if (evalue_type == LoggedEValueType::kProgramOutput) {
+        auto bool_ref = etdump_Bool_create(builder, FLATBUFFERS_TRUE);
+        etdump_Value_output_add(builder, bool_ref);
+      }
+      auto value_ref = etdump_Value_end(builder);
+
+      etdump_DebugEvent_debug_entry_add(builder, value_ref);
       break;
     }
 
