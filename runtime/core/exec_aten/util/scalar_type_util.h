@@ -606,7 +606,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
         ET_CHECK_MSG(                                \
             false,                                   \
             "Unhandled dtype %s for %s",             \
-            toString(_st),                           \
+            torch::executor::toString(_st),          \
             et_switch_name);                         \
     }                                                \
   }()
