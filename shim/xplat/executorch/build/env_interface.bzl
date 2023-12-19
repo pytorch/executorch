@@ -128,6 +128,7 @@ def _remove_unsupported_kwargs(kwargs):
     """
     kwargs.pop("tags", None)  # tags = ["long_running"] doesn't work in oss
     kwargs.pop("types", None)  # will have to find a different way to handle .pyi files in oss
+    kwargs.pop("resources", None)  # doesn't support resources in python_library/python_binary yet
     return kwargs
 
 def _patch_headers(kwargs):
