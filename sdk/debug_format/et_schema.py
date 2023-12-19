@@ -43,6 +43,7 @@ class RESERVED_METADATA_ARG(Enum):
     MEMORY_USAGE = "memory_usage"
     DEBUG_ENTRY = "debug_entry"
     STACK_TRACE = "stack_trace"
+    DEBUG_DATA = "debug_data"
 
     METRICS_KEYWORD = "metrics"
     PROFILE_SUMMARY_COLDSTART = "Coldstart"
