@@ -857,6 +857,7 @@ class Inspector:
         delegate_metadata_parser: Optional[
             Callable[[List[str]], Dict[str, Any]]
         ] = None,
+        enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
         Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
@@ -919,6 +920,7 @@ class Inspector:
         # _consume_etrecord() will populate the _reference_outputs dict
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
+        self._enable_module_hierarchy = enable_module_hierarchy
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -954,7 +956,10 @@ class Inspector:
             )
 
         # (2) Event Metadata Association
-        self.op_graph_dict = gen_graphs_from_etrecord(etrecord=self._etrecord)
+        self.op_graph_dict = gen_graphs_from_etrecord(
+            etrecord=self._etrecord,
+            enable_module_hierarchy=self._enable_module_hierarchy,
+        )
         debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(
             self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
         )
