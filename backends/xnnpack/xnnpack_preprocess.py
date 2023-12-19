@@ -191,11 +191,11 @@ class XnnpackBackend(BackendDetails):
     ) -> PreprocessResult:
         ep = copy.deepcopy(edge_program)
         # Need to wrap EP here because xnnpack does addmm to linear
-        # transforms. This makes resulting graph not aten comliant
+        # transforms. This makes resulting graph not aten compliant
         # as aten.linear is not a core aten op.
         # Ideal fix would be to have XNNPACK verifier that bypass
         # most checks but the base Verifier itself has some strict changes
-        # and to bypass those, we would basicallyy copy what EdgeDialectVerifier
+        # and to bypass those, we would basically copy what EdgeDialectVerifier
         # does. So for now instead of copy pasting that, just instantiate
         # EdgeDialectVerifier, but disable it.
         # TODO (task link) to implement NullVerifier or something similar

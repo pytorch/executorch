@@ -11,7 +11,7 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestLinear(unittest.TestCase):
-    def _test_linear(self, make_module, uses_bias):
+    def _test_linear(self, make_module, uses_bias, quant=False):
         aten_op, edge_op = (
             (
                 "aten.addmm.default",
@@ -40,32 +40,38 @@ class TestLinear(unittest.TestCase):
             module = make_module(input_size, output_size).eval()
             inputs = (torch.randn(in_size, input_size),)
 
-            (
-                Tester(module, inputs)
-                .export()
-                .check_count({aten_op: 1})
-                .to_edge()
-                .check_count({edge_op: 1})
-                .partition()
-                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-                .check_not([edge_op])
-                .to_executorch()
-                .serialize()
-                .run_method()
-                .compare_outputs()
-            )
+            tester = Tester(module, inputs)
+
+            if quant:
+                tester.quantize()
+
+            tester.export()
+            tester.check_count({aten_op: 1})
+            if quant:
+                tester.check(["torch.ops.quantized_decomposed"])
+
+            tester.to_edge()
+            tester.check_count({edge_op: 1})
+
+            tester.partition()
+            tester.check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+
+            if quant:
+                tester.check_not([edge_op, "torch.ops.quantized_decomposed"])
+
+            tester.to_executorch()
+            tester.serialize()
+            tester.run_method()
+            tester.compare_outputs()
 
     def test_fp32_linear(self):
-        self._test_linear(
-            lambda in_size, out_size: torch.nn.Linear(in_size, out_size, bias=False),
-            uses_bias=False,
-        )
-
-    def test_fp32_linear_bias(self):
-        self._test_linear(
-            lambda in_size, out_size: torch.nn.Linear(in_size, out_size, bias=True),
-            uses_bias=True,
-        )
+        for use_bias in (True, False):
+            self._test_linear(
+                lambda in_size, out_size: torch.nn.Linear(
+                    in_size, out_size, bias=use_bias  # noqa
+                ),
+                uses_bias=use_bias,
+            )
 
     def test_fp32_addmm(self):
         """
@@ -85,3 +91,12 @@ class TestLinear(unittest.TestCase):
             lambda in_size, out_size: AddMMModule(in_size, out_size),
             uses_bias=True,
         )
+
+    def test_qs8_linear(self):
+        for use_bias in (True, False):
+            self._test_linear(
+                lambda in_size, out_size: torch.nn.Linear(
+                    in_size, out_size, bias=use_bias  # noqa
+                ),
+                uses_bias=use_bias,
+            )

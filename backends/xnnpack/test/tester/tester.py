@@ -7,7 +7,7 @@
 import copy
 import sys
 from abc import ABC, abstractmethod
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
@@ -435,6 +435,24 @@ class Tester:
             FileCheck().check_count(key, count, exactly=True).run(
                 self.stages[self.cur].graph_module.code
             )
+        return self
+
+    def check_node_count(self, input: Dict[Any, int]):
+        # Count the occurances of each target in the graph.
+        target_ops = [
+            node.target
+            for node in self.stages[self.cur].graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        op_counts = Counter(target_ops)
+
+        for key, count in input.items():
+            if count != op_counts[key]:
+                print(f"Nodes: {op_counts}")
+                raise AssertionError(
+                    f"Expected {count} {key} nodes but found {op_counts[key]}."
+                )
+
         return self
 
     def run_method(

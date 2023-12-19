@@ -92,3 +92,42 @@ class TestMaxPool2d(unittest.TestCase):
                 }
             )
         )
+
+    def test_qs8_maxpool2d(self):
+        class MaxPool(torch.nn.Module):
+            def __init__(self, maxpool_params):
+                super().__init__()
+                self.max = torch.nn.MaxPool2d(*maxpool_params)
+
+            def forward(self, x):
+                z = x + x
+                return self.max(z)
+
+        # Parameter order is kernel_size, stride, padding.
+        for maxpool_params in [(4,), (4, 2), (4, 2, 2)]:
+            inputs = (torch.ones(1, 2, 8, 8),)
+            (
+                Tester(MaxPool(maxpool_params), inputs)
+                .quantize()
+                .export()
+                .check_count({"torch.ops.aten.max_pool2d_with_indices.default": 1})
+                .check(["torch.ops.quantized_decomposed"])
+                .to_edge()
+                .check_count(
+                    {
+                        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default": 1
+                    }
+                )
+                .partition()
+                .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+                .check_not(
+                    [
+                        "executorch_exir_dialects_edge__ops_aten_max_pool2d_with_indices_default",
+                        "torch.ops.quantized_decomposed",
+                    ]
+                )
+                .to_executorch()
+                .serialize()
+                .run_method()
+                .compare_outputs()
+            )
