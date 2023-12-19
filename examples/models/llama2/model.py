@@ -11,7 +11,6 @@
 import json
 import math
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional, Tuple
 
 import torch
@@ -115,7 +114,6 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
 def apply_rotary_emb(
     xq: torch.Tensor, xk: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-
     xq_r, xq_i = xq.float().reshape(xq.shape[:-1] + (-1, 2)).unbind(-1)
     xk_r, xk_i = xk.float().reshape(xk.shape[:-1] + (-1, 2)).unbind(-1)
 
@@ -143,6 +141,7 @@ class Attention(nn.Module):
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
+        # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -221,7 +220,7 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin):
+    def forward(self, x, freqs_cos, freqs_sin):  # x: 1xN
         h = x + self.attention.forward(self.attention_norm(x), freqs_cos, freqs_sin)
         out = h + self.feed_forward.forward(self.ffn_norm(h))
         return out
@@ -267,19 +266,17 @@ class Llama2Model(EagerModelBase):
     def __init__(self, **kwargs):
         import pkg_resources
 
-        ckpt_dir = Path(__file__).absolute().parent
-
         # Get the path to the resource file
         params_path = (
-            Path(ckpt_dir) / kwargs["checkpoint"]
-            if "checkpoint" in kwargs
+            kwargs["params"]
+            if "params" in kwargs
             else pkg_resources.resource_filename(
                 "executorch.examples.portable.scripts", "demo_config.json"
             )
         )
         checkpoint_path = (
-            Path(ckpt_dir) / kwargs["params"]
-            if "params" in kwargs
+            kwargs["checkpoint"]
+            if "checkpoint" in kwargs
             else pkg_resources.resource_filename(
                 "executorch.examples.portable.scripts", "demo_rand_params.pth"
             )
@@ -288,6 +285,7 @@ class Llama2Model(EagerModelBase):
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
+        # flake8: noqa: TOR102
         checkpoint = torch.load(checkpoint_path, map_location=device)
         with open(params_path, "r") as f:
             params = json.loads(f.read())
@@ -309,4 +307,4 @@ class Llama2Model(EagerModelBase):
 
     @staticmethod
     def get_example_inputs():
-        return (torch.tensor([[1]]),)
+        return (torch.tensor([[1, 2]], dtype=torch.long),)
