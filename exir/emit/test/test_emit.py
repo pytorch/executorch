@@ -489,9 +489,14 @@ class TestEmit(unittest.TestCase):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
         x = (torch.randn(1, 1, 2, 2),)
-        program = to_edge(export(M(), x)).to_executorch().executorch_program
+        program = (
+            to_edge(export(M(), x))
+            .transform([ConstPropPass()])
+            .to_executorch()
+            .executorch_program
+        )
         self.assertIsInstance(
-            program.execution_plan[0].values[28].val, schema.OptionalTensorList
+            program.execution_plan[0].values[4].val, schema.OptionalTensorList
         )
 
     def test_emit_cond(self) -> None:
