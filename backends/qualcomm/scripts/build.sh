@@ -56,18 +56,33 @@ if [ "$BUILD_AARCH64" = true ]; then
     if [ "$CLEAN" = true ]; then
         rm -rf $BUILD_ROOT && mkdir $BUILD_ROOT
     fi
-    cd $BUILD_ROOT
 
-    cmake .. -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+    cd $BUILD_ROOT
+    cmake .. \
+        -DBUCK2=buck2 \
+        -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DEXECUTORCH_BUILD_QNN=ON \
-        -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-        -DBUCK2=buck2
+        -B$BUILD_ROOT
 
-    cmake --build $BUILD_ROOT -j16
+    cmake --build $BUILD_ROOT -j16 --target install
+
+    EXAMPLE_ROOT=examples/qualcomm
+    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;${BUILD_ROOT}/backends/qualcomm;${BUILD_ROOT}/kernels/portable"
+
+    cmake $PRJ_ROOT/$EXAMPLE_ROOT \
+        -DBUCK2=buck2 \
+        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+        -DANDROID_ABI='arm64-v8a' \
+        -DANDROID_NATIVE_API_LEVEL=23 \
+        -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        -B$EXAMPLE_ROOT
+
+    cmake --build $EXAMPLE_ROOT -j16
 fi
 
 if [ "$BUILD_X86_64" = true ]; then

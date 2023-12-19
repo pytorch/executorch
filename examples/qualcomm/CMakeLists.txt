@@ -11,33 +11,61 @@ endif()
 cmake_minimum_required(VERSION 3.19)
 project(qualcomm_runner_example)
 
+# Find prebuilt libraries. executorch package should contain
+# portable_ops_lib, etdump, bundled_program.
+find_package(executorch CONFIG REQUIRED)
+find_package(gflags REQUIRED)
+find_library(android_log log)
+set(qnn_lib_list
+    qnn_backend
+    qnn_backend_cache
+    qnn_context
+    qnn_device
+    qnn_executorch_backend
+    qnn_executorch_logging
+    qnn_factory
+    qnn_graph
+    qnn_implementation
+    qnn_logger
+    qnn_manager
+    qnn_sys_implementation
+    utils
+    wrappers
+    ${CMAKE_DL_LIBS}
+    ${android_log}
+)
+foreach(lib ${qnn_lib_list})
+    set(lib_var "LIB_${lib}")
+    find_library(${lib_var} ${lib} CMAKE_FIND_ROOT_PATH_BOTH)
+    if(NOT ${lib_var})
+        message("${lib} library is not found")
+    else()
+        add_library(${lib} STATIC IMPORTED)
+        set_target_properties(
+            ${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}"
+        )
+        target_include_directories(${lib} INTERFACE ${_root})
+    endif()
+endforeach()
+
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-# Find prebuilt libraries. executorch package should contain
-# portable_ops_lib, etdump, bundled_program.
-find_package(executorch CONFIG REQUIRED)
-find_package(
-  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
-)
+
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-set(
-  EXECUTORCH_SRCS_FILE
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+set(EXECUTORCH_SRCS_FILE
   "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
 )
-
 extract_sources(${EXECUTORCH_SRCS_FILE})
-
 include(${EXECUTORCH_SRCS_FILE})
 
 get_filename_component(EXECUTORCH_SOURCE_DIR
@@ -45,6 +73,7 @@ get_filename_component(EXECUTORCH_SOURCE_DIR
     ABSOLUTE
 )
 set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
+
 list(
     TRANSFORM
     _qnn_executor_runner__srcs
@@ -65,9 +94,35 @@ list(
 
 add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
 
+add_library(portable_ops)
+find_file(LIB_FILES
+    NAMES
+    "RegisterCodegenUnboxedKernelsEverything.cpp"
+    "Functions.h"
+    "NativeFunctions.h"
+    CMAKE_FIND_ROOT_PATH_BOTH
+)
+target_sources(portable_ops
+    PRIVATE
+    ${LIB_FILES}
+)
+target_include_directories(portable_ops
+    PUBLIC
+    ${_common_include_directories}
+)
+target_link_libraries(portable_ops
+    PRIVATE executorch
+    INTERFACE portable_kernels
+)
+target_link_options_shared_lib(portable_ops)
+
+target_include_directories(qnn_executor_runner
+    PUBLIC
+    ${_common_include_directories}
+)
 target_link_libraries(qnn_executor_runner
-    ${_executor_runner_libs}
-    qnn_executorch_backend
+    ${qnn_lib_list}
+    portable_ops
     gflags
 )
 target_compile_options(qnn_executor_runner

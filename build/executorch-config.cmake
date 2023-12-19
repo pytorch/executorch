@@ -15,7 +15,9 @@ cmake_minimum_required(VERSION 3.19)
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
 add_library(executorch STATIC IMPORTED)
 find_library(
-    EXECUTORCH_LIBRARY_PATH executorch HINTS "${_root}"
+    EXECUTORCH_LIBRARY_PATH executorch
+    HINTS "${_root}"
+    CMAKE_FIND_ROOT_PATH_BOTH
 )
 set_target_properties(
     executorch PROPERTIES IMPORTED_LOCATION "${EXECUTORCH_LIBRARY_PATH}"
@@ -24,7 +26,9 @@ target_include_directories(executorch INTERFACE ${_root})
 
 add_library(portable_kernels STATIC IMPORTED)
 find_library(
-    PORTABLE_KERNELS_PATH portable_kernels HINTS "${_root}"
+    PORTABLE_KERNELS_PATH portable_kernels
+    HINTS "${_root}"
+    CMAKE_FIND_ROOT_PATH_BOTH
 )
 set_target_properties(
     portable_kernels PROPERTIES IMPORTED_LOCATION "${PORTABLE_KERNELS_PATH}"
@@ -32,12 +36,11 @@ set_target_properties(
 target_include_directories(portable_kernels INTERFACE ${_root})
 
 set(lib_list
-    etdump bundled_program extension_data_loader flatcc mpsdelegate
-    qnn_executorch_backend)
+    etdump bundled_program extension_data_loader flatcc mpsdelegate)
 foreach(lib ${lib_list})
     # Name of the variable which stores result of the find_library search
     set(lib_var "LIB_${lib}")
-    find_library(${lib_var} ${lib} HINTS "${_root}")
+    find_library(${lib_var} ${lib} HINTS "${_root}" CMAKE_FIND_ROOT_PATH_BOTH)
     if(NOT ${lib_var})
         message("${lib} library is not found.
             If needed rebuild with the proper options in CMakeLists.txt")
