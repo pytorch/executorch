@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
 def main() -> None:
-    ckpt_dir = Path(__file__).absolute().parent
+    ckpt_dir = Path(__file__).absolute().parent / "params"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
     parser.add_argument(

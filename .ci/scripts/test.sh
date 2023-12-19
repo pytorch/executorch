@@ -45,13 +45,10 @@ build_cmake_executor_runner() {
 
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
-    cd examples/third-party/llama
-    pip install -e .
-    cd ../../..
     "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama
-  else
-    "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
   fi
+  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
+  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
 
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
