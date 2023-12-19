@@ -225,10 +225,12 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         For node q, if op1 or op2 is good, q should be good
         TODO: q -> op -> dq, real q not handled right now
         """
-        first = XnnpackOperatorSupport.check_constraint(q.args[0], ep)
-        dq = list(q.users.keys())[0]
-        op2 = list(dq.users.keys())[0]
-        return first or XnnpackOperatorSupport.check_constraint(op2, ep)
+        if XnnpackOperatorSupport.check_constraint(q.args[0], ep):
+            return True
+        else:
+            dq = list(q.users.keys())[0]
+            op2 = list(dq.users.keys())[0]
+            return XnnpackOperatorSupport.check_constraint(op2, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default)
     def dequant_per_tensor_default(

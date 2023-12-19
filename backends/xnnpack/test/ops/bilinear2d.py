@@ -66,7 +66,6 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             return a
 
     ops = {
-        "executorch_exir_dialects_edge__ops_aten_ceil_default",
         "executorch_exir_dialects_edge__ops_aten_sub_Tensor",
         "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
         "executorch_exir_dialects_edge__ops_aten_index_Tensor",

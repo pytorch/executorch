@@ -19,7 +19,7 @@ class TestClamp(unittest.TestCase):
 
         def forward(self, x):
             z = torch.clamp(x, min=self.min_val, max=self.max_val)
-            return z
+            return z + z
 
     def test_fp32_clamp(self):
         inputs = (torch.randn(1, 4, 122, 122) * 2,)
@@ -66,6 +66,30 @@ class TestClamp(unittest.TestCase):
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_clamp(self):
+        inputs = (torch.randn(1, 4, 122, 122),)
+        (
+            Tester(self.Clamp(min_val=-1, max_val=1), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.clamp.default": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_clamp_default": 1})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_clamp_default",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
             .to_executorch()
             .serialize()
             .run_method()
