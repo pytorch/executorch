@@ -200,7 +200,7 @@ class FXOperatorGraph(OperatorGraph):
     def gen_operator_graph(
         model: torch.fx.GraphModule,
         skip_stack_trace: Optional[bool] = False,
-        enable_module_hierarchy=False,
+        enable_module_hierarchy: bool = False,
     ) -> FXOperatorGraph:
         graph: torch.fx.Graph = model.graph
 
