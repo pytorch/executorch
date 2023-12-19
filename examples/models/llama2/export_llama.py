@@ -29,11 +29,11 @@ def main() -> None:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=ckpt_dir / "consolidated.00.pth",
+        default=ckpt_dir / "demo_rand_params.pth",
         help="checkpoint.pth",
     )
     parser.add_argument(
-        "-p", "--params", default=ckpt_dir / "params.json", help="config.json"
+        "-p", "--params", default=ckpt_dir / "demo_config.json", help="config.json"
     )
 
     args = parser.parse_args()
