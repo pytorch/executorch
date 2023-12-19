@@ -7,10 +7,7 @@
 import unittest
 
 import torch
-from executorch.backends.xnnpack.test.test_xnnpack_utils import (
-    randomize_bn,
-    TestXNNPACK,
-)
+from executorch.backends.xnnpack.test.test_xnnpack_utils import TestXNNPACK
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
