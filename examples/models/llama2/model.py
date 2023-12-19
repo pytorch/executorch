@@ -11,6 +11,7 @@
 import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Tuple
 
 import torch
@@ -266,20 +267,33 @@ class Llama2Model(EagerModelBase):
     def __init__(self, **kwargs):
         import pkg_resources
 
-        # Get the path to the resource file
-        params_path = (
-            kwargs["params"]
-            if "params" in kwargs
-            else pkg_resources.resource_filename(
-                "executorch.examples.portable.scripts", "demo_config.json"
+        # default path to the resource file
+        # It currently supports 3 ways of specifying the checkpoint location:
+        # 1. Using default path locates in examples/models/llama2/params
+        # 2. Passing in the checkpoint path and params via kwargs
+        # 3. Using the path from pkg_resources, only works with buck2
+        try:
+            # The 3rd way, if we can import this path, we are running with buck2, all resources can be accessed with pkg_resources.resource_filename
+            # pyre-ignore
+            from executorch.examples.models.llama2 import params
+
+            ckpt_dir = Path(
+                pkg_resources.resource_filename(
+                    "executorch.examples.models.llama2", "params"
+                )
             )
-        )
+        except:
+            # The 1st way
+            ckpt_dir = Path(__file__).absolute().parent / "params"
+
         checkpoint_path = (
             kwargs["checkpoint"]
             if "checkpoint" in kwargs
-            else pkg_resources.resource_filename(
-                "executorch.examples.portable.scripts", "demo_rand_params.pth"
-            )
+            else ckpt_dir / "demo_rand_params.pth"
+        )
+
+        params_path = (
+            kwargs["params"] if "params" in kwargs else ckpt_dir / "demo_config.json"
         )
 
         # The example is using a dummy small model with random weights for demo purpose only.
