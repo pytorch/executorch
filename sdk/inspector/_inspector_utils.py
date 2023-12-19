@@ -194,17 +194,21 @@ def is_debug_output(value: Value) -> bool:
 
 
 def gen_graphs_from_etrecord(
-    etrecord: ETRecord,
+    etrecord: ETRecord, enable_module_hierarchy: bool = False
 ) -> Mapping[str, OperatorGraph]:
     op_graph_map = {}
     if etrecord.graph_map is not None:
         op_graph_map = {
-            name: FXOperatorGraph.gen_operator_graph(exported_program.graph_module)
+            name: FXOperatorGraph.gen_operator_graph(
+                exported_program.graph_module,
+                enable_module_hierarchy=enable_module_hierarchy,
+            )
             for name, exported_program in etrecord.graph_map.items()
         }
     if etrecord.edge_dialect_program is not None:
         op_graph_map[EDGE_DIALECT_GRAPH_KEY] = FXOperatorGraph.gen_operator_graph(
-            etrecord.edge_dialect_program.graph_module
+            etrecord.edge_dialect_program.graph_module,
+            enable_module_hierarchy=enable_module_hierarchy,
         )
 
     return op_graph_map
