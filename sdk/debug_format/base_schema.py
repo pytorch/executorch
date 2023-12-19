@@ -24,6 +24,8 @@ class Node:
     output_shapes: Optional[List[List[int]]] = None
     # Generic Node level metadata
     metadata: Optional[Dict[str, Any]] = None
+    # Names of the arguments derived from the op schema:
+    named_args: Optional[List[str]] = None
 
 
 # Base Representation of an operator subgraph with metadata
