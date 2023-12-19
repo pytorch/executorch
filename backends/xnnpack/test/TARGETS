@@ -4,104 +4,10 @@ load(":targets.bzl", "define_common_targets")
 define_common_targets()
 
 runtime.python_test(
-    name = "test_xnnpack",
-    srcs = [
-        "test_xnnpack.py",
-        "test_xnnpack_utils.py",
-        "test_xnnpack_utils_classes.py",
-    ],
-    preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
-    ],
-    tags = ["long_running"],
-    deps = [
-        "//executorch/backends/xnnpack:xnnpack_backend",
-        "//executorch/backends/xnnpack:xnnpack_preprocess",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/xnnpack/utils:xnnpack_utils",
-        "//executorch/exir:lib",
-        "//executorch/exir/backend:backend_api",
-        "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/extension/pybindings:portable_lib",  # @manual
-        "//executorch/extension/pytree:pylib",
-        "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program:core",
-        "//executorch/sdk/bundled_program/serialize:lib",
-    ],
-    external_deps = [
-        "libtorch",
-    ],
-)
-
-runtime.python_test(
-    name = "test_xnnpack_quantized",
-    srcs = [
-        "test_xnnpack_quantized.py",
-        "test_xnnpack_utils.py",
-    ],
-    preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
-    ],
-    tags = ["long_running"],
-    deps = [
-        "//executorch/backends/xnnpack:xnnpack_backend",
-        "//executorch/backends/xnnpack:xnnpack_preprocess",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/xnnpack/utils:xnnpack_utils",
-        "//executorch/exir:lib",
-        "//executorch/exir/backend:backend_api",
-        "//executorch/exir/dialects:lib",
-        "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/extension/pybindings:portable_lib",  # @manual
-        "//executorch/extension/pytree:pylib",
-        "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program:core",
-        "//executorch/sdk/bundled_program/serialize:lib",
-    ],
-    external_deps = [
-        "libtorch",
-    ],
-)
-
-runtime.python_test(
-    name = "test_xnnpack_quantized_models",
-    srcs = [
-        "test_xnnpack_quantized_models.py",
-        "test_xnnpack_utils.py",
-    ],
-    preload_deps = [
-        "//executorch/kernels/portable:custom_ops_generated_lib",
-        "//executorch/kernels/quantized:custom_ops_generated_lib",
-    ],
-    tags = ["long_running"],
-    deps = [
-        "//executorch/backends/xnnpack:xnnpack_backend",
-        "//executorch/backends/xnnpack:xnnpack_preprocess",
-        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
-        "//executorch/backends/xnnpack/utils:xnnpack_utils",
-        "//executorch/exir:lib",
-        "//executorch/exir/backend:backend_api",
-        "//executorch/exir/passes:spec_prop_pass",
-        "//executorch/extension/pybindings:portable_lib",  # @manual
-        "//executorch/extension/pytree:pylib",
-        "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program:core",
-        "//executorch/sdk/bundled_program/serialize:lib",
-        "//pytorch/vision:torchvision",
-    ],
-    external_deps = [
-        "libtorch",
-    ],
-)
-
-runtime.python_test(
     name = "test_xnnpack_passes",
     srcs = glob([
         "passes/*.py",
     ]) + [
-        "test_xnnpack_passes.py",
         "test_xnnpack_utils_classes.py",
     ],
     deps = [
