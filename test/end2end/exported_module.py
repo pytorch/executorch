@@ -16,7 +16,6 @@ from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
     DebugPass,
-    HintBasedSymShapeEvalPass,
     MemoryPlanningPass,
     to_scratch_op_pass,
     ToOutVarPass,
@@ -164,7 +163,6 @@ class ExportedModule:
                         ),
                         to_scratch_op_pass,
                     ],
-                    sym_shape_eval_pass=HintBasedSymShapeEvalPass(),
                     dynamic_memory_planning_mode=dynamic_memory_planning_mode,
                     memory_planning_pass=memory_planning_pass,
                     to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
