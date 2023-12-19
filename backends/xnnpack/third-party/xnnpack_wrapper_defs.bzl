@@ -6,6 +6,10 @@ PROD_SCALAR_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/amalgam/gen/scalar.c",
 ]
 
+PROD_FMA_MICROKERNEL_SRCS = [
+    "xnnpack_wrappers/amalgam/gen/fma.c",
+]
+
 PROD_ARMSIMD32_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/amalgam/gen/armsimd32.c",
 ]
@@ -49,6 +53,14 @@ PROD_NEONDOT_MICROKERNEL_SRCS = [
 
 PROD_NEONDOT_AARCH64_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/amalgam/gen/neondot-aarch64.c",
+]
+
+PROD_NEONDOTFP16ARITH_MICROKERNEL_SRCS = [
+    "xnnpack_wrappers/amalgam/gen/neondotfp16arith.c",
+]
+
+PROD_NEONDOTFP16ARITH_AARCH64_MICROKERNEL_SRCS = [
+    "xnnpack_wrappers/amalgam/gen/neondotfp16-aarch64.c",
 ]
 
 PROD_NEONI8MM_MICROKERNEL_SRCS = [
@@ -107,6 +119,10 @@ PROD_AVX512VNNI_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/amalgam/gen/avx512vnni.c",
 ]
 
+PROD_RVV_MICROKERNEL_SRCS = [
+    "xnnpack_wrappers/amalgam/gen/rvv.c",
+]
+
 PROD_AVXVNNI_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/amalgam/gen/avxvnni.c",
 ]
@@ -137,6 +153,7 @@ AARCH32_ASM_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/f32-igemm/gen/f32-igemm-4x8-minmax-asm-aarch32-neon-cortex-a75-prfm.S",
     "xnnpack_wrappers/f32-igemm/gen/f32-igemm-4x8-minmax-asm-aarch32-neon-cortex-a75.S",
     "xnnpack_wrappers/f32-igemm/gen/f32-igemm-4x8-minmax-asm-aarch32-neon-ld64.S",
+    "xnnpack_wrappers/qd8-f16-qc8w-gemm/gen/qd8-f16-qc8w-gemm-4x8c4-minmax-asm-aarch32-neondotfp16arith-cortex-a55.S",
     "xnnpack_wrappers/qd8-f32-qc8w-gemm/gen/qd8-f32-qc8w-gemm-4x8c4-minmax-asm-aarch32-neondot-cortex-a55.S",
     "xnnpack_wrappers/qd8-f32-qc8w-igemm/gen/qd8-f32-qc8w-igemm-4x8c4-minmax-asm-aarch32-neondot-cortex-a55.S",
     "xnnpack_wrappers/qs8-gemm/gen/qs8-gemm-1x8-minmax-rndnu-asm-aarch32-neon-mlal-lane-cortex-a7-prfm.S",
@@ -400,6 +417,8 @@ AARCH64_ASM_MICROKERNEL_SRCS = [
     "xnnpack_wrappers/f32-qc8w-gemm/gen/f32-qc8w-gemm-4x8-minmax-asm-aarch64-neonfma-ld128.S",
     "xnnpack_wrappers/f32-qc8w-gemm/gen/f32-qc8w-gemm-6x8-minmax-asm-aarch64-neonfma-ld64.S",
     "xnnpack_wrappers/f32-qc8w-gemm/gen/f32-qc8w-gemm-6x8-minmax-asm-aarch64-neonfma-ld128.S",
+    "xnnpack_wrappers/qd8-f16-qc8w-gemm/gen/qd8-f16-qc8w-gemm-4x16c4-minmax-asm-aarch64-neondot-ld128.S",
+    "xnnpack_wrappers/qd8-f16-qc8w-gemm/gen/qd8-f16-qc8w-gemm-4x16c4-minmax-asm-aarch64-neondotfp16arith-cortex-a55.S",
     "xnnpack_wrappers/qd8-f32-qc8w-gemm/gen/qd8-f32-qc8w-gemm-4x16c4-minmax-asm-aarch64-neondot-cortex-a55.S",
     "xnnpack_wrappers/qd8-f32-qc8w-gemm/gen/qd8-f32-qc8w-gemm-4x16c4-minmax-asm-aarch64-neondot-ld64.S",
     "xnnpack_wrappers/qd8-f32-qc8w-gemm/gen/qd8-f32-qc8w-gemm-4x16c4-minmax-asm-aarch64-neondot-ld128.S",
