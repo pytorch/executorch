@@ -12,6 +12,8 @@ from typing import Any, Callable, cast, Dict, List, Optional, Set, Union
 import torch
 
 from executorch.backends.xnnpack.partition.configs import (
+    _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE,
+    _SUPPORTED_OPS_WITH_DYNAMIC_SHAPE,
     SUPPORTED_DYN_QUANT_MODULES,
     SUPPORTED_MODULES,
     SUPPORTED_OPS,
@@ -676,18 +678,53 @@ class XnnpackPartitioner(Partitioner):
         supported_quant_modules: List[Callable] = SUPPORTED_QUANT_MODULES,
         supported_quant_ops: Optional[List[Callable]] = SUPPORTED_QUANT_OPS,
         quant: Optional[bool] = None,
+        _only_ops_with_dynamic_shape_support: Optional[bool] = False,
     ):
         super().__init__()
         self.supported_modules = set(supported_modules)
         self.supported_ops = set(supported_ops or [])
         self.supported_quant_modules = set(supported_quant_modules)
+
         supported_quant_ops = supported_quant_ops or []
         self.supported_quant_ops = set(supported_quant_ops + self._QUANT_OPS)
 
         self.quant = quant
 
+        if _only_ops_with_dynamic_shape_support is True:
+            self._update_op_lists_for_dynamic_shapes()
+
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
+
+    def _update_op_lists_for_dynamic_shapes(self):
+        # Not ready for quants yet
+        assert (
+            self.quant is not True
+        ), "Dynamic shape only supported for valid FP32 ops, no quants support yet."
+        self.supported_quant_ops = set()
+        self.supported_quant_modules = set()
+
+        # for supported ops
+        self.supported_ops_with_dynamic_shape = set(_SUPPORTED_OPS_WITH_DYNAMIC_SHAPE)
+        assert self.supported_ops_with_dynamic_shape.issubset(
+            self.supported_ops
+        ), "All ops with dynamic shape support must be in SUPPORTED_OPS"
+        self.supported_ops = self.supported_ops_with_dynamic_shape
+        log.info(
+            f"Xnnpack Partitioner updated supported op for dynamic shapes: {self.supported_ops}"
+        )
+
+        # for supported modules
+        self.supported_modules_with_dynamic_shape = set(
+            _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE
+        )
+        assert self.supported_modules_with_dynamic_shape.issubset(
+            self.supported_modules
+        ), "All modules with dynamic shape support must be in SUPPORTED_MODULES"
+        self.supported_modules = self.supported_modules_with_dynamic_shape
+        log.info(
+            f"Xnnpack Partitioner updated supported modules with dynamic shapes: {self.supported_modules}"
+        )
 
     def get_supported_modules(self, quant: bool) -> Set[Callable]:
         """
