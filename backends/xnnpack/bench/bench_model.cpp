@@ -290,7 +290,7 @@ class MultiHeadedAttention {
           TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
               {benchmarking_batch_size_, output_channels});
 
-      qparams_.resize(1 + XNN_EXTRA_QUANTIZATION_PARAMS);
+      qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
       std::generate(qparams_.begin(), qparams_.end(), [&]() {
         return xnn_dynamic_quantization_params{0, 1.f};
       });
@@ -446,7 +446,7 @@ class FeedForward {
           TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
               {benchmarking_batch_size_, args.dim});
 
-      qparams_.resize(1 + XNN_EXTRA_QUANTIZATION_PARAMS);
+      qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
       std::generate(qparams_.begin(), qparams_.end(), [&]() {
         return xnn_dynamic_quantization_params{0, 1.f};
       });
