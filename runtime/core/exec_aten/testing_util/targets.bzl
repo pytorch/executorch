@@ -29,6 +29,7 @@ def define_common_targets():
                 "//executorch/kernels/quantized/test/...",
                 "//executorch/kernels/optimized/test/...",
                 "//executorch/kernels/test/...",
+                "//executorch/examples/...",
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
                 "//executorch/util/...",

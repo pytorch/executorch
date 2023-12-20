@@ -1,0 +1,15 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
+load("@fbsource//xplat/executorch/backends/xnnpack/third-party:third_party_libs.bzl", "third_party_dep")
+
+runtime.cxx_binary(
+    name = "bench_model_llama2_7b",
+    srcs = ["bench_model.cpp"],
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_backend",
+        "//executorch/backends/xnnpack/threadpool:threadpool",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+        third_party_dep("XNNPACK"),
+    ],
+    define_static_target = True,
+    **get_oss_build_kwargs()
+)

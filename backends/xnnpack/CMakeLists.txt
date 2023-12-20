@@ -106,3 +106,5 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   target_compile_options(xnn_executor_runner_lib
                          PUBLIC ${_common_compile_options})
 endif()
+
+add_subdirectory(bench)
