@@ -7,6 +7,7 @@
 from typing import cast, Dict
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -52,8 +53,7 @@ class SqueezeVisitor(NodeVisitor):
             "val" in input_node.meta,
             "Missing val in tensor metadata for input when serializing XNNStaticReshape node",
         )
-        tensor_val = input_node.meta["val"]
-        new_shape = list(tensor_val.shape)[:-1]
+        new_shape = get_shape(input_node)[:-1]
 
         ser_node = XNode(
             xnode_union=XNNStaticReshape(
@@ -101,8 +101,7 @@ class UnsqueezeVisitor(NodeVisitor):
             "val" in input_node.meta,
             "Missing val in tensor metadata for input when serializing XNNStaticReshape node",
         )
-        tensor_val = input_node.meta["val"]
-        new_shape = list(tensor_val.shape) + [1]
+        new_shape = get_shape(input_node) + [1]
 
         ser_node = XNode(
             xnode_union=XNNStaticReshape(
