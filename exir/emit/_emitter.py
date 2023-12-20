@@ -1271,7 +1271,6 @@ class _TopLevelEmitter(_Emitter):
             if spec is None:
                 return ""
             assert isinstance(spec, pytree.TreeSpec), type(spec)
-            # pyre-fixme[16]: `TreeSpec` has no attribute `num_leaves`.
             dummy_leaves = [0] * spec.num_leaves
             tree = torch.utils._pytree.tree_unflatten(dummy_leaves, spec)
             # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
