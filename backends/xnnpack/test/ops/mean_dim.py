@@ -17,7 +17,9 @@ class TestMeanDim(unittest.TestCase):
             self.dims = dims
 
         def forward(self, x):
-            return torch.mean(x, self.dims, keepdim=True)
+            y = x + x
+            z = torch.mean(y, self.dims, keepdim=True)
+            return z
 
     def test_fp32_mean_dim(self):
         inputs = (torch.randn(1, 5, 4, 4),)
@@ -50,4 +52,32 @@ class TestMeanDim(unittest.TestCase):
             .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
             .partition()
             .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+        )
+
+    def test_qs8_mean_dim(self):
+        inputs = (torch.randn(1, 5, 4, 4),)
+        (
+            Tester(self.MeanDim((-1, -2)), inputs)
+            .quantize()
+            .export()
+            .check_node_count(
+                {
+                    torch.ops.aten.mean.dim: 1,
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
+                }
+            )
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mean_dim",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs(qtol=1)
         )
