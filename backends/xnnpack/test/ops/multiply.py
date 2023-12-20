@@ -12,12 +12,24 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 class TestMul(unittest.TestCase):
     class Mul(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-
         def forward(self, x, y):
             z = x * y
             return z
+
+    class Mul2(torch.nn.Module):
+        def forward(self, x):
+            z = x * x
+            return z
+
+    class MulFunctional(torch.nn.Module):
+        def forward(self, x, y):
+            z = torch.mul(x, y) * torch.functional.torch.mul(x, y)
+            return z
+
+    class MulRelu(torch.nn.Module):
+        def forward(self, x, y):
+            z = x * y
+            return torch.nn.functional.relu(z)
 
     def test_fp32_mul(self):
         inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
@@ -37,7 +49,7 @@ class TestMul(unittest.TestCase):
         )
 
     def test_qs8_mul(self):
-        inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
+        inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
         (
             Tester(self.Mul(), inputs)
             .quantize()
@@ -51,6 +63,84 @@ class TestMul(unittest.TestCase):
             .check_not(
                 [
                     "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_mul2(self):
+        inputs = (torch.randn(1, 1, 4, 4),)
+        (
+            Tester(self.Mul2(), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.mul.Tensor": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_mul_functional(self):
+        inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
+        (
+            Tester(self.MulFunctional(), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.mul.Tensor": 3})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 3})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_mul_relu(self):
+        inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
+        (
+            Tester(self.MulRelu(), inputs)
+            .quantize()
+            .export()
+            .check_count(
+                {
+                    "torch.ops.aten.mul.Tensor": 1,
+                    "torch.ops.aten.relu.default": 1,
+                }
+            )
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mul_Tensor": 1})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mul_Tensor",
+                    "executorch_exir_dialects_edge__ops_aten_relu_default",
                     "torch.ops.quantized_decomposed",
                 ]
             )

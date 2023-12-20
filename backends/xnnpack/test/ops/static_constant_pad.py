@@ -11,7 +11,7 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 
 class TestStaticConstantPad(unittest.TestCase):
-    class StaticConstantPad(torch.nn.Module):
+    class StaticConstantPadFunctional(torch.nn.Module):
         def __init__(self):
             super().__init__()
 
@@ -67,16 +67,30 @@ class TestStaticConstantPad(unittest.TestCase):
                 mode="constant",
                 value=1.2,
             )
-            return (a, b, c, d, e, f, g, h)
 
-    def test_fp32_static_constant_pad(self):
+            # Pad quantizes by propagation
+
+            return (a + a, b + b, c + c, d + d, e + e, f + f, g + g, h + h)
+
+    class StaticConstantPad2d(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.pad = torch.nn.ConstantPad2d([1, 2, 3, 4], 2.3)
+
+        def forward(self, x):
+            y = self.pad(x)
+            # Pad quantizes by propagation
+            z = y + y
+            return z
+
+    def test_fp32_static_constant_pad_functional(self):
         inputs = (
             torch.randn(size=(5, 4, 3, 2)),
             torch.randn(size=(5, 3, 2)),
             torch.randn(size=(4, 3)),
         )
         (
-            Tester(self.StaticConstantPad(), inputs)
+            Tester(self.StaticConstantPadFunctional(), inputs)
             .export()
             .check_count({"torch.ops.aten.constant_pad_nd.default": 8})
             .to_edge()
@@ -87,6 +101,71 @@ class TestStaticConstantPad(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(
                 ["executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_static_constant_pad_functional(self):
+        class Pad(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                z = torch.nn.functional.pad(
+                    input=x,
+                    pad=(2, 1),
+                    mode="constant",
+                    value=2.3,
+                )
+                return z + z
+
+        inputs = (torch.randn(size=(1, 2)),)
+        (
+            Tester(Pad(), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.constant_pad_nd.default": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge()
+            .check_count(
+                {"executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default": 1}
+            )
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default"
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs()
+        )
+
+    def test_qs8_static_constant_pad_2d(self):
+        inputs = (torch.randn(size=(5, 4, 3, 2)),)
+        (
+            Tester(self.StaticConstantPad2d(), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.constant_pad_nd.default": 1})
+            .check(["torch.ops.quantized_decomposed"])
+            .to_edge()
+            .check_count(
+                {"executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default": 1}
+            )
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_constant_pad_nd_default",
+                    "torch.ops.quantized_decomposed",
+                ]
             )
             .to_executorch()
             .serialize()
