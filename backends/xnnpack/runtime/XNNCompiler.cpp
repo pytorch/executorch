@@ -219,7 +219,7 @@ Error defineTensor(
               /*subgraph=*/subgraph_ptr,
               /*datatype=*/xnn_datatype_qdint8,
               /*num_dims=*/tensor_value->num_dims(),
-              /*num_nonbatch_dims=*/1, // This is always for fully connected
+              /*num_nonbatch_dims=*/dims_data.size(), // = per tensor dq
               /*dims=*/dims_data.data(),
               /*external_id=*/XNN_INVALID_VALUE_ID, // always internal value id
               /*flags=*/0, // this is netiher external input or output
