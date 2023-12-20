@@ -11,6 +11,18 @@ endif()
 cmake_minimum_required(VERSION 3.19)
 project(qualcomm_runner_example)
 
+if(NOT PYTHON_EXECUTABLE)
+  set(PYTHON_EXECUTABLE python3)
+endif()
+# Source root directory for executorch.
+if(NOT EXECUTORCH_ROOT)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+endif()
+# Source root directory for pytorch.
+if(NOT TORCH_ROOT)
+  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
+endif()
+
 # Find prebuilt libraries. executorch package should contain
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
@@ -48,11 +60,6 @@ foreach(lib ${qnn_lib_list})
     endif()
 endforeach()
 
-# Source root directory for executorch.
-if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
-endif()
-
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
@@ -74,6 +81,18 @@ get_filename_component(EXECUTORCH_SOURCE_DIR
 )
 set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
 
+# portable_ops_lib
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+gen_selected_ops("" "" "ON")
+generate_bindings_for_kernels(
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+)
+gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+target_include_directories(portable_ops_lib
+    PUBLIC
+    ${_common_include_directories}
+)
+
 list(
     TRANSFORM
     _qnn_executor_runner__srcs
@@ -94,35 +113,13 @@ list(
 
 add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
 
-add_library(portable_ops)
-find_file(LIB_FILES
-    NAMES
-    "RegisterCodegenUnboxedKernelsEverything.cpp"
-    "Functions.h"
-    "NativeFunctions.h"
-    CMAKE_FIND_ROOT_PATH_BOTH
-)
-target_sources(portable_ops
-    PRIVATE
-    ${LIB_FILES}
-)
-target_include_directories(portable_ops
-    PUBLIC
-    ${_common_include_directories}
-)
-target_link_libraries(portable_ops
-    PRIVATE executorch
-    INTERFACE portable_kernels
-)
-target_link_options_shared_lib(portable_ops)
-
 target_include_directories(qnn_executor_runner
     PUBLIC
     ${_common_include_directories}
 )
 target_link_libraries(qnn_executor_runner
     ${qnn_lib_list}
-    portable_ops
+    portable_ops_lib
     gflags
 )
 target_compile_options(qnn_executor_runner
