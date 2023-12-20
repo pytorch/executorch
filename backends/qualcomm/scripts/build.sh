@@ -71,10 +71,9 @@ if [ "$BUILD_AARCH64" = true ]; then
     cmake --build $BUILD_ROOT -j16 --target install
 
     EXAMPLE_ROOT=examples/qualcomm
-    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;${BUILD_ROOT}/backends/qualcomm;${BUILD_ROOT}/kernels/portable"
+    CMAKE_PREFIX_PATH="${BUILD_ROOT}/lib/cmake/ExecuTorch;${BUILD_ROOT}/third-party/gflags;"
 
     cmake $PRJ_ROOT/$EXAMPLE_ROOT \
-        -DBUCK2=buck2 \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \

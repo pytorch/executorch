@@ -27,38 +27,6 @@ endif()
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 find_package(gflags REQUIRED)
-find_library(android_log log)
-set(qnn_lib_list
-    qnn_backend
-    qnn_backend_cache
-    qnn_context
-    qnn_device
-    qnn_executorch_backend
-    qnn_executorch_logging
-    qnn_factory
-    qnn_graph
-    qnn_implementation
-    qnn_logger
-    qnn_manager
-    qnn_sys_implementation
-    utils
-    wrappers
-    ${CMAKE_DL_LIBS}
-    ${android_log}
-)
-foreach(lib ${qnn_lib_list})
-    set(lib_var "LIB_${lib}")
-    find_library(${lib_var} ${lib} CMAKE_FIND_ROOT_PATH_BOTH)
-    if(NOT ${lib_var})
-        message("${lib} library is not found")
-    else()
-        add_library(${lib} STATIC IMPORTED)
-        set_target_properties(
-            ${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}"
-        )
-        target_include_directories(${lib} INTERFACE ${_root})
-    endif()
-endforeach()
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
@@ -118,7 +86,7 @@ target_include_directories(qnn_executor_runner
     ${_common_include_directories}
 )
 target_link_libraries(qnn_executor_runner
-    ${qnn_lib_list}
+    qnn_executorch_backend
     portable_ops_lib
     gflags
 )

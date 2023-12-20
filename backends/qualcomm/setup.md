@@ -105,11 +105,10 @@ cmake .. \
 cmake --build $PWD -j16 --target install
 
 cmake ../examples/qualcomm \
-    -DBUCK2=buck2 \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_NATIVE_API_LEVEL=23 \
-    -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;$PWD/backends/qualcomm;$PWD/kernels/portable" \
+    -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -Bexamples/qualcomm
 
