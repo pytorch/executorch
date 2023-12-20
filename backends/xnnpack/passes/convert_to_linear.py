@@ -44,6 +44,8 @@ class ConvertToLinearPass(XNNPACKPass):
         kind: str = "args",
         index: int = 0,
     ):
+        # This is a hack to support lifted graphs.
+        # TODO(T171263351) - fix source partitioning for lifted graphs
         if not node or node in args or node.op == "placeholder":
             return node
         if kind == "args":
@@ -167,28 +169,40 @@ class ConvertToLinearPass(XNNPACKPass):
         logger.debug("ConvertToLinear Begin: ")
         logger.debug(graph_module.print_readable(print_output=False))
 
-        src_partition_dict = get_source_partitions(
-            graph_module.graph, self.linear_modules
-        )
-
-        src_node_dict = {
-            node: src_partition
-            for src_partitions in src_partition_dict.values()
-            for src_partition in src_partitions
-            for node in src_partition.nodes
-            if node.target in self.targets
-        }
-
-        if len(src_node_dict) == 0:
-            logger.debug(
-                "Did not find any [add]mm target in source partitions, skipping the pass."
+        processed_partitions = 0
+        while True:
+            src_partition_dict = get_source_partitions(
+                graph_module.graph, self.linear_modules
             )
 
-        logger.debug("Converting [add]mm into Linear")
+            src_node_dict = {
+                node: src_partition
+                for src_partitions in src_partition_dict.values()
+                for src_partition in src_partitions
+                for node in src_partition.nodes
+                if node.target in self.targets
+            }
 
-        for node in src_node_dict.keys():
-            self.create_linear(graph_module, node, src_node_dict[node])
+            # No more [add]mm target in source partitions
+            if len(src_node_dict) == 0:
+                if processed_partitions == 0:
+                    logger.debug(
+                        "Did not find any [add]mm target in source partitions, skipping the pass."
+                    )
+                else:
+                    logger.debug(
+                        f"Converted {processed_partitions} [add]mm target(s) into Linear."
+                    )
+                break
 
+            logger.debug("Converting [add]mm into Linear")
+            for node in src_node_dict.keys():
+                self.create_linear(graph_module, node, src_node_dict[node])
+                processed_partitions += 1
+                # Only convert the first [add]mm target
+                break
+
+        # fall back to linear transform
         graph_module.graph = apply_addmm_mm_to_linear_transform(graph_module.graph)
 
         graph_module.recompile()
@@ -198,4 +212,5 @@ class ConvertToLinearPass(XNNPACKPass):
 
         logger.debug("ConvertToLinear End: ")
         logger.debug(graph_module.print_readable(print_output=False))
+
         return PassResult(graph_module, True)
