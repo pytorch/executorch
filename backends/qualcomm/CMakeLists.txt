@@ -71,7 +71,7 @@ include_directories(
 # declare targets
 #
 add_library(executorch_backend INTERFACE)
-add_library(qnn_executorch_backend STATIC)
+add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
 add_library(qnn_executorch_logging STATIC)
 add_library(qnn_manager STATIC)
@@ -200,6 +200,7 @@ add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
+install(TARGETS qnn_executorch_backend DESTINATION lib)
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")

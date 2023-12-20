@@ -89,25 +89,30 @@ Commands to build `qnn_executor_runner` for Android:
 
 ```bash
 cd $EXECUTORCH_ROOT
-# build executorch & qnn_executorch_backend
-cmake -DBUCK2="$BUCK" \
-        -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_BUILD_QNN=ON \
-        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-        -Bcmake-out .
-cmake --build cmake-out -j9 --target install --config Release
 mkdir build_android
 cd build_android
-cmake -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
+# build executorch & qnn_executorch_backend
+cmake .. \
+    -DBUCK2=buck2 \
+    -DCMAKE_INSTALL_PREFIX=$PWD \
     -DEXECUTORCH_BUILD_QNN=ON \
+    -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI='arm64-v8a' \
     -DANDROID_NATIVE_API_LEVEL=23 \
-    -DBUCK2=buck2 \
-    -Bbuild_android/examples/qualcomm \
-    examples/qualcomm
-cmake --build build_android -j8
+    -B$PWD
+
+cmake --build $PWD -j16 --target install
+
+cmake ../examples/qualcomm \
+    -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI='arm64-v8a' \
+    -DANDROID_NATIVE_API_LEVEL=23 \
+    -DCMAKE_PREFIX_PATH="$PWD/lib/cmake/ExecuTorch;$PWD/third-party/gflags;" \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+    -Bexamples/qualcomm
+
+cmake --build examples/qualcomm -j16
 ```
 
 You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
