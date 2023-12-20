@@ -163,7 +163,7 @@ Error QnnExecuTorchBackend::execute(
 
   for (int i = 0; i < input_tensors.size(); ++i) {
     input_tensors[i]->FillDataBuffer(
-        args[i]->toTensor().data_ptr(), true /* copy_data */);
+        args[i]->toTensor().const_data_ptr(), true /* copy_data */);
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
 
@@ -171,7 +171,7 @@ Error QnnExecuTorchBackend::execute(
        i < input_tensors.size() + output_tensors.size();
        ++i) {
     output_tensors[i - input_tensors.size()]->FillDataBuffer(
-        args[i]->toTensor().data_ptr(), false /* copy_data */);
+        args[i]->toTensor().mutable_data_ptr(), false /* copy_data */);
     output_tensor_structs.push_back(
         output_tensors[i - input_tensors.size()]->CloneTensorStruct());
   }

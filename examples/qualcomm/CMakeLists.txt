@@ -11,33 +11,36 @@ endif()
 cmake_minimum_required(VERSION 3.19)
 project(qualcomm_runner_example)
 
+if(NOT PYTHON_EXECUTABLE)
+  set(PYTHON_EXECUTABLE python3)
+endif()
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
+# Source root directory for pytorch.
+if(NOT TORCH_ROOT)
+  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
+endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+# Find prebuilt libraries. executorch package should contain
+# portable_ops_lib, etdump, bundled_program.
+find_package(executorch CONFIG REQUIRED)
+find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-# Find prebuilt libraries. executorch package should contain
-# portable_ops_lib, etdump, bundled_program.
-find_package(executorch CONFIG REQUIRED)
-find_package(
-  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../third-party
-)
+
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-set(
-  EXECUTORCH_SRCS_FILE
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+set(EXECUTORCH_SRCS_FILE
   "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
 )
-
 extract_sources(${EXECUTORCH_SRCS_FILE})
-
 include(${EXECUTORCH_SRCS_FILE})
 
 get_filename_component(EXECUTORCH_SOURCE_DIR
@@ -45,6 +48,19 @@ get_filename_component(EXECUTORCH_SOURCE_DIR
     ABSOLUTE
 )
 set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
+
+# portable_ops_lib
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+gen_selected_ops("" "" "ON")
+generate_bindings_for_kernels(
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+)
+gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+target_include_directories(portable_ops_lib
+    PUBLIC
+    ${_common_include_directories}
+)
+
 list(
     TRANSFORM
     _qnn_executor_runner__srcs
@@ -65,9 +81,13 @@ list(
 
 add_executable(qnn_executor_runner ${_qnn_executor_runner__srcs})
 
+target_include_directories(qnn_executor_runner
+    PUBLIC
+    ${_common_include_directories}
+)
 target_link_libraries(qnn_executor_runner
-    ${_executor_runner_libs}
     qnn_executorch_backend
+    portable_ops_lib
     gflags
 )
 target_compile_options(qnn_executor_runner
