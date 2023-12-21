@@ -116,7 +116,7 @@ if __name__ == "__main__":
             f"Valid compute units are {compute_units}."
         )
 
-    model, example_inputs = EagerModelFactory.create_model(
+        model, example_inputs, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
