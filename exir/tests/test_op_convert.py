@@ -81,7 +81,7 @@ class TestToOutVariant(unittest.TestCase):
         func_var_op: OpOverload = (
             torch.ops.my_awesome_3rdparty_ns.schema_mismatch_op.default
         )
-        with self.assertRaisesRegexp(
+        with self.assertRaisesRegex(
             RuntimeError,
             "Found an out variant for operator name .* but its schema mismatched with functional op.",
         ):
