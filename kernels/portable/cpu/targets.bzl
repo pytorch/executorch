@@ -61,6 +61,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -491,6 +492,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -505,6 +507,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
@@ -513,6 +516,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
