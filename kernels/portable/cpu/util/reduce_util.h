@@ -596,5 +596,47 @@ Error resize_reduction_out(
     bool keepdim,
     exec_aten::Tensor& out);
 
+#ifndef USE_ATEN_MODE
+bool check_reduction_args(
+    const Tensor& in,
+    const optional<ArrayRef<int64_t>>& dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out);
+
+bool check_reduction_args_single_dim(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    Tensor& out);
+
+bool check_mean_dim_args(
+    const Tensor& in,
+    optional<ArrayRef<int64_t>> dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out);
+
+bool check_amin_amax_args(
+    const Tensor& in,
+    ArrayRef<int64_t> dim_list,
+    bool keepdim,
+    Tensor& out);
+
+bool check_argmin_argmax_args(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    Tensor& out);
+
+bool check_min_max_args(
+    const Tensor& in,
+    int64_t dim,
+    bool keepdim,
+    Tensor& max,
+    Tensor& max_indices);
+
+#endif
+
 } // namespace executor
 } // namespace torch
