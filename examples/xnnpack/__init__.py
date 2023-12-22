@@ -27,7 +27,7 @@ MODEL_NAME_TO_OPTIONS = {
     "vit": XNNPACKOptions(False, True),
     "w2l": XNNPACKOptions(False, True),
     "edsr": XNNPACKOptions(True, True),
-    "mobilebert": XNNPACKOptions(False, True),
+    "mobilebert": XNNPACKOptions(True, True),
     "llama2": XNNPACKOptions(False, True),
 }
 
