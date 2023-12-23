@@ -30,6 +30,8 @@ class Runner {
       const std::vector<EValue>& inputs,
       std::vector<EValue>& outputs);
 
+  Result<const char*> getMethodName(size_t methodIndex) const;
+
  private:
   Error loadMethod(const std::string& methodName);
 

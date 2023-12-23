@@ -22,3 +22,21 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
         ],
     )
+
+    runtime.cxx_library(
+        name = "runner_aten",
+        srcs = [
+            "runner.cpp",
+        ],
+        exported_headers = [
+            "runner.h",
+        ],
+        platforms = ["Default"],
+        define_static_target = False,
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/runtime/executor:program_aten",
+        ],
+    )
