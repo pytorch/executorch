@@ -76,4 +76,8 @@ Error Runner::loadMethod(const std::string& methodName) {
   return Error::Ok;
 }
 
+Result<const char*> Runner::getMethodName(size_t methodIndex) const {
+  return program_->get_method_name(methodIndex);
+}
+
 } // namespace torch::executor
