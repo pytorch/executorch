@@ -32,7 +32,7 @@ Error Runner::run(
   if (error != Error::Ok) {
     return error;
   }
-  auto& method = methods_.at(methodName).method;
+  auto& method = methods_.at(methodName).method_;
   for (auto index = 0; index < inputs.size(); ++index) {
     error = method->set_input(inputs[index], index);
     if (error != Error::Ok) {
@@ -55,31 +55,23 @@ Error Runner::loadMethod(const std::string& methodName) {
     if (!methodMetadata.ok()) {
       return methodMetadata.error();
     }
-    std::vector<std::vector<uint8_t>> plannedBuffers;
-    std::vector<Span<uint8_t>> plannedSpans;
+    std::vector<size_t> bufferSizes;
     const auto plannedBuffersCount =
         methodMetadata->num_memory_planned_buffers();
     for (auto id = 0; id < plannedBuffersCount; ++id) {
       const size_t bufferSize =
           methodMetadata->memory_planned_buffer_size(id).get();
-      plannedBuffers.emplace_back(std::vector<uint8_t>(bufferSize));
-      plannedSpans.emplace_back(plannedBuffers.back().data(), bufferSize);
+      bufferSizes.emplace_back(bufferSize);
     }
-    auto plannedMemory = std::make_unique<HierarchicalAllocator>(
-        Span(plannedSpans.data(), plannedSpans.size()));
-    auto memoryManager = std::make_unique<MemoryManager>(
-        memoryAllocator_.get(), plannedMemory.get());
-    auto method =
-        program_->load_method(methodName.c_str(), memoryManager.get());
+    auto memory = std::make_unique<Memory>(bufferSizes, memoryAllocator_);
+
+    auto method = program_->load_method(
+        methodName.c_str(), memory->getMemoryManager().get());
     if (!method.ok()) {
       return method.error();
     }
     methods_[methodName] = {
-        std::move(plannedBuffers),
-        std::move(plannedSpans),
-        std::move(plannedMemory),
-        std::move(memoryManager),
-        std::make_unique<Method>(std::move(method.get()))};
+        std::move(memory), std::make_unique<Method>(std::move(method.get()))};
   }
   return Error::Ok;
 }
