@@ -38,7 +38,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs = EagerModelFactory.create_model(
         "llama2", "Llama2Model", checkpoint=args.checkpoint, params=args.params
     )
 

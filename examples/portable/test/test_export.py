@@ -62,7 +62,7 @@ class ExportTest(unittest.TestCase):
         return result
 
     def test_mv3_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["mv3"]
         )
         eager_model = eager_model.eval()
@@ -75,7 +75,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_mv2_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["mv2"]
         )
         eager_model = eager_model.eval()
@@ -85,7 +85,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_vit_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["vit"]
         )
         eager_model = eager_model.eval()
@@ -95,7 +95,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_w2l_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["w2l"]
         )
         eager_model = eager_model.eval()
@@ -105,7 +105,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_ic3_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["ic3"]
         )
         eager_model = eager_model.eval()
@@ -115,7 +115,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_resnet18_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["resnet18"]
         )
         eager_model = eager_model.eval()
@@ -125,7 +125,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_resnet50_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["resnet50"]
         )
         eager_model = eager_model.eval()
@@ -135,7 +135,7 @@ class ExportTest(unittest.TestCase):
         )
 
     def test_dl3_export_to_executorch(self):
-        eager_model, example_inputs, _ = EagerModelFactory.create_model(
+        eager_model, example_inputs = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["dl3"]
         )
         eager_model = eager_model.eval()
