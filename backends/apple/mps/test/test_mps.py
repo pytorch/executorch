@@ -80,7 +80,7 @@ def run_model(
 ):
     logging.info(f"Step 1: Retrieving model: {model}...")
     if model_type == MODEL_TYPE.EXIR_DEFAULT_MODEL:
-        m, m_inputs, _ = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[model])
+        m, m_inputs = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[model])
     elif model_type == MODEL_TYPE.EXIR_TEST_MODEL:
         m, m_inputs = EXIR_MODEL_NAME_TO_MODEL.get(model)()
     elif model_type == MODEL_TYPE.MPS_TEST_MODEL:

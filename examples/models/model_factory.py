@@ -19,7 +19,7 @@ class EagerModelFactory:
     @staticmethod
     def create_model(
         module_name, model_class_name, **kwargs
-    ) -> Tuple[torch.nn.Module, Any, Any]:
+    ) -> Tuple[torch.nn.Module, Any]:
         """
         Create an instance of a model class that implements EagerModelBase and retrieve related data.
 
@@ -41,14 +41,7 @@ class EagerModelFactory:
         if hasattr(module, model_class_name):
             model_class = getattr(module, model_class_name)
             model = model_class(**kwargs)
-            if hasattr(model, "get_dynamic_shapes"):
-                return (
-                    model.get_eager_model(),
-                    model.get_example_inputs(),
-                    model.get_dynamic_shapes(),
-                )
-            else:
-                return model.get_eager_model(), model.get_example_inputs(), None
+            return model.get_eager_model(), model.get_example_inputs()
 
         raise ValueError(
             f"Model class '{model_class_name}' not found in module '{module_name}'."
