@@ -160,7 +160,7 @@ def main() -> None:
         )
 
     start = time.perf_counter()
-    model, example_inputs, _ = EagerModelFactory.create_model(
+    model, example_inputs = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
     end = time.perf_counter()
