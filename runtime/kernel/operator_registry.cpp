@@ -41,7 +41,7 @@ Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
   // have any side effect even if falled multiple times.
   ::et_pal_init();
 
-  if (kernels.size() + this->num_kernels_ >= kMaxNumOfKernels) {
+  if (kernels.size() + this->num_kernels_ > kMaxNumOfKernels) {
     ET_LOG(
         Error,
         "The total number of kernels to be registered is larger than the limit %" PRIu32
