@@ -13,6 +13,12 @@ _QUANT_OPS = (
     ),
     op_target(
         name = "op_dequantize",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+        _aten_mode_deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util_aten",
+        ],
     ),
     op_target(
         name = "op_embedding",

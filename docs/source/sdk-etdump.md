@@ -34,7 +34,7 @@ if (result.buf != nullptr && result.size > 0) {
   }
 ```
 
-4. ***Compile*** your binary with the `ET_EVENT_TRACER_ENABLED` flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime.
+4. ***Compile*** your binary with the `ET_EVENT_TRACER_ENABLED` pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime.
 
     i). ***Buck***
 

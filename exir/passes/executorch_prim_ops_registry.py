@@ -98,6 +98,7 @@ _EXECUTORCH_SYM_OPS.update(
         torch.ops.aten.sym_stride.int,
         torch.ops.aten.sym_size.int,
         torch.ops.aten.sym_numel.default,
+        torch.ops.aten._local_scalar_dense.default,
     }
 )
 

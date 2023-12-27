@@ -53,7 +53,7 @@ def define_common_targets(is_fbcode = False):
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
-                "//xplat/third-party/gmock:gtest",
+                "//third-party/googletest:gtest_main",
             ],
         )
 

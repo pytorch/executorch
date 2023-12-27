@@ -26,6 +26,7 @@ python_binary(
     main_function = ".inspector_cli.main",
     main_src = "inspector_cli.py",
     deps = [
+        ":inspector_utils",
         "//executorch/sdk:lib",
     ],
 )
@@ -36,6 +37,8 @@ python_library(
         "_inspector_utils.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/matplotlib:matplotlib",
+        "fbsource//third-party/pypi/numpy:numpy",
         "//caffe2:torch",
         "//executorch/sdk/debug_format:base_schema",
         "//executorch/sdk/debug_format:et_schema",

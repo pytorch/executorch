@@ -7,9 +7,13 @@
 import dataclasses
 import logging
 import sys
+import warnings
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
+from functools import cached_property
 from typing import (
+    Any,
+    Callable,
     Dict,
     IO,
     List,
@@ -282,9 +286,15 @@ class Event:
         module_hierarchy: A dictionary mapping the name of each associated op to its module hierarchy.
         is_delegated_op: Whether or not the event was delegated.
         delegate_backend_name: Name of the backend this event was delegated to.
-        delegate_debug_metadatas: A list of delegate debug metadata in string, one for each profile event.
+
+        _delegate_debug_metadatas: A list of raw delegate debug metadata in string, one for each profile event.
+            Available parsed (if parser provided) as Event.delegate_debug_metadatas
+            Available as Event.raw_delegate_debug_metadatas
 
         debug_data: A list containing intermediate data collected.
+
+        _instruction_id: Instruction Identifier for Symbolication
+        _delegate_metadata_parser: Optional Parser for _delegate_debug_metadatas
     """
 
     name: str
@@ -296,10 +306,29 @@ class Event:
     module_hierarchy: Dict[str, Dict] = dataclasses.field(default_factory=dict)
     is_delegated_op: Optional[bool] = None
     delegate_backend_name: Optional[str] = None
-    delegate_debug_metadatas: List[str] = dataclasses.field(default_factory=list)
+    _delegate_debug_metadatas: List[str] = dataclasses.field(default_factory=list)
 
     debug_data: ProgramOutput = dataclasses.field(default_factory=list)
     _instruction_id: Optional[int] = None
+
+    _delegate_metadata_parser: Optional[Callable[[List[str]], Dict[str, Any]]] = None
+
+    @cached_property
+    def delegate_debug_metadatas(self) -> Union[List[str], Dict[str, Any]]:
+        """
+        Returns the parsed _delegate_debug_metadatas if a parser is available
+        Otherwise returns the raw _delegate_debug_metadatas
+        """
+        if not self.is_delegated_op or self._delegate_metadata_parser is None:
+            return self._delegate_debug_metadatas
+        return self._delegate_metadata_parser(self._delegate_debug_metadatas)
+
+    @property
+    def raw_delegate_debug_metadatas(self) -> List[str]:
+        """
+        Return the raw unparsed _delegate_debug_metadatas
+        """
+        return self._delegate_debug_metadatas
 
     @staticmethod
     def _gen_from_inference_events(
@@ -307,6 +336,9 @@ class Event:
         events: List[InstructionEvent],
         scale_factor: float = 1.0,
         output_buffer: Optional[bytes] = None,
+        delegate_metadata_parser: Optional[
+            Callable[[List[str]], Dict[str, Any]]
+        ] = None,
     ) -> "Event":
         """
         Given an EventSignature and a list of Events with that signature,
@@ -316,13 +348,18 @@ class Event:
 
         An optional inverse scale factor can be provided to adjust the event timestamps
         An optional buffer can be provided to inflate etdump references
+        An optional delegate_metadata_parser can be provided to parse the delegate metadata
         """
 
         profile_event_signature = signature.profile_event_signature
         debug_event_signature = signature.debug_event_signature
 
         # Event is gradually populated in this function
-        ret_event: Event = Event(name="", _instruction_id=signature.instruction_id)
+        ret_event: Event = Event(
+            name="",
+            _instruction_id=signature.instruction_id,
+            _delegate_metadata_parser=delegate_metadata_parser,
+        )
 
         # Populate fields from profile events
         Event._populate_profiling_related_fields(
@@ -387,10 +424,13 @@ class Event:
                         f"Expected exactly one profile event per InstructionEvent when generating Inspector Event, but got {len(profile_events)}"
                     )
 
+                # Scale factor should only be applied to non-delegated ops
+                scale_factor_updated = 1 if ret_event.is_delegated_op else scale_factor
+
                 profile_event = profile_events[0]
                 data.append(
                     float(profile_event.end_time - profile_event.start_time)
-                    / scale_factor
+                    / scale_factor_updated
                 )
                 delegate_debug_metadatas.append(
                     profile_event.delegate_debug_metadata
@@ -401,7 +441,8 @@ class Event:
         # Update fields
         if len(data) > 0:
             ret_event.perf_data = PerfData(data)
-        ret_event.delegate_debug_metadatas = delegate_debug_metadatas
+        if any(delegate_debug_metadatas):
+            ret_event._delegate_debug_metadatas = delegate_debug_metadatas
 
     @staticmethod
     def _populate_debugging_related_fields(
@@ -492,7 +533,9 @@ class EventBlock:
     run_output: Optional[ProgramOutput] = None
     reference_output: Optional[ProgramOutput] = None
 
-    def to_dataframe(self, include_units: bool = False) -> pd.DataFrame:
+    def to_dataframe(
+        self, include_units: bool = False, include_delegate_debug_data: bool = False
+    ) -> pd.DataFrame:
         """
         Converts the EventBlock into a DataFrame with each row being an event instance
 
@@ -501,6 +544,7 @@ class EventBlock:
 
         Args:
             include_units: Whether headers should include units (default false)
+            include_delegate_debug_data: Whether to show the delegate debug data
 
         Returns:
             A Pandas DataFrame containing the data of each Event instance in this EventBlock.
@@ -559,6 +603,30 @@ class EventBlock:
             "debug_data": [event.debug_data for event in self.events],
         }
         df = pd.DataFrame(data)
+
+        # Add Delegate Debug Metadata columns
+        if include_delegate_debug_data:
+            delegate_data = []
+            for event in self.events:
+                if (metadata := event.delegate_debug_metadatas) is not None and len(
+                    metadata
+                ) > 0:
+                    if isinstance(metadata, list):
+                        delegate_data.append(
+                            pd.Series([metadata], index=["delegate_debug_metadata"])
+                        )
+                    elif isinstance(metadata, dict):
+                        delegate_data.append(pd.Series(metadata))
+                    else:
+                        raise ValueError(
+                            f"Unexpected type for delegate_debug_metadata: {type(metadata)}"
+                        )
+                else:
+                    delegate_data.append(pd.Series())
+
+            if any(not data.empty for data in delegate_data):
+                df = pd.concat([df, pd.DataFrame(delegate_data)], axis=1)
+
         return df
 
     @staticmethod
@@ -567,6 +635,9 @@ class EventBlock:
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
         output_buffer: Optional[bytes] = None,
+        delegate_metadata_parser: Optional[
+            Callable[[List[str]], Dict[str, Any]]
+        ] = None,
     ) -> List["EventBlock"]:
         """
         Given an etdump, generate a list of EventBlocks corresponding to the
@@ -576,6 +647,8 @@ class EventBlock:
         etdump timestamps associated with each EventBlocks
 
         An optional buffer to inflate etdump references
+
+        An optional delegate metadata parser function to parse delegate profiling metadata
         """
 
         # Map each RunSignatures to instances of its constituent events.
@@ -657,7 +730,11 @@ class EventBlock:
             # Construct the Events
             events: List[Event] = [
                 Event._gen_from_inference_events(
-                    signature, instruction_events, scale_factor, output_buffer
+                    signature,
+                    instruction_events,
+                    scale_factor,
+                    output_buffer,
+                    delegate_metadata_parser,
                 )
                 for signature, instruction_events in run_group.items()
             ]
@@ -754,6 +831,9 @@ class EventBlock:
                 event.debug_handles = delegate_metadata_delegate_map.get(
                     str(delegate_debug_id)  # pyre-ignore
                 )
+                for key, value in delegate_metadata_delegate_map.items():
+                    if key in str(delegate_debug_id):
+                        event.debug_handles = value
 
 
 class Inspector:
@@ -773,7 +853,11 @@ class Inspector:
         etrecord: Optional[Union[ETRecord, str]] = None,
         source_time_scale: TimeScale = TimeScale.NS,
         target_time_scale: TimeScale = TimeScale.MS,
-        buffer_path: Optional[str] = None,
+        debug_buffer_path: Optional[str] = None,
+        delegate_metadata_parser: Optional[
+            Callable[[List[str]], Dict[str, Any]]
+        ] = None,
+        enable_module_hierarchy: bool = False,
     ) -> None:
         r"""
         Initialize an `Inspector` instance with the underlying `EventBlock`\ s populated with data from the provided ETDump path
@@ -784,7 +868,9 @@ class Inspector:
             etrecord: Optional ETRecord object or path to the ETRecord file.
             source_time_scale: The time scale of the performance data retrieved from the runtime. The default time hook implentation in the runtime returns NS.
             target_time_scale: The target time scale to which the users want their performance data converted to. Defaults to MS.
-            buffer_path: Buffer file path referenced by ETDump
+            debug_buffer_path: Debug buffer file path that contains the debug data referenced by ETDump for intermediate and program outputs.
+            delegate_metadata_parser: Optional function to parse delegate metadata from an Profiling Event. Expected signature of the function is:
+                    (delegate_metadata_list: List[bytes]) -> Union[List[str], Dict[str, Any]]
 
         Returns:
             None
@@ -810,17 +896,22 @@ class Inspector:
 
         # Create EventBlocks from ETDump
         etdump = gen_etdump_object(etdump_path=etdump_path)
-        if buffer_path is not None:
-            with open(buffer_path, "rb") as f:
+        if debug_buffer_path is not None:
+            with open(debug_buffer_path, "rb") as f:
                 output_buffer = f.read()
         else:
             output_buffer = None
+            warnings.warn(
+                "Output Buffer not found. Tensor Debug Data will not be available.",
+                stacklevel=1,
+            )
 
         self.event_blocks = EventBlock._gen_from_etdump(
             etdump,
             self._source_time_scale,
             self._target_time_scale,
             output_buffer,
+            delegate_metadata_parser=delegate_metadata_parser,
         )
 
         # Connect ETRecord to EventBlocks
@@ -829,6 +920,7 @@ class Inspector:
         # _consume_etrecord() will populate the _reference_outputs dict
         # Key str is method name; value is list of ProgramOutputs because of list of test cases
         self._reference_outputs: Dict[str, List[ProgramOutput]] = {}
+        self._enable_module_hierarchy = enable_module_hierarchy
         self._consume_etrecord()
 
     def _consume_etrecord(self) -> None:
@@ -864,7 +956,10 @@ class Inspector:
             )
 
         # (2) Event Metadata Association
-        self.op_graph_dict = gen_graphs_from_etrecord(etrecord=self._etrecord)
+        self.op_graph_dict = gen_graphs_from_etrecord(
+            etrecord=self._etrecord,
+            enable_module_hierarchy=self._enable_module_hierarchy,
+        )
         debug_handle_to_op_node_map = create_debug_handle_to_op_node_mapping(
             self.op_graph_dict[EDGE_DIALECT_GRAPH_KEY],
         )
@@ -886,7 +981,10 @@ class Inspector:
                     ]
 
     def print_data_tabular(
-        self, file: IO[str] = sys.stdout, include_units: bool = True
+        self,
+        file: IO[str] = sys.stdout,
+        include_units: bool = True,
+        include_delegate_debug_data: bool = False,
     ) -> None:
         """
         Displays the underlying EventBlocks in a structured tabular format, with each row representing an Event.
@@ -895,6 +993,7 @@ class Inspector:
             file: Which IO stream to print to. Defaults to stdout.
                 Not used if this is in an IPython environment such as a Jupyter notebook.
             include_units: Whether headers should include units (default true)
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
 
         Returns:
             None
@@ -904,7 +1003,10 @@ class Inspector:
             return f"font-size: {size}px"
 
         df_list = [
-            event_block.to_dataframe(include_units=include_units)
+            event_block.to_dataframe(
+                include_units=include_units,
+                include_delegate_debug_data=include_delegate_debug_data,
+            )
             for event_block in self.event_blocks
         ]
         combined_df = pd.concat(df_list, ignore_index=True)

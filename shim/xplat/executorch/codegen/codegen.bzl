@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime", "struct_to_json")
 
 # Headers that declare the function signatures of the C++ functions that
 # map to entries in functions.yaml and custom_ops.yaml.
@@ -44,6 +44,7 @@ CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES = [
 def et_operator_library(
         name,
         ops = [],
+        ops_dict = {},
         model = None,
         include_all_operators = False,
         ops_schema_yaml_target = None,
@@ -59,6 +60,11 @@ def et_operator_library(
     if ops:
         genrule_cmd.append(
             "--root_ops=" + ",".join(ops),
+        )
+    if ops_dict:
+        ops_dict_json = struct_to_json(ops_dict)
+        genrule_cmd.append(
+            "--ops_dict='{}'".format(ops_dict_json),
         )
     if model:
         genrule_cmd.append(

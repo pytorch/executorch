@@ -1,9 +1,12 @@
 import logging
 import os
 
+import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
+
 import numpy as np
 import serializer.tosa_serializer as ts
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 
 logger = logging.getLogger(__name__)
@@ -132,3 +135,33 @@ def buildReshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
+
+
+def is_permute_node_before_addmm(node):
+    return (
+        node.target == exir_ops.edge.aten.permute_copy.default
+        and list(node.users)[0].target == exir_ops.edge.aten.addmm.default
+    )
+
+
+def is_bias_node_for_addmm(node):
+    consumer_node = list(node.users)[0]
+    # consumer node is addmm
+    is_rank2_linear_bias = (
+        consumer_node.target == exir_ops.edge.aten.addmm.default
+        and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
+    )
+
+    # rank>2 linear layers
+    # consumer_consumer node is view_copy
+    is_rank_greater_than_2_linear_bias = False
+    if (
+        consumer_node.target == exir_ops.edge.aten.addmm.default
+        and list(consumer_node.users)[0].target == exir_ops.edge.aten.view_copy.default
+    ):
+        consumer_consumer_node = list(consumer_node.users)[0]
+        is_rank_greater_than_2_linear_bias = (
+            list(consumer_consumer_node.users)[0].target == tosa_quant_utils.q_op
+        )
+
+    return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias

@@ -129,5 +129,18 @@ bool check_scatter_add_args(
   return true;
 }
 
+bool check_index_out_args(
+    const Tensor& in,
+    const Tensor& out,
+    const Tensor& index_out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape(out, index_out));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensor_is_default_or_channels_last_dim_order(index_out));
+  ET_LOG_AND_RETURN_IF_FALSE(index_out.scalar_type() == ScalarType::Long);
+
+  return true;
+}
+
 } // namespace executor
 } // namespace torch

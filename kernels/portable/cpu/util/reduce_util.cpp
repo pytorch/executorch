@@ -12,6 +12,10 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
+#ifndef USE_ATEN_MODE
+#include <executorch/kernels/portable/cpu/util/index_util.h>
+#endif
+
 namespace torch {
 namespace executor {
 
@@ -316,6 +320,118 @@ Error resize_reduction_out(
       sizes_arr, static_cast<size_t>(out_dim)};
   return resize_tensor(out, out_size);
 }
+
+#ifndef USE_ATEN_MODE
+
+/**
+ * Check the validity of arguments for reduction operators.
+ */
+bool check_reduction_args(
+    const Tensor& in,
+    const optional<ArrayRef<int64_t>>& dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  if (dtype.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+  }
+  check_dim_list_is_valid(in, dim_list);
+  ET_LOG_AND_RETURN_IF_FALSE(
+      out.dim() == compute_reduced_out_dim(in, dim_list, keepdim));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+
+  return true;
+}
+
+/**
+ * Check the validity of arguments for reduction operators that take
+ * a single dimension argument.
+ */
+bool check_reduction_args_single_dim(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    Tensor& out) {
+  if (in.dim() == 0) {
+    if (dim.has_value()) {
+      ET_LOG_AND_RETURN_IF_FALSE(dim.value() == 0 || dim.value() == -1);
+    }
+    return true;
+  }
+
+  if (dim.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim.value(), in.dim()));
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_non_empty_dim(in, dim.value()));
+  }
+
+  ET_LOG_AND_RETURN_IF_FALSE(
+      out.dim() == compute_reduced_out_dim(in, dim, keepdim));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
+
+  return true;
+}
+
+bool check_mean_dim_args(
+    const Tensor& in,
+    optional<ArrayRef<int64_t>> dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(
+      check_reduction_args(in, dim_list, keepdim, dtype, out));
+
+  if (dtype) {
+    ET_LOG_AND_RETURN_IF_FALSE(torch::executor::isFloatingType(dtype.value()));
+    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == dtype.value());
+  } else {
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(in));
+    ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(out));
+  }
+
+  return true;
+}
+
+bool check_amin_amax_args(
+    const Tensor& in,
+    ArrayRef<int64_t> dim_list,
+    bool keepdim,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(
+      check_reduction_args(in, dim_list, keepdim, {}, out));
+  ET_LOG_AND_RETURN_IF_FALSE(in.scalar_type() == out.scalar_type());
+
+  return true;
+}
+
+bool check_argmin_argmax_args(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(
+      check_reduction_args_single_dim(in, dim, keepdim, out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == ScalarType::Long);
+
+  return true;
+}
+
+bool check_min_max_args(
+    const Tensor& in,
+    int64_t dim,
+    bool keepdim,
+    Tensor& max,
+    Tensor& max_indices) {
+  ET_LOG_AND_RETURN_IF_FALSE(
+      check_reduction_args_single_dim(in, dim, keepdim, max));
+  ET_LOG_AND_RETURN_IF_FALSE(check_index_out_args(in, max, max_indices));
+
+  return true;
+}
+
+#endif
 
 } // namespace executor
 } // namespace torch

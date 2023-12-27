@@ -2,4 +2,6 @@
 # targets.bzl. This file can contain fbcode-only targets.
 load(":targets.bzl", "define_common_targets")
 
+oncall("executorch")
+
 define_common_targets()

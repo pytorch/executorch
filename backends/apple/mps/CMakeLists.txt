@@ -28,3 +28,9 @@ add_library(mpsdelegate ${_mps_backend__srcs})
 target_link_libraries(mpsdelegate PRIVATE baundled_program
                                           ${_executor_runner_libs})
 target_include_directories(mpsdelegate PUBLIC ${_common_include_directories})
+
+install(
+  TARGETS mpsdelegate
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})

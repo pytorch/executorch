@@ -5,7 +5,6 @@
 
 #define EXIR_MPS_DELEGATE 1
 
-#include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/backends/apple/mps/runtime/MPSStream.h>
 #include <executorch/backends/apple/mps/utils/OperationUtils.h>
 

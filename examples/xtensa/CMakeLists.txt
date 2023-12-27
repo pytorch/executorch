@@ -19,6 +19,9 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+# Find prebuilt executorch lib
+find_package(executorch CONFIG REQUIRED)
+
 add_compile_options(
   -DSDK_DEBUGCONSOLE=1
   -DSERIAL_PORT_TYPE_UART=1

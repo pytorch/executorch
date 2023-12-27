@@ -15,7 +15,7 @@ import executorch.exir as exir
 # Import passes
 import executorch.exir.memory_planning  # noqa
 import torch
-from executorch.exir import CaptureConfig, EdgeCompileConfig, memory
+from executorch.exir import EdgeCompileConfig, memory, to_edge
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
@@ -31,7 +31,6 @@ from executorch.exir.passes import (
     ReplaceSymSizeOpPass,
     ToOutVarPass,
 )
-from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
@@ -48,6 +47,7 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
+from torch.export import export
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.library import impl, Library
@@ -104,12 +104,15 @@ class TestPasses(unittest.TestCase):
 
         int_tensor = torch.tensor([[1, 2, 3]])
         float_tensor = torch.tensor([[1.0, 2.0, 3.0]])
-        edge_prog = exir.capture(
-            add, (int_tensor, float_tensor), exir.CaptureConfig()
-        ).to_edge()
+        edge_prog = to_edge(
+            export(
+                add,
+                (int_tensor, float_tensor),
+            )
+        )
 
-        new_prog = edge_prog.transform(RemoveMixedTypeOperators())
-        new_graph_module = new_prog.exported_program.graph_module
+        new_prog = edge_prog.transform([RemoveMixedTypeOperators()])
+        new_graph_module = new_prog.exported_program().graph_module
         self.assertIsNotNone(new_graph_module)
 
         add_count = 0
@@ -129,12 +132,10 @@ class TestPasses(unittest.TestCase):
         double_tensor = torch.tensor([[1.0, 2.0, 3.0]])
         double_tensor = double_tensor.to(torch.double)
 
-        double_prog = exir.capture(
-            add, (int_tensor, double_tensor), exir.CaptureConfig()
-        ).to_edge()
+        double_prog = to_edge(export(add, (int_tensor, double_tensor)))
 
-        double_prog.transform(RemoveMixedTypeOperators())
-        new_graph_module_double = double_prog.exported_program.graph_module
+        double_prog.transform([RemoveMixedTypeOperators()])
+        new_graph_module_double = double_prog.exported_program().graph_module
         self.assertIsNotNone(new_graph_module_double)
 
         add_count_double = 0
@@ -155,14 +156,17 @@ class TestPasses(unittest.TestCase):
             return x * y
 
         float_tensor_vert = float_tensor.T
-        mult_prog = exir.capture(
-            mult, (int_tensor, float_tensor_vert), exir.CaptureConfig()
-        ).to_edge()
+        mult_prog = to_edge(
+            export(
+                mult,
+                (int_tensor, float_tensor_vert),
+            )
+        )
 
         # graph_module_mult.graph.print_tabular()
 
-        mult_prog = mult_prog.transform(RemoveMixedTypeOperators())
-        new_graph_module_mult = mult_prog.exported_program.graph_module
+        mult_prog = mult_prog.transform([RemoveMixedTypeOperators()])
+        new_graph_module_mult = mult_prog.exported_program().graph_module
         self.assertIsNotNone(new_graph_module_mult)
 
         mult_count = 0
@@ -184,14 +188,15 @@ class TestPasses(unittest.TestCase):
             return x.to(dtype=torch.float32)
 
         # Turn off functionalization so that we can get the actual to.dtype op
-        edge_prog = exir.capture(
-            foo,
-            (torch.ones(1, dtype=torch.float32),),
-            exir.CaptureConfig(),
-        ).to_edge()
-        edge_prog = edge_prog.transform(RemoveNoopPass())
-        self.assertIsNotNone(edge_prog.exported_program.graph_module)
-        new_graph_module = edge_prog.exported_program.graph_module
+        edge_prog = to_edge(
+            export(
+                foo,
+                (torch.ones(1, dtype=torch.float32),),
+            )
+        )
+        edge_prog = edge_prog.transform([RemoveNoopPass()])
+        self.assertIsNotNone(edge_prog.exported_program().graph_module)
+        new_graph_module = edge_prog.exported_program().graph_module
         for node in new_graph_module.graph.nodes:
             if node.op == "call_function":
                 self.assertNotEqual(node.target, torch.ops.aten.to.dtype)
@@ -208,31 +213,38 @@ class TestPasses(unittest.TestCase):
 
         # Turn off functionalization so that we can get the actual to.dtype op
         x = torch.ones((3, 8, 8))
-        prog = exir.capture(foo_with_no_slice, (x,), exir.CaptureConfig()).to_edge()
-        prog = prog.transform(RemoveNoopPass())
-        new_graph_module = prog.exported_program.graph_module
+        prog = to_edge(
+            export(
+                foo_with_no_slice,
+                (x,),
+            )
+        )
+        prog = prog.transform([RemoveNoopPass()])
+        new_graph_module = prog.exported_program().graph_module
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor", 0, exactly=True
         ).run(new_graph_module.code)
 
-        prog = exir.capture(
-            foo_with_one_slice,
-            (x,),
-            exir.CaptureConfig(),
-        ).to_edge()
-        prog = prog.transform(RemoveNoopPass())
-        new_graph_module = prog.exported_program.graph_module
+        prog = to_edge(
+            export(
+                foo_with_one_slice,
+                (x,),
+            )
+        )
+        prog = prog.transform([RemoveNoopPass()])
+        new_graph_module = prog.exported_program().graph_module
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor", 1, exactly=True
         ).run(new_graph_module.code)
 
-        prog = exir.capture(
-            foo_with_all_slices,
-            (x,),
-            exir.CaptureConfig(),
-        ).to_edge()
-        prog = prog.transform(RemoveNoopPass())
-        new_graph_module = prog.exported_program.graph_module
+        prog = to_edge(
+            export(
+                foo_with_all_slices,
+                (x,),
+            )
+        )
+        prog = prog.transform([RemoveNoopPass()])
+        new_graph_module = prog.exported_program().graph_module
         FileCheck().check_count(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor", 3, exactly=True
         ).run(new_graph_module.code)
@@ -243,7 +255,12 @@ class TestPasses(unittest.TestCase):
 
         x = (torch.randn(2, 3),)
 
-        exir.capture(f, x, exir.CaptureConfig()).to_edge().exported_program.graph_module
+        to_edge(
+            export(
+                f,
+                x,
+            )
+        ).exported_program().graph_module
         # TODO(angelayi): Add a utility function that verifies a model is in
         # the edge dialect
 
@@ -270,15 +287,19 @@ class TestPasses(unittest.TestCase):
 
         composite_m = CompositeModel(3)
 
-        edge_prog = (
-            exir.capture(composite_m, inputs, exir.CaptureConfig())
+        edge_prog = to_edge(
+            export(
+                composite_m,
+                inputs,
+            )
             # torch._ops.aten.t.default
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            ,
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_prog = edge_prog.transform(SpecPropPass())
+        new_prog = edge_prog.transform([SpecPropPass()], check_ir_validity=False)
 
-        new_gm_res = ToOutVarPass()(new_prog.exported_program.graph_module)
+        new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
         for node in new_gm.graph.nodes:
@@ -295,8 +316,8 @@ class TestPasses(unittest.TestCase):
         new_gm_res = MemoryPlanningPass()(new_gm)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
-        new_prog.exported_program.graph_module.graph = new_gm.graph
-        emit_program(new_prog.exported_program)
+        new_prog.exported_program().graph_module.graph = new_gm.graph
+        emit_program(new_prog.exported_program())
 
     def test_to_out_variant_singleon_tensor_list(self) -> None:
         class MyModel(nn.Module):
@@ -311,10 +332,14 @@ class TestPasses(unittest.TestCase):
 
         model = MyModel()
         inputs = model.get_random_inputs()
-        prog = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
-            EdgeCompileConfig(_check_ir_validity=False)
+        prog = to_edge(
+            export(
+                model,
+                inputs,
+            ),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )  # TODO(larryliu): fix split_copy
-        new_gm_res = ToOutVarPass()(prog.exported_program.graph_module)
+        new_gm_res = ToOutVarPass()(prog.exported_program().graph_module)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
@@ -342,10 +367,14 @@ class TestPasses(unittest.TestCase):
 
         model = MyModel()
         inputs = model.get_random_inputs()
-        prog = exir.capture(model, inputs, exir.CaptureConfig()).to_edge(
-            EdgeCompileConfig(_check_ir_validity=False)
+        prog = to_edge(
+            export(
+                model,
+                inputs,
+            ),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )  # TODO(larryliu): fix topk
-        new_gm_res = ToOutVarPass()(prog.exported_program.graph_module)
+        new_gm_res = ToOutVarPass()(prog.exported_program().graph_module)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
@@ -373,8 +402,13 @@ class TestPasses(unittest.TestCase):
         inputs = torch.tensor(1.0, dtype=torch.float)
         model_res = model(inputs)
 
-        edge_dialect = exir.capture(model, (inputs,), exir.CaptureConfig()).to_edge()
-        edge_res = edge_dialect(inputs)
+        edge_dialect = to_edge(
+            export(
+                model,
+                (inputs,),
+            )
+        )
+        edge_res = edge_dialect.exported_program()(inputs)
         self.assertTrue(torch.allclose(model_res, edge_res))
 
     def test_export_pass(self) -> None:
@@ -385,18 +419,22 @@ class TestPasses(unittest.TestCase):
         class NullPass(ExportPass):
             pass
 
-        prog = exir.capture(f, (torch.ones(3, 2),), exir.CaptureConfig()).to_edge(
-            EdgeCompileConfig(_check_ir_validity=False)
+        prog = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            ),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )  # TODO(larryliu): fix cat
-        new_prog = prog.transform(NullPass())
-        new_nodes = new_prog.exported_program.graph_module.graph.nodes
+        new_prog = prog.transform([NullPass()])
+        new_nodes = new_prog.exported_program().graph_module.graph.nodes
         for node in new_nodes:
             if node.op != "call_function":
                 continue
             self.assertTrue(hasattr(node, "stack_trace"))
             self.assertIsNotNone(node.stack_trace)
 
-        old_nodes = prog.exported_program.graph_module.graph.nodes
+        old_nodes = prog.exported_program().graph_module.graph.nodes
         self.assertEqual(len(new_nodes), len(old_nodes))
         for new_node, old_node in zip(new_nodes, old_nodes):
             self.assertEqual(new_node.op, old_node.op)
@@ -410,66 +448,42 @@ class TestPasses(unittest.TestCase):
         class NullPass(ExportPass):
             pass
 
-        # TODO (yidi) cannot enable functionalization under exir.capture() pt2 mode
-        prog = exir.capture(
-            f,
-            (torch.ones(3, 2),),
-            CaptureConfig(enable_functionalization=False),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        new_prog = prog.transform(NullPass())
-        new_nodes = new_prog.exported_program.graph_module.graph.nodes
+        prog = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+            ),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        new_prog = prog.transform([NullPass()])
+        new_nodes = new_prog.exported_program().graph_module.graph.nodes
         for node in new_nodes:
             if node.op != "call_function":
                 continue
             self.assertTrue(hasattr(node, "stack_trace"))
             self.assertIsNotNone(node.stack_trace)
 
-        old_nodes = prog.exported_program.graph_module.graph.nodes
+        old_nodes = prog.exported_program().graph_module.graph.nodes
         self.assertEqual(len(new_nodes), len(old_nodes))
         for new_node, old_node in zip(new_nodes, old_nodes):
             self.assertEqual(new_node.op, old_node.op)
             self.assertEqual(new_node.target, old_node.target)
 
-    def test_export_const_prop_pass(self) -> None:
-        class M(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.a = torch.nn.Parameter(torch.ones(1, 2, 3))
-
-            def forward(self, x):
-                b = self.a + self.a
-                c = torch.cat([self.a, b])
-                return (c + c) + x
-
-        def count_additions(gm: torch.fx.GraphModule) -> int:
-            return sum(
-                (node.target == torch.ops.aten.add.Tensor) for node in gm.graph.nodes
-            )
-
-        # TODO (yidi) cannot enable functionalization under exir.capture() pt2 mode
-        graph_module = exir.capture(
-            M(),
-            (torch.zeros(2, 2, 3),),
-            CaptureConfig(enable_dynamic_shape=True, enable_functionalization=True),
-        ).exported_program.graph_module
-        self.assertEqual(count_additions(graph_module), 3)
-
-        new_gm = ConstPropPass()(graph_module)
-        self.assertIsNotNone(new_gm)
-        new_gm = new_gm.graph_module
-        self.assertEqual(count_additions(new_gm), 1)
-
     def test_export_scalar_to_tensor_pass(self) -> None:
         def mul(x: torch.Tensor) -> torch.Tensor:
             return x * 3.14
 
-        expo_prog = exir.capture(mul, (torch.ones(1),), exir.CaptureConfig())
-        new_prog = expo_prog.transform(ScalarToTensorPass())
-        self.assertIsNotNone(new_prog.exported_program.graph_module)
-        new_graph_module = new_prog.exported_program.graph_module
+        expo_prog = to_edge(export(mul, (torch.ones(1),)))
+        new_prog = expo_prog.transform([ScalarToTensorPass()])
+        self.assertIsNotNone(new_prog.exported_program().graph_module)
+        new_graph_module = new_prog.exported_program().graph_module
 
         inp = torch.zeros(1)
-        self.assertTrue(torch.allclose(expo_prog(inp), new_prog(inp)))
+        self.assertTrue(
+            torch.allclose(
+                expo_prog.exported_program()(inp), new_prog.exported_program()(inp)
+            )
+        )
         for node in new_graph_module.graph.nodes:
             if node.op == "call_function":
                 for arg in node.args + tuple(node.kwargs.values()):
@@ -487,25 +501,38 @@ class TestPasses(unittest.TestCase):
 
         example_inputs = (torch.randn(2, 3, 4, 5),)
 
-        gm = exir.capture(
-            f,
-            example_inputs,
-            exir.CaptureConfig(enable_dynamic_shape=True),
+        gm = to_edge(
+            export(
+                f,
+                example_inputs,
+            )
         )
         new_gm = gm.transform(
-            ReplaceSymSizeOpPass(), ScalarToTensorPass(), RemoveMixedTypeOperators()
+            [ReplaceSymSizeOpPass(), ScalarToTensorPass(), RemoveMixedTypeOperators()]
         )
-        self.assertIsNotNone(new_gm.exported_program.graph_module)
+        self.assertIsNotNone(new_gm.exported_program().graph_module)
 
-        self.assertTrue(torch.allclose(gm(*example_inputs), new_gm(*example_inputs)))
+        self.assertTrue(
+            torch.allclose(
+                gm.exported_program()(*example_inputs),
+                new_gm.exported_program()(*example_inputs),
+            )
+        )
 
     def test_spec_prop_pass(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             return x + x
 
-        gm = exir.capture(
-            f, (torch.ones(3, 2),), exir.CaptureConfig()
-        ).exported_program.graph_module
+        gm = (
+            to_edge(
+                export(
+                    f,
+                    (torch.ones(3, 2),),
+                )
+            )
+            .exported_program()
+            .graph_module
+        )
         new_gm = SpecPropPass()(gm)
         self.assertIsNotNone(new_gm)
         new_nodes = new_gm.graph_module.graph.nodes
@@ -522,9 +549,16 @@ class TestPasses(unittest.TestCase):
         def f(x: torch.Tensor) -> Tuple[torch.Tensor]:
             return (x + x,)
 
-        gm = exir.capture(
-            f, (torch.ones(3, 2),), exir.CaptureConfig()
-        ).exported_program.graph_module
+        gm = (
+            to_edge(
+                export(
+                    f,
+                    (torch.ones(3, 2),),
+                )
+            )
+            .exported_program()
+            .graph_module
+        )
         new_gm = SpecPropPass()(gm)
         self.assertIsNotNone(new_gm)
         new_nodes = new_gm.graph_module.graph.nodes
@@ -547,34 +581,39 @@ class TestPasses(unittest.TestCase):
             return model(inp)
 
         # ReplaceBrokenOpsWithFunctionalOpsPass is used in to_edge()
-        prog = exir.capture(f, (x,), exir.CaptureConfig()).to_edge(
-            exir.EdgeCompileConfig(_check_ir_validity=False)
+        prog = to_edge(
+            export(
+                f,
+                (x,),
+            ),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        gm = prog.exported_program.graph_module
+        gm = prog.exported_program().graph_module
         count_after = 0
         for node in gm.graph.nodes:
             if node.target == torch.ops.aten._unsafe_view.default:
                 count_after += 1
         self.assertEqual(count_after, 0)
-        self.assertTrue(torch.allclose(prog(x), f(x)))
+        self.assertTrue(torch.allclose(prog.exported_program()(x), f(x)))
 
     def test_convert_symb_ops(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
-            x = x.view(x.shape[0] - 1, -1)
-            return torch.cat([x, x])
+            return torch.add(x, x.shape[0] - 1)
 
-        # TODO(hirsheybar): view_copy failing on dynamic shape input P557013846
-        prog = exir.capture(
-            f,
-            (torch.ones(3, 2),),
-            exir.CaptureConfig(
-                enable_functionalization=False,
-                enable_dynamic_shape=True,
+        # Mark the 0th dimension of X as dynamic with a max value of 3.
+        dim_x = torch.export.Dim("dim_x", max=3)
+
+        prog = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+                dynamic_shapes={"x": {0: dim_x}},
             ),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        new_prog = prog.transform(EdgeToBackendOpsPass())
-        self.assertIsNotNone(new_prog.exported_program.graph_module)
-        converted_gm = new_prog.exported_program.graph_module
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        new_prog = prog.transform([EdgeToBackendOpsPass()], check_ir_validity=False)
+        self.assertIsNotNone(new_prog.exported_program().graph_module)
+        converted_gm = new_prog.exported_program().graph_module
 
         FileCheck().check("torch.ops.aten.sym_size.int").check(
             "executorch_exir_dialects_backend__ops_executorch_prim_sub_Scalar"
@@ -587,21 +626,20 @@ class TestPasses(unittest.TestCase):
         """
         eager_model = FTMapBasic()
         inputs = eager_model.get_random_inputs()
-        prog = exir.capture(
-            eager_model,
-            inputs,
-            exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                enable_functionalization=False,
+        prog = to_edge(
+            export(
+                eager_model,
+                inputs,
             ),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
         passes = [
             SpecPropPass(),
             HintBasedSymShapeEvalPass(),
         ]
-        new_prog = prog.transform(*passes)
+        new_prog = prog.transform(passes)
 
-        new_gm_res = ToOutVarPass()(new_prog.exported_program.graph_module)
+        new_gm_res = ToOutVarPass()(new_prog.exported_program().graph_module)
         self.assertIsNotNone(new_gm_res)
         new_gm = new_gm_res.graph_module
 
@@ -641,13 +679,10 @@ class TestPasses(unittest.TestCase):
     def test_dce_recursive(self) -> None:
         eager_model = FTCondDeadCode()
         inputs = eager_model.get_random_inputs()
-        gm = exir.capture(
+        gm = export(
             eager_model,
             inputs,
-            exir.CaptureConfig(
-                enable_dynamic_shape=True, enable_functionalization=False
-            ),
-        ).exported_program.graph_module
+        ).graph_module
 
         self.assertTrue(torch.ops.aten.sub.Tensor in collect_ops(gm))
         dead_code_elimination_pass(gm)
@@ -661,21 +696,15 @@ class TestPasses(unittest.TestCase):
                 y = y + x
             return y
 
-        prog = (
-            exir.capture(
+        prog = to_edge(
+            export(
                 f,
                 (torch.rand(5),),
-                config=CaptureConfig(
-                    enable_dynamic_shape=True,
-                ),
-            )
-            .to_edge(
-                # missing dispatch key
-                exir.EdgeCompileConfig(_check_ir_validity=False)
-            )
-            .transform(*propagate_dynamic_shape())
-        )
-        gm = prog.exported_program.graph_module
+            ),
+            # missing dispatch key
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        ).transform(propagate_dynamic_shape())
+        gm = prog.exported_program().graph_module
         nspec = 0
         for n in gm.graph.nodes:
             for spec in pytree.tree_flatten(n.meta["spec"])[0]:
@@ -691,32 +720,28 @@ class TestPasses(unittest.TestCase):
         """
 
         def f(x: torch.Tensor) -> torch.Tensor:
-            rep = x.size(1) // x.size(0)
-            ones = torch.ones(rep)
-            return ones
+            return torch.add(x, x.shape[0] - 1)
 
-        inp = torch.rand(4, 8)
-        prog = exir.capture(
-            f,
-            (inp,),
-            config=CaptureConfig(
-                enable_dynamic_shape=True,
+        dim_x = torch.export.Dim("dim_x", max=3)
+        prog = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+                dynamic_shapes={"x": {0: dim_x}},
             ),
-        ).to_edge(
-            # missing dispatch key
-            exir.EdgeCompileConfig(_check_ir_validity=False)
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        new_prog = prog.transform(EdgeToBackendOpsPass())
-        gm = new_prog.exported_program.graph_module
+        new_prog = prog.transform([EdgeToBackendOpsPass()], check_ir_validity=False)
+        gm = new_prog.exported_program().graph_module
         gm.print_readable()
         *_, ones, out = gm.graph.nodes
         print(f"Before ExportPass: {ones.format_node()}")
         self.assertTrue(isinstance(ones.meta["val"].shape[0], torch.SymInt))
         self.assertTrue(len(ones.meta["val"].shape[0].node.expr.free_symbols) > 0)
 
-        new_prog = new_prog.transform(ExportPass())
-        gm = new_prog.exported_program.graph_module
+        new_prog = new_prog.transform([ExportPass()], check_ir_validity=False)
+        gm = new_prog.exported_program().graph_module
         gm.print_readable()
         *_, ones, out = gm.graph.nodes
         print(f"After ExportPass: {ones.format_node()}")
@@ -730,9 +755,14 @@ class TestPasses(unittest.TestCase):
             return x + x
 
         gm = (
-            exir.capture(f, (x,), exir.CaptureConfig())
-            .to_edge()
-            .exported_program.graph_module
+            to_edge(
+                export(
+                    f,
+                    (x,),
+                )
+            )
+            .exported_program()
+            .graph_module
         )
         for node in gm.graph.nodes:
             if node.op == "call_function":
@@ -747,13 +777,12 @@ class TestPasses(unittest.TestCase):
             z = x + y
             return torch.ops.aten.relu.default(z)
 
-        gm = exir.capture(
+        gm = export(
             f,
             (
                 torch.randn(2, 2),
                 torch.randn(2, 2),
             ),
-            exir.CaptureConfig(),
         )
         # should look like:
         # graph():
@@ -764,7 +793,7 @@ class TestPasses(unittest.TestCase):
         #     return [relu_default]
         FileCheck().check("torch.ops.aten.add.Tensor").check(
             "torch.ops.aten.relu.default"
-        ).run(gm.exported_program.graph_module.code)
+        ).run(gm.graph_module.code)
 
         class AddReluFusionPass(ExportPass):
             def call(self, graph_module: GraphModule) -> PassResult:
@@ -793,15 +822,16 @@ class TestPasses(unittest.TestCase):
                     )
                 return super().call_operator(op, args, kwargs, meta)
 
-        gm_lowered = gm.to_edge(
-            EdgeCompileConfig(
+        gm_lowered = to_edge(
+            gm,
+            compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
-        ).transform(AddReluFusionPass(), OpReplacePass())
+        ).transform([AddReluFusionPass(), OpReplacePass()])
 
         FileCheck().check(
             "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu_default"
-        ).run(gm_lowered.code)
+        ).run(gm_lowered.exported_program().graph_module.code)
         # lowered module:
         # def forward(self, ph_0, ph_1):
         #     do_not_use_test_only_add_relu_default = executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu_default(ph_0, ph_1);  ph_0 = ph_1 = None
@@ -809,31 +839,34 @@ class TestPasses(unittest.TestCase):
 
         # Retrace:
         # If not backend op retrace will error out because no CPU/CompositeExplicitAutograd kernel registered.
-        gm_retraced = exir.capture(
-            gm_lowered.module,
-            (
-                torch.randn(2, 2),
-                torch.randn(2, 2),
-            ),
-            exir.CaptureConfig(),
+        gm_retraced = to_edge(
+            export(
+                gm_lowered.exported_program(),
+                (
+                    torch.randn(2, 2),
+                    torch.randn(2, 2),
+                ),
+            )
         )
         # Retrace-able, the graph "promote" back to ATen dialect, showing up add and relu, which is expected.
         FileCheck().check("torch.ops.aten.add.Tensor").check(
             "torch.ops.aten.relu.default"
-        ).run(gm_retraced.exported_program.graph_module.code)
+        ).run(gm_retraced.exported_program().graph_module.code)
 
     def test_debug_handle_generator_pass(self) -> None:
         eager_model = MLP(2, output_size=4)
         inputs = eager_model.get_random_inputs()
 
-        graph_module = exir.capture(
-            eager_model,
-            inputs,
-            exir.CaptureConfig(
-                enable_dynamic_shape=False,
-                enable_functionalization=True,
-            ),
-        ).exported_program.graph_module
+        graph_module = (
+            to_edge(
+                export(
+                    eager_model,
+                    inputs,
+                )
+            )
+            .exported_program()
+            .graph_module
+        )
         DebugHandleGeneratorPass()(graph_module)
         for node in graph_module.graph.nodes:
             self.assertIn("debug_handle", node.meta)
@@ -878,11 +911,16 @@ class TestPasses(unittest.TestCase):
             torch.ones(2, 2),
         )
 
-        graph_module = exir.capture(
-            f,
-            inputs,
-            exir.CaptureConfig(),
-        ).exported_program.graph_module
+        graph_module = (
+            to_edge(
+                export(
+                    f,
+                    inputs,
+                )
+            )
+            .exported_program()
+            .graph_module
+        )
 
         def check_debug_handle_metadata(graph_module: torch.fx.GraphModule) -> None:
             queue = [graph_module]
@@ -907,94 +945,49 @@ class TestPasses(unittest.TestCase):
 
     def test_symint_conversion(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
-            return x + x.shape[0]
+            return torch.add(x, x.shape[0] - 1)
 
-        inputs = (torch.ones(6),)
-        prog = exir.capture(
-            f, inputs, exir.CaptureConfig(enable_dynamic_shape=True)
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        prog = prog.transform(SymToTensorPass())
-
-        FileCheck().check(
-            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
-        ).run(prog.exported_program.graph_module.code)
-        self.assertTrue(torch.allclose(f(torch.ones(6)), prog(torch.ones(6))))
-        self.assertTrue(torch.allclose(f(torch.zeros(6)), prog(torch.zeros(6))))
-
-        # This pass should also be part of to_edge, so checking again after to_edge
-        prog = exir.capture(
-            f, inputs, exir.CaptureConfig(enable_dynamic_shape=True)
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        FileCheck().check(
-            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
-        ).run(prog.exported_program.graph_module.code)
-
-    def test_replace_edge_with_backend_pass(self) -> None:
-        def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            z = x + y
-            return torch.ops.aten.relu.default(z)
-
-        prog = exir.capture(
-            f,
-            (
-                torch.randn(2, 2),
-                torch.randn(2, 2),
+        dim_x = torch.export.Dim("dim_x", max=3)
+        prog = to_edge(
+            export(
+                f,
+                (torch.ones(3, 2),),
+                dynamic_shapes={"x": {0: dim_x}},
             ),
-            exir.CaptureConfig(),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        # should look like:
-        # graph():
-        #     %ph_0 : [#users=1] = placeholder[target=ph_0]
-        #     %ph_1 : [#users=1] = placeholder[target=ph_1]
-        #     %add_tensor : [#users=1] = call_function[target=torch.ops.aten.add.Tensor](args = (%ph_0, %ph_1), kwargs = {})
-        #     %relu_default : [#users=1] = call_function[target=torch.ops.aten.relu.default](args = (%add_tensor,), kwargs = {})
-        #     return [relu_default]
-        FileCheck().check("torch.ops.aten.add.Tensor").check(
-            "torch.ops.aten.relu.default"
-        ).run(prog.exported_program.graph_module.code)
-
-        class AddReluFusionPass(ExportPass):
-            def call(self, graph_module: GraphModule) -> PassResult:
-                # decorator registers this pattern as a CompositeExplicitAutograd kernel, since there's no kernel registered before.
-                @bind_pattern_to_op(
-                    lib, "add_relu2(Tensor self, Tensor other) -> Tensor"
-                )
-                def pattern(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                    z = torch.ops.aten.add.Tensor(x, y)
-                    out = torch.ops.aten.relu.default(z)
-                    return out
-
-                def replacement(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                    return ops.backend.DO_NOT_USE_TEST_ONLY.add_relu2.default(x, y)
-
-                subgraph_rewriter.replace_pattern(graph_module, pattern, replacement)
-                return PassResult(graph_module, True)
-
-        lowered_prog = prog.to_edge(
-            EdgeCompileConfig(
-                _check_ir_validity=False,
-                _use_edge_ops=False,  # doesn't work with it enabled
-            ),
-        ).transform(AddReluFusionPass(), EdgeToBackendOpsPass())
+        prog = prog.transform([SymToTensorPass()])
 
         FileCheck().check(
-            "executorch_exir_dialects_backend__ops_DO_NOT_USE_TEST_ONLY_add_relu2_default"
-        ).run(lowered_prog.exported_program.graph_module.code)
+            "executorch_exir_dialects_edge__ops_aten_scalar_tensor_default"
+        ).run(prog.exported_program().graph_module.code)
+        self.assertTrue(
+            torch.allclose(
+                f(torch.ones(3, 2)), prog.exported_program()(torch.ones(3, 2))
+            )
+        )
+        self.assertTrue(
+            torch.allclose(
+                f(torch.zeros(3, 2)), prog.exported_program()(torch.zeros(3, 2))
+            )
+        )
 
     def test_remove_assert_pass(self) -> None:
         def f(x: torch.Tensor) -> torch.Tensor:
             assert x.shape[0] == 5
             return x * x
 
-        gm = exir.capture(
-            f,
-            (torch.randn(5),),
-            exir.CaptureConfig(),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        new_gm = gm.transform(RemoveAssertAsyncPass())
+        gm = to_edge(
+            export(
+                f,
+                (torch.randn(5),),
+            ),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
+        new_gm = gm.transform([RemoveAssertAsyncPass()])
         num_asserts = [
             node
-            for node in new_gm.exported_program.graph.nodes
+            for node in new_gm.exported_program().graph.nodes
             if node.op == "call_function"
             and node.target == torch.ops.aten._assert_async.msg
         ]
@@ -1009,11 +1002,12 @@ class TestPasses(unittest.TestCase):
             def forward(self, x):
                 return torch.arange(start=0, end=2) + x
 
-        _ = (
-            exir.capture(M(), (torch.randn(2),), exir.CaptureConfig())
-            .to_edge()
-            .to_executorch()
-        )
+        _ = to_edge(
+            export(
+                M(),
+                (torch.randn(2),),
+            )
+        ).to_executorch()
 
     def test_replace_slice(self) -> None:
         class M(torch.nn.Module):
@@ -1025,9 +1019,14 @@ class TestPasses(unittest.TestCase):
                 return self.a[:2] + x
 
         gm = (
-            exir.capture(M(), (torch.randn(2),), exir.CaptureConfig())
-            .to_edge()
-            .exported_program.graph_module
+            to_edge(
+                export(
+                    M(),
+                    (torch.randn(2),),
+                )
+            )
+            .exported_program()
+            .graph_module
         )
         FileCheck().check(
             "executorch_exir_dialects_edge__ops_aten_slice_copy_Tensor"
@@ -1037,16 +1036,16 @@ class TestPasses(unittest.TestCase):
         def add(x: torch.Tensor) -> torch.Tensor:
             return x + 3
 
-        edge = exir.capture(add, (torch.ones(1),), exir.CaptureConfig(enable_aot=True))
-        edge = edge.transform(ScalarToTensorPass(), RemoveMixedTypeOperators())
-        edge.exported_program = lift_constant_tensor_pass(edge.exported_program)
+        edge = to_edge(export(add, (torch.ones(1),)))
+        edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
+        edge.exported_program = lift_constant_tensor_pass(edge.exported_program())
 
         # Check there is a lifted tensor followed by a to_copy node
         FileCheck().check("_lifted_tensor_constant0").check(
             "torch.ops.aten._to_copy.default"
-        ).run(edge.exported_program.graph_module.code)
+        ).run(edge.exported_program().graph_module.code)
 
-        new_ep = constant_prop_pass(edge.exported_program)
+        new_ep = constant_prop_pass(edge.exported_program())
 
         # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
         FileCheck().check_not("_lifted_tensor_constant").check(
@@ -1069,14 +1068,13 @@ class TestPasses(unittest.TestCase):
                 c = torch.cat([self.a, b])
                 return (c + c) + x
 
-        edge = exir.capture(
+        aten = export(
             M(),
             (torch.zeros(2, 2, 3),),
-            exir.CaptureConfig(enable_aot=True),
         )
-        self.assertEqual(count_additions(edge.exported_program.graph_module), 3)
-        edge.exported_program = constant_prop_pass(edge.exported_program)
-        self.assertEqual(count_additions(edge.exported_program.graph_module), 1)
+        self.assertEqual(count_additions(aten.graph_module), 3)
+        new_ep = constant_prop_pass(aten)
+        self.assertEqual(count_additions(new_ep.graph_module), 1)
 
     def test_constant_prop_pass_for_control_flow(self) -> None:
         class Module(torch.nn.Module):
@@ -1104,7 +1102,10 @@ class TestPasses(unittest.TestCase):
         mod = Module()
         x = torch.randn([3, 3])
         pred = torch.tensor(x[0][0].item() < 0)
-        edge = exir.capture(mod, (pred, x), config=exir.CaptureConfig(enable_aot=True))
+        edge = to_edge(
+            export(mod, (pred, x)),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
         error_msg = r"constant_prop_pass for control flow is not supported yet."
 
         # TODO(chenlai): enable constant prop pass for control flow
@@ -1112,4 +1113,4 @@ class TestPasses(unittest.TestCase):
             RuntimeError,
             error_msg,
         ):
-            _ = constant_prop_pass(edge.exported_program)
+            _ = constant_prop_pass(edge.exported_program())

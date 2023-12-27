@@ -27,6 +27,7 @@ from executorch.sdk.debug_format.base_schema import (
     OperatorNode,
     ValueNode,
 )
+from torch._subclasses import FakeTensor
 
 
 # Keywords used in debug_format Metadata
@@ -42,6 +43,7 @@ class RESERVED_METADATA_ARG(Enum):
     MEMORY_USAGE = "memory_usage"
     DEBUG_ENTRY = "debug_entry"
     STACK_TRACE = "stack_trace"
+    DEBUG_DATA = "debug_data"
 
     METRICS_KEYWORD = "metrics"
     PROFILE_SUMMARY_COLDSTART = "Coldstart"
@@ -105,40 +107,54 @@ class FXOperatorGraph(OperatorGraph):
         nodes: Dict[str, Node],
         const_count: int,
         module_mapping: Dict[Tuple[str, str], List[Node]],
+        enable_module_hierarchy: bool,
     ) -> Tuple[List[Node], int]:
         inputs = []
         op = node.op
         name = node.name
         args = node.args
         kwargs = node.kwargs
+        named_args = None
+        if node.op == "call_function" and hasattr(node.target, "_schema"):
+            # pyre-ignore
+            named_args = node.target._schema.arguments
 
-        for arg in args:
+        for index, arg in enumerate(args):
             if isinstance(arg, torch.fx.node.Node):
                 if arg.target == exir.memory.alloc:
                     continue
                 arg_name = FXOperatorGraph._get_node_name(arg)
             elif isinstance(arg, (int, float, torch.dtype)):
                 # e.g. The "0" from node.args of squeeze_copy (mm_default, 0)
-                arg_name = "CONST_" + str(const_count)
+                if named_args and len(named_args) > index:
+                    arg_name = named_args[index].name + "_" + str(const_count)
+                else:
+                    arg_name = "CONST_" + str(const_count)
                 const_count += 1
                 const_node = ValueNode(arg_name, val=str(arg))
                 nodes[arg_name] = const_node
-                FXOperatorGraph._update_module_mapping(
-                    const_node, module_mapping, node.meta
-                )
+                if enable_module_hierarchy:
+                    FXOperatorGraph._update_module_mapping(
+                        const_node, module_mapping, node.meta
+                    )
             elif isinstance(arg, list):
                 arg_name: List[str] = []
                 for list_arg in arg:
                     if isinstance(list_arg, (int, float)):
                         # Consider the whole list of ints/floats as a single constant and
                         # stringify that.
-                        arg_name += ["CONST_" + str(const_count)]
+                        if named_args and len(named_args) > index:
+                            arg_name = [named_args[index].name + "_" + str(const_count)]
+                        else:
+                            arg_name = ["CONST_" + str(const_count)]
                         const_count += 1
-                        const_node = ValueNode(arg_name[-1], val=str(arg))
-                        nodes[arg_name[-1]] = const_node
-                        FXOperatorGraph._update_module_mapping(
-                            const_node, module_mapping, node.meta
-                        )
+                        const_node = ValueNode(arg_name[0], val=arg)
+                        nodes[arg_name[0]] = const_node
+                        if enable_module_hierarchy:
+                            FXOperatorGraph._update_module_mapping(
+                                const_node, module_mapping, node.meta
+                            )
+                        break
                     elif isinstance(list_arg, torch.fx.node.Node):
                         arg_name += [FXOperatorGraph._get_node_name(list_arg)]
                     elif list_arg is None:
@@ -146,9 +162,10 @@ class FXOperatorGraph(OperatorGraph):
                         const_count += 1
                         const_node = ValueNode(arg_name[-1], val=str(arg))
                         nodes[arg_name[-1]] = const_node
-                        FXOperatorGraph._update_module_mapping(
-                            const_node, module_mapping, node.meta
-                        )
+                        if enable_module_hierarchy:
+                            FXOperatorGraph._update_module_mapping(
+                                const_node, module_mapping, node.meta
+                            )
                     else:
                         raise Exception(
                             f"Unsupported argument encountered in list {arg}, {type(arg[0])}"
@@ -182,7 +199,9 @@ class FXOperatorGraph(OperatorGraph):
     # Given an FX GraphModule, parse it into an OperatorGraph
     @staticmethod
     def gen_operator_graph(
-        model: torch.fx.GraphModule, skip_stack_trace: Optional[bool] = False
+        model: torch.fx.GraphModule,
+        skip_stack_trace: Optional[bool] = False,
+        enable_module_hierarchy: bool = False,
     ) -> FXOperatorGraph:
         graph: torch.fx.Graph = model.graph
 
@@ -201,12 +220,14 @@ class FXOperatorGraph(OperatorGraph):
                 continue
             op = fx_node.op
             name = FXOperatorGraph._get_node_name(fx_node)
-            dtype = fx_node.type
             target = fx_node.target
             args = fx_node.args
             kwargs = fx_node.kwargs
             metadata = FXOperatorGraph._extract_metadata(fx_node.meta, skip_stack_trace)
-            output_shapes = FXOperatorGraph._extract_output_shapes(fx_node.meta)
+            output_shapes = FXOperatorGraph._extract_output_shapes(
+                fx_node.meta.get("val")
+            )
+            dtype = FXOperatorGraph._extract_output_dtype(fx_node.meta.get("val")) or ""
 
             assert (
                 op != "call_module"
@@ -221,14 +242,16 @@ class FXOperatorGraph(OperatorGraph):
                     name,
                     output_shapes=output_shapes,
                     metadata=metadata,
-                    dtype=dtype,
-                    val=args,
+                    dtype=str(dtype),
                 )  # val is default arg
                 input_nodes[name] = node
             # Constants
             elif op == "get_attr":
                 node = ValueNode(
-                    name, output_shapes=output_shapes, metadata=metadata, dtype=dtype
+                    name,
+                    output_shapes=output_shapes,
+                    metadata=metadata,
+                    dtype=str(dtype),
                 )
             # Output
             elif op == "output":
@@ -242,24 +265,29 @@ class FXOperatorGraph(OperatorGraph):
                     inputs=in_nodes,
                     output_shapes=output_shapes,
                     metadata=metadata,
-                    dtype=dtype,
+                    dtype=str(dtype),
                 )
                 output_nodes[name] = node
             # Op Calls
             elif op == "call_function":
                 inputs, const_count = FXOperatorGraph._parse_args(
-                    fx_node, nodes, const_count, module_mapping
+                    fx_node, nodes, const_count, module_mapping, enable_module_hierarchy
                 )
+                named_args = []
+                if fx_node.op == "call_function" and hasattr(fx_node.target, "_schema"):
+                    named_args = [arg.name for arg in fx_node.target._schema.arguments]
                 node = OperatorNode(
                     name,
                     inputs=inputs,
                     output_shapes=output_shapes,
                     metadata=metadata,
                     op=FXOperatorGraph._get_op_name(fx_node),
+                    named_args=named_args,
                 )
-                FXOperatorGraph._update_module_mapping(
-                    node, module_mapping, fx_node.meta
-                )
+                if enable_module_hierarchy:
+                    FXOperatorGraph._update_module_mapping(
+                        node, module_mapping, fx_node.meta
+                    )
 
                 for kwarg_name, kwarg in kwargs.items():
                     if (
@@ -355,7 +383,30 @@ class FXOperatorGraph(OperatorGraph):
             ]
         return ret
 
-    # Not yet implemented
     @staticmethod
-    def _extract_output_shapes(metadata: Dict[str, Any]) -> Optional[List[List[int]]]:
-        return None
+    def _extract_output_shapes(val: Any) -> Optional[List[List[int]]]:
+        if isinstance(val, (FakeTensor, torch.Tensor)):
+            # If val is a single tensor
+            return [list(val.shape)]
+        elif isinstance(val, tuple) and all(
+            isinstance(tensor, (FakeTensor, torch.Tensor)) for tensor in val
+        ):
+            # If val is a tuple of tensors
+            shapes = [list(fake_tensor.shape) for fake_tensor in val]
+            return shapes
+        else:
+            return None
+
+    @staticmethod
+    def _extract_output_dtype(val: Any) -> Optional[List[torch.dtype]]:
+        if isinstance(val, (FakeTensor, torch.Tensor)):
+            # If val is a single tensor
+            return [val.dtype]
+        elif isinstance(val, tuple) and all(
+            isinstance(tensor, (FakeTensor, torch.Tensor)) for tensor in val
+        ):
+            # If val is a tuple of tensors
+            dtypes = [fake_tensor.dtype for fake_tensor in val]
+            return dtypes
+        else:
+            return None
