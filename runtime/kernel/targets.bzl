@@ -24,7 +24,7 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "operator_registry_TWO_KERNELS_TEST_ONLY",
+        name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
         srcs = ["operator_registry.cpp"],
         exported_headers = ["operator_registry.h"],
         visibility = [
@@ -35,7 +35,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
         ],
-        preprocessor_flags = ["-DMAX_KERNEL_NUM=2"],
+        preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
     )
 
     for aten_mode in (True, False):
