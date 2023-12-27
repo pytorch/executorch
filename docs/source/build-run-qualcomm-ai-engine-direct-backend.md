@@ -46,6 +46,7 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)
+ - SA8295 (Snapdragon SA8295P)
 
 This example is verified with SM8550 and SM8450.
 
