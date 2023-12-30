@@ -21,7 +21,7 @@ COREML=OFF
 MPS=OFF
 XNNPACK=OFF
 HEADERS_PATH="include"
-EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_data_loader.a:$HEADERS_PATH"
+EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_data_loader.a,libextension_runner_module.a:$HEADERS_PATH"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
@@ -112,6 +112,7 @@ cmake_build() {
         -DPYTHON_EXECUTABLE="$PYTHON" \
         -DFLATC_EXECUTABLE="$FLATC" \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_MODULE=ON \
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
