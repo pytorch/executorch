@@ -7,36 +7,23 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    runtime.cxx_library(
-        name = "runner",
-        srcs = [
-            "runner.cpp",
-        ],
-        exported_headers = [
-            "runner.h",
-        ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/executor:program",
-        ],
-    )
+    for aten_mode in (True, False):
+        aten_suffix = ("_aten" if aten_mode else "")
 
-    runtime.cxx_library(
-        name = "runner_aten",
-        srcs = [
-            "runner.cpp",
-        ],
-        exported_headers = [
-            "runner.h",
-        ],
-        platforms = ["Default"],
-        define_static_target = False,
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/executor:program_aten",
-        ],
-    )
+        runtime.cxx_library(
+            name = "runner" + aten_suffix,
+            srcs = [
+                "runner.cpp",
+            ],
+            exported_headers = [
+                "runner.h",
+            ],
+            platforms = ["Default"] if aten_mode else [],
+            define_static_target = not aten_mode,
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/executor:program" + aten_suffix,
+            ],
+        )

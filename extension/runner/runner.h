@@ -17,63 +17,70 @@
 
 namespace torch::executor {
 
+/**
+ * A facade class for loading programs and executing methods within them.
+ */
 class Runner {
  public:
+  /**
+   * Constructs an instance with the provided data loader and memory allocator.
+   *
+   * @param[in] dataLoader A DataLoader used for loading program data.
+   * @param[in] memoryAllocator A MemoryAllocator used for memory management.
+   *
+   * @throws std::runtime_error if the program fails to load.
+   */
   explicit Runner(
       std::unique_ptr<DataLoader> dataLoader,
       std::unique_ptr<MemoryAllocator> memoryAllocator);
   Runner(const Runner&) = delete;
   Runner& operator=(const Runner&) = delete;
 
+  /**
+   * Run a specific method with the given inputs and retrieve outputs.
+   * Loads the method before running if needed.
+   *
+   * @param[in] methodName The name of the method to execute.
+   * @param[in] inputs A vector of input values to be passed to the method.
+   * @param[out] outputs A vector to store the output values from the method.
+   *
+   * @returns An Error to indicate success or failure.
+   */
   Error run(
       const std::string& methodName,
       const std::vector<EValue>& inputs,
       std::vector<EValue>& outputs);
 
-  Result<const char*> getMethodName(size_t methodIndex) const;
+  /**
+   * Get a list of method names available in the loaded program.
+   *
+   * @returns A vector of strings containing the names of the methods.
+   */
+  std::vector<std::string> methodNames() const;
 
- private:
+  /**
+   * Load a specific method from the program and set up memory management if
+   * needed. The loaded method is cached to reuse the next time it's run.
+   *
+   * @param[in] methodName The name of the method to load.
+   *
+   * @returns An Error to indicate success or failure.
+   */
   Error loadMethod(const std::string& methodName);
 
  private:
-  class Memory {
-   public:
-    explicit Memory(
-        std::vector<size_t> sizes,
-        std::shared_ptr<MemoryAllocator> memoryAllocator) {
-      plannedBuffers.resize(sizes.size());
-      plannedSpans.resize(sizes.size());
-      for (size_t i = 0; i < sizes.size(); ++i) {
-        plannedBuffers[i].resize(sizes[i]);
-        plannedSpans[i] = {plannedBuffers[i].data(), sizes[i]};
-      }
-      plannedMemory = std::make_unique<HierarchicalAllocator>(
-          Span(plannedSpans.data(), plannedSpans.size()));
-      memoryManager = std::make_unique<MemoryManager>(
-          memoryAllocator.get(), plannedMemory.get());
-    }
-    /// Returns a pointer to the internal memory manager, the Memory instance
-    /// must outlive this pointer.
-    std::shared_ptr<MemoryManager> inline getMemoryManager() {
-      return memoryManager;
-    }
-
-   private:
+  struct MethodHolder {
     std::vector<std::vector<uint8_t>> plannedBuffers;
     std::vector<Span<uint8_t>> plannedSpans;
     std::unique_ptr<HierarchicalAllocator> plannedMemory;
-    std::shared_ptr<MemoryManager> memoryManager;
-  };
-
-  struct MethodHolder {
-    std::unique_ptr<Memory> memory_;
-    std::unique_ptr<Method> method_;
+    std::unique_ptr<MemoryManager> memoryManager;
+    std::unique_ptr<Method> method;
   };
 
  private:
   std::unique_ptr<DataLoader> dataLoader_;
+  std::unique_ptr<MemoryAllocator> memoryAllocator_;
   std::unique_ptr<Program> program_;
-  std::shared_ptr<MemoryAllocator> memoryAllocator_;
   std::unordered_map<std::string, MethodHolder> methods_;
 };
 

@@ -7,38 +7,23 @@ def define_common_targets():
     TARGETS and BUCK files that call this function.
     """
 
-    runtime.cxx_library(
-        name = "module",
-        srcs = [
-            "module.cpp",
-        ],
-        exported_headers = [
-            "module.h",
-        ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/extension/memory_allocator:malloc_memory_allocator",
-            "//executorch/extension/data_loader:mmap_data_loader",
-            "//executorch/extension/runner:runner",
-        ],
-    )
+    for aten_mode in (True, False):
+        aten_suffix = ("_aten" if aten_mode else "")
 
-    runtime.cxx_library(
-        name = "module_aten",
-        srcs = [
-            "module.cpp",
-        ],
-        exported_headers = [
-            "module.h",
-        ],
-        visibility = [
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/extension/memory_allocator:malloc_memory_allocator",
-            "//executorch/extension/data_loader:mmap_data_loader",
-            "//executorch/extension/runner:runner_aten",
-        ],
-    )
+        runtime.cxx_library(
+            name = "module" + aten_suffix,
+            srcs = [
+                "module.cpp",
+            ],
+            exported_headers = [
+                "module.h",
+            ],
+            visibility = [
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/extension/memory_allocator:malloc_memory_allocator",
+                "//executorch/extension/data_loader:mmap_data_loader",
+                "//executorch/extension/runner:runner" + aten_suffix,
+            ],
+        )
