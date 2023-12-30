@@ -49,6 +49,7 @@ SUBGRAPH_SRCS = [
     "XNNPACK/src/subgraph/static-reshape.c",
     "XNNPACK/src/subgraph/static-resize-bilinear-2d.c",
     "XNNPACK/src/subgraph/static-slice.c",
+    "XNNPACK/src/subgraph/reshape-helpers.c",
     "XNNPACK/src/subgraph/static-transpose.c",
     "XNNPACK/src/subgraph/subtract.c",
     "XNNPACK/src/subgraph/tanh.c",
