@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from memory_profiler import profile
+
 import copy
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
@@ -251,10 +253,12 @@ class ExirExportedProgram:
     def dump(self) -> None:
         print(self.exported_program.graph_module.graph)
 
+    @profile
     def to_executorch(
         self,
         config: Optional[ExecutorchBackendConfig] = None,
     ) -> "ExecutorchProgram":
+        print("program/_program.py: to_executorch (ExirExportedProgram class)")
         if not self.after_to_edge_passes:
             raise RuntimeError("Must run to_edge before to_executorch.")
         config = config or ExecutorchBackendConfig()
@@ -319,8 +323,10 @@ class ExecutorchProgram:
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
 
+    @profile
     @property
     def buffer(self) -> bytes:
+        print("program/_program.py: buffer")
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
@@ -917,6 +923,7 @@ class EdgeProgramManager:
             new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
+    @profile
     def to_executorch(
         self, config: Optional[ExecutorchBackendConfig] = None
     ) -> "ExecutorchProgramManager":
@@ -931,6 +938,7 @@ class EdgeProgramManager:
             ExecutorchProgramManager: A manager representing the state of the EdgeProgramManager
             after it has been transformed to the ExecuTorch backend.
         """
+        print("program/_program.py: to_executorch (EdgeProgramManager)")
         config = config if config else ExecutorchBackendConfig()
 
         execution_programs: Dict[str, ExportedProgram] = {}

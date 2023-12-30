@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from memory_profiler import profile
+
 import logging
 import os
 
@@ -54,7 +56,7 @@ def _core_aten_to_edge(
     logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
     return edge_manager
 
-
+@profile
 def export_to_edge(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
