@@ -72,7 +72,11 @@ def define_common_targets():
     runtime.genrule(
         name = "exported_programs",
         cmd = "$(exe :export_program) --modules " + ",".join(MODULES_TO_EXPORT) + " --outdir $OUT",
-        outs = {fname + ".pte": [fname + ".pte"] for fname in MODULES_TO_EXPORT},
+        outs = {
+            fname + seg_suffix + ".pte": [fname + seg_suffix + ".pte"]
+            for fname in MODULES_TO_EXPORT
+            for seg_suffix in ["", "-no-constant-segment"]
+        },
         default_outs = ["."],
         visibility = [
             "//executorch/...",
