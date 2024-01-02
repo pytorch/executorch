@@ -17,7 +17,7 @@ from collections import defaultdict
 
 from enum import Enum
 from types import NoneType
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch import exir
@@ -124,7 +124,7 @@ class FXOperatorGraph(OperatorGraph):
                 if arg.target == exir.memory.alloc:
                     continue
                 arg_name = FXOperatorGraph._get_node_name(arg)
-            elif isinstance(arg, (int, float, torch.dtype)):
+            elif isinstance(arg, (str, int, float, torch.dtype)):
                 # e.g. The "0" from node.args of squeeze_copy (mm_default, 0)
                 if named_args and len(named_args) > index:
                     arg_name = named_args[index].name + "_" + str(const_count)
@@ -173,7 +173,9 @@ class FXOperatorGraph(OperatorGraph):
             elif isinstance(arg, NoneType):
                 continue
             else:
-                raise Exception(f"Unsupported argument encountered {op}, {name}, {arg}")
+                raise Exception(
+                    f"Unsupported argument encountered op = {op}, name = {name}, arg = {arg}, type(arg) = {type(arg)}"
+                )
 
             if isinstance(arg_name, list):
                 for val in arg_name:
@@ -199,9 +201,10 @@ class FXOperatorGraph(OperatorGraph):
     # Given an FX GraphModule, parse it into an OperatorGraph
     @staticmethod
     def gen_operator_graph(
-        model: torch.fx.GraphModule,
+        model: Union[torch.fx.GraphModule, torch.nn.Module],
         skip_stack_trace: Optional[bool] = False,
         enable_module_hierarchy: bool = False,
+        embed_params: bool = False,
     ) -> FXOperatorGraph:
         graph: torch.fx.Graph = model.graph
 
@@ -212,6 +215,7 @@ class FXOperatorGraph(OperatorGraph):
         module_mapping = defaultdict(list)
 
         const_count = 0
+
         for fx_node in graph.nodes:
             if (
                 fx_node.target == exir.memory.alloc
@@ -247,11 +251,19 @@ class FXOperatorGraph(OperatorGraph):
                 input_nodes[name] = node
             # Constants
             elif op == "get_attr":
+                val = None
+                if embed_params:
+                    val = (
+                        getattr(model, fx_node.target)
+                        if hasattr(model, fx_node.target)
+                        else None
+                    )
                 node = ValueNode(
                     name,
                     output_shapes=output_shapes,
                     metadata=metadata,
                     dtype=str(dtype),
+                    val=val,
                 )
             # Output
             elif op == "output":
