@@ -129,6 +129,13 @@ if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
 
+# Build dataloader library
+option(EXECUTORCH_BUILD_EXTENSION_RUNNER_MODULE
+       "Build the extension/runner/module directory" OFF)
+if(NOT BUCK2)
+  set(BUCK2 buck2)
+endif()
+
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
@@ -309,6 +316,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_RUNNER_MODULE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner/module)
 endif()
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
