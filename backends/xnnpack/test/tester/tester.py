@@ -143,7 +143,10 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        captured_graph = torch._export.capture_pre_autograd_graph(artifact, inputs)
+        captured_graph = torch.export._trace._export(
+            artifact, inputs, pre_dispatch=True
+        ).module()
+
         prepared = prepare_pt2e(captured_graph, self.quantizer)
 
         if self.calibrate:
