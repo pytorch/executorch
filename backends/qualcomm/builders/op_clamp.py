@@ -36,8 +36,8 @@ class Clamp(NodeVisitor):
         )
 
         # default value of output_min and output_max
-        output_min = torch.finfo(input_tensor.dtype).min
-        output_max = torch.finfo(input_tensor.dtype).max
+        output_min = torch.finfo(torch.float32).min
+        output_max = torch.finfo(torch.float32).max
 
         if node.args[1] is not None:
             # update output_min

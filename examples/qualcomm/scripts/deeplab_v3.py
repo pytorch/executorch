@@ -10,6 +10,7 @@ import os
 import random
 import re
 import sys
+from multiprocessing.connection import Client
 
 import numpy as np
 
@@ -107,6 +108,18 @@ if __name__ == "__main__":
         help="If specified, only compile the model.",
         action="store_true",
         default=False,
+    )
+    parser.add_argument(
+        "--ip",
+        help="IPC address for delivering execution result",
+        default="",
+        type=str,
+    )
+    parser.add_argument(
+        "--port",
+        help="IPC port for delivering execution result",
+        default=-1,
+        type=int,
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
@@ -221,7 +234,13 @@ if __name__ == "__main__":
         )
 
     pa, mpa, miou, cls_iou = segmentation_metrics(predictions, targets, classes)
-    print(f"PA   : {pa}%")
-    print(f"MPA  : {mpa}%")
-    print(f"MIoU : {miou}%")
-    print(f"CIoU : \n{json.dumps(cls_iou, indent=2)}")
+    if args.ip and args.port != -1:
+        with Client((args.ip, args.port)) as conn:
+            conn.send(
+                json.dumps({"PA": float(pa), "MPA": float(mpa), "MIoU": float(miou)})
+            )
+    else:
+        print(f"PA   : {pa}%")
+        print(f"MPA  : {mpa}%")
+        print(f"MIoU : {miou}%")
+        print(f"CIoU : \n{json.dumps(cls_iou, indent=2)}")
