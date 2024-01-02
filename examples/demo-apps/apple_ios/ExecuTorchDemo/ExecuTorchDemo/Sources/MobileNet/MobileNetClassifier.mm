@@ -8,7 +8,7 @@
 
 #import "MobileNetClassifier.h"
 
-#include "Module.h"
+#import <executorch/extension/runner/module.h>
 
 using namespace ::torch::executor;
 
@@ -18,7 +18,7 @@ const int32_t kSize = 224;
 const int32_t kChannels = 3;
 
 @implementation ETMobileNetClassifier {
-  std::unique_ptr<demo::Module> _module;
+  std::unique_ptr<Module> _module;
 }
 
 - (nullable instancetype)initWithFilePath:(NSString*)filePath
@@ -26,7 +26,7 @@ const int32_t kChannels = 3;
   self = [super init];
   if (self) {
     try {
-      _module = std::make_unique<demo::Module>(filePath.UTF8String);
+      _module = std::make_unique<Module>(filePath.UTF8String);
     } catch (const std::exception& exception) {
       if (error) {
         *error = [NSError
