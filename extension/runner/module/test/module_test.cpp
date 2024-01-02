@@ -24,6 +24,9 @@ class ModuleTest : public ::testing::Test {
 
 TEST_F(ModuleTest, test) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
+
+  EXPECT_EQ(module.methodNames(), std::vector<std::string>{"forward"});
+
   float input[] = {1, 2};
   int32_t sizes[] = {1, 2};
   TensorImpl tensorImpl(ScalarType::Float, std::size(sizes), sizes, input);
