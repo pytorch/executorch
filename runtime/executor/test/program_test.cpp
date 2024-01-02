@@ -18,6 +18,7 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
@@ -88,6 +89,11 @@ class ProgramTestFriend final {
       const Program* program,
       size_t index) {
     return program->LoadSegment(index);
+  }
+
+  const static executorch_flatbuffer::Program* GetInternalProgram(
+      const Program* program) {
+    return program->internal_program_;
   }
 };
 } // namespace testing
@@ -299,9 +305,6 @@ TEST_F(ProgramTest, HeaderNotPresent) {
       Program::HeaderStatus::NotPresent);
 }
 
-// TODO(T144120904): Add tests for programs with segments once we can generate
-// them.
-
 TEST_F(ProgramTest, getMethods) {
   // Parse the Program from the data.
   Result<Program> program_res =
@@ -325,4 +328,71 @@ TEST_F(ProgramTest, DEPRECATEDLoad) {
   // Parse the Program from the data.
   Result<Program> program_res = Program::Load(multi_loader_.get());
   EXPECT_EQ(program_res.error(), Error::Ok);
+}
+
+TEST_F(ProgramTest, LoadConstantSegment) {
+  // Load the serialized ModuleLinear data, with constants in the segment and no
+  // constants in the flatbuffer.
+  const char* linear_path =
+      std::getenv("ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH");
+  Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
+  ASSERT_EQ(linear_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> linear_header =
+      linear_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+  ASSERT_EQ(linear_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(linear_header->data(), linear_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&linear_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  // Load constant segment data.
+  Result<FreeableBuffer> segment =
+      ProgramTestFriend::LoadSegment(&program.get(), 0);
+  EXPECT_EQ(segment.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect one segment containing the constants.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 1);
+
+  // The constant buffer should be empty.
+  EXPECT_EQ(flatbuffer_program->constant_buffer()->size(), 0);
+
+  // Check constant segment offsets.
+  EXPECT_EQ(flatbuffer_program->constant_segment()->segment_index(), 0);
+  EXPECT_GE(flatbuffer_program->constant_segment()->offsets()->size(), 1);
+}
+
+TEST_F(ProgramTest, LoadConstantSegmentWithNoConstantSegment) {
+  // Load the serialized ModuleLinear data, with constants in the flatbuffer and
+  // no constants in the segment.
+  const char* linear_path =
+      std::getenv("ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH");
+  Result<FileDataLoader> linear_loader = FileDataLoader::from(linear_path);
+  ASSERT_EQ(linear_loader.error(), Error::Ok);
+
+  // This file should always be compatible.
+  Result<FreeableBuffer> linear_header =
+      linear_loader->Load(/*offset=*/0, Program::kMinHeadBytes);
+  ASSERT_EQ(linear_header.error(), Error::Ok);
+  EXPECT_EQ(
+      Program::check_header(linear_header->data(), linear_header->size()),
+      Program::HeaderStatus::CompatibleVersion);
+
+  Result<Program> program = Program::load(&linear_loader.get());
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  const executorch_flatbuffer::Program* flatbuffer_program =
+      ProgramTestFriend::GetInternalProgram(&program.get());
+
+  // Expect no segments.
+  EXPECT_EQ(flatbuffer_program->segments()->size(), 0);
+
+  // The constant buffer should exist.
+  EXPECT_GE(flatbuffer_program->constant_buffer()->size(), 1);
 }
