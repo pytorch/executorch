@@ -310,6 +310,7 @@ class Llama2Model(EagerModelBase):
             max_batch_size=max_batch_size,
             **params,
         )
+        torch.set_default_tensor_type(torch.HalfTensor)
         self.model_ = Transformer(model_args)
         self.model_.load_state_dict(
             checkpoint, strict=False
