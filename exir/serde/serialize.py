@@ -16,10 +16,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import executorch.exir as exir
 import executorch.exir.memory as memory
+import executorch.exir.serde.export_serialize as export_serialize
 import torch
 import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
-import torch._export.serde.serialize as export_serialize
 from executorch.exir import delegate
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
@@ -35,6 +35,7 @@ from executorch.exir.serde.schema import (
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
 from torch._export.serde.serialize import SerializeError
+from torch._export.serde.union import _Union
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
 
@@ -307,7 +308,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         )
 
         json_lowered_module = json.dumps(
-            dataclasses.asdict(serialized_lowered_module),
+            _dataclass_to_dict(serialized_lowered_module),
             cls=export_serialize.EnumEncoder,
         )
         return json_lowered_module
@@ -695,6 +696,28 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         return exported_program
 
 
+# pyre-ignore
+def _dataclass_to_dict(obj):
+    if isinstance(obj, _Union):
+        return {
+            f.name: _dataclass_to_dict(getattr(obj, f.name, None))
+            for f in dataclasses.fields(obj)
+        }
+    elif dataclasses.is_dataclass(obj):
+        return {
+            f.name: _dataclass_to_dict(getattr(obj, f.name))
+            for f in dataclasses.fields(obj)
+        }
+    elif isinstance(obj, list):
+        return [_dataclass_to_dict(x) for x in obj]
+    elif isinstance(obj, tuple):
+        return tuple(_dataclass_to_dict(x) for x in obj)
+    elif isinstance(obj, dict):
+        return {k: _dataclass_to_dict(v) for k, v in obj.items()}
+    else:
+        return obj
+
+
 def serialize(
     exported_program: ep.ExportedProgram,
     opset_version: Optional[Dict[str, int]] = None,
@@ -704,7 +727,7 @@ def serialize(
     )
     assert isinstance(serialized_artifact.exported_program, schema.ExportedProgram)
     json_program = json.dumps(
-        dataclasses.asdict(serialized_artifact.exported_program),
+        _dataclass_to_dict(serialized_artifact.exported_program),
         cls=export_serialize.EnumEncoder,
     )
     json_bytes = json_program.encode("utf-8")
