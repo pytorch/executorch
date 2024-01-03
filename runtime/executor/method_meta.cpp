@@ -59,7 +59,7 @@ size_t calculate_nbytes(
   for (ssize_t i = 0; i < sizes.size(); i++) {
     n *= sizes[i];
   }
-  return n * sizeof_scalar_type(scalar_type);
+  return n * torch::executor::elementSize(scalar_type);
 }
 
 } // namespace
