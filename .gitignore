@@ -10,10 +10,14 @@ exir/_serialize/scalar_type.fbs
 exir/_serialize/program.fbs
 sdk/bundled_program/serialize/bundled_program_schema.fbs
 sdk/bundled_program/serialize/scalar_type.fbs
+build_release
+build_android
+build_x86*
 
 # Any exported models and profiling outputs
 *.pte
 *.bin
+.gitignore
 
 # Editor temporaries
 *.swa
