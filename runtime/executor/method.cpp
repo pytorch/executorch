@@ -457,6 +457,11 @@ Error Method::resolve_operator(
   constexpr size_t kTempBufferSizeForName = 100;
   char operator_name[kTempBufferSizeForName];
   const auto ops = serialization_plan_->operators();
+  ET_CHECK_OR_RETURN_ERROR(
+      ops != nullptr && op_index < ops->size(),
+      InvalidProgram,
+      "Op index %" PRIu32 " out of range",
+      op_index);
   const auto& op = ops->Get(op_index);
 
   populateOperatorName(op, kTempBufferSizeForName, operator_name);
@@ -567,11 +572,18 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   {
     // Load chains
     const auto chains = serialization_plan_->chains();
-    ET_CHECK(chains != nullptr);
-    n_chains_ = chains->size();
+    if (chains == nullptr) {
+      n_chains_ = 0;
+      chains_ = nullptr;
+    } else {
+      n_chains_ = chains->size();
+      chains_ =
+          ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
+    }
 
-    chains_ =
-        ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
+    // Try resolving all operators before failing, to make it easier to debug
+    // multiple problems at once.
+    Error delayed_error = Error::Ok;
     int32_t num_instructions_missing_op = 0;
     for (size_t i = 0; i < n_chains_; ++i) {
       auto s_chain = chains->Get(i);
@@ -610,6 +622,8 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
               num_instructions_missing_op++;
             } else if (err == Error::MemoryAllocationFailed) {
               return err;
+            } else {
+              delayed_error = err;
             }
           } break;
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
@@ -644,6 +658,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
         "There are %d instructions don't have corresponding operator registered. "
         "See logs for details",
         num_instructions_missing_op);
+    if (delayed_error != Error::Ok) {
+      return delayed_error;
+    }
   }
 
   pre_allocated_input_ = false;
