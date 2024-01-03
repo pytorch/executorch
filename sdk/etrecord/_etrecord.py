@@ -22,12 +22,12 @@ from executorch.exir import (
     MultiMethodExirExportedProgram,
 )
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
+
+from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.serialize import deserialize, serialize
 from executorch.sdk.bundled_program.core import BundledProgram
 
 from executorch.sdk.bundled_program.schema.bundled_program_schema import Value
-
-from torch._export.serde.serialize import SerializedArtifact
 
 ProgramOutput = List[Value]
 
