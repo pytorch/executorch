@@ -5,6 +5,7 @@ oncall("executorch")
 python_library(
     name = "serialize",
     srcs = [
+        "export_serialize.py",
         "serialize.py",
     ],
     deps = [
