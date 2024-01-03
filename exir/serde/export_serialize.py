@@ -51,7 +51,7 @@ from torch._export.serde.schema import (
     OutputSpec,
     RangeConstraint,
     ScalarType,
-    SCHEMA_VERSION,
+    SchemaVersion,
     SymBool,
     SymBoolArgument,
     SymExpr,
@@ -1046,7 +1046,7 @@ class ExportedProgramSerializer:
             graph_module=serialized_graph_module,
             opset_version=self.opset_version,
             range_constraints=serialized_range_constraints,
-            schema_version=SCHEMA_VERSION,
+            schema_version=SchemaVersion(-1, -1),
             dialect=exported_program.dialect,
         )
 
@@ -1699,17 +1699,11 @@ class ExportedProgramDeserializer:
     ) -> ep.ExportedProgram:
         assert isinstance(serialized_artifact.exported_program, ExportedProgram)
 
-        if serialized_artifact.exported_program.schema_version != SCHEMA_VERSION:
-            raise SerializeError(
-                f"Serialized schema version {serialized_artifact.exported_program.schema_version} "  # pyre-ignore
-                f"does not match our current schema version {SCHEMA_VERSION}."
-            )
-
         symbol_name_to_range = {
             k: symbolic_shapes.ValueRanges(
                 _int_to_sympy_int(v.min_val), _int_to_sympy_int(v.max_val)
             )
-            for k, v in serialized_artifact.exported_program.range_constraints.items()  # pyre-ignore
+            for k, v in serialized_artifact.exported_program.range_constraints.items()
         }
         constants = deserialize_torch_artifact(serialized_artifact.constants)
 

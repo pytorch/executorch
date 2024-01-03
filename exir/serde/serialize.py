@@ -34,6 +34,7 @@ from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
+from torch._export.serde.schema import SchemaVersion
 from torch._export.serde.serialize import SerializeError
 from torch._export.serde.union import _Union
 from torch._export.verifier import load_verifier
@@ -345,7 +346,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 graph_module=serialized_graph_module,
                 opset_version=self.opset_version,
                 range_constraints=serialized_range_constraints,
-                schema_version=schema.SCHEMA_VERSION,
+                schema_version=SchemaVersion(-1, -1),
                 dialect=exported_program.dialect,
             ),
             export_serialize.serialize_torch_artifact(exported_program.state_dict),
