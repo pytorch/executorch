@@ -9,6 +9,7 @@ python_library(
         "serialize.py",
     ],
     deps = [
+        "fbsource//third-party/pypi/sympy:sympy",
         ":schema",
         "//caffe2:torch",
         "//executorch/exir:delegate",
