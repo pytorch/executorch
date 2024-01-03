@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -32,6 +33,19 @@ Result<torch::executor::Tensor> parseTensor(
       NotSupported,
       "Non-zero storage offset %" PRId32 " not supported",
       s_tensor->storage_offset());
+
+  ScalarType scalar_type = static_cast<ScalarType>(s_tensor->scalar_type());
+  ET_CHECK_OR_RETURN_ERROR(
+      isValid(scalar_type) &&
+          // Types not yet supported by ExecuTorch.
+          scalar_type != exec_aten::ScalarType::Half &&
+          scalar_type != exec_aten::ScalarType::ComplexHalf &&
+          scalar_type != exec_aten::ScalarType::ComplexFloat &&
+          scalar_type != exec_aten::ScalarType::ComplexDouble &&
+          scalar_type != exec_aten::ScalarType::BFloat16,
+      InvalidProgram,
+      "Invalid or unsupported ScalarType %" PRId8,
+      static_cast<int8_t>(scalar_type));
 
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
@@ -90,7 +104,7 @@ Result<torch::executor::Tensor> parseTensor(
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
   new (tensor_impl) torch::executor::TensorImpl(
-      static_cast<ScalarType>(s_tensor->scalar_type()),
+      scalar_type,
       dim,
       sizes,
       /*data=*/nullptr,

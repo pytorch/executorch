@@ -70,6 +70,24 @@ TEST(ScalarTypeUtilTest, ElementSize) {
   }
 }
 
+TEST(ScalarTypeUtilTest, IsValid) {
+  // Some valid types.
+  EXPECT_TRUE(torch::executor::isValid(ScalarType::Byte));
+  EXPECT_TRUE(torch::executor::isValid(ScalarType::Float));
+  EXPECT_TRUE(torch::executor::isValid(ScalarType::ComplexFloat));
+  EXPECT_TRUE(torch::executor::isValid(ScalarType::Bits16));
+
+  // Undefined, which is sort of a special case since it's not part of the
+  // iteration macros but is still a part of the enum.
+  EXPECT_FALSE(torch::executor::isValid(ScalarType::Undefined));
+
+  // Some out-of-range types, also demonstrating that NumOptions is not really a
+  // scalar type.
+  EXPECT_FALSE(torch::executor::isValid(ScalarType::NumOptions));
+  EXPECT_FALSE(torch::executor::isValid(static_cast<ScalarType>(127)));
+  EXPECT_FALSE(torch::executor::isValid(static_cast<ScalarType>(-1)));
+}
+
 TEST(ScalarTypeUtilTest, UnknownTypeElementSizeDies) {
   // Undefined, which is sort of a special case since it's not part of the
   // iteration macros but is still a part of the enum.
