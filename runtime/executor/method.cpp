@@ -923,9 +923,6 @@ Method::get_outputs(EValue* output_evalues, size_t length) {
 }
 
 Error Method::execute_instruction() {
-  // TODO(jakeszwe): remove all the ET_CHECKS in this function and properly
-  // return the error instead
-
   auto& chain = chains_[step_state_.chain_idx];
   auto instructions = chain.s_chain_->instructions();
 
@@ -1040,10 +1037,11 @@ Error Method::execute_instruction() {
       internal::reset_data_ptr(t);
     } break;
     default:
-      ET_CHECK_MSG(
-          false,
-          "Instruction is not supported. %hhu",
+      ET_LOG(
+          Error,
+          "Unknown instruction: %hhu",
           static_cast<uint8_t>(instruction->instr_args_type()));
+      err = Error::InvalidProgram;
   }
   // Reset the temp allocator for every instruction.
   if (memory_manager_->temp_allocator() != nullptr) {
