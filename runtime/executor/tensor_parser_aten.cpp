@@ -9,6 +9,7 @@
 #include <executorch/runtime/executor/tensor_parser.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -43,6 +44,11 @@ Result<at::Tensor> parseTensor(
 
   // get metadata
   at::ScalarType type = static_cast<at::ScalarType>(s_tensor->scalar_type());
+  ET_CHECK_OR_RETURN_ERROR(
+      isValid(type),
+      InvalidProgram,
+      "Invalid ScalarType %" PRId8,
+      static_cast<int8_t>(type));
   auto options = at::CPU(type).options();
 
   // convert int32 in serialization to int64 for aten
