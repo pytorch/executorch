@@ -46,12 +46,13 @@ You will need an Android smartphone with adb-connected running on one of below Q
  - SM8450 (Snapdragon 8 Gen 1)
  - SM8475 (Snapdragon 8 Gen 1+)
  - SM8550 (Snapdragon 8 Gen 2)
+ - SM8650 (Snapdragon 8 Gen 3)
 
 This example is verified with SM8550 and SM8450.
 
 ### Software:
 
- - Follow ExecuTorch recommneded Python version.
+ - Follow ExecuTorch recommended Python version.
  - A compiler to compile AOT parts. GCC 9.4 come with Ubuntu20.04 is verified.
  - [Android NDK](https://developer.android.com/ndk). This example is verified with NDK 25c.
  - [Qualcomm AI Engine Direct SDK](https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk)

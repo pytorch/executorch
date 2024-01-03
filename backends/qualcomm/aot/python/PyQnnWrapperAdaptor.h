@@ -85,8 +85,7 @@ class PyQnnOpWrapper {
             name, data_type, attrData["data"].cast<bool>());
         break;
       default:
-        QNN_EXECUTORCH_LOG(
-            kLogLevelError, "[Qnn ExecuTorch] tensor.v1.name: %d", data_type);
+        QNN_EXECUTORCH_LOG_ERROR("tensor.v1.name: %d", data_type);
         break;
     }
   }
