@@ -215,13 +215,22 @@ namespace {
 
 Result<InstructionArgs> gen_instruction_arguments(
     MemoryAllocator* method_allocator,
+    size_t num_values,
     EValue* values,
     size_t num_args,
     const int32_t* arg_idxs) {
   EValue** arg_list =
       ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, EValue*, num_args);
   for (size_t i = 0; i < num_args; ++i) {
-    arg_list[i] = &values[arg_idxs[i]];
+    int32_t arg_idx = arg_idxs[i];
+    ET_LOG(Error, "Argument index %d vs num_values %zu", arg_idx, num_values);
+    ET_CHECK_OR_RETURN_ERROR(
+        arg_idx < num_values,
+        InvalidProgram,
+        "Arg index %d >= %zu",
+        arg_idx,
+        num_values);
+    arg_list[i] = &values[arg_idx];
   }
   return InstructionArgs(arg_list, num_args);
 }
@@ -582,7 +591,11 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             const auto arg_idxs =
                 instruction->instr_args_as_KernelCall()->args();
             auto res = gen_instruction_arguments(
-                method_allocator, values_, arg_idxs->size(), arg_idxs->data());
+                method_allocator,
+                n_value_,
+                values_,
+                arg_idxs->size(),
+                arg_idxs->data());
             if (!res.ok()) {
               return res.error();
             }
@@ -603,7 +616,11 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             const auto arg_idxs =
                 instruction->instr_args_as_DelegateCall()->args();
             auto res = gen_instruction_arguments(
-                method_allocator, values_, arg_idxs->size(), arg_idxs->data());
+                method_allocator,
+                n_value_,
+                values_,
+                arg_idxs->size(),
+                arg_idxs->data());
             if (!res.ok()) {
               return res.error();
             }
