@@ -178,13 +178,11 @@ class Attention(nn.Module):
         xk = xk.transpose(1, 2)
         xv = xv.transpose(1, 2)
 
-        scores = torch.matmul(xq, xk.transpose(2, 3)) / math.sqrt(self.head_dim)
         assert hasattr(self, "mask")
-        scores = (
-            scores + self.mask[:, :, :seqlen, :seqlen]
-        )  # (bs, n_local_heads, seqlen, cache_len + seqlen)
-        scores = F.softmax(scores.float(), dim=-1).type_as(xq)
-        output = torch.matmul(scores, xv)  # (bs, n_local_heads, seqlen, head_dim)
+        mask = self.mask[:, :, :seqlen, :seqlen]
+        output = F.scaled_dot_product_attention(
+            xq, xk, xv, attn_mask=mask, dropout_p=0.0
+        )
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
