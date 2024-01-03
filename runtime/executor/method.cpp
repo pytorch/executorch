@@ -388,12 +388,11 @@ Error Method::parse_values() {
         // subtract one to keep the output in 0 based indexing for a
         // disgruntled debugger seeing this error message and checking
         // schema.fbs
-        ET_CHECK_MSG(
-            false,
-            "Enum KernelTypes type: %" PRIu32
-            " not supported. Please look in executorch/schema/program.fbs "
-            "to see which type this is.",
+        ET_LOG(
+            Error,
+            "Unknown KernelTypes value %" PRIu32,
             static_cast<uint32_t>(serialization_value->val_type()) - 1);
+        return Error::InvalidProgram;
     }
 
     // ~Method() will try to clean up n_value_ entries in the values_ array.
