@@ -15,14 +15,17 @@ namespace executor {
 
 TEST(TensorTest, InvalidScalarType) {
   TensorImpl::SizesType sizes[1] = {1};
-  // A type that executorch doesn't support yet.
-  ET_EXPECT_DEATH({ TensorImpl x(ScalarType::BFloat16, 1, sizes); }, "");
 
-  // The literal Undefined type.
+  // Undefined, which is sort of a special case since it's not part of the
+  // iteration macros but is still a part of the enum.
   ET_EXPECT_DEATH({ TensorImpl y(ScalarType::Undefined, 1, sizes); }, "");
 
-  // An int value that doesn't map to a valid enum value
+  // Some out-of-range types, also demonstrating that NumOptions is not really a
+  // scalar type.
   ET_EXPECT_DEATH({ TensorImpl y(ScalarType::NumOptions, 1, sizes); }, "");
+  ET_EXPECT_DEATH(
+      { TensorImpl y(static_cast<ScalarType>(127), 1, sizes); }, "");
+  ET_EXPECT_DEATH({ TensorImpl y(static_cast<ScalarType>(-1), 1, sizes); }, "");
 }
 
 TEST(TensorTest, SetData) {
