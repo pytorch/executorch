@@ -10,10 +10,8 @@ import logging
 import torch
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.dim_order_utils import get_dim_order
-from executorch.exir.pass_base import ExportPass
+from executorch.exir.pass_base import ExportPass, ProxyValue
 from executorch.exir.passes.dim_order_ops_registry import DimOrderOpsMap
-
-from torch._export.pass_infra.proxy_value import ProxyValue
 
 logger = logging.getLogger(__file__)
 logger.setLevel(logging.INFO)
