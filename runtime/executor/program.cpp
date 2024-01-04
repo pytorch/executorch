@@ -227,6 +227,13 @@ Result<Method> Program::load_method(
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileScope event_tracer_scope =
       internal::EventTracerProfileScope(event_tracer, "Program::load_method");
+  // If we can't create a MethodMeta for the Method, the Method is corrupt;
+  // Method::method_meta() assumes success, so we must fail here.
+  Result<MethodMeta> meta = method_meta(method_name);
+  if (!meta.ok()) {
+    return meta.error();
+  }
+
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
@@ -239,6 +246,20 @@ Result<MethodMeta> Program::method_meta(const char* method_name) const {
   if (!plan.ok()) {
     return plan.error();
   }
+  // Check any fields whose accessors don't return Result<> in case they're
+  // missing or corrupt.
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->name() != nullptr, InvalidProgram, "Missing name field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->non_const_buffer_sizes() != nullptr,
+      InvalidProgram,
+      "Missing non_const_buffer_sizes field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->inputs() != nullptr, InvalidProgram, "Missing inputs field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->outputs() != nullptr,
+      InvalidProgram,
+      "Missing outputs field");
   return MethodMeta(plan.get());
 }
 
