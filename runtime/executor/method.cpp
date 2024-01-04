@@ -225,7 +225,6 @@ Result<InstructionArgs> gen_instruction_arguments(
       ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, EValue*, num_args);
   for (size_t i = 0; i < num_args; ++i) {
     int32_t arg_idx = arg_idxs[i];
-    ET_LOG(Error, "Argument index %d vs num_values %zu", arg_idx, num_values);
     ET_CHECK_OR_RETURN_ERROR(
         arg_idx < num_values,
         InvalidProgram,
