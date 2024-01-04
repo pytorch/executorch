@@ -34,7 +34,7 @@ sample_inputs = (torch.randn(1, 3, 224, 224), )
 
 edge = to_edge(export(mobilenet_v2, sample_inputs))
 
-edge = edge.to_backend(XnnpackPartitioner)
+edge = edge.to_backend(XnnpackPartitioner())
 ```
 
 We will go through this example with the [MobileNetV2](https://pytorch.org/hub/pytorch_vision_mobilenet_v2/) pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model `to_edge`. We call the `to_backend` api with the `XnnpackPartitioner`. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.
@@ -112,7 +112,7 @@ Quantization requires a two stage export. First we use the `capture_pre_autograd
 # Continued from earlier...
 edge = to_edge(export(quantized_mobilenetv2, sample_inputs), compile_config=EdgeCompileConfig(_check_ir_validity=False))
 
-edge = edge.to_backend(XnnpackPartitioner)
+edge = edge.to_backend(XnnpackPartitioner())
 
 exec_prog = edge.to_executorch()
 
