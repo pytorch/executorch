@@ -57,6 +57,8 @@ class BackendDelegate final {
       BackendInitContext& backend_init_context,
       BackendDelegate* out) {
     // Look up the backend.
+    ET_CHECK_OR_RETURN_ERROR(
+        delegate.id() != nullptr, InvalidProgram, "Missing backend id");
     const char* backend_id = delegate.id()->c_str();
     PyTorchBackendInterface* backend = get_backend_class(backend_id);
     ET_CHECK_OR_RETURN_ERROR(
