@@ -36,12 +36,96 @@ from executorch.exir.verification.verifier import (
 )
 from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
-from torch.export.exported_program import InputKind, InputSpec, TensorArgument
+from torch.export.exported_program import (
+    _get_updated_range_constraints,
+    ConstantArgument,
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputSpec,
+    TensorArgument,
+)
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
+from torch.fx.passes.infra.pass_manager import PassManager
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+def _get_updated_graph_signature(
+    old_signature: ExportGraphSignature,
+    new_gm: torch.fx.GraphModule,
+) -> ExportGraphSignature:
+    """
+    Update the graph signature's user_input/user_outputs.
+    """
+    new_input_specs = []
+    for i, node in enumerate(new_gm.graph.nodes):
+        if node.op != "placeholder":
+            break
+
+        assert i < len(
+            old_signature.input_specs
+        ), "Number of inputs changed after transformation"
+        old_input_spec = old_signature.input_specs[i]
+        arg = (
+            old_input_spec.arg
+            if isinstance(old_input_spec.arg, ConstantArgument)
+            else type(old_input_spec.arg)(node.name)
+        )
+        new_input_specs.append(
+            InputSpec(old_input_spec.kind, arg, old_input_spec.target)
+        )
+
+    output_node = list(new_gm.graph.nodes)[-1]
+    assert output_node.op == "output"
+
+    new_output_specs = []
+    for i, node in enumerate(output_node.args[0]):
+        assert i < len(
+            old_signature.output_specs
+        ), "Number of outputs changed after transformation"
+        old_output_spec = old_signature.output_specs[i]
+        arg = (
+            old_output_spec.arg
+            if isinstance(old_output_spec.arg, ConstantArgument)
+            else type(old_output_spec.arg)(node.name)
+        )
+        new_output_specs.append(
+            OutputSpec(old_output_spec.kind, arg, old_output_spec.target)
+        )
+
+    new_signature = ExportGraphSignature(
+        input_specs=new_input_specs, output_specs=new_output_specs
+    )
+    return new_signature
+
+
+def _transform(self, *passes: PassType) -> "ExportedProgram":
+    pm = PassManager(list(passes))
+    res = pm(self.graph_module)
+    transformed_gm = res.graph_module if res is not None else self.graph_module
+    assert transformed_gm is not None
+
+    if transformed_gm is self.graph_module and not res.modified:
+        return self
+
+    transformed_ep = ExportedProgram(
+        transformed_gm,
+        transformed_gm.graph,
+        _get_updated_graph_signature(self.graph_signature, transformed_gm),
+        self.state_dict,
+        _get_updated_range_constraints(transformed_gm),
+        copy.deepcopy(self.equality_constraints),
+        copy.deepcopy(self._module_call_graph),
+        self.example_inputs,
+        self.verifier,
+        self.tensor_constants,
+    )
+    transformed_ep.graph_module.meta.update(self.graph_module.meta)
+    transformed_ep.graph_module.meta.update(res.graph_module.meta)
+    return transformed_ep
 
 
 def _copy_module(new_prog, new_gm):
@@ -231,7 +315,7 @@ class ExirExportedProgram:
         self.after_to_edge_passes = after_to_edge_passes
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
-        self.exported_program = self.exported_program._transform(*passes)
+        self.exported_program = _transform(self.exported_program, *passes)
         return self
 
     def __call__(self, *args: Any) -> Any:
@@ -419,7 +503,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     new_ep.exported_program = ExportedProgram(
         new_gm,
         new_gm.graph,
-        new_ep.exported_program.graph_signature,
+        _get_updated_graph_signature(new_ep.exported_program.graph_signature, new_gm),
         new_ep.exported_program.state_dict,
         new_ep.exported_program.range_constraints,
         new_ep.exported_program.equality_constraints,
@@ -755,7 +839,9 @@ def to_edge(
         edge_program = ExportedProgram(
             root=gm,
             graph=gm.graph,
-            graph_signature=edge_program.graph_signature,
+            graph_signature=_get_updated_graph_signature(
+                edge_program.graph_signature, gm
+            ),
             state_dict=edge_program.state_dict,
             range_constraints=edge_program.range_constraints,
             equality_constraints=edge_program.equality_constraints,
@@ -770,7 +856,7 @@ def to_edge(
         )
         passes = []
         passes.extend(aten_to_edge_passes.passes[-2:])
-        edge_program = edge_program._transform(*passes)
+        edge_program = _transform(edge_program, *passes)
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
@@ -856,7 +942,7 @@ class EdgeProgramManager:
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
-                    new_programs[name] = program._transform(*passes[name])
+                    new_programs[name] = _transform(program, *passes[name])
                     EXIREdgeDialectVerifier(enable=check_ir_validity)(
                         new_programs[name].graph_module
                     )
@@ -865,7 +951,7 @@ class EdgeProgramManager:
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
-                new_programs[name] = program._transform(*passes)
+                new_programs[name] = _transform(program, *passes)
                 EXIREdgeDialectVerifier(enable=check_ir_validity)(
                     new_programs[name].graph_module
                 )
