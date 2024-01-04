@@ -598,7 +598,13 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     int32_t num_instructions_missing_op = 0;
     for (size_t i = 0; i < n_chains_; ++i) {
       auto s_chain = chains->Get(i);
-      auto num_instructions = s_chain->instructions()->size();
+      auto s_instructions = s_chain->instructions();
+      ET_CHECK_OR_RETURN_ERROR(
+          s_instructions != nullptr,
+          InvalidProgram,
+          "Missing instructions in chain %zu",
+          i);
+      auto num_instructions = s_instructions->size();
       auto chain_instruction_kernels = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
           method_allocator, OpFunction, num_instructions);
       auto chain_instruction_arg_lists = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
@@ -606,9 +612,9 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
       // Set up the argument lists ahead of time and store pointers to them to
       // use when the instructions are called
-      for (size_t instr_idx = 0; instr_idx < s_chain->instructions()->size();
+      for (size_t instr_idx = 0; instr_idx < s_instructions->size();
            ++instr_idx) {
-        const auto instruction = s_chain->instructions()->Get(instr_idx);
+        const auto instruction = s_instructions->Get(instr_idx);
         switch (instruction->instr_args_type()) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
             const auto arg_idxs =
