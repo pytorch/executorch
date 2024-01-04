@@ -210,7 +210,7 @@ Error QnnManager::Compile(
     }
 
     for (const auto& param : op_wrapper->GetParams()) {
-      auto* p_tensor_param = dynamic_cast<TensorParamWrapper*>(param.get());
+      auto* p_tensor_param = static_cast<TensorParamWrapper*>(param.get());
       if (p_tensor_param != nullptr) {
         ET_CHECK_OR_RETURN_ERROR(
             backend_params_ptr_->qnn_graph_ptr_->EnsureTensorInQnnGraph(
