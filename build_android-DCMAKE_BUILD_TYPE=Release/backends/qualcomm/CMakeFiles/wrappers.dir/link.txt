@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libwrappers.a CMakeFiles/wrappers.dir/aot/wrappers/TensorWrapper.cpp.o CMakeFiles/wrappers.dir/aot/wrappers/QuantizeParamsWrapper.cpp.o CMakeFiles/wrappers.dir/aot/wrappers/OpWrapper.cpp.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libwrappers.a

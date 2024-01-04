@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_backend_cache.a CMakeFiles/qnn_backend_cache.dir/runtime/backends/QnnBackendCache.cpp.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_backend_cache.a

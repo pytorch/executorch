@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_sys_implementation.a CMakeFiles/qnn_sys_implementation.dir/runtime/backends/QnnSysImplementation.cpp.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_sys_implementation.a

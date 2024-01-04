@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_graph.a CMakeFiles/qnn_graph.dir/runtime/backends/QnnGraphCommon.cpp.o CMakeFiles/qnn_graph.dir/runtime/backends/htpbackend/HtpGraph.cpp.o CMakeFiles/qnn_graph.dir/runtime/backends/htpbackend/aarch64/HtpGraphCustomConfig.cpp.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_graph.a

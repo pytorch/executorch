@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_manager.a CMakeFiles/qnn_manager.dir/runtime/QnnManager.cpp.o CMakeFiles/qnn_manager.dir/aot/wrappers/TensorWrapper.cpp.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_manager.a

@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libgflags_nothreads_debug.a CMakeFiles/gflags_nothreads_static.dir/src/gflags.cc.o CMakeFiles/gflags_nothreads_static.dir/src/gflags_reporting.cc.o CMakeFiles/gflags_nothreads_static.dir/src/gflags_completions.cc.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libgflags_nothreads_debug.a

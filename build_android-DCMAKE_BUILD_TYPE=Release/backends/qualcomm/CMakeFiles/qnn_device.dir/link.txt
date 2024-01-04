@@ -1,2 +1,0 @@
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_device.a CMakeFiles/qnn_device.dir/runtime/backends/QnnDeviceCommon.cpp.o CMakeFiles/qnn_device.dir/runtime/backends/htpbackend/HtpDevice.cpp.o CMakeFiles/qnn_device.dir/runtime/backends/htpbackend/aarch64/HtpDevicePlatformInfoConfig.cpp.o
-/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_device.a
