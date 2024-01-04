@@ -14,7 +14,7 @@ import torch._export
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
-from executorch.exir.program._program import HackedUpExportedProgramDONOTUSE
+from executorch.exir.program._program import _transform, HackedUpExportedProgramDONOTUSE
 from executorch.exir.tracer import (
     _default_decomposition_table,
     dispatch_trace,
@@ -170,7 +170,7 @@ def capture(  # noqa: C901
 
             ep = export(f, args, constraints=constraints)
             ep = ep.run_decompositions(_default_decomposition_table())
-            ep = ep._transform(ReplaceViewOpsWithViewCopyOpsPass())
+            ep = _transform(ep, ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
                 return ExirExportedProgram(ep, False)
             graph_module = ep.module()
