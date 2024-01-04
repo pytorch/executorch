@@ -602,6 +602,8 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
             const auto arg_idxs =
                 instruction->instr_args_as_KernelCall()->args();
+            ET_CHECK_OR_RETURN_ERROR(
+                arg_idxs != nullptr, InvalidProgram, "KernelCall args missing");
             auto res = gen_instruction_arguments(
                 method_allocator,
                 n_value_,
@@ -629,6 +631,10 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
             const auto arg_idxs =
                 instruction->instr_args_as_DelegateCall()->args();
+            ET_CHECK_OR_RETURN_ERROR(
+                arg_idxs != nullptr,
+                InvalidProgram,
+                "DelegateCall args missing");
             auto res = gen_instruction_arguments(
                 method_allocator,
                 n_value_,
