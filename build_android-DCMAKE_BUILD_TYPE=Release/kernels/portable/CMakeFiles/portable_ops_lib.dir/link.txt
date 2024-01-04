@@ -1,0 +1,2 @@
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libportable_ops_lib.a CMakeFiles/portable_ops_lib.dir/RegisterCodegenUnboxedKernelsEverything.cpp.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libportable_ops_lib.a

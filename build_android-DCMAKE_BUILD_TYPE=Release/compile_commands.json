@@ -1,0 +1,1107 @@
+[
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/kernels/prim_ops/et_copy_index.cpp.o -c /home/megankuo/repos/executorch/kernels/prim_ops/et_copy_index.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/prim_ops/et_copy_index.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/kernels/prim_ops/register_prim_ops.cpp.o -c /home/megankuo/repos/executorch/kernels/prim_ops/register_prim_ops.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/prim_ops/register_prim_ops.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/backend/interface.cpp.o -c /home/megankuo/repos/executorch/runtime/backend/interface.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/backend/interface.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/core/evalue.cpp.o -c /home/megankuo/repos/executorch/runtime/core/evalue.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/core/evalue.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/core/exec_aten/util/tensor_util_portable.cpp.o -c /home/megankuo/repos/executorch/runtime/core/exec_aten/util/tensor_util_portable.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/core/exec_aten/util/tensor_util_portable.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/core/portable_type/tensor_impl.cpp.o -c /home/megankuo/repos/executorch/runtime/core/portable_type/tensor_impl.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/core/portable_type/tensor_impl.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/executor/method.cpp.o -c /home/megankuo/repos/executorch/runtime/executor/method.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/executor/method.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/executor/method_meta.cpp.o -c /home/megankuo/repos/executorch/runtime/executor/method_meta.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/executor/method_meta.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/executor/program.cpp.o -c /home/megankuo/repos/executorch/runtime/executor/program.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/executor/program.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/executor/tensor_parser_exec_aten.cpp.o -c /home/megankuo/repos/executorch/runtime/executor/tensor_parser_exec_aten.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/executor/tensor_parser_exec_aten.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/executor/tensor_parser_portable.cpp.o -c /home/megankuo/repos/executorch/runtime/executor/tensor_parser_portable.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/executor/tensor_parser_portable.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/kernel/operator_registry.cpp.o -c /home/megankuo/repos/executorch/runtime/kernel/operator_registry.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/kernel/operator_registry.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/platform/abort.cpp.o -c /home/megankuo/repos/executorch/runtime/platform/abort.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/platform/abort.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/platform/log.cpp.o -c /home/megankuo/repos/executorch/runtime/platform/log.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/platform/log.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/platform/profiler.cpp.o -c /home/megankuo/repos/executorch/runtime/platform/profiler.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/platform/profiler.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/platform/runtime.cpp.o -c /home/megankuo/repos/executorch/runtime/platform/runtime.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/platform/runtime.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/runtime/platform/target/Posix.cpp.o -c /home/megankuo/repos/executorch/runtime/platform/target/Posix.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/platform/target/Posix.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/schema/include -I/home/megankuo/repos/executorch/schema/../third-party/flatbuffers/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executorch.dir/schema/extended_header.cpp.o -c /home/megankuo/repos/executorch/schema/extended_header.cpp",
+  "file": "/home/megankuo/repos/executorch/schema/extended_header.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executor_runner.dir/examples/portable/executor_runner/executor_runner.cpp.o -c /home/megankuo/repos/executorch/examples/portable/executor_runner/executor_runner.cpp",
+  "file": "/home/megankuo/repos/executorch/examples/portable/executor_runner/executor_runner.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executor_runner.dir/extension/data_loader/file_data_loader.cpp.o -c /home/megankuo/repos/executorch/extension/data_loader/file_data_loader.cpp",
+  "file": "/home/megankuo/repos/executorch/extension/data_loader/file_data_loader.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executor_runner.dir/extension/evalue_util/print_evalue.cpp.o -c /home/megankuo/repos/executorch/extension/evalue_util/print_evalue.cpp",
+  "file": "/home/megankuo/repos/executorch/extension/evalue_util/print_evalue.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -I/home/megankuo/repos/executorch/.. -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/executor_runner.dir/runtime/executor/test/test_backend_compiler_lib.cpp.o -c /home/megankuo/repos/executorch/runtime/executor/test/test_backend_compiler_lib.cpp",
+  "file": "/home/megankuo/repos/executorch/runtime/executor/test/test_backend_compiler_lib.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_parser.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_parser.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_parser.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_text.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_text.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_text.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/reflection.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/reflection.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/reflection.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/util.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/util.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_binary.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_binary.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_binary.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_cpp.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_cpp.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_cpp.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_csharp.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_csharp.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_csharp.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_dart.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_dart.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_dart.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_kotlin.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_kotlin.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_kotlin.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_go.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_go.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_go.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_java.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_java.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_java.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_ts.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_ts.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_ts.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_php.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_php.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_php.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_python.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_python.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_python.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_lobster.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_lobster.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_lobster.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_rust.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_rust.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_rust.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_fbs.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_fbs.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_fbs.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_grpc.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_grpc.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_grpc.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_json_schema.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_json_schema.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_json_schema.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/idl_gen_swift.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_swift.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/idl_gen_swift.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/file_name_saving_file_manager.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/file_name_saving_file_manager.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/file_name_saving_file_manager.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/file_binary_writer.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/file_binary_writer.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/file_binary_writer.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/file_writer.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/file_writer.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/file_writer.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/flatc.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/flatc.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/flatc.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/flatc_main.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/flatc_main.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/flatc_main.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/binary_annotator.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/binary_annotator.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/binary_annotator.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/annotated_binary_text_gen.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/annotated_binary_text_gen.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/annotated_binary_text_gen.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/bfbs_gen_lua.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/bfbs_gen_lua.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/bfbs_gen_lua.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/bfbs_gen_nim.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/bfbs_gen_nim.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/bfbs_gen_nim.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/src/code_generators.cpp.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/src/code_generators.cpp",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/src/code_generators.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/grpc/src/compiler/cpp_generator.cc.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/cpp_generator.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/cpp_generator.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/grpc/src/compiler/go_generator.cc.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/go_generator.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/go_generator.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/grpc/src/compiler/java_generator.cc.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/java_generator.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/java_generator.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/grpc/src/compiler/python_generator.cc.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/python_generator.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/python_generator.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/grpc/src/compiler/swift_generator.cc.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/swift_generator.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/swift_generator.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/flatbuffers",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -I/home/megankuo/repos/executorch/third-party/flatbuffers/include -I/home/megankuo/repos/executorch/third-party/flatbuffers/grpc -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIE -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wnewline-eof -Wno-unknown-warning-option -Wmissing-declarations -Wzero-as-null-pointer-constant -Wimplicit-fallthrough -Wextra-semi -std=c++17 -o CMakeFiles/flatc.dir/grpc/src/compiler/ts_generator.cc.o -c /home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/ts_generator.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/flatbuffers/grpc/src/compiler/ts_generator.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_ops_lib.dir/RegisterCodegenUnboxedKernelsEverything.cpp.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable/RegisterCodegenUnboxedKernelsEverything.cpp",
+  "file": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable/RegisterCodegenUnboxedKernelsEverything.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_abs.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_abs.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_abs.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_acos.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_acos.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_acos.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_acosh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_acosh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_acosh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_add.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_add.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_add.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_addmm.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_addmm.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_addmm.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_alias_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_alias_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_alias_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_allclose.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_allclose.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_allclose.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_amax.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_amax.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_amax.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_amin.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_amin.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_amin.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_any.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_any.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_any.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_arange.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_arange.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_arange.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_argmax.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_argmax.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_argmax.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_argmin.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_argmin.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_argmin.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_as_strided_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_as_strided_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_as_strided_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_asin.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_asin.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_asin.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_asinh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_asinh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_asinh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_atan.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_atan.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_atan.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_atanh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_atanh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_atanh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_avg_pool2d.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_avg_pool2d.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_avg_pool2d.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_bitwise_and.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_and.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_and.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_bitwise_not.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_not.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_not.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_bitwise_or.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_or.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_or.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_bitwise_xor.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_xor.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_bitwise_xor.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_bmm.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_bmm.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_bmm.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_cat.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_cat.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_cat.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_ceil.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_ceil.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_ceil.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_clamp.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_clamp.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_clamp.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_clone.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_clone.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_clone.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_constant_pad_nd.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_constant_pad_nd.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_constant_pad_nd.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_convolution.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_convolution.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_convolution.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_cos.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_cos.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_cos.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_cosh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_cosh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_cosh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_cumsum.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_cumsum.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_cumsum.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_detach_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_detach_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_detach_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_div.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_div.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_div.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_embedding.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_embedding.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_embedding.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_empty.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_empty.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_empty.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_eq.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_eq.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_eq.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_erf.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_erf.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_erf.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_exp.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_exp.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_exp.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_expand_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_expand_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_expand_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_fill.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_fill.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_fill.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_floor.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_floor.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_floor.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_floor_divide.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_floor_divide.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_floor_divide.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_fmod.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_fmod.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_fmod.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_full.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_full.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_full.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_full_like.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_full_like.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_full_like.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_ge.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_ge.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_ge.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_gelu.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_gelu.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_gelu.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_glu.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_glu.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_glu.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_gt.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_gt.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_gt.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_hardtanh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_hardtanh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_hardtanh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_index.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_index.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_index.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_index_put.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_index_put.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_index_put.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_index_select.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_index_select.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_index_select.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_isinf.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_isinf.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_isinf.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_isnan.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_isnan.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_isnan.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_le.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_le.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_le.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_leaky_relu.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_leaky_relu.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_leaky_relu.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_lift_fresh_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_lift_fresh_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_lift_fresh_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_linear_scratch_example.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_linear_scratch_example.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_linear_scratch_example.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_log.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_log.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_log.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_log_softmax.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_log_softmax.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_log_softmax.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_logical_and.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_and.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_and.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_logical_not.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_not.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_not.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_logical_or.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_or.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_or.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_logical_xor.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_xor.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_logical_xor.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_logit.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_logit.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_logit.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_lt.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_lt.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_lt.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_masked_fill.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_masked_fill.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_masked_fill.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_max.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_max.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_max.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_max_pool2d_with_indices.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_max_pool2d_with_indices.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_max_pool2d_with_indices.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_mean.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_mean.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_mean.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_min.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_min.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_min.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_minimum.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_minimum.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_minimum.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_mm.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_mm.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_mm.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_mul.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_mul.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_mul.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_native_batch_norm.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_native_batch_norm.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_native_batch_norm.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_native_layer_norm.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_native_layer_norm.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_native_layer_norm.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_ne.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_ne.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_ne.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_neg.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_neg.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_neg.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_nonzero.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_nonzero.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_nonzero.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_ones.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_ones.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_ones.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_permute_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_permute_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_permute_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_pixel_shuffle.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_pixel_shuffle.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_pixel_shuffle.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_pow.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_pow.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_pow.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_reciprocal.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_reciprocal.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_reciprocal.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_relu.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_relu.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_relu.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_remainder.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_remainder.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_remainder.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_repeat.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_repeat.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_repeat.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_round.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_round.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_round.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_rsqrt.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_rsqrt.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_rsqrt.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_rsub.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_rsub.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_rsub.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_scalar_tensor.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_scalar_tensor.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_scalar_tensor.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_scatter_add.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_scatter_add.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_scatter_add.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_select_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_select_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_select_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_select_scatter.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_select_scatter.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_select_scatter.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sigmoid.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sigmoid.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sigmoid.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sign.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sign.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sign.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sin.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sin.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sin.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sinh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sinh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sinh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_slice_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_slice_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_slice_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_slice_scatter.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_slice_scatter.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_slice_scatter.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_softmax.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_softmax.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_softmax.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_split_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_split_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_split_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_split_with_sizes_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_split_with_sizes_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_split_with_sizes_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sqrt.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sqrt.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sqrt.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_squeeze_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_squeeze_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_squeeze_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_stack.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_stack.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_stack.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sub.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sub.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sub.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_sum.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_sum.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_sum.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_t_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_t_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_t_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_tan.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_tan.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_tan.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_tanh.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_tanh.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_tanh.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_to_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_to_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_to_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_transpose_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_transpose_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_transpose_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_tril.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_tril.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_tril.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_unbind_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_unbind_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_unbind_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_unsqueeze_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_unsqueeze_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_unsqueeze_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_var.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_var.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_var.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_view_copy.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_view_copy.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_view_copy.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_where.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_where.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_where.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/op_zeros.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/op_zeros.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/op_zeros.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/pattern/binary_ufunc_realb_realb_to_realb_logical.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/pattern/binary_ufunc_realb_realb_to_realb_logical.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/pattern/binary_ufunc_realb_realb_to_realb_logical.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/pattern/unary_ufunc_real.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/pattern/unary_ufunc_real.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/pattern/unary_ufunc_real.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/pattern/unary_ufunc_realb_to_bool.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/pattern/unary_ufunc_realb_to_bool.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/pattern/unary_ufunc_realb_to_bool.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/pattern/unary_ufunc_realb_to_float.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/pattern/unary_ufunc_realb_to_float.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/pattern/unary_ufunc_realb_to_float.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/activation_ops_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/activation_ops_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/activation_ops_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/advanced_index_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/advanced_index_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/advanced_index_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/broadcast_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/broadcast_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/broadcast_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/copy_ops_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/copy_ops_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/copy_ops_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/index_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/index_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/index_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/kernel_ops_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/kernel_ops_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/kernel_ops_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/matmul_ops_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/matmul_ops_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/matmul_ops_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/normalization_ops_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/normalization_ops_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/normalization_ops_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/reduce_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/reduce_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/reduce_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/kernels/portable",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/portable_kernels.dir/cpu/util/repeat_util.cpp.o -c /home/megankuo/repos/executorch/kernels/portable/cpu/util/repeat_util.cpp",
+  "file": "/home/megankuo/repos/executorch/kernels/portable/cpu/util/repeat_util.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -DNO_THREADS -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -I/home/megankuo/repos/executorch/third-party/gflags/src -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include/gflags -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -std=gnu++17 -o CMakeFiles/gflags_nothreads_static.dir/src/gflags.cc.o -c /home/megankuo/repos/executorch/third-party/gflags/src/gflags.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/gflags/src/gflags.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -DNO_THREADS -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -I/home/megankuo/repos/executorch/third-party/gflags/src -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include/gflags -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -std=gnu++17 -o CMakeFiles/gflags_nothreads_static.dir/src/gflags_reporting.cc.o -c /home/megankuo/repos/executorch/third-party/gflags/src/gflags_reporting.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/gflags/src/gflags_reporting.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -DGFLAGS_IS_A_DLL=0 -DNO_THREADS -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include -I/home/megankuo/repos/executorch/third-party/gflags/src -I/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/third-party/gflags/include/gflags -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -std=gnu++17 -o CMakeFiles/gflags_nothreads_static.dir/src/gflags_completions.cc.o -c /home/megankuo/repos/executorch/third-party/gflags/src/gflags_completions.cc",
+  "file": "/home/megankuo/repos/executorch/third-party/gflags/src/gflags_completions.cc"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_executorch_logging.dir/runtime/Logging.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/Logging.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/Logging.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/utils.dir/runtime/Utils.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/Utils.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/Utils.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/wrappers.dir/aot/wrappers/TensorWrapper.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/TensorWrapper.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/TensorWrapper.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/wrappers.dir/aot/wrappers/QuantizeParamsWrapper.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/QuantizeParamsWrapper.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/wrappers.dir/aot/wrappers/OpWrapper.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/OpWrapper.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/OpWrapper.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_implementation.dir/runtime/backends/QnnImplementation.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnImplementation.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnImplementation.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_logger.dir/runtime/backends/QnnLogger.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnLogger.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnLogger.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_backend.dir/runtime/backends/QnnBackendCommon.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_sys_implementation.dir/runtime/backends/QnnSysImplementation.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_device.dir/runtime/backends/QnnDeviceCommon.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_device.dir/runtime/backends/htpbackend/HtpDevice.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_device.dir/runtime/backends/htpbackend/aarch64/HtpDevicePlatformInfoConfig.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/aarch64/HtpDevicePlatformInfoConfig.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/aarch64/HtpDevicePlatformInfoConfig.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_backend_cache.dir/runtime/backends/QnnBackendCache.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnBackendCache.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnBackendCache.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_context.dir/runtime/backends/QnnContextCommon.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnContextCommon.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnContextCommon.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_graph.dir/runtime/backends/QnnGraphCommon.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_graph.dir/runtime/backends/htpbackend/HtpGraph.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_graph.dir/runtime/backends/htpbackend/aarch64/HtpGraphCustomConfig.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/aarch64/HtpGraphCustomConfig.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/htpbackend/aarch64/HtpGraphCustomConfig.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_factory.dir/runtime/backends/QnnBackendFactory.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_manager.dir/runtime/QnnManager.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/QnnManager.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/QnnManager.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot  -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -std=gnu++17 -o CMakeFiles/qnn_manager.dir/aot/wrappers/TensorWrapper.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/TensorWrapper.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/aot/wrappers/TensorWrapper.cpp"
+},
+{
+  "directory": "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/backends/qualcomm",
+  "command": "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Dqnn_executorch_backend_EXPORTS -I/opt/qcom/aistack/qnn/2.16.4.231110/include/QNN -I/home/megankuo/repos -I/home/megankuo/repos/executorch/.. -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -O0 -g -fPIC -Wall -Wno-sign-compare -Wno-deprecated-declarations -fPIC -std=gnu++17 -o CMakeFiles/qnn_executorch_backend.dir/runtime/QnnExecuTorchBackend.cpp.o -c /home/megankuo/repos/executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.cpp",
+  "file": "/home/megankuo/repos/executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.cpp"
+}
+]

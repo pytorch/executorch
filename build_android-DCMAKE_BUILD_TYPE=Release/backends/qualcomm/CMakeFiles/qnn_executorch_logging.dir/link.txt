@@ -1,0 +1,2 @@
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_executorch_logging.a CMakeFiles/qnn_executorch_logging.dir/runtime/Logging.cpp.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_executorch_logging.a

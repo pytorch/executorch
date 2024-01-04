@@ -1,0 +1,512 @@
+The target system is: Android - 1 - aarch64
+The host system is: Linux - 5.15.0-91-generic - x86_64
+Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+Compiler: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang 
+Build flags: -g;-DANDROID;-fdata-sections;-ffunction-sections;-funwind-tables;-fstack-protector-strong;-no-canonical-prefixes;-D_FORTIFY_SOURCE=2;-Wformat;-Werror=format-security;
+Id flags: -c;--target=aarch64-none-linux-android23 
+
+The output was:
+0
+
+
+Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "CMakeCCompilerId.o"
+
+The C compiler identification is Clang, found in "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/3.21.1/CompilerIdC/CMakeCCompilerId.o"
+
+Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+Compiler: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ 
+Build flags: -g;-DANDROID;-fdata-sections;-ffunction-sections;-funwind-tables;-fstack-protector-strong;-no-canonical-prefixes;-D_FORTIFY_SOURCE=2;-Wformat;-Werror=format-security;;
+Id flags: -c;--target=aarch64-none-linux-android23 
+
+The output was:
+0
+
+
+Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "CMakeCXXCompilerId.o"
+
+The CXX compiler identification is Clang, found in "/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/3.21.1/CompilerIdCXX/CMakeCXXCompilerId.o"
+
+Detecting C compiler ABI info compiled with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_31a87/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_31a87.dir/build.make CMakeFiles/cmTC_31a87.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat   -fPIE   -v -MD -MT CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -c /usr/local/share/cmake-3.21/Modules/CMakeCCompilerABI.c
+Android (9352603, based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)
+Target: aarch64-none-linux-android23
+Thread model: posix
+InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin
+ (in-process)
+ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" -cc1 -triple aarch64-none-linux-android23 -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +neon -target-feature +v8a -target-feature +fix-cortex-a53-835769 -target-abi aapcs -fallow-half-arguments-and-returns -mllvm -treat-scalable-fixed-error-as-warning -debug-info-kind=constructor -dwarf-version=4 -debugger-tuning=gdb -v -ffunction-sections -fdata-sections -fcoverage-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -resource-dir /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7 -dependency-file CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o.d -MT CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -sys-header-deps -D ANDROID -D _FORTIFY_SOURCE=2 -isysroot /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Wformat -fdebug-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -ferror-limit 19 -stack-protector 2 -fno-signed-char -fgnuc-version=4.2.1 -target-feature +outline-atomics -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -x c /usr/local/share/cmake-3.21/Modules/CMakeCCompilerABI.c
+clang -cc1 version 14.0.7 based upon LLVM 14.0.7git default target x86_64-unknown-linux-gnu
+ignoring nonexistent directory "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+End of search list.
+Linking C executable cmTC_31a87
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_31a87.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat   -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments   -v CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -o cmTC_31a87 
+Android (9352603, based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)
+Target: aarch64-none-linux-android23
+Thread model: posix
+InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin
+ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/ld" --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -pie -EL --fix-cortex-a53-843419 --warn-shared-textrel -z now -z relro -z max-page-size=4096 --hash-style=gnu --enable-new-dtags --eh-frame-hdr -m aarch64linux -dynamic-linker /system/bin/linker64 -o cmTC_31a87 /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib --build-id=sha1 --no-rosegment --fatal-warnings --no-undefined CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl -lc /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Parsed C implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+  end of search list found
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+  implicit include dirs: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+
+
+Parsed C implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld\.lld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_31a87/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_31a87.dir/build.make CMakeFiles/cmTC_31a87.dir/build]
+  ignore line: [gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp']
+  ignore line: [Building C object CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o]
+  ignore line: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat   -fPIE   -v -MD -MT CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -c /usr/local/share/cmake-3.21/Modules/CMakeCCompilerABI.c]
+  ignore line: [Android (9352603  based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)]
+  ignore line: [Target: aarch64-none-linux-android23]
+  ignore line: [Thread model: posix]
+  ignore line: [InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin]
+  ignore line: [ (in-process)]
+  ignore line: [ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang" -cc1 -triple aarch64-none-linux-android23 -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +neon -target-feature +v8a -target-feature +fix-cortex-a53-835769 -target-abi aapcs -fallow-half-arguments-and-returns -mllvm -treat-scalable-fixed-error-as-warning -debug-info-kind=constructor -dwarf-version=4 -debugger-tuning=gdb -v -ffunction-sections -fdata-sections -fcoverage-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -resource-dir /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7 -dependency-file CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o.d -MT CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -sys-header-deps -D ANDROID -D _FORTIFY_SOURCE=2 -isysroot /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Wformat -fdebug-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -ferror-limit 19 -stack-protector 2 -fno-signed-char -fgnuc-version=4.2.1 -target-feature +outline-atomics -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -x c /usr/local/share/cmake-3.21/Modules/CMakeCCompilerABI.c]
+  ignore line: [clang -cc1 version 14.0.7 based upon LLVM 14.0.7git default target x86_64-unknown-linux-gnu]
+  ignore line: [ignoring nonexistent directory "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+  ignore line: [End of search list.]
+  ignore line: [Linking C executable cmTC_31a87]
+  ignore line: [/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_31a87.dir/link.txt --verbose=1]
+  ignore line: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat   -static-libstdc++ -Wl --build-id=sha1 -Wl --no-rosegment -Wl --fatal-warnings -Wl --no-undefined -Qunused-arguments   -v CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o -o cmTC_31a87 ]
+  ignore line: [Android (9352603  based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)]
+  ignore line: [Target: aarch64-none-linux-android23]
+  ignore line: [Thread model: posix]
+  ignore line: [InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin]
+  link line: [ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/ld" --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -pie -EL --fix-cortex-a53-843419 --warn-shared-textrel -z now -z relro -z max-page-size=4096 --hash-style=gnu --enable-new-dtags --eh-frame-hdr -m aarch64linux -dynamic-linker /system/bin/linker64 -o cmTC_31a87 /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib --build-id=sha1 --no-rosegment --fatal-warnings --no-undefined CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl -lc /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/ld] ==> ignore
+    arg [--sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot] ==> ignore
+    arg [-pie] ==> ignore
+    arg [-EL] ==> ignore
+    arg [--fix-cortex-a53-843419] ==> ignore
+    arg [--warn-shared-textrel] ==> ignore
+    arg [-znow] ==> ignore
+    arg [-zrelro] ==> ignore
+    arg [-zmax-page-size=4096] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [--enable-new-dtags] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [aarch64linux] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/system/bin/linker64] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_31a87] ==> ignore
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o] ==> obj [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+    arg [--build-id=sha1] ==> ignore
+    arg [--no-rosegment] ==> ignore
+    arg [--fatal-warnings] ==> ignore
+    arg [--no-undefined] ==> ignore
+    arg [CMakeFiles/cmTC_31a87.dir/CMakeCCompilerABI.c.o] ==> ignore
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a] ==> lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+    arg [-l:libunwind.a] ==> lib [-l:libunwind.a]
+    arg [-ldl] ==> lib [dl]
+    arg [-lc] ==> lib [c]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a] ==> lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+    arg [-l:libunwind.a] ==> lib [-l:libunwind.a]
+    arg [-ldl] ==> lib [dl]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o] ==> obj [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o]
+  remove lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+  remove lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+  implicit libs: [-l:libunwind.a;dl;c;-l:libunwind.a;dl]
+  implicit objs: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o]
+  implicit dirs: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+  implicit fwks: []
+
+
+Detecting CXX compiler ABI info compiled with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_ba71a/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_ba71a.dir/build.make CMakeFiles/cmTC_ba71a.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat    -fPIE   -v -MD -MT CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -c /usr/local/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp
+Android (9352603, based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)
+Target: aarch64-none-linux-android23
+Thread model: posix
+InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin
+ (in-process)
+ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" -cc1 -triple aarch64-none-linux-android23 -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +neon -target-feature +v8a -target-feature +fix-cortex-a53-835769 -target-abi aapcs -fallow-half-arguments-and-returns -mllvm -treat-scalable-fixed-error-as-warning -debug-info-kind=constructor -dwarf-version=4 -debugger-tuning=gdb -v -ffunction-sections -fdata-sections -fcoverage-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -resource-dir /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7 -dependency-file CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -D ANDROID -D _FORTIFY_SOURCE=2 -isysroot /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1 -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Wformat -fdeprecated-macro -fdebug-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -ferror-limit 19 -stack-protector 2 -fno-signed-char -fgnuc-version=4.2.1 -fcxx-exceptions -fexceptions -target-feature +outline-atomics -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/local/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp
+clang -cc1 version 14.0.7 based upon LLVM 14.0.7git default target x86_64-unknown-linux-gnu
+ignoring nonexistent directory "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android
+ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
+End of search list.
+Linking CXX executable cmTC_ba71a
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ba71a.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments   -v CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_ba71a 
+Android (9352603, based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)
+Target: aarch64-none-linux-android23
+Thread model: posix
+InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin
+ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/ld" --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -pie -EL --fix-cortex-a53-843419 --warn-shared-textrel -z now -z relro -z max-page-size=4096 --hash-style=gnu --enable-new-dtags --eh-frame-hdr -m aarch64linux -dynamic-linker /system/bin/linker64 -o cmTC_ba71a /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib --build-id=sha1 --no-rosegment --fatal-warnings --no-undefined CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -Bstatic -lc++ -Bdynamic -lm /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl -lc /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Parsed CXX implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+    add: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+  end of search list found
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+  collapse include dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+  implicit include dirs: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+
+
+Parsed CXX implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld\.lld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_ba71a/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_ba71a.dir/build.make CMakeFiles/cmTC_ba71a.dir/build]
+  ignore line: [gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp']
+  ignore line: [Building CXX object CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o]
+  ignore line: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat    -fPIE   -v -MD -MT CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -c /usr/local/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp]
+  ignore line: [Android (9352603  based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)]
+  ignore line: [Target: aarch64-none-linux-android23]
+  ignore line: [Thread model: posix]
+  ignore line: [InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin]
+  ignore line: [ (in-process)]
+  ignore line: [ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++" -cc1 -triple aarch64-none-linux-android23 -emit-obj -mrelax-all --mrelax-relocations -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -pic-is-pie -mframe-pointer=non-leaf -ffp-contract=on -fno-rounding-math -mconstructor-aliases -funwind-tables=2 -target-cpu generic -target-feature +neon -target-feature +v8a -target-feature +fix-cortex-a53-835769 -target-abi aapcs -fallow-half-arguments-and-returns -mllvm -treat-scalable-fixed-error-as-warning -debug-info-kind=constructor -dwarf-version=4 -debugger-tuning=gdb -v -ffunction-sections -fdata-sections -fcoverage-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -resource-dir /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7 -dependency-file CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -D ANDROID -D _FORTIFY_SOURCE=2 -isysroot /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1 -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include -internal-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include -internal-externc-isystem /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include -Wformat -fdeprecated-macro -fdebug-compilation-dir=/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp -ferror-limit 19 -stack-protector 2 -fno-signed-char -fgnuc-version=4.2.1 -fcxx-exceptions -fexceptions -target-feature +outline-atomics -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/local/share/cmake-3.21/Modules/CMakeCXXCompilerABI.cpp]
+  ignore line: [clang -cc1 version 14.0.7 based upon LLVM 14.0.7git default target x86_64-unknown-linux-gnu]
+  ignore line: [ignoring nonexistent directory "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/c++/v1]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/include]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/local/include]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android]
+  ignore line: [ /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include]
+  ignore line: [End of search list.]
+  ignore line: [Linking CXX executable cmTC_ba71a]
+  ignore line: [/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ba71a.dir/link.txt --verbose=1]
+  ignore line: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat    -static-libstdc++ -Wl --build-id=sha1 -Wl --no-rosegment -Wl --fatal-warnings -Wl --no-undefined -Qunused-arguments   -v CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_ba71a ]
+  ignore line: [Android (9352603  based on r450784d1) clang version 14.0.7 (https://android.googlesource.com/toolchain/llvm-project 4c603efb0cca074e9238af8b4106c30add4418f6)]
+  ignore line: [Target: aarch64-none-linux-android23]
+  ignore line: [Thread model: posix]
+  ignore line: [InstalledDir: /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin]
+  link line: [ "/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/ld" --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -pie -EL --fix-cortex-a53-843419 --warn-shared-textrel -z now -z relro -z max-page-size=4096 --hash-style=gnu --enable-new-dtags --eh-frame-hdr -m aarch64linux -dynamic-linker /system/bin/linker64 -o cmTC_ba71a /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23 -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android -L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib --build-id=sha1 --no-rosegment --fatal-warnings --no-undefined CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o -Bstatic -lc++ -Bdynamic -lm /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl -lc /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a -l:libunwind.a -ldl /home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/ld] ==> ignore
+    arg [--sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot] ==> ignore
+    arg [-pie] ==> ignore
+    arg [-EL] ==> ignore
+    arg [--fix-cortex-a53-843419] ==> ignore
+    arg [--warn-shared-textrel] ==> ignore
+    arg [-znow] ==> ignore
+    arg [-zrelro] ==> ignore
+    arg [-zmax-page-size=4096] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [--enable-new-dtags] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [aarch64linux] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/system/bin/linker64] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_ba71a] ==> ignore
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o] ==> obj [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android]
+    arg [-L/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib] ==> dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+    arg [--build-id=sha1] ==> ignore
+    arg [--no-rosegment] ==> ignore
+    arg [--fatal-warnings] ==> ignore
+    arg [--no-undefined] ==> ignore
+    arg [CMakeFiles/cmTC_ba71a.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+    arg [-Bstatic] ==> search static
+    arg [-lc++] ==> lib [c++]
+    arg [-Bdynamic] ==> search dynamic
+    arg [-lm] ==> lib [m]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a] ==> lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+    arg [-l:libunwind.a] ==> lib [-l:libunwind.a]
+    arg [-ldl] ==> lib [dl]
+    arg [-lc] ==> lib [c]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a] ==> lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+    arg [-l:libunwind.a] ==> lib [-l:libunwind.a]
+    arg [-ldl] ==> lib [dl]
+    arg [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o] ==> obj [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o]
+  remove lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+  remove lib [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/libclang_rt.builtins-aarch64-android.a]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android]
+  collapse library dir [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib] ==> [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+  implicit libs: [c++;m;-l:libunwind.a;dl;c;-l:libunwind.a;dl]
+  implicit objs: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtbegin_dynamic.o;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23/crtend_android.o]
+  implicit dirs: [/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/lib64/clang/14.0.7/lib/linux/aarch64;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/23;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android;/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib]
+  implicit fwks: []
+
+
+Determining if the strtof_l exist passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_03d55/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_03d55.dir/build.make CMakeFiles/cmTC_03d55.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_03d55.dir/CheckSymbolExists.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -std=gnu++17 -MD -MT CMakeFiles/cmTC_03d55.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_03d55.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_03d55.dir/CheckSymbolExists.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx
+Linking CXX executable cmTC_03d55
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_03d55.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_03d55.dir/CheckSymbolExists.cxx.o -o cmTC_03d55  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+File /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strtof_l
+  return ((int*)(&strtof_l))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strtoull_l exist passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_22212/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_22212.dir/build.make CMakeFiles/cmTC_22212.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_22212.dir/CheckSymbolExists.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -std=gnu++17 -MD -MT CMakeFiles/cmTC_22212.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_22212.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_22212.dir/CheckSymbolExists.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx
+Linking CXX executable cmTC_22212
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_22212.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_22212.dir/CheckSymbolExists.cxx.o -o cmTC_22212  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+File /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strtoull_l
+  return ((int*)(&strtoull_l))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the realpath exist passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_14b74/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_14b74.dir/build.make CMakeFiles/cmTC_14b74.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_14b74.dir/CheckSymbolExists.c.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -fPIE -MD -MT CMakeFiles/cmTC_14b74.dir/CheckSymbolExists.c.o -MF CMakeFiles/cmTC_14b74.dir/CheckSymbolExists.c.o.d -o CMakeFiles/cmTC_14b74.dir/CheckSymbolExists.c.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_14b74
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_14b74.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security   -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_14b74.dir/CheckSymbolExists.c.o -o cmTC_14b74  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+File /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef realpath
+  return ((int*)(&realpath))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the include file unistd.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_aae7a/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_aae7a.dir/build.make CMakeFiles/cmTC_aae7a.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_aae7a.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_aae7a.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_aae7a.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_aae7a.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_aae7a
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_aae7a.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_aae7a.dir/CheckIncludeFile.cxx.o -o cmTC_aae7a  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stdint.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_ab64c/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_ab64c.dir/build.make CMakeFiles/cmTC_ab64c.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_ab64c.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_ab64c.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_ab64c.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_ab64c.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_ab64c
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ab64c.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_ab64c.dir/CheckIncludeFile.cxx.o -o cmTC_ab64c  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file inttypes.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_d79ff/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_d79ff.dir/build.make CMakeFiles/cmTC_d79ff.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_d79ff.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_d79ff.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_d79ff.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_d79ff.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_d79ff
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d79ff.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_d79ff.dir/CheckIncludeFile.cxx.o -o cmTC_d79ff  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/types.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_05388/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_05388.dir/build.make CMakeFiles/cmTC_05388.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_05388.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_05388.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_05388.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_05388.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_05388
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_05388.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_05388.dir/CheckIncludeFile.cxx.o -o cmTC_05388  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/stat.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_43b44/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_43b44.dir/build.make CMakeFiles/cmTC_43b44.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_43b44.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_43b44.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_43b44.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_43b44.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_43b44
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_43b44.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_43b44.dir/CheckIncludeFile.cxx.o -o cmTC_43b44  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file fnmatch.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_48e3b/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_48e3b.dir/build.make CMakeFiles/cmTC_48e3b.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_48e3b.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_48e3b.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_48e3b.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_48e3b.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_48e3b
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_48e3b.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_48e3b.dir/CheckIncludeFile.cxx.o -o cmTC_48e3b  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stddef.h exists passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_e14e0/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_e14e0.dir/build.make CMakeFiles/cmTC_e14e0.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_e14e0.dir/CheckIncludeFile.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_e14e0.dir/CheckIncludeFile.cxx.o -MF CMakeFiles/cmTC_e14e0.dir/CheckIncludeFile.cxx.o.d -o CMakeFiles/cmTC_e14e0.dir/CheckIncludeFile.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckIncludeFile.cxx
+Linking CXX executable cmTC_e14e0
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e14e0.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_e14e0.dir/CheckIncludeFile.cxx.o -o cmTC_e14e0  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of uint32_t passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_13f12/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_13f12.dir/build.make CMakeFiles/cmTC_13f12.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_13f12.dir/uint32_t.cpp.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -MD -MT CMakeFiles/cmTC_13f12.dir/uint32_t.cpp.o -MF CMakeFiles/cmTC_13f12.dir/uint32_t.cpp.o.d -o CMakeFiles/cmTC_13f12.dir/uint32_t.cpp.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CheckTypeSize/uint32_t.cpp
+Linking CXX executable cmTC_13f12
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_13f12.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_13f12.dir/uint32_t.cpp.o -o cmTC_13f12  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the strtoll exist passed with the following output:
+Change Dir: /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_cab0b/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_cab0b.dir/build.make CMakeFiles/cmTC_cab0b.dir/build
+gmake[1]: Entering directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_cab0b.dir/CheckSymbolExists.cxx.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot   -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -fPIE -std=gnu++17 -MD -MT CMakeFiles/cmTC_cab0b.dir/CheckSymbolExists.cxx.o -MF CMakeFiles/cmTC_cab0b.dir/CheckSymbolExists.cxx.o.d -o CMakeFiles/cmTC_cab0b.dir/CheckSymbolExists.cxx.o -c /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx
+Linking CXX executable cmTC_cab0b
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_cab0b.dir/link.txt --verbose=1
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security    -static-libstdc++ -Wl,--build-id=sha1 -Wl,--no-rosegment -Wl,--fatal-warnings -Wl,--no-undefined -Qunused-arguments    CMakeFiles/cmTC_cab0b.dir/CheckSymbolExists.cxx.o -o cmTC_cab0b  -latomic -lm 
+gmake[1]: Leaving directory '/home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp'
+
+
+File /home/megankuo/repos/executorch/build_android-DCMAKE_BUILD_TYPE=Release/CMakeFiles/CMakeTmp/CheckSymbolExists.cxx:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strtoll
+  return ((int*)(&strtoll))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}

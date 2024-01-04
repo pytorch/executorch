@@ -1,0 +1,5 @@
+# Hashes of file build rules.
+9ac4bb104ad883217f46c0a3042d3606 kernels/portable/RegisterCodegenUnboxedKernelsEverything.cpp
+384a571a15d49a31e342526f8e157da3 kernels/portable/selected_operators.yaml
+204f29976d0ffb7b1cf3bd177dc6222d schema/include/executorch/program_generated.h
+170e6e2355a0d1ffb8b264952a419ac7 schema/include/executorch/scalar_type_generated.h

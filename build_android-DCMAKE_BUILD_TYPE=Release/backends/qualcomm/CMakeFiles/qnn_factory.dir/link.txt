@@ -1,0 +1,2 @@
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libqnn_factory.a CMakeFiles/qnn_factory.dir/runtime/backends/QnnBackendFactory.cpp.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libqnn_factory.a

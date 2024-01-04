@@ -1,0 +1,2 @@
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar qc libutils.a CMakeFiles/utils.dir/runtime/Utils.cpp.o
+/home/megankuo/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib libutils.a
