@@ -37,7 +37,7 @@ if(${ANDROID})
     find_library(android_log log)
 endif()
 
-add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
+add_compile_options("-Wall" "-Wno-sign-compare")
 
 # GNU emit wanring for ignored attributes
 # Unfortunately, we use [[maybe_unused]] which can be ignored by GNU.
@@ -54,7 +54,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
     # --gc-sections is added by torch.
-    add_compile_definitions("-O3" "-ffunction-sections" "-fdata-sections")
+    add_compile_options("-O3" "-ffunction-sections" "-fdata-sections")
 endif()
 
 
