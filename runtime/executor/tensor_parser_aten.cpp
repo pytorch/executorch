@@ -51,8 +51,22 @@ Result<at::Tensor> parseTensor(
       static_cast<int8_t>(type));
   auto options = at::CPU(type).options();
 
-  // convert int32 in serialization to int64 for aten
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
   size_t ndim = s_tensor->sizes()->size();
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidProgram,
+      "Missing dim_order field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order()->size() == ndim,
+      InvalidProgram,
+      "dim_order size %" PRIu32 " != ndim %zu",
+      s_tensor->dim_order()->size(),
+      ndim);
+
+  // convert int32 in serialization to int64 for aten
   std::vector<int64_t> sizes(
       s_tensor->sizes()->begin(), s_tensor->sizes()->end());
   std::vector<int64_t> strides(ndim);
