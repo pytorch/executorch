@@ -56,11 +56,25 @@ Result<torch::executor::Tensor> parseTensor(
       NotSupported,
       "Fully dynamic tensor shapes not yet supported: T133200526");
 
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
+  const auto serialized_sizes = s_tensor->sizes()->data();
+  const auto dim = s_tensor->sizes()->size();
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidProgram,
+      "Missing dim_order field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order()->size() == dim,
+      InvalidProgram,
+      "dim_order size %" PRIu32 " != dim %" PRIu32,
+      s_tensor->dim_order()->size(),
+      dim);
+  const auto serialized_dim_order = s_tensor->dim_order()->data();
+
   exec_aten::SizesType* sizes = nullptr;
   exec_aten::DimOrderType* dim_order = nullptr;
-  const auto dim = s_tensor->sizes()->size();
-  const auto serialized_sizes = s_tensor->sizes()->data();
-  const auto serialized_dim_order = s_tensor->dim_order()->data();
   // For dynamic shape tensors, allocate local buffers to allow mutable sizes
   // and strides
   if (dynamism != TensorShapeDynamism::STATIC) {
