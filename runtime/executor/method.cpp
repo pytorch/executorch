@@ -413,37 +413,44 @@ Error Method::parse_values() {
   return Error::Ok;
 }
 
+namespace {
 /**
  * Private/helper method for populating operator_name from the Operator.
  * operator_name is a char pointer that is already allocated. The size of
  * of this buffer is of size operator_name_size.
  */
-static void populateOperatorName(
+Error populate_operator_name(
     const executorch_flatbuffer::Operator* const& op,
     const size_t operator_name_size,
     char* operator_name) {
-  int cx;
-  const bool has_overload = (op->overload()->size() > 0);
-  // Don't append any overload if the overload string is empty.
-  cx = snprintf(
+  const bool has_overload =
+      op->overload() != nullptr && op->overload()->size() > 0;
+
+  ET_CHECK_OR_RETURN_ERROR(
+      op->name() != nullptr, InvalidProgram, "Missing operator name");
+  int cx = snprintf(
       operator_name,
       operator_name_size,
       "%s%s%s",
       op->name()->c_str(),
+      // Don't append any overload if the overload string is empty.
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "");
-
-  ET_CHECK_MSG(cx >= 0, "String encoding error occured.");
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(cx >= 0, Internal, "snprintf failed: %d", cx);
+  ET_CHECK_OR_RETURN_ERROR(
       cx < operator_name_size,
-      "Aborting. Operator name %s%s%s with length %d "
+      Internal,
+      "Operator name %s%s%s with length %d "
       "truncated to %zu due to internal buffer limit.",
       op->name()->c_str(),
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "",
       cx,
       operator_name_size);
+
+  return Error::Ok;
 }
+} // namespace
 
 Error Method::resolve_operator(
     int32_t op_index,
@@ -465,7 +472,10 @@ Error Method::resolve_operator(
       op_index);
   const auto& op = ops->Get(op_index);
 
-  populateOperatorName(op, kTempBufferSizeForName, operator_name);
+  Error err = populate_operator_name(op, kTempBufferSizeForName, operator_name);
+  if (err != Error::Ok) {
+    return err;
+  }
 
   // resolve tensor meta
   auto method_allocator = memory_manager_->method_allocator();
@@ -481,7 +491,7 @@ Error Method::resolve_operator(
       exec_aten::DimOrderType* dim_order_ptr = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
           method_allocator, exec_aten::DimOrderType, tensor.dim());
       size_t size = tensor.dim();
-      Error err = get_dim_order(tensor, dim_order_ptr, size);
+      err = get_dim_order(tensor, dim_order_ptr, size);
       ET_CHECK_OR_RETURN_ERROR(
           err == Error::Ok,
           InvalidArgument,
