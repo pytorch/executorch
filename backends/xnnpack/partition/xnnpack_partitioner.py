@@ -22,6 +22,9 @@ from executorch.backends.xnnpack.partition.configs import (
     UNSUPPORTED_QUANT_MODULES,
 )
 from executorch.backends.xnnpack.partition.graphs.bilinear_2d import bilinear2d_graphs
+from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
 from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
@@ -373,6 +376,23 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         is_keep_dim = (len(node.args) == 3) and (cast(bool, node.args[3]) is True)
         dim_arg_val = cast(int, node.args[1])
         return is_keep_dim and (dim_arg_val == 2 or dim_arg_val == 3)
+
+    @_constraint(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
+    def batch_norm(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
+        """
+        Only support batch norms that can be fused with convolutions.
+        This will be removed once standalone batch norm is supported.
+        """
+
+        # TODO(gjcomer) Remove after standalone batch norm (T171796544).
+
+        conv_node = node.args[0]
+        assert isinstance(conv_node, torch.fx.Node)
+
+        if conv_node.target != exir_ops.edge.aten.convolution.default:
+            return False
+
+        return FuseBatchNormWithConvPass.can_fuse(conv_node, node, ep)
 
 
 class XnnpackFloatingPointPartitioner(Partitioner):
