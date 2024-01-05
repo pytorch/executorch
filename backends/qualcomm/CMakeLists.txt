@@ -37,7 +37,7 @@ if(${ANDROID})
     find_library(android_log log)
 endif()
 
-add_compile_options("-Wall" "-Wno-sign-compare")
+add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 
 # GNU emit wanring for ignored attributes
 # Unfortunately, we use [[maybe_unused]] which can be ignored by GNU.
