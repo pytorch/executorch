@@ -8,10 +8,12 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
 
+#include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -52,6 +54,21 @@
       throw std::runtime_error(msg_buf);                          \
     }                                                             \
   })
+
+// Our logs work by writing to stderr. By default this is done through fprintf
+// (as defined in Posix.cpp) which then does not show up in python environments.
+// Here we override the pal to use std::cerr which can be properly redirected by
+// scoped_estream_redirect.
+void et_pal_emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    __ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    __ET_UNUSED size_t length) {
+  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
+}
 
 namespace py = pybind11;
 namespace torch {
@@ -606,38 +623,50 @@ void create_profile_block(const std::string& name) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
+  auto call_guard = py::
+      call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
   m.def(
       "_load_for_executorch",
       PyModule::load_from_file,
       py::arg("path"),
-      py::arg("enable_etdump") = false);
+      py::arg("enable_etdump") = false,
+      call_guard);
   m.def(
       "_load_for_executorch_from_buffer",
       &PyModule::load_from_buffer,
       py::arg("buffer"),
-      py::arg("enable_etdump") = false);
+      py::arg("enable_etdump") = false,
+      call_guard);
   m.def(
       "_load_for_executorch_from_bundled_program",
       &PyModule::load_from_bundled_program,
       py::arg("ptr"),
-      py::arg("enable_etdump") = false);
+      py::arg("enable_etdump") = false,
+      call_guard);
   m.def(
       "_load_bundled_program_from_buffer",
       &PyBundledModule::load_from_buffer,
       py::arg("buffer"),
-      py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE);
-  m.def("_dump_profile_results", []() {
-    prof_result_t prof_result;
-    EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-    return py::bytes(
-        reinterpret_cast<const char*>(prof_result.prof_data),
-        prof_result.num_bytes);
-  });
-  m.def("_create_profile_block", &create_profile_block);
-  m.def("_reset_profile_results", []() { EXECUTORCH_RESET_PROFILE_RESULTS(); });
+      py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE,
+      call_guard);
+  m.def(
+      "_dump_profile_results",
+      []() {
+        prof_result_t prof_result;
+        EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
+        return py::bytes(
+            reinterpret_cast<const char*>(prof_result.prof_data),
+            prof_result.num_bytes);
+      },
+      call_guard);
+  m.def("_create_profile_block", &create_profile_block, call_guard);
+  m.def(
+      "_reset_profile_results",
+      []() { EXECUTORCH_RESET_PROFILE_RESULTS(); },
+      call_guard);
 
   py::class_<PyModule>(m, "ExecutorchModule")
-      .def("load_bundled_input", &PyModule::load_bundled_input)
+      .def("load_bundled_input", &PyModule::load_bundled_input, call_guard)
       .def(
           "verify_result_with_bundled_expected_output",
           &PyModule::verify_result_with_bundled_expected_output,
@@ -645,15 +674,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("method_name"),
           py::arg("testset_idx"),
           py::arg("rtol") = 1e-5,
-          py::arg("atol") = 1e-8)
-      .def("plan_execute", &PyModule::plan_execute)
-      .def("run_method", &PyModule::run_method)
-      .def("forward", &PyModule::forward)
-      .def("has_etdump", &PyModule::has_etdump)
+          py::arg("atol") = 1e-8,
+          call_guard)
+      .def("plan_execute", &PyModule::plan_execute, call_guard)
+      .def("run_method", &PyModule::run_method, call_guard)
+      .def("forward", &PyModule::forward, call_guard)
+      .def("has_etdump", &PyModule::has_etdump, call_guard)
       .def(
-          "write_etdump_result_to_file", &PyModule::write_etdump_result_to_file)
-      .def("__call__", &PyModule::forward)
-      .def("__call__", &PyModule::forward_single_input);
+          "write_etdump_result_to_file",
+          &PyModule::write_etdump_result_to_file,
+          call_guard)
+      .def("__call__", &PyModule::forward, call_guard)
+      .def("__call__", &PyModule::forward_single_input, call_guard);
 
   py::class_<PyBundledModule>(m, "BundledModule");
 }
