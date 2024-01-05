@@ -102,7 +102,6 @@ target_sources(qnn_backend
 target_sources(qnn_factory
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.h
-    ${CMAKE_CURRENT_LIST_DIR}/QnnFactory.h
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.cpp
 )
