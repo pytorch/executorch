@@ -436,7 +436,9 @@ def _get_new_signature(
                     )
                 )
         if node.op == "output":
-            for output in node.all_input_nodes:
+            for output in pytree.tree_leaves((node.args, node.kwargs)):
+                if not isinstance(output, torch.fx.Node):
+                    continue
                 output_specs.append(
                     OutputSpec(
                         kind=OutputKind.USER_OUTPUT,
