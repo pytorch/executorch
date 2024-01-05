@@ -11,8 +11,6 @@ import logging
 
 from executorch.exir.capture import EdgeCompileConfig
 
-from executorch.exir.capture._config import ExecutorchBackendConfig
-
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
 from ..utils import export_to_edge, export_to_exec_prog, save_pte_program
@@ -31,12 +29,6 @@ def main() -> None:
         help=f"provide a model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
     )
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
-    parser.add_argument(
-        "-c",
-        "--constant_segment",
-        default=True,
-        help="whether or not to store constants in a separate segment",
-    )
 
     args = parser.parse_args()
 
@@ -50,7 +42,6 @@ def main() -> None:
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    config = ExecutorchBackendConfig(extract_constant_segment=args.constant_segment)
     if (
         dynamic_shapes is not None
     ):  # capture_pre_autograd_graph does not work with dynamic shapes
@@ -62,13 +53,9 @@ def main() -> None:
                 _check_ir_validity=False,
             ),
         )
-        prog = edge_manager.to_executorch(
-            ExecutorchBackendConfig(extract_constant_segment=True)
-        )
+        prog = edge_manager.to_executorch()
     else:
-        prog = export_to_exec_prog(
-            model, example_inputs, dynamic_shapes=dynamic_shapes, backend_config=config
-        )
+        prog = export_to_exec_prog(model, example_inputs, dynamic_shapes=dynamic_shapes)
     save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
 
