@@ -470,7 +470,7 @@ Before you begin it is recommended you go through the following:</div>
 
 <span class="n">edge</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">))</span>
 
-<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
 </pre></div>
 </div>
 <p>We will go through this example with the <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_mobilenet_v2/">MobileNetV2</a> pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>. We call the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> api with the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.</p>
@@ -541,7 +541,7 @@ Before you begin it is recommended you go through the following:</div>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Continued from earlier...</span>
 <span class="n">edge</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_mobilenetv2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
 
-<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
 
 <span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 

@@ -444,12 +444,12 @@
     <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
+
+<span class="kn">from</span> <span class="nn">executorch.exir.serde.export_serialize</span> <span class="kn">import</span> <span class="n">SerializedArtifact</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.serde.serialize</span> <span class="kn">import</span> <span class="n">deserialize</span><span class="p">,</span> <span class="n">serialize</span>
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
 
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.schema.bundled_program_schema</span> <span class="kn">import</span> <span class="n">Value</span>
-
-<span class="kn">from</span> <span class="nn">torch._export.serde.serialize</span> <span class="kn">import</span> <span class="n">SerializedArtifact</span>
 
 <span class="n">ProgramOutput</span> <span class="o">=</span> <span class="n">List</span><span class="p">[</span><span class="n">Value</span><span class="p">]</span>
 
