@@ -61,9 +61,10 @@ def _get_updated_graph_signature(
     Update the graph signature's user_input/user_outputs.
     """
     new_input_specs = []
-    for i, node in enumerate(new_gm.graph.nodes):
+    i = 0
+    for node in new_gm.graph.nodes:
         if node.op != "placeholder":
-            break
+            continue
 
         assert i < len(
             old_signature.input_specs
@@ -77,6 +78,7 @@ def _get_updated_graph_signature(
         new_input_specs.append(
             InputSpec(old_input_spec.kind, arg, old_input_spec.target)
         )
+        i += 1
 
     output_node = list(new_gm.graph.nodes)[-1]
     assert output_node.op == "output"
