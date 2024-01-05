@@ -122,6 +122,11 @@ class LoweredBackendModule(torch.nn.Module):
     # TODO(chenlai): re-consider recapture instead of manually constructing the program because
     # the meta data construction is done manually.
     def program(self, emit_stacktrace: bool = False) -> Program:
+        from executorch.exir.program._program import (
+            _get_updated_graph_signature,
+            _transform,
+        )
+
         """
         Returns the object that represents the ExecuTorch binary before serialization.
         """
@@ -257,8 +262,11 @@ class LoweredBackendModule(torch.nn.Module):
         exported_program = ExportedProgram(
             root=lowered_exported_program.graph_module,
             graph=lowered_exported_program.graph,
-            graph_signature=ExportGraphSignature(
-                input_specs=input_specs, output_specs=output_specs
+            graph_signature=_get_updated_graph_signature(
+                ExportGraphSignature(
+                    input_specs=input_specs, output_specs=output_specs
+                ),
+                lowered_exported_program.graph_module,
             ),
             # TODO: May need to set lowered_exported_program.call_spec = CallSpec(None, None)
             # somewhere as we should pass it a list of tensors to the lowered module and output a
@@ -271,8 +279,8 @@ class LoweredBackendModule(torch.nn.Module):
             example_inputs=None,
             verifier=lowered_exported_program.verifier,
         )
-        exported_program = exported_program._transform(
-            SpecPropPass(), MemoryPlanningPass("greedy")
+        exported_program = _transform(
+            exported_program, SpecPropPass(), MemoryPlanningPass("greedy")
         )
         emitted_program = emit_program(
             exported_program, emit_stacktrace=emit_stacktrace
@@ -428,7 +436,9 @@ def _get_new_signature(
                     )
                 )
         if node.op == "output":
-            for output in node.all_input_nodes:
+            for output in pytree.tree_leaves((node.args, node.kwargs)):
+                if not isinstance(output, torch.fx.Node):
+                    continue
                 output_specs.append(
                     OutputSpec(
                         kind=OutputKind.USER_OUTPUT,

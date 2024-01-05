@@ -57,6 +57,8 @@ class BackendDelegate final {
       BackendInitContext& backend_init_context,
       BackendDelegate* out) {
     // Look up the backend.
+    ET_CHECK_OR_RETURN_ERROR(
+        delegate.id() != nullptr, InvalidProgram, "Missing backend id");
     const char* backend_id = delegate.id()->c_str();
     PyTorchBackendInterface* backend = get_backend_class(backend_id);
     ET_CHECK_OR_RETURN_ERROR(
@@ -223,7 +225,6 @@ Result<InstructionArgs> gen_instruction_arguments(
       ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, EValue*, num_args);
   for (size_t i = 0; i < num_args; ++i) {
     int32_t arg_idx = arg_idxs[i];
-    ET_LOG(Error, "Argument index %d vs num_values %zu", arg_idx, num_values);
     ET_CHECK_OR_RETURN_ERROR(
         arg_idx < num_values,
         InvalidProgram,
@@ -412,37 +413,44 @@ Error Method::parse_values() {
   return Error::Ok;
 }
 
+namespace {
 /**
  * Private/helper method for populating operator_name from the Operator.
  * operator_name is a char pointer that is already allocated. The size of
  * of this buffer is of size operator_name_size.
  */
-static void populateOperatorName(
+Error populate_operator_name(
     const executorch_flatbuffer::Operator* const& op,
     const size_t operator_name_size,
     char* operator_name) {
-  int cx;
-  const bool has_overload = (op->overload()->size() > 0);
-  // Don't append any overload if the overload string is empty.
-  cx = snprintf(
+  const bool has_overload =
+      op->overload() != nullptr && op->overload()->size() > 0;
+
+  ET_CHECK_OR_RETURN_ERROR(
+      op->name() != nullptr, InvalidProgram, "Missing operator name");
+  int cx = snprintf(
       operator_name,
       operator_name_size,
       "%s%s%s",
       op->name()->c_str(),
+      // Don't append any overload if the overload string is empty.
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "");
-
-  ET_CHECK_MSG(cx >= 0, "String encoding error occured.");
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(cx >= 0, Internal, "snprintf failed: %d", cx);
+  ET_CHECK_OR_RETURN_ERROR(
       cx < operator_name_size,
-      "Aborting. Operator name %s%s%s with length %d "
+      Internal,
+      "Operator name %s%s%s with length %d "
       "truncated to %zu due to internal buffer limit.",
       op->name()->c_str(),
       has_overload ? "." : "",
       has_overload ? op->overload()->c_str() : "",
       cx,
       operator_name_size);
+
+  return Error::Ok;
 }
+} // namespace
 
 Error Method::resolve_operator(
     int32_t op_index,
@@ -464,7 +472,10 @@ Error Method::resolve_operator(
       op_index);
   const auto& op = ops->Get(op_index);
 
-  populateOperatorName(op, kTempBufferSizeForName, operator_name);
+  Error err = populate_operator_name(op, kTempBufferSizeForName, operator_name);
+  if (err != Error::Ok) {
+    return err;
+  }
 
   // resolve tensor meta
   auto method_allocator = memory_manager_->method_allocator();
@@ -480,7 +491,7 @@ Error Method::resolve_operator(
       exec_aten::DimOrderType* dim_order_ptr = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
           method_allocator, exec_aten::DimOrderType, tensor.dim());
       size_t size = tensor.dim();
-      Error err = get_dim_order(tensor, dim_order_ptr, size);
+      err = get_dim_order(tensor, dim_order_ptr, size);
       ET_CHECK_OR_RETURN_ERROR(
           err == Error::Ok,
           InvalidArgument,
@@ -587,7 +598,13 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     int32_t num_instructions_missing_op = 0;
     for (size_t i = 0; i < n_chains_; ++i) {
       auto s_chain = chains->Get(i);
-      auto num_instructions = s_chain->instructions()->size();
+      auto s_instructions = s_chain->instructions();
+      ET_CHECK_OR_RETURN_ERROR(
+          s_instructions != nullptr,
+          InvalidProgram,
+          "Missing instructions in chain %zu",
+          i);
+      auto num_instructions = s_instructions->size();
       auto chain_instruction_kernels = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
           method_allocator, OpFunction, num_instructions);
       auto chain_instruction_arg_lists = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
@@ -595,13 +612,15 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
 
       // Set up the argument lists ahead of time and store pointers to them to
       // use when the instructions are called
-      for (size_t instr_idx = 0; instr_idx < s_chain->instructions()->size();
+      for (size_t instr_idx = 0; instr_idx < s_instructions->size();
            ++instr_idx) {
-        const auto instruction = s_chain->instructions()->Get(instr_idx);
+        const auto instruction = s_instructions->Get(instr_idx);
         switch (instruction->instr_args_type()) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
             const auto arg_idxs =
                 instruction->instr_args_as_KernelCall()->args();
+            ET_CHECK_OR_RETURN_ERROR(
+                arg_idxs != nullptr, InvalidProgram, "KernelCall args missing");
             auto res = gen_instruction_arguments(
                 method_allocator,
                 n_value_,
@@ -629,6 +648,10 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
           case executorch_flatbuffer::InstructionArguments::DelegateCall: {
             const auto arg_idxs =
                 instruction->instr_args_as_DelegateCall()->args();
+            ET_CHECK_OR_RETURN_ERROR(
+                arg_idxs != nullptr,
+                InvalidProgram,
+                "DelegateCall args missing");
             auto res = gen_instruction_arguments(
                 method_allocator,
                 n_value_,
