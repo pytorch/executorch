@@ -536,16 +536,17 @@
         <span class="k">return</span> <span class="bp">self</span>
 
     <span class="n">transformed_ep</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
-        <span class="n">transformed_gm</span><span class="p">,</span>
-        <span class="n">transformed_gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-        <span class="n">_get_updated_graph_signature</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">transformed_gm</span><span class="p">),</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
-        <span class="n">_get_updated_range_constraints</span><span class="p">(</span><span class="n">transformed_gm</span><span class="p">),</span>
-        <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">),</span>
-        <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_module_call_graph</span><span class="p">),</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
+        <span class="n">root</span><span class="o">=</span><span class="n">transformed_gm</span><span class="p">,</span>
+        <span class="n">graph</span><span class="o">=</span><span class="n">transformed_gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+        <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">transformed_gm</span>
+        <span class="p">),</span>
+        <span class="n">state_dict</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+        <span class="n">range_constraints</span><span class="o">=</span><span class="n">_get_updated_range_constraints</span><span class="p">(</span><span class="n">transformed_gm</span><span class="p">),</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_module_call_graph</span><span class="p">),</span>
+        <span class="n">example_inputs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+        <span class="n">verifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
+        <span class="n">tensor_constants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
     <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
@@ -648,21 +649,19 @@
         <span class="n">call_spec</span><span class="p">,</span>
         <span class="n">state_dict</span><span class="p">,</span>
         <span class="n">range_constraints</span><span class="p">,</span>
-        <span class="n">equality_constraints</span><span class="p">,</span>
         <span class="n">module_call_graph</span><span class="p">,</span>
         <span class="n">example_inputs</span><span class="p">,</span>
         <span class="n">verifier</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">(</span>
-            <span class="n">root</span><span class="p">,</span>
-            <span class="n">graph</span><span class="p">,</span>
-            <span class="n">graph_signature</span><span class="p">,</span>
-            <span class="n">state_dict</span><span class="p">,</span>
-            <span class="n">range_constraints</span><span class="p">,</span>
-            <span class="n">equality_constraints</span><span class="p">,</span>
-            <span class="n">module_call_graph</span><span class="p">,</span>
-            <span class="n">example_inputs</span><span class="p">,</span>
-            <span class="n">verifier</span><span class="p">,</span>
+            <span class="n">root</span><span class="o">=</span><span class="n">root</span><span class="p">,</span>
+            <span class="n">graph</span><span class="o">=</span><span class="n">graph</span><span class="p">,</span>
+            <span class="n">graph_signature</span><span class="o">=</span><span class="n">graph_signature</span><span class="p">,</span>
+            <span class="n">state_dict</span><span class="o">=</span><span class="n">state_dict</span><span class="p">,</span>
+            <span class="n">range_constraints</span><span class="o">=</span><span class="n">range_constraints</span><span class="p">,</span>
+            <span class="n">module_call_graph</span><span class="o">=</span><span class="n">module_call_graph</span><span class="p">,</span>
+            <span class="n">example_inputs</span><span class="o">=</span><span class="n">example_inputs</span><span class="p">,</span>
+            <span class="n">verifier</span><span class="o">=</span><span class="n">verifier</span><span class="p">,</span>
         <span class="p">)</span>
 
     <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
@@ -889,14 +888,13 @@
     <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
         <span class="n">ep</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
             <span class="n">ExportedProgram</span><span class="p">(</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+                <span class="n">root</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span>
+                <span class="n">graph</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+                <span class="n">graph_signature</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span>
+                <span class="n">state_dict</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+                <span class="n">range_constraints</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
+                <span class="n">module_call_graph</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
+                <span class="n">example_inputs</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
                 <span class="n">verifier</span><span class="o">=</span><span class="n">get_aten_verifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">),</span>
                 <span class="n">tensor_constants</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
             <span class="p">),</span>
@@ -925,14 +923,15 @@
         <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
     <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
-        <span class="n">new_gm</span><span class="p">,</span>
-        <span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-        <span class="n">_get_updated_graph_signature</span><span class="p">(</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">),</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
-        <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+        <span class="n">root</span><span class="o">=</span><span class="n">new_gm</span><span class="p">,</span>
+        <span class="n">graph</span><span class="o">=</span><span class="n">new_gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
+        <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span>
+            <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">new_gm</span>
+        <span class="p">),</span>
+        <span class="n">state_dict</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+        <span class="n">range_constraints</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
+        <span class="n">example_inputs</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
         <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
             <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
             <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
@@ -1268,7 +1267,6 @@
             <span class="p">),</span>
             <span class="n">state_dict</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
             <span class="n">range_constraints</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
-            <span class="n">equality_constraints</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
             <span class="n">module_call_graph</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
             <span class="n">example_inputs</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
             <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>

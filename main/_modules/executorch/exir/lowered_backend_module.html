@@ -696,7 +696,6 @@
             <span class="c1"># inputs/outputs to the toplevel program will be in the format of the eager module.</span>
             <span class="n">state_dict</span><span class="o">=</span><span class="p">{},</span>  <span class="c1"># None because all data are consumed by delegate</span>
             <span class="n">range_constraints</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
-            <span class="n">equality_constraints</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">equality_constraints</span><span class="p">,</span>
             <span class="n">module_call_graph</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
             <span class="n">example_inputs</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
             <span class="n">verifier</span><span class="o">=</span><span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
@@ -902,7 +901,6 @@
         <span class="n">graph_signature</span><span class="o">=</span><span class="n">subgraph_signature</span><span class="p">,</span>
         <span class="n">state_dict</span><span class="o">=</span><span class="n">subgraph_state_dict</span><span class="p">,</span>
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
-        <span class="n">equality_constraints</span><span class="o">=</span><span class="p">[],</span>
         <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[],</span>
         <span class="n">verifier</span><span class="o">=</span><span class="n">owning_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
     <span class="p">)</span>
