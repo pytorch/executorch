@@ -7,6 +7,7 @@ name = "executorch"
 version = "0.1.0"
 # Python dependencies required for development
 dependencies=[
+  "cmake",
   "expecttest",
   "flatbuffers",
   "hypothesis",
