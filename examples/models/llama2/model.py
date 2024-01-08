@@ -78,9 +78,11 @@ class ModelArgs:
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
-
     max_batch_size: int = 32
     max_seq_len: int = 2048
+    moe: bool = False  # True to enable the MoE (Mixture of Experts)
+    num_experts: int = 8  # Number of experts
+    num_activated_experts: int = 2  # Number of experts to activate
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -203,6 +205,48 @@ class FeedForward(nn.Module):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
+class ConditionalFeedForward(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        hidden_dim = 4 * config.dim
+        hidden_dim = int(2 * hidden_dim / 3)
+        hidden_dim = config.multiple_of * (
+            (hidden_dim + config.multiple_of - 1) // config.multiple_of
+        )
+        self.w1 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
+        self.w2 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
+        self.w3 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
+        self.num_experts = config.num_experts
+        self.dim = config.dim
+
+    def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
+        w1_weights = self.w1[expert_indices].transpose(-1, -2)  # [T, A, D, D]
+        w3_weights = self.w3[expert_indices].transpose(-1, -2)  # [T, A, D, D]
+        w2_weights = self.w2[expert_indices]  # [T, A, D, D]
+        x1 = F.silu(torch.einsum("ti,taio -> tao", x, w1_weights))
+        x3 = torch.einsum("ti, taio -> tao", x, w3_weights)
+        expert_outs = torch.einsum("tao, taoi -> tai", (x1 * x3), w2_weights)
+        return expert_outs
+
+
+class MOEFeedForward(nn.Module):
+    def __init__(self, config) -> None:
+        super().__init__()
+        self.gate = nn.Linear(config.dim, config.num_experts, bias=False)
+        self.cond_ffn = ConditionalFeedForward(config)
+        self.dim = config.dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.view(-1, self.dim)
+        # T = num_tokens, E = num_experts, D = hidden dim, A = activated experts
+        # x: [T, D]
+        scores = self.gate(x)  # [T, E]
+        expert_weights, expert_indices = torch.topk(scores, 2, dim=-1)  # [T, A], [T, A]
+        expert_weights = expert_weights.softmax(dim=-1)  # [T, A]
+        expert_outs = self.cond_ffn(x, expert_indices)
+        return torch.einsum("tai,ta -> ti", expert_outs, expert_weights)
+
+
 class TransformerBlock(nn.Module):
     def __init__(self, layer_id: int, args: ModelArgs):
         super().__init__()
@@ -210,18 +254,24 @@ class TransformerBlock(nn.Module):
         self.dim = args.dim
         self.head_dim = args.dim // args.n_heads
         self.attention = Attention(args)
-        self.feed_forward = FeedForward(
-            dim=args.dim,
-            hidden_dim=4 * args.dim,
-            multiple_of=args.multiple_of,
-        )
+        if args.moe:
+            self.block_sparse_moe = MOEFeedForward(args)
+        else:
+            self.feed_forward = FeedForward(
+                dim=args.dim,
+                hidden_dim=4 * args.dim,
+                multiple_of=args.multiple_of,
+            )
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
     def forward(self, x, freqs_cos, freqs_sin):  # x: 1xN
         h = x + self.attention.forward(self.attention_norm(x), freqs_cos, freqs_sin)
-        out = h + self.feed_forward.forward(self.ffn_norm(h))
+        if hasattr(self, "block_sparse_moe"):
+            out = h + self.block_sparse_moe(self.ffn_norm(h))
+        else:
+            out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
 
