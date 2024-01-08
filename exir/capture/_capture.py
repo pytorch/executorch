@@ -90,9 +90,9 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
                 n.meta["val"] = None
 
     ep = HackedUpExportedProgramDONOTUSE(
-        graph_module,
-        graph_module.graph,
-        ExportGraphSignature(
+        root=graph_module,
+        graph=graph_module.graph,
+        graph_signature=ExportGraphSignature(
             input_specs=[
                 InputSpec(
                     kind=InputKind.USER_INPUT, arg=TensorArgument(name=i), target=None
@@ -106,11 +106,10 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
                 for o in user_outputs
             ],
         ),
-        CallSpec(in_spec, out_spec),
-        {},
-        {},
-        [],
-        [
+        call_spec=CallSpec(in_spec, out_spec),
+        state_dict={},
+        range_constraints={},
+        module_call_graph=[
             ModuleCallEntry(
                 fqn="",
                 signature=ModuleCallSignature(
@@ -121,8 +120,8 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
                 ),
             )
         ],
-        None,
-        EXIRATenDialectVerifierBase,
+        example_inputs=None,
+        verifier=EXIRATenDialectVerifierBase,
     )
     return ExirExportedProgram(ep, False)
 
@@ -294,13 +293,12 @@ def capture(  # noqa: C901
 
     graph_module.graph.eliminate_dead_code()
     ep = ExportedProgram(
-        graph_module,
-        graph_module.graph,
-        ExportGraphSignature(user_inputs, user_outputs),
-        {},
-        {},
-        [],
-        [
+        root=graph_module,
+        graph=graph_module.graph,
+        graph_signature=ExportGraphSignature(user_inputs, user_outputs),
+        state_dict={},
+        range_constraints={},
+        module_call_graph=[
             ModuleCallEntry(
                 fqn="",
                 signature=ModuleCallSignature(
@@ -311,8 +309,8 @@ def capture(  # noqa: C901
                 ),
             )
         ],
-        None,
-        EXIRATenDialectVerifierBase,
+        example_inputs=None,
+        verifier=EXIRATenDialectVerifierBase,
     )
     return ExirExportedProgram(ep, False)
 
