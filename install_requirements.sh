@@ -7,6 +7,11 @@
 
 # Install required python dependencies for developing
 # Dependencies are defined in .pyproject.toml
+if [[ -z $BUCK ]];
+then
+  BUCK=buck2
+fi
+
 pip install .
 
 # Install pytorch dependencies
