@@ -676,12 +676,11 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
         exported_program = exir.ExportedProgram(
-            state_dict,
-            dummy_g,
-            ep.ExportGraphSignature(input_specs=[], output_specs=[]),
-            {},  # TODO(T157676982)
-            range_constraints,
-            [],
+            root=state_dict,
+            graph=dummy_g,
+            graph_signature=ep.ExportGraphSignature(input_specs=[], output_specs=[]),
+            state_dict={},  # TODO(T157676982)
+            range_constraints=range_constraints,
             module_call_graph=module_call_graph,
             verifier=load_verifier(
                 serialized_artifact.exported_program.dialect  # pyre-ignore
