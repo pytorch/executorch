@@ -122,6 +122,9 @@ option(EXECUTORCH_BUILD_SDK
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
 
+# Build portable library
+option(EXECUTORCH_BUILD_PORTABLE_LIB "Build portable kernel library" ON)
+
 # Build dataloader library
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
        "Build the extension/data_loader directory" OFF)
@@ -141,7 +144,11 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 # TODO(dbort): Fix these warnings and remove this flag.
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+if(EXECUTORCH_BUILD_ATEN_LIB_PYBIND)
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC -frtti -fexceptions)
+else()
+  set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+endif()
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
@@ -236,7 +243,18 @@ add_subdirectory(schema)
 # full operators. Does not contain any backends.
 #
 
-add_library(executorch ${_executorch__srcs})
+if(EXECUTORCH_BUILD_ATEN_LIB_PYBIND)
+  add_library(executorch ${_executorch_aten__srcs})
+
+  # find torch
+  find_package(Torch CONFIG REQUIRED)
+  include_directories(${TORCH_INCLUDE_DIRS})
+
+  add_definitions(-DUSE_ATEN_LIB)
+  target_link_libraries(executorch PUBLIC torch c10)
+else()
+  add_library(executorch ${_executorch__srcs})
+endif()
 target_link_libraries(executorch PRIVATE program_schema)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
@@ -258,7 +276,9 @@ endif()
 # Real integrations should supply their own YAML file that only lists the
 # operators necessary for the models that will run.
 #
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+if(EXECUTORCH_BUILD_PORTABLE_LIB)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+endif()
 
 #
 # gflags: Commandline flag host library.
@@ -283,7 +303,7 @@ install(FILES build/executorch-config.cmake DESTINATION lib/cmake/ExecuTorch)
 #
 cmake_dependent_option(
   EXECUTORCH_BUILD_EXECUTOR_RUNNER "Build the executor_runner executable" ON
-  EXECUTORCH_BUILD_HOST_TARGETS OFF)
+  "EXECUTORCH_BUILD_PORTABLE_LIB;EXECUTORCH_BUILD_HOST_TARGETS" OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch portable_ops_lib gflags)
@@ -355,5 +375,33 @@ if(EXECUTORCH_BUILD_COREML)
   endif()
 endif()
 
+# Build aten mode pybind
+option(EXECUTORCH_BUILD_ATEN_LIB_PYBIND "Build pybindings for ATen mode" OFF)
+if(EXECUTORCH_BUILD_ATEN_LIB_PYBIND)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  pybind11_add_module(aten_lib extension/pybindings/pybindings.cpp)
+
+  # util lib
+  add_library(util
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/runtime/executor/test/test_backend_compiler_lib.cpp)
+  target_include_directories(util PUBLIC ${_common_include_directories})
+  target_compile_options(util PUBLIC ${_common_compile_options})
+  target_link_libraries(util PRIVATE torch c10)
+
+  find_library(TORCH_PYTHON_LIBRARY torch_python PATHS "${TORCH_INSTALL_PREFIX}/lib")
+
+  # set USE_ATEN_LIB
+  target_compile_definitions(aten_lib PUBLIC USE_ATEN_LIB EXECUTORCH_PYTHON_MODULE_NAME=aten_lib)
+  target_include_directories(aten_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+  target_link_libraries(aten_lib PUBLIC ${TORCH_PYTHON_LIBRARY} executorch extension_data_loader bundled_program etdump flatcc util)
+
+  install(TARGETS aten_lib
+        LIBRARY DESTINATION executorch/extension/pybindings
+        )
+endif()
 # Print all summary
 executorch_print_configuration_summary()

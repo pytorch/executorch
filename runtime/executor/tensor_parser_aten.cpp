@@ -115,7 +115,7 @@ Result<at::Tensor> parseTensor(
         "Expected non-null data for tensor with shape dynamism %d",
         int(s_tensor->shape_dynamism()));
     tensor.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
-        at::DataPtr(data_ptr.get(), DeviceType::CPU));
+        at::DataPtr(data_ptr.get(), c10::DeviceType::CPU));
   }
 
   return tensor;
