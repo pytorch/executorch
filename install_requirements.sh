@@ -12,6 +12,11 @@ then
   BUCK=buck2
 fi
 
+if [[ -z $PYTHON_EXECUTABLE ]];
+then
+  PYTHON_EXECUTABLE=python3
+fi
+
 pip install .
 
 # Install pytorch dependencies
