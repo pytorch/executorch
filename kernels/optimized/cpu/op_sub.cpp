@@ -53,7 +53,11 @@ Tensor& opt_sub_out(
     ScalarType common_type = promoteTypes(a_type, b_type);
     ET_CHECK(canCast(common_type, out_type));
 
-    resize_to_broadcast_target_size(a, b, out);
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+        InvalidArgument,
+        out);
 
     ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.out", CTYPE_A, [&]() {
       ET_SWITCH_REAL_TYPES(b_type, ctx, "sub.out", CTYPE_B, [&]() {
