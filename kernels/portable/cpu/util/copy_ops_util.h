@@ -131,5 +131,22 @@ void get_stack_out_target_size(
 
 bool check_tril_args(const Tensor& in, Tensor& out);
 
+bool check_split_copy_args(
+    const Tensor& input,
+    int64_t split_size,
+    int64_t dim,
+    TensorList out);
+
+bool check_to_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    Tensor& out);
+
+bool check_unsqueeze_copy_args(
+    const Tensor input,
+    int64_t dim,
+    const Tensor out);
+
 } // namespace executor
 } // namespace torch

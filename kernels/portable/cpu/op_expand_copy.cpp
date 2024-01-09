@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/kernels/portable/cpu/util/repeat_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <sys/types.h>
@@ -123,32 +124,24 @@ Tensor& expand_copy_out(
     Tensor& out) {
   (void)ctx;
 
-  ET_CHECK_MSG(
-      implicit == false,
-      "This operator is not implemented for when implicit == true.");
+  ET_KERNEL_CHECK(
+      ctx,
+      check_expand_copy_args(self, expand_sizes, implicit, out),
+      InvalidArgument,
+      out);
 
   const auto& self_sizes = self.sizes();
-
-  ET_CHECK_MSG(
-      expand_sizes.size() >= self_sizes.size(),
-      "The number of sizes provided (%zu) must at least be equal to the number of dimensions in the tensor (%zu)",
-      expand_sizes.size(),
-      self_sizes.size());
-
-  ET_CHECK_MSG(
-      expand_sizes.size() <= kTensorDimensionLimit,
-      "The number of expanded dims (%zu) exceeds the configured maximum (%zu). Increase this limit.",
-      expand_sizes.size(),
-      kTensorDimensionLimit);
 
   // Holds the result of converting -1 to the original dim sizes
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];
   const auto output_sizes_size{
       calculate_output_sizes(self_sizes, expand_sizes, output_sizes)};
 
-  auto error = resize_tensor(out, {output_sizes, output_sizes_size});
-  // TODO: Construct error message with requested output sizes.
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {output_sizes, output_sizes_size}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   // Check that the output tensor is the same shape as the mapped expand
   check_output_tensor(self, {output_sizes, output_sizes_size}, out);

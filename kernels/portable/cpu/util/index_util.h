@@ -39,5 +39,7 @@ bool check_index_out_args(
     const Tensor& out,
     const Tensor& index_out);
 
+bool check_nonzero_args(const Tensor& in, const Tensor& out);
+
 } // namespace executor
 } // namespace torch

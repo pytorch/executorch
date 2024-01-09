@@ -142,5 +142,21 @@ bool check_index_out_args(
   return true;
 }
 
+bool check_nonzero_args(const Tensor& in, const Tensor& out) {
+  (void)in;
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      out.scalar_type() == ScalarType::Long,
+      "Expected out to be a Long tensor but received %" PRId8,
+      static_cast<int8_t>(out.scalar_type()));
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      out.dim() == 2,
+      "Expected out to be a 2d tensor received %zd",
+      ssize_t(out.dim()));
+
+  return true;
+}
+
 } // namespace executor
 } // namespace torch

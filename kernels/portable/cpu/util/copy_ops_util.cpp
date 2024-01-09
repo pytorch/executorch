@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {
@@ -547,6 +548,207 @@ void get_stack_out_target_size(
 bool check_tril_args(const Tensor& in, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 2));
+  return true;
+}
+
+bool check_split_copy_args(
+    const Tensor& input,
+    int64_t split_size,
+    int64_t dim,
+    TensorList out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      input.dim() > 0,
+      "input must have at least one dimension; saw %zd",
+      input.dim());
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim >= 0 && dim < input.dim(),
+      "dim %" PRId64 " out of range [0,%zd)",
+      dim,
+      input.dim());
+
+  const ssize_t dim_size = input.size(dim);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      split_size >= 0,
+      "split_size %" PRId64 " must be non-negative",
+      split_size);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      split_size > 0 || dim_size == 0,
+      "split_size is zero but input.size(%" PRId64 ") %zd is non-zero",
+      dim,
+      dim_size);
+
+  // Check the number of outputs.
+  //
+  // The specified dimension will be split into split_size-sized chunks, with
+  // the final chunk possibly being smaller. So, the expected output length is
+  // ceil(dim_size / split_size).
+  //
+  // E.g., splitting dim 0 of a [5,2] tensor with split_size 2 would produce
+  // three tensors with size [2,2], [2,2], [1,2].
+  int64_t remainder; // The size of the split dimension of the final out tensor.
+  if (split_size >= dim_size) {
+    // Note that this also handles the case where split_size == 0, avoiding a
+    // division by zero in the other branch. When dim_size == 0 && split_size ==
+    // 0, core PyTorch expects 1 output element.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out.size() == 1,
+        "Unexpected out.size() %zu: should be 1 because split_size %" PRId64
+        " >= input.size(%" PRId64 ") %zd",
+        out.size(),
+        split_size,
+        dim,
+        dim_size);
+    remainder = dim_size;
+  } else {
+    int64_t expected_out_len = (dim_size + split_size - 1) / split_size;
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out.size() == expected_out_len,
+        "Unexpected out.size() %zu: ceil(input.size(%" PRId64
+        ")=%zd"
+        " / split_size=%" PRId64 ") is %" PRId64,
+        out.size(),
+        dim,
+        dim_size,
+        split_size,
+        expected_out_len);
+    remainder = dim_size % split_size;
+    if (remainder == 0) {
+      remainder = split_size;
+    }
+  }
+
+  // Validate each output.
+  for (size_t i = 0; i < out.size(); ++i) {
+    // All output dtypes must be the same.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].scalar_type() == out[0].scalar_type(),
+        "out[%zu] dtype %" PRId8 " != out[0] dtype %" PRId8,
+        i,
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
+
+    // All outputs must have the same number of dimensions as the input.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].dim() == input.dim(),
+        "out[%zu] dim %zd != input dim %zd",
+        i,
+        out[i].dim(),
+        input.dim());
+
+    // Check the shape of the output.
+    for (ssize_t d = 0; d < out[i].dim(); ++d) {
+      if (d == dim) {
+        // This is the split dimension, which may be different.
+        if (i < out.size() - 1) {
+          // All outputs except the final one: split dimension should be
+          // split_size.
+          ET_LOG_MSG_AND_RETURN_IF_FALSE(
+              out[i].size(d) == split_size,
+              "out[%zu].size(%zd) %zd != split_size %" PRId64,
+              i,
+              d,
+              out[i].size(d),
+              split_size);
+        } else {
+          // The final output: split dimension should be the remainder of
+          // split_size.
+          ET_LOG_MSG_AND_RETURN_IF_FALSE(
+              out[i].size(d) == remainder,
+              "out[%zu].size(%zd) %zd != remainder %" PRId64,
+              i,
+              d,
+              out[i].size(d),
+              remainder);
+        }
+      } else {
+        // Non-split output dimensions must be the same as the input dimension.
+        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+            out[i].size(d) == input.size(d),
+            "out[%zu].size(%zd) %zd != input.size(%zd) %zd",
+            i,
+            d,
+            out[i].size(d),
+            d,
+            input.size(d));
+      }
+    }
+  }
+
+  return true;
+}
+
+bool check_to_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    Tensor& out) {
+  // Right now we only support blocking data transfer
+  ET_LOG_AND_RETURN_IF_FALSE(non_blocking == false);
+
+  // Right now we only focus on contiguous memory, memory_format shall be
+  // exec::aten::MemoryFormat::Contiguous or none.
+  ET_LOG_AND_RETURN_IF_FALSE(
+      !memory_format.has_value() ||
+      memory_format.value() == MemoryFormat::Contiguous);
+
+  return true;
+}
+
+bool check_unsqueeze_copy_args(
+    const Tensor input,
+    int64_t dim,
+    const Tensor out) {
+  // The input and out shall share same dtype
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, out));
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim >= -out.dim() && dim < out.dim(),
+      "dim %" PRId64 " out of range [-%zd,%zd)",
+      dim,
+      out.dim(),
+      out.dim());
+
+  // The shape of input and out shall obey the relationship:
+  // 1. input.dim() == out.dim()-1
+  // 2. input.size(i) == out.size(i) for all i < dim
+  // 3. input.size(i-1) == out.size(i) for all i >= dim
+  // 4. out.size(dim) == 1
+  ET_LOG_AND_RETURN_IF_FALSE(input.dim() == out.dim() - 1);
+
+  for (size_t d = 0; d < out.dim(); d++) {
+    auto dim_normalized = dim;
+    if (dim_normalized < 0) {
+      dim_normalized += out.dim();
+    }
+
+    if (d < dim_normalized) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          input.size(d) == out.size(d),
+          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
+          d,
+          input.size(d),
+          d,
+          out.size(d),
+          dim);
+    } else if (d > dim_normalized) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          input.size(d - 1) == out.size(d),
+          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
+          d - 1,
+          input.size(d),
+          d,
+          out.size(d),
+          dim);
+    } else { // d == dim
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          out.size(d) == 1,
+          "out.size(%zu) %zd shall equal 1 | dim = %" PRId64,
+          d,
+          out.size(d),
+          dim);
+    }
+  }
+
   return true;
 }
 
