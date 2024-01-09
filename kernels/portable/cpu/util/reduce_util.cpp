@@ -12,10 +12,6 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
-#ifndef USE_ATEN_LIB
-#include <executorch/kernels/portable/cpu/util/index_util.h>
-#endif
-
 namespace torch {
 namespace executor {
 
