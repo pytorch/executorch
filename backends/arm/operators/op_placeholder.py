@@ -1,11 +1,16 @@
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import numpy as np
 import serializer.tosa_serializer as ts
 import torch
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
     dq_q_ops,
-    getQuantNodeArgs,
-    isQuantArg,
+    get_quant_node_args,
+    is_quant_arg,
     q_op,
 )
 from executorch.backends.arm.tosa_utils import getNodeArgs, is_bias_node_for_addmm
@@ -50,13 +55,12 @@ def process_placeholder(
             ) = consumer_node.all_input_nodes
             weight_node = weight_node_permuted.all_input_nodes[0]
 
-            # input_node_scale, _ = getQuantNodeArgs(input_node)
             if input_node.target == exir_ops.edge.aten.view_copy.default:
-                input_node_scale, _ = getQuantNodeArgs(input_node.all_input_nodes[0])
+                input_node_scale, _ = get_quant_node_args(input_node.all_input_nodes[0])
             else:
-                input_node_scale, _ = getQuantNodeArgs(input_node)
+                input_node_scale, _ = get_quant_node_args(input_node)
 
-            weight_node_scale, weight_node_zp = getQuantNodeArgs(weight_node)
+            weight_node_scale, weight_node_zp = get_quant_node_args(weight_node)
 
             bias_values_quantized = (
                 parameter_values / (input_node_scale * weight_node_scale)
@@ -78,8 +82,8 @@ def process_placeholder(
                 bias_node,
             ) = consumer_node.all_input_nodes
 
-            input_node_scale, _ = getQuantNodeArgs(input_node)
-            weight_node_scale, _ = getQuantNodeArgs(weight_node)
+            input_node_scale, _ = get_quant_node_args(input_node)
+            weight_node_scale, _ = get_quant_node_args(weight_node)
 
             bias_scales = input_node_scale * weight_node_scale
             parameter_values_quantized = (parameter_values / bias_scales).astype(
@@ -108,7 +112,7 @@ def process_placeholder(
         tensor = ts.TosaSerializerTensor(
             inputs[0].name,
             inputs[0].shape,
-            ts.DType.INT8 if isQuantArg(node) else inputs[0].dtype,
+            ts.DType.INT8 if is_quant_arg(node) else inputs[0].dtype,
             data=None,
             placeholderFilename=inputs[0].name + ".npy",
         )
