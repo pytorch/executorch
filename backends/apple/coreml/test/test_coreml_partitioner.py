@@ -38,7 +38,7 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         exported_to_coreml = to_backend(
             exported_program,
-            CoreMLPartitioner(skip_ops=["mm.default"]),
+            CoreMLPartitioner(skip_ops_for_coreml_delegation=["aten.mm.default"]),
         )
 
         assert [
