@@ -33,8 +33,7 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # Quantized ops kernel sources TODO(larryliu0820): use buck2 to gather the
 # sources
-file(GLOB_RECURSE _quantized_kernels__srcs
-     "${CMAKE_CURRENT_SOURCE_DIR}/cpu/*.cpp")
+list(TRANSFORM _quantized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in quantized.yaml
 gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/quantized.yaml" "" "")
@@ -47,7 +46,6 @@ set(_quantized_sources
     ${_quantized_kernels__srcs}
     ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp # This
     # is a hack
-    ${EXECUTORCH_ROOT}/kernels/portable/cpu/util/reduce_util.cpp
 )
 gen_custom_ops_aot_lib("quantized_ops_aot_lib" "${_quantized_sources}")
 

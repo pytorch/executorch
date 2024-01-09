@@ -12,10 +12,6 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
-#ifndef USE_ATEN_LIB
-#include <executorch/kernels/portable/cpu/util/index_util.h>
-#endif
-
 namespace torch {
 namespace executor {
 
@@ -426,7 +422,11 @@ bool check_min_max_args(
     Tensor& max_indices) {
   ET_LOG_AND_RETURN_IF_FALSE(
       check_reduction_args_single_dim(in, dim, keepdim, max));
-  ET_LOG_AND_RETURN_IF_FALSE(check_index_out_args(in, max, max_indices));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, max));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape(max, max_indices));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensor_is_default_or_channels_last_dim_order(max_indices));
+  ET_LOG_AND_RETURN_IF_FALSE(max_indices.scalar_type() == ScalarType::Long);
 
   return true;
 }

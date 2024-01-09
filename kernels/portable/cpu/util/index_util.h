@@ -34,10 +34,5 @@ bool check_scatter_add_args(
     const Tensor& src,
     Tensor& out);
 
-bool check_index_out_args(
-    const Tensor& in,
-    const Tensor& out,
-    const Tensor& index_out);
-
 } // namespace executor
 } // namespace torch
