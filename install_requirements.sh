@@ -17,8 +17,6 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
-pip install . --no-build-isolation
-
 # Install pytorch dependencies
 #
 # Note:
@@ -46,6 +44,9 @@ pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
 
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
+
+# Install ExecuTorch after dependencies are installed.
+pip install . --no-build-isolation
 
 # Install flatc dependency
 bash build/install_flatc.sh
