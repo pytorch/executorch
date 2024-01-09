@@ -428,7 +428,6 @@ bool check_min_max_args(
       tensor_is_default_or_channels_last_dim_order(max_indices));
   ET_LOG_AND_RETURN_IF_FALSE(max_indices.scalar_type() == ScalarType::Long);
 
-
   return true;
 }
 
