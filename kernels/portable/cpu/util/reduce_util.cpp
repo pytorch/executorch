@@ -12,7 +12,7 @@
 #include <executorch/runtime/platform/assert.h>
 #include <cstring>
 
-#ifndef USE_ATEN_MODE
+#ifndef USE_ATEN_LIB
 #include <executorch/kernels/portable/cpu/util/index_util.h>
 #endif
 
@@ -321,7 +321,7 @@ Error resize_reduction_out(
   return resize_tensor(out, out_size);
 }
 
-#ifndef USE_ATEN_MODE
+#ifndef USE_ATEN_LIB
 
 /**
  * Check the validity of arguments for reduction operators.

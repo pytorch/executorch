@@ -24,7 +24,7 @@ void get_index_select_out_target_size(
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_scatter_add_args(
