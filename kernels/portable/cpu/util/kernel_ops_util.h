@@ -370,6 +370,8 @@ void apply_kernel_2d_reduce_then_map_fn(
 // Operator specific utility functions
 //
 
+bool check_arange_args(double start, double end, double step, Tensor& out);
+
 bool check_avg_pool2d_args(
     const Tensor& in,
     const IntArrayRef kernel_size,
@@ -409,6 +411,12 @@ void get_convolution_out_target_size(
     IntArrayRef dilation,
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
+
+bool check_cumsum_args(
+    const Tensor& self,
+    int64_t dim,
+    optional<ScalarType> enforced_dtype,
+    Tensor& out);
 
 bool check_max_pool2d_with_indices_args(
     const Tensor& in,

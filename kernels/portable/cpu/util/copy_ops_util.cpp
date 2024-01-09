@@ -147,6 +147,30 @@ void get_cat_out_target_size(
   }
 }
 
+bool check_expand_copy_args(
+    const Tensor& input,
+    ArrayRef<int64_t> expand_sizes,
+    bool implicit,
+    Tensor& out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      implicit == false,
+      "This operator is not implemented for when implicit == true.");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      expand_sizes.size() >= input.sizes().size(),
+      "The number of sizes provided (%zu) must at least be equal to the number of dimensions in the tensor (%zu)",
+      expand_sizes.size(),
+      input.sizes().size());
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      expand_sizes.size() <= kTensorDimensionLimit,
+      "The number of expanded dims (%zu) exceeds the configured maximum (%zu). Increase this limit.",
+      expand_sizes.size(),
+      kTensorDimensionLimit);
+
+  return true;
+}
+
 bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, dims.size()));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
@@ -170,6 +194,62 @@ bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
         dim_exist[dim] == false, "duplicate dims are not allowed.");
 
     dim_exist[dim] = true;
+  }
+
+  return true;
+}
+
+bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      in.dim() > 0, "in must have at least one dimension; saw %zd", in.dim());
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim >= 0 && dim < in.dim(),
+      "dim %" PRId64 " out of range [0,%zd)",
+      dim,
+      in.dim());
+
+  const ssize_t dim_size = in.size(dim);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim_size == out.size(),
+      "out tensorlist's length %zd must equal unbind dim %" PRId64
+      " size = %zd.",
+      out.size(),
+      dim,
+      dim_size);
+
+  // Validate each output.
+  for (size_t i = 0; i < out.size(); ++i) {
+    // All output dtypes must be the same.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].scalar_type() == out[0].scalar_type(),
+        "out[%zu] dtype %" PRId8 " != out[0] dtype %" PRId8,
+        i,
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
+
+    // output tensor must have # of dims = in.dim() -1
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].dim() == (in.dim() - 1),
+        "out[%zu] dim %zd != in dim %zd",
+        i,
+        out[i].dim(),
+        in.dim() - 1);
+
+    // Check the shape of the output.
+    for (ssize_t d = 0, out_d = 0; d < in.dim(); ++d) {
+      if (d != dim) {
+        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+            out[i].size(out_d) == in.size(d),
+            "out[%zu].size(%zd) %zd != in.size(%zd) %zd",
+            i,
+            d,
+            out[i].size(out_d),
+            d,
+            in.size(d));
+        out_d++;
+      }
+    }
   }
 
   return true;
