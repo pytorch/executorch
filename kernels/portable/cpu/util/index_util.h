@@ -41,5 +41,26 @@ bool check_index_out_args(
 
 bool check_nonzero_args(const Tensor& in, const Tensor& out);
 
+bool check_slice_scatter_args(
+    const Tensor& input,
+    const Tensor& src,
+    int64_t dim,
+    int64_t num_values,
+    int64_t step,
+    Tensor output);
+
+int64_t adjust_slice_indices(
+    int64_t dim_length,
+    int64_t* start,
+    int64_t* end,
+    int64_t step);
+
+bool check_select_scatter_args(
+    const Tensor& in,
+    const Tensor& src,
+    int64_t dim,
+    int64_t index,
+    Tensor& output);
+
 } // namespace executor
 } // namespace torch
