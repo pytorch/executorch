@@ -128,6 +128,10 @@ class CMakeBuild(build_ext):
             if hasattr(self, "parallel") and self.parallel:
                 # CMake 3.12+ only.
                 build_args += [f"-j{self.parallel}"]
+            else:
+                build_args += ["-j4"] # hardcoded
+        else:
+            build_args += [f"-j{os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", "4")}"]
 
         build_temp = Path(self.build_temp) / ext.name
         if not build_temp.exists():
