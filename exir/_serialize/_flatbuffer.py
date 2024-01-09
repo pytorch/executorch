@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from memory_profiler import profile
+
 import importlib.resources
 import os
 import re
@@ -245,6 +247,7 @@ def _flatc_decompile(
     )
 
 
+@profile
 def _program_json_to_flatbuffer(
     program_json: str,
     *,
@@ -265,6 +268,7 @@ def _program_json_to_flatbuffer(
 
     Returns: The flatbuffer data and associated metadata.
     """
+    print("_serialize/_flatbuffer.py: _program_json_to_flatbuffer")
     with tempfile.TemporaryDirectory() as temp_dir:
         schema_info = _prepare_schema(
             out_dir=temp_dir,

@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from memory_profiler import profile
 import copy
 import json
 import re
@@ -37,7 +38,9 @@ from executorch.exir.schema import (
 _HEADER_BYTEORDER: Literal["little"] = "little"
 
 
+@profile
 def _program_to_json(program: Program) -> str:
+    print("_serialize/_program.py: _program_to_json")
     """Returns the JSON representation of the given Program."""
     return json.dumps(program, cls=_DataclassEncoder)
 
@@ -500,6 +503,7 @@ def _append_segments(
     return b"".join(padded_segments)
 
 
+@profile
 def serialize_pte_binary(
     program: Program,
     *,
@@ -509,6 +513,7 @@ def serialize_pte_binary(
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
 ) -> bytes:
+    print("_serialize/_program.py: serialize_pte_binary")
     """Returns the runtime binary representation of the given Program.
 
     Args:

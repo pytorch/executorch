@@ -6,6 +6,7 @@
 
 # Example script for exporting Llama2 to flatbuffer
 
+from memory_profiler import profile
 import argparse
 import logging
 from pathlib import Path
@@ -44,6 +45,7 @@ def main() -> None:
 
     dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
+    print("export_llama: export_to_edge")
     edge_manager = export_to_edge(
         model,
         example_inputs,
@@ -53,9 +55,11 @@ def main() -> None:
         ),
     )
 
+    print("export_llama: to_executorch")
     export_program = edge_manager.to_executorch(
-        ExecutorchBackendConfig(extract_constant_segment=True)
+        ExecutorchBackendConfig(extract_constant_segment=False)
     )
+    print("export_llama: save_pte_program")
     save_pte_program(export_program.buffer, "llama2", args.output_dir)
     # model.forward(input)
 
