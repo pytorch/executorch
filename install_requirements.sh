@@ -17,7 +17,7 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
-pip install .
+pip install . --no-build-isolation
 
 # Install pytorch dependencies
 #

@@ -200,8 +200,5 @@ setup(
         "egg_info": CustomEggInfoCommand,
         "build_ext": CMakeBuild,
     },
-    install_requires=[
-        "cmake",
-    ],
     ext_modules=[CMakeExtension("executorch.extension.pybindings.aten_lib")],
 )
