@@ -65,7 +65,7 @@ void get_index_select_out_target_size(
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
   for (size_t i = 0; i < in.dim(); ++i) {
@@ -126,19 +126,6 @@ bool check_scatter_add_args(
         (size_t)dim,
         nonempty_size(self, dim));
   }
-  return true;
-}
-
-bool check_index_out_args(
-    const Tensor& in,
-    const Tensor& out,
-    const Tensor& index_out) {
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape(out, index_out));
-  ET_LOG_AND_RETURN_IF_FALSE(
-      tensor_is_default_or_channels_last_dim_order(index_out));
-  ET_LOG_AND_RETURN_IF_FALSE(index_out.scalar_type() == ScalarType::Long);
-
   return true;
 }
 

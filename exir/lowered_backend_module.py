@@ -274,7 +274,6 @@ class LoweredBackendModule(torch.nn.Module):
             # inputs/outputs to the toplevel program will be in the format of the eager module.
             state_dict={},  # None because all data are consumed by delegate
             range_constraints=lowered_exported_program.range_constraints,
-            equality_constraints=lowered_exported_program.equality_constraints,
             module_call_graph=lowered_exported_program.module_call_graph,
             example_inputs=None,
             verifier=lowered_exported_program.verifier,
@@ -480,7 +479,6 @@ def create_exported_program_from_submodule(
         graph_signature=subgraph_signature,
         state_dict=subgraph_state_dict,
         range_constraints=copy.deepcopy(owning_program.range_constraints),
-        equality_constraints=[],
         module_call_graph=[],
         verifier=owning_program.verifier,
     )

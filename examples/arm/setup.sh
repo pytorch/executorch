@@ -167,7 +167,7 @@ function setup_tosa_reference_model() {
     # errors for the early codebase
     cd "${root_dir}"
     if [[ ! -e reference_model ]]; then
-        git clone https://review.mlplatform.org/tosa/reference_model -b v0.80.0
+        git clone https://review.mlplatform.org/tosa/reference_model -b main
         cd reference_model
         git submodule update --init --recursive
         cd ..
