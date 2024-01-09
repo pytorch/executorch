@@ -56,12 +56,13 @@ class CMakeBuild(build_ext):
         # EXAMPLE_VERSION_INFO shows you how to pass a value into the C++ code
         # from Python.
         buck = os.environ.get("BUCK", "buck2")
+        cmake_prefix_path = os.environ.get("CMAKE_PREFIX_PATH", get_python_lib())
         cmake_args = [
             "-DEXECUTORCH_BUILD_ATEN_LIB_PYBIND=ON",
             "-DEXECUTORCH_BUILD_PORTABLE_LIB=OFF", # Don't build portable lib
             "-DBUILD_SHARED_LIBS=ON", # For flatcc
             f"-DBUCK2={buck}",
-            f"-DCMAKE_PREFIX_PATH={get_python_lib()}",
+            f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={extdir}{os.sep}",
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             f"-DCMAKE_BUILD_TYPE={cfg}",  # not used on MSVC, but no harm
