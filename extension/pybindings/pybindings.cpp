@@ -25,6 +25,7 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/bundled_program/bundled_program.h>
@@ -623,6 +624,7 @@ void create_profile_block(const std::string& name) {
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
+  // Redirects cout and cerr for function calls this guards to the python env.
   auto call_guard = py::
       call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
   m.def(
