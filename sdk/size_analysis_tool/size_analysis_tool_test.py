@@ -56,17 +56,14 @@ class SizeAnalysisToolTest(unittest.TestCase):
         partitioner = XnnpackFloatingPointPartitioner()
 
         with validation_disabled():
-            delegated_program = edge_program
-            delegated_program.exported_program = to_backend(
-                edge_program.exported_program, partitioner
-            )
+            delegated_program = edge_program.to_backend(partitioner)
 
         program = delegated_program.to_executorch(
             get_xnnpack_executorch_backend_config([SpecPropPass()]),
         )
 
         size_information = generate_model_size_information(
-            model=program,
+            model=program.exported_program(),
             delegate_deserializers=None,
             flatbuffer=program.buffer,
         )

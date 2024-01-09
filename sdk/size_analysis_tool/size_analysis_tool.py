@@ -15,9 +15,11 @@ from executorch.exir.backend.backend_api import LoweredBackendModule
 from executorch.sdk import parse_etrecord
 
 
-def _get_tensor_data(node: torch.fx.Node, tensor: torch.Tensor) -> Dict[str, Any]:
+def _get_tensor_data(
+    node: Optional[torch.fx.Node], tensor: torch.Tensor
+) -> Dict[str, Any]:
     return {
-        "name": node.name,
+        "name": node.name if node is not None else "",
         "numel": tensor.numel(),
         "dtype": str(tensor.dtype)[6:],  # Remove "torch." prefix
         "element_size": tensor.element_size(),
@@ -25,7 +27,7 @@ def _get_tensor_data(node: torch.fx.Node, tensor: torch.Tensor) -> Dict[str, Any
         "num_bytes": tensor.element_size() * tensor.numel(),
         "nn_module_stack": (
             str(node.meta["nn_module_stack"])
-            if "nn_module_stack" in node.meta
+            if node is not None and "nn_module_stack" in node.meta
             else None
         ),
     }
@@ -57,6 +59,7 @@ def _get_delegate_blob_data(
 
 
 def _get_nested_model_data(
+    ep: ExportedProgram,
     graph_module: torch.fx.GraphModule,
     delegate_deserializers: Optional[
         Dict[str, Callable[[bytes], Dict[str, Any]]]
@@ -66,6 +69,9 @@ def _get_nested_model_data(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     if tensor_data is None:
         tensor_data = []
+        for _, value in ep.state_dict.items():
+            if isinstance(value, torch.Tensor):
+                tensor_data.append(_get_tensor_data(None, value))
 
     if delegate_blob_data is None:
         delegate_blob_data = []
@@ -77,7 +83,11 @@ def _get_nested_model_data(
                 tensor_data.append(_get_tensor_data(node, node_attr))
             elif isinstance(node_attr, torch.fx.GraphModule):
                 _get_nested_model_data(
-                    node_attr, delegate_deserializers, tensor_data, delegate_blob_data
+                    ep,
+                    node_attr,
+                    delegate_deserializers,
+                    tensor_data,
+                    delegate_blob_data,
                 )
             elif isinstance(node_attr, LoweredBackendModule):
                 delegate_blob_data.append(
@@ -105,7 +115,7 @@ def generate_model_size_information(
     """
 
     tensor_and_delegate_blob_data = _get_nested_model_data(
-        model.graph_module, delegate_deserializers
+        model, model.graph_module, delegate_deserializers
     )
 
     for data_list in tensor_and_delegate_blob_data:

@@ -25,7 +25,7 @@ from executorch.backends.xnnpack.utils.utils import capture_graph_for_xnnpack
 
 # import the xnnpack backend implementation
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
-from executorch.exir import ExecutorchProgram, ExirExportedProgram
+from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -72,6 +72,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.export import export
 
 from torch.testing import FileCheck
 
@@ -166,7 +167,7 @@ class TestXNNPACK(unittest.TestCase):
         # TODO: remove this after we migrate to use long term flow
         quantizer_api_test: bool = False,
         dump_bundled_program: bool = False,  # for debugging, dump the generated bundled program file
-    ) -> ExirExportedProgram:
+    ) -> EdgeProgramManager:
         """
         Helper testing function that takes a torch.nn.Module and lowers it to XNNPACK with
         the given sample inputs. It then runs the lowered module and compares its
@@ -174,7 +175,7 @@ class TestXNNPACK(unittest.TestCase):
         """
 
         if quantizer_api_test:
-            assert isinstance(module, ExirExportedProgram)
+            assert isinstance(module, EdgeProgramManager)
             edge_program = module
         else:
 
@@ -186,11 +187,13 @@ class TestXNNPACK(unittest.TestCase):
                 def forward(self, *args):
                     return self.one_module(*args)
 
+            print(WrappedModule())
             edge_program = capture_graph_for_xnnpack(WrappedModule(), sample_inputs)
 
         partitioner = None
         if quantized:
             if quantized_dynamic:
+                print("QUANTIZED_DYNAMIC")
                 partitioner = XnnpackDynamicallyQuantizedPartitioner()
             else:
                 partitioner = XnnpackPartitioner()
@@ -199,24 +202,26 @@ class TestXNNPACK(unittest.TestCase):
 
         if use_partitioner:
             with validation_disabled():
-                delegated_program = edge_program
-                delegated_program.exported_program = to_backend(
-                    edge_program.exported_program, partitioner
-                )
+                print(edge_program.exported_program().graph)
+                delegated_program = edge_program.to_backend(partitioner)
 
-            executorch_program: ExecutorchProgram = delegated_program.to_executorch(
-                get_xnnpack_executorch_backend_config([SpecPropPass()]),
+            executorch_program: ExecutorchProgramManager = (
+                delegated_program.to_executorch(
+                    get_xnnpack_executorch_backend_config([SpecPropPass()]),
+                )
             )
         else:
             delegated_program = to_backend(
-                "XnnpackBackend", edge_program.exported_program, []
+                "XnnpackBackend", edge_program.exported_program(), []
             )
 
-            exported_program: ExirExportedProgram = capture_graph_for_xnnpack(
+            exported_program: EdgeProgramManager = capture_graph_for_xnnpack(
                 delegated_program, sample_inputs
             )
-            executorch_program: ExecutorchProgram = exported_program.to_executorch(
-                get_xnnpack_executorch_backend_config(),
+            executorch_program: ExecutorchProgramManager = (
+                exported_program.to_executorch(
+                    get_xnnpack_executorch_backend_config(),
+                )
             )
 
         # print("Graph Module with delegate:")
@@ -224,11 +229,16 @@ class TestXNNPACK(unittest.TestCase):
 
         # Assert the backend name is xnnpack
         self.assertEqual(
-            executorch_program.program.execution_plan[0].delegates[0].id,
+            executorch_program._emitter_output.program.execution_plan[0]
+            .delegates[0]
+            .id,
             XnnpackBackend.__name__,
         )
 
-        ref_output = delegated_program(*sample_inputs)
+        if isinstance(delegated_program, EdgeProgramManager):
+            ref_output = delegated_program.exported_program()(*sample_inputs)
+        else:
+            ref_output = delegated_program(*sample_inputs)
         if dump_bundled_program:
             save_bundled_program(
                 representative_inputs=sample_inputs,
@@ -326,14 +336,13 @@ class TestXNNPACK(unittest.TestCase):
         prepared = prepare_pt2e(m, quantizer)
         converted = convert_pt2e(prepared, fold_quantize=True)
 
-        captured_program = exir.capture(
+        captured_program = export(
             converted,
             example_inputs,
-            config=exir.CaptureConfig(enable_aot=True, _unlift=True),
         )
 
-        edge_program = captured_program.to_edge(
-            get_xnnpack_edge_compile_config()
+        edge_program = to_edge(
+            captured_program, compile_config=get_xnnpack_edge_compile_config()
         ).transform(*get_transform_passes())
         delegated_module = self.lower_module_and_test_output(
             module=edge_program,
@@ -401,10 +410,10 @@ class TestXNNPACK(unittest.TestCase):
 
         captured_dqlinear = capture_graph_for_xnnpack(converted_linear, example_inputs)
 
-        captured_dqlinear.exported_program.graph_module.graph.print_tabular()
+        captured_dqlinear.exported_program().graph_module.graph.print_tabular()
 
         lowered_module = to_backend(
-            "XnnpackBackend", captured_dqlinear.exported_program, []
+            "XnnpackBackend", captured_dqlinear.exported_program(), []
         )
 
         class CompositeModule(torch.nn.Module):
@@ -418,19 +427,21 @@ class TestXNNPACK(unittest.TestCase):
         composite_model = CompositeModule()
         composite_model(*example_inputs)
 
-        exported_program: ExirExportedProgram = capture_graph_for_xnnpack(
+        exported_program: EdgeProgramManager = capture_graph_for_xnnpack(
             composite_model, example_inputs
         )
-        executorch_program: ExecutorchProgram = exported_program.to_executorch(
+        executorch_program: ExecutorchProgramManager = exported_program.to_executorch(
             get_xnnpack_executorch_backend_config(),
         )
 
         self.assertEqual(
-            executorch_program.program.execution_plan[0].delegates[0].id,
+            executorch_program._emitter_output.program.execution_plan[0]
+            .delegates[0]
+            .id,
             XnnpackBackend.__name__,
         )
 
-        ref_output = captured_dqlinear(*example_inputs)
+        ref_output = captured_dqlinear.exported_program()(*example_inputs)
         ref_output = composite_model(*example_inputs)
         print("ref_output:", ref_output)
 
