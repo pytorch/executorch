@@ -381,6 +381,7 @@ if(EXECUTORCH_BUILD_ATEN_LIB_PYBIND)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/aten)
   pybind11_add_module(aten_lib extension/pybindings/pybindings.cpp)
 
   # util lib
@@ -397,7 +398,7 @@ if(EXECUTORCH_BUILD_ATEN_LIB_PYBIND)
   # set USE_ATEN_LIB
   target_compile_definitions(aten_lib PUBLIC USE_ATEN_LIB EXECUTORCH_PYTHON_MODULE_NAME=aten_lib)
   target_include_directories(aten_lib PRIVATE ${TORCH_INCLUDE_DIRS})
-  target_link_libraries(aten_lib PUBLIC ${TORCH_PYTHON_LIBRARY} executorch extension_data_loader bundled_program etdump flatcc util)
+  target_link_libraries(aten_lib PUBLIC ${TORCH_PYTHON_LIBRARY} aten_ops_lib executorch extension_data_loader bundled_program etdump flatcc util)
 
   install(TARGETS aten_lib
         LIBRARY DESTINATION executorch/extension/pybindings
