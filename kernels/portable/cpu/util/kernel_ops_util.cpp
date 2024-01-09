@@ -455,5 +455,56 @@ void get_max_pool2d_with_indices_out_target_size(
       in, 2, kernel_size, stride, padding, dilation, out_sizes, ceil_mode);
 }
 
+bool check_masked_fill_args(
+    const Tensor& in,
+    const Tensor& mask,
+    const Scalar& value,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(mask.scalar_type() == ScalarType::Bool);
+
+  return true;
+}
+
+bool check_constant_pad_args(
+    const Tensor& in,
+    IntArrayRef pad,
+    const Scalar& value,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      in.dim() == out.dim(), "self and out must have the same number of dims");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      pad.size() % 2 == 0, "Padding array must be a multiple of 2");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      pad.size() / 2 <= in.dim(), "Padding array contains too many elements");
+
+  return true;
+}
+
+Error resize_constant_pad_output(
+    const Tensor& in,
+    IntArrayRef pad,
+    Tensor& out) {
+  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
+
+  int pad_i = in.dim() - 1;
+  for (size_t i = 0; i < in.dim(); ++i, --pad_i) {
+    expected_output_size[i] = in.size(i);
+    if (pad_i >= 0 && pad_i < pad.size() / 2) {
+      expected_output_size[i] += pad[2 * pad_i] + pad[2 * pad_i + 1];
+    }
+  }
+
+  ArrayRef<Tensor::SizesType> output_size{
+      expected_output_size, static_cast<size_t>(in.dim())};
+  auto error = resize_tensor(out, output_size);
+
+  return error;
+}
+
 } // namespace executor
 } // namespace torch

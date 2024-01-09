@@ -438,5 +438,22 @@ void get_max_pool2d_with_indices_out_target_size(
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_masked_fill_args(
+    const Tensor& in,
+    const Tensor& mask,
+    const Scalar& value,
+    Tensor& out);
+
+bool check_constant_pad_args(
+    const Tensor& in,
+    IntArrayRef pad,
+    const Scalar& value,
+    Tensor& out);
+
+Error resize_constant_pad_output(
+    const Tensor& in,
+    IntArrayRef pad,
+    Tensor& out);
+
 } // namespace executor
 } // namespace torch
