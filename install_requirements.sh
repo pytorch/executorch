@@ -22,7 +22,7 @@ NIGHTLY_VERSION=dev20231129
 TORCH_VERSION=2.2.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
-TORCH_VISION_VERSION=0.17.0.${NIGHTLY_VERSION}
+TORCH_VISION_VERSION=0.18.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
 TORCH_AUDIO_VERSION=2.2.0.${NIGHTLY_VERSION}
