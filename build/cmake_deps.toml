@@ -38,6 +38,17 @@ filters = [
   ".cpp$",
 ]
 
+[targets.executorch_aten]
+buck_targets = [
+  "//runtime/executor:program_aten",
+]
+deps = [
+  "program_schema",
+]
+filters = [
+  ".cpp$",
+]
+
 [targets.extension_data_loader]
 buck_targets = [
   "//extension/data_loader:buffer_data_loader",

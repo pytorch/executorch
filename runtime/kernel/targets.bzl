@@ -8,20 +8,7 @@ def define_common_targets():
     """
 
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
-    runtime.cxx_library(
-        name = "operator_registry",
-        srcs = ["operator_registry.cpp"],
-        exported_headers = ["operator_registry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:evalue",
-        ],
-        preprocessor_flags = ["-DMAX_KERNEL_NUM=" + max_kernel_num] if max_kernel_num != None else [],
-    )
+
 
     runtime.cxx_library(
         name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
@@ -40,7 +27,20 @@ def define_common_targets():
 
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
-
+        runtime.cxx_library(
+            name = "operator_registry" + aten_suffix,
+            srcs = ["operator_registry.cpp"],
+            exported_headers = ["operator_registry.h"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue" + aten_suffix,
+            ],
+            preprocessor_flags = ["-DMAX_KERNEL_NUM=" + max_kernel_num] if max_kernel_num != None else [],
+        )
         runtime.cxx_library(
             name = "kernel_runtime_context" + aten_suffix,
             exported_headers = [
