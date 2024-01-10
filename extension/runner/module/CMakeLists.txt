@@ -13,7 +13,7 @@ cmake_minimum_required(VERSION 3.19)
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
-  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+  set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
 list(TRANSFORM _extension_runner_module__srcs PREPEND "${EXECUTORCH_ROOT}/")

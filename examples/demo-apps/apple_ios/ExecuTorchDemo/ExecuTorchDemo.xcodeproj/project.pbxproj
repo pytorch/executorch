@@ -17,7 +17,6 @@
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
 		032C01B92AC32ADF002955E1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B82AC32ADF002955E1 /* CameraController.swift */; };
 		032C01E82AC34B60002955E1 /* MobileNetClassifier.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032C01902AC22B16002955E1 /* MobileNetClassifier.mm */; };
-		032C01E92AC34B63002955E1 /* Module.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032C01942AC22B16002955E1 /* Module.cpp */; };
 		032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */; };
 		032C02032AC47CFB002955E1 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
@@ -109,8 +108,6 @@
 		032C018E2AC22B16002955E1 /* MobileNet-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "MobileNet-Bridging-Header.h"; sourceTree = "<group>"; };
 		032C01902AC22B16002955E1 /* MobileNetClassifier.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MobileNetClassifier.mm; sourceTree = "<group>"; };
 		032C01912AC22B16002955E1 /* MobileNetClassifier.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MobileNetClassifier.h; sourceTree = "<group>"; };
-		032C01932AC22B16002955E1 /* Module.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Module.h; sourceTree = "<group>"; };
-		032C01942AC22B16002955E1 /* Module.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Module.cpp; sourceTree = "<group>"; };
 		032C01B62AC329B6002955E1 /* CustomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomViews.swift; sourceTree = "<group>"; };
 		032C01B82AC32ADF002955E1 /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
 		032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libMobileNetClassifier.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -242,8 +239,6 @@
 				032C018E2AC22B16002955E1 /* MobileNet-Bridging-Header.h */,
 				032C01912AC22B16002955E1 /* MobileNetClassifier.h */,
 				032C01902AC22B16002955E1 /* MobileNetClassifier.mm */,
-				032C01932AC22B16002955E1 /* Module.h */,
-				032C01942AC22B16002955E1 /* Module.cpp */,
 			);
 			path = MobileNet;
 			sourceTree = "<group>";
@@ -488,7 +483,6 @@
 			files = (
 				03C818252AC75E580084CC29 /* MobileNetClassifier.swift in Sources */,
 				032C01E82AC34B60002955E1 /* MobileNetClassifier.mm in Sources */,
-				032C01E92AC34B63002955E1 /* Module.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

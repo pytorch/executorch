@@ -8,7 +8,7 @@
 
 #import "MobileNetClassifier.h"
 
-#import <executorch/extension/runner/module.h>
+#import <executorch/extension/runner/module/module.h>
 
 using namespace ::torch::executor;
 
@@ -50,11 +50,8 @@ const int32_t kChannels = 3;
                outputSize:(NSInteger)outputSize
                     error:(NSError**)error {
   int32_t sizes[] = {1, kChannels, kSize, kSize};
-  uint8_t order[] = {0, 1, 2, 3};
-  int32_t strides[] = {kChannels * kSize * kSize, kSize * kSize, kSize, 1};
-  TensorImpl tensorImpl(
-      ScalarType::Float, std::size(sizes), sizes, input, order, strides);
-  std::vector<EValue> inputs = {EValue(Tensor(&tensorImpl))};
+  TensorImpl tensorImpl(ScalarType::Float, std::size(sizes), sizes, input);
+  std::vector<EValue> inputs{EValue(Tensor(&tensorImpl))};
   std::vector<EValue> outputs;
 
   const auto torchError = _module->forward(inputs, outputs);
