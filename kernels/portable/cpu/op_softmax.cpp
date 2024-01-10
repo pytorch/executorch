@@ -27,7 +27,11 @@ Tensor& softmax_out(
     Tensor& out) {
   (void)ctx;
 
-  check_softmax_args(in, dim, half_to_float, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_softmax_args(in, dim, half_to_float, out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
