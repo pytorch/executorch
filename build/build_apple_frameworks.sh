@@ -135,6 +135,7 @@ mkdir -p "$HEADERS_PATH"
   //runtime/executor:program \
   //extension/data_loader: \
   //extension/memory_allocator: \
+  //extension/runner/module: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
 
 echo "Creating frameworks"
