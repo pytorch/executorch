@@ -12,6 +12,7 @@ from pathlib import Path
 
 import torch
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
 from ...portable.utils import export_to_edge, save_pte_program
 
@@ -54,7 +55,14 @@ def main() -> None:
     )
 
     export_program = edge_manager.to_executorch(
-        ExecutorchBackendConfig(extract_constant_segment=True)
+        ExecutorchBackendConfig(
+            extract_constant_segment=True,
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+        )
+    )
+    print(
+        "Required memory for activation in bytes: ",
+        export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
     )
     save_pte_program(export_program.buffer, "llama2", args.output_dir)
     # model.forward(input)
