@@ -95,7 +95,7 @@ Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {
       InvalidArgument,
       "Source tensor should have data_ptr not being nullptr.");
   // Assign the dataptr as the input tensor dataptr
-  storage->set_data_ptr(at::DataPtr(t_src.mutable_data_ptr(), DeviceType::CPU));
+  storage->set_data_ptr(at::DataPtr(t_src.mutable_data_ptr(), c10::DeviceType::CPU));
   storage->set_nbytes(t_src.nbytes());
 
   return Error::Ok;
@@ -142,7 +142,7 @@ set_tensor_data(const at::Tensor& t, void* buffer, size_t buffer_size) {
       buffer_size,
       t.nbytes());
   t.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
-      at::DataPtr(buffer, DeviceType::CPU));
+      at::DataPtr(buffer, c10::DeviceType::CPU));
   return Error::Ok;
 }
 
@@ -155,7 +155,7 @@ void reset_data_ptr(const at::Tensor& tensor) {
 /// Most callers should use resize_tensor() instead.
 Error resize_tensor_impl(
     c10::TensorImpl* impl,
-    c10::ArrayRef<exec_aten::SizesType> new_sizes) {
+    c10::ArrayRef<int64_t> new_sizes) {
   // The lean-mode Tensor will perform this check, but at::Tensor won't.
   // Although at::Tensor can be resized in this case, it's not allowed by the
   // higher-level constraints of the runtime.

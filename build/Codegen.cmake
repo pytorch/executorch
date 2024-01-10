@@ -47,12 +47,13 @@ function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
 
   # Command to codegen C++ wrappers to register custom ops to both PyTorch and
   # Executorch runtime.
+  set(_native_functions_yaml ${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml)
   set(_gen_command
       "${PYTHON_EXECUTABLE}" -m torchgen.gen_executorch
       --source-path=${EXECUTORCH_ROOT}/codegen
       --install-dir=${CMAKE_CURRENT_BINARY_DIR}
       --tags-path=${TORCH_ROOT}/aten/src/ATen/native/tags.yaml
-      --aten-yaml-path=${TORCH_ROOT}/aten/src/ATen/native/native_functions.yaml
+      --aten-yaml-path=${_native_functions_yaml}
       --op-selection-yaml-path=${_oplist_yaml})
 
   set(_gen_command_sources
@@ -62,8 +63,7 @@ function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
 
   if(functions_yaml)
     list(APPEND _gen_command --functions-yaml-path=${functions_yaml})
-  endif()
-  if(custom_ops_yaml)
+  elseif(custom_ops_yaml)
     list(APPEND _gen_command --custom-ops-yaml-path=${custom_ops_yaml})
     list(
       APPEND
@@ -71,8 +71,13 @@ function(generate_bindings_for_kernels functions_yaml custom_ops_yaml)
       ${CMAKE_CURRENT_BINARY_DIR}/RegisterCPUCustomOps.cpp
       ${CMAKE_CURRENT_BINARY_DIR}/RegisterSchema.cpp
       ${CMAKE_CURRENT_BINARY_DIR}/CustomOpsNativeFunctions.h)
+  else()
+    # if no functions.yaml or custom_ops_yaml, we are doing aten mode
+    list(APPEND _gen_command --use_aten_lib)
+    list(APPEND _gen_command --functions-yaml-path=${_native_functions_yaml})
   endif()
 
+  message("Command ${_gen_command}")
   add_custom_command(
     COMMENT "Generating code for kernel registration"
     OUTPUT ${_gen_command_sources}

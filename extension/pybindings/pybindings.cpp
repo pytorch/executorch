@@ -603,6 +603,17 @@ void create_profile_block(const std::string& name) {
   EXECUTORCH_PROFILE_CREATE_BLOCK(name.c_str());
 }
 
+py::list get_operator_names() {
+  ArrayRef<Kernel> kernels = get_kernels();
+  py::list res;
+  for(const Kernel& k: kernels) {
+    if(k.name_ != nullptr) {
+      res.append(py::cast(k.name_));
+    }
+  }
+  return res;
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
@@ -633,6 +644,7 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
         reinterpret_cast<const char*>(prof_result.prof_data),
         prof_result.num_bytes);
   });
+  m.def("_get_operator_names", &get_operator_names);
   m.def("_create_profile_block", &create_profile_block);
   m.def("_reset_profile_results", []() { EXECUTORCH_RESET_PROFILE_RESULTS(); });
 
