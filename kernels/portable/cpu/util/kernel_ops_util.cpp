@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {
@@ -221,6 +222,19 @@ void calculate_kernel_output_sizes(
   }
 }
 
+bool check_arange_args(double start, double end, double step, Tensor& out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      out.dim() == 1,
+      "out should be a 1-d tensor, but got a %zu-d tensor",
+      out.dim());
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (step > 0 && (end >= start)) || (step < 0 && (end <= start)),
+      "upper bound and larger bound inconsistent with step sign");
+
+  return true;
+}
+
 bool check_avg_pool2d_args(
     const Tensor& in,
     const IntArrayRef kernel_size,
@@ -368,6 +382,20 @@ void get_convolution_out_target_size(
       dilation,
       out_sizes,
       false);
+}
+
+bool check_cumsum_args(
+    const Tensor& in,
+    int64_t dim,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
+
+  if (dtype.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+  }
+
+  return true;
 }
 
 bool check_max_pool2d_with_indices_args(

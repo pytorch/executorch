@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
@@ -85,32 +86,19 @@ Tensor& cumsum_out(
     optional<ScalarType> enforced_dtype,
     Tensor& out) {
   (void)ctx;
-  // Ensure dim is valid
-  if (self.dim() == 0) {
-    ET_CHECK(dim == 0 || dim == -1);
-  } else {
-    ET_CHECK_MSG(
-        dim >= -self.dim() && dim < self.dim(),
-        "dim %" PRId64 " >= 0 && dim %" PRId64 " < self.dim() %zd",
-        dim,
-        dim,
-        self.dim());
-  }
 
-  torch::executor::Error err = resize_tensor(out, self.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in cumsum_out");
+  ET_KERNEL_CHECK(
+      ctx,
+      check_cumsum_args(self, dim, enforced_dtype, out),
+      InvalidArgument,
+      out);
 
-  ET_CHECK_SAME_SHAPE2(self, out);
-  if (enforced_dtype.has_value()) {
-    ET_CHECK_MSG(
-        enforced_dtype.value() == out.scalar_type(),
-        "dtype must be equal to the type of out tensor");
-  }
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, self.sizes()) == Error::Ok, InvalidArgument, out);
+
   dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;
 
-// Use a two layer switch to hanldle each possible data pair
+// Use a two layer switch to handle each possible data pair
 #define CUMSUM_IMPL(SELF_CTYPE, OUT_CTYPE, out_dtype)      \
   case ScalarType::out_dtype:                              \
     cumsum_tensors<SELF_CTYPE, OUT_CTYPE>(self, dim, out); \
