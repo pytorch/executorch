@@ -6,8 +6,6 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
-      - requirements-lintrunner.txt
-      - examples/arm/**
   push:
     branches:
       - main
@@ -15,8 +13,6 @@ on:
     paths:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
-      - requirements-lintrunner.txt
-      - examples/arm/**
   schedule:
     - cron: 1 3 * * 3
 
