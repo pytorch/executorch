@@ -37,8 +37,15 @@ class Runner {
   Runner& operator=(const Runner&) = delete;
 
   /**
+   * Loads the program using the data loader.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  Error load();
+
+  /**
    * Run a specific method with the given inputs and retrieve outputs.
-   * Loads the method before running if needed.
+   * Loads the program and method before running if needed.
    *
    * @param[in] methodName The name of the method to execute.
    * @param[in] inputs A vector of input values to be passed to the method.
@@ -54,7 +61,8 @@ class Runner {
   /**
    * Get a list of method names available in the loaded program.
    *
-   * @returns A vector of strings containing the names of the methods.
+   * @returns A vector of strings containing the names of the methods, or an
+   * empty vector if the program failed to load.
    */
   std::vector<std::string> methodNames() const;
 

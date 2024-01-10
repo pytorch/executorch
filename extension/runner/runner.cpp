@@ -15,13 +15,17 @@ Runner::Runner(
     std::unique_ptr<MemoryAllocator> memoryAllocator)
     : dataLoader_(std::move(dataLoader)),
       memoryAllocator_(std::move(memoryAllocator)) {
+  ET_CHECK(dataLoader_);
+  ET_CHECK(memoryAllocator_);
+}
+
+Error Runner::load() {
   auto program = Program::load(dataLoader_.get());
   if (!program.ok()) {
-    throw std::runtime_error(
-        "Failed to load the program: " +
-        std::to_string(error_code_t(program.error())));
+    return program.error();
   }
   program_ = std::make_unique<Program>(std::move(program.get()));
+  return Error::Ok;
 }
 
 Error Runner::run(
@@ -50,6 +54,9 @@ Error Runner::run(
 }
 
 std::vector<std::string> Runner::methodNames() const {
+  if (!program_) {
+    return {};
+  }
   const auto methodCount = program_->num_methods();
   std::vector<std::string> result;
   result.reserve(methodCount);
@@ -62,6 +69,12 @@ std::vector<std::string> Runner::methodNames() const {
 
 Error Runner::loadMethod(const std::string& methodName) {
   if (!methods_.count(methodName)) {
+    if (!program_) {
+      const auto status = load();
+      if (status != Error::Ok) {
+        return status;
+      }
+    }
     MethodHolder methodHolder;
     const auto methodMetadata = program_->method_meta(methodName.c_str());
     if (!methodMetadata.ok()) {
