@@ -354,12 +354,13 @@ def _(
         edge_program, tagged_graph_module
     )
     return ExportedProgram(
-        root=tagged_graph_module,
-        graph=tagged_graph_module.graph,
-        graph_signature=new_signature,
-        state_dict=new_state_dict,
-        range_constraints=copy.deepcopy(edge_program.range_constraints),
-        module_call_graph=copy.deepcopy(edge_program.module_call_graph),
-        example_inputs=None,
-        verifier=edge_program.verifier,
+        tagged_graph_module,
+        tagged_graph_module.graph,
+        new_signature,
+        new_state_dict,
+        copy.deepcopy(edge_program.range_constraints),
+        copy.deepcopy(edge_program.equality_constraints),
+        copy.deepcopy(edge_program.module_call_graph),
+        None,
+        edge_program.verifier,
     )
