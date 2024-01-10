@@ -67,6 +67,9 @@ void run_unsqueeze_test_cases(
     const std::vector<int64_t>& dims) {
   TensorFactory<DTYPE> tf;
 
+  // DEBUG
+  et_pal_init();
+
   for (int64_t dim : dims) {
     std::vector<int32_t> size_out = generate_size_out(input.sizes(), dim);
     Tensor out = tf.ones(size_out);
