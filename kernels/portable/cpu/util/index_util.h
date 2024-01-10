@@ -34,5 +34,7 @@ bool check_scatter_add_args(
     const Tensor& src,
     Tensor& out);
 
+bool check_nonzero_args(const Tensor& in, const Tensor& out);
+
 } // namespace executor
 } // namespace torch
