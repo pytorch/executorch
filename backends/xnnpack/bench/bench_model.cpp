@@ -141,9 +141,20 @@ xnn_operator_t create_sdpa(const ComputeType compute_type) {
   if (compute_type == ComputeType::F16) {
     const xnn_status status = xnn_create_scaled_dot_product_attention_nhtc_f16(
         xnn_attention_logits_cap_type_none, nullptr, 0, &op);
+    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
     return op;
   }
   ET_CHECK_MSG(false, "Unsupported operator type:%hhu", compute_type);
+}
+
+xnn_operator_t create_convert_dq(const FullyConnectedOpType fc_type) {
+  xnn_operator_t op = nullptr;
+  if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
+    const xnn_status status = xnn_create_convert_nc_f16_qd8(0, &op);
+    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    return op;
+  }
+  ET_CHECK_MSG(false, "Unsupported operator type:%hhu", fc_type);
 }
 
 void run_fully_connected(
@@ -238,6 +249,41 @@ void run_sdpa(
   }
   ET_CHECK_MSG(false, "Unsupported operator type:%hhu", compute_type);
 }
+
+void run_convert(
+    const FullyConnectedOpType fc_type,
+    xnn_operator_t op,
+    xnn_dynamic_quantization_params* qparams,
+    const torch::executor::Tensor& input,
+    torch::executor::Tensor& output) {
+  auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+  ET_CHECK_MSG(input.dim() == 2, "Expected input tensor dim of 2");
+  const int32_t batch_size = input.size(0);
+  const int32_t input_channels = input.size(1);
+  if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
+    xnn_status status = xnn_reshape_convert_nc_f16_qd8(
+        op,
+        batch_size,
+        input_channels,
+        input_channels,
+        input_channels,
+        threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+    status = xnn_setup_convert_nc_f16_qd8(
+        op,
+        input.const_data_ptr<uint16_t>(),
+        output.mutable_data_ptr<int8_t>(),
+        reinterpret_cast<struct xnn_dynamic_quantization_params*>(qparams));
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to setup xnnpack operator");
+
+    status = xnn_run_operator(op, threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to run xnnpack operator");
+  }
+}
 } // namespace
 
 class MultiHeadedAttention {
@@ -260,6 +306,8 @@ class MultiHeadedAttention {
     int32_t output_channels = args.n_heads * (args.dim / args.n_heads);
     int32_t head_dim = args.dim / args.n_heads;
 
+    convert_op_ = create_convert_dq(linear_type);
+
     q_proj_ =
         create_fully_connected(linear_type, input_channels, output_channels);
     k_proj_ =
@@ -274,6 +322,9 @@ class MultiHeadedAttention {
     sdpa_op_ = create_sdpa(sdpa_type);
 
     if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
+      query_input_float_ =
+          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
+              {benchmarking_batch_size_, input_channels});
       query_input_ =
           TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Char>(
               {benchmarking_batch_size_, input_channels});
@@ -291,9 +342,6 @@ class MultiHeadedAttention {
               {benchmarking_batch_size_, output_channels});
 
       qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
-      std::generate(qparams_.begin(), qparams_.end(), [&]() {
-        return xnn_dynamic_quantization_params{0, 1.f};
-      });
 
       k_cache_ =
           TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
@@ -335,6 +383,7 @@ class MultiHeadedAttention {
       delete; // Move assignment operator
 
   ~MultiHeadedAttention() {
+    xnn_delete_operator(convert_op_);
     xnn_delete_operator(q_proj_);
     xnn_delete_operator(k_proj_);
     xnn_delete_operator(v_proj_);
@@ -350,6 +399,13 @@ class MultiHeadedAttention {
   }
 
   void run_bench() {
+    int32_t input_channels = query_input_float_.value().size(1);
+    run_convert(
+        linear_type_,
+        convert_op_,
+        qparams_.data(),
+        query_input_float_.value(),
+        query_input_.value());
     run_fully_connected(
         linear_type_,
         q_proj_,
@@ -399,11 +455,13 @@ class MultiHeadedAttention {
   FullyConnectedOpType linear_type_;
   ComputeType sdpa_type_;
   std::vector<xnn_dynamic_quantization_params> qparams_;
+  exec_aten::optional<torch::executor::Tensor> query_input_float_;
   exec_aten::optional<torch::executor::Tensor> query_input_, k_cache_, v_cache_;
   exec_aten::optional<torch::executor::Tensor> scales_, mask_;
   exec_aten::optional<torch::executor::Tensor> sdpa_output_;
   exec_aten::optional<torch::executor::Tensor> query_output_, key_output_,
       value_output_, output_;
+  xnn_operator_t convert_op_;
   xnn_operator_t q_proj_;
   xnn_operator_t k_proj_;
   xnn_operator_t v_proj_;
@@ -610,7 +668,7 @@ class Transformer {
 
 static void benchmark_llama2_7b() {
   ModelArgs args;
-  const int32_t kIterations = 200;
+  const int32_t kIterations = 50;
   // Need to benchmark pre-fill separately.
   Transformer transformer(
       args, FullyConnectedOpType::QD8_F16_QC4W, ComputeType::F16);
