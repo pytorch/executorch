@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/activation_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cinttypes>
@@ -125,57 +126,6 @@ Tensor& glu_out_tensor(const Tensor& self, int64_t dim, Tensor& out) {
   mul_tensors<CTYPE_IN, CTYPE_OUT>(self, dim, out);
   return out;
 }
-
-void check_pre_conditions(const Tensor& self, int64_t dim, Tensor& out) {
-  ET_CHECK_MSG(
-      dim >= -self.dim() && dim < self.dim(),
-      "dim %" PRId64 " >= -self.dim() && dim %" PRId64 " < self.dim() %zd",
-      dim,
-      dim,
-      ssize_t(self.dim()));
-  const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
-  const size_t dim_size = self.size(non_negative_dim);
-  ET_CHECK_MSG(
-      dim_size % 2 == 0,
-      "Halving dimension must be even, but dimension %zd is size %zd",
-      non_negative_dim,
-      dim_size);
-  auto out_dtype = out.scalar_type();
-  ET_CHECK_MSG(
-      out_dtype == ScalarType::Float || out_dtype == ScalarType::Double,
-      "dtype of the output Tensor shall be either Float or Double.");
-  ET_CHECK_MSG(
-      out.dim() == self.dim(),
-      "input and output tensor must have same dimensions.");
-  ET_CHECK_MSG(
-      out.size(non_negative_dim) == dim_size / 2,
-      "output tensor must have half the size of the input tensor along the specified dimension.");
-  for (size_t i = 0; i < self.dim(); ++i) {
-    if (i != non_negative_dim) {
-      ET_CHECK_MSG(
-          out.size(i) == self.size(i),
-          "output tensor must have the same size as the input tensor in all dimensions except for the specified dimension.");
-    }
-  }
-}
-
-void resize_out_tensor(const Tensor& self, int64_t dim, Tensor& out) {
-  exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
-
-  const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
-  for (size_t i = 0; i < self.dim(); i++) {
-    expected_output_size[i] =
-        (i == non_negative_dim) ? (self.size(i) / 2) : self.size(i);
-  }
-
-  ArrayRef<exec_aten::SizesType> output_size{
-      expected_output_size, static_cast<size_t>(out.dim())};
-
-  torch::executor::Error err = resize_tensor(out, output_size);
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in glu_out");
-}
 } // namespace
 
 /**
@@ -190,8 +140,12 @@ void resize_out_tensor(const Tensor& self, int64_t dim, Tensor& out) {
 Tensor&
 glu_out(RuntimeContext& ctx, const Tensor& self, int64_t dim, Tensor& out) {
   (void)ctx;
-  resize_out_tensor(self, dim, out);
-  check_pre_conditions(self, dim, out);
+
+  ET_KERNEL_CHECK(
+      ctx, resize_glu_out(self, dim, out) == Error::Ok, InvalidArgument, out);
+
+  ET_KERNEL_CHECK(ctx, check_glu_args(self, dim, out), InvalidArgument, out);
+
   const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
   const auto in_dtype = self.scalar_type();
 

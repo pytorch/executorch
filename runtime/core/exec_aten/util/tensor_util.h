@@ -824,6 +824,15 @@ inline bool tensor_is_contiguous(exec_aten::Tensor t) {
   return true;
 }
 
+inline bool tensors_have_same_rank(exec_aten::Tensor a, exec_aten::Tensor b) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim(),
+      ET_TENSOR_CHECK_PREFIX__ ": rank={%zd, %zd}",
+      ssize_t(a.dim()),
+      ssize_t(b.dim()));
+  return true;
+}
+
 /**
  * The expected output size may not be the existing size of any inputs and
  * outputs if the operator supports both broadcast and dynamic shape. Therefore
