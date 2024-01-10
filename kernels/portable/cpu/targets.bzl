@@ -205,7 +205,10 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_constant_pad_nd",
-        deps = [":scalar_utils"],
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
     ),
     op_target(
         name = "op_convolution",
@@ -488,6 +491,7 @@ _ATEN_OPS = (
         name = "op_masked_fill",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":scalar_utils",
         ],
     ),
