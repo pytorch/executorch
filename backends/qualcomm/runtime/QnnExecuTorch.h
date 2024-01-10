@@ -73,6 +73,7 @@ typedef enum {
   SM8450 = 36, // v69
   SM8475 = 42, // v69
   SM8550 = 43, // v73
+  SM8650 = 57, // v75
 } QcomChipset;
 
 /// Specifies the backend options for the HTP backend.

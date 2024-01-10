@@ -25,6 +25,8 @@ from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.pass_base import ExportPass
 
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+
+from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 
 from torch.export import ExportedProgram
@@ -77,5 +79,5 @@ class XNNPACKPassManager:
                 raise RuntimeError(
                     f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
                 )
-            ep = ep._transform(transform_pass)
+            ep = _transform(ep, transform_pass)
         return ep

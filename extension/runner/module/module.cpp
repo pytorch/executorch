@@ -16,7 +16,9 @@ namespace torch::executor {
 Module::Module(const std::string& filePath)
     : Runner(
           ({
-            auto dataLoader = util::MmapDataLoader::from(filePath.c_str());
+            auto dataLoader = util::MmapDataLoader::from(
+                filePath.c_str(),
+                util::MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
             if (!dataLoader.ok()) {
               throw std::runtime_error("Failed to load file: " + filePath);
             }

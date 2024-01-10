@@ -16,10 +16,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import executorch.exir as exir
 import executorch.exir.memory as memory
+import executorch.exir.serde.export_serialize as export_serialize
 import torch
 import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
-import torch._export.serde.serialize as export_serialize
 from executorch.exir import delegate
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
@@ -34,7 +34,9 @@ from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
 )
+from torch._export.serde.schema import SchemaVersion
 from torch._export.serde.serialize import SerializeError
+from torch._export.serde.union import _Union
 from torch._export.verifier import load_verifier
 from torch.fx.experimental import symbolic_shapes
 
@@ -307,7 +309,7 @@ class GraphModuleSerializer(export_serialize.GraphModuleSerializer):
         )
 
         json_lowered_module = json.dumps(
-            dataclasses.asdict(serialized_lowered_module),
+            _dataclass_to_dict(serialized_lowered_module),
             cls=export_serialize.EnumEncoder,
         )
         return json_lowered_module
@@ -344,7 +346,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
                 graph_module=serialized_graph_module,
                 opset_version=self.opset_version,
                 range_constraints=serialized_range_constraints,
-                schema_version=schema.SCHEMA_VERSION,
+                schema_version=SchemaVersion(-1, -1),
                 dialect=exported_program.dialect,
             ),
             export_serialize.serialize_torch_artifact(exported_program.state_dict),
@@ -674,12 +676,11 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         dummy_g = torch.fx.Graph()
         dummy_g.output(())
         exported_program = exir.ExportedProgram(
-            state_dict,
-            dummy_g,
-            ep.ExportGraphSignature(input_specs=[], output_specs=[]),
-            {},  # TODO(T157676982)
-            range_constraints,
-            [],
+            root=state_dict,
+            graph=dummy_g,
+            graph_signature=ep.ExportGraphSignature(input_specs=[], output_specs=[]),
+            state_dict={},  # TODO(T157676982)
+            range_constraints=range_constraints,
             module_call_graph=module_call_graph,
             verifier=load_verifier(
                 serialized_artifact.exported_program.dialect  # pyre-ignore
@@ -695,6 +696,28 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         return exported_program
 
 
+# pyre-ignore
+def _dataclass_to_dict(obj):
+    if isinstance(obj, _Union):
+        return {
+            f.name: _dataclass_to_dict(getattr(obj, f.name, None))
+            for f in dataclasses.fields(obj)
+        }
+    elif dataclasses.is_dataclass(obj):
+        return {
+            f.name: _dataclass_to_dict(getattr(obj, f.name))
+            for f in dataclasses.fields(obj)
+        }
+    elif isinstance(obj, list):
+        return [_dataclass_to_dict(x) for x in obj]
+    elif isinstance(obj, tuple):
+        return tuple(_dataclass_to_dict(x) for x in obj)
+    elif isinstance(obj, dict):
+        return {k: _dataclass_to_dict(v) for k, v in obj.items()}
+    else:
+        return obj
+
+
 def serialize(
     exported_program: ep.ExportedProgram,
     opset_version: Optional[Dict[str, int]] = None,
@@ -704,7 +727,7 @@ def serialize(
     )
     assert isinstance(serialized_artifact.exported_program, schema.ExportedProgram)
     json_program = json.dumps(
-        dataclasses.asdict(serialized_artifact.exported_program),
+        _dataclass_to_dict(serialized_artifact.exported_program),
         cls=export_serialize.EnumEncoder,
     )
     json_bytes = json_program.encode("utf-8")

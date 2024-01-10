@@ -39,6 +39,7 @@ class SoCModel(enum.Enum):
     SM8450 = 1
     SM8475 = 2
     SM8550 = 3
+    SM8650 = 4
 
 
 def qnn_capture_config():
@@ -157,6 +158,7 @@ def generate_qnn_executorch_compiler_spec(
         SoCModel.SM8450: PyQnnManager.QcomChipset.SM8450,
         SoCModel.SM8475: PyQnnManager.QcomChipset.SM8475,
         SoCModel.SM8550: PyQnnManager.QcomChipset.SM8550,
+        SoCModel.SM8650: PyQnnManager.QcomChipset.SM8650,
     }
     backend_type = CompileSpec(
         "backend_type", bytes([PyQnnManager.QnnExecuTorchBackendType.kHtpBackend])

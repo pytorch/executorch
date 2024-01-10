@@ -200,14 +200,13 @@ class XnnpackBackend(BackendDetails):
         # EdgeDialectVerifier, but disable it.
         # TODO (task link) to implement NullVerifier or something similar
         ep = ExportedProgram(
-            ep.graph_module,
-            ep.graph,
-            ep.graph_signature,
-            ep.state_dict,
-            ep.range_constraints,
-            ep.equality_constraints,
-            copy.deepcopy(ep.module_call_graph),
-            ep.example_inputs,
+            root=ep.graph_module,
+            graph=ep.graph,
+            graph_signature=ep.graph_signature,
+            state_dict=ep.state_dict,
+            range_constraints=ep.range_constraints,
+            module_call_graph=copy.deepcopy(ep.module_call_graph),
+            example_inputs=ep.example_inputs,
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=False, enable=False, class_only=True
             ),

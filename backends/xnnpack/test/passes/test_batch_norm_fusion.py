@@ -55,3 +55,27 @@ class TestBatchNormFusion(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp32_batch_norm_no_fusion_doesnt_partition(self):
+        """
+        We do not currently support standalone batch norms (i.e. batch norms that are
+        not fused with a conv). This is planned, but until implemented, this test ensures
+        that we do not partition the standalone batch norm and then fail to lower.
+        """
+
+        class BN(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.bn = torch.nn.BatchNorm2d(2)
+
+            def forward(self, x):
+                return self.bn(x)
+
+        (
+            Tester(BN(), (torch.randn(2, 2, 4, 4),))
+            .export()
+            .to_edge()
+            .check_count({self.bn_name: 1})
+            .partition()
+            .check_count({self.bn_name: 1})
+        )

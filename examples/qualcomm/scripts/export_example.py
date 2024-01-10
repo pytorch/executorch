@@ -35,7 +35,7 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    model, example_inputs = EagerModelFactory.create_model(
+    model, example_inputs, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
@@ -56,7 +56,7 @@ if __name__ == "__main__":
     edge_program = capture_program(m, example_inputs)
 
     # Delegate to QNN backend
-    QnnPartitioner.set_compiler_spec(
+    qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
             is_fp16=False,
             soc_model=SoCModel.SM8550,
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     with validation_disabled():
         delegated_program = edge_program
         delegated_program.exported_program = to_backend(
-            edge_program.exported_program, QnnPartitioner()
+            edge_program.exported_program, qnn_partitioner
         )
 
     executorch_program = delegated_program.to_executorch()
