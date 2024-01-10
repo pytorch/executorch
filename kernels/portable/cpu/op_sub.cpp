@@ -22,9 +22,11 @@ Tensor& sub_out(
     const Tensor& b,
     const Scalar& alpha,
     Tensor& out) {
-  (void)ctx;
-
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();

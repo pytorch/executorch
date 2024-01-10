@@ -39,9 +39,11 @@ ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
 
 Tensor&
 div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
-  (void)ctx;
-
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -79,9 +81,11 @@ Tensor& div_out_mode(
     const Tensor& b,
     exec_aten::optional<exec_aten::string_view> mode,
     Tensor& out) {
-  (void)ctx;
-
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
