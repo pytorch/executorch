@@ -1,0 +1,1 @@
+../../../.ci/docker/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
