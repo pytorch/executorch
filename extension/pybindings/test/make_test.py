@@ -166,48 +166,10 @@ def make_test(  # noqa: C901
             expected = inputs[0] + inputs[0]
             tester.assertEqual(str(expected), str(executorch_output))
 
-        def test_stderr_redirect(tester):
-            import sys
-            from io import StringIO
-
-            class RedirectedStderr:
-                def __init__(self):
-                    self._stderr = None
-                    self._string_io = None
-
-                def __enter__(self):
-                    self._stderr = sys.stderr
-                    sys.stderr = self._string_io = StringIO()
-                    return self
-
-                def __exit__(self, type, value, traceback):
-                    sys.stderr = self._stderr
-
-                def __str__(self):
-                    return self._string_io.getvalue()
-
-            with RedirectedStderr() as out:
-                try:
-                    # Create an ExecuTorch program from ModuleAdd.
-                    exported_program, inputs = create_program(ModuleAdd())
-
-                    # Use pybindings to load and execute the program.
-                    executorch_module = load_fn(exported_program.buffer)
-
-                    # add an extra input to trigger error
-                    inputs = (*inputs, 1)
-
-                    # Invoke the callable on executorch_module instead of calling module.forward.
-                    executorch_output = executorch_module(inputs)[0]  # noqa
-                    tester.assertFalse(True)  # should be unreachable
-                except Exception:
-                    tester.assertTrue("The length of given input array" in str(out))
-
         test_e2e(tester)
         test_multiple_entry(tester)
         test_output_lifespan(tester)
         test_module_callable(tester)
         test_module_single_input(tester)
-        test_stderr_redirect(tester)
 
     return wrapper

@@ -114,17 +114,16 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
         return self
 
     transformed_ep = ExportedProgram(
-        root=transformed_gm,
-        graph=transformed_gm.graph,
-        graph_signature=_get_updated_graph_signature(
-            self.graph_signature, transformed_gm
-        ),
-        state_dict=self.state_dict,
-        range_constraints=_get_updated_range_constraints(transformed_gm),
-        module_call_graph=copy.deepcopy(self._module_call_graph),
-        example_inputs=self.example_inputs,
-        verifier=self.verifier,
-        tensor_constants=self.tensor_constants,
+        transformed_gm,
+        transformed_gm.graph,
+        _get_updated_graph_signature(self.graph_signature, transformed_gm),
+        self.state_dict,
+        _get_updated_range_constraints(transformed_gm),
+        copy.deepcopy(self.equality_constraints),
+        copy.deepcopy(self._module_call_graph),
+        self.example_inputs,
+        self.verifier,
+        self.tensor_constants,
     )
     transformed_ep.graph_module.meta.update(self.graph_module.meta)
     transformed_ep.graph_module.meta.update(res.graph_module.meta)
@@ -227,19 +226,21 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
         call_spec,
         state_dict,
         range_constraints,
+        equality_constraints,
         module_call_graph,
         example_inputs,
         verifier,
     ):
         super().__init__(
-            root=root,
-            graph=graph,
-            graph_signature=graph_signature,
-            state_dict=state_dict,
-            range_constraints=range_constraints,
-            module_call_graph=module_call_graph,
-            example_inputs=example_inputs,
-            verifier=verifier,
+            root,
+            graph,
+            graph_signature,
+            state_dict,
+            range_constraints,
+            equality_constraints,
+            module_call_graph,
+            example_inputs,
+            verifier,
         )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -466,13 +467,14 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if dialect == "ATEN":
         ep = ExirExportedProgram(
             ExportedProgram(
-                root=ep.exported_program.graph_module,
-                graph=ep.exported_program.graph_module.graph,
-                graph_signature=ep.exported_program.graph_signature,
-                state_dict=ep.exported_program.state_dict,
-                range_constraints=ep.exported_program.range_constraints,
-                module_call_graph=ep.exported_program.module_call_graph,
-                example_inputs=ep.exported_program.example_inputs,
+                ep.exported_program.graph_module,
+                ep.exported_program.graph_module.graph,
+                ep.exported_program.graph_signature,
+                ep.exported_program.state_dict,
+                ep.exported_program.range_constraints,
+                ep.exported_program.equality_constraints,
+                ep.exported_program.module_call_graph,
+                ep.exported_program.example_inputs,
                 verifier=get_aten_verifier(enable=config._check_ir_validity),
                 tensor_constants=ep.exported_program.tensor_constants,
             ),
@@ -501,15 +503,14 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm = new_gm_res.graph_module
 
     new_ep.exported_program = ExportedProgram(
-        root=new_gm,
-        graph=new_gm.graph,
-        graph_signature=_get_updated_graph_signature(
-            new_ep.exported_program.graph_signature, new_gm
-        ),
-        state_dict=new_ep.exported_program.state_dict,
-        range_constraints=new_ep.exported_program.range_constraints,
-        module_call_graph=new_ep.exported_program.module_call_graph,
-        example_inputs=new_ep.exported_program.example_inputs,
+        new_gm,
+        new_gm.graph,
+        _get_updated_graph_signature(new_ep.exported_program.graph_signature, new_gm),
+        new_ep.exported_program.state_dict,
+        new_ep.exported_program.range_constraints,
+        new_ep.exported_program.equality_constraints,
+        new_ep.exported_program.module_call_graph,
+        new_ep.exported_program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
             check_edge_ops=config._use_edge_ops,
             enable=config._check_ir_validity,
@@ -845,6 +846,7 @@ def to_edge(
             ),
             state_dict=edge_program.state_dict,
             range_constraints=edge_program.range_constraints,
+            equality_constraints=edge_program.equality_constraints,
             module_call_graph=edge_program.module_call_graph,
             example_inputs=edge_program.example_inputs,
             verifier=EXIREdgeDialectVerifier(
