@@ -167,7 +167,8 @@ def define_common_targets():
             deps = [
                 "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
                 "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
+                ":index_util",
             ],
-            exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            exported_preprocessor_flags = ["-DUSE_ATEN_MODE"] if aten_mode else [],
             visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
         )

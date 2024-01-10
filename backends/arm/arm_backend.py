@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -18,7 +18,7 @@ from executorch.backends.arm.arm_vela import vela_compile
 from executorch.backends.arm.operators.node_visitor import get_node_visitors
 from executorch.backends.arm.operators.op_placeholder import process_placeholder
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import is_quant_node
+from executorch.backends.arm.tosa_quant_utils import isQuantNode
 from executorch.backends.arm.tosa_utils import (
     dbg_fail,
     dbg_tosa_dump,
@@ -70,6 +70,9 @@ class ArmBackend(BackendDetails):
                 for arg in node.args:
                     inputs.append(TosaArg(arg))
 
+                # Check it's a quantized graph or not
+                is_quant_node = isQuantNode(node)
+
                 # Convert output (this node itself)
                 output = TosaArg(node)
                 # Add output to TOSA graph
@@ -78,13 +81,13 @@ class ArmBackend(BackendDetails):
                     inputs[0].shape
                     if is_permute_node_before_addmm(node)
                     else output.shape,
-                    ts.DType.INT8 if is_quant_node(node) else output.dtype,
+                    ts.DType.INT8 if is_quant_node else output.dtype,
                 )
 
                 # Visiting each Node
                 if node.target.__name__ in node_visitors:
                     node_visitors[node.target.__name__].define_node(
-                        node, tosa_graph, inputs, output, is_quant_node(node)
+                        node, tosa_graph, inputs, output, is_quant_node
                     )
                 else:
                     raise RuntimeError(f"Unknown operator {node.target}")

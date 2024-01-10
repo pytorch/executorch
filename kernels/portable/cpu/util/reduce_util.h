@@ -596,7 +596,7 @@ Error resize_reduction_out(
     bool keepdim,
     exec_aten::Tensor& out);
 
-#ifndef USE_ATEN_LIB
+#ifndef USE_ATEN_MODE
 bool check_reduction_args(
     const Tensor& in,
     const optional<ArrayRef<int64_t>>& dim_list,

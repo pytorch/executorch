@@ -1,8 +1,3 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
 import logging
 import os
 
@@ -109,8 +104,8 @@ def getNodeArgs(node):
 
 # Helper function to do broadcasting
 # Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_broadcasting
-def broadcast_shapes(shape1, shape2):
-    assert len(shape1) == len(shape2), "broadcast_shapes::shapes must have same ranks"
+def broadcastShapes(shape1, shape2):
+    assert len(shape1) == len(shape2), "broadcastShape::shapes must have same ranks"
 
     need_broadcasting = False
     for val1, val2 in zip(shape1, shape2):
@@ -127,7 +122,7 @@ def broadcast_shapes(shape1, shape2):
         else:
             assert not (
                 shape2[idx] != 1 and shape2[idx] != broadcasted_shape[idx]
-            ), "broadcast_shapes::broadcast shape mismatch"
+            ), "broadcastShape::broadcast shape mismatch"
 
     return broadcasted_shape
 
@@ -136,7 +131,7 @@ def broadcast_shapes(shape1, shape2):
     No data conversion happens during a reshape operation. """
 
 
-def build_reshape(tosa_fb, input_name, new_shape, output_name):
+def buildReshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
