@@ -34,16 +34,12 @@ case "${IMAGE_NAME}" in
     exit 1
 esac
 
+# NB: All files needed to build the Docker image needs to be in .ci/docker
+# folder so that the image hash is updated correctly when they change. The
+# good news is that links can be setup to refer to them from other locations
+
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
 BUILD_DOCS=1
-
-# Copy requirements-lintrunner.txt from root to here
-cp ../../requirements-lintrunner.txt ./
-
-# Copy arm setup script from root to here
-# TODO(huydhn): Figure out a way to rebuild the Docker image automatically
-# with a new image hash when the content here is updated
-cp -r ../../examples/arm/ ./arm
 
 docker build \
   --no-cache \

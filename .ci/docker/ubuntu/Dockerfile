@@ -67,7 +67,7 @@ RUN if [ -n "${LINTRUNNER}" ]; then bash ./install_linter.sh; fi
 RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 
 ARG ARM_SDK
-COPY --chown=ci-user:ci-user ./arm /opt/arm
+COPY --chown=ci-user:ci-user ./examples/arm /opt/arm
 # Set up ARM SDK if needed
 RUN if [ -n "${ARM_SDK}" ]; then git config --global user.email "ossci@example.com"; git config --global user.name "OSS CI"; bash /opt/arm/setup.sh --i-agree-to-the-contained-eula /opt/arm-sdk; chown -R ci-user:ci-user /opt/arm-sdk; fi
 
