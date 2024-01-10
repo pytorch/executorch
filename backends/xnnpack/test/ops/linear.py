@@ -204,45 +204,6 @@ class TestLinear(unittest.TestCase):
             LinearModule(), inputs, linear_count=3, is_per_channel=True, uses_bias=True
         )
 
-    def test_fp32_linear_fused_relu(self):
-        class LinearReluModule(torch.nn.Module):
-            def __init__(self, in_size, out_size, use_bias):
-                super().__init__()
-                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
-
-            def forward(self, x):
-                return torch.nn.functional.relu(self.linear(x))
-
-        for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: LinearReluModule(
-                    in_size,
-                    out_size,
-                    use_bias,  # noqa
-                ),
-                uses_bias=use_bias,
-            )
-
-    def test_qs8_linear_fused_relu(self):
-        class LinearReluModule(torch.nn.Module):
-            def __init__(self, in_size, out_size, use_bias):
-                super().__init__()
-                self.linear = torch.nn.Linear(in_size, out_size, bias=use_bias)
-
-            def forward(self, x):
-                return torch.nn.functional.relu(self.linear(x))
-
-        for use_bias in (True, False):
-            self._test_linear(
-                lambda in_size, out_size: LinearReluModule(
-                    in_size,
-                    out_size,
-                    use_bias,  # noqa
-                ),
-                uses_bias=use_bias,
-                quant=True,
-            )
-
     def _test_linear(self, make_module, uses_bias, quant=False):
         aten_op, edge_op = (
             (
@@ -295,7 +256,7 @@ class TestLinear(unittest.TestCase):
             tester.to_executorch()
             tester.serialize()
             tester.run_method()
-            tester.compare_outputs(qtol=quant)
+            tester.compare_outputs()
 
     def _test_dqlinear(
         self, module, inputs, linear_count=1, is_per_channel=False, uses_bias=False

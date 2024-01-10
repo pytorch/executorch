@@ -24,7 +24,7 @@ void get_index_select_out_target_size(
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
-    exec_aten::SizesType* out_sizes,
+    Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_scatter_add_args(
@@ -33,6 +33,11 @@ bool check_scatter_add_args(
     const Tensor& index,
     const Tensor& src,
     Tensor& out);
+
+bool check_index_out_args(
+    const Tensor& in,
+    const Tensor& out,
+    const Tensor& index_out);
 
 } // namespace executor
 } // namespace torch

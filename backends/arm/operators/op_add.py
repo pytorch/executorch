@@ -1,4 +1,4 @@
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2023 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -13,10 +13,10 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import (
-    build_rescale_from_int32,
-    build_rescale_to_int32,
+    buildRescaleFromInt32,
+    buildRescaleToInt32,
 )
-from executorch.backends.arm.tosa_utils import broadcast_shapes, getNodeArgs
+from executorch.backends.arm.tosa_utils import broadcastShapes, getNodeArgs
 from serializer.tosa_serializer import TosaOp
 
 
@@ -51,14 +51,14 @@ class AddVisitor(NodeVisitor):
             inputA_rescale_scale = input_A_scale.number / max_scale_2x
             inputB_rescale_scale = input_B_scale.number / max_scale_2x
 
-            input_A_rescaled_to_int32 = build_rescale_to_int32(
+            input_A_rescaled_to_int32 = buildRescaleToInt32(
                 tosa_graph,
                 input_A,
                 input_A_zp.number,
                 inputA_rescale_scale,
             )
 
-            input_B_rescaled_to_int32 = build_rescale_to_int32(
+            input_B_rescaled_to_int32 = buildRescaleToInt32(
                 tosa_graph,
                 input_B,
                 input_B_zp.number,
@@ -66,7 +66,7 @@ class AddVisitor(NodeVisitor):
             )
 
             ## Do the INT32 Add
-            broadcasted_shape = broadcast_shapes(input_A.shape, input_B.shape)
+            broadcasted_shape = broadcastShapes(input_A.shape, input_B.shape)
             add_res = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
             tosa_graph.addOperator(
                 TosaOp.Op().ADD,
@@ -84,7 +84,7 @@ class AddVisitor(NodeVisitor):
             output_rescale_scale = max_scale_2x / (output_scale.number)
 
             # Rescale Back to INT8
-            build_rescale_from_int32(
+            buildRescaleFromInt32(
                 tosa_graph,
                 add_res.name,
                 output.name,

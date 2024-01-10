@@ -64,11 +64,6 @@ class TagImplicitQDqPass(XNNPACKPass):
                 _END_OF_CHAIN_MARKER: True,
             }
         },
-        exir_ops.edge.aten.linear.default.name(): {
-            exir_ops.edge.aten.relu.default.name(): {
-                _END_OF_CHAIN_MARKER: True,
-            }
-        },
     }
     IS_IMPLICIT_Q_DQ_TAG = "IS_IMPLICIT_Q_DQ_TAG"
 

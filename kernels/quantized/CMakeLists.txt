@@ -33,7 +33,8 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # Quantized ops kernel sources TODO(larryliu0820): use buck2 to gather the
 # sources
-list(TRANSFORM _quantized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
+file(GLOB_RECURSE _quantized_kernels__srcs
+     "${CMAKE_CURRENT_SOURCE_DIR}/cpu/*.cpp")
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in quantized.yaml
 gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/quantized.yaml" "" "")
