@@ -36,7 +36,7 @@ Tensor& fmod_Tensor_out(
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(canCast(common_type, out_type));
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, a_type, ctx, "fmod.Tensor_out", CTYPE_A, [&]() {

@@ -50,7 +50,7 @@ Tensor& bitwise_xor_Tensor_out(
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(canCast(common_type, out_type));
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   ET_SWITCH_INT_TYPES_AND(
       Bool, a_type, ctx, "bitwise_xor.Tensor_out", CTYPE_A, [&]() {

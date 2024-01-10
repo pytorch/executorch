@@ -19,8 +19,15 @@ using Tensor = exec_aten::Tensor;
 Tensor& alias_copy_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
-  ET_CHECK(resize_tensor(out, in.sizes()) == torch::executor::Error::Ok);
-  ET_CHECK_SAME_DTYPE2(in, out);
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
   if (in.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0
