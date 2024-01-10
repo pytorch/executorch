@@ -24,9 +24,15 @@ Tensor& unary_ufunc_real(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
     apply_unary_map_fn(

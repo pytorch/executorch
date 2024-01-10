@@ -786,5 +786,60 @@ bool check_unsqueeze_copy_args(
   return true;
 }
 
+bool check_view_copy_args(
+    const Tensor& self,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == out.sizes().size());
+
+  // The input and out shall share same dtype and numel
+  ET_LOG_AND_RETURN_IF_FALSE(self.numel() == out.numel());
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, out));
+
+  // The size of out should equal target size.
+  bool size_inferred = false;
+  for (int i = 0; i < size_int64_t.size(); i++) {
+    // If this value is -1 it implies that this dimension is inferred.
+    if (size_int64_t[i] == -1) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          !size_inferred, "Multiple dimensions cannot be inferred.");
+      size_inferred = true;
+    }
+    ET_LOG_AND_RETURN_IF_FALSE(
+        ((int64_t)out.sizes()[i] == size_int64_t[i]) ||
+        (size_int64_t[i] == -1));
+  }
+
+  return true;
+}
+
+bool get_view_copy_target_size(
+    const Tensor input,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    int64_t dim,
+    Tensor::SizesType* out_sizes) {
+  size_t out_numels_without_minus_1 = 1;
+  int32_t minus_1_dim = -1;
+
+  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == dim);
+
+  for (size_t i = 0; i < dim; ++i) {
+    if (size_int64_t[i] != -1) {
+      out_sizes[i] = static_cast<Tensor::SizesType>(size_int64_t[i]);
+      out_numels_without_minus_1 = out_numels_without_minus_1 * size_int64_t[i];
+    } else {
+      // TODO(kimishpatel): Add test to hit this line
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          minus_1_dim == -1, "At most one view copy dim can be -1.");
+      minus_1_dim = i;
+    }
+  }
+  if (minus_1_dim >= 0) {
+    out_sizes[minus_1_dim] = input.numel() / out_numels_without_minus_1;
+  }
+
+  return true;
+}
+
 } // namespace executor
 } // namespace torch

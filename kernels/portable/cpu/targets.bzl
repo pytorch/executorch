@@ -262,6 +262,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_embedding",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
     ),
     op_target(
         name = "op_eq",
@@ -823,6 +826,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_view_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_where",

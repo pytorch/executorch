@@ -20,13 +20,15 @@ using exec_aten::Tensor;
 
 namespace {
 
-void size_check(
+bool check_sizes(
     exec_aten::ArrayRef<int64_t> size_int64_t,
     exec_aten::ArrayRef<int32_t> size_int32_t) {
-  ET_CHECK(size_int64_t.size() == size_int32_t.size());
+  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == size_int32_t.size());
   for (int i = 0; i < size_int64_t.size(); i++) {
-    ET_CHECK(((int64_t)size_int32_t[i] == size_int64_t[i]));
+    ET_LOG_AND_RETURN_IF_FALSE(((int64_t)size_int32_t[i] == size_int64_t[i]));
   }
+
+  return true;
 };
 
 } // namespace
@@ -39,12 +41,16 @@ void size_check(
 Tensor& zeros_out(RuntimeContext& ctx, IntArrayRef size, Tensor& out) {
   (void)ctx;
 
-  torch::executor::Error err = resize_tensor(out, size);
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in zeros_out");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, size) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
-  size_check(size, out.sizes());
+  ET_KERNEL_CHECK(ctx, check_sizes(size, out.sizes()), InvalidArgument, out);
+
   void* out_data = out.mutable_data_ptr();
   if (out_data != nullptr) {
     /*

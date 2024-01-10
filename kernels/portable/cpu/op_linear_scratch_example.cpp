@@ -103,7 +103,12 @@ Tensor& linear_scratch_example(
 
     // add the bias
     if (bias.has_value()) {
-      ET_CHECK_MSG(K == bias.value().numel(), "Unexpected numel for bias");
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          K == bias.value().numel(),
+          InvalidArgument,
+          out,
+          "Unexpected numel for bias");
       for (size_t i = 0; i < M; ++i) {
         for (size_t j = 0; j < K; ++j) {
           scalar_t* scratch_ptr =
