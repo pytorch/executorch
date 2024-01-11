@@ -39,25 +39,22 @@ using torch::executor::ScalarType;
 using torch::executor::testing::TensorFactory;
 
 namespace {
+// Due to lack of support for short types in ExecuTorch just using Short for now
+ScalarType MyHalf = ScalarType::Short;
 class TensorFactoryWrapper {
  public:
-  template <torch::executor::ScalarType DTYPE>
   static torch::executor::Tensor make_tensor(
+      ScalarType dtype,
       const std::vector<int32_t>& sizes) {
     sizes_vector_.push_back(sizes);
     auto& size = sizes_vector_.back();
     size[0] = size[0] * 4;
-    return make_tensor_impl<DTYPE>(sizes);
+    return make_tensor_impl(dtype, sizes);
   }
 
-  template <torch::executor::ScalarType DTYPE>
   static torch::executor::Tensor make_tensor_impl(
-      const std::vector<int32_t>& sizes) {
-    ET_CHECK_MSG(
-        false,
-        "Cannot make tensor of type %s",
-        torch::executor::toString(DTYPE));
-  }
+      ScalarType dtype,
+      const std::vector<int32_t>& sizes);
 
   static std::vector<std::vector<int32_t>> sizes_vector_;
   static TensorFactory<ScalarType::Char> tf_int8_;
@@ -73,35 +70,22 @@ TensorFactory<ScalarType::Int> TensorFactoryWrapper::tf_int_;
 TensorFactory<ScalarType::Float> TensorFactoryWrapper::tf_float_;
 TensorFactory<ScalarType::Short> TensorFactoryWrapper::tf_short_;
 
-template <>
-torch::executor::Tensor
-TensorFactoryWrapper::make_tensor_impl<torch::executor::ScalarType::Char>(
+torch::executor::Tensor TensorFactoryWrapper::make_tensor_impl(
+    ScalarType dtype,
     const std::vector<int32_t>& sizes) {
-  return tf_int8_.ones(sizes);
-}
-template <>
-torch::executor::Tensor
-TensorFactoryWrapper::make_tensor_impl<torch::executor::ScalarType::Byte>(
-    const std::vector<int32_t>& sizes) {
-  return tf_uint8_.ones(sizes);
-}
-template <>
-torch::executor::Tensor
-TensorFactoryWrapper::make_tensor_impl<torch::executor::ScalarType::Int>(
-    const std::vector<int32_t>& sizes) {
-  return tf_int_.ones(sizes);
-}
-template <>
-torch::executor::Tensor
-TensorFactoryWrapper::make_tensor_impl<torch::executor::ScalarType::Float>(
-    const std::vector<int32_t>& sizes) {
-  return tf_float_.ones(sizes);
-}
-template <>
-torch::executor::Tensor
-TensorFactoryWrapper::make_tensor_impl<torch::executor::ScalarType::Half>(
-    const std::vector<int32_t>& sizes) {
-  return tf_short_.ones(sizes);
+  if (dtype == torch::executor::ScalarType::Char) {
+    return tf_int8_.ones(sizes);
+  } else if (dtype == torch::executor::ScalarType::Byte) {
+    return tf_uint8_.ones(sizes);
+  } else if (dtype == torch::executor::ScalarType::Int) {
+    return tf_int_.ones(sizes);
+  } else if (dtype == torch::executor::ScalarType::Float) {
+    return tf_float_.ones(sizes);
+  } else if (dtype == ::MyHalf) {
+    return tf_short_.ones(sizes);
+  }
+  ET_CHECK_MSG(
+      false, "Cannot make tensor of type %s", torch::executor::toString(dtype));
 }
 
 xnn_operator_t create_fully_connected(
@@ -109,28 +93,48 @@ xnn_operator_t create_fully_connected(
     const int32_t input_channels,
     const int32_t output_channels) {
   xnn_operator_t op = nullptr;
-  if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
+  if (fc_type == FullyConnectedOpType::QD8_F16_QC4W ||
+      fc_type == FullyConnectedOpType::QD8_F32_QC4W) {
     std::vector<uint8_t> kernel(output_channels * input_channels / 2, 1);
     std::vector<float> kernel_scales(output_channels, 1.0);
     const float output_min = -std::numeric_limits<float>::infinity();
     const float output_max = +std::numeric_limits<float>::infinity();
 
-    const xnn_status status = xnn_create_fully_connected_nc_qd8_f16_qc4w(
-        input_channels,
-        output_channels,
-        input_channels,
-        output_channels,
-        8,
-        kernel_scales.data(),
-        kernel.data(),
-        nullptr,
-        output_min,
-        output_max,
-        0,
-        nullptr,
-        nullptr,
-        &op);
-    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
+      const xnn_status status = xnn_create_fully_connected_nc_qd8_f16_qc4w(
+          input_channels,
+          output_channels,
+          input_channels,
+          output_channels,
+          8,
+          kernel_scales.data(),
+          kernel.data(),
+          nullptr,
+          output_min,
+          output_max,
+          0,
+          nullptr,
+          nullptr,
+          &op);
+      ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    } else {
+      const xnn_status status = xnn_create_fully_connected_nc_qd8_f32_qc4w(
+          input_channels,
+          output_channels,
+          input_channels,
+          output_channels,
+          8,
+          kernel_scales.data(),
+          kernel.data(),
+          nullptr,
+          output_min,
+          output_max,
+          0,
+          nullptr,
+          nullptr,
+          &op);
+      ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    }
     return op;
   }
   ET_CHECK_MSG(false, "Unsupported operator type:%hhu", fc_type);
@@ -143,6 +147,11 @@ xnn_operator_t create_sdpa(const ComputeType compute_type) {
         xnn_attention_logits_cap_type_none, nullptr, 0, &op);
     ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
     return op;
+  } else if (compute_type == ComputeType::F32) {
+    const xnn_status status = xnn_create_scaled_dot_product_attention_nhtc_f32(
+        xnn_attention_logits_cap_type_none, nullptr, 0, &op);
+    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    return op;
   }
   ET_CHECK_MSG(false, "Unsupported operator type:%hhu", compute_type);
 }
@@ -151,6 +160,10 @@ xnn_operator_t create_convert_dq(const FullyConnectedOpType fc_type) {
   xnn_operator_t op = nullptr;
   if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
     const xnn_status status = xnn_create_convert_nc_f16_qd8(0, &op);
+    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    return op;
+  } else if (fc_type == FullyConnectedOpType::QD8_F32_QC4W) {
+    const xnn_status status = xnn_create_convert_nc_f32_qd8(0, &op);
     ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
     return op;
   }
@@ -165,7 +178,9 @@ void run_fully_connected(
     torch::executor::Tensor& output) {
   auto threadpool = torch::executorch::threadpool::get_pthreadpool();
   int32_t batch_size = input.size(0);
+  ET_CHECK_MSG(input.scalar_type() == ScalarType::Char, "Input must be int8");
   if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
+    ET_CHECK_MSG(output.scalar_type() == ::MyHalf, "Output must be Half");
     xnn_status status =
         xnn_reshape_fully_connected_nc_qd8_f16_qc4w(op, 1, threadpool);
     ET_CHECK_MSG(
@@ -183,7 +198,30 @@ void run_fully_connected(
     status = xnn_run_operator(op, threadpool);
     ET_CHECK_MSG(
         status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
+  } else if (fc_type == FullyConnectedOpType::QD8_F32_QC4W) {
+    ET_CHECK_MSG(
+        output.scalar_type() == ScalarType::Float, "Output must be float");
+    xnn_status status =
+        xnn_reshape_fully_connected_nc_qd8_f32_qc4w(op, 1, threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+    status = xnn_setup_fully_connected_nc_qd8_f32_qc4w(
+        op,
+        input.const_data_ptr<int8_t>(),
+        output.mutable_data_ptr<float>(),
+        reinterpret_cast<const struct xnn_dynamic_quantization_params*>(
+            qparams));
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to setup xnnpack operator");
+
+    status = xnn_run_operator(op, threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
   }
+  ET_CHECK_MSG(false, "Unsupported operator type:%hhu", fc_type);
 }
 
 void run_sdpa(
@@ -206,6 +244,12 @@ void run_sdpa(
   size_t workspace_size = 0;
   size_t workspace_alignment = 0;
   if (compute_type == ComputeType::F16) {
+    ET_CHECK_MSG(query.scalar_type() == ::MyHalf, "Query must be half");
+    ET_CHECK_MSG(key.scalar_type() == ::MyHalf, "Key must be half");
+    ET_CHECK_MSG(value.scalar_type() == ::MyHalf, "Value must be half");
+    ET_CHECK_MSG(scale.scalar_type() == ::MyHalf, "Scalemust be half");
+    ET_CHECK_MSG(mask.scalar_type() == ::MyHalf, "Mask must be half");
+    ET_CHECK_MSG(output.scalar_type() == ::MyHalf, "Output must be half");
     xnn_status status = xnn_reshape_scaled_dot_product_attention_nhtc_f16(
         op,
         batch_size,
@@ -246,6 +290,57 @@ void run_sdpa(
     ET_CHECK_MSG(
         status == xnn_status_success, "Failed to run xnnpack operator");
     return;
+  } else if (compute_type == ComputeType::F32) {
+    ET_CHECK_MSG(
+        query.scalar_type() == ScalarType::Float, "Query must be float");
+    ET_CHECK_MSG(key.scalar_type() == ScalarType::Float, "Key must be float");
+    ET_CHECK_MSG(
+        value.scalar_type() == ScalarType::Float, "Value must be float");
+    ET_CHECK_MSG(
+        scale.scalar_type() == ScalarType::Float, "Scalemust be float");
+    ET_CHECK_MSG(mask.scalar_type() == ScalarType::Float, "Mask must be float");
+    ET_CHECK_MSG(
+        output.scalar_type() == ScalarType::Float, "Output must be float");
+    xnn_status status = xnn_reshape_scaled_dot_product_attention_nhtc_f32(
+        op,
+        batch_size,
+        query_heads,
+        query_tokens,
+        kv_heads,
+        kv_tokens,
+        qk_channels,
+        v_channels,
+        &workspace_size,
+        &workspace_alignment,
+        threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success,
+        "Failed to reshape sdpa xnnpack operator");
+
+    constexpr std::ptrdiff_t alignment{64};
+    // std::vector<char> workspace(workspace_size + alignment);
+    // void* workspace_ptr = reinterpret_cast<void*>(workspace.data());
+    void* workspace_ptr_orig = malloc(workspace_size + alignment);
+    ET_CHECK_MSG(
+        workspace_ptr_orig != nullptr, "Failed to allocate workspace memory");
+    void* workspace_ptr = workspace_ptr_orig;
+    status = xnn_setup_scaled_dot_product_attention_nhtc_f32(
+        op,
+        workspace_ptr,
+        query.const_data_ptr<float>(),
+        key.const_data_ptr<float>(),
+        value.const_data_ptr<float>(),
+        scale.const_data_ptr<float>(),
+        mask.const_data_ptr<float>(),
+        output.mutable_data_ptr<float>());
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to setup sdpa xnnpack operator");
+
+    status = xnn_run_operator(op, threadpool);
+    free(workspace_ptr_orig);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
   }
   ET_CHECK_MSG(false, "Unsupported operator type:%hhu", compute_type);
 }
@@ -261,6 +356,11 @@ void run_convert(
   const int32_t batch_size = input.size(0);
   const int32_t input_channels = input.size(1);
   if (fc_type == FullyConnectedOpType::QD8_F16_QC4W) {
+    ET_CHECK_MSG(input.scalar_type() == ::MyHalf, "Input must be half");
+    ET_CHECK_MSG(
+        output.scalar_type() == ScalarType::Char, "Output must be int8");
+    ET_CHECK_MSG(
+        output.scalar_type() == ScalarType::Char, "Output must be int8");
     xnn_status status = xnn_reshape_convert_nc_f16_qd8(
         op,
         batch_size,
@@ -282,6 +382,34 @@ void run_convert(
     status = xnn_run_operator(op, threadpool);
     ET_CHECK_MSG(
         status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
+  } else if (fc_type == FullyConnectedOpType::QD8_F32_QC4W) {
+    ET_CHECK_MSG(
+        input.scalar_type() == ScalarType::Float, "Input must be float");
+    ET_CHECK_MSG(
+        output.scalar_type() == ScalarType::Char, "Output must be int8");
+    xnn_status status = xnn_reshape_convert_nc_f32_qd8(
+        op,
+        batch_size,
+        input_channels,
+        input_channels,
+        input_channels,
+        threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+    status = xnn_setup_convert_nc_f32_qd8(
+        op,
+        input.const_data_ptr<float>(),
+        output.mutable_data_ptr<int8_t>(),
+        reinterpret_cast<struct xnn_dynamic_quantization_params*>(qparams));
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to setup xnnpack operator");
+
+    status = xnn_run_operator(op, threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
   }
 }
 } // namespace
@@ -320,57 +448,56 @@ class MultiHeadedAttention {
     // Not doing RoPE
     // SDPA
     sdpa_op_ = create_sdpa(sdpa_type);
+    convert_sdpa_output_op_ = create_convert_dq(linear_type);
 
+    torch::executor::ScalarType qkv_output_dtype;
+    torch::executor::ScalarType q_input_dtype;
+
+    torch::executor::ScalarType qkv_linear_dtype =
+        torch::executor::ScalarType::Char;
     if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
-      query_input_float_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, input_channels});
-      query_input_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Char>(
-              {benchmarking_batch_size_, input_channels});
-      query_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, output_channels});
-      key_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, output_channels});
-      value_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, output_channels});
-      sdpa_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, output_channels});
-
-      qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
-
-      k_cache_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_,
-               args.n_heads,
-               args.max_seq_len,
-               head_dim});
-      v_cache_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_,
-               args.n_heads,
-               args.max_seq_len,
-               head_dim});
-      scales_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {head_dim});
-      mask_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {1, args.max_seq_len});
-
-      query_heads_ = args.n_heads;
-      kv_heads_ = args.n_heads;
-      query_tokens_ = 1;
-      kv_tokens_ = args.max_seq_len;
-      qk_channels_ = head_dim;
-      v_channels_ = head_dim;
-      return;
+      qkv_output_dtype = ::MyHalf;
+      q_input_dtype = ::MyHalf;
+    } else if (linear_type_ == FullyConnectedOpType::QD8_F32_QC4W) {
+      qkv_output_dtype = torch::executor::ScalarType::Float;
+      q_input_dtype = torch::executor::ScalarType::Float;
+    } else {
+      ET_CHECK_MSG(false, "Unsupported operator type:%hhu", linear_type);
     }
-    ET_CHECK_MSG(false, "Unsupported operator type:%hhu", linear_type);
+
+    query_input_float_ = TensorFactoryWrapper::make_tensor(
+        q_input_dtype, {benchmarking_batch_size_, input_channels});
+    query_input_ = TensorFactoryWrapper::make_tensor(
+        qkv_linear_dtype, {benchmarking_batch_size_, input_channels});
+    query_output_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype, {benchmarking_batch_size_, output_channels});
+    key_output_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype, {benchmarking_batch_size_, output_channels});
+    value_output_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype, {benchmarking_batch_size_, output_channels});
+    sdpa_output_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype, {benchmarking_batch_size_, output_channels});
+    sdpa_output_dq_ = TensorFactoryWrapper::make_tensor(
+        qkv_linear_dtype, {benchmarking_batch_size_, output_channels});
+
+    qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
+
+    k_cache_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype,
+        {benchmarking_batch_size_, args.n_heads, args.max_seq_len, head_dim});
+    v_cache_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype,
+        {benchmarking_batch_size_, args.n_heads, args.max_seq_len, head_dim});
+    scales_ = TensorFactoryWrapper::make_tensor(qkv_output_dtype, {head_dim});
+    mask_ = TensorFactoryWrapper::make_tensor(
+        qkv_output_dtype, {1, args.max_seq_len});
+
+    query_heads_ = args.n_heads;
+    kv_heads_ = args.n_heads;
+    query_tokens_ = 1;
+    kv_tokens_ = args.max_seq_len;
+    qk_channels_ = head_dim;
+    v_channels_ = head_dim;
   }
 
   MultiHeadedAttention(const MultiHeadedAttention& other) =
@@ -384,6 +511,7 @@ class MultiHeadedAttention {
 
   ~MultiHeadedAttention() {
     xnn_delete_operator(convert_op_);
+    xnn_delete_operator(convert_sdpa_output_op_);
     xnn_delete_operator(q_proj_);
     xnn_delete_operator(k_proj_);
     xnn_delete_operator(v_proj_);
@@ -399,7 +527,6 @@ class MultiHeadedAttention {
   }
 
   void run_bench() {
-    int32_t input_channels = query_input_float_.value().size(1);
     run_convert(
         linear_type_,
         convert_op_,
@@ -442,11 +569,17 @@ class MultiHeadedAttention {
         scales_.value(),
         mask_.value(),
         sdpa_output_.value());
+    run_convert(
+        linear_type_,
+        convert_sdpa_output_op_,
+        qparams_.data(),
+        sdpa_output_.value(),
+        sdpa_output_dq_.value());
     run_fully_connected(
         linear_type_,
         o_proj_,
         qparams_.data(),
-        sdpa_output_.value(),
+        sdpa_output_dq_.value(),
         value_output_.value());
   }
 
@@ -458,10 +591,10 @@ class MultiHeadedAttention {
   exec_aten::optional<torch::executor::Tensor> query_input_float_;
   exec_aten::optional<torch::executor::Tensor> query_input_, k_cache_, v_cache_;
   exec_aten::optional<torch::executor::Tensor> scales_, mask_;
-  exec_aten::optional<torch::executor::Tensor> sdpa_output_;
+  exec_aten::optional<torch::executor::Tensor> sdpa_output_, sdpa_output_dq_;
   exec_aten::optional<torch::executor::Tensor> query_output_, key_output_,
       value_output_, output_;
-  xnn_operator_t convert_op_;
+  xnn_operator_t convert_op_, convert_sdpa_output_op_;
   xnn_operator_t q_proj_;
   xnn_operator_t k_proj_;
   xnn_operator_t v_proj_;
@@ -486,31 +619,38 @@ class FeedForward {
     int32_t mask = ~(args.multiple_of - 1);
     int32_t intermediate_size = (n_hidden + args.multiple_of - 1) & mask;
 
+    convert_op_ffn_input_ = create_convert_dq(linear_type);
     w1_ = create_fully_connected(linear_type, args.dim, intermediate_size);
     w3_ = create_fully_connected(linear_type, args.dim, intermediate_size);
+    convert_op_w2_input_ = create_convert_dq(linear_type);
     w2_ = create_fully_connected(linear_type, intermediate_size, args.dim);
 
-    if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
-      ffw_input_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Char>(
-              {benchmarking_batch_size_, args.dim});
-      w1_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, intermediate_size});
-      w3_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, intermediate_size});
-      w2_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, args.dim});
+    torch::executor::ScalarType linear_out_dtype;
 
-      qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
-      std::generate(qparams_.begin(), qparams_.end(), [&]() {
-        return xnn_dynamic_quantization_params{0, 1.f};
-      });
-      return;
+    torch::executor::ScalarType ffn_linear_dtype =
+        torch::executor::ScalarType::Char;
+    if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
+      linear_out_dtype = ::MyHalf;
+    } else if (linear_type_ == FullyConnectedOpType::QD8_F32_QC4W) {
+      linear_out_dtype = torch::executor::ScalarType::Float;
+    } else {
+      ET_CHECK_MSG(false, "Unsupported operator type:%hhu", linear_type);
     }
-    ET_CHECK_MSG(false, "Unsupported operator type:%hhu", linear_type);
+
+    ffw_input_float_ = TensorFactoryWrapper::make_tensor(
+        linear_out_dtype, {benchmarking_batch_size_, args.dim});
+    ffw_input_ = TensorFactoryWrapper::make_tensor(
+        ffn_linear_dtype, {benchmarking_batch_size_, args.dim});
+    w1_output_ = TensorFactoryWrapper::make_tensor(
+        linear_out_dtype, {benchmarking_batch_size_, intermediate_size});
+    w3_output_ = TensorFactoryWrapper::make_tensor(
+        linear_out_dtype, {benchmarking_batch_size_, intermediate_size});
+    w2_input_ = TensorFactoryWrapper::make_tensor(
+        ffn_linear_dtype, {benchmarking_batch_size_, intermediate_size});
+    w2_output_ = TensorFactoryWrapper::make_tensor(
+        linear_out_dtype, {benchmarking_batch_size_, args.dim});
+
+    qparams_.resize(benchmarking_batch_size_ + XNN_EXTRA_QUANTIZATION_PARAMS);
   }
 
   FeedForward(const FeedForward& other) = delete;
@@ -520,6 +660,8 @@ class FeedForward {
       delete; // Move assignment operator
 
   ~FeedForward() {
+    xnn_delete_operator(convert_op_ffn_input_);
+    xnn_delete_operator(convert_op_w2_input_);
     xnn_delete_operator(w1_);
     xnn_delete_operator(w2_);
     xnn_delete_operator(w3_);
@@ -531,6 +673,12 @@ class FeedForward {
   }
 
   void run_bench() {
+    run_convert(
+        linear_type_,
+        convert_op_ffn_input_,
+        qparams_.data(),
+        ffw_input_float_.value(),
+        ffw_input_.value());
     run_fully_connected(
         linear_type_,
         w1_,
@@ -543,11 +691,17 @@ class FeedForward {
         qparams_.data(),
         ffw_input_.value(),
         w3_output_.value());
+    run_convert(
+        linear_type_,
+        convert_op_w2_input_,
+        qparams_.data(),
+        w3_output_.value(),
+        w2_input_.value());
     run_fully_connected(
         linear_type_,
         w2_,
         qparams_.data(),
-        w3_output_.value(),
+        w2_input_.value(),
         w2_output_.value());
   }
 
@@ -557,6 +711,8 @@ class FeedForward {
   std::vector<xnn_dynamic_quantization_params> qparams_;
   exec_aten::optional<torch::executor::Tensor> ffw_input_, w1_output_,
       w3_output_, w2_output_;
+  exec_aten::optional<torch::executor::Tensor> ffw_input_float_, w2_input_;
+  xnn_operator_t convert_op_ffn_input_, convert_op_w2_input_;
   xnn_operator_t w1_;
   xnn_operator_t w2_;
   xnn_operator_t w3_;
@@ -618,12 +774,11 @@ class Transformer {
         create_fully_connected(linear_type, args.dim, args.vocab_size);
 
     if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
-      out_logits_input_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Char>(
-              {benchmarking_batch_size_, args.dim});
-      out_logits_output_ =
-          TensorFactoryWrapper::make_tensor<torch::executor::ScalarType::Half>(
-              {benchmarking_batch_size_, args.vocab_size});
+      out_logits_input_ = TensorFactoryWrapper::make_tensor(
+          torch::executor::ScalarType::Char,
+          {benchmarking_batch_size_, args.dim});
+      out_logits_output_ = TensorFactoryWrapper::make_tensor(
+          ::MyHalf, {benchmarking_batch_size_, args.vocab_size});
 
       qparams_.resize(1 + XNN_EXTRA_QUANTIZATION_PARAMS);
       std::generate(qparams_.begin(), qparams_.end(), [&]() {
@@ -668,10 +823,14 @@ class Transformer {
 
 static void benchmark_llama2_7b() {
   ModelArgs args;
-  const int32_t kIterations = 50;
+  const int32_t kWarmupIterations = 1;
+  const int32_t kIterations = 1;
   // Need to benchmark pre-fill separately.
   Transformer transformer(
       args, FullyConnectedOpType::QD8_F16_QC4W, ComputeType::F16);
+  for (int i = 0; i < kWarmupIterations; ++i) {
+    transformer.run_bench();
+  }
   auto start_time = std::chrono::steady_clock::now();
   for (int i = 0; i < kIterations; ++i) {
     transformer.run_bench();
