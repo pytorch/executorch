@@ -577,6 +577,8 @@ _ATEN_OPS = (
         name = "op_nonzero",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -663,8 +665,10 @@ _ATEN_OPS = (
     op_target(
         name = "op_select_scatter",
         deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),
     op_target(
@@ -695,10 +699,15 @@ _ATEN_OPS = (
         name = "op_slice_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),
     op_target(
         name = "op_slice_scatter",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
     ),
     op_target(
         name = "op_softmax",
