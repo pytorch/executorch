@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -17,64 +18,6 @@ namespace native {
 
 using Tensor = exec_aten::Tensor;
 using TensorList = exec_aten::TensorList;
-
-namespace {
-void check_args(const Tensor& input, int64_t dim, TensorList out) {
-  ET_CHECK_MSG(
-      input.dim() > 0,
-      "input must have at least one dimension; saw %zd",
-      input.dim());
-  ET_CHECK_MSG(
-      dim >= 0 && dim < input.dim(),
-      "dim %" PRId64 " out of range [0,%zd)",
-      dim,
-      input.dim());
-
-  const ssize_t dim_size = input.size(dim);
-  ET_CHECK_MSG(
-      dim_size == out.size(),
-      "out tensorlist's length %zd must equal unbind dim %" PRId64
-      " size = %zd.",
-      out.size(),
-      dim,
-      dim_size);
-
-  // Validate each output.
-  for (size_t i = 0; i < out.size(); ++i) {
-    // All output dtypes must be the same.
-    ET_CHECK_MSG(
-        out[i].scalar_type() == out[0].scalar_type(),
-        "out[%zu] dtype %" PRId8 " != out[0] dtype %" PRId8,
-        i,
-        static_cast<int8_t>(out[i].scalar_type()),
-        static_cast<int8_t>(out[0].scalar_type()));
-
-    // output tensor must have # of dims = input.dim() -1
-    ET_CHECK_MSG(
-        out[i].dim() == (input.dim() - 1),
-        "out[%zu] dim %zd != input dim %zd",
-        i,
-        out[i].dim(),
-        input.dim() - 1);
-
-    // Check the shape of the output.
-    for (ssize_t d = 0, out_d = 0; d < input.dim(); ++d) {
-      if (d != dim) {
-        ET_CHECK_MSG(
-            out[i].size(out_d) == input.size(d),
-            "out[%zu].size(%zd) %zd != input.size(%zd) %zd",
-            i,
-            d,
-            out[i].size(out_d),
-            d,
-            input.size(d));
-        out_d++;
-      }
-    }
-  }
-}
-
-} // namespace
 
 /**
  * unbind_copy.int_out(Tensor input, int dim=0, *, Tensor(a!)[] out) -> ()
@@ -89,7 +32,9 @@ void unbind_copy_int_out(
   if (dim < 0) {
     dim += input.dim();
   }
-  check_args(input, dim, out);
+
+  ET_KERNEL_CHECK(
+      ctx, check_unbind_copy_args(input, dim, out), InvalidArgument, out);
 
   if (input.numel() == 0) {
     return;
