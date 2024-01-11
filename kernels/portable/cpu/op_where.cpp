@@ -20,8 +20,6 @@ Tensor& where_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  (void)ctx;
-
   ScalarType cond_type = cond.scalar_type();
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -31,7 +29,11 @@ Tensor& where_out(
   ET_CHECK(common_type == out_type);
 
   // Determine output size and resize for dynamic shapes
-  resize_to_broadcast_target_size(a, b, cond, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, cond, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_TWO_TYPES(
       Bool, Byte, cond_type, ctx, "where.self_out", CTYPE_COND, [&]() {
