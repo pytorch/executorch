@@ -31,8 +31,12 @@ Tensor& cat_out(
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   get_cat_out_target_size(tensors, dim, expected_out_size, &expected_out_dim);
-  ET_CHECK(
-      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   // Special handling when all inputs are 1D-empty tensors for aten consistency
   // In that case, just return an 1D-empty tensor without checking dim

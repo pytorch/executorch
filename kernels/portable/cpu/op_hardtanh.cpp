@@ -77,8 +77,13 @@ Tensor& hardtanh_out(
     Tensor& out) {
   (void)ctx;
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = utils::get_scalar_dtype(min);

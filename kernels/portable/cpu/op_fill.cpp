@@ -74,8 +74,12 @@ Tensor& fill_tensor_out(
   ET_CHECK(a_type == out_type);
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Tensor_out", CTYPE_A, [&] {
     CTYPE_A b_casted;

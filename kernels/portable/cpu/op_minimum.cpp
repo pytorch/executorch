@@ -27,6 +27,8 @@ Tensor& minimum_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
+  (void)ctx;
+
   ET_KERNEL_CHECK(
       ctx,
       resize_to_broadcast_target_size(a, b, out) == Error::Ok,
@@ -38,7 +40,7 @@ Tensor& minimum_out(
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(canCast(common_type, out_type));
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "minimum.out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "minimum.out", CTYPE_B, [&]() {

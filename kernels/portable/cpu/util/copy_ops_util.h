@@ -154,5 +154,16 @@ bool check_unsqueeze_copy_args(
     int64_t dim,
     const Tensor out);
 
+bool check_view_copy_args(
+    const Tensor& self,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    Tensor& out);
+
+bool get_view_copy_target_size(
+    const Tensor input,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    int64_t dim,
+    Tensor::SizesType* out_sizes);
+
 } // namespace executor
 } // namespace torch

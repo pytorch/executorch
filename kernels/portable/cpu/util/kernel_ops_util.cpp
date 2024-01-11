@@ -618,5 +618,45 @@ Error resize_constant_pad_output(
   return error;
 }
 
+bool check_embedding_args(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& out) {
+  // Ensure weight is 2-D. It could be empty.
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      weight.dim() == 2, "weight.dim() %zd != 2", weight.dim());
+
+  // Ensure out is k+1 dimension tensor where k is the indices.dim()
+  // out's first k dimension shall be same as indices, and the last dim shall
+  // equal weight's last dim
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      out.dim() == indices.dim() + 1,
+      "out.dim() %zd != indices.dim() %zd + 1",
+      out.dim(),
+      indices.dim());
+
+  // Ensure dtype is the same for out and weight
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(weight, out));
+
+  return true;
+}
+
+Error resize_embedding_output(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& out) {
+  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
+  for (size_t i = 0; i < indices.dim(); i++) {
+    expected_output_size[i] = indices.size(i);
+  }
+  const size_t embedding_dim = weight.size(1);
+  expected_output_size[out.dim() - 1] = embedding_dim;
+
+  ArrayRef<Tensor::SizesType> output_size{
+      expected_output_size, static_cast<size_t>(out.dim())};
+
+  return resize_tensor(out, output_size);
+}
+
 } // namespace executor
 } // namespace torch
