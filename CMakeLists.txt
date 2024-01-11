@@ -355,5 +355,53 @@ if(EXECUTORCH_BUILD_COREML)
   endif()
 endif()
 
+# Build pybind
+option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
+if(EXECUTORCH_BUILD_PYBIND)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+
+  # find pytorch lib, to allow pybind to take at::Tensor as input/output
+  find_package(Torch CONFIG REQUIRED)
+  find_library(TORCH_PYTHON_LIBRARY torch_python
+               PATHS "${TORCH_INSTALL_PREFIX}/lib")
+
+  # compile options for pybind
+
+  set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
+                              -fexceptions)
+  # util lib
+  add_library(
+    util
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
+  )
+  target_include_directories(util PUBLIC ${_common_include_directories}
+                                         ${TORCH_INCLUDE_DIRS})
+  target_compile_options(util PUBLIC ${_pybind_compile_options})
+  target_link_libraries(util PRIVATE torch c10 executorch)
+
+  # pybind portable_lib
+  pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
+  target_compile_definitions(portable_lib
+                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
+  target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+  target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
+  target_link_libraries(
+    portable_lib
+    PUBLIC ${TORCH_PYTHON_LIBRARY}
+           portable_ops_lib
+           executorch
+           extension_data_loader
+           bundled_program
+           etdump
+           flatcc
+           util)
+
+  install(TARGETS portable_lib
+          LIBRARY DESTINATION executorch/extension/pybindings)
+endif()
 # Print all summary
 executorch_print_configuration_summary()

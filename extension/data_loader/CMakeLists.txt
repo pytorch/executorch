@@ -18,8 +18,9 @@ endif()
 
 list(TRANSFORM _extension_data_loader__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(extension_data_loader ${_extension_data_loader__srcs})
+target_link_libraries(extension_data_loader executorch)
 target_include_directories(extension_data_loader PUBLIC ${EXECUTORCH_ROOT}/..)
-
+target_compile_options(extension_data_loader PUBLIC ${_common_compile_options})
 
 # Install libraries
 install(
