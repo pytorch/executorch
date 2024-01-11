@@ -25,12 +25,16 @@ namespace {} // namespace
 Tensor& detach_copy_out(RuntimeContext& ctx, const Tensor& self, Tensor& out) {
   (void)ctx;
 
-  torch::executor::Error err = resize_tensor(out, self.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in detach_copy_out");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, self.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(self, out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_shape_and_dtype(self, out), InvalidArgument, out);
 
   if (self.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0

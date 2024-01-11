@@ -22,10 +22,16 @@ using ScalarType = exec_aten::ScalarType;
 Tensor& relu_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "relu.out", CTYPE, [&]() {
     apply_unary_map_fn(
