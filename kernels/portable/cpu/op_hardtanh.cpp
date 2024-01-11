@@ -85,7 +85,7 @@ Tensor& hardtanh_out(
   ScalarType max_type = utils::get_scalar_dtype(max);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(in_type == out_type);
+  ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(in_type, ctx, "hardtanh.out", CTYPE, [&]() {
     CTYPE min_casted;

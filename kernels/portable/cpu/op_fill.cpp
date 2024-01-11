@@ -29,11 +29,15 @@ Tensor& fill_scalar_out(
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(a_type == out_type);
+  ET_KERNEL_CHECK(ct, a_type == out_type, InvalidArgument, out);
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
