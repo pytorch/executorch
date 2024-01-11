@@ -74,6 +74,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_arange",
         deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
@@ -239,6 +240,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -286,6 +288,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
             "//executorch/kernels/portable/cpu/util:repeat_util",
             ":scalar_utils",
         ],
@@ -354,6 +357,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_glu",
         deps = [
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
