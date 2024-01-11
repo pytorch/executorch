@@ -478,5 +478,15 @@ Error resize_constant_pad_output(
     IntArrayRef pad,
     Tensor& out);
 
+bool check_embedding_args(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& out);
+
+Error resize_embedding_output(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& out);
+
 } // namespace executor
 } // namespace torch

@@ -21,8 +21,11 @@ void calculate_output_size(
     const exec_aten::ArrayRef<exec_aten::SizesType>& self_sizes,
     const exec_aten::ArrayRef<int64_t>& repeats,
     Tensor::SizesType* out_sizes_ptr) {
-  ET_CHECK_MSG(
+  ET_KERNEL_CHECK_MSG(
+      ctx,
       repeats.size() >= self_sizes.size(),
+      InvalidArgument,
+      ,
       "Repeats vector size is %zu must be >= self_sizes %zu.",
       repeats.size(),
       self_sizes.size());

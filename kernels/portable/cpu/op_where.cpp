@@ -26,7 +26,7 @@ Tensor& where_out(
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   // Determine output size and resize for dynamic shapes
   ET_KERNEL_CHECK(

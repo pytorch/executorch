@@ -66,10 +66,13 @@ Tensor& ne_scalar_out(
     const Scalar& b,
     Tensor& out) {
   (void)ctx;
-
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

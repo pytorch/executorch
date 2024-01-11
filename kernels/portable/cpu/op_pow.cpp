@@ -81,15 +81,20 @@ Tensor& pow_Tensor_Scalar_out(
     Tensor& out) {
   (void)ctx;
 
-  // Determine output size and resize for dynamic shapes
-  ET_CHECK(resize_tensor(out, a.sizes()) == Error::Ok);
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, a_type, ctx, "pow.Tensor_Scalar_out", CTYPE_A, [&]() {
@@ -133,15 +138,20 @@ Tensor& pow_Scalar_out(
     Tensor& out) {
   (void)ctx;
 
-  // Determine output size and resize for dynamic shapes
-  ET_CHECK(resize_tensor(out, b.sizes()) == Error::Ok);
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, b.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = utils::get_scalar_dtype(a);
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = utils::promote_type_with_scalar(b_type, a);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_SCALAR_OBJ_TYPES(a_type, ctx, "pow.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(
