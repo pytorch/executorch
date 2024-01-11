@@ -31,7 +31,15 @@ void get_cat_out_target_size(
     Tensor::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_expand_copy_args(
+    const Tensor& self,
+    ArrayRef<int64_t> expand_sizes,
+    bool implicit,
+    Tensor& out);
+
 bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out);
+
+bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out);
 
 void get_permute_copy_out_target_size(
     const Tensor& in,
