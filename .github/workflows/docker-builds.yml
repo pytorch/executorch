@@ -7,7 +7,8 @@ on:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
       - requirements-lintrunner.txt
-      - examples/arm/**
+      - examples/arm/setup.sh
+      - examples/arm/ethos-u-setup/**
   push:
     branches:
       - main
@@ -16,7 +17,8 @@ on:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
       - requirements-lintrunner.txt
-      - examples/arm/**
+      - examples/arm/setup.sh
+      - examples/arm/ethos-u-setup/**
   schedule:
     - cron: 1 3 * * 3
 
@@ -58,11 +60,14 @@ jobs:
 
       - name: Build docker image
         id: build-docker-image
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@main
+        # TODO (huydhn): THIS IS TO TEST https://github.com/pytorch/test-infra/pull/4866, switching back
+        # to @main once that PR lands before committing this change
+        uses: pytorch/test-infra/.github/actions/calculate-docker-image@calculate-docker-image-force-push
         with:
           docker-image-name: ${{ matrix.docker-image-name }}
           always-rebuild: true
           push: true
+          force-push: true
 
       - name: Teardown Linux
         uses: pytorch/test-infra/.github/actions/teardown-linux@main
