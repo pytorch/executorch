@@ -39,6 +39,20 @@ using torch::executor::ScalarType;
 using torch::executor::testing::TensorFactory;
 
 namespace {
+static void* aligned_allocate(size_t alignment, size_t size) {
+#if defined(__ANDROID__)
+  return memalign(alignment, size);
+#elif defined(_WIN32)
+  return _aligned_malloc(size, alignment);
+#else
+  void* memory_ptr = NULL;
+  if (posix_memalign(&memory_ptr, alignment, size) != 0) {
+    return NULL;
+  }
+  return memory_ptr;
+#endif
+}
+
 // Due to lack of support for short types in ExecuTorch just using Short for now
 ScalarType MyHalf = ScalarType::Short;
 class TensorFactoryWrapper {
@@ -267,12 +281,9 @@ void run_sdpa(
         "Failed to reshape sdpa xnnpack operator");
 
     constexpr std::ptrdiff_t alignment{64};
-    // std::vector<char> workspace(workspace_size + alignment);
-    // void* workspace_ptr = reinterpret_cast<void*>(workspace.data());
-    void* workspace_ptr_orig = malloc(workspace_size + alignment);
+    void* workspace_ptr = aligned_allocate(alignment, workspace_size);
     ET_CHECK_MSG(
-        workspace_ptr_orig != nullptr, "Failed to allocate workspace memory");
-    void* workspace_ptr = workspace_ptr_orig;
+        workspace_ptr != nullptr, "Failed to allocate workspace memory");
     status = xnn_setup_scaled_dot_product_attention_nhtc_f16(
         op,
         workspace_ptr,
@@ -286,7 +297,7 @@ void run_sdpa(
         status == xnn_status_success, "Failed to setup sdpa xnnpack operator");
 
     status = xnn_run_operator(op, threadpool);
-    free(workspace_ptr_orig);
+    free(workspace_ptr);
     ET_CHECK_MSG(
         status == xnn_status_success, "Failed to run xnnpack operator");
     return;
@@ -318,12 +329,9 @@ void run_sdpa(
         "Failed to reshape sdpa xnnpack operator");
 
     constexpr std::ptrdiff_t alignment{64};
-    // std::vector<char> workspace(workspace_size + alignment);
-    // void* workspace_ptr = reinterpret_cast<void*>(workspace.data());
-    void* workspace_ptr_orig = malloc(workspace_size + alignment);
+    void* workspace_ptr = aligned_allocate(alignment, workspace_size);
     ET_CHECK_MSG(
-        workspace_ptr_orig != nullptr, "Failed to allocate workspace memory");
-    void* workspace_ptr = workspace_ptr_orig;
+        workspace_ptr != nullptr, "Failed to allocate workspace memory");
     status = xnn_setup_scaled_dot_product_attention_nhtc_f32(
         op,
         workspace_ptr,
@@ -337,7 +345,7 @@ void run_sdpa(
         status == xnn_status_success, "Failed to setup sdpa xnnpack operator");
 
     status = xnn_run_operator(op, threadpool);
-    free(workspace_ptr_orig);
+    free(workspace_ptr);
     ET_CHECK_MSG(
         status == xnn_status_success, "Failed to run xnnpack operator");
     return;
@@ -773,20 +781,26 @@ class Transformer {
     out_logits_ =
         create_fully_connected(linear_type, args.dim, args.vocab_size);
 
-    if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
-      out_logits_input_ = TensorFactoryWrapper::make_tensor(
-          torch::executor::ScalarType::Char,
-          {benchmarking_batch_size_, args.dim});
-      out_logits_output_ = TensorFactoryWrapper::make_tensor(
-          ::MyHalf, {benchmarking_batch_size_, args.vocab_size});
+    torch::executor::ScalarType out_logits_out_type;
 
-      qparams_.resize(1 + XNN_EXTRA_QUANTIZATION_PARAMS);
-      std::generate(qparams_.begin(), qparams_.end(), [&]() {
-        return xnn_dynamic_quantization_params{0, 1.f};
-      });
-      return;
+    torch::executor::ScalarType out_logits_linear_type =
+        torch::executor::ScalarType::Char;
+    if (linear_type_ == FullyConnectedOpType::QD8_F16_QC4W) {
+      out_logits_out_type = ::MyHalf;
+    } else if (linear_type_ == FullyConnectedOpType::QD8_F32_QC4W) {
+      out_logits_out_type = torch::executor::ScalarType::Float;
+    } else {
+      ET_CHECK_MSG(false, "Unsupported operator type:%hhu", linear_type);
     }
-    ET_CHECK_MSG(false, "Unsupported operator type:%hhu", linear_type);
+    out_logits_input_ = TensorFactoryWrapper::make_tensor(
+        out_logits_linear_type, {benchmarking_batch_size_, args.dim});
+    out_logits_output_ = TensorFactoryWrapper::make_tensor(
+        out_logits_out_type, {benchmarking_batch_size_, args.vocab_size});
+
+    qparams_.resize(1 + XNN_EXTRA_QUANTIZATION_PARAMS);
+    std::generate(qparams_.begin(), qparams_.end(), [&]() {
+      return xnn_dynamic_quantization_params{0, 1.f};
+    });
   }
 
   Transformer(const Transformer& other) = delete;
@@ -821,13 +835,19 @@ class Transformer {
       out_logits_output_;
 };
 
+// #define BENCHMARK_FP32
 static void benchmark_llama2_7b() {
   ModelArgs args;
-  const int32_t kWarmupIterations = 1;
-  const int32_t kIterations = 1;
-  // Need to benchmark pre-fill separately.
+  const int32_t kWarmupIterations = 10;
+  const int32_t kIterations = 50;
+// Need to benchmark pre-fill separately.
+#if defined(BENCHMARK_FP32)
+  Transformer transformer(
+      args, FullyConnectedOpType::QD8_F32_QC4W, ComputeType::F32);
+#else
   Transformer transformer(
       args, FullyConnectedOpType::QD8_F16_QC4W, ComputeType::F16);
+#endif
   for (int i = 0; i < kWarmupIterations; ++i) {
     transformer.run_bench();
   }
