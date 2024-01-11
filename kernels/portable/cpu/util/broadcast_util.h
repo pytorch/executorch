@@ -130,15 +130,14 @@ void get_broadcast_target_size(
  * @param[in] b The second tensor going to be broadcasted.
  * @param[out] out The output tensor that will be resized.
  */
-inline void
+[[nodiscard]] inline Error
 resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   size_t expected_output_dim = 0;
   get_broadcast_target_size(
       a, b, expected_output_size, kTensorDimensionLimit, &expected_output_dim);
 
-  Error err = resize_tensor(out, {expected_output_size, expected_output_dim});
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  return resize_tensor(out, {expected_output_size, expected_output_dim});
 }
 
 /**
@@ -150,7 +149,7 @@ resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
  * @param[in] c The third tensor going to be broadcasted.
  * @param[out] out The output tensor that will be resized.
  */
-inline void resize_to_broadcast_target_size(
+[[nodiscard]] inline Error resize_to_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     const Tensor& c,
@@ -174,8 +173,7 @@ inline void resize_to_broadcast_target_size(
       kTensorDimensionLimit,
       &expected_output_dim);
 
-  Error err = resize_tensor(out, {expected_output_size, expected_output_dim});
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  return resize_tensor(out, {expected_output_size, expected_output_dim});
 }
 
 /**

@@ -33,8 +33,11 @@ Tensor& masked_fill_scalar_out(
   ScalarType in_type = in.scalar_type();
   ScalarType val_type = utils::get_scalar_dtype(value);
 
-  // TODO(gjcomer) Refactor with remaining resize_to_broadcast_ users.
-  resize_to_broadcast_target_size(in, mask, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(in, mask, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
