@@ -231,6 +231,7 @@ class XnnpackBackend(BackendDetails):
             output_ids=[],
             constant_buffer=[Buffer(storage=b"")],
             mem_buffer_sizes=[0],
+            constant_data=[],
         )
 
         node_visitors = get_node_visitors(ep, node_to_external_map)
