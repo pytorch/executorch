@@ -37,6 +37,12 @@ bool check_expand_copy_args(
     bool implicit,
     Tensor& out);
 
+bool get_expand_copy_out_target_size(
+    exec_aten::ArrayRef<exec_aten::SizesType> self_sizes,
+    exec_aten::ArrayRef<int64_t> expand_sizes,
+    exec_aten::SizesType* output_sizes,
+    size_t* output_rank);
+
 bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out);
 
 bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out);
@@ -130,6 +136,23 @@ void get_stack_out_target_size(
     size_t* out_ndim);
 
 bool check_tril_args(const Tensor& in, Tensor& out);
+
+bool check_split_copy_args(
+    const Tensor& input,
+    int64_t split_size,
+    int64_t dim,
+    TensorList out);
+
+bool check_to_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    Tensor& out);
+
+bool check_unsqueeze_copy_args(
+    const Tensor input,
+    int64_t dim,
+    const Tensor out);
 
 } // namespace executor
 } // namespace torch

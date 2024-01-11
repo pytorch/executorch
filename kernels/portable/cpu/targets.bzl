@@ -711,6 +711,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_split_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_split_with_sizes_copy",
@@ -771,6 +774,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_to_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_transpose_copy",
@@ -784,9 +790,15 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_unbind_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_unsqueeze_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_var",
