@@ -714,25 +714,37 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
     }
   }
 
+  // Validate input values and get tensor pre-allocation info.
   pre_allocated_input_ = false;
-
-  // Get pre_allocation info for input tensors
   for (int i = 0; i < inputs_size(); i++) {
-    if (get_input(i).isTensor()) {
-      pre_allocated_input_ =
-          get_input(i).toTensor().const_data_ptr() != nullptr;
-      break;
+    // get_input() will panic if the index is invalid, so do this manually.
+    size_t index = get_input_index(i);
+    ET_CHECK_OR_RETURN_ERROR(
+        index < n_value_,
+        InvalidProgram,
+        "Input index %zu >= %zu",
+        index,
+        n_value_);
+    const EValue& input = values_[index];
+    if (input.isTensor()) {
+      pre_allocated_input_ |= input.toTensor().const_data_ptr() != nullptr;
     }
   }
 
+  // Validate output values and get tensor pre-allocation info.
   pre_allocated_output_ = false;
-
-  // Get pre_allocation info for output tensors
   for (int i = 0; i < outputs_size(); i++) {
-    if (get_output(i).isTensor()) {
-      pre_allocated_output_ =
-          get_output(i).toTensor().const_data_ptr() != nullptr;
-      break;
+    // get_output() will panic if the index is invalid, so do this manually.
+    size_t index = get_output_index(i);
+    ET_CHECK_OR_RETURN_ERROR(
+        index < n_value_,
+        InvalidProgram,
+        "output index %zu >= %zu",
+        index,
+        n_value_);
+    const EValue& output = values_[index];
+    if (output.isTensor()) {
+      pre_allocated_output_ |= output.toTensor().const_data_ptr() != nullptr;
     }
   }
 
@@ -1240,18 +1252,22 @@ size_t Method::values_size() const {
 }
 
 const EValue& Method::get_value(size_t i) const {
+  ET_CHECK_MSG(i < n_value_, "%zu >= %zu", i, n_value_);
   return values_[i];
 }
 
 EValue& Method::mutable_value(size_t i) {
+  ET_CHECK_MSG(i < n_value_, "%zu >= %zu", i, n_value_);
   return values_[i];
 }
 
 size_t Method::inputs_size() const {
-  return serialization_plan_->inputs()->size();
+  const auto* inputs = serialization_plan_->inputs();
+  return inputs == nullptr ? 0 : inputs->size();
 }
 
 size_t Method::get_input_index(size_t i) const {
+  ET_CHECK_MSG(i < inputs_size(), "%zu >= %zu", i, inputs_size());
   return static_cast<size_t>(serialization_plan_->inputs()->Get(i));
 }
 
@@ -1264,10 +1280,12 @@ EValue& Method::mutable_input(size_t i) {
 }
 
 size_t Method::outputs_size() const {
-  return serialization_plan_->outputs()->size();
+  const auto* outputs = serialization_plan_->outputs();
+  return outputs == nullptr ? 0 : outputs->size();
 }
 
 size_t Method::get_output_index(size_t i) const {
+  ET_CHECK_MSG(i < outputs_size(), "%zu >= %zu", i, outputs_size());
   return static_cast<size_t>(serialization_plan_->outputs()->Get(i));
 }
 
