@@ -184,6 +184,20 @@ xnn_operator_t create_convert_dq(const FullyConnectedOpType fc_type) {
   ET_CHECK_MSG(false, "Unsupported operator type:%hhu", fc_type);
 }
 
+xnn_operator_t create_transpose_nd(const ComputeType type) {
+  xnn_operator_t op = nullptr;
+  if (type == ComputeType::F16) {
+    const xnn_status status = xnn_create_transpose_nd_x16(0, &op);
+    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    return op;
+  } else if (type == ComputeType::F32) {
+    const xnn_status status = xnn_create_transpose_nd_x32(0, &op);
+    ET_CHECK_MSG(op != nullptr, "Failed to create xnnpack operator");
+    return op;
+  }
+  ET_CHECK_MSG(false, "Unsupported operator type:%hhu", type);
+}
+
 void run_fully_connected(
     const FullyConnectedOpType fc_type,
     xnn_operator_t op,
@@ -367,8 +381,6 @@ void run_convert(
     ET_CHECK_MSG(input.scalar_type() == ::MyHalf, "Input must be half");
     ET_CHECK_MSG(
         output.scalar_type() == ScalarType::Char, "Output must be int8");
-    ET_CHECK_MSG(
-        output.scalar_type() == ScalarType::Char, "Output must be int8");
     xnn_status status = xnn_reshape_convert_nc_f16_qd8(
         op,
         batch_size,
@@ -420,15 +432,63 @@ void run_convert(
     return;
   }
 }
+
+void run_transpose_nd(
+    const ComputeType type,
+    xnn_operator_t op,
+    const int32_t num_dims,
+    const std::vector<size_t>& sizes,
+    const std::vector<size_t>& perm,
+    const torch::executor::Tensor& input,
+    torch::executor::Tensor& output) {
+  auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+  if (type == ComputeType::F16) {
+    ET_CHECK_MSG(input.scalar_type() == ::MyHalf, "Input must be half");
+    ET_CHECK_MSG(output.scalar_type() == ::MyHalf, "Input must be half");
+    xnn_status status = xnn_reshape_transpose_nd_x16(
+        op, num_dims, sizes.data(), perm.data(), threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+    status = xnn_setup_transpose_nd_x16(
+        op,
+        input.const_data_ptr<uint16_t>(),
+        output.mutable_data_ptr<uint16_t>());
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to setup xnnpack operator");
+
+    status = xnn_run_operator(op, threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
+  } else if (type == ComputeType::F32) {
+    ET_CHECK_MSG(
+        input.scalar_type() == ScalarType::Float, "Input must be float");
+    ET_CHECK_MSG(
+        output.scalar_type() == ScalarType::Float, "Input must be float");
+    xnn_status status = xnn_reshape_transpose_nd_x32(
+        op, num_dims, sizes.data(), perm.data(), threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+    status = xnn_setup_transpose_nd_x32(
+        op, input.const_data_ptr<float>(), output.mutable_data_ptr<float>());
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to setup xnnpack operator");
+
+    status = xnn_run_operator(op, threadpool);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to run xnnpack operator");
+    return;
+  }
+}
 } // namespace
 
 class MultiHeadedAttention {
  public:
   /*
   What is not accounted for:
-  1. Dimension permute from NTHC to NHTC (for SDPA)
-  2. Dimension permute from NHTC to NTHC for output projection
-  3. RoPE
+  1. RoPE
   */
   explicit MultiHeadedAttention(
       const ModelArgs& args,
@@ -450,13 +510,25 @@ class MultiHeadedAttention {
         create_fully_connected(linear_type, input_channels, output_channels);
     v_proj_ =
         create_fully_connected(linear_type, input_channels, output_channels);
-    o_proj_ =
-        create_fully_connected(linear_type, output_channels, input_channels);
+
+    // Tranpose q, k, v
+    // Use single op to do the tranpose
+    // Since all q, k and v projected output are of the same size
+    qkv_sdpa_out_transpose_ = create_transpose_nd(sdpa_type_);
+    qkv_dims_[0] = 1;
+    qkv_dims_[1] = 1;
+    qkv_dims_[2] = args.n_heads;
+    qkv_dims_[3] = head_dim;
 
     // Not doing RoPE
-    // SDPA
     sdpa_op_ = create_sdpa(sdpa_type);
     convert_sdpa_output_op_ = create_convert_dq(linear_type);
+    sdpa_dims_[0] = 1;
+    sdpa_dims_[1] = args.n_heads;
+    sdpa_dims_[2] = 1; // Seq len = 1 for 1 token at a time
+    sdpa_dims_[3] = head_dim;
+    o_proj_ =
+        create_fully_connected(linear_type, output_channels, input_channels);
 
     torch::executor::ScalarType qkv_output_dtype;
     torch::executor::ScalarType q_input_dtype;
@@ -477,12 +549,14 @@ class MultiHeadedAttention {
         q_input_dtype, {benchmarking_batch_size_, input_channels});
     query_input_ = TensorFactoryWrapper::make_tensor(
         qkv_linear_dtype, {benchmarking_batch_size_, input_channels});
+
     query_output_ = TensorFactoryWrapper::make_tensor(
         qkv_output_dtype, {benchmarking_batch_size_, output_channels});
     key_output_ = TensorFactoryWrapper::make_tensor(
         qkv_output_dtype, {benchmarking_batch_size_, output_channels});
     value_output_ = TensorFactoryWrapper::make_tensor(
         qkv_output_dtype, {benchmarking_batch_size_, output_channels});
+
     sdpa_output_ = TensorFactoryWrapper::make_tensor(
         qkv_output_dtype, {benchmarking_batch_size_, output_channels});
     sdpa_output_dq_ = TensorFactoryWrapper::make_tensor(
@@ -523,6 +597,7 @@ class MultiHeadedAttention {
     xnn_delete_operator(q_proj_);
     xnn_delete_operator(k_proj_);
     xnn_delete_operator(v_proj_);
+    xnn_delete_operator(qkv_sdpa_out_transpose_);
     xnn_delete_operator(o_proj_);
     xnn_delete_operator(sdpa_op_);
   }
@@ -559,8 +634,34 @@ class MultiHeadedAttention {
         qparams_.data(),
         query_input_.value(),
         value_output_.value());
+
     // Missing
     // - apply rotary embedding on q and k
+    run_transpose_nd(
+        sdpa_type_,
+        qkv_sdpa_out_transpose_,
+        4,
+        qkv_dims_,
+        qkv_sdpa_out_perm_,
+        query_output_.value(),
+        query_output_.value());
+    run_transpose_nd(
+        sdpa_type_,
+        qkv_sdpa_out_transpose_,
+        4,
+        qkv_dims_,
+        qkv_sdpa_out_perm_,
+        key_output_.value(),
+        key_output_.value());
+    run_transpose_nd(
+        sdpa_type_,
+        qkv_sdpa_out_transpose_,
+        4,
+        qkv_dims_,
+        qkv_sdpa_out_perm_,
+        value_output_.value(),
+        value_output_.value());
+
     run_sdpa(
         sdpa_type_,
         sdpa_op_,
@@ -576,6 +677,14 @@ class MultiHeadedAttention {
         v_cache_.value(),
         scales_.value(),
         mask_.value(),
+        sdpa_output_.value());
+    run_transpose_nd(
+        sdpa_type_,
+        qkv_sdpa_out_transpose_,
+        4,
+        sdpa_dims_,
+        qkv_sdpa_out_perm_,
+        sdpa_output_.value(),
         sdpa_output_.value());
     run_convert(
         linear_type_,
@@ -603,11 +712,15 @@ class MultiHeadedAttention {
   exec_aten::optional<torch::executor::Tensor> query_output_, key_output_,
       value_output_, output_;
   xnn_operator_t convert_op_, convert_sdpa_output_op_;
+  xnn_operator_t qkv_sdpa_out_transpose_;
   xnn_operator_t q_proj_;
   xnn_operator_t k_proj_;
   xnn_operator_t v_proj_;
   xnn_operator_t o_proj_;
   xnn_operator_t sdpa_op_;
+  std::vector<size_t> qkv_sdpa_out_perm_{0, 2, 1, 3};
+  std::vector<size_t> qkv_dims_ = std::vector<size_t>(4, 1);
+  std::vector<size_t> sdpa_dims_ = std::vector<size_t>(4, 1);
   int32_t query_heads_, kv_heads_, query_tokens_, kv_tokens_, qk_channels_,
       v_channels_;
 };
