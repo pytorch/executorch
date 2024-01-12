@@ -578,7 +578,8 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   {
     // Resolve delegates
     const auto delegates = serialization_plan_->delegates();
-    ET_CHECK(delegates != nullptr);
+    ET_CHECK_OR_RETURN_ERROR(
+        delegates != nullptr, InvalidProgram, "Missing delegates field");
     size_t n_delegate = delegates->size();
     delegates_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
         method_allocator, BackendDelegate, n_delegate);
