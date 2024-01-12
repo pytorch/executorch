@@ -607,14 +607,11 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
   {
     // Load chains
     const auto chains = serialization_plan_->chains();
-    if (chains == nullptr) {
-      n_chains_ = 0;
-      chains_ = nullptr;
-    } else {
-      n_chains_ = chains->size();
-      chains_ =
-          ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
-    }
+    ET_CHECK_OR_RETURN_ERROR(
+        chains != nullptr && chains->size() > 0, InvalidProgram, "No chains");
+    n_chains_ = chains->size();
+    chains_ =
+        ET_ALLOCATE_LIST_OR_RETURN_ERROR(method_allocator, Chain, n_chains_);
 
     // Try resolving all operators before failing, to make it easier to debug
     // multiple problems at once.
@@ -738,12 +735,6 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
       break;
     }
   }
-
-  ET_CHECK_OR_RETURN_ERROR(
-      n_chains_ > 0,
-      Internal,
-      "Expected program to have at least one chain received %zu",
-      n_chains_);
 
   step_state_ = StepState{0, 0};
 
