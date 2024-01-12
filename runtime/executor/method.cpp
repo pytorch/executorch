@@ -276,7 +276,8 @@ bool parse_cond_value(const EValue& cond_value) {
 
 Error Method::parse_values() {
   auto flatbuffer_values = serialization_plan_->values();
-  ET_CHECK(flatbuffer_values != nullptr);
+  ET_CHECK_OR_RETURN_ERROR(
+      flatbuffer_values != nullptr, InvalidProgram, "Missing values");
   size_t n_value = flatbuffer_values->size();
   values_ = ET_ALLOCATE_LIST_OR_RETURN_ERROR(
       memory_manager_->method_allocator(), EValue, n_value);
@@ -288,6 +289,16 @@ Error Method::parse_values() {
 
   for (size_t i = 0; i < n_value; ++i) {
     auto serialization_value = flatbuffer_values->Get(i);
+    // Ensure that the `val_as_X()` calls will return non-null pointers.
+    ET_CHECK_OR_RETURN_ERROR(
+        serialization_value != nullptr &&
+            (serialization_value->val_type() ==
+                 executorch_flatbuffer::KernelTypes::Null ||
+             serialization_value->val() != nullptr),
+        InvalidProgram,
+        "Null value at index %zu",
+        i);
+
     switch (serialization_value->val_type()) {
       case executorch_flatbuffer::KernelTypes::Null: {
         // Placement new as the list elements are not initialized, so calling
@@ -308,6 +319,8 @@ Error Method::parse_values() {
       } break;
       case executorch_flatbuffer::KernelTypes::IntList: {
         const auto items = serialization_value->val_as_IntList()->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // Allocate space for boxed and unboxed list representations using
         // values_ as source of truth
         auto* evalp_list =
@@ -326,6 +339,8 @@ Error Method::parse_values() {
       } break;
       case executorch_flatbuffer::KernelTypes::BoolList: {
         const auto items = serialization_value->val_as_BoolList()->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         // NOTE: This is technically not portable. A platform could technically
         // define boolean as something longer than a byte. This would be an
         // exceptionally rare case, and this type is currently unused in any
@@ -338,11 +353,18 @@ Error Method::parse_values() {
       } break;
       case executorch_flatbuffer::KernelTypes::DoubleList: {
         const auto items = serialization_value->val_as_DoubleList()->items();
+        ET_CHECK_OR_RETURN_ERROR(
+            items != nullptr, InvalidProgram, "Missing list at index %zu", i);
         new (&values_[i])
             EValue(exec_aten::ArrayRef<double>(items->data(), items->size()));
       } break;
       case executorch_flatbuffer::KernelTypes::String: {
         const auto fb_str = serialization_value->val_as_String()->string_val();
+        ET_CHECK_OR_RETURN_ERROR(
+            fb_str != nullptr,
+            InvalidProgram,
+            "Missing string at index %zu",
+            i);
         new (&values_[i]) EValue(fb_str->c_str(), fb_str->size());
       } break;
       case executorch_flatbuffer::KernelTypes::Tensor: {
@@ -400,8 +422,9 @@ Error Method::parse_values() {
         // schema.fbs
         ET_LOG(
             Error,
-            "Unknown KernelTypes value %" PRIu32,
-            static_cast<uint32_t>(serialization_value->val_type()) - 1);
+            "Unknown KernelTypes value %" PRIu32 " at index %zu",
+            static_cast<uint32_t>(serialization_value->val_type()) - 1,
+            i);
         return Error::InvalidProgram;
     }
 
@@ -615,6 +638,13 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
       for (size_t instr_idx = 0; instr_idx < s_instructions->size();
            ++instr_idx) {
         const auto instruction = s_instructions->Get(instr_idx);
+        // Ensure that the `instr_args_as_X()` calls will return non-null.
+        ET_CHECK_OR_RETURN_ERROR(
+            instruction != nullptr && instruction->instr_args() != nullptr,
+            InvalidProgram,
+            "Null instruction at index %zu",
+            instr_idx);
+
         switch (instruction->instr_args_type()) {
           case executorch_flatbuffer::InstructionArguments::KernelCall: {
             const auto arg_idxs =
@@ -972,6 +1002,8 @@ Error Method::execute_instruction() {
       chain.kernels_[step_state_.instr_idx](context, args.data());
       err = context.failure_state();
       if (err != Error::Ok) {
+        // We know that instr_args_as_KernelCall is non-null because it was
+        // checked at init time.
         auto op_index = instruction->instr_args_as_KernelCall()->op_index();
         auto op = serialization_plan_->operators()->Get(op_index);
         ET_LOG(
@@ -998,6 +1030,8 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("DELEGATE_CALL");
       internal::EventTracerProfileScope event_tracer_profile_scope =
           internal::EventTracerProfileScope(event_tracer_, "DELEGATE_CALL");
+      // We know that instr_args_as_DelegateCall is non-null because it was
+      // checked at init time.
       auto delegate_idx =
           instruction->instr_args_as_DelegateCall()->delegate_index();
       ET_CHECK_OR_RETURN_ERROR(
@@ -1038,6 +1072,8 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("JF_CALL");
       internal::EventTracerProfileScope event_tracer_profile_scope =
           internal::EventTracerProfileScope(event_tracer_, "JF_CALL");
+      // We know that instr_args_as_JumpFalseCall is non-null because it was
+      // checked at init time.
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
       bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
       if (!jf_result) {
@@ -1048,6 +1084,8 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("MOVE_CALL");
       internal::EventTracerProfileScope event_tracer_profile_scope =
           internal::EventTracerProfileScope(event_tracer_, "MOVE_CALL");
+      // We know that instr_args_as_MoveCall is non-null because it was checked
+      // at init time.
       auto move_call = instruction->instr_args_as_MoveCall();
       mutable_value(move_call->move_to()) = get_value(move_call->move_from());
     } break;
@@ -1055,6 +1093,8 @@ Error Method::execute_instruction() {
       EXECUTORCH_SCOPE_PROF("FREE_CALL");
       internal::EventTracerProfileScope event_tracer_profile_scope =
           internal::EventTracerProfileScope(event_tracer_, "FREE_CALL");
+      // We know that instr_args_as_FreeCall is non-null because it was checked
+      // at init time.
       auto free_call = instruction->instr_args_as_FreeCall();
       auto t = values_[free_call->value_index()].toTensor();
       internal::reset_data_ptr(t);
