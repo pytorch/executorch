@@ -236,7 +236,7 @@ Result<InstructionArgs> gen_instruction_arguments(
   return InstructionArgs(arg_list, num_args);
 }
 
-bool parse_cond_value(const EValue& cond_value) {
+Result<bool> parse_cond_value(const EValue& cond_value) {
   // The cond value attached to the JF instruction at the beginning of an
   // if/else branch is a Tensor which we parse and decide whether to continue
   // to execute the if branch or jump to the else branch.
@@ -249,8 +249,9 @@ bool parse_cond_value(const EValue& cond_value) {
     // All the tensors and scalar cond values should be of bool type
     // currently. If that's not the case then something is wrong in the model
     // and we should exit.
-    ET_CHECK_MSG(
+    ET_CHECK_OR_RETURN_ERROR(
         ScalarType::Bool == cond_val.scalar_type(),
+        InvalidProgram,
         "Expected dtype of %" PRId8 " got %" PRId8,
         static_cast<int8_t>(ScalarType::Bool),
         static_cast<int8_t>(cond_val.scalar_type()));
@@ -266,7 +267,9 @@ bool parse_cond_value(const EValue& cond_value) {
       return false;
     }
   } else {
-    ET_CHECK_MSG(false, "Unsupported EValue was passed in for JF instruction");
+    ET_LOG(
+        Error, "Unsupported JF EValue type %" PRIu32, (uint32_t)cond_value.tag);
+    return Error::InvalidProgram;
   }
 
   return true;
@@ -691,10 +694,22 @@ Error Method::init(executorch_flatbuffer::ExecutionPlan* s_plan) {
             }
             chain_instruction_arg_lists[instr_idx] = res.get();
           } break;
-          default:
-            // wasteful but non kernel/delegate instructions are fairly sparse
-            // maybe need to revisit if FreeCall becomes to populous
+          case executorch_flatbuffer::InstructionArguments::JumpFalseCall: {
+            // Validate the index at load time so we can trust it during
+            // execution.
+            auto index =
+                instruction->instr_args_as_JumpFalseCall()->cond_value_index();
+            ET_CHECK_OR_RETURN_ERROR(
+                index >= 0 && index < n_value_,
+                InvalidProgram,
+                "Index %d negative or >= %zu",
+                index,
+                n_value_);
             chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
+          default: {
+            chain_instruction_arg_lists[instr_idx] = InstructionArgs();
+          } break;
         }
       }
       chains_[i] = Chain{
@@ -1079,9 +1094,16 @@ Error Method::execute_instruction() {
       // We know that instr_args_as_JumpFalseCall is non-null because it was
       // checked at init time.
       auto jf_call = instruction->instr_args_as_JumpFalseCall();
-      bool jf_result = parse_cond_value(values_[jf_call->cond_value_index()]);
-      if (!jf_result) {
-        next_instr_idx = jf_call->destination_instruction();
+      // We know that index is a valid values_ index because it was checked at
+      // init time.
+      auto index = jf_call->cond_value_index();
+      Result<bool> jf_result = parse_cond_value(values_[index]);
+      if (jf_result.ok()) {
+        if (!jf_result.get()) {
+          next_instr_idx = jf_call->destination_instruction();
+        }
+      } else {
+        err = jf_result.error();
       }
     } break;
     case executorch_flatbuffer::InstructionArguments::MoveCall: {
