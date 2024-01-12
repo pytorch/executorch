@@ -840,32 +840,422 @@ class FeedForward {
   xnn_operator_t silu_;
 };
 
+class RMSNorm {
+ public:
+  explicit RMSNorm(const ModelArgs& args, const ComputeType compute_type)
+      : compute_type_(compute_type), input_dims_1_(8, 1), input_dims_2_(8, 1) {
+    xnn_status status = xnn_create_square_nc_f16(0, &square_op_);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to create square operator");
+
+    status = xnn_create_mean_nd_f16(0, &mean_op_);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to create mean operator");
+
+    status = xnn_create_square_root_nc_f16(0, &sqrt_op_);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to create sqrt operator");
+
+    const float output_min = -std::numeric_limits<float>::infinity();
+    const float output_max = +std::numeric_limits<float>::infinity();
+    status = xnn_create_divide_nd_f16(output_min, output_max, 0, &divide_op_);
+    ET_CHECK_MSG(
+        status == xnn_status_success, "Failed to create sqrt operator");
+
+    status = xnn_create_multiply_nd_f16(output_min, output_max, 0, &mul_op_);
+    ET_CHECK_MSG(status == xnn_status_success, "Failed to create mul operator");
+
+    torch::executor::ScalarType tensor_dtype;
+    if (compute_type_ == ComputeType::F16) {
+      tensor_dtype = ::MyHalf;
+    } else if (compute_type_ == ComputeType::F32) {
+      tensor_dtype = torch::executor::ScalarType::Float;
+    } else {
+      ET_CHECK_MSG(false, "Unsupported operator type:%hhu", compute_type_);
+    }
+
+    weight_ = TensorFactoryWrapper::make_tensor(
+        tensor_dtype, {benchmarking_batch_size_, args.dim});
+    rmsnorm_input_ = TensorFactoryWrapper::make_tensor(
+        tensor_dtype, {benchmarking_batch_size_, args.dim});
+    square_output_ = TensorFactoryWrapper::make_tensor(
+        tensor_dtype, {benchmarking_batch_size_, args.dim});
+    // second dim is one because mean is doing reduction across that dim
+    mean_sqrt_output_ = TensorFactoryWrapper::make_tensor(
+        tensor_dtype, {benchmarking_batch_size_, 1});
+    // second dim is back to args.dim because output of sqrt
+    // is broadcast divided by the rmsnorm_input_
+    divide_mul_output_ = TensorFactoryWrapper::make_tensor(
+        tensor_dtype, {benchmarking_batch_size_, args.dim});
+  }
+
+  void run() {
+    // Fake it
+  }
+
+  void run_bench() {
+    run_bench_square_op(rmsnorm_input_.value(), square_output_.value());
+    run_bench_mean_op(square_output_.value(), mean_sqrt_output_.value());
+    run_bench_square_root_op(
+        mean_sqrt_output_.value(), mean_sqrt_output_.value());
+    run_bench_divide_op(
+        rmsnorm_input_.value(),
+        mean_sqrt_output_.value(),
+        divide_mul_output_.value());
+    run_bench_mul_op(
+        weight_.value(),
+        divide_mul_output_.value(),
+        divide_mul_output_.value());
+  }
+
+ private:
+  void run_bench_square_op(
+      const torch::executor::Tensor& input,
+      torch::executor::Tensor& output) {
+    auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+    size_t input_channels = input.size(1);
+    if (compute_type_ == ComputeType::F16) {
+      xnn_status status = xnn_reshape_square_nc_f16(
+          square_op_,
+          benchmarking_batch_size_,
+          input_channels,
+          input_channels,
+          input_channels,
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_square_nc_f16(
+          square_op_,
+          input.const_data_ptr<uint16_t>(),
+          output.mutable_data_ptr<uint16_t>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(square_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    } else if (compute_type_ == ComputeType::F32) {
+      xnn_status status = xnn_reshape_square_nc_f32(
+          square_op_,
+          benchmarking_batch_size_,
+          input_channels,
+          input_channels,
+          input_channels,
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_square_nc_f32(
+          square_op_,
+          input.const_data_ptr<float>(),
+          output.mutable_data_ptr<float>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(square_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    }
+  }
+
+  void run_bench_mean_op(
+      const torch::executor::Tensor& input,
+      torch::executor::Tensor& output) {
+    auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+    const size_t num_input_dims = input.dim();
+    for (size_t i = 0; i < num_input_dims; ++i) {
+      input_dims_1_[i] = input.size(i);
+    }
+    if (compute_type_ == ComputeType::F16) {
+      size_t workspace_size;
+      size_t workspace_alignment;
+      xnn_status status = xnn_reshape_mean_nd_f16(
+          mean_op_,
+          1,
+          mean_axis_.data(),
+          num_input_dims,
+          input_dims_1_.data(),
+          &workspace_size,
+          &workspace_alignment,
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      constexpr std::ptrdiff_t alignment{64};
+      void* workspace_ptr = aligned_allocate(alignment, workspace_size);
+      ET_CHECK_MSG(
+          workspace_ptr != nullptr, "Failed to allocate workspace memory");
+
+      status = xnn_setup_mean_nd_f16(
+          mean_op_,
+          workspace_ptr,
+          input.const_data_ptr<uint16_t>(),
+          output.mutable_data_ptr<uint16_t>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(mean_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    } else if (compute_type_ == ComputeType::F32) {
+      size_t workspace_size;
+      size_t workspace_alignment;
+      xnn_status status = xnn_reshape_mean_nd_f32(
+          mean_op_,
+          1,
+          mean_axis_.data(),
+          num_input_dims,
+          input_dims_1_.data(),
+          &workspace_size,
+          &workspace_alignment,
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      constexpr std::ptrdiff_t alignment{64};
+      void* workspace_ptr = aligned_allocate(alignment, workspace_size);
+      ET_CHECK_MSG(
+          workspace_ptr != nullptr, "Failed to allocate workspace memory");
+
+      status = xnn_setup_mean_nd_f32(
+          mean_op_,
+          workspace_ptr,
+          input.const_data_ptr<float>(),
+          output.mutable_data_ptr<float>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(mean_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    }
+  }
+
+  void run_bench_square_root_op(
+      const torch::executor::Tensor& input,
+      torch::executor::Tensor& output) {
+    auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+    size_t input_channels = input.size(1);
+    if (compute_type_ == ComputeType::F16) {
+      xnn_status status = xnn_reshape_square_root_nc_f16(
+          sqrt_op_,
+          benchmarking_batch_size_,
+          input_channels,
+          input_channels,
+          input_channels,
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_square_root_nc_f16(
+          sqrt_op_,
+          input.const_data_ptr<uint16_t>(),
+          output.mutable_data_ptr<uint16_t>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(sqrt_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    } else if (compute_type_ == ComputeType::F32) {
+      xnn_status status = xnn_reshape_square_root_nc_f32(
+          sqrt_op_,
+          benchmarking_batch_size_,
+          input_channels,
+          input_channels,
+          input_channels,
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_square_root_nc_f32(
+          sqrt_op_,
+          input.const_data_ptr<float>(),
+          output.mutable_data_ptr<float>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(sqrt_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    }
+  }
+
+  void run_bench_divide_op(
+      const torch::executor::Tensor& input1,
+      const torch::executor::Tensor& input2,
+      torch::executor::Tensor& output) {
+    auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+    const size_t num_input1_dims = input1.dim();
+    const size_t num_input2_dims = input2.dim();
+    for (size_t i = 0; i < num_input1_dims; ++i) {
+      input_dims_1_[i] = input1.size(i);
+    }
+    for (size_t i = 0; i < num_input2_dims; ++i) {
+      input_dims_2_[i] = input2.size(i);
+    }
+    if (compute_type_ == ComputeType::F16) {
+      xnn_status status = xnn_reshape_divide_nd_f16(
+          divide_op_,
+          num_input1_dims,
+          input_dims_1_.data(),
+          num_input2_dims,
+          input_dims_2_.data(),
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_divide_nd_f16(
+          divide_op_,
+          input1.const_data_ptr<uint16_t>(),
+          input2.const_data_ptr<uint16_t>(),
+          output.mutable_data_ptr<uint16_t>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(mean_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    } else if (compute_type_ == ComputeType::F32) {
+      xnn_status status = xnn_reshape_divide_nd_f32(
+          divide_op_,
+          num_input1_dims,
+          input_dims_1_.data(),
+          num_input2_dims,
+          input_dims_2_.data(),
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_divide_nd_f32(
+          divide_op_,
+          input1.const_data_ptr<float>(),
+          input2.const_data_ptr<float>(),
+          output.mutable_data_ptr<float>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(mean_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    }
+  }
+
+  void run_bench_mul_op(
+      const torch::executor::Tensor& input1,
+      const torch::executor::Tensor& input2,
+      torch::executor::Tensor& output) {
+    auto threadpool = torch::executorch::threadpool::get_pthreadpool();
+    const size_t num_input1_dims = input1.dim();
+    const size_t num_input2_dims = input2.dim();
+    for (size_t i = 0; i < num_input1_dims; ++i) {
+      input_dims_1_[i] = input1.size(i);
+    }
+    for (size_t i = 0; i < num_input2_dims; ++i) {
+      input_dims_2_[i] = input2.size(i);
+    }
+    if (compute_type_ == ComputeType::F16) {
+      xnn_status status = xnn_reshape_multiply_nd_f16(
+          mul_op_,
+          num_input1_dims,
+          input_dims_1_.data(),
+          num_input2_dims,
+          input_dims_2_.data(),
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_multiply_nd_f16(
+          mul_op_,
+          input1.const_data_ptr<uint16_t>(),
+          input2.const_data_ptr<uint16_t>(),
+          output.mutable_data_ptr<uint16_t>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(mean_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    } else if (compute_type_ == ComputeType::F32) {
+      xnn_status status = xnn_reshape_multiply_nd_f32(
+          mul_op_,
+          num_input1_dims,
+          input_dims_1_.data(),
+          num_input2_dims,
+          input_dims_2_.data(),
+          threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to reshape xnnpack operator");
+
+      status = xnn_setup_multiply_nd_f32(
+          mul_op_,
+          input1.const_data_ptr<float>(),
+          input2.const_data_ptr<float>(),
+          output.mutable_data_ptr<float>());
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to setup xnnpack operator");
+
+      status = xnn_run_operator(mean_op_, threadpool);
+      ET_CHECK_MSG(
+          status == xnn_status_success, "Failed to run xnnpack operator");
+      return;
+    }
+  }
+
+  int32_t benchmarking_batch_size_{1};
+  ComputeType compute_type_;
+  exec_aten::optional<torch::executor::Tensor> weight_;
+  exec_aten::optional<torch::executor::Tensor> rmsnorm_input_;
+  exec_aten::optional<torch::executor::Tensor> square_output_;
+  exec_aten::optional<torch::executor::Tensor> mean_sqrt_output_,
+      divide_mul_output_;
+  xnn_operator_t square_op_;
+  xnn_operator_t mean_op_;
+  xnn_operator_t sqrt_op_;
+  xnn_operator_t divide_op_;
+  xnn_operator_t mul_op_;
+  std::vector<size_t> mean_axis_{1};
+  std::vector<size_t> input_dims_1_;
+  std::vector<size_t> input_dims_2_;
+};
+
 class TransformerBlock {
  public:
-  /*
-  What is not accounted for:
-  1. Attention RMSNorm
-  2. FFN RMSNorm
-  */
   explicit TransformerBlock(
       const ModelArgs& args,
       const FullyConnectedOpType linear_type,
       const ComputeType sdpa_type)
       : multi_headed_attention_(args, linear_type, sdpa_type),
-        feedforward_(args, linear_type) {}
+        feedforward_(args, linear_type),
+        attention_norm_(args, sdpa_type),
+        ffn_norm_(args, sdpa_type) {}
 
   void run(const torch::executor::Tensor& mha_output) {
     // Fake it
   }
 
   void run_bench() {
+    attention_norm_.run_bench();
     multi_headed_attention_.run_bench();
+    ffn_norm_.run_bench();
     feedforward_.run_bench();
   }
 
  private:
   MultiHeadedAttention multi_headed_attention_;
   FeedForward feedforward_;
+  RMSNorm attention_norm_;
+  RMSNorm ffn_norm_;
 };
 
 class Transformer {
@@ -876,7 +1266,6 @@ class Transformer {
   2. frequ_cis populating for RoPE
   In run_bench
   1. Token embeddings
-  2. RMSNorm on transformer blocks
   */
   explicit Transformer(
       const ModelArgs& args,
