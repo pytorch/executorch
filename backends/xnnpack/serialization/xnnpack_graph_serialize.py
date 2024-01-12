@@ -9,10 +9,14 @@ import os
 import tempfile
 
 from dataclasses import dataclass, fields, is_dataclass
-from typing import ClassVar, Literal
+from typing import ClassVar, List, Literal, Tuple
 
 import pkg_resources
-from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import XNNGraph
+from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
+    Buffer,
+    ConstantDataOffset,
+    XNNGraph,
+)
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 
 from executorch.exir._serialize._flatbuffer import _flatc_compile
@@ -236,6 +240,74 @@ class XNNHeader:
         return data
 
 
+def _padding_required(offset: int, alignment: int) -> int:
+    """Returns the padding required to align `offset` to `alignment`."""
+    remainder: int = offset % alignment
+    if remainder != 0:
+        return alignment - remainder
+    return 0
+
+
+def _aligned_size(input_size: int, alignment: int) -> int:
+    """Returns input_size padded up to the next whole multiple of alignment."""
+    aligned_size = input_size + _padding_required(input_size, alignment)
+    assert aligned_size % alignment == 0
+    return aligned_size
+
+
+def _pad_to(data: bytes, length: int) -> bytes:
+    """Returns the input followed by enough zero bytes to become the requested length.
+
+    Args:
+        data: The data to pad.
+        length: The length of the returned data.
+    Returns:
+        The padded data.
+    Raises:
+        ValueError: If the requested length is less than the input length.
+    """
+    if length < len(data):
+        raise ValueError(f"Data length {len(data)} > padded length {length}")
+    if length > len(data):
+        data = data + b"\x00" * (length - len(data))
+    assert len(data) == length
+    return data
+
+
+def _extract_constant_data(
+    constant_buffer: List[Buffer],
+    tensor_alignment: int = 16,
+) -> Tuple[bytes, List[int]]:
+    """Copies the tensors from the provided list into a single buffer and tracks the offsets
+    of each tensor.
+
+        constant_buffer: list of Buffers from which to extract constants from. Not modified.
+        tensor_alignment: Alignment in bytes. The starting offset of each tensor in the
+            constant segment will be aligned to this value. Default to 16.
+
+    Returns:
+        A tuple of (constant segment, list of offsets for each tensor in the segment)
+    """
+    constant_segment_data: bytearray = bytearray()
+    constant_segment_offsets: List[int] = []
+    current_offset: int = 0
+    for i in range(len(constant_buffer)):
+        buffer = constant_buffer[i]
+        buffer_length = len(buffer.storage)
+        pad_length = _padding_required(buffer_length, tensor_alignment)
+
+        # Append each constant buffer to the constant segment.
+        constant_segment_data += buffer.storage
+        # Add padding for all but the last tensor.
+        if i < len(constant_buffer) - 1:
+            constant_segment_data += b"\x00" * pad_length
+
+        # Append constant data offset.
+        constant_segment_offsets.append(current_offset)
+        current_offset += buffer_length + pad_length
+    return bytes(constant_segment_data), constant_segment_offsets
+
+
 def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
     sanity_check_xnngraph_dataclass(xnnpack_graph)
     xnnpack_graph_json = json.dumps(xnnpack_graph, cls=_DataclassEncoder)
@@ -251,3 +323,67 @@ def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
         output_path = os.path.join(d, "schema.bin")
         with open(output_path, "rb") as output_file:
             return output_file.read()
+
+
+def serialize_xnnpack_binary(xnnpack_graph: XNNGraph) -> bytes:
+    """Returns the runtime binary representation of the given XNNGraph.
+
+    Args:
+        xnnpack_graph: XNNGraph object to serialize.
+
+    Returns:
+        The serialized form of the XNNGraph, ready for execution by XNNPACK Backend
+    """
+    constant_tensor_alignment = 16
+
+    # Extract constant data from the graph
+    constant_data, constant_data_offsets = _extract_constant_data(
+        xnnpack_graph.constant_buffer, constant_tensor_alignment
+    )
+
+    assert len(constant_data_offsets) == len(xnnpack_graph.mem_buffer_sizes)
+
+    for offset_idx in range(len(constant_data_offsets)):
+        constant_data_offset = constant_data_offsets[offset_idx]
+        constant_data_size = xnnpack_graph.mem_buffer_sizes[offset_idx]
+        xnnpack_graph.constant_data.append(
+            ConstantDataOffset(constant_data_offset, constant_data_size)
+        )
+
+    # We are moving all constant data from the graph to the constant data section.
+    # So we remove all constant buffers
+    xnnpack_graph.constant_buffer = []
+    xnnpack_graph.mem_buffer_sizes = []
+
+    # Convert the XNNGraph to a flatbuffer
+    flatbuffer_payload = convert_to_flatbuffer(xnnpack_graph)
+
+    # size of flatbuffer data, padded to be `constant_tensor_alignment`  byte aligned
+    padded_flatbuffer_length: int = _aligned_size(
+        input_size=len(flatbuffer_payload),
+        alignment=constant_tensor_alignment,
+    )
+    # size of header to insert, padded to be `constant_tensor_alignment` byte aligned
+    padded_header_length: int = _aligned_size(
+        input_size=XNNHeader.EXPECTED_LENGTH,
+        alignment=constant_tensor_alignment,
+    )
+
+    # Create the XNNPACK Header
+    header: bytes = XNNHeader(
+        flatbuffer_offset=padded_header_length,
+        flatbuffer_size=len(flatbuffer_payload),
+        constant_data_offset=padded_header_length + padded_flatbuffer_length,
+        constant_data_size=len(constant_data),
+    ).to_bytes()
+
+    # Concatenate the header, flatbuffer data, and constant data
+    # Constant data does not need to be padded to alignment because nothing follows it
+
+    return b"".join(
+        [
+            _pad_to(header, padded_header_length),
+            _pad_to(flatbuffer_payload, padded_flatbuffer_length),
+            constant_data,
+        ]
+    )
