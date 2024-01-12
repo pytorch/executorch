@@ -216,7 +216,12 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
   }
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->execution_plan()->Get(plan_index)->name()->c_str();
+  // We know that the execution plan exists because num_methods() returned > 0.
+  auto name = internal_program->execution_plan()->Get(plan_index)->name();
+  if (name == nullptr) {
+    return Error::InvalidProgram;
+  }
+  return name->c_str();
 }
 
 Result<Method> Program::load_method(
