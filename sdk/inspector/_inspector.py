@@ -330,6 +330,48 @@ class Event:
         """
         return self._delegate_debug_metadatas
 
+    def to_dataframe(self, _units="") -> pd.DataFrame:
+        """
+        Convert the Event into a pandas DataFrame
+
+        Args:
+            None
+
+        Returns:
+            A pandas DataFrame with the Event data
+        """
+        event_dict = self.asdict(_units=_units)
+        return pd.DataFrame(event_dict)
+
+    # Override the default implementation of dataclass.asdict to handle null perf data
+    def asdict(self, _units="") -> dict:
+        """
+        Convert the Event into a dict
+
+        Args:
+            None
+
+        Returns:
+            A dict with the Event data
+        """
+        return {
+            "event_name": self.name,
+            "raw": [self.perf_data.raw if self.perf_data else None],
+            "p10" + _units: self.perf_data.p10 if self.perf_data else None,
+            "p50" + _units: self.perf_data.p50 if self.perf_data else None,
+            "p90" + _units: self.perf_data.p90 if self.perf_data else None,
+            "avg" + _units: self.perf_data.avg if self.perf_data else None,
+            "min" + _units: self.perf_data.min if self.perf_data else None,
+            "max" + _units: self.perf_data.max if self.perf_data else None,
+            "op_types": [self.op_types],
+            "delegate_debug_identifier": self.delegate_debug_identifier,
+            "stack_traces": [self.stack_traces],
+            "module_hierarchy": [self.module_hierarchy],
+            "is_delegated_op": self.is_delegated_op,
+            "delegate_backend_name": self.delegate_backend_name,
+            "debug_data": [self.debug_data],
+        }
+
     @staticmethod
     def _gen_from_inference_events(
         signature: EventSignature,
@@ -547,62 +589,18 @@ class EventBlock:
             include_delegate_debug_data: Whether to show the delegate debug data
 
         Returns:
-            A Pandas DataFrame containing the data of each Event instance in this EventBlock.
+            A pandas DataFrame containing the data of each Event instance in this EventBlock.
         """
 
         units = " (" + self.target_time_scale.value + ")" if include_units else ""
 
-        # TODO: push row generation down to Event
-        data = {
-            "event_block_name": [self.name] * len(self.events),
-            "event_name": [event.name for event in self.events],
-            "raw": [
-                event.perf_data.raw if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "p10"
-            + units: [
-                event.perf_data.p10 if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "p50"
-            + units: [
-                event.perf_data.p50 if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "p90"
-            + units: [
-                event.perf_data.p90 if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "avg"
-            + units: [
-                event.perf_data.avg if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "min"
-            + units: [
-                event.perf_data.min if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "max"
-            + units: [
-                event.perf_data.max if event.perf_data is not None else None
-                for event in self.events
-            ],
-            "op_types": [event.op_types for event in self.events],
-            "delegate_debug_identifier": [
-                event.delegate_debug_identifier for event in self.events
-            ],
-            "stack_traces": [event.stack_traces for event in self.events],
-            "module_hierarchy": [event.module_hierarchy for event in self.events],
-            "is_delegated_op": [event.is_delegated_op for event in self.events],
-            "delegate_backend_name": [
-                event.delegate_backend_name for event in self.events
-            ],
-            "debug_data": [event.debug_data for event in self.events],
-        }
-        df = pd.DataFrame(data)
+        df = pd.concat([e.to_dataframe(units) for e in self.events], ignore_index=True)
+        df.insert(
+            0,
+            "event_block_name",
+            np.asarray([self.name for _ in range(len(self.events))]),
+            allow_duplicates=True,
+        )
 
         # Add Delegate Debug Metadata columns
         if include_delegate_debug_data:
@@ -980,6 +978,29 @@ class Inspector:
                         index
                     ]
 
+    def to_dataframe(
+        self,
+        include_units: bool = True,
+        include_delegate_debug_data: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Args:
+            include_units: Whether headers should include units (default true)
+            include_delegate_debug_data: Whether to include delegate debug metadata (default false)
+
+        Returns:
+            Returns a pandas DataFrame of the Events in each EventBlock in the inspector, with each row representing an Event.
+        """
+
+        df_list = [
+            event_block.to_dataframe(
+                include_units=include_units,
+                include_delegate_debug_data=include_delegate_debug_data,
+            )
+            for event_block in self.event_blocks
+        ]
+        return pd.concat(df_list, ignore_index=True)
+
     def print_data_tabular(
         self,
         file: IO[str] = sys.stdout,
@@ -998,18 +1019,7 @@ class Inspector:
         Returns:
             None
         """
-
-        def style_text_size(val, size=12):
-            return f"font-size: {size}px"
-
-        df_list = [
-            event_block.to_dataframe(
-                include_units=include_units,
-                include_delegate_debug_data=include_delegate_debug_data,
-            )
-            for event_block in self.event_blocks
-        ]
-        combined_df = pd.concat(df_list, ignore_index=True)
+        combined_df = self.to_dataframe(include_units, include_delegate_debug_data)
 
         # Filter out some columns and rows for better readability when printing
         filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
@@ -1019,6 +1029,9 @@ class Inspector:
         try:
             from IPython import get_ipython
             from IPython.display import display
+
+            def style_text_size(val, size=12):
+                return f"font-size: {size}px"
 
             if get_ipython() is not None:
                 styled_df = filtered_df.style.applymap(style_text_size)
