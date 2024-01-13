@@ -714,16 +714,6 @@ inline bool tensors_have_same_shape_and_dtype(
   return tensors_have_same_shape(a, b, c) && tensors_have_same_dtype(a, b, c);
 }
 
-#define ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(t__)           \
-  ({                                                             \
-    ET_CHECK_MSG(                                                \
-        is_default_dim_order(                                    \
-            t__.dim_order().data(), t__.dim_order().size()) ||   \
-            is_channels_last_dim_order(                          \
-                t__.dim_order().data(), t__.dim_order().size()), \
-        "Tensor must have default or channels last dim order");  \
-  })
-
 inline bool tensor_has_expected_size(
     exec_aten::Tensor a,
     exec_aten::ArrayRef<exec_aten::SizesType> expected_sizes) {

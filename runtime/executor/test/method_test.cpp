@@ -52,6 +52,8 @@ class MethodTest : public ::testing::Test {
   }
 
   void SetUp() override {
+    torch::executor::runtime_init();
+
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
     load_program(

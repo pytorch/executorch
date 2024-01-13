@@ -8,14 +8,12 @@
 
 #include <executorch/runtime/executor/method.h>
 
-#include <cinttypes>
+#include <cinttypes> // @donotremove
 #include <cstdint>
 #include <cstdio>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/event_tracer_hooks.h>
-#include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
-#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/core/span.h>
 #include <executorch/runtime/executor/memory_manager.h>

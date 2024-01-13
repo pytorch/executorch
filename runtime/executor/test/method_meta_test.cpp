@@ -13,7 +13,6 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/executor/method_meta.h>
 #include <executorch/runtime/executor/program.h>
-#include <executorch/util/util.h>
 #include <gtest/gtest.h>
 
 using namespace ::testing;

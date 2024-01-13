@@ -15,7 +15,7 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-#include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
+#include <ATen/ATen.h> // @donotremove @manual=//caffe2/aten:ATen-core
 
 namespace torch {
 namespace executor {
