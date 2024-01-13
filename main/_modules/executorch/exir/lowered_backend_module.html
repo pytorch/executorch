@@ -544,6 +544,9 @@
     <span class="c1"># TODO(chenlai): re-consider recapture instead of manually constructing the program because</span>
     <span class="c1"># the meta data construction is done manually.</span>
     <span class="k">def</span> <span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
+        <span class="c1"># Fix autodpes introuces cyclic dependencies:</span>
+        <span class="c1"># program -&gt; verifier -&gt; lowered_backend_module -&gt; program</span>
+        <span class="c1"># @manual</span>
         <span class="kn">from</span> <span class="nn">executorch.exir.program._program</span> <span class="kn">import</span> <span class="p">(</span>
             <span class="n">_get_updated_graph_signature</span><span class="p">,</span>
             <span class="n">_transform</span><span class="p">,</span>
