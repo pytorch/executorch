@@ -9,6 +9,7 @@ def define_common_targets(is_fbcode = False):
 
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
+
         runtime.cxx_library(
             name = "test_backend_compiler_lib" + aten_suffix,
             srcs = [
@@ -55,6 +56,23 @@ def define_common_targets(is_fbcode = False):
             # TestBackendCompilerLib.cpp needs to compile with executor as whole
             # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
             link_whole = True,
+        )
+
+        runtime.cxx_test(
+            name = "executor_test" + aten_suffix,
+            srcs = [
+                "executor_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/pytree:pytree",
+                "//executorch/kernels/portable:generated_lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/platform:platform",
+            ],
         )
 
     runtime.cxx_library(
