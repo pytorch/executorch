@@ -477,6 +477,22 @@ and optional ETRecord path.</p>
 </div>
 <div class="section" id="to-dataframe">
 <h3>to_dataframe<a class="headerlink" href="#to-dataframe" title="Permalink to this headline">¶</a></h3>
+<dl class="py function">
+<dt class="sig sig-object py" id="sdk.Inspector.to_dataframe">
+<span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">to_dataframe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_units</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_delegate_debug_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.to_dataframe" title="Permalink to this definition">¶</a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>include_units</strong> – Whether headers should include units (default true)</p></li>
+<li><p><strong>include_delegate_debug_data</strong> – Whether to include delegate debug metadata (default false)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Returns a pandas DataFrame of the Events in each EventBlock in the inspector, with each row representing an Event.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
 <div class="section" id="print-data-tabular">
 <h3>print_data_tabular<a class="headerlink" href="#print-data-tabular" title="Permalink to this headline">¶</a></h3>
