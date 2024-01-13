@@ -326,6 +326,7 @@ TEST_F(ProgramTest, getMethods) {
 // Test that the deprecated Load method (capital 'L') still works.
 TEST_F(ProgramTest, DEPRECATEDLoad) {
   // Parse the Program from the data.
+  // NOLINTNEXTLINE(facebook-hte-Deprecated)
   Result<Program> program_res = Program::Load(multi_loader_.get());
   EXPECT_EQ(program_res.error(), Error::Ok);
 }

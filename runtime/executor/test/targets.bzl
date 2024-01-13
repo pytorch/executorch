@@ -145,7 +145,6 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
