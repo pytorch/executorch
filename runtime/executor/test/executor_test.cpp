@@ -8,24 +8,28 @@
 
 #include <gtest/gtest.h>
 
-#include <algorithm>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <unordered_map>
-
 #include <executorch/extension/pytree/pytree.h>
-#include <executorch/runtime/core/array_ref.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
-#include <executorch/runtime/platform/assert.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
-namespace torch {
-namespace executor {
+using exec_aten::IntArrayRef;
+using exec_aten::Scalar;
+using exec_aten::ScalarType;
+using exec_aten::SizesType;
+using exec_aten::Tensor;
+using torch::executor::Error;
+using torch::executor::EValue;
+using torch::executor::getOpsFn;
+using torch::executor::hasOpsFn;
+using torch::executor::Kernel;
+using torch::executor::KernelRuntimeContext;
+using torch::executor::register_kernels;
+using torch::executor::testing::TensorFactory;
 
 class ExecutorTest : public ::testing::Test {
  protected:
@@ -35,10 +39,8 @@ class ExecutorTest : public ::testing::Test {
 };
 
 TEST_F(ExecutorTest, Tensor) {
-  TensorImpl::SizesType sizes[2] = {2, 2};
-  int32_t data[4]{1, 2, 3, 4};
-  auto a_impl = TensorImpl(ScalarType::Int, 2, sizes, data);
-  Tensor a(&a_impl);
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.make({2, 2}, {1, 2, 3, 4});
 
   auto data_p = a.const_data_ptr<int32_t>();
   ASSERT_EQ(data_p[0], 1);
@@ -48,51 +50,39 @@ TEST_F(ExecutorTest, Tensor) {
 }
 
 TEST_F(ExecutorTest, EValue) {
-  TensorImpl::SizesType sizes[2] = {2, 2};
-  int32_t data[4]{1, 2, 3, 4};
-  auto a_impl = TensorImpl(ScalarType::Int, 2, sizes, data);
-  Tensor a(&a_impl);
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.make({2, 2}, {1, 2, 3, 4});
 
   EValue v(a);
   ASSERT_TRUE(v.isTensor());
   ASSERT_EQ(v.toTensor().nbytes(), 16);
 }
 
-TEST_F(ExecutorTest, Registry) {
-  auto func = getOpsFn("aten::add.out");
+TEST_F(ExecutorTest, RegistryLookupAndCall) {
+  const char* op_name = "aten::add.out";
+  ASSERT_TRUE(hasOpsFn(op_name));
+  auto func = getOpsFn(op_name);
   ASSERT_TRUE(func);
 
-  EValue values[4];
+  TensorFactory<ScalarType::Int> tf;
+  constexpr size_t num_evalues = 4;
+  EValue evalues[num_evalues] = {
+      tf.make({2, 2}, {1, 2, 3, 4}),
+      tf.make({2, 2}, {5, 6, 7, 8}),
+      Scalar(1),
+      tf.make({2, 2}, {0, 0, 0, 0}),
+  };
 
-  TensorImpl::SizesType a_sizes[2] = {2, 2};
-  int32_t a_data[4]{1, 2, 3, 4};
-  auto a_impl = TensorImpl(ScalarType::Int, 2, a_sizes, a_data);
-  Tensor a(&a_impl);
-  values[0] = EValue(a);
-
-  TensorImpl::SizesType b_sizes[2] = {2, 2};
-  int32_t b_data[4]{5, 6, 7, 8};
-  auto b_impl = TensorImpl(ScalarType::Int, 2, b_sizes, b_data);
-  Tensor b(&b_impl);
-  values[1] = EValue(b);
-
-  values[2] = Scalar(1);
-
-  TensorImpl::SizesType c_sizes[2] = {2, 2};
-  int32_t c_data[4]{0, 0, 0, 0};
-  auto c_impl = TensorImpl(ScalarType::Int, 2, c_sizes, c_data);
-  Tensor c(&c_impl);
-  values[3] = EValue(c);
-
-  EValue* kernel_values[5];
-  for (size_t i = 0; i < 4; i++) {
-    kernel_values[i] = &values[i];
+  EValue* kernel_args[5];
+  for (size_t i = 0; i < num_evalues; i++) {
+    kernel_args[i] = &evalues[i];
   }
   // x and x_out args are same evalue for out variant kernels
-  kernel_values[4] = &values[3];
+  kernel_args[4] = &evalues[3];
+
   KernelRuntimeContext context{};
-  func(context, kernel_values);
-  auto c_ptr = values[3].toTensor().const_data_ptr<int32_t>();
+  func(context, kernel_args);
+  auto c_ptr = evalues[3].toTensor().const_data_ptr<int32_t>();
   ASSERT_EQ(c_ptr[3], 12);
 }
 
@@ -154,7 +144,7 @@ TEST_F(ExecutorTest, OpRegistration) {
   ASSERT_EQ(Error::Ok, s1);
   ASSERT_EQ(Error::Ok, s2);
   ET_EXPECT_DEATH(
-      { auto s3 = register_kernels({Kernel("test", test_op)}); }, "");
+      []() { (void)register_kernels({Kernel("test", test_op)}); }(), "");
 
   ASSERT_TRUE(hasOpsFn("test"));
   ASSERT_TRUE(hasOpsFn("test_2"));
@@ -183,7 +173,7 @@ TEST_F(ExecutorTest, OpRegistrationWithContext) {
   ASSERT_EQ(val, 100);
 }
 
-TEST_F(ExecutorTest, OpRegistrationAddMul) {
+TEST_F(ExecutorTest, AddMulAlreadyRegistered) {
   ASSERT_TRUE(hasOpsFn("aten::add.out"));
   ASSERT_TRUE(hasOpsFn("aten::mul.out"));
 }
@@ -195,7 +185,7 @@ TEST(PyTreeEValue, List) {
   Scalar d((double)3.0);
   EValue items[2] = {i, d};
 
-  auto c = pytree::unflatten(spec, items);
+  auto c = torch::executor::pytree::unflatten(spec, items);
   ASSERT_TRUE(c.isList());
   ASSERT_EQ(c.size(), 2);
 
@@ -217,7 +207,7 @@ TEST(PyTreeEValue, List) {
 
 auto unflatten(EValue* items) {
   std::string spec = "D4#1#1#1#1('key0':$,1:$,23:$,123:$)";
-  return pytree::unflatten(spec, items);
+  return torch::executor::pytree::unflatten(spec, items);
 }
 
 TEST(PyTreeEValue, DestructedSpec) {
@@ -234,8 +224,8 @@ TEST(PyTreeEValue, DestructedSpec) {
   auto& key0 = c.key(0);
   auto& key1 = c.key(1);
 
-  ASSERT_TRUE(key0 == pytree::Key("key0"));
-  ASSERT_TRUE(key1 == pytree::Key(1));
+  ASSERT_TRUE(key0 == torch::executor::pytree::Key("key0"));
+  ASSERT_TRUE(key1 == torch::executor::pytree::Key(1));
 
   const auto& child0 = c[0];
   const auto& child1 = c[1];
@@ -251,6 +241,3 @@ TEST(PyTreeEValue, DestructedSpec) {
   ASSERT_TRUE(child1.leaf().isDouble());
   ASSERT_NEAR(child1.leaf().toDouble(), 3.0, 0.01);
 }
-
-} // namespace executor
-} // namespace torch
