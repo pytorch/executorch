@@ -45,6 +45,7 @@ class TestQNN(unittest.TestCase):
     artifact_dir: Literal = ""
     image_dataset: Literal = ""
     pretrained_weight: Literal = ""
+    online_prepare: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))

@@ -42,6 +42,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             soc_model=self.arch_table[TestQNN.model],
             debug=False,
             saver=False,
+            online_prepare=TestQNN.online_prepare,
         )
 
     def test_qnn_backend_arange(self):
@@ -342,6 +343,7 @@ class TestQNNFloatingPointModel(TestQNN):
             soc_model=self.arch_table[TestQNN.model],
             debug=False,
             saver=False,
+            online_prepare=TestQNN.online_prepare,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -430,6 +432,7 @@ class TestQNNQuantizedOperator(TestQNN):
             soc_model=self.arch_table[TestQNN.model],
             debug=False,
             saver=False,
+            online_prepare=TestQNN.online_prepare,
         )
 
     def test_qnn_backend_arange(self):
@@ -769,6 +772,7 @@ class TestQNNQuantizedModel(TestQNN):
             soc_model=self.arch_table[TestQNN.model],
             debug=False,
             saver=False,
+            online_prepare=TestQNN.online_prepare,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -1235,6 +1239,12 @@ def setup_environment():
         type=str,
     )
     parser.add_argument(
+        "-o",
+        "--online_prepare",
+        help="Conduct on-device graph compilation",
+        action="store_true",
+    )
+    parser.add_argument(
         "-e",
         "--error_only",
         help="Emit log only when error happened",
@@ -1250,6 +1260,7 @@ def setup_environment():
     TestQNN.artifact_dir = args.artifact_dir
     TestQNN.image_dataset = args.image_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
+    TestQNN.online_prepare = args.online_prepare
     TestQNN.error_only = args.error_only
     return sys.argv[:1] + ns_args
 
