@@ -76,7 +76,7 @@ enum class Error : error_code_t {
   /// Could not access a resource.
   AccessFailed = 0x22,
 
-  /// Error caused by the contents of a proggram.
+  /// Error caused by the contents of a program.
   InvalidProgram = 0x23,
 
   /*
@@ -110,4 +110,20 @@ enum class Error : error_code_t {
       ET_LOG(Error, message__, ##__VA_ARGS__);                    \
       return torch::executor::Error::error__;                     \
     }                                                             \
+  })
+
+/**
+ * If error__ is not Error::Ok, log message__ and return the Error
+ * from the current function, which must be declared to return
+ * torch::executor::Error
+ *
+ * @param[in] error__ Error enum value asserted to be Error::Ok.
+ * @param[in] message__ Log error message format string.
+ */
+#define ET_CHECK_OK_OR_RETURN_ERROR(error__, message__, ...) \
+  ({                                                         \
+    if ((error__) != Error::Ok) {                            \
+      ET_LOG(Error, message__, ##__VA_ARGS__);               \
+      return error__;                                        \
+    }                                                        \
   })

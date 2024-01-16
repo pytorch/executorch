@@ -25,6 +25,7 @@ bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out) {
 
 bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_floating_type(in));
 
   const size_t non_negative_dim = dim < 0 ? dim + in.dim() : dim;
   const size_t dim_size = in.size(non_negative_dim);

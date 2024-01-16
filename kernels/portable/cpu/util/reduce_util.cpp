@@ -32,7 +32,7 @@ inline size_t _normalize_non_neg_d(ssize_t d, ssize_t in_dim) {
   return d;
 }
 
-void check_dim_list_is_valid(
+[[nodiscard]] bool check_dim_list_is_valid(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list) {
   if (dim_list.has_value() && dim_list.value().size() != 0) {
@@ -41,20 +41,24 @@ void check_dim_list_is_valid(
     memset(dim_exist, false, sizeof(dim_exist));
     for (const auto& d : reduce_dims) {
       if (in.dim() == 0) {
-        ET_CHECK(d == 0 || d == -1);
+        ET_LOG_AND_RETURN_IF_FALSE(d == 0 || d == -1);
       } else {
-        ET_CHECK_VALID_DIM(d, in.dim());
+        ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(d, in.dim()));
       }
-      const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
-      ET_CHECK(non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
 
-      ET_CHECK_MSG(
+      const size_t non_neg_d = _normalize_non_neg_d(d, in.dim());
+      ET_LOG_AND_RETURN_IF_FALSE(
+          non_neg_d < kTensorDimensionLimit && non_neg_d >= 0);
+
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
           dim_exist[non_neg_d] == false,
           "dim %zd appears multiple times in the list of dims",
           non_neg_d);
       dim_exist[non_neg_d] = true;
     }
   }
+
+  return true;
 }
 
 bool check_dim_in_dim_list(
@@ -331,7 +335,7 @@ bool check_reduction_args(
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
   }
-  check_dim_list_is_valid(in, dim_list);
+  ET_LOG_AND_RETURN_IF_FALSE(check_dim_list_is_valid(in, dim_list));
   ET_LOG_AND_RETURN_IF_FALSE(
       out.dim() == compute_reduced_out_dim(in, dim_list, keepdim));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
