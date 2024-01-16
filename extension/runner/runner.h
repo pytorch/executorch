@@ -35,10 +35,64 @@ class Runner {
       std::unique_ptr<MemoryAllocator> memoryAllocator);
   Runner(const Runner&) = delete;
   Runner& operator=(const Runner&) = delete;
+  virtual ~Runner() = default;
+
+  /**
+   * Loads the program using the specified data loader and memory allocator.
+   *
+   * @returns An Error to indicate success or failure of the loading process.
+   */
+  virtual Error load();
+
+  /**
+   * Checks if the program is loaded.
+   *
+   * @returns true if the program is loaded, false otherwise.
+   */
+  bool isLoaded() const;
+
+  /**
+   * Get a list of method names available in the loaded program.
+   * Loads the program and method if needed.
+   *
+   * @returns A vector of strings containing the names of the methods, or an
+   * error if the program or method failed to load.
+   */
+  Result<std::vector<std::string>> methodNames();
+
+  /**
+   * Load a specific method from the program and set up memory management if
+   * needed. The loaded method is cached to reuse the next time it's run.
+   *
+   * @param[in] methodName The name of the method to load.
+   *
+   * @returns An Error to indicate success or failure.
+   */
+  Error loadMethod(const std::string& methodName);
+
+  /**
+   * Checks if a specific method is loaded.
+   *
+   * @param[in] methodName The name of the method to check.
+   * @returns true if the method specified by methodName is loaded, false
+   * otherwise.
+   */
+  bool isMethodLoaded(const std::string& methodName) const;
+
+  /**
+   * Get a method metadata struct by method name.
+   * Loads the program and method if needed.
+   *
+   * @param[in] methodName The name of the method to get the metadata for.
+   *
+   * @returns A method metadata, or an error if the program or method failed to
+   * load.
+   */
+  Result<MethodMeta> methodMeta(const std::string& methodName);
 
   /**
    * Run a specific method with the given inputs and retrieve outputs.
-   * Loads the method before running if needed.
+   * Loads the program and method before running if needed.
    *
    * @param[in] methodName The name of the method to execute.
    * @param[in] inputs A vector of input values to be passed to the method.
@@ -51,23 +105,6 @@ class Runner {
       const std::vector<EValue>& inputs,
       std::vector<EValue>& outputs);
 
-  /**
-   * Get a list of method names available in the loaded program.
-   *
-   * @returns A vector of strings containing the names of the methods.
-   */
-  std::vector<std::string> methodNames() const;
-
-  /**
-   * Load a specific method from the program and set up memory management if
-   * needed. The loaded method is cached to reuse the next time it's run.
-   *
-   * @param[in] methodName The name of the method to load.
-   *
-   * @returns An Error to indicate success or failure.
-   */
-  Error loadMethod(const std::string& methodName);
-
  private:
   struct MethodHolder {
     std::vector<std::vector<uint8_t>> plannedBuffers;
@@ -77,8 +114,10 @@ class Runner {
     std::unique_ptr<Method> method;
   };
 
- private:
+ protected:
   std::unique_ptr<DataLoader> dataLoader_;
+
+ private:
   std::unique_ptr<MemoryAllocator> memoryAllocator_;
   std::unique_ptr<Program> program_;
   std::unordered_map<std::string, MethodHolder> methods_;
