@@ -13,17 +13,32 @@
 
 namespace torch::executor {
 
-Module::Module(const std::string& filePath)
-    : Runner(
-          ({
-            auto dataLoader = util::MmapDataLoader::from(
-                filePath.c_str(),
-                util::MmapDataLoader::MlockConfig::UseMlockIgnoreErrors);
-            if (!dataLoader.ok()) {
-              throw std::runtime_error("Failed to load file: " + filePath);
-            }
-            std::make_unique<util::MmapDataLoader>(std::move(dataLoader.get()));
-          }),
-          std::make_unique<util::MallocMemoryAllocator>()) {}
+Module::Module(
+    const std::string& filePath,
+    const Module::MlockConfig mlockConfig)
+    : Runner(nullptr, std::make_unique<util::MallocMemoryAllocator>()),
+      filePath_(filePath),
+      mlockConfig_(mlockConfig) {}
+
+Error Module::load() {
+  if (!isLoaded()) {
+    auto dataLoader = util::MmapDataLoader::from(filePath_.c_str(), [this] {
+      switch (mlockConfig_) {
+        case MlockConfig::NoMlock:
+          return util::MmapDataLoader::MlockConfig::NoMlock;
+        case MlockConfig::UseMlock:
+          return util::MmapDataLoader::MlockConfig::UseMlock;
+        case MlockConfig::UseMlockIgnoreErrors:
+          return util::MmapDataLoader::MlockConfig::UseMlockIgnoreErrors;
+      }
+    }());
+    if (!dataLoader.ok()) {
+      return dataLoader.error();
+    }
+    dataLoader_ =
+        std::make_unique<util::MmapDataLoader>(std::move(dataLoader.get()));
+  }
+  return Runner::load();
+}
 
 } // namespace torch::executor
