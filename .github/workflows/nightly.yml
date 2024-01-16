@@ -6,9 +6,6 @@ on:
   push:
     tags:
       - ciflow/nightly/*
-  pull_request:
-    paths:
-      - .github/workflows/nightly.yml
   workflow_dispatch:
 
 concurrency:
@@ -21,10 +18,10 @@ jobs:
     environment: update-commit-hash
     steps:
       - name: update-pytorch-commit-hash
-        # TODO: Switch to main once https://github.com/pytorch/test-infra/pull/4885 lands
+        # TODO (huydhn): Switch to main once https://github.com/pytorch/test-infra/pull/4885 lands and
+        # before committing this change
         uses: pytorch/test-infra/.github/actions/update-commit-hash@migrate-update-commit-hash-to-test-infra
-        # TODO: UNCOMMENT BEFORE COMMITING
-        # if: ${{ github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch
           branch: main
