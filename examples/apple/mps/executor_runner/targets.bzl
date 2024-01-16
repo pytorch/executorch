@@ -22,6 +22,7 @@ def define_common_targets():
             deps = [
                 "//executorch/backends/apple/mps:mps",
                 "//executorch/runtime/executor:program",
+                "//executorch/extension/evalue_util:print_evalue",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/kernels/portable:generated_lib_all_ops",
                 "//executorch/extension/data_loader:file_data_loader",

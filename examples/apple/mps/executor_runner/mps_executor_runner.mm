@@ -12,11 +12,8 @@
  * It uses the original bundled input data from the flatbuffer file.
  */
 
-#import <Foundation/Foundation.h>
-#import <MetalPerformanceShaders/MetalPerformanceShaders.h>
-#import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
-
 #include <memory>
+#include <iostream>
 
 #include <gflags/gflags.h>
 
@@ -31,6 +28,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/extension/evalue_util/print_evalue.h>
 
 #include <chrono>
 using namespace std::chrono;
@@ -440,15 +438,10 @@ int main(int argc, char** argv) {
   std::vector<EValue> outputs(method->outputs_size());
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
-  for (EValue& output : outputs) {
-    // TODO(T159700776): This assumes that all outputs are fp32 tensors. Add
-    // support for other EValues and Tensor dtypes, and print tensors in a more
-    // readable way.
-    auto output_tensor = output.toTensor();
-    auto data_output = output_tensor.const_data_ptr<float>();
-    for (size_t j = 0; j < output_tensor.numel(); ++j) {
-      ET_LOG(Info, "%f", data_output[j]);
-    }
+  // Print the first and last 100 elements of long lists of scalars.
+  std::cout << torch::executor::util::evalue_edge_items(100);
+  for (int i = 0; i < outputs.size(); ++i) {
+    std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
   // Dump the profiling data to the specified file.

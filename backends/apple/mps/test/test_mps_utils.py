@@ -195,7 +195,7 @@ class TestMPS(unittest.TestCase):
                 method_name="forward",
                 test_cases=[
                     MethodTestCase(
-                        input=sample_inputs, expected_outputs=module(*sample_inputs)
+                        inputs=sample_inputs, expected_outputs=module(*sample_inputs)
                     )
                 ],
             )

@@ -263,17 +263,13 @@ class MPSBackend(BackendDetails):
                     from typing import cast
 
                     input_node = cast(torch.fx.Node, node.args[0]).meta["val"]
-                    sizes = input_node.size()
-                    dim0 = sizes[0]
-                    dim1 = sizes[1]
+                    weight_node = cast(torch.fx.Node, node.args[1]).meta["val"]
                     groups = int(node.args[8])
-                    group_in_channels = dim1
-                    group_out_channels = int(dim0 / groups)
 
                     # Convolution is depthwise if groups = input channels and output channel
                     # is a positive multiple of input channels
-                    is_depthwise_conv = (group_in_channels == 1) and (
-                        group_out_channels % group_in_channels == 0
+                    is_depthwise_conv = (groups > 1 and weight_node.size(1) == 1) and (
+                        input_node.dim() >= 4 and weight_node.dim() >= 4
                     )
 
                     if node.args[2] is None:
