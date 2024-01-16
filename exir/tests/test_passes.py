@@ -33,7 +33,7 @@ from executorch.exir.passes import (
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
-from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
@@ -984,7 +984,7 @@ class TestPasses(unittest.TestCase):
             ),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        new_gm = gm.transform([RemoveAssertAsyncPass()])
+        new_gm = gm.transform([RemoveGraphAssertsPass()])
         num_asserts = [
             node
             for node in new_gm.exported_program().graph.nodes
