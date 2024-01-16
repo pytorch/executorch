@@ -87,9 +87,9 @@ python_library(
 )
 
 python_library(
-    name = "remove_assert_async_pass",
+    name = "remove_graph_asserts_pass",
     srcs = [
-        "remove_assert_async_pass.py",
+        "remove_graph_asserts_pass.py",
     ],
     deps = [
         "//caffe2:torch",
