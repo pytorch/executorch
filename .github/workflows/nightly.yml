@@ -1,0 +1,34 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: 0 2 * * *
+  push:
+    tags:
+      - ciflow/nightly/*
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}--${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}
+  cancel-in-progress: true
+
+jobs:
+  update-pytorch-commit-hash:
+    runs-on: ubuntu-latest
+    environment: update-commit-hash
+    steps:
+      - name: update-pytorch-commit-hash
+        # TODO: Switch to main once https://github.com/pytorch/test-infra/pull/4885 lands
+        uses: pytorch/test-infra/.github/actions/update-commit-hash@migrate-update-commit-hash-to-test-infra
+        # TODO: UNCOMMENT BEFORE COMMITING
+        # if: ${{ github.event_name == 'schedule' }}
+        with:
+          repo-name: pytorch
+          branch: main
+          pin-folder: .ci/docker/ci_commit_pins
+          test-infra-ref: migrate-update-commit-hash-to-test-infra
+          updatebot-token: ${{ secrets.UPDATEBOT_TOKEN }}
+          pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
