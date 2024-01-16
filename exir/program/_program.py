@@ -24,7 +24,7 @@ from executorch.exir.passes import (
     EdgeToBackendOpsPass,
     OpReplacePass,
 )
-from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
@@ -530,7 +530,7 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         EdgeToBackendOpsPass(),
-        RemoveAssertAsyncPass(),
+        RemoveGraphAssertsPass(),
         config.sym_shape_eval_pass,
         config.to_out_var_pass,
         config.memory_planning_pass,

@@ -11,9 +11,9 @@ import torch
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 
-class RemoveAssertAsyncPass(PassBase):
+class RemoveGraphAssertsPass(PassBase):
     """
-    Temporary pass to remove all the assert async ops until runtime decides to address it.
+    Temporary pass to remove all the assert ops until runtime decides to address it.
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
@@ -22,9 +22,10 @@ class RemoveAssertAsyncPass(PassBase):
                 continue
 
             for node in module.graph.nodes:
-                if (
-                    node.op == "call_function"
-                    and node.target == torch.ops.aten._assert_async.msg
+                if node.op == "call_function" and (
+                    node.target == torch.ops.aten._assert_async.msg
+                    or node.target
+                    == torch.ops.aten.sym_constrain_range_for_size.default
                 ):
                     module.graph.erase_node(node)
 
