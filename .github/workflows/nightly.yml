@@ -18,14 +18,13 @@ jobs:
     environment: update-commit-hash
     steps:
       - name: update-pytorch-commit-hash
-        # TODO (huydhn): Switch to main once https://github.com/pytorch/test-infra/pull/4885 lands and
-        # before committing this change
-        uses: pytorch/test-infra/.github/actions/update-commit-hash@migrate-update-commit-hash-to-test-infra
-        if: ${{ github.event_name == 'schedule' }}
+        uses: pytorch/test-infra/.github/actions/update-commit-hash@main
+        # TODO: UNCOMMENT ME BEFORE LANDING
+        # if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch
           branch: main
           pin-folder: .ci/docker/ci_commit_pins
-          test-infra-ref: migrate-update-commit-hash-to-test-infra
+          test-infra-ref: main
           updatebot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           pytorchbot-token: ${{ secrets.GH_PYTORCHBOT_TOKEN }}
