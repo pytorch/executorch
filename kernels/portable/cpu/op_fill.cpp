@@ -65,13 +65,13 @@ Tensor& fill_tensor_out(
   (void)ctx;
 
   // Assert `b` must be a scalar tensor.
-  ET_CHECK(b.dim() == 0 && b.numel() == 1);
+  ET_KERNEL_CHECK(ctx, tensor_is_scalar(b), InvalidArgument, b);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(a_type == out_type);
+  ET_KERNEL_CHECK(ctx, a_type == out_type, InvalidArgument, out);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
