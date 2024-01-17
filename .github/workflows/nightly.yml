@@ -6,6 +6,9 @@ on:
   push:
     tags:
       - ciflow/nightly/*
+  pull_request:
+    paths:
+      .github/workflows/nightly.yml
   workflow_dispatch:
 
 concurrency:
@@ -15,7 +18,8 @@ concurrency:
 jobs:
   update-pytorch-commit-hash:
     runs-on: ubuntu-latest
-    environment: update-commit-hash
+    # TODO: JUST FOR TESTING
+    environment: ${{ startsWith(github.event.ref, 'refs/heads/main') && 'update-commit-hash' || 'update-commit-hash' }}
     steps:
       - name: update-pytorch-commit-hash
         uses: pytorch/test-infra/.github/actions/update-commit-hash@main
