@@ -15,7 +15,7 @@ hypothesis==6.84.2
 parameterized==0.9.0
 
 # Doc build requirements
-sphinx==5.5.0
+sphinx==5.0.0
 sphinx-gallery
 breathe==4.35.0
 exhale==0.3.6
