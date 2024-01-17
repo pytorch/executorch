@@ -424,17 +424,17 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="integrating-a-backend-delegate-into-executorch">
-<h1>Integrating a Backend Delegate into ExecuTorch<a class="headerlink" href="#integrating-a-backend-delegate-into-executorch" title="Permalink to this headline">¶</a></h1>
+<h1>Integrating a Backend Delegate into ExecuTorch<a class="headerlink" href="#integrating-a-backend-delegate-into-executorch" title="Permalink to this heading">¶</a></h1>
 <p>Disclaimer: We are planning to restructure the repository around delegates.
 With that some of these guidelines will change in the future.</p>
 <p>This is a high level guideline when integrating a backend delegate with ExecuTorch.</p>
 <div class="section" id="directory-structure">
-<h2>Directory Structure<a class="headerlink" href="#directory-structure" title="Permalink to this headline">¶</a></h2>
+<h2>Directory Structure<a class="headerlink" href="#directory-structure" title="Permalink to this heading">¶</a></h2>
 <p>Delegate files should be under this directory:
 <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/</span></code>. The delegate name should be unique.</p>
 </div>
 <div class="section" id="python-source-files">
-<h2>Python Source Files<a class="headerlink" href="#python-source-files" title="Permalink to this headline">¶</a></h2>
+<h2>Python Source Files<a class="headerlink" href="#python-source-files" title="Permalink to this heading">¶</a></h2>
 <p>Delegate Python files such as those implementing <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> or <code class="docutils literal notranslate"><span class="pre">partition()</span></code>
 functions for ExecuTorch AOT flow, excluding any external third-party
 dependencies and their files, should be installed and available with
@@ -442,7 +442,7 @@ the top level ExecuTorch package. For third-party dependencies, please refer to
 <a class="reference internal" href="backend-delegates-dependencies.html"><span class="doc std std-doc">this</span></a>.</p>
 </div>
 <div class="section" id="c-source-files">
-<h2>C++ Source Files<a class="headerlink" href="#c-source-files" title="Permalink to this headline">¶</a></h2>
+<h2>C++ Source Files<a class="headerlink" href="#c-source-files" title="Permalink to this heading">¶</a></h2>
 <p>At a minimum, a delegate must provide CMake support for building its C++
 sources.</p>
 <p>For the CMake setup, the delegate dir should be included by the
@@ -459,7 +459,7 @@ provide some uniform abstraction across delegates.
 --->
 </div>
 <div class="section" id="tests">
-<h2>Tests<a class="headerlink" href="#tests" title="Permalink to this headline">¶</a></h2>
+<h2>Tests<a class="headerlink" href="#tests" title="Permalink to this heading">¶</a></h2>
 <p>Tests should be added under <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/test</span></code>. Tests
 can be either python or C++ tests. For adding more complex end-to-end (e2e)
 tests, please reach out to us.</p>
@@ -472,7 +472,7 @@ runtime logic.</p></li>
 </ul>
 </div>
 <div class="section" id="documentation">
-<h2>Documentation<a class="headerlink" href="#documentation" title="Permalink to this headline">¶</a></h2>
+<h2>Documentation<a class="headerlink" href="#documentation" title="Permalink to this heading">¶</a></h2>
 <p>A delegate must contain a <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/README.md</span></code>
 explaining the basics of the delegate, directory structure, features, and known
 issues if any.</p>
@@ -552,7 +552,9 @@ issues if any.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

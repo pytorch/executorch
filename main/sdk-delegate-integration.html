@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="sdk-delegate-integration">
-<h1>SDK Delegate Integration<a class="headerlink" href="#sdk-delegate-integration" title="Permalink to this headline">¶</a></h1>
+<h1>SDK Delegate Integration<a class="headerlink" href="#sdk-delegate-integration" title="Permalink to this heading">¶</a></h1>
 <p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegate backends</span></a> are a prominent component of on-device models due to their flexibility in defining behavior. A side effect of this flexibility is that it operates as an opaque transformation. This obfuscates rich associations and mutations that are valuable in post-processing.</p>
 <ul class="simple">
 <li><p>For example, if two different operator fusions were to occur within a delegate, post processing wouldn’t be able to separate the two transformations.</p></li>
@@ -437,10 +437,10 @@
 <li><p><strong>Deserialization</strong>: Delegate authors provide a parser for custom metadata in delegate events.</p></li>
 </ul>
 <div class="section" id="ahead-of-time">
-<h2>Ahead-of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this headline">¶</a></h2>
+<h2>Ahead-of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this heading">¶</a></h2>
 <p>Delegate authors propagate what transformations occur in a lowered backend by returning a <strong>Debug Handle Map</strong> from the backend implementation.</p>
 <div class="section" id="generating-a-debug-handle-map">
-<h3>Generating a Debug Handle Map<a class="headerlink" href="#generating-a-debug-handle-map" title="Permalink to this headline">¶</a></h3>
+<h3>Generating a Debug Handle Map<a class="headerlink" href="#generating-a-debug-handle-map" title="Permalink to this heading">¶</a></h3>
 <p><strong>Debug Handle Maps</strong> communicate what transformations occurred in a backend by mapping <strong>Delegate Debug Identifiers</strong> to debug handles.</p>
 <p><strong>Delegate Debug Identifiers</strong> are generated or user-provided identifiers for representing points of interest during runtime. Recall that debug handles are unique identifiers to operator instances in the model graph.</p>
 <p>For example:</p>
@@ -463,7 +463,7 @@
 </div>
 <p>PreprocessResult is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/backend_details.py">here</a>.</p>
 <div class="section" id="delegatemappingbuilder">
-<h4>DelegateMappingBuilder<a class="headerlink" href="#delegatemappingbuilder" title="Permalink to this headline">¶</a></h4>
+<h4>DelegateMappingBuilder<a class="headerlink" href="#delegatemappingbuilder" title="Permalink to this heading">¶</a></h4>
 <p><code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> is a helper class for managing and constructing Debug Handle Maps. The result of the builder should be passed in when constructing PreprocessResult.</p>
 <p><code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/utils.py">here</a></p>
 <p>A <code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> instance can be constructed in one of 2 modes: manual identifiers or generated identifiers.</p>
@@ -496,10 +496,10 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </div>
 </div>
 <div class="section" id="runtime">
-<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h2>
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
 <p>Corresponding to the AOT map, the runtime then defines the functionality through which these events are logged.</p>
 <div class="section" id="real-time-logging">
-<h3>Real-Time Logging<a class="headerlink" href="#real-time-logging" title="Permalink to this headline">¶</a></h3>
+<h3>Real-Time Logging<a class="headerlink" href="#real-time-logging" title="Permalink to this heading">¶</a></h3>
 <p>ExecuTorch allows you to log in real time. <strong>Real time Logging</strong> is useful when timestamps are available as the execution occurs. It provides minimal overhead and is intuitive for authors to call.</p>
 <p>To log events in real-time (for example, explicitly denoting the profiling start and stop), <code class="docutils literal notranslate"><span class="pre">event_tracer_start_profiling_delegate</span></code> is used to create an <code class="docutils literal notranslate"><span class="pre">EventEntry</span></code> and <code class="docutils literal notranslate"><span class="pre">event_tracer_end_profiling_delegate</span></code> is used to conclude the <code class="docutils literal notranslate"><span class="pre">EventEntry</span></code> for the provided <code class="docutils literal notranslate"><span class="pre">EventTracer</span></code>.</p>
 <p>To start an <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code> using <code class="docutils literal notranslate"><span class="pre">event_tracer_start_profiling_delegate</span></code>, the <strong>Delegate Debug Identifier</strong> (provided AOT to the <code class="docutils literal notranslate"><span class="pre">debug_handle_map</span></code>) is passed as either the name or <code class="docutils literal notranslate"><span class="pre">delegate_debug_id</span></code> argument depending on the <strong>Delegate Debug Identifier</strong> type (str and int respectively)</p>
@@ -520,7 +520,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </div>
 </div>
 <div class="section" id="post-time-logging">
-<h3>Post-Time Logging<a class="headerlink" href="#post-time-logging" title="Permalink to this headline">¶</a></h3>
+<h3>Post-Time Logging<a class="headerlink" href="#post-time-logging" title="Permalink to this heading">¶</a></h3>
 <p>ExecuTorch also allows you to log in post time. Some runtime settings don’t have access to timestamps while it is executing. <strong>Post-Time Logging</strong> enables authors to still be able to log these events.</p>
 <p>To log events in post (for example, logging start and end time simultaneously) <code class="docutils literal notranslate"><span class="pre">event_tracer_log_profiling_delegate</span></code> is called with a combination of the arguments used in the real-time logging API’s and timestamps.</p>
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="n">event_tracer_log_profiling_delegate</span><span class="p">(</span>
@@ -537,7 +537,7 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
 </div>
 </div>
 <div class="section" id="surfacing-custom-metadata-from-delegate-events">
-<h2>Surfacing custom metadata from delegate events<a class="headerlink" href="#surfacing-custom-metadata-from-delegate-events" title="Permalink to this headline">¶</a></h2>
+<h2>Surfacing custom metadata from delegate events<a class="headerlink" href="#surfacing-custom-metadata-from-delegate-events" title="Permalink to this heading">¶</a></h2>
 <p>As seen in the runtime logging API’s above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>.</p>
 <p>Users can pass a metadata parser when creating an instance of the Inspector. The parser is a callable that deserializes the data and returns a list of strings or a dictionary containing key-value pairs. The deserialized data is then added back to the corresponding event in the event block for user consumption. Here’s an example of how to write this parser:</p>
 <p>NOTE: The input to the deserializer is a list where each entry is a series of bytes (essentially each entry is an immutable bytearray). Users are expected to iterate over this list, deserialize each entry and then return it in the expected format which is either a list of strings, or a dict.</p>
@@ -640,7 +640,9 @@ With <strong>generated identifiers</strong>, the builder will auto-assign a <str
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

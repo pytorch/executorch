@@ -424,9 +424,9 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="custom-compiler-passes-and-partitioners">
-<h1>Custom Compiler Passes and Partitioners<a class="headerlink" href="#custom-compiler-passes-and-partitioners" title="Permalink to this headline">¶</a></h1>
+<h1>Custom Compiler Passes and Partitioners<a class="headerlink" href="#custom-compiler-passes-and-partitioners" title="Permalink to this heading">¶</a></h1>
 <div class="section" id="passes">
-<h2>Passes<a class="headerlink" href="#passes" title="Permalink to this headline">¶</a></h2>
+<h2>Passes<a class="headerlink" href="#passes" title="Permalink to this heading">¶</a></h2>
 <p>Passes can be roughly categorized into a couple of axes:</p>
 <p>Axis A:</p>
 <ol class="arabic simple">
@@ -450,7 +450,7 @@
 <li><p>B.2, C.2</p></li>
 </ol>
 <div class="section" id="level-1">
-<h3>Level 1<a class="headerlink" href="#level-1" title="Permalink to this headline">¶</a></h3>
+<h3>Level 1<a class="headerlink" href="#level-1" title="Permalink to this heading">¶</a></h3>
 <p>For level 1 uses cases (creating one-to-X mappings, performing forwards iterations,
 and looking at local node information), we can utilize a helper class called
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/pass_base.py#L44"><code class="docutils literal notranslate"><span class="pre">ExportPass</span></code></a>.
@@ -468,7 +468,7 @@ run the graph module and create a new graph containing the changes specified by
 the pass. This means that the graph module passed in must be runnable on CPU,
 and this invariant will be maintained after the pass is run.</p>
 <div class="section" id="one-to-one-pass">
-<h4>One-to-One Pass<a class="headerlink" href="#one-to-one-pass" title="Permalink to this headline">¶</a></h4>
+<h4>One-to-One Pass<a class="headerlink" href="#one-to-one-pass" title="Permalink to this heading">¶</a></h4>
 <p>An example for one-to-one mappings, if we wanted to replace an op A with another op B,
 we can run the given
 <code class="docutils literal notranslate"><span class="pre">fx.GraphModule</span></code>, and every time we see op A, return op B.</p>
@@ -495,7 +495,7 @@ we can run the given
 given arguments.</p>
 </div>
 <div class="section" id="one-to-x-pass">
-<h4>One-to-X Pass<a class="headerlink" href="#one-to-x-pass" title="Permalink to this headline">¶</a></h4>
+<h4>One-to-X Pass<a class="headerlink" href="#one-to-x-pass" title="Permalink to this heading">¶</a></h4>
 <p>If we wanted to do one-to-X mappings, like replacing op A with 2 other ops B and
 C, we would then make 2 calls to <code class="docutils literal notranslate"><span class="pre">super().call_operator</span></code> to create 2 FX nodes,
 one with op B and another with op C, and return the result of running op C.</p>
@@ -534,7 +534,7 @@ one with op B and another with op C, and return the result of running op C.</p>
 </div>
 </div>
 <div class="section" id="one-to-none-pass">
-<h4>One-to-None Pass<a class="headerlink" href="#one-to-none-pass" title="Permalink to this headline">¶</a></h4>
+<h4>One-to-None Pass<a class="headerlink" href="#one-to-none-pass" title="Permalink to this heading">¶</a></h4>
 <p>If we wanted to remove an op, we can just return the value passed into the
 function:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">RemoveDetachPass</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
@@ -551,7 +551,7 @@ function:</p>
 </div>
 </div>
 <div class="section" id="utilizing-local-information">
-<h4>Utilizing Local Information<a class="headerlink" href="#utilizing-local-information" title="Permalink to this headline">¶</a></h4>
+<h4>Utilizing Local Information<a class="headerlink" href="#utilizing-local-information" title="Permalink to this heading">¶</a></h4>
 <p>An example of utilizing local node information is, if we wanted to convert all the
 scalars within the graph to tensors, we
 can run the given <code class="docutils literal notranslate"><span class="pre">fx.GraphModule</span></code>, and for every argument that contains a scalar,
@@ -590,7 +590,7 @@ we convert it to a tensor. It might look something like:</p>
 </div>
 </div>
 <div class="section" id="level-2">
-<h3>Level 2<a class="headerlink" href="#level-2" title="Permalink to this headline">¶</a></h3>
+<h3>Level 2<a class="headerlink" href="#level-2" title="Permalink to this heading">¶</a></h3>
 <p>For creating many-to-one mappings, we can utilize FX’s <a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/subgraph_rewriter.py#L77">subgraph
 rewriter</a>.
 Given a <code class="docutils literal notranslate"><span class="pre">pattern</span></code>, it creates a subgraph of operators matching to the pattern,
@@ -642,7 +642,7 @@ is normally in EXIR nodes (`stack_trace`, `val`, `nn_module_stack`).
 </div>
 </div>
 <div class="section" id="level-3">
-<h3>Level 3<a class="headerlink" href="#level-3" title="Permalink to this headline">¶</a></h3>
+<h3>Level 3<a class="headerlink" href="#level-3" title="Permalink to this heading">¶</a></h3>
 <p>For the third way of creating a pass, we can utilize the most basic
 <a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/infra/pass_base.py#L22"><code class="docutils literal notranslate"><span class="pre">PassBase</span></code></a>.
 To create a pass, we can subclass this and implement the function <code class="docutils literal notranslate"><span class="pre">call</span></code> with
@@ -681,7 +681,7 @@ module, we can pass the graph module directly to an instance of the class.</p>
 </div>
 </div>
 <div class="section" id="pass-manager">
-<h2>Pass Manager<a class="headerlink" href="#pass-manager" title="Permalink to this headline">¶</a></h2>
+<h2>Pass Manager<a class="headerlink" href="#pass-manager" title="Permalink to this heading">¶</a></h2>
 <p>The <code class="docutils literal notranslate"><span class="pre">PassManager</span></code> is a class used to run multiple passes on a given graph
 module. When initializing a <code class="docutils literal notranslate"><span class="pre">PassManager</span></code> instance, we pass in a list of passes
 that we want to run and set a couple of flags. To run the collection of passes
@@ -717,12 +717,12 @@ called after each pass is run on the graph module.</p>
 </div>
 </div>
 <div class="section" id="partitioner">
-<h2>Partitioner<a class="headerlink" href="#partitioner" title="Permalink to this headline">¶</a></h2>
+<h2>Partitioner<a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
 <p>There are a couple of common FX-graph based partitioners we can use to partition
 the graph. However, these do not necessarily produce a graph that is compliant
 with IR Spec, so be careful when using them.</p>
 <div class="section" id="subgraph-matcher">
-<h3>Subgraph Matcher<a class="headerlink" href="#subgraph-matcher" title="Permalink to this headline">¶</a></h3>
+<h3>Subgraph Matcher<a class="headerlink" href="#subgraph-matcher" title="Permalink to this heading">¶</a></h3>
 <p>For finding subgraphs within a graph that match a specific pattern, we can
 utilize FX’s
 <a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/utils/matcher_utils.py#L51"><code class="docutils literal notranslate"><span class="pre">SubgraphMatcher</span></code></a>.</p>
@@ -785,7 +785,7 @@ will instead treat them as wildcards.</p></li>
 </div>
 </div>
 <div class="section" id="capability-based-partitioner">
-<h3>Capability Based Partitioner<a class="headerlink" href="#capability-based-partitioner" title="Permalink to this headline">¶</a></h3>
+<h3>Capability Based Partitioner<a class="headerlink" href="#capability-based-partitioner" title="Permalink to this heading">¶</a></h3>
 <p>To find the largest subgraphs of nodes that support a specific invariant, we can
 utilize FX’s
 <a class="reference external" href="https://github.com/pytorch/pytorch/blob/8597d37536ef11bdf6b0a539ab79af876e1c92f6/torch/fx/passes/infra/partitioner.py#L34C1-L34C1"><code class="docutils literal notranslate"><span class="pre">CapabilityBasedPartitioner</span></code></a>.</p>
@@ -839,7 +839,7 @@ as submodules, and calls to these submodules in the toplevel graph through
 not allow <code class="docutils literal notranslate"><span class="pre">call_module</span></code> nodes.</p>
 </div>
 <div class="section" id="combined">
-<h3>Combined<a class="headerlink" href="#combined" title="Permalink to this headline">¶</a></h3>
+<h3>Combined<a class="headerlink" href="#combined" title="Permalink to this heading">¶</a></h3>
 <p>We also provide a combined helper function:
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/canonical_partitioners/pattern_op_partitioner.py#L59"><code class="docutils literal notranslate"><span class="pre">generate_pattern_op_partitions</span></code></a></p>
 <p>Args:</p>
@@ -868,7 +868,7 @@ given pattern graphs.</p></li>
 </ul>
 </div>
 <div class="section" id="source-partitioner">
-<h3>Source Partitioner<a class="headerlink" href="#source-partitioner" title="Permalink to this headline">¶</a></h3>
+<h3>Source Partitioner<a class="headerlink" href="#source-partitioner" title="Permalink to this heading">¶</a></h3>
 <p>For more complicated use cases in which users want to partition based on higher
 level modules (<code class="docutils literal notranslate"><span class="pre">torch.nn.Linear</span></code> or <code class="docutils literal notranslate"><span class="pre">torch.nn.functional.Linear</span></code>) which are now
 decomposed into their operators (<code class="docutils literal notranslate"><span class="pre">aten.permute</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.addmm</span></code>), we have the
@@ -1041,7 +1041,9 @@ a module of that type.</p></li>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

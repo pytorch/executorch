@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="runtime-platform-abstraction-layer-pal">
-<h1>Runtime Platform Abstraction Layer (PAL)<a class="headerlink" href="#runtime-platform-abstraction-layer-pal" title="Permalink to this headline">¶</a></h1>
+<h1>Runtime Platform Abstraction Layer (PAL)<a class="headerlink" href="#runtime-platform-abstraction-layer-pal" title="Permalink to this heading">¶</a></h1>
 <p>The ExecuTorch <em>Platform Abstraction Layer</em> (PAL) provides a way for execution
 environments to override operations like:</p>
 <ul class="simple">
@@ -435,7 +435,7 @@ environments to override operations like:</p>
 <p>The PAL function declarations are in
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/platform.h"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/platform.h</span></code></a>.</p>
 <div class="section" id="overriding-the-default-pal">
-<h2>Overriding the default PAL<a class="headerlink" href="#overriding-the-default-pal" title="Permalink to this headline">¶</a></h2>
+<h2>Overriding the default PAL<a class="headerlink" href="#overriding-the-default-pal" title="Permalink to this heading">¶</a></h2>
 <p>The default PAL implementation is in
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Posix.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Posix.cpp</span></code></a>.
 It uses <code class="docutils literal notranslate"><span class="pre">std::chrono::steady_clock</span></code> for the time, prints log messages to
@@ -451,7 +451,7 @@ in one of your application’s <code class="docutils literal notranslate"><span 
 so providing your own strong-symbol definition will override them at link time.</p>
 </div>
 <div class="section" id="minimal-pal">
-<h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this headline">¶</a></h2>
+<h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this heading">¶</a></h2>
 <p>If you run into build problems because your system doesn’t support the functions
 called by <code class="docutils literal notranslate"><span class="pre">Posix.cpp</span></code>, you can instead use the no-op minimal PAL at
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/platform/target/Minimal.cpp"><code class="docutils literal notranslate"><span class="pre">executorch/runtime/platform/target/Minimal.cpp</span></code></a>
@@ -530,7 +530,9 @@ you will need to override all of them.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

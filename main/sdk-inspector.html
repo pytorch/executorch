@@ -424,9 +424,9 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="inspector-apis">
-<h1>Inspector APIs<a class="headerlink" href="#inspector-apis" title="Permalink to this headline">¶</a></h1>
+<h1>Inspector APIs<a class="headerlink" href="#inspector-apis" title="Permalink to this heading">¶</a></h1>
 <div class="section" id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p>The Inspector APIs provide a convenient interface for analyzing the
 contents of <a class="reference external" href="sdk-etrecord.html">ETRecord</a> and
 <a class="reference external" href="sdk-etdump.html">ETDump</a>, helping developers get insights about model
@@ -442,9 +442,9 @@ APIs:</p>
 <p>Please refer to the <a class="reference external" href="tutorials/sdk-integration-tutorial.html">e2e use case doc</a> get an understanding of how to use these in a real world example.</p>
 </div>
 <div class="section" id="inspector-methods">
-<h2>Inspector Methods<a class="headerlink" href="#inspector-methods" title="Permalink to this headline">¶</a></h2>
+<h2>Inspector Methods<a class="headerlink" href="#inspector-methods" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="constructor">
-<h3>Constructor<a class="headerlink" href="#constructor" title="Permalink to this headline">¶</a></h3>
+<h3>Constructor<a class="headerlink" href="#constructor" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.Inspector.__init__">
 <span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etdump_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">etrecord</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">source_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.NS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_time_scale</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">TimeScale.MS</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">debug_buffer_path</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">delegate_metadata_parser</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">enable_module_hierarchy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.__init__" title="Permalink to this definition">¶</a></dt>
@@ -476,7 +476,7 @@ and optional ETRecord path.</p>
 </div>
 </div>
 <div class="section" id="to-dataframe">
-<h3>to_dataframe<a class="headerlink" href="#to-dataframe" title="Permalink to this headline">¶</a></h3>
+<h3>to_dataframe<a class="headerlink" href="#to-dataframe" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.Inspector.to_dataframe">
 <span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">to_dataframe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_units</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_delegate_debug_data</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.to_dataframe" title="Permalink to this definition">¶</a></dt>
@@ -495,7 +495,7 @@ and optional ETRecord path.</p>
 
 </div>
 <div class="section" id="print-data-tabular">
-<h3>print_data_tabular<a class="headerlink" href="#print-data-tabular" title="Permalink to this headline">¶</a></h3>
+<h3>print_data_tabular<a class="headerlink" href="#print-data-tabular" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.Inspector.print_data_tabular">
 <span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">print_data_tabular</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file=&lt;sphinx_gallery.gen_rst._LoggingTee</span> <span class="pre">object&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_units=True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">include_delegate_debug_data=False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.print_data_tabular" title="Permalink to this definition">¶</a></dt>
@@ -522,7 +522,7 @@ Not used if this is in an IPython environment such as a Jupyter notebook.</p></l
 <img alt="_images/print_data_tabular.png" src="_images/print_data_tabular.png" />
 </div>
 <div class="section" id="find-total-for-module">
-<h3>find_total_for_module<a class="headerlink" href="#find-total-for-module" title="Permalink to this headline">¶</a></h3>
+<h3>find_total_for_module<a class="headerlink" href="#find-total-for-module" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.Inspector.find_total_for_module">
 <span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">find_total_for_module</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.find_total_for_module" title="Permalink to this definition">¶</a></dt>
@@ -546,7 +546,7 @@ Not used if this is in an IPython environment such as a Jupyter notebook.</p></l
 </div>
 </div>
 <div class="section" id="get-exported-program">
-<h3>get_exported_program<a class="headerlink" href="#get-exported-program" title="Permalink to this headline">¶</a></h3>
+<h3>get_exported_program<a class="headerlink" href="#get-exported-program" title="Permalink to this heading">¶</a></h3>
 <dl class="py function">
 <dt class="sig sig-object py" id="sdk.Inspector.get_exported_program">
 <span class="sig-prename descclassname"><span class="pre">sdk.Inspector.</span></span><span class="sig-name descname"><span class="pre">get_exported_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">graph</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#sdk.Inspector.get_exported_program" title="Permalink to this definition">¶</a></dt>
@@ -582,9 +582,9 @@ Not used if this is in an IPython environment such as a Jupyter notebook.</p></l
 </div>
 </div>
 <div class="section" id="inspector-attributes">
-<h2>Inspector Attributes<a class="headerlink" href="#inspector-attributes" title="Permalink to this headline">¶</a></h2>
+<h2>Inspector Attributes<a class="headerlink" href="#inspector-attributes" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="eventblock-class">
-<h3><code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> Class<a class="headerlink" href="#eventblock-class" title="Permalink to this headline">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> Class<a class="headerlink" href="#eventblock-class" title="Permalink to this heading">¶</a></h3>
 <p>Access <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instances through the <code class="docutils literal notranslate"><span class="pre">event_blocks</span></code> attribute
 of an <code class="docutils literal notranslate"><span class="pre">Inspector</span></code> instance, for example:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">inspector</span><span class="o">.</span><span class="n">event_blocks</span>
@@ -592,7 +592,7 @@ of an <code class="docutils literal notranslate"><span class="pre">Inspector</sp
 </div>
 </div>
 <div class="section" id="event-class">
-<h3><code class="docutils literal notranslate"><span class="pre">Event</span></code> Class<a class="headerlink" href="#event-class" title="Permalink to this headline">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">Event</span></code> Class<a class="headerlink" href="#event-class" title="Permalink to this heading">¶</a></h3>
 <p>Access <code class="docutils literal notranslate"><span class="pre">Event</span></code> instances through the <code class="docutils literal notranslate"><span class="pre">events</span></code> attribute of an
 <code class="docutils literal notranslate"><span class="pre">EventBlock</span></code> instance.</p>
 <p><strong>Example Usage:</strong></p>
@@ -608,7 +608,7 @@ of an <code class="docutils literal notranslate"><span class="pre">Inspector</sp
 </div>
 </div>
 <div class="section" id="cli">
-<h2>CLI<a class="headerlink" href="#cli" title="Permalink to this headline">¶</a></h2>
+<h2>CLI<a class="headerlink" href="#cli" title="Permalink to this heading">¶</a></h2>
 <p>Execute the following command in your terminal to display the data
 table. This command produces the identical table output as calling the
 <a class="reference external" href="#print-data-tabular">print_data_tabular</a> mentioned earlier:</p>
@@ -668,11 +668,26 @@ table. This command produces the identical table output as calling the
 <li><a class="reference internal" href="#">Inspector APIs</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#inspector-methods">Inspector Methods</a><ul>
-<li><a class="reference internal" href="#constructor">Constructor</a></li>
-<li><a class="reference internal" href="#to-dataframe">to_dataframe</a></li>
-<li><a class="reference internal" href="#print-data-tabular">print_data_tabular</a></li>
-<li><a class="reference internal" href="#find-total-for-module">find_total_for_module</a></li>
-<li><a class="reference internal" href="#get-exported-program">get_exported_program</a></li>
+<li><a class="reference internal" href="#constructor">Constructor</a><ul>
+<li><a class="reference internal" href="#sdk.Inspector.__init__"><code class="docutils literal notranslate"><span class="pre">__init__()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#to-dataframe">to_dataframe</a><ul>
+<li><a class="reference internal" href="#sdk.Inspector.to_dataframe"><code class="docutils literal notranslate"><span class="pre">to_dataframe()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#print-data-tabular">print_data_tabular</a><ul>
+<li><a class="reference internal" href="#sdk.Inspector.print_data_tabular"><code class="docutils literal notranslate"><span class="pre">print_data_tabular()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#find-total-for-module">find_total_for_module</a><ul>
+<li><a class="reference internal" href="#sdk.Inspector.find_total_for_module"><code class="docutils literal notranslate"><span class="pre">find_total_for_module()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#get-exported-program">get_exported_program</a><ul>
+<li><a class="reference internal" href="#sdk.Inspector.get_exported_program"><code class="docutils literal notranslate"><span class="pre">get_exported_program()</span></code></a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li><a class="reference internal" href="#inspector-attributes">Inspector Attributes</a><ul>
@@ -701,7 +716,9 @@ table. This command produces the identical table output as calling the
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

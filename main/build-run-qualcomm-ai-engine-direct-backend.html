@@ -427,7 +427,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="building-and-running-executorch-with-qualcomm-ai-engine-direct-backend">
-<h1>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend<a class="headerlink" href="#building-and-running-executorch-with-qualcomm-ai-engine-direct-backend" title="Permalink to this headline">¶</a></h1>
+<h1>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend<a class="headerlink" href="#building-and-running-executorch-with-qualcomm-ai-engine-direct-backend" title="Permalink to this heading">¶</a></h1>
 <p>In this tutorial we will walk you through the process of getting setup to
 build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.</p>
 <p>Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation.</p>
@@ -461,7 +461,7 @@ Tutorials we recommend you complete before this:</div>
 </div>
 </div>
 <div class="section" id="what-s-qualcomm-ai-engine-direct">
-<h2>What’s Qualcomm AI Engine Direct?<a class="headerlink" href="#what-s-qualcomm-ai-engine-direct" title="Permalink to this headline">¶</a></h2>
+<h2>What’s Qualcomm AI Engine Direct?<a class="headerlink" href="#what-s-qualcomm-ai-engine-direct" title="Permalink to this heading">¶</a></h2>
 <p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct</a>
 is designed to provide unified, low-level APIs for AI development.</p>
 <p>Developers can interact with various accelerators on Qualcomm SoCs with these set of APIs, including
@@ -469,16 +469,16 @@ Kryo CPU, Adreno GPU, and Hexagon processors. More details can be found <a class
 <p>Currently, this ExecuTorch Backend can delegate AI computations to Hexagon processors through Qualcomm AI Engine Direct APIs.</p>
 </div>
 <div class="section" id="prerequsites-hardware-and-software">
-<h2>Prerequsites (Hardware and Software)<a class="headerlink" href="#prerequsites-hardware-and-software" title="Permalink to this headline">¶</a></h2>
+<h2>Prerequsites (Hardware and Software)<a class="headerlink" href="#prerequsites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="host-os">
-<h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this headline">¶</a></h3>
+<h3>Host OS<a class="headerlink" href="#host-os" title="Permalink to this heading">¶</a></h3>
 <p>The Linux host operating system that QNN Backend is verified with is Ubuntu 20.04 LTS x64.</p>
 <p>However, because Qualcomm Package Manager(QPM) used to download necessary SDK (see below)
 only support Ubuntu, we recommend users to exercise this tutorial exacly
 on Ubuntu 20.04.</p>
 </div>
 <div class="section" id="hardware">
-<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this headline">¶</a></h3>
+<h3>Hardware:<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
 <p>You will need an Android smartphone with adb-connected running on one of below Qualcomm SoCs:</p>
 <ul class="simple">
 <li><p>SM8450 (Snapdragon 8 Gen 1)</p></li>
@@ -488,7 +488,7 @@ on Ubuntu 20.04.</p>
 <p>This example is verified with SM8550 and SM8450.</p>
 </div>
 <div class="section" id="software">
-<h3>Software:<a class="headerlink" href="#software" title="Permalink to this headline">¶</a></h3>
+<h3>Software:<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Follow ExecuTorch recommneded Python version.</p></li>
 <li><p>A compiler to compile AOT parts. GCC 9.4 come with Ubuntu20.04 is verified.</p></li>
@@ -524,16 +524,16 @@ on Ubuntu 20.04.</p>
 </div>
 </div>
 <div class="section" id="setting-up-your-developer-environment">
-<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this headline">¶</a></h2>
+<h2>Setting up your developer environment<a class="headerlink" href="#setting-up-your-developer-environment" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="conventions">
-<h3>Conventions<a class="headerlink" href="#conventions" title="Permalink to this headline">¶</a></h3>
+<h3>Conventions<a class="headerlink" href="#conventions" title="Permalink to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">$QNN_SDK_ROOT</span></code> refers to the root of Qualcomm AI Engine Direct SDK,
 i.e., the directory containing <code class="docutils literal notranslate"><span class="pre">QNN_README.txt</span></code>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">$ANDROID_NDK</span></code> refers to the root of Android NDK.</p>
 <p><code class="docutils literal notranslate"><span class="pre">$EXECUTORCH_ROOT</span></code> refers to the root of executorch git repository.</p>
 </div>
 <div class="section" id="setup-environment-variables">
-<h3>Setup environment variables<a class="headerlink" href="#setup-environment-variables" title="Permalink to this headline">¶</a></h3>
+<h3>Setup environment variables<a class="headerlink" href="#setup-environment-variables" title="Permalink to this heading">¶</a></h3>
 <p>We set <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> to make sure the dynamic linker can find QNN libraries.</p>
 <p>Further, we set <code class="docutils literal notranslate"><span class="pre">PYTHONPATH</span></code> because it’s easier to develop and import ExecuTorch
 Pytho APIs.</p>
@@ -544,10 +544,10 @@ Pytho APIs.</p>
 </div>
 </div>
 <div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
 <p>An example script for below building instructions is <a class="reference download internal" download="" href="_downloads/d9e3387e8f389f6a68c05c3f3bc13e0b/build.sh"><span class="xref download myst">here</span></a>.</p>
 <div class="section" id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this headline">¶</a></h3>
+<h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
 <p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
 mkdir<span class="w"> </span>build_x86_64
@@ -563,7 +563,7 @@ cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapp
 </div>
 </div>
 <div class="section" id="runtime">
-<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<h3>Runtime:<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p>A example <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> executable would be used to run the compiled <code class="docutils literal notranslate"><span class="pre">pte</span></code> model.</p>
 <p>Commands to build <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> for Android:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
@@ -582,9 +582,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </div>
 </div>
 <div class="section" id="deploying-and-running-on-device">
-<h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this headline">¶</a></h2>
+<h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="aot-compile-a-model">
-<h3>AOT compile a model<a class="headerlink" href="#aot-compile-a-model" title="Permalink to this headline">¶</a></h3>
+<h3>AOT compile a model<a class="headerlink" href="#aot-compile-a-model" title="Permalink to this heading">¶</a></h3>
 <p>You can refer to <a class="reference download internal" download="" href="_downloads/780f2a7e6f1e5aca7ce0c3869b88c778/deeplab_v3.py"><span class="xref download myst">this script</span></a> for the exact flow.
 We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cd $EXECUTORCH_ROOT
@@ -609,7 +609,7 @@ python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --comp
 <p>The compiled model is <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code>.</p>
 </div>
 <div class="section" id="run-model-inference-on-an-android-smartphone-with-qualcomm-socs">
-<h3>Run model Inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this headline">¶</a></h3>
+<h3>Run model Inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this heading">¶</a></h3>
 <p><em><strong>Step 1</strong></em>. We need to push required QNN libraries to the device.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># make sure you have write-permission on below path.</span>
 <span class="nv">DEVICE_DIR</span><span class="o">=</span>/data/local/tmp/executorch_qualcomm_tutorial/
@@ -643,20 +643,20 @@ adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;c
 </div>
 </div>
 <div class="section" id="running-a-model-via-executorch-s-android-demo-app">
-<h3>Running a model via ExecuTorch’s android demo-app<a class="headerlink" href="#running-a-model-via-executorch-s-android-demo-app" title="Permalink to this headline">¶</a></h3>
+<h3>Running a model via ExecuTorch’s android demo-app<a class="headerlink" href="#running-a-model-via-executorch-s-android-demo-app" title="Permalink to this heading">¶</a></h3>
 <p>An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
 <code class="docutils literal notranslate"><span class="pre">examples</span></code>. Please refer to android demo app tutorial.</p>
 </div>
 </div>
 <div class="section" id="what-is-coming">
-<h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this headline">¶</a></h2>
+<h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/658">An example using quantized mobilebert</a> to solve multi-class text classification.</p></li>
 <li><p>More Qualcomm AI Engine Direct accelerators, e.g., GPU.</p></li>
 </ul>
 </div>
 <div class="section" id="faq">
-<h2>FAQ<a class="headerlink" href="#faq" title="Permalink to this headline">¶</a></h2>
+<h2>FAQ<a class="headerlink" href="#faq" title="Permalink to this heading">¶</a></h2>
 <p>If you encounter any issues while reproducing the tutorial, please file a github
 issue on ExecuTorch repo and tag use <code class="docutils literal notranslate"><span class="pre">#qcom_aisw</span></code> tag</p>
 </div>
@@ -753,7 +753,9 @@ issue on ExecuTorch repo and tag use <code class="docutils literal notranslate">
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

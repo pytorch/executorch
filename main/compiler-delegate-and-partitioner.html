@@ -427,14 +427,14 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="backend-and-delegate">
-<h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this headline">¶</a></h1>
+<h1>Backend and Delegate<a class="headerlink" href="#backend-and-delegate" title="Permalink to this heading">¶</a></h1>
 <p>Audience: Vendors, Backend Delegate developers, who are interested in integrating their own compilers and hardware as part of ExecuTorch</p>
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage performance and efficiency benefits of specialized
 backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime.</p>
 <div class="section" id="backend-interfaces-overview">
-<h2>Backend Interfaces: Overview<a class="headerlink" href="#backend-interfaces-overview" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Interfaces: Overview<a class="headerlink" href="#backend-interfaces-overview" title="Permalink to this heading">¶</a></h2>
 <p>At a high level, the entry point for backends is defined by 2 components:</p>
 <ul class="simple">
 <li><p>An IR to represent the program: <strong>Edge Dialect</strong> (which is produced through
@@ -466,7 +466,7 @@ the <code class="docutils literal notranslate"><span class="pre">to_edge</span><
 <p><strong>Figure 1.</strong> A high level of entry points for backend interfaces, including both ahead-of-time and runtime.</p>
 </div>
 <div class="section" id="backend-interfaces-ahead-of-time-preprocessing">
-<h2>Backend Interfaces: Ahead-of-Time Preprocessing<a class="headerlink" href="#backend-interfaces-ahead-of-time-preprocessing" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Interfaces: Ahead-of-Time Preprocessing<a class="headerlink" href="#backend-interfaces-ahead-of-time-preprocessing" title="Permalink to this heading">¶</a></h2>
 <p>There are mainly two Ahead-of-Time entry point for backend to implement: <code class="docutils literal notranslate"><span class="pre">partition</span></code> and <code class="docutils literal notranslate"><span class="pre">preprocess</span></code>.</p>
 <p><code class="docutils literal notranslate"><span class="pre">partitioner</span></code> is an algorithm implemented by the backend to tag the nodes to be lowered to the backend. <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> API will apply the partition algorithm and lower each subgraph, which consists of connected tagged nodes, to the targeted backend. Every subgraph
 will be sent to the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> part provided by the backend to compiled as a binary blob.</p>
@@ -500,7 +500,7 @@ parsed and executed at runtime.</p>
 <p><strong>Figure 2.</strong> The graph goes through partition and each subgraph will be sent to the preprocess part.</p>
 </div>
 <div class="section" id="backend-interfaces-runtime-initialization-and-execution">
-<h2>Backend Interfaces: Runtime Initialization and Execution<a class="headerlink" href="#backend-interfaces-runtime-initialization-and-execution" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Interfaces: Runtime Initialization and Execution<a class="headerlink" href="#backend-interfaces-runtime-initialization-and-execution" title="Permalink to this heading">¶</a></h2>
 <p>During the runtime, the compiled blob from the <code class="docutils literal notranslate"><span class="pre">preprocess</span></code> function will be
 loaded and passed directly to the backend’s custom <code class="docutils literal notranslate"><span class="pre">init</span></code> function. This
 function is responsible for further processing the compiled unit, as well as
@@ -544,7 +544,7 @@ function which will be called when the program is out of its lifespan.</p>
 </div>
 </div>
 <div class="section" id="sdk-integration-debuggability">
-<h2>SDK Integration: Debuggability<a class="headerlink" href="#sdk-integration-debuggability" title="Permalink to this headline">¶</a></h2>
+<h2>SDK Integration: Debuggability<a class="headerlink" href="#sdk-integration-debuggability" title="Permalink to this heading">¶</a></h2>
 <p>Providing consistent debugging experience, be it for runtime failures or performance profiling, is important. ExecuTorch employs native SDK (Software Development Kit) for this purpose, which enables correlating program instructions to original PyTorch code, via debug handles. You can read more about it <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">here</span></a>.</p>
 <p>Delegated program or subgraphs are opaque to ExecuTorch runtime and appear as a special <code class="docutils literal notranslate"><span class="pre">call_delegate</span></code> instruction, which asks corresponding backend to handle the execution of the subgraph or program. Due to the opaque nature of backend delgates, native SDK does not have visibility into delegated program. Thus the debugging, functional or performance, experiences of delegated execution suffers significantly as compared to it’s non-delegated counterpart.</p>
 <p>In order to provide consistent debugging experience to users, regardless of the use of delegation for a model, SDK provides an interface to correlate delegated (sub)graph to original (sub)graph. The SDK does so via debug handles map which allows delegates to generate internal handles that can be associated with the original (sub)graph consumed by the delegate. Then at runtime, backend developer can report error or profiling information using the internal handle, which will be mapped to original (sub)graph using the debug handle map. For more information, please refer to <a class="reference internal" href="sdk-delegate-integration.html"><span class="doc std std-doc">SDK delegate integration</span></a>.</p>
@@ -555,7 +555,7 @@ back to the exact line of PyThon code.</p>
 <img src="./_static/img/backend_debug_handle_example.png" alt="drawing" style="width:700px;"/>
 </div>
 <div class="section" id="common-questions">
-<h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this headline">¶</a></h2>
+<h2>Common Questions<a class="headerlink" href="#common-questions" title="Permalink to this heading">¶</a></h2>
 <p><strong>1. How can we get data in backend.preprocess?</strong></p>
 <p>The graph module being preprocessed is a lifted graph, this means that static
 data like weights and biases are supplied as inputs to the graph. However, we
@@ -737,7 +737,9 @@ We provide an helper function</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

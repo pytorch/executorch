@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="export-ir-specification">
-<h1>Export IR Specification<a class="headerlink" href="#export-ir-specification" title="Permalink to this headline">¶</a></h1>
+<h1>Export IR Specification<a class="headerlink" href="#export-ir-specification" title="Permalink to this heading">¶</a></h1>
 <p>Export IR is an intermediate representation (IR) for the result of
 <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>. To read more on the details of Export IR, please read this
 <a class="reference external" href="https://pytorch.org/docs/main/export.ir_spec.html">document</a>.</p>
@@ -448,7 +448,7 @@ ExecuTorch compilation process starts from a Python program capture into ATen
 Dialect, then ATen Dialect is converted to Edge Dialect, Edge to Backend, and
 finally to a binary format for execution.</p>
 <div class="section" id="aten-dialect">
-<h2>ATen Dialect<a class="headerlink" href="#aten-dialect" title="Permalink to this headline">¶</a></h2>
+<h2>ATen Dialect<a class="headerlink" href="#aten-dialect" title="Permalink to this heading">¶</a></h2>
 <p>ATen dialect will be used as the entry point of the ExecuTorch compilation
 pipeline. It is the first time an eager mode PyTorch program becomes an Exported
 IR graph. At this stage, functionalization is performed, removing any tensor
@@ -462,7 +462,7 @@ from adding custom ops in the graph via passes.</p>
 However, in the future we can see this one as the common integration point for
 other export use cases.</p>
 <div class="section" id="aten-dialect-properties">
-<h3>ATen Dialect Properties<a class="headerlink" href="#aten-dialect-properties" title="Permalink to this headline">¶</a></h3>
+<h3>ATen Dialect Properties<a class="headerlink" href="#aten-dialect-properties" title="Permalink to this heading">¶</a></h3>
 <p>An ATen dialect graph is a valid Export IR graph with the following additional
 properties:</p>
 <ol class="arabic simple">
@@ -485,19 +485,19 @@ promotions and implicit broadcasting of tensors.</p></li>
 </ol>
 </div>
 <div class="section" id="aten-operator-definition">
-<h3>ATen Operator Definition<a class="headerlink" href="#aten-operator-definition" title="Permalink to this headline">¶</a></h3>
+<h3>ATen Operator Definition<a class="headerlink" href="#aten-operator-definition" title="Permalink to this heading">¶</a></h3>
 <p>The operator set definition can be found <a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">here</span></a>.</p>
 </div>
 </div>
 <div class="section" id="edge-dialect">
-<h2>Edge Dialect<a class="headerlink" href="#edge-dialect" title="Permalink to this headline">¶</a></h2>
+<h2>Edge Dialect<a class="headerlink" href="#edge-dialect" title="Permalink to this heading">¶</a></h2>
 <p>This dialect is meant to introduce specializations that are useful for Edge
 devices but not necessarily for general (server) export. However, we still
 withhold specializing further to each different hardware. In other words, we
 don’t want to introduce any new hardware dependent concepts or data; besides
 those already present in users’ original python program.</p>
 <div class="section" id="edge-dialect-properties">
-<h3>Edge Dialect Properties<a class="headerlink" href="#edge-dialect-properties" title="Permalink to this headline">¶</a></h3>
+<h3>Edge Dialect Properties<a class="headerlink" href="#edge-dialect-properties" title="Permalink to this heading">¶</a></h3>
 <p>An Edge dialect graph is a valid Export IR graph with the following additional
 properties:</p>
 <ol class="arabic simple">
@@ -510,7 +510,7 @@ All scalar types (such as float, int) are converted to Tensor.</p></li>
 </ol>
 </div>
 <div class="section" id="using-the-edge-dialect">
-<h3>Using the Edge Dialect<a class="headerlink" href="#using-the-edge-dialect" title="Permalink to this headline">¶</a></h3>
+<h3>Using the Edge Dialect<a class="headerlink" href="#using-the-edge-dialect" title="Permalink to this heading">¶</a></h3>
 <p>The Edge dialect is represented with <code class="docutils literal notranslate"><span class="pre">exir.EdgeProgramManager</span></code> Python class in
 memory. This contains one or multiple <code class="docutils literal notranslate"><span class="pre">torch.export.ExportedProgram</span></code>s which
 contain the graph representation of a method.</p>
@@ -536,7 +536,7 @@ A tutorial on pass writing can be found
 executed, <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> will make sure the graph is still valid.</p>
 </div>
 <div class="section" id="edge-operators">
-<h3>Edge Operators<a class="headerlink" href="#edge-operators" title="Permalink to this headline">¶</a></h3>
+<h3>Edge Operators<a class="headerlink" href="#edge-operators" title="Permalink to this heading">¶</a></h3>
 <p>As mentioned before, an edge operator is an ATen core operator with type
 specialization. This means an instance of the edge operator contains a set of
 dtype constraints, that describe all the tensor dtypes supported by both the
@@ -580,7 +580,7 @@ in the Edge op schema. For example we can do:</p>
 <p>These constraints are helpful for someone who wants to write a custom kernel for this operator. Also inside EXIR, we offer a validator to check if the graph is still complying with these dtype constraints, after custom transformations.</p>
 </div>
 <div class="section" id="op-set-wip">
-<h3>Op Set (WIP)<a class="headerlink" href="#op-set-wip" title="Permalink to this headline">¶</a></h3>
+<h3>Op Set (WIP)<a class="headerlink" href="#op-set-wip" title="Permalink to this heading">¶</a></h3>
 <p>Check out
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/dialects/edge/edge.yaml">edge.yaml</a>
 for the complete list of operators having dtype constraints specified. We are
@@ -589,7 +589,7 @@ for all core ATen ops.</p>
 </div>
 </div>
 <div class="section" id="backend-dialect">
-<h2>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this heading">¶</a></h2>
 <p>See this <a class="reference internal" href="compiler-backend-dialect.html"><span class="doc std std-doc">doc</span></a></p>
 </div>
 </div>
@@ -673,7 +673,9 @@ for all core ATen ops.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

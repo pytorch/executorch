@@ -425,7 +425,7 @@
               
   <!---- Name is a WIP - this reflects better what it can do today ----->
 <div class="section" id="building-and-running-executorch-with-arm-ethos-u-backend">
-<h1>Building and Running ExecuTorch with ARM Ethos-U Backend<a class="headerlink" href="#building-and-running-executorch-with-arm-ethos-u-backend" title="Permalink to this headline">¶</a></h1>
+<h1>Building and Running ExecuTorch with ARM Ethos-U Backend<a class="headerlink" href="#building-and-running-executorch-with-arm-ethos-u-backend" title="Permalink to this heading">¶</a></h1>
 <!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
 <div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
@@ -462,23 +462,23 @@ What you will learn in this tutorial:</div>
 <p>If you are already familiar with this delegate, you may want to jump directly to the examples source dir - <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/arm">https://github.com/pytorch/executorch/tree/main/examples/arm</a></p>
 </div>
 <div class="section" id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <p>Let’s make sure you have everything you need before we get started.</p>
 <div class="section" id="hardware">
-<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this headline">¶</a></h3>
+<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
 <p>To successfully complete this tutorial, you will need a Linux-based host machine with Arm aarch64 or x86_64 processor architecture.</p>
 <p>The target device will be an embedded platform with an Arm Cortex-M55 CPU and Ethos-U55 NPU (ML processor). This tutorial will show you how to run PyTorch models on both.</p>
 <p>We will be using a <a class="reference external" href="https://www.arm.com/products/development-tools/simulation/fixed-virtual-platforms">Fixed Virtual Platform (FVP)</a>, simulating a <a class="reference external" href="https://developer.arm.com/Processors/Corstone-300">Corstone-300</a>(cs300) system. Since we will be using the FVP (think of it as virtual hardware), we won’t be requiring any real embedded hardware for this tutorial.</p>
 </div>
 <div class="section" id="software">
-<h3>Software<a class="headerlink" href="#software" title="Permalink to this headline">¶</a></h3>
+<h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <p>First, you will need to install ExecuTorch. Please follow the recommended tutorials if you haven’t already, to set up a working ExecuTorch development environment.</p>
 <p>To generate software which can be run on an embedded platform (real or virtual), we will need a tool chain for cross-compilation and an Arm Ethos-U software development kit, including the Vela compiler for Ethos-U NPUs.</p>
 <p>In the following sections we will walk through the steps to download each of the dependencies listed above.</p>
 </div>
 </div>
 <div class="section" id="set-up-the-developer-environment">
-<h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this headline">¶</a></h2>
+<h2>Set Up the Developer Environment<a class="headerlink" href="#set-up-the-developer-environment" title="Permalink to this heading">¶</a></h2>
 <p>In this section, we will do a one-time setup, like downloading and installing necessary software, for the platform support files needed to run ExecuTorch programs in this tutorial. There are two approaches available:</p>
 <ol class="arabic simple">
 <li><p>Method 1: Use the <code class="docutils literal notranslate"><span class="pre">examples/arm/setup.sh</span></code> script to pull each item in an automated fashion (recommended). It is recommended to run the script in a conda environment. Upon successful execution, you can directly go to <a class="reference internal" href="#convert-the-pytorch-model-to-the-pte-file"><span class="std std-doc">the next step</span></a>.</p></li>
@@ -498,7 +498,7 @@ uname<span class="w"> </span>-m
 </div>
 <p>Let’s create an empty directory, and use this as a top level development directory.</p>
 <div class="section" id="download-and-set-up-the-corstone-300-fvp">
-<h3>Download and Set Up the Corstone-300 FVP<a class="headerlink" href="#download-and-set-up-the-corstone-300-fvp" title="Permalink to this headline">¶</a></h3>
+<h3>Download and Set Up the Corstone-300 FVP<a class="headerlink" href="#download-and-set-up-the-corstone-300-fvp" title="Permalink to this heading">¶</a></h3>
 <p>Fixed Virtual Platforms (FVPs) are pre-configured, functionally accurate simulations of popular system configurations. Here in this tutorial, we are interested in the Corstone-300 system. We can download this from the Arm website.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
@@ -536,7 +536,7 @@ curl<span class="w"> </span><span class="se">\</span>
 </div>
 </div>
 <div class="section" id="download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain">
-<h3>Download and Install the Arm GNU AArch32 Bare-Metal Toolchain<a class="headerlink" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain" title="Permalink to this headline">¶</a></h3>
+<h3>Download and Install the Arm GNU AArch32 Bare-Metal Toolchain<a class="headerlink" href="#download-and-install-the-arm-gnu-aarch32-bare-metal-toolchain" title="Permalink to this heading">¶</a></h3>
 <p>Similar to the FVP, we would also need a tool-chain to cross-compile ExecuTorch runtime, executor-runner bare-metal application, as well as the rest of the bare-metal stack for Cortex-M55 CPU available on the Corstone-300 platform.</p>
 <p>These toolchains are available <a class="reference external" href="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads">here</a>. We will be using GCC 12.3 targeting <code class="docutils literal notranslate"><span class="pre">arm-none-eabi</span></code> here for our tutorial. Just like FVP, to download the same version as we tested with in the top-level development dir,</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># for aarch64</span>
@@ -559,7 +559,7 @@ curl<span class="w"> </span><span class="se">\</span>
 </div>
 </div>
 <div class="section" id="setup-the-arm-ethos-u-software-development">
-<h3>Setup the Arm Ethos-U Software Development<a class="headerlink" href="#setup-the-arm-ethos-u-software-development" title="Permalink to this headline">¶</a></h3>
+<h3>Setup the Arm Ethos-U Software Development<a class="headerlink" href="#setup-the-arm-ethos-u-software-development" title="Permalink to this heading">¶</a></h3>
 <p>This git repository is the root directory for all Arm Ethos-U software. It is to help us download required repositories and place them in a tree structure. In the top-level devlopment dir,</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Download the repo</span>
 git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/ml/ethos-u/ethos-u
@@ -578,7 +578,7 @@ git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatfor
 </div>
 <p>Once this is done, you should have a working FVP simulator, a functioning toolchain for cross compilation, and the Ethos-U software development setup ready for the bare-metal developement.</p>
 <div class="section" id="applying-local-patches">
-<h4>Applying Local Patches<a class="headerlink" href="#applying-local-patches" title="Permalink to this headline">¶</a></h4>
+<h4>Applying Local Patches<a class="headerlink" href="#applying-local-patches" title="Permalink to this heading">¶</a></h4>
 <p>Since this is under active development, we have some patches for the Arm Ethos-u software development kit. Let’s apply them on the download SDK and the Vela compiler.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>ethos-u<span class="w"> </span><span class="c1"># this is the top level Ethos-U software directory</span>
 
@@ -597,7 +597,7 @@ git<span class="w"> </span>am<span class="w"> </span>-3<span class="w"> </span>&
 </div>
 </div>
 <div class="section" id="install-the-vela-compiler">
-<h3>Install the Vela Compiler<a class="headerlink" href="#install-the-vela-compiler" title="Permalink to this headline">¶</a></h3>
+<h3>Install the Vela Compiler<a class="headerlink" href="#install-the-vela-compiler" title="Permalink to this heading">¶</a></h3>
 <p>Once the patching is done, let’s finish the setup by installing the Vela compiler.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># still in the ethos-u-vela directory</span>
 pip<span class="w"> </span>install<span class="w"> </span>.
@@ -605,7 +605,7 @@ pip<span class="w"> </span>install<span class="w"> </span>.
 </div>
 </div>
 <div class="section" id="install-the-tosa-reference-model">
-<h3>Install the TOSA reference model<a class="headerlink" href="#install-the-tosa-reference-model" title="Permalink to this headline">¶</a></h3>
+<h3>Install the TOSA reference model<a class="headerlink" href="#install-the-tosa-reference-model" title="Permalink to this heading">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://review.mlplatform.org/tosa/reference_model<span class="w"> </span>-b<span class="w"> </span>v0.80.0
 <span class="nb">cd</span><span class="w"> </span>reference_model
 git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init<span class="w"> </span>--recursive
@@ -639,15 +639,15 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 </div>
 </div>
 <div class="section" id="convert-the-pytorch-model-to-the-pte-file">
-<h2>Convert the PyTorch Model to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> File<a class="headerlink" href="#convert-the-pytorch-model-to-the-pte-file" title="Permalink to this headline">¶</a></h2>
+<h2>Convert the PyTorch Model to the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> File<a class="headerlink" href="#convert-the-pytorch-model-to-the-pte-file" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary file produced by ExecuTorch Ahead-of-Time (AoT) pipeline by taking in a PyTorch Model (a torch.nn.Module), exporting it, running a variety of passes, and finally serializing it to a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format. This binary file is typically consumed by the ExecuTorch Runtime. This <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/docs/source/getting-started-architecture.md">document</a> goes in much more depth about the ExecuTorch software stack for both AoT as well as Runtime.</p>
 <p>In this section, we will primarily focus on the AoT flow with the end goal of producing a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. There are a set of export configurations to target different backends at runtime. For each, the AoT flow will produce a unique <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. We will explore a couple of different configurations producing different <code class="docutils literal notranslate"><span class="pre">.pte</span></code> files, particularly interesting for our Corstone-300 system and available processing elements.</p>
 <p>Before we get started, let’s first talk about the PyTorch modules we will be using.</p>
 <div class="section" id="pytorch-example-modules">
-<h3>PyTorch Example Modules<a class="headerlink" href="#pytorch-example-modules" title="Permalink to this headline">¶</a></h3>
+<h3>PyTorch Example Modules<a class="headerlink" href="#pytorch-example-modules" title="Permalink to this heading">¶</a></h3>
 <p>We will use a couple of simple PyTorch Modules to explore the end-to-end flow. These modules will be used in various different ways throughout the tutorial, referring to them by their <code class="docutils literal notranslate"><span class="pre">&lt;class_name&gt;</span></code>.</p>
 <div class="section" id="softmaxmodule">
-<h4>SoftmaxModule<a class="headerlink" href="#softmaxmodule" title="Permalink to this headline">¶</a></h4>
+<h4>SoftmaxModule<a class="headerlink" href="#softmaxmodule" title="Permalink to this heading">¶</a></h4>
 <p>This is a very simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html#torch.nn.Softmax">Softmax</a> operator.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">SoftmaxModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -668,7 +668,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 </div>
 </div>
 <div class="section" id="addmodule">
-<h4>AddModule<a class="headerlink" href="#addmodule" title="Permalink to this headline">¶</a></h4>
+<h4>AddModule<a class="headerlink" href="#addmodule" title="Permalink to this heading">¶</a></h4>
 <p>Let’s write another simple PyTorch module with just one <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.add.html#torch.add">Add</a> operator.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">AddModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
@@ -692,7 +692,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 </div>
 </div>
 <div class="section" id="non-delegated-workflow">
-<h3>Non-delegated Workflow<a class="headerlink" href="#non-delegated-workflow" title="Permalink to this headline">¶</a></h3>
+<h3>Non-delegated Workflow<a class="headerlink" href="#non-delegated-workflow" title="Permalink to this heading">¶</a></h3>
 <p>In the ExecuTorch AoT pipeline, one of the options is to select a backend. ExecuTorch offers a variety of different backends. Selecting backend is optional, it is typically done to target a particular mode of acceleration or hardware for a given model compute requirements. Without any backends, ExecuTorch runtime will fallback to using, available by default, a highly portable set of operators.</p>
 <p>It’s expected that on platforms with dedicated acceleration like the Ethos-U55, that the non-delegated flow is used for two primary cases:</p>
 <ol class="arabic simple">
@@ -707,7 +707,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 </div>
 </div>
 <div class="section" id="delegated-workflow">
-<h3>Delegated Workflow<a class="headerlink" href="#delegated-workflow" title="Permalink to this headline">¶</a></h3>
+<h3>Delegated Workflow<a class="headerlink" href="#delegated-workflow" title="Permalink to this heading">¶</a></h3>
 <p>Working with Arm, we introduced a new Arm backend delegate for ExecuTorch. This backend is under active development and has a limited set of features available as of writing this.</p>
 <p>By including a following step during the ExecuTorch AoT export pipeline to generate the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we can enable this backend delegate.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">graph_module_edge</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">exported_program</span><span class="p">,</span> <span class="n">ArmPartitioner</span><span class="p">())</span>
@@ -722,7 +722,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 </div>
 </div>
 <div class="section" id="getting-a-bare-metal-executable">
-<h2>Getting a Bare-Metal Executable<a class="headerlink" href="#getting-a-bare-metal-executable" title="Permalink to this headline">¶</a></h2>
+<h2>Getting a Bare-Metal Executable<a class="headerlink" href="#getting-a-bare-metal-executable" title="Permalink to this heading">¶</a></h2>
 <p>In this section, we will go over steps that you need to go through to build the runtime application. This then run on the target device.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
@@ -732,7 +732,7 @@ make<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$((<
 <p>The block diagram below demonstrates, at the high level, how the various build artifacts are generated and are linked together to generate the final bare-metal executable.</p>
 <p><img alt="" src="_images/arm-delegate-runtime-build.svg" /></p>
 <div class="section" id="generating-executorch-libraries">
-<h3>Generating ExecuTorch Libraries<a class="headerlink" href="#generating-executorch-libraries" title="Permalink to this headline">¶</a></h3>
+<h3>Generating ExecuTorch Libraries<a class="headerlink" href="#generating-executorch-libraries" title="Permalink to this heading">¶</a></h3>
 <p>ExecuTorch’s CMake build system produces a set of build pieces which are critical for us to include and run the ExecuTorch runtime with-in the bare-metal environment we have for Corstone-300 from Ethos-U SDK.</p>
 <p><a class="reference internal" href="runtime-build-and-cross-compilation.html"><span class="doc std std-doc">This</span></a> document provides a detailed overview of each individual build piece. For running either variant of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, we will need a core set of libraries. Here is a list,</p>
 <ul class="simple">
@@ -779,7 +779,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>&lt;executorch_build
 <p>For example, here in the command line above, to run SoftmaxModule, we only included the softmax CPU operator. Similarly, to run AddModule in a non-delegated manner you will need add op and so on. As you might have already realized, for the delegated operators, which will be executed by the Arm backend delegate, we do not need to include those operators in this list. This is only for <em>non-delegated</em> operators.</p>
 </div>
 <div class="section" id="building-the-executor-runner-bare-metal-application">
-<h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this headline">¶</a></h3>
+<h3>Building the executor_runner Bare-Metal Application<a class="headerlink" href="#building-the-executor-runner-bare-metal-application" title="Permalink to this heading">¶</a></h3>
 <p>The SDK dir is the same one prepared <a class="reference internal" href="#setup-the-arm-ethos-u-software-development"><span class="std std-doc">earlier</span></a>. And, we will be passing the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file (any one of them) generated above.</p>
 <p>Note, you have to generate a new <code class="docutils literal notranslate"><span class="pre">executor-runner</span></code> binary if you want to change the model or the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. This constraint is from the constrained bare-metal runtime environment we have for Corstone-300 platform.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>&lt;ethos-u-sdk-dir&gt;/core_platform/
@@ -798,7 +798,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build<span class="w"
 </div>
 </div>
 <div class="section" id="running-on-corstone-300-fvp-platform">
-<h2>Running on Corstone-300 FVP Platform<a class="headerlink" href="#running-on-corstone-300-fvp-platform" title="Permalink to this headline">¶</a></h2>
+<h2>Running on Corstone-300 FVP Platform<a class="headerlink" href="#running-on-corstone-300-fvp-platform" title="Permalink to this heading">¶</a></h2>
 <p>Once the elf is prepared, regardless of the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file variant is used to generate the bare metal elf, you can run in with following command,</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nv">ethos_u_build_dir</span><span class="o">=</span>&lt;ethos-u-sdk-dir&gt;/core_platform/build/
 
@@ -871,7 +871,7 @@ FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><
 </div>
 </div>
 <div class="section" id="takeaways">
-<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this headline">¶</a></h2>
+<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
 <p>Through this tutorial we’ve learnt how to use the ExecuTorch software to both export a standard model from PyTorch and to run it on the compact and fully functioned ExecuTorch runtime, enabling a smooth path for offloading models from PyTorch to Arm based platforms.</p>
 <p>To recap, there are two major flows:</p>
 <ul class="simple">
@@ -881,7 +881,7 @@ FVP_Corstone_SSE-300_Ethos-U55<span class="w">                          </span><
 <p>Both of these flows continue to evolve, enabling more use-cases and better performance.</p>
 </div>
 <div class="section" id="faqs">
-<h2>FAQs<a class="headerlink" href="#faqs" title="Permalink to this headline">¶</a></h2>
+<h2>FAQs<a class="headerlink" href="#faqs" title="Permalink to this heading">¶</a></h2>
 <!----
 Describe what common errors users may see and how to resolve them.
 
@@ -993,7 +993,9 @@ Describe what common errors users may see and how to resolve them.
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

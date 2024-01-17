@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="profiling-models-in-executorch">
-<h1>Profiling Models in ExecuTorch<a class="headerlink" href="#profiling-models-in-executorch" title="Permalink to this headline">¶</a></h1>
+<h1>Profiling Models in ExecuTorch<a class="headerlink" href="#profiling-models-in-executorch" title="Permalink to this heading">¶</a></h1>
 <p>Profiling in ExecuTorch gives users access to these runtime metrics:</p>
 <ul class="simple">
 <li><p>Model Load Time.</p></li>
@@ -439,7 +439,7 @@
 <p>One uniqe aspect of ExecuTorch Profiling is the ability to link every runtime executed operator back to the exact line of python code from which this operator originated. This capability enables users to easily identify hotspots in their model, source them back to the exact line of Python code, and optimize if chosen to.</p>
 <p>We provide access to all the profiling data via the Python <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>. The data mentioned above can be accessed through these interfaces, allowing users to perform any post-run analysis of their choice.</p>
 <div class="section" id="steps-to-profile-a-model-in-executorch">
-<h2>Steps to Profile a Model in ExecuTorch<a class="headerlink" href="#steps-to-profile-a-model-in-executorch" title="Permalink to this headline">¶</a></h2>
+<h2>Steps to Profile a Model in ExecuTorch<a class="headerlink" href="#steps-to-profile-a-model-in-executorch" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple">
 <li><p>[Optional] Generate an <a class="reference internal" href="sdk-etrecord.html"><span class="doc std std-doc">ETRecord</span></a> while you’re exporting your model. If provided this will enable users to link back profiling details to eager model source code (with stack traces and module hierarchy).</p></li>
 <li><p>Build the runtime with the pre-processor flags that enable profiling. Detailed in the <a class="reference internal" href="sdk-etdump.html"><span class="doc std std-doc">ETDump documentation</span></a>.</p></li>
@@ -521,7 +521,9 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

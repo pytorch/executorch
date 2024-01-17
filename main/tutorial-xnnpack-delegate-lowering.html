@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="building-and-running-executorch-with-xnnpack-backend">
-<h1>Building and Running ExecuTorch with XNNPACK Backend<a class="headerlink" href="#building-and-running-executorch-with-xnnpack-backend" title="Permalink to this headline">¶</a></h1>
+<h1>Building and Running ExecuTorch with XNNPACK Backend<a class="headerlink" href="#building-and-running-executorch-with-xnnpack-backend" title="Permalink to this heading">¶</a></h1>
 <p>The following tutorial will familiarize you with leveraging the ExecuTorch XNNPACK Delegate for accelerating your ML Models using CPU hardware. It will go over exporting and serializing a model to a binary file, targeting the XNNPACK Delegate Backend and running the model on a supported target  platform. To get started quickly, use the script in the ExecuTorch repository with instructions on exporting and generating  a binary file for a few sample models demonstrating the flow.</p>
 <!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
@@ -455,7 +455,7 @@ Before you begin it is recommended you go through the following:</div>
 </div>
 </div>
 <div class="section" id="lowering-a-model-to-xnnpack">
-<h2>Lowering a model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this headline">¶</a></h2>
+<h2>Lowering a model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torchvision.models</span> <span class="k">as</span> <span class="nn">models</span>
 
@@ -502,7 +502,7 @@ Before you begin it is recommended you go through the following:</div>
 <p>After lowering to the XNNPACK Program, we can then prepare it for executorch and save the model as a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. <code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary format that stores the serialized ExecuTorch graph.</p>
 </div>
 <div class="section" id="lowering-a-quantized-model-to-xnnpack">
-<h2>Lowering a Quantized Model to XNNPACK<a class="headerlink" href="#lowering-a-quantized-model-to-xnnpack" title="Permalink to this headline">¶</a></h2>
+<h2>Lowering a Quantized Model to XNNPACK<a class="headerlink" href="#lowering-a-quantized-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
 <p>The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to <span class="xref myst">Custom Quantization</span> note. For the sake of this tutorial, we will leverage the <code class="docutils literal notranslate"><span class="pre">quantize()</span></code> python helper function conveniently added to the <code class="docutils literal notranslate"><span class="pre">executorch/executorch/examples</span></code> folder.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span>
@@ -551,7 +551,7 @@ Before you begin it is recommended you go through the following:</div>
 </div>
 </div>
 <div class="section" id="lowering-with-aot-compiler-py-script">
-<h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Permalink to this headline">¶</a></h2>
+<h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Permalink to this heading">¶</a></h2>
 <p>We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
 </pre></div>
@@ -565,7 +565,7 @@ Before you begin it is recommended you go through the following:</div>
 <p>The generated model file will be named <code class="docutils literal notranslate"><span class="pre">[model_name]_xnnpack_[qs8/fp32].pte</span></code> depending on the arguments supplied.</p>
 </div>
 <div class="section" id="running-the-xnnpack-model">
-<h2>Running the XNNPACK Model<a class="headerlink" href="#running-the-xnnpack-model" title="Permalink to this headline">¶</a></h2>
+<h2>Running the XNNPACK Model<a class="headerlink" href="#running-the-xnnpack-model" title="Permalink to this heading">¶</a></h2>
 <p>We will use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
 <span class="c1"># or to run the quantized variant</span>
@@ -574,7 +574,7 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_exe
 </div>
 </div>
 <div class="section" id="building-and-linking-with-the-xnnpack-backend">
-<h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this headline">¶</a></h2>
+<h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this heading">¶</a></h2>
 <p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54">BUCK target</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83">CMake target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
 </div>
 </div>
@@ -650,7 +650,9 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_exe
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

@@ -424,30 +424,30 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="executorch-concepts">
-<h1>ExecuTorch Concepts<a class="headerlink" href="#executorch-concepts" title="Permalink to this headline">¶</a></h1>
+<h1>ExecuTorch Concepts<a class="headerlink" href="#executorch-concepts" title="Permalink to this heading">¶</a></h1>
 <p>This page provides an overview of key concepts and terms used throughout the ExecuTorch documentation. It is intended to help readers understand the terminology and concepts used in PyTorch Edge and ExecuTorch.</p>
 <div class="section" id="concepts-map">
-<h2>Concepts Map<a class="headerlink" href="#concepts-map" title="Permalink to this headline">¶</a></h2>
+<h2>Concepts Map<a class="headerlink" href="#concepts-map" title="Permalink to this heading">¶</a></h2>
 <p><img alt="" src="_images/concepts-map-overview.png" /></p>
 <p><a href="./_static/img/concepts-map-overview.png" target="_blank">View in full size</a></p>
 <p><a href="./_static/img/concepts-map-detailed.png" target="_blank">View detailed concept map</a></p>
 </div>
 <div class="section" id="aot-ahead-of-time">
-<h2><a class="reference internal" href="getting-started-architecture.html#program-preparation"><span class="std std-doc">AOT (Ahead of Time)</span></a><a class="headerlink" href="#aot-ahead-of-time" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="getting-started-architecture.html#program-preparation"><span class="std std-doc">AOT (Ahead of Time)</span></a><a class="headerlink" href="#aot-ahead-of-time" title="Permalink to this heading">¶</a></h2>
 <p>AOT generally refers to the program preparation that occurs before execution. On a high level, ExecuTorch workflow is split into an AOT compilation and a runtime. The AOT steps involve compilation into an Intermediate Representation (IR), along with optional transformations and optimizations.</p>
 </div>
 <div class="section" id="aten">
-<h2><a class="reference external" href="https://pytorch.org/cppdocs/#aten">ATen</a><a class="headerlink" href="#aten" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://pytorch.org/cppdocs/#aten">ATen</a><a class="headerlink" href="#aten" title="Permalink to this heading">¶</a></h2>
 <p>Fundamentally, it is a tensor library on top of which almost all other Python and C++ interfaces in PyTorch are built. It provides a core Tensor class, on which many hundreds of operations are defined.</p>
 </div>
 <div class="section" id="aten-dialect">
-<h2><a class="reference internal" href="ir-exir.html#aten-dialect"><span class="std std-doc">ATen Dialect</span></a><a class="headerlink" href="#aten-dialect" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-exir.html#aten-dialect"><span class="std std-doc">ATen Dialect</span></a><a class="headerlink" href="#aten-dialect" title="Permalink to this heading">¶</a></h2>
 <p>ATen dialect is the immediate result of exporting an eager module to a graph representation. It is the entry point of the ExecuTorch compilation pipeline; after exporting to ATen dialect, subsequent passes can lower to <span class="xref myst">Core ATen dialect</span> and <a class="reference internal" href="#edge-dialect"><span class="std std-doc">Edge dialect</span></a>.</p>
 <p>ATen dialect is a valid <a class="reference internal" href="#exir"><span class="std std-doc">EXIR</span></a> with additional properties. It consists of functional ATen operators, higher order operators (like control flow operators) and registered custom operators.</p>
 <p>The goal of ATen dialect is to capture users’ programs as faithfully as possible.</p>
 </div>
 <div class="section" id="aten-mode">
-<h2>ATen mode<a class="headerlink" href="#aten-mode" title="Permalink to this headline">¶</a></h2>
+<h2>ATen mode<a class="headerlink" href="#aten-mode" title="Permalink to this heading">¶</a></h2>
 <p>ATen mode uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, from the PyTorch core. This is in contrast to portable mode, which uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) and related types, such as <code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>.</p>
 <ul class="simple">
 <li><p>ATen kernels that rely on the full <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> API are usable in this configuration.</p></li>
@@ -456,86 +456,86 @@
 </ul>
 </div>
 <div class="section" id="autograd-safe-aten-dialect">
-<h2>Autograd safe ATen Dialect<a class="headerlink" href="#autograd-safe-aten-dialect" title="Permalink to this headline">¶</a></h2>
+<h2>Autograd safe ATen Dialect<a class="headerlink" href="#autograd-safe-aten-dialect" title="Permalink to this heading">¶</a></h2>
 <p>Autograd safe ATen dialect includes only differentiable ATen operators, along with higher order operators (control flow ops) and registered custom operators.</p>
 </div>
 <div class="section" id="backend">
-<h2>Backend<a class="headerlink" href="#backend" title="Permalink to this headline">¶</a></h2>
+<h2>Backend<a class="headerlink" href="#backend" title="Permalink to this heading">¶</a></h2>
 <p>A specific hardware (like GPU, NPU) or a software stack (like XNNPACK) that consumes a graph or part of it, with performance and efficiency benefits.</p>
 </div>
 <div class="section" id="backend-dialect">
-<h2><a class="reference internal" href="ir-exir.html#backend-dialect"><span class="std std-doc">Backend Dialect</span></a><a class="headerlink" href="#backend-dialect" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-exir.html#backend-dialect"><span class="std std-doc">Backend Dialect</span></a><a class="headerlink" href="#backend-dialect" title="Permalink to this heading">¶</a></h2>
 <p>Backend dialect is the immediate result of exporting Edge dialect to specific backend. It’s target-aware, and may contain operators or submodules that are only meaningful to the target backend. This dialect allows the introduction of target-specific operators that do not conform to the schema defined in the Core ATen Operator Set and are not shown in ATen or Edge Dialect.</p>
 </div>
 <div class="section" id="backend-registry">
-<h2>Backend registry<a class="headerlink" href="#backend-registry" title="Permalink to this headline">¶</a></h2>
+<h2>Backend registry<a class="headerlink" href="#backend-registry" title="Permalink to this heading">¶</a></h2>
 <p>A table mapping backend names to backend interfaces. This allows backends to be called via name during runtime.</p>
 </div>
 <div class="section" id="backend-specific-operator">
-<h2>Backend Specific Operator<a class="headerlink" href="#backend-specific-operator" title="Permalink to this headline">¶</a></h2>
+<h2>Backend Specific Operator<a class="headerlink" href="#backend-specific-operator" title="Permalink to this heading">¶</a></h2>
 <p>These are operators that are not part of ATen dialect or Edge dialect. Backend specific operators are only introduced by passes that happen after Edge dialect (see Backend dialect). These operators are specific to the target backend and will generally execute faster.</p>
 </div>
 <div class="section" id="buck2">
-<h2><a class="reference external" href="https://buck2.build/">Buck2</a><a class="headerlink" href="#buck2" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://buck2.build/">Buck2</a><a class="headerlink" href="#buck2" title="Permalink to this heading">¶</a></h2>
 <p>An open-source, large scale build system. Used to build ExecuTorch.</p>
 </div>
 <div class="section" id="cmake">
-<h2><a class="reference external" href="https://cmake.org/">CMake</a><a class="headerlink" href="#cmake" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://cmake.org/">CMake</a><a class="headerlink" href="#cmake" title="Permalink to this heading">¶</a></h2>
 <p>An open-source, cross-platform family of tools designed to build, test and package software. Used to build ExecuTorch.</p>
 </div>
 <div class="section" id="codegen">
-<h2>Codegen<a class="headerlink" href="#codegen" title="Permalink to this headline">¶</a></h2>
+<h2>Codegen<a class="headerlink" href="#codegen" title="Permalink to this heading">¶</a></h2>
 <p>At a high level, codegen performs two tasks; generating the <a class="reference internal" href="kernel-library-custom-aten-kernel.html"><span class="doc std std-doc">kernel registration</span></a> library, and optionally running <a class="reference internal" href="#selective-build"><span class="std std-doc">selective build</span></a>.</p>
 <p>The kernel registration library connects operator names (referenced in the model) with the corresponding kernel implementation (from the kernel library).</p>
 <p>The selective build API collects operator information from models and/or other sources and only includes the operators required by them. This can reduce the binary size.</p>
 <p>The output of codegen is a set of C++ bindings (various <code class="docutils literal notranslate"><span class="pre">.h</span></code>, <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files) that glue together the kernel library and the ExecuTorch runtime.</p>
 </div>
 <div class="section" id="core-aten-dialect">
-<h2><a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler_ir.html#irs">Core ATen Dialect</a><a class="headerlink" href="#core-aten-dialect" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://pytorch.org/docs/stable/torch.compiler_ir.html#irs">Core ATen Dialect</a><a class="headerlink" href="#core-aten-dialect" title="Permalink to this heading">¶</a></h2>
 <p>Core ATen dialect contains the core ATen operators along with higher order operators (control flow) and registered custom operators.</p>
 </div>
 <div class="section" id="core-aten-operators-canonical-aten-operator-set">
-<h2><a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">Core ATen operators / Canonical ATen operator set</span></a><a class="headerlink" href="#core-aten-operators-canonical-aten-operator-set" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">Core ATen operators / Canonical ATen operator set</span></a><a class="headerlink" href="#core-aten-operators-canonical-aten-operator-set" title="Permalink to this heading">¶</a></h2>
 <p>A select subset of the PyTorch ATen operator library. Core ATen operators will not be decomposed when exported with the core ATen decomposition table. They serve as a reference for the baseline ATen ops that a backend or compiler should expect from upstream.</p>
 </div>
 <div class="section" id="core-aten-decomposition-table">
-<h2>Core ATen Decomposition Table<a class="headerlink" href="#core-aten-decomposition-table" title="Permalink to this headline">¶</a></h2>
+<h2>Core ATen Decomposition Table<a class="headerlink" href="#core-aten-decomposition-table" title="Permalink to this heading">¶</a></h2>
 <p>Decomposing an operator means expressing it as a combination of other operators. During the AOT process, a default list of decompositions is employed, breaking down ATen operators into core ATen operators. This is referred to as the Core ATen Decomposition Table.</p>
 </div>
 <div class="section" id="custom-operator">
-<h2><a class="reference external" href="https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit?fbclid=IwAR1qLTrChO4wRokhh_wHgdbX1SZwsU-DUv1XE2xFq0tIKsZSdDLAe6prTxg#heading=h.ahugy69p2jmz">Custom operator</a><a class="headerlink" href="#custom-operator" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://docs.google.com/document/d/1_W62p8WJOQQUzPsJYa7s701JXt0qf2OfLub2sbkHOaU/edit?fbclid=IwAR1qLTrChO4wRokhh_wHgdbX1SZwsU-DUv1XE2xFq0tIKsZSdDLAe6prTxg#heading=h.ahugy69p2jmz">Custom operator</a><a class="headerlink" href="#custom-operator" title="Permalink to this heading">¶</a></h2>
 <p>These are operators that aren’t part of the ATen library, but which appear in <a class="reference internal" href="#eager-mode"><span class="std std-doc">eager mode</span></a>. Registered custom operators are registered into the current PyTorch eager mode runtime, usually with a <code class="docutils literal notranslate"><span class="pre">TORCH_LIBRARY</span></code> call. They are most likely associated with a specific target model or hardware platform. For example, <a class="reference external" href="https://pytorch.org/vision/main/generated/torchvision.ops.roi_align.html">torchvision::roi_align</a> is a custom operator widely used by torchvision (doesn’t target a specific hardware).</p>
 </div>
 <div class="section" id="dataloader">
-<h2>DataLoader<a class="headerlink" href="#dataloader" title="Permalink to this headline">¶</a></h2>
+<h2>DataLoader<a class="headerlink" href="#dataloader" title="Permalink to this heading">¶</a></h2>
 <p>An interface that enables the ExecuTorch runtime to read from a file or other data source without directly depending on operating system concepts like files or memory allocation.</p>
 </div>
 <div class="section" id="delegation">
-<h2><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegation</span></a><a class="headerlink" href="#delegation" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegation</span></a><a class="headerlink" href="#delegation" title="Permalink to this heading">¶</a></h2>
 <p>To run parts (or all) of a program on a specific backend (eg. XNNPACK) while the rest of the program (if any) runs on the basic ExecuTorch runtime. Delegation enables us to leverage the performance and efficiency benefits of specialized backends and hardware.</p>
 </div>
 <div class="section" id="dsp-digital-signal-processor">
-<h2>DSP (Digital Signal Processor)<a class="headerlink" href="#dsp-digital-signal-processor" title="Permalink to this headline">¶</a></h2>
+<h2>DSP (Digital Signal Processor)<a class="headerlink" href="#dsp-digital-signal-processor" title="Permalink to this heading">¶</a></h2>
 <p>Specialized microprocessor chip with architecture optimized for digital signal processing.</p>
 </div>
 <div class="section" id="dtype">
-<h2>dtype<a class="headerlink" href="#dtype" title="Permalink to this headline">¶</a></h2>
+<h2>dtype<a class="headerlink" href="#dtype" title="Permalink to this heading">¶</a></h2>
 <p>Data type, the type of data (eg. float, integer, etc.) in a tensor.</p>
 </div>
 <div class="section" id="dynamic-quantization">
-<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Dynamic Quantization</a><a class="headerlink" href="#dynamic-quantization" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Dynamic Quantization</a><a class="headerlink" href="#dynamic-quantization" title="Permalink to this heading">¶</a></h2>
 <p>A method of quantizing wherein tensors are quantized on the fly during inference. This is in contrast to <a class="reference internal" href="#static-quantization"><span class="std std-doc">static quantization</span></a>, where tensors are quantized before inference.</p>
 </div>
 <div class="section" id="dynamic-shapes">
-<h2>Dynamic shapes<a class="headerlink" href="#dynamic-shapes" title="Permalink to this headline">¶</a></h2>
+<h2>Dynamic shapes<a class="headerlink" href="#dynamic-shapes" title="Permalink to this heading">¶</a></h2>
 <p>Refers to the ability of a model to accept inputs with varying shapes during inference. For example, the ATen op <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.unique_consecutive.html">unique_consecutive</a> and the custom op <a class="reference external" href="https://pytorch.org/vision/main/models/mask_rcnn.html">MaskRCNN</a> have data dependent output shapes. Such operators are difficult to do memory planning on, as each invocation may produce a different output shape even for the same input shape. To support dynamic shapes in ExecuTorch, kernels can allocate tensor data using the <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code> provided by the client.</p>
 </div>
 <div class="section" id="eager-mode">
-<h2>Eager mode<a class="headerlink" href="#eager-mode" title="Permalink to this headline">¶</a></h2>
+<h2>Eager mode<a class="headerlink" href="#eager-mode" title="Permalink to this heading">¶</a></h2>
 <p>Python execution environment where operators in a model are immediately executed as they are encountered. e.g. Jupyter / Colab notebooks are run in eager mode. This is in contrast to graph mode, where operators are first synthesized into a graph which is then compiled and executed.</p>
 </div>
 <div class="section" id="edge-dialect">
-<h2><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge Dialect</span></a><a class="headerlink" href="#edge-dialect" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-exir.html#edge-dialect"><span class="std std-doc">Edge Dialect</span></a><a class="headerlink" href="#edge-dialect" title="Permalink to this heading">¶</a></h2>
 <p>A dialect of EXIR with the following properties:</p>
 <ul class="simple">
 <li><p>All operators are from a predefined operator set, called ‘Edge Operators’ or are registered custom operators.</p></li>
@@ -544,55 +544,55 @@
 <p>Edge dialect introduces specializations that are useful for Edge devices, but not necessarily for general (server) export. However, Edge dialect does not contain specializations for specific hardware besides those already present in the original Python program.</p>
 </div>
 <div class="section" id="edge-operator">
-<h2>Edge operator<a class="headerlink" href="#edge-operator" title="Permalink to this headline">¶</a></h2>
+<h2>Edge operator<a class="headerlink" href="#edge-operator" title="Permalink to this heading">¶</a></h2>
 <p>An ATen operator with a dtype specialization.</p>
 </div>
 <div class="section" id="executorch">
-<h2><a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch</a><a class="headerlink" href="#executorch" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://github.com/pytorch/executorch">ExecuTorch</a><a class="headerlink" href="#executorch" title="Permalink to this heading">¶</a></h2>
 <p>A unified ML software stack within the PyTorch Edge platform designed for efficient on-device inference. ExecuTorch defines a workflow to prepare (export and transform) and execute a PyTorch program on Edge devices such as mobile, wearables, and embedded devices.</p>
 </div>
 <div class="section" id="executorch-method">
-<h2>ExecuTorch Method<a class="headerlink" href="#executorch-method" title="Permalink to this headline">¶</a></h2>
+<h2>ExecuTorch Method<a class="headerlink" href="#executorch-method" title="Permalink to this heading">¶</a></h2>
 <p>The executable equivalent of an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code> Python method. For example, the <code class="docutils literal notranslate"><span class="pre">forward()</span></code> Python method would compile into an ExecuTorch <code class="docutils literal notranslate"><span class="pre">Method</span></code>.</p>
 </div>
 <div class="section" id="executorch-program">
-<h2>ExecuTorch Program<a class="headerlink" href="#executorch-program" title="Permalink to this headline">¶</a></h2>
+<h2>ExecuTorch Program<a class="headerlink" href="#executorch-program" title="Permalink to this heading">¶</a></h2>
 <p>An ExecuTorch <code class="docutils literal notranslate"><span class="pre">Program</span></code> maps string names like <code class="docutils literal notranslate"><span class="pre">forward</span></code> to specific ExecuTorch <code class="docutils literal notranslate"><span class="pre">Method</span></code> entries.</p>
 </div>
 <div class="section" id="executor-runner">
-<h2>executor_runner<a class="headerlink" href="#executor-runner" title="Permalink to this headline">¶</a></h2>
+<h2>executor_runner<a class="headerlink" href="#executor-runner" title="Permalink to this heading">¶</a></h2>
 <p>A sample wrapper around the ExecuTorch runtime which includes all the operators and backends.</p>
 </div>
 <div class="section" id="exir">
-<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a><a class="headerlink" href="#exir" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a><a class="headerlink" href="#exir" title="Permalink to this heading">¶</a></h2>
 <p>The <strong>EX</strong>port <strong>I</strong>ntermediate <strong>R</strong>epresentation (IR) from <code class="docutils literal notranslate"><span class="pre">torch.export</span></code>. Contains the computational graph of the model. All EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
 </div>
 <div class="section" id="exportedprogram">
-<h2><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code><a class="headerlink" href="#exportedprogram" title="Permalink to this headline">¶</a></h2>
+<h2><code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code><a class="headerlink" href="#exportedprogram" title="Permalink to this heading">¶</a></h2>
 <p>The output of <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> that bundles the computational graph of a PyTorch model (usually an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>) with the parameters or weights that the model consumes.</p>
 </div>
 <div class="section" id="flatbuffer">
-<h2><a class="reference external" href="https://github.com/google/flatbuffers">flatbuffer</a><a class="headerlink" href="#flatbuffer" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://github.com/google/flatbuffers">flatbuffer</a><a class="headerlink" href="#flatbuffer" title="Permalink to this heading">¶</a></h2>
 <p>Memory efficient, cross platform serialization library. In the context of ExecuTorch, eager mode Pytorch models are exported to flatbuffer, which is the format consumed by the ExecuTorch runtime.</p>
 </div>
 <div class="section" id="framework-tax">
-<h2>Framework tax<a class="headerlink" href="#framework-tax" title="Permalink to this headline">¶</a></h2>
+<h2>Framework tax<a class="headerlink" href="#framework-tax" title="Permalink to this heading">¶</a></h2>
 <p>The cost of various loading and initialization tasks (not inference). For example; loading a program, initializing executor, kernel and backend-delegate dispatch, and runtime memory utilization.</p>
 </div>
 <div class="section" id="functional-aten-operators">
-<h2>Functional ATen operators<a class="headerlink" href="#functional-aten-operators" title="Permalink to this headline">¶</a></h2>
+<h2>Functional ATen operators<a class="headerlink" href="#functional-aten-operators" title="Permalink to this heading">¶</a></h2>
 <p>ATen operators that do not have any side effects.</p>
 </div>
 <div class="section" id="graph">
-<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Graph</span></a><a class="headerlink" href="#graph" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Graph</span></a><a class="headerlink" href="#graph" title="Permalink to this heading">¶</a></h2>
 <p>An EXIR Graph is a PyTorch program represented in the form of a DAG (directed acyclic graph). Each node in the graph represents a particular computation or operation, and edges of this graph consist of references between nodes. Note: all EXIR graphs are valid <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Graph">FX graphs</a>.</p>
 </div>
 <div class="section" id="graph-mode">
-<h2>Graph mode<a class="headerlink" href="#graph-mode" title="Permalink to this headline">¶</a></h2>
+<h2>Graph mode<a class="headerlink" href="#graph-mode" title="Permalink to this heading">¶</a></h2>
 <p>In graph mode, operators are first synthesized into a graph, which will then be compiled and executed as a whole. This is in contrast to eager mode, where operators are executed as they are encountered. Graph mode typically delivers higher performance as it allows optimizations such as operator fusion.</p>
 </div>
 <div class="section" id="higher-order-operators">
-<h2>Higher Order Operators<a class="headerlink" href="#higher-order-operators" title="Permalink to this headline">¶</a></h2>
+<h2>Higher Order Operators<a class="headerlink" href="#higher-order-operators" title="Permalink to this heading">¶</a></h2>
 <p>A higher order operator (HOP) is an operator that:</p>
 <ul class="simple">
 <li><p>either accepts a Python function as input, returns a Python function as output, or both.</p></li>
@@ -600,48 +600,48 @@
 </ul>
 </div>
 <div class="section" id="hybrid-quantization">
-<h2>Hybrid Quantization<a class="headerlink" href="#hybrid-quantization" title="Permalink to this headline">¶</a></h2>
+<h2>Hybrid Quantization<a class="headerlink" href="#hybrid-quantization" title="Permalink to this heading">¶</a></h2>
 <p>A quantization technique where different parts of the model are quantized with different techniques based on computational complexity and sensitivity to accuracy loss. Some parts of the model may not be quantized to retain accuracy.</p>
 </div>
 <div class="section" id="intermediate-representation-ir">
-<h2>Intermediate Representation (IR)<a class="headerlink" href="#intermediate-representation-ir" title="Permalink to this headline">¶</a></h2>
+<h2>Intermediate Representation (IR)<a class="headerlink" href="#intermediate-representation-ir" title="Permalink to this heading">¶</a></h2>
 <p>A representation of a program between the source and target languages. Generally, it is a data structure used internally by a compiler or virtual machine to represent source code.</p>
 </div>
 <div class="section" id="kernel">
-<h2>Kernel<a class="headerlink" href="#kernel" title="Permalink to this headline">¶</a></h2>
+<h2>Kernel<a class="headerlink" href="#kernel" title="Permalink to this heading">¶</a></h2>
 <p>An implementation of an operator. There can be multiple implementations of an operator for different backends/inputs/etc.</p>
 </div>
 <div class="section" id="kernel-registry-operator-registry">
-<h2>Kernel registry / Operator registry<a class="headerlink" href="#kernel-registry-operator-registry" title="Permalink to this headline">¶</a></h2>
+<h2>Kernel registry / Operator registry<a class="headerlink" href="#kernel-registry-operator-registry" title="Permalink to this heading">¶</a></h2>
 <p>A table with mappings between kernel names and their implementations. This allows the ExecuTorch runtime to resolve references to kernels during execution.</p>
 </div>
 <div class="section" id="lowering">
-<h2>Lowering<a class="headerlink" href="#lowering" title="Permalink to this headline">¶</a></h2>
+<h2>Lowering<a class="headerlink" href="#lowering" title="Permalink to this heading">¶</a></h2>
 <p>The process of transforming a model to run on various backends. It is called ‘lowering’ as it is moving code closer to the hardware. In ExecuTorch, lowering is performed as part of backend delegation.</p>
 </div>
 <div class="section" id="memory-planning">
-<h2><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory planning</span></a><a class="headerlink" href="#memory-planning" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="compiler-memory-planning.html"><span class="doc std std-doc">Memory planning</span></a><a class="headerlink" href="#memory-planning" title="Permalink to this heading">¶</a></h2>
 <p>The process of allocating and managing memory for a model. In ExecuTorch, a memory planning pass is run before the graph is saved to flatbuffer. This assigns a memory ID to each tensor and an offset in the buffer, marking where storage for the tensor starts.</p>
 </div>
 <div class="section" id="node">
-<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Node</span></a><a class="headerlink" href="#node" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Node</span></a><a class="headerlink" href="#node" title="Permalink to this heading">¶</a></h2>
 <p>A node in an EXIR graph represents a particular computation or operation, and is represented in Python using <a class="reference external" href="https://pytorch.org/docs/stable/fx.html#torch.fx.Node">torch.fx.Node</a> class.</p>
 </div>
 <div class="section" id="operator">
-<h2>Operator<a class="headerlink" href="#operator" title="Permalink to this headline">¶</a></h2>
+<h2>Operator<a class="headerlink" href="#operator" title="Permalink to this heading">¶</a></h2>
 <p>Function on tensors. This is the abstraction; kernels are the implementation. There can be varying implementations for different backends/inputs/etc.</p>
 </div>
 <div class="section" id="operator-fusion">
-<h2>Operator fusion<a class="headerlink" href="#operator-fusion" title="Permalink to this headline">¶</a></h2>
+<h2>Operator fusion<a class="headerlink" href="#operator-fusion" title="Permalink to this heading">¶</a></h2>
 <p>Operator fusion is the process of combining multiple operators into a single compound operator, resulting in faster computation due to fewer kernel launches and fewer memory read/writes. This is a performance advantage of graph mode vs eager mode.</p>
 </div>
 <div class="section" id="out-variant">
-<h2>Out variant<a class="headerlink" href="#out-variant" title="Permalink to this headline">¶</a></h2>
+<h2>Out variant<a class="headerlink" href="#out-variant" title="Permalink to this heading">¶</a></h2>
 <p>Instead of allocating returned tensors in kernel implementations, an operator’s out variant will take in a pre-allocated tensor to its out kwarg, and store the result there.</p>
 <p>This makes it easier for memory planners to perform tensor lifetime analysis. In ExecuTorch, an out variant pass is performed before memory planning.</p>
 </div>
 <div class="section" id="pal-platform-abstraction-layer">
-<h2><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">PAL (Platform Abstraction Layer)</span></a><a class="headerlink" href="#pal-platform-abstraction-layer" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc">PAL (Platform Abstraction Layer)</span></a><a class="headerlink" href="#pal-platform-abstraction-layer" title="Permalink to this heading">¶</a></h2>
 <p>Provides a way for execution environments to override operations such as;</p>
 <ul class="simple">
 <li><p>Getting the current time.</p></li>
@@ -651,15 +651,15 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 </ul>
 </div>
 <div class="section" id="partial-kernels">
-<h2>Partial kernels<a class="headerlink" href="#partial-kernels" title="Permalink to this headline">¶</a></h2>
+<h2>Partial kernels<a class="headerlink" href="#partial-kernels" title="Permalink to this heading">¶</a></h2>
 <p>Kernels that support a subset of tensor dtypes and/or dim orders.</p>
 </div>
 <div class="section" id="partitioner">
-<h2><span class="xref myst">Partitioner</span><a class="headerlink" href="#partitioner" title="Permalink to this headline">¶</a></h2>
+<h2><span class="xref myst">Partitioner</span><a class="headerlink" href="#partitioner" title="Permalink to this heading">¶</a></h2>
 <p>Parts of a model may be delegated to run on an optimized backend. The partitioner splits the graph into the appropriate sub-networks and tags them for delegation.</p>
 </div>
 <div class="section" id="portable-mode-lean-mode">
-<h2>Portable mode (lean mode)<a class="headerlink" href="#portable-mode-lean-mode" title="Permalink to this headline">¶</a></h2>
+<h2>Portable mode (lean mode)<a class="headerlink" href="#portable-mode-lean-mode" title="Permalink to this heading">¶</a></h2>
 <p>Portable mode uses ExecuTorch’s smaller implementation of tensor (<code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>) along with related types (<code class="docutils literal notranslate"><span class="pre">torch::executor::ScalarType</span></code>, etc.). This is in contrast to ATen mode, which uses the ATen implementation of Tensor (<code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>) and related types (<code class="docutils literal notranslate"><span class="pre">ScalarType</span></code>, etc.)</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">torch::executor::Tensor</span></code>, also known as ETensor, is a source-compatible subset of <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>. Code written against ETensor can build against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>.</p></li>
@@ -667,7 +667,7 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 </ul>
 </div>
 <div class="section" id="portable-kernels">
-<h2>Portable kernels<a class="headerlink" href="#portable-kernels" title="Permalink to this headline">¶</a></h2>
+<h2>Portable kernels<a class="headerlink" href="#portable-kernels" title="Permalink to this heading">¶</a></h2>
 <p>Portable kernels are operator implementations that are written to be compatible with ETensor. As ETensor is compatible with <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code>, portable kernels can be built against <code class="docutils literal notranslate"><span class="pre">at::Tensor</span></code> and used in the same model as ATen kernels. Portable kernels are:</p>
 <ul class="simple">
 <li><p>Compatible with ATen operator signatures</p></li>
@@ -678,43 +678,43 @@ The default PAL implementation can be overridden if it doesn’t work for a part
 </ul>
 </div>
 <div class="section" id="program">
-<h2>Program<a class="headerlink" href="#program" title="Permalink to this headline">¶</a></h2>
+<h2>Program<a class="headerlink" href="#program" title="Permalink to this heading">¶</a></h2>
 <p>The set of codes and data to describe an ML model.</p>
 </div>
 <div class="section" id="program-source-code">
-<h2>Program source code<a class="headerlink" href="#program-source-code" title="Permalink to this headline">¶</a></h2>
+<h2>Program source code<a class="headerlink" href="#program-source-code" title="Permalink to this heading">¶</a></h2>
 <p>The Python source code to describe the program. It can be a Python function, or a method in PyTorch’s eager mode <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
 </div>
 <div class="section" id="ptq-post-training-quantization">
-<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PTQ (Post Training Quantization)</a><a class="headerlink" href="#ptq-post-training-quantization" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_ptq.html">PTQ (Post Training Quantization)</a><a class="headerlink" href="#ptq-post-training-quantization" title="Permalink to this heading">¶</a></h2>
 <p>A quantization technique where the model is quantized after it has been trained (usually for performance benefits). PTQ applies the quantization flow after training, in contrast to QAT which applies it during training.</p>
 </div>
 <div class="section" id="qat-quantization-aware-training">
-<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html">QAT (Quantization Aware Training)</a><a class="headerlink" href="#qat-quantization-aware-training" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://pytorch.org/tutorials/prototype/pt2e_quant_qat.html">QAT (Quantization Aware Training)</a><a class="headerlink" href="#qat-quantization-aware-training" title="Permalink to this heading">¶</a></h2>
 <p>Models may lose accuracy after quantization. QAT enables higher accuracy compared to eg. PTQ, by modeling the effects of quantization while training. During training, all weights and activations are ‘fake quantized’; float values are rounded to mimic int8 values, but all computations are still done with floating point numbers. Thus, all weight adjustments during training are made ‘aware’ that the model will ultimately be quantized. QAT applies the quantization flow during training, in contrast to PTQ which applies it afterwards.</p>
 </div>
 <div class="section" id="quantization">
-<h2><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization</span></a><a class="headerlink" href="#quantization" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="quantization-overview.html"><span class="doc std std-doc">Quantization</span></a><a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
 <p>Techniques for performing computations and memory accesses on tensors with lower precision data, usually <code class="docutils literal notranslate"><span class="pre">int8</span></code>. Quantization improves model performance by lowering the memory usage and (usually) decreasing computational latency; depending on the hardware, computation done in lower precision will typically be faster, e.g. <code class="docutils literal notranslate"><span class="pre">int8</span></code> matmul vs <code class="docutils literal notranslate"><span class="pre">fp32</span></code> matmul. Often, quantization comes at the cost of model accuracy.</p>
 </div>
 <div class="section" id="runtime">
-<h2><a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime</span></a><a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime</span></a><a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
 <p>The ExecuTorch runtime executes models on edge devices. It is responsible for program initialization, program execution and, optionally, destruction (releasing backend owned resources).</p>
 </div>
 <div class="section" id="sdk">
-<h2><a class="reference internal" href="sdk-overview.html"><span class="doc std std-doc">SDK</span></a><a class="headerlink" href="#sdk" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="sdk-overview.html"><span class="doc std std-doc">SDK</span></a><a class="headerlink" href="#sdk" title="Permalink to this heading">¶</a></h2>
 <p>Software Development Kit. The tooling users need to profile, debug and visualize programs that are running with ExecuTorch.</p>
 </div>
 <div class="section" id="selective-build">
-<h2><a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">Selective build</span></a><a class="headerlink" href="#selective-build" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference internal" href="kernel-library-selective-build.html"><span class="doc std std-doc">Selective build</span></a><a class="headerlink" href="#selective-build" title="Permalink to this heading">¶</a></h2>
 <p>An API used to build a leaner runtime by linking only to kernels used by the program. This provides significant binary size savings.</p>
 </div>
 <div class="section" id="static-quantization">
-<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Static Quantization</a><a class="headerlink" href="#static-quantization" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://pytorch.org/docs/main/quantization.html#general-quantization-flow">Static Quantization</a><a class="headerlink" href="#static-quantization" title="Permalink to this heading">¶</a></h2>
 <p>A method of quantizing wherein tensors are statically quantized. That is, floats are converted to a reduced-precision data type before inference.</p>
 </div>
 <div class="section" id="xnnpack">
-<h2><a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a><a class="headerlink" href="#xnnpack" title="Permalink to this headline">¶</a></h2>
+<h2><a class="reference external" href="https://github.com/google/XNNPACK">XNNPACK</a><a class="headerlink" href="#xnnpack" title="Permalink to this heading">¶</a></h2>
 <p>An optimized library of neural network interface operators for ARM, x86, WebAssembly, and RISC-V platforms. It is an open-source project and used by PyTorch and ExecuTorch. It is a successor to the QNNPack library. The operators support both floating point and quantized values.</p>
 </div>
 </div>
@@ -848,7 +848,9 @@ The default PAL implementation can be overridden if it doesn’t work for a part
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

@@ -424,18 +424,18 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="kernel-library-selective-build">
-<h1>Kernel Library Selective Build<a class="headerlink" href="#kernel-library-selective-build" title="Permalink to this headline">¶</a></h1>
+<h1>Kernel Library Selective Build<a class="headerlink" href="#kernel-library-selective-build" title="Permalink to this heading">¶</a></h1>
 <p><em>Selective build</em> is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.</p>
 <p>This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.</p>
 <p>Preread: <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Overview of the ExecuTorch runtime</span></a>, <a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">High-level architecture and components of ExecuTorch</span></a></p>
 <div class="section" id="design-principles">
-<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this headline">¶</a></h2>
+<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this heading">¶</a></h2>
 <p><strong>Why selective build?</strong> Many ExecuTorch use cases are constrained by binary size. Selective build can reduce the binary size of the ExecuTorch runtime without compromising support for a target model.</p>
 <p><strong>What are we selecting?</strong> Our core ExecuTorch library is around 50kB with no operators/kernels or delegates. If we link in kernel libraries such as the ExecuTorch in-house portable kernel library, the binary size of the whole application surges, due to unused kernels being registered into the ExecuTorch runtime. Selective build is able to apply a filter on the kernel libraries, so that only the kernels actually being used are linked, thus reducing the binary size of the application.</p>
 <p><strong>How do we select?</strong> Selective build provides APIs to allow users to pass in <em>op info</em>, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.</p>
 </div>
 <div class="section" id="high-level-architecture">
-<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this headline">¶</a></h2>
+<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this heading">¶</a></h2>
 <p><img alt="" src="_images/kernel-library-selective-build.png" /></p>
 <p>Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.</p>
 <p>The basic flow looks like this:</p>
@@ -446,7 +446,7 @@
 </ol>
 </div>
 <div class="section" id="apis">
-<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h2>
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
 <p>We expose build macros for CMake and Buck2, to allow users specifying op info.</p>
 <p>On CMake:</p>
 <p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12">gen_selected_ops</a></p>
@@ -454,22 +454,22 @@
 <p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/codegen/codegen.bzl#L44C21-L44C21">et_operator_library</a></p>
 <p>Both of these build macros take the following inputs:</p>
 <div class="section" id="select-all-ops">
-<h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this headline">¶</a></h3>
+<h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this heading">¶</a></h3>
 <p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
 </div>
 <div class="section" id="select-ops-from-schema-yaml">
-<h3>Select ops from schema yaml<a class="headerlink" href="#select-ops-from-schema-yaml" title="Permalink to this headline">¶</a></h3>
+<h3>Select ops from schema yaml<a class="headerlink" href="#select-ops-from-schema-yaml" title="Permalink to this heading">¶</a></h3>
 <p>Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see <a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Kernel Library Overview</span></a>. This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.</p>
 </div>
 <div class="section" id="select-root-ops-from-operator-list">
-<h3>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this headline">¶</a></h3>
+<h3>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this heading">¶</a></h3>
 <p>This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.</p>
 </div>
 </div>
 <div class="section" id="example-walkthrough">
-<h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this headline">¶</a></h2>
+<h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="buck2-example">
-<h3>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this headline">¶</a></h3>
+<h3>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this heading">¶</a></h3>
 <p>Let’s take a look at the following build:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select a list of operators: defined in `ops`</span>
 <span class="n">et_operator_library</span><span class="p">(</span>
@@ -508,7 +508,7 @@
 <p>Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (<code class="docutils literal notranslate"><span class="pre">custom_ops.yaml</span></code>).</p>
 </div>
 <div class="section" id="cmake-example">
-<h3>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this headline">¶</a></h3>
+<h3>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this heading">¶</a></h3>
 <p>In CMakeLists.txt we have the following logic:</p>
 <div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">_kernel_lib</span><span class="p">)</span>
 <span class="nb">if</span><span class="p">(</span><span class="s">SELECT_ALL_OPS</span><span class="p">)</span>
@@ -613,7 +613,9 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

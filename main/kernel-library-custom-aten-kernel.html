@@ -424,14 +424,14 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="kernel-registration">
-<h1>Kernel Registration<a class="headerlink" href="#kernel-registration" title="Permalink to this headline">¶</a></h1>
+<h1>Kernel Registration<a class="headerlink" href="#kernel-registration" title="Permalink to this heading">¶</a></h1>
 <div class="section" id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p>At the last stage of <a class="reference internal" href="export-overview.html"><span class="doc std std-doc">ExecuTorch model exporting</span></a>, we lower the operators in the dialect to the <em>out variants</em> of the <a class="reference internal" href="ir-ops-set-definition.html"><span class="doc std std-doc">core ATen operators</span></a>. Then we serialize these operator names into the model artifact. During runtime execution, for each operator name we will need to find the actual <em>kernels</em>, i.e., the C++ functions that do the heavy-lifting calculations and return results.</p>
 <p>Portable kernel library is the in-house default kernel library, it’s easy to use and portable for most of the target backends. However it’s not optimized for performance, because it’s not specialized for any certain target. Therefore we provide kernel registration APIs for ExecuTorch users to easily register their own optimized kernels.</p>
 </div>
 <div class="section" id="design-principles">
-<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this headline">¶</a></h2>
+<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this heading">¶</a></h2>
 <p><strong>What do we support?</strong> On the operator coverage side, the kernel registration APIs allow users to register kernels for all core ATen ops as well as custom ops, as long as the custom ops schemas are specified.</p>
 <p>Notice that we also support _partial kernels, _for example the kernel only supports a subset of tensor dtypes and/or dim orders.</p>
 <p><strong>Kernel contract</strong>: kernels need to comply with the following requirements:</p>
@@ -442,7 +442,7 @@
 </ul>
 </div>
 <div class="section" id="high-level-architecture">
-<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this headline">¶</a></h2>
+<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this heading">¶</a></h2>
 <p><img alt="" src="_images/kernel-library-custom-aten-kernel.png" /></p>
 <p>ExecuTorch users are asked to provide:</p>
 <ol class="arabic simple">
@@ -450,17 +450,17 @@
 <li><p>a yaml file associated with the library that describes what operators are being implemented by this library. For partial kernels, the yaml file also contains information on the dtypes and dim orders supported by the  kernel. More details in the API section.</p></li>
 </ol>
 <div class="section" id="workflow">
-<h3>Workflow<a class="headerlink" href="#workflow" title="Permalink to this headline">¶</a></h3>
+<h3>Workflow<a class="headerlink" href="#workflow" title="Permalink to this heading">¶</a></h3>
 <p>At build time, the yaml files associated with kernel libraries will be passed to the <em>kernel resolver</em> along with the model op info (see selective build doc) and the outcome is a mapping between a combination of operator names and tensor metadata, to kernel symbols. Then codegen tools will use this mapping to generate C++ bindings that connect the kernels to ExecuTorch runtime. ExecuTorch users need to link this generated library into their application to use these kernels.</p>
 <p>At static object initialization time, kernels will be registered into the ExecuTorch kernel registry.</p>
 <p>At runtime initialization stage, ExecuTorch will use the operator name and argument metadata as a key to lookup for the kernels. For example, with “aten::add.out” and inputs being float tensors with dim order (0, 1, 2, 3), ExecuTorch will go into the kernel registry and lookup for a kernel that matches the name and the input metadata.</p>
 </div>
 </div>
 <div class="section" id="apis">
-<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h2>
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
 <p>There are two sets of APIs: yaml files that describe kernel - operator mappings and codegen tools to consume these mappings.</p>
 <div class="section" id="yaml-entry-for-core-aten-op-out-variant">
-<h3>Yaml Entry for Core ATen Op Out Variant<a class="headerlink" href="#yaml-entry-for-core-aten-op-out-variant" title="Permalink to this headline">¶</a></h3>
+<h3>Yaml Entry for Core ATen Op Out Variant<a class="headerlink" href="#yaml-entry-for-core-aten-op-out-variant" title="Permalink to this heading">¶</a></h3>
 <p>Top level attributes:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">op</span></code> (if the operator appears in <code class="docutils literal notranslate"><span class="pre">native_functions.yaml</span></code>) or <code class="docutils literal notranslate"><span class="pre">func</span></code> for custom operator. The value for this key needs to be the full operator name (including overload name) for <code class="docutils literal notranslate"><span class="pre">op</span></code> key, or a full operator schema (namespace, operator name, operator overload name and schema string), if we are describing a custom operator. For schema syntax please refer to this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">instruction</a>.</p></li>
@@ -497,7 +497,7 @@
 </div>
 </div>
 <div class="section" id="custom-ops-yaml-entry">
-<h3>Custom Ops Yaml Entry<a class="headerlink" href="#custom-ops-yaml-entry" title="Permalink to this headline">¶</a></h3>
+<h3>Custom Ops Yaml Entry<a class="headerlink" href="#custom-ops-yaml-entry" title="Permalink to this heading">¶</a></h3>
 <p>For custom ops (the ones that are not part of the out variants of core ATen opset) we need to specify the operator schema as well as a <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section. So instead of <code class="docutils literal notranslate"><span class="pre">op</span></code> we use <code class="docutils literal notranslate"><span class="pre">func</span></code> with the operator schema. As an example, here’s a yaml entry for a custom op:</p>
 <div class="highlight-none notranslate highlight-yaml"><div class="highlight"><pre><span></span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">func</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -&gt; Tensor(a!)</span>
 <span class="w">  </span><span class="nt">kernels</span><span class="p">:</span>
@@ -507,7 +507,7 @@
 </div>
 <p>The <code class="docutils literal notranslate"><span class="pre">kernel</span></code> section is the same as the one defined in core ATen ops. For operator schema, we are reusing the DSL defined in this <a class="reference external" href="https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/README.md">README.md</a>, with a few differences:</p>
 <div class="section" id="out-variants-only">
-<h4>Out variants only<a class="headerlink" href="#out-variants-only" title="Permalink to this headline">¶</a></h4>
+<h4>Out variants only<a class="headerlink" href="#out-variants-only" title="Permalink to this heading">¶</a></h4>
 <p>ExecuTorch only supports out-style operators, where:</p>
 <ul class="simple">
 <li><p>The caller provides the output Tensor or Tensor list in the final position with the name <code class="docutils literal notranslate"><span class="pre">out</span></code>.</p></li>
@@ -522,11 +522,11 @@
 <p>Since all output values are returned via an <code class="docutils literal notranslate"><span class="pre">out</span></code> parameter, ExecuTorch ignores the actual C++ function return value. But, to be consistent, functions should always return <code class="docutils literal notranslate"><span class="pre">out</span></code> when the return type is non-<code class="docutils literal notranslate"><span class="pre">void</span></code>.</p>
 </div>
 <div class="section" id="can-only-return-tensor-or">
-<h4>Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code><a class="headerlink" href="#can-only-return-tensor-or" title="Permalink to this headline">¶</a></h4>
+<h4>Can only return <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> or <code class="docutils literal notranslate"><span class="pre">()</span></code><a class="headerlink" href="#can-only-return-tensor-or" title="Permalink to this heading">¶</a></h4>
 <p>ExecuTorch only supports operators that return a single <code class="docutils literal notranslate"><span class="pre">Tensor</span></code>, or the unit type <code class="docutils literal notranslate"><span class="pre">()</span></code> (which maps to <code class="docutils literal notranslate"><span class="pre">void</span></code>). It does not support returning any other types, including lists, optionals, tuples, or scalars like <code class="docutils literal notranslate"><span class="pre">bool</span></code>.</p>
 </div>
 <div class="section" id="supported-argument-types">
-<h4>Supported argument types<a class="headerlink" href="#supported-argument-types" title="Permalink to this headline">¶</a></h4>
+<h4>Supported argument types<a class="headerlink" href="#supported-argument-types" title="Permalink to this heading">¶</a></h4>
 <p>ExecuTorch does not support all of the argument types that core PyTorch supports. Here’s a list of the argument types we currently support:</p>
 <ul class="simple">
 <li><p>Tensor</p></li>
@@ -546,10 +546,10 @@
 </div>
 </div>
 <div class="section" id="build-tool-macros">
-<h3>Build Tool Macros<a class="headerlink" href="#build-tool-macros" title="Permalink to this headline">¶</a></h3>
+<h3>Build Tool Macros<a class="headerlink" href="#build-tool-macros" title="Permalink to this heading">¶</a></h3>
 <p>We provide build time macros to help users to build their kernel registration library. The macro takes the yaml file describing the kernel library as well as model operator metadata, and packages the generated C++ bindings into a C++ library. The macro is available on both CMake and Buck2.</p>
 <div class="section" id="cmake">
-<h4>CMake<a class="headerlink" href="#cmake" title="Permalink to this headline">¶</a></h4>
+<h4>CMake<a class="headerlink" href="#cmake" title="Permalink to this heading">¶</a></h4>
 <p><code class="docutils literal notranslate"><span class="pre">generate_bindings_for_kernels(functions_yaml,</span> <span class="pre">custom_ops_yaml)</span></code> takes a yaml file for core ATen op out variants and also a yaml file for custom ops, generate C++ bindings for kernel registration. It also depends on the selective build artifact generated by <code class="docutils literal notranslate"><span class="pre">gen_selected_ops()</span></code>, see selective build doc for more information. Then <code class="docutils literal notranslate"><span class="pre">gen_operators_lib</span></code> will package those bindings to be a C++ library. As an example:</p>
 <div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="c"># SELECT_OPS_LIST: aten::add.out,aten::mm.out</span>
 <span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
@@ -566,7 +566,7 @@
 </div>
 </div>
 <div class="section" id="buck2">
-<h4>Buck2<a class="headerlink" href="#buck2" title="Permalink to this headline">¶</a></h4>
+<h4>Buck2<a class="headerlink" href="#buck2" title="Permalink to this heading">¶</a></h4>
 <p><code class="docutils literal notranslate"><span class="pre">executorch_generated_lib</span></code> is the macro that takes the yaml files and depends on the selective build macro <code class="docutils literal notranslate"><span class="pre">et_operator_library</span></code>. For an example:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Yaml file for kernel library</span>
 <span class="n">export_file</span><span class="p">(</span>
@@ -697,7 +697,9 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

@@ -424,9 +424,9 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="bundled-program-a-tool-for-executorch-model-validation">
-<h1>Bundled Program – a Tool for ExecuTorch Model Validation<a class="headerlink" href="#bundled-program-a-tool-for-executorch-model-validation" title="Permalink to this headline">¶</a></h1>
+<h1>Bundled Program – a Tool for ExecuTorch Model Validation<a class="headerlink" href="#bundled-program-a-tool-for-executorch-model-validation" title="Permalink to this heading">¶</a></h1>
 <div class="section" id="introduction">
-<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this headline">¶</a></h2>
+<h2>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> is a wrapper around the core ExecuTorch program designed to help users wrapping test cases with the model they deploy. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> is not necessarily a core part of the program and not needed for its execution, but is particularly important for various other use-cases, such as model correctness evaluation, including e2e testing during the model bring-up process.</p>
 <p>Overall, the procedure can be broken into two stages, and in each stage we are supporting:</p>
 <ul class="simple">
@@ -435,7 +435,7 @@
 </ul>
 </div>
 <div class="section" id="emit-stage">
-<h2>Emit stage<a class="headerlink" href="#emit-stage" title="Permalink to this headline">¶</a></h2>
+<h2>Emit stage<a class="headerlink" href="#emit-stage" title="Permalink to this heading">¶</a></h2>
 <p>This stage mainly focuses on the creation of a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dumping it out to the disk as a flatbuffer file. The main procedure is as follow:</p>
 <ol class="arabic simple">
 <li><p>Create a model and emit its ExecuTorch program.</p></li>
@@ -444,11 +444,11 @@
 <li><p>Serialize the <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and dump it out to the disk.</p></li>
 </ol>
 <div class="section" id="step-1-create-a-model-and-emit-its-executorch-program">
-<h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Permalink to this headline">¶</a></h3>
+<h3>Step 1: Create a Model and Emit its ExecuTorch Program.<a class="headerlink" href="#step-1-create-a-model-and-emit-its-executorch-program" title="Permalink to this heading">¶</a></h3>
 <p>ExecuTorch Program can be emitted from user’s model by using ExecuTorch APIs. Follow the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Generate Sample ExecuTorch program</span></a> or <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a>.</p>
 </div>
 <div class="section" id="step-2-construct-list-methodtestsuite-to-hold-test-info">
-<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info<a class="headerlink" href="#step-2-construct-list-methodtestsuite-to-hold-test-info" title="Permalink to this headline">¶</a></h3>
+<h3>Step 2: Construct <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold test info<a class="headerlink" href="#step-2-construct-list-methodtestsuite-to-hold-test-info" title="Permalink to this heading">¶</a></h3>
 <p>In <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code>, we create two new classes, <code class="docutils literal notranslate"><span class="pre">MethodTestCase</span></code> and <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code>, to hold essential info for ExecuTorch program verification.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -469,7 +469,7 @@
 </details><p>Since each model may have multiple inference methods, we need to generate <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold all essential infos.</p>
 </div>
 <div class="section" id="step-3-generate-bundledprogram">
-<h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this headline">¶</a></h3>
+<h3>Step 3: Generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code><a class="headerlink" href="#step-3-generate-bundledprogram" title="Permalink to this heading">¶</a></h3>
 <p>We provide <code class="docutils literal notranslate"><span class="pre">create_bundled_program</span></code> API under <code class="docutils literal notranslate"><span class="pre">executorch/sdk/bundled_program/core.py</span></code> to generate <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> by bundling the emitted ExecuTorch program with the <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -486,7 +486,7 @@
 </ol>
 </div>
 <div class="section" id="step-4-serialize-bundledprogram-to-flatbuffer">
-<h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this headline">¶</a></h3>
+<h3>Step 4: Serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to Flatbuffer.<a class="headerlink" href="#step-4-serialize-bundledprogram-to-flatbuffer" title="Permalink to this heading">¶</a></h3>
 <p>To serialize <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> to make runtime APIs use it, we provide two APIs, both under <code class="docutils literal notranslate"><span class="pre">executorch/sdk/bundled_program/serialize/__init__.py</span></code>.</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -498,7 +498,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </details></div>
 <div class="section" id="emit-example">
-<h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this headline">¶</a></h3>
+<h3>Emit Example<a class="headerlink" href="#emit-example" title="Permalink to this heading">¶</a></h3>
 <p>Here is a flow highlighting how to generate a <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> given a PyTorch model and the representative inputs we want to test it along with.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span>
 <span class="kn">import</span> <span class="nn">torch</span>
@@ -621,10 +621,10 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </div>
 <div class="section" id="runtime-stage">
-<h2>Runtime Stage<a class="headerlink" href="#runtime-stage" title="Permalink to this headline">¶</a></h2>
+<h2>Runtime Stage<a class="headerlink" href="#runtime-stage" title="Permalink to this heading">¶</a></h2>
 <p>This stage mainly focuses on executing the model with the bundled inputs and and comparing the model’s output with the bundled expected output. We provide multiple APIs to handle the key parts of it.</p>
 <div class="section" id="get-executorch-program-pointer-from-bundledprogram-buffer">
-<h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Permalink to this headline">¶</a></h3>
+<h3>Get ExecuTorch Program Pointer from <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> Buffer<a class="headerlink" href="#get-executorch-program-pointer-from-bundledprogram-buffer" title="Permalink to this heading">¶</a></h3>
 <p>We need the pointer to ExecuTorch program to do the execution. To unify the process of loading and executing <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> and Program flatbuffer, we create an API:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -662,7 +662,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </div>
 <div class="section" id="load-bundled-input-to-method">
-<h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this headline">¶</a></h3>
+<h3>Load Bundled Input to Method<a class="headerlink" href="#load-bundled-input-to-method" title="Permalink to this heading">¶</a></h3>
 <p>To execute the program on the bundled input, we need to load the bundled input into the method. Here we provided an API called <code class="docutils literal notranslate"><span class="pre">torch::executor::bundled_program::LoadBundledInput</span></code>:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -678,7 +678,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </details></div>
 <div class="section" id="verify-the-method-s-output">
-<h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this headline">¶</a></h3>
+<h3>Verify the Method’s Output.<a class="headerlink" href="#verify-the-method-s-output" title="Permalink to this heading">¶</a></h3>
 <p>We call <code class="docutils literal notranslate"><span class="pre">torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput</span></code> to verify the method’s output with bundled expected outputs. Here’s the details of this API:</p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -694,7 +694,7 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </details></div>
 <div class="section" id="runtime-example">
-<h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Permalink to this headline">¶</a></h3>
+<h3>Runtime Example<a class="headerlink" href="#runtime-example" title="Permalink to this heading">¶</a></h3>
 <p>Here we provide an example about how to run the bundled program step by step. Most of the code is borrowed from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/sdk/sdk_example_runner/sdk_example_runner.cpp">executor_runner</a>, and please review that file if you need more info and context:</p>
 <div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="c1">// method_name is the name for the method we want to test</span>
 <span class="c1">// memory_manager is the executor::MemoryManager variable for executor memory allocation.</span>
@@ -739,10 +739,10 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 </div>
 </div>
 <div class="section" id="common-errors">
-<h2>Common Errors<a class="headerlink" href="#common-errors" title="Permalink to this headline">¶</a></h2>
+<h2>Common Errors<a class="headerlink" href="#common-errors" title="Permalink to this heading">¶</a></h2>
 <p>Errors will be raised if <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuites]</span></code> doesn’t match the <code class="docutils literal notranslate"><span class="pre">Program</span></code>. Here’re two common situations:</p>
 <div class="section" id="test-input-doesn-t-match-model-s-requirement">
-<h3>Test input doesn’t match model’s requirement.<a class="headerlink" href="#test-input-doesn-t-match-model-s-requirement" title="Permalink to this headline">¶</a></h3>
+<h3>Test input doesn’t match model’s requirement.<a class="headerlink" href="#test-input-doesn-t-match-model-s-requirement" title="Permalink to this heading">¶</a></h3>
 <p>Each inference method of PyTorch model has its own requirement for the inputs, like number of input, the dtype of each input, etc. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error if test input not meet the requirement.</p>
 <p>Here’s the example of the dtype of test input not meet model’s requirement:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
@@ -880,7 +880,7 @@ Raised Error<div class="sd-summary-down docutils">
 </div>
 </details></div>
 <div class="section" id="method-name-in-bundleconfig-does-not-exist">
-<h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Permalink to this headline">¶</a></h3>
+<h3>Method name in <code class="docutils literal notranslate"><span class="pre">BundleConfig</span></code> does not exist.<a class="headerlink" href="#method-name-in-bundleconfig-does-not-exist" title="Permalink to this heading">¶</a></h3>
 <p>Another common error would be the method name in any <code class="docutils literal notranslate"><span class="pre">MethodTestSuite</span></code> does not exist in Model. <code class="docutils literal notranslate"><span class="pre">BundledProgram</span></code> will raise error and show the non-exist method name:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
@@ -1087,7 +1087,9 @@ Raised Error<div class="sd-summary-down docutils">
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="portable-c-programming">
-<h1>Portable C++ Programming<a class="headerlink" href="#portable-c-programming" title="Permalink to this headline">¶</a></h1>
+<h1>Portable C++ Programming<a class="headerlink" href="#portable-c-programming" title="Permalink to this heading">¶</a></h1>
 <p>NOTE: This document covers the code that needs to build for and execute in
 target hardware environments. This applies to the core execution runtime, as
 well as kernel and backend implementations in this repo. These rules do not
@@ -465,7 +465,7 @@ dependencies except:</p>
 <li><p>Core PyTorch (only for ATen mode)</p></li>
 </ul>
 <div class="section" id="platform-abstraction-layer-pal">
-<h2>Platform Abstraction Layer (PAL)<a class="headerlink" href="#platform-abstraction-layer-pal" title="Permalink to this headline">¶</a></h2>
+<h2>Platform Abstraction Layer (PAL)<a class="headerlink" href="#platform-abstraction-layer-pal" title="Permalink to this heading">¶</a></h2>
 <p>To avoid assuming the capabilities of the target system, the ExecuTorch runtime
 lets clients override low-level functions in its Platform Abstraction Layer
 (PAL), defined in <code class="docutils literal notranslate"><span class="pre">//executorch/runtime/platform/platform.h</span></code>, to perform operations
@@ -477,18 +477,18 @@ like:</p>
 </ul>
 </div>
 <div class="section" id="memory-allocation">
-<h2>Memory Allocation<a class="headerlink" href="#memory-allocation" title="Permalink to this headline">¶</a></h2>
+<h2>Memory Allocation<a class="headerlink" href="#memory-allocation" title="Permalink to this heading">¶</a></h2>
 <p>Instead of using <code class="docutils literal notranslate"><span class="pre">malloc()</span></code> or <code class="docutils literal notranslate"><span class="pre">new</span></code>, the runtime code should allocate memory
 using the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code> (<code class="docutils literal notranslate"><span class="pre">//executorch/runtime/executor/memory_manager.h</span></code>)
 provided by the client.</p>
 </div>
 <div class="section" id="file-loading">
-<h2>File Loading<a class="headerlink" href="#file-loading" title="Permalink to this headline">¶</a></h2>
+<h2>File Loading<a class="headerlink" href="#file-loading" title="Permalink to this heading">¶</a></h2>
 <p>Instead of loading files directly, clients should provide buffers with the data
 already loaded, or wrapped in types like <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code>.</p>
 </div>
 <div class="section" id="integer-types">
-<h2>Integer Types<a class="headerlink" href="#integer-types" title="Permalink to this headline">¶</a></h2>
+<h2>Integer Types<a class="headerlink" href="#integer-types" title="Permalink to this heading">¶</a></h2>
 <p>ExecuTorch runtime code should not assume anything about the sizes of primitive
 types like <code class="docutils literal notranslate"><span class="pre">int</span></code>, <code class="docutils literal notranslate"><span class="pre">short</span></code>, or <code class="docutils literal notranslate"><span class="pre">char</span></code>. For example, the C++ standard only
 guarantees that <code class="docutils literal notranslate"><span class="pre">int</span></code> will be at least 16 bits wide. And ARM toolchains treat
@@ -509,7 +509,7 @@ signed count. Prefer <code class="docutils literal notranslate"><span class="pre
 </ul>
 </div>
 <div class="section" id="floating-point-arithmetic">
-<h2>Floating Point Arithmetic<a class="headerlink" href="#floating-point-arithmetic" title="Permalink to this headline">¶</a></h2>
+<h2>Floating Point Arithmetic<a class="headerlink" href="#floating-point-arithmetic" title="Permalink to this heading">¶</a></h2>
 <p>Not every system has support for floating point arithmetic: some don’t even enable
 floating point emulation in their toolchains. Therefore, the core runtime code
 must not perform any floating point arithmetic at runtime, although it is ok to
@@ -519,7 +519,7 @@ arithmetic. Though some kernels may choose not to, so that they can run on syste
 without floating point support.</p>
 </div>
 <div class="section" id="logging">
-<h2>Logging<a class="headerlink" href="#logging" title="Permalink to this headline">¶</a></h2>
+<h2>Logging<a class="headerlink" href="#logging" title="Permalink to this heading">¶</a></h2>
 <p>Instead of using <code class="docutils literal notranslate"><span class="pre">printf()</span></code>, <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">cout</span></code>, <code class="docutils literal notranslate"><span class="pre">cerr</span></code>, or a library like
 <code class="docutils literal notranslate"><span class="pre">folly::logging</span></code> or <code class="docutils literal notranslate"><span class="pre">glog</span></code>, the ExecuTorch runtime provides the <code class="docutils literal notranslate"><span class="pre">ET_LOG</span></code>
 interface in <code class="docutils literal notranslate"><span class="pre">//executorch/runtime/platform/log.h</span></code> and the <code class="docutils literal notranslate"><span class="pre">ET_CHECK</span></code> interface in
@@ -527,9 +527,9 @@ interface in <code class="docutils literal notranslate"><span class="pre">//exec
 which means that clients can redirect them to any underlying logging system, or
 just print them to <code class="docutils literal notranslate"><span class="pre">stderr</span></code> if available.</p>
 <div class="section" id="logging-format-portability">
-<h3>Logging Format Portability<a class="headerlink" href="#logging-format-portability" title="Permalink to this headline">¶</a></h3>
+<h3>Logging Format Portability<a class="headerlink" href="#logging-format-portability" title="Permalink to this heading">¶</a></h3>
 <div class="section" id="fixed-width-integers">
-<h4>Fixed-Width Integers<a class="headerlink" href="#fixed-width-integers" title="Permalink to this headline">¶</a></h4>
+<h4>Fixed-Width Integers<a class="headerlink" href="#fixed-width-integers" title="Permalink to this heading">¶</a></h4>
 <p>When you have a log statement like</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">int64_t</span> <span class="n">value</span><span class="p">;</span>
 <span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">&quot;Value %??? is bad&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
@@ -561,7 +561,7 @@ quotes). It also requires the leading <code class="docutils literal notranslate"
 appropriate format pattern for the type.</p>
 </div>
 <div class="section" id="size-t-ssize-t">
-<h4><code class="docutils literal notranslate"><span class="pre">size_t</span></code>, <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code><a class="headerlink" href="#size-t-ssize-t" title="Permalink to this headline">¶</a></h4>
+<h4><code class="docutils literal notranslate"><span class="pre">size_t</span></code>, <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code><a class="headerlink" href="#size-t-ssize-t" title="Permalink to this heading">¶</a></h4>
 <p>Unlike the fixed-width integer types, format strings already have a portable
 way to handle <code class="docutils literal notranslate"><span class="pre">size_t</span></code> and <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code>:</p>
 <ul class="simple">
@@ -570,7 +570,7 @@ way to handle <code class="docutils literal notranslate"><span class="pre">size_
 </ul>
 </div>
 <div class="section" id="casting">
-<h4>Casting<a class="headerlink" href="#casting" title="Permalink to this headline">¶</a></h4>
+<h4>Casting<a class="headerlink" href="#casting" title="Permalink to this heading">¶</a></h4>
 <p>Sometimes, especially in code that straddles ATen and lean mode, the type of the
 value itself might be different across build modes. In those cases, cast the
 value to the lean mode type, like:</p>
@@ -673,7 +673,9 @@ modes disagree. Otherwise, use the format pattern that matches the type.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

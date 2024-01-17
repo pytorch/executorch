@@ -425,7 +425,7 @@
               
   <p>This page describes how ExecuTorch works and its key benefits.</p>
 <div class="section" id="how-executorch-works">
-<h1>How ExecuTorch Works<a class="headerlink" href="#how-executorch-works" title="Permalink to this headline">¶</a></h1>
+<h1>How ExecuTorch Works<a class="headerlink" href="#how-executorch-works" title="Permalink to this heading">¶</a></h1>
 <p>At a high-level, there are three steps for running a PyTorch model with ExecuTorch across edge devices, such as laptops, mobile phones, wearables, and IoT devices.</p>
 <ol class="arabic simple">
 <li><p><strong>Export the model.</strong> The first step is to capture the PyTorch program as a graph, which is a new representation of the model that can be expressed in terms of a series of operators such as addition, multiplication, or convolution. This process safely preserves the semantics of the original PyTorch program. This representation is the first step to enable running the model on edge use cases that have low memory and/or low compute.</p></li>
@@ -435,7 +435,7 @@
 <p>This figure illustrates the three-step process of exporting a PyTorch program, compiling it into an ExecuTorch program that targets a specific hardware device, and finally executing the program on the device using the ExecuTorch runtime.
 <img alt="name" src="_images/how-executorch-works-high-level.png" /></p>
 <div class="section" id="key-benefits">
-<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this headline">¶</a></h2>
+<h2>Key Benefits<a class="headerlink" href="#key-benefits" title="Permalink to this heading">¶</a></h2>
 <p>ExecuTorch provides the following benefits to engineers who need to deploy machine learning models to an edge device:</p>
 <ul class="simple">
 <li><p><strong>Export that is robust and powerful.</strong> Export uses <a class="reference external" href="https://pytorch.org/docs/main/export.html"><code class="docutils literal notranslate"><span class="pre">torch.export()</span></code></a>, which uses the same technology used in PyTorch 2.x to capture PyTorch programs for fast execution. While eager mode is flexible and allows experimentation in Python, it may not work well if Python isn’t available or cannot deliver efficient execution. The <em>Export Intermediate Representation (Export IR)</em> that export flow generates can describe a wide range of dynamism in PyTorch models, including control flow and dynamic shapes, which makes it a powerful tool for fully capturing existing PyTorch models with little effort.</p></li>
@@ -517,7 +517,9 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

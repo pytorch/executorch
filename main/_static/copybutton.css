@@ -35,8 +35,7 @@ div.highlight  {
     position: relative;
 }
 
-/* Show the copybutton */
-.highlight:hover button.copybtn, button.copybtn.success {
+.highlight:hover button.copybtn {
 	opacity: 1;
 }
 

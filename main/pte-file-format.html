@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="pte-file-format">
-<h1><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format<a class="headerlink" href="#pte-file-format" title="Permalink to this headline">¶</a></h1>
+<h1><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format<a class="headerlink" href="#pte-file-format" title="Permalink to this heading">¶</a></h1>
 <p>ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> program files are serialized as modified binary flatbuffer
 files with optional data segments appended.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>             ┌───────────────────────────────────┐
@@ -455,7 +455,7 @@ Optional ─┤  ├────────────────────
 </pre></div>
 </div>
 <div class="section" id="headers">
-<h2>Headers<a class="headerlink" href="#headers" title="Permalink to this headline">¶</a></h2>
+<h2>Headers<a class="headerlink" href="#headers" title="Permalink to this heading">¶</a></h2>
 <p>Program files can be recognized by the magic string at byte offset 4, beginning
 with <code class="docutils literal notranslate"><span class="pre">ET</span></code> and followed by two ASCII decimal digits.</p>
 <p>Program files may have an optional extended header at byte offset 8, recognized
@@ -503,7 +503,7 @@ End of optional extended header.
 </div>
 </div>
 <div class="section" id="program-data">
-<h2>Program data<a class="headerlink" href="#program-data" title="Permalink to this headline">¶</a></h2>
+<h2>Program data<a class="headerlink" href="#program-data" title="Permalink to this heading">¶</a></h2>
 <p>See <code class="docutils literal notranslate"><span class="pre">//executorch/schema/program.fbs</span></code> for the Program flatbuffer schema.</p>
 <p>The flatbuffer-encoded program data follows the headers. By embedding the size
 of this region in the extended header, clients can read only the program data
@@ -512,7 +512,7 @@ sticks around for the lifetime of a model, while the large segment data is often
 freeable after model initialization.</p>
 </div>
 <div class="section" id="segment-data">
-<h2>Segment data<a class="headerlink" href="#segment-data" title="Permalink to this headline">¶</a></h2>
+<h2>Segment data<a class="headerlink" href="#segment-data" title="Permalink to this heading">¶</a></h2>
 <p>The first segment starts at the offset embedded in the extended header.
 Segments are typically aligned to 4096 or some other power of 2 that matches
 the target system’s memory page size. This makes it easier to use <code class="docutils literal notranslate"><span class="pre">mmap()</span></code>
@@ -592,7 +592,9 @@ relative to the segment offet in the extended header.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

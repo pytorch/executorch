@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="lowering-a-model-as-a-delegate">
-<h1>Lowering a Model as a Delegate<a class="headerlink" href="#lowering-a-model-as-a-delegate" title="Permalink to this headline">¶</a></h1>
+<h1>Lowering a Model as a Delegate<a class="headerlink" href="#lowering-a-model-as-a-delegate" title="Permalink to this heading">¶</a></h1>
 <p>Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime.</p>
 <p>Backend delegation is an entry point for backends to process and execute PyTorch
 programs to leverage the performance and efficiency benefits of specialized
@@ -432,7 +432,7 @@ backends and hardware, while still providing PyTorch users with an experience
 close to that of the PyTorch runtime. The backend delegate is usually either provided by
 ExecuTorch or vendors. The way to leverage delegation in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
 <div class="section" id="frontend-interfaces">
-<h2>Frontend Interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this headline">¶</a></h2>
+<h2>Frontend Interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this heading">¶</a></h2>
 <p>There are three flows for delegating a program to a backend:</p>
 <ol class="arabic simple">
 <li><p>Lower the whole module to a backend. This is good for testing backends and
@@ -444,7 +444,7 @@ lowering models that include both lowerable and non-lowerable nodes, and is
 the most streamlined procecss.</p></li>
 </ol>
 <div class="section" id="flow-1-lowering-the-whole-module">
-<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this headline">¶</a></h3>
+<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this heading">¶</a></h3>
 <p>This flow starts from a traced graph module with Edge Dialect representation. To
 lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code> (more documentation on this function can be found in the <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API reference</span></a>)</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># defined in backend_api.py</span>
@@ -496,7 +496,7 @@ that can be loaded by the runtime.</p>
 </div>
 </div>
 <div class="section" id="flow-2-lowering-the-whole-module-and-composite">
-<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this headline">¶</a></h3>
+<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this heading">¶</a></h3>
 <p>Alternatively, after flow 1, we can compose this lowered module with another
 module:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># This submodule runs in executor runtime</span>
@@ -534,7 +534,7 @@ module:</p>
 </div>
 </div>
 <div class="section" id="flow-3-partitioning">
-<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this headline">¶</a></h3>
+<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this heading">¶</a></h3>
 <p>The third flow also starts from a traced graph module with Edge Dialect
 representation. To lower certain nodes in this graph module, we can use the
 overloaded <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/backend_api.py#L39"><code class="docutils literal notranslate"><span class="pre">to_backend</span></code>
@@ -593,7 +593,7 @@ will be inserted into the top-level module and serialized.</p>
 </div>
 </div>
 <div class="section" id="runtime">
-<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h2>
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
 <p>After having the program with delegates, to run the model with the backend, we’d need to register the backend.
 Depending on the delegate implementation, the backend can be registered either as part of global variables or
 explicitly registered inside the main function.</p>
@@ -677,7 +677,9 @@ explicitly registered inside the main function.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

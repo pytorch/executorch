@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="building-an-executorch-android-demo-app">
-<h1>Building an ExecuTorch Android Demo App<a class="headerlink" href="#building-an-executorch-android-demo-app" title="Permalink to this headline">¶</a></h1>
+<h1>Building an ExecuTorch Android Demo App<a class="headerlink" href="#building-an-executorch-android-demo-app" title="Permalink to this heading">¶</a></h1>
 <p>This is forked from <a class="reference external" href="https://github.com/pytorch/android-demo-app">PyTorch Android Demo App</a>.</p>
 <p>This guide explains how to setup ExecuTorch for Android using a demo app. The app employs a <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/">DeepLab v3</a> model for image segmentation tasks. Models are exported to ExecuTorch using <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK FP32 backend</span></a>.</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
@@ -463,12 +463,12 @@ Prerequisites</div>
 <p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>.</p>
 </div>
 <div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="ahead-of-time">
-<h3>Ahead-Of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this headline">¶</a></h3>
+<h3>Ahead-Of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this heading">¶</a></h3>
 <p>We generate the model file for the ExecuTorch runtime in Android Demo App.</p>
 <div class="section" id="xnnpack-delegation">
-<h4>XNNPACK Delegation<a class="headerlink" href="#xnnpack-delegation" title="Permalink to this headline">¶</a></h4>
+<h4>XNNPACK Delegation<a class="headerlink" href="#xnnpack-delegation" title="Permalink to this heading">¶</a></h4>
 <p>For delegating DeepLab v3 to XNNPACK backend, please do the following to export the model:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">FLATC_EXECUTABLE</span><span class="o">=</span><span class="k">$(</span>realpath<span class="w"> </span>third-party/flatbuffers/cmake-out/flatc<span class="k">)</span>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;dl3&quot;</span><span class="w"> </span>--delegate
@@ -479,7 +479,7 @@ cp<span class="w"> </span>dl3_xnnpack_fp32.pte<span class="w"> </span>examples/d
 <p>For more detailed tutorial of lowering to XNNPACK, please see <a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html"><span class="doc std std-doc">XNNPACK backend</span></a>.</p>
 </div>
 <div class="section" id="qualcomm-hexagon-npu">
-<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this headline">¶</a></h4>
+<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#qualcomm-hexagon-npu" title="Permalink to this heading">¶</a></h4>
 <p>For delegating to Qualcomm Hexagon NPU, please follow the tutorial <a class="reference internal" href="build-run-qualcomm-ai-engine-direct-backend.html"><span class="doc std std-doc">here</span></a>.</p>
 <p>After generating the model, copy the model to <code class="docutils literal notranslate"><span class="pre">assets</span></code> directory.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.qualcomm.scripts.deeplab_v3<span class="w"> </span>-b<span class="w"> </span>build_android<span class="w"> </span>-m<span class="w"> </span>SM8550<span class="w"> </span>-s<span class="w"> </span>&lt;adb_connected_device_serial&gt;
@@ -489,10 +489,10 @@ cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>example
 </div>
 </div>
 <div class="section" id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p>We build the required ExecuTorch runtime library to run the model.</p>
 <div class="section" id="xnnpack">
-<h4>XNNPACK<a class="headerlink" href="#xnnpack" title="Permalink to this headline">¶</a></h4>
+<h4>XNNPACK<a class="headerlink" href="#xnnpack" title="Permalink to this heading">¶</a></h4>
 <ol class="arabic simple">
 <li><p>Configure the CMake target for the library with XNNPACK backend:</p></li>
 </ol>
@@ -519,7 +519,7 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 </div>
 </div>
 <div class="section" id="id2">
-<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h4>
+<h4>Qualcomm Hexagon NPU<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h4>
 <ol class="arabic simple">
 <li><p>Configure the CMake target for the library with Qualcomm Hexagon NPU (HTP) backend (XNNPACK also included):</p></li>
 </ol>
@@ -551,9 +551,9 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 </div>
 </div>
 <div class="section" id="deploying-on-device-via-demo-app">
-<h2>Deploying on Device via Demo App<a class="headerlink" href="#deploying-on-device-via-demo-app" title="Permalink to this headline">¶</a></h2>
+<h2>Deploying on Device via Demo App<a class="headerlink" href="#deploying-on-device-via-demo-app" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="steps-for-deploying-model-via-xnnpack">
-<h3>Steps for Deploying Model via XNNPACK<a class="headerlink" href="#steps-for-deploying-model-via-xnnpack" title="Permalink to this headline">¶</a></h3>
+<h3>Steps for Deploying Model via XNNPACK<a class="headerlink" href="#steps-for-deploying-model-via-xnnpack" title="Permalink to this heading">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
@@ -565,7 +565,7 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <p>This allows the Android app to load ExecuTorch runtime with XNNPACK backend as a JNI library. Later, this shared library will be loaded by <code class="docutils literal notranslate"><span class="pre">NativePeer.java</span></code> in Java code.</p>
 </div>
 <div class="section" id="steps-for-deploying-model-via-qualcomm-s-ai-engine-direct">
-<h3>Steps for Deploying Model via Qualcomm’s AI Engine Direct<a class="headerlink" href="#steps-for-deploying-model-via-qualcomm-s-ai-engine-direct" title="Permalink to this headline">¶</a></h3>
+<h3>Steps for Deploying Model via Qualcomm’s AI Engine Direct<a class="headerlink" href="#steps-for-deploying-model-via-qualcomm-s-ai-engine-direct" title="Permalink to this heading">¶</a></h3>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>mkdir<span class="w"> </span>-p<span class="w"> </span>../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 </pre></div>
 </div>
@@ -582,7 +582,7 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 </div>
 </div>
 <div class="section" id="running-the-app">
-<h2>Running the App<a class="headerlink" href="#running-the-app" title="Permalink to this headline">¶</a></h2>
+<h2>Running the App<a class="headerlink" href="#running-the-app" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple">
 <li><p>Open the project <code class="docutils literal notranslate"><span class="pre">examples/demo-apps/android/ExecuTorchDemo</span></code> with Android Studio.</p></li>
 <li><p><a class="reference external" href="https://developer.android.com/studio/run">Run</a> the app (^R).</p></li>
@@ -592,11 +592,11 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 <img src="_static/img/android_demo_run.png" alt="Android Demo" /><br></p>
 </div>
 <div class="section" id="takeaways">
-<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this headline">¶</a></h2>
+<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
 <p>Through this tutorial we’ve learnt how to build the ExecuTorch runtime library with XNNPACK (or Qualcomm HTP) backend, and expose it to JNI layer to build the Android app running segmentation model.</p>
 </div>
 <div class="section" id="reporting-issues">
-<h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this headline">¶</a></h2>
+<h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
 <p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
 <hr class="footnotes docutils" />
 <dl class="footnote brackets">
@@ -694,7 +694,9 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

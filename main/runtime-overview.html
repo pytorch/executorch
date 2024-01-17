@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="executorch-runtime-overview">
-<h1>ExecuTorch Runtime Overview<a class="headerlink" href="#executorch-runtime-overview" title="Permalink to this headline">¶</a></h1>
+<h1>ExecuTorch Runtime Overview<a class="headerlink" href="#executorch-runtime-overview" title="Permalink to this heading">¶</a></h1>
 <p>This document discusses the design of the ExecuTorch runtime, which executes
 ExecuTorch program files on edge devices like smartphones, wearables, and
 embedded devices. The code for the main execution API is under
@@ -456,7 +456,7 @@ delegates</span></a> for acceleration.</p></li>
 execution.</p></li>
 </ul>
 <div class="section" id="design-goals">
-<h2>Design Goals<a class="headerlink" href="#design-goals" title="Permalink to this headline">¶</a></h2>
+<h2>Design Goals<a class="headerlink" href="#design-goals" title="Permalink to this heading">¶</a></h2>
 <p>The ExecuTorch runtime was designed to run on a wide variety of edge devices,
 from modern smartphone CPUs to resource-constrained microcontrollers and DSPs.
 It has first-class support for
@@ -466,9 +466,9 @@ heterogeneous architectures. It is small and portable enough to run directly in
 bare-metal embedded environments with no operating systems, dynamic memory, or
 threads.</p>
 <div class="section" id="low-execution-overhead">
-<h3>Low Execution Overhead<a class="headerlink" href="#low-execution-overhead" title="Permalink to this headline">¶</a></h3>
+<h3>Low Execution Overhead<a class="headerlink" href="#low-execution-overhead" title="Permalink to this heading">¶</a></h3>
 <div class="section" id="memory">
-<h4>Memory<a class="headerlink" href="#memory" title="Permalink to this headline">¶</a></h4>
+<h4>Memory<a class="headerlink" href="#memory" title="Permalink to this heading">¶</a></h4>
 <ul class="simple">
 <li><p>The core runtime library is less than 50kB when built without kernels or
 backends.</p></li>
@@ -485,7 +485,7 @@ that will operate on the data.</p></li>
 </ul>
 </div>
 <div class="section" id="cpu">
-<h4>CPU<a class="headerlink" href="#cpu" title="Permalink to this headline">¶</a></h4>
+<h4>CPU<a class="headerlink" href="#cpu" title="Permalink to this heading">¶</a></h4>
 <ul class="simple">
 <li><p>Model execution is a simple loop over an array of instructions, most of which
 are function pointers to kernels and backend delegates. This keeps the
@@ -498,7 +498,7 @@ original model or generated <code class="docutils literal notranslate"><span cla
 </div>
 </div>
 <div class="section" id="familiar-pytorch-semantics">
-<h3>Familiar PyTorch Semantics<a class="headerlink" href="#familiar-pytorch-semantics" title="Permalink to this headline">¶</a></h3>
+<h3>Familiar PyTorch Semantics<a class="headerlink" href="#familiar-pytorch-semantics" title="Permalink to this heading">¶</a></h3>
 <p>ExecuTorch is a first-class component of the PyTorch stack, and reuses APIs and
 semantics whenever possible.</p>
 <ul class="simple">
@@ -514,11 +514,11 @@ to ensure this, and to help test future implementations of these operators.</p><
 </ul>
 </div>
 <div class="section" id="portable-code-and-architecture">
-<h3>Portable Code and Architecture<a class="headerlink" href="#portable-code-and-architecture" title="Permalink to this headline">¶</a></h3>
+<h3>Portable Code and Architecture<a class="headerlink" href="#portable-code-and-architecture" title="Permalink to this heading">¶</a></h3>
 <p>The ExecuTorch runtime is implemented with portability in mind, so that users
 can build it for a wide variety of target systems.</p>
 <div class="section" id="c-language-considerations">
-<h4>C++ Language Considerations<a class="headerlink" href="#c-language-considerations" title="Permalink to this headline">¶</a></h4>
+<h4>C++ Language Considerations<a class="headerlink" href="#c-language-considerations" title="Permalink to this heading">¶</a></h4>
 <ul class="simple">
 <li><p>The code is C++11-compatible to work with older toolchains.</p></li>
 <li><p>The runtime does not use exceptions or RTTI, although it is not antagonistic
@@ -530,7 +530,7 @@ easier.</p></li>
 </ul>
 </div>
 <div class="section" id="operating-system-considerations">
-<h4>Operating System Considerations<a class="headerlink" href="#operating-system-considerations" title="Permalink to this headline">¶</a></h4>
+<h4>Operating System Considerations<a class="headerlink" href="#operating-system-considerations" title="Permalink to this heading">¶</a></h4>
 <p>The runtime makes no direct system calls. All access to memory, files, logging,
 and clocks are abstracted through the <a class="reference internal" href="runtime-platform-abstraction-layer.html"><span class="doc std std-doc"><em>Runtime Platform Abstraction Layer
 (PAL)</em></span></a> and injected interfaces like
@@ -551,7 +551,7 @@ arbitrary runtime or operating system features. Users should double-check the
 docs for the kernel and backend libraries that they use.</p>
 </div>
 <div class="section" id="threading-considerations">
-<h4>Threading Considerations<a class="headerlink" href="#threading-considerations" title="Permalink to this headline">¶</a></h4>
+<h4>Threading Considerations<a class="headerlink" href="#threading-considerations" title="Permalink to this heading">¶</a></h4>
 <p>The core runtime does no threading or locking, and does not use thread local
 variables. But, it plays well with higher-level synchronization.</p>
 <ul class="simple">
@@ -583,7 +583,7 @@ libraries that they use.</p></li>
 </div>
 </div>
 <div class="section" id="further-reading">
-<h2>Further Reading<a class="headerlink" href="#further-reading" title="Permalink to this headline">¶</a></h2>
+<h2>Further Reading<a class="headerlink" href="#further-reading" title="Permalink to this heading">¶</a></h2>
 <p>For more details about the ExecuTorch runtime, please see:</p>
 <ul class="simple">
 <li><p><a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">Runtime API Tutorial</span></a></p></li>
@@ -679,7 +679,9 @@ libraries that they use.</p></li>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

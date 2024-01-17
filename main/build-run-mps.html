@@ -427,7 +427,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="building-and-running-executorch-with-mps-backend">
-<h1>Building and Running ExecuTorch with MPS Backend<a class="headerlink" href="#building-and-running-executorch-with-mps-backend" title="Permalink to this headline">¶</a></h1>
+<h1>Building and Running ExecuTorch with MPS Backend<a class="headerlink" href="#building-and-running-executorch-with-mps-backend" title="Permalink to this heading">¶</a></h1>
 <p>In this tutorial we will walk you through the process of getting setup to build the MPS backend for ExecuTorch and running a simple model on it.</p>
 <p>The MPS backend device maps machine learning computational graphs and primitives on the <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshadersgraph/mpsgraph?language=objc">MPS Graph</a> framework and tuned kernels provided by <a class="reference external" href="https://developer.apple.com/documentation/metalperformanceshaders?language=objc">MPS</a>.</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
@@ -460,16 +460,16 @@ Tutorials we recommend you complete before this:</div>
 </div>
 </div>
 <div class="section" id="prerequisites-hardware-and-software">
-<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this headline">¶</a></h2>
+<h2>Prerequisites (Hardware and Software)<a class="headerlink" href="#prerequisites-hardware-and-software" title="Permalink to this heading">¶</a></h2>
 <p>In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you’ll need the following hardware and software components.</p>
 <div class="section" id="hardware">
-<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this headline">¶</a></h3>
+<h3>Hardware<a class="headerlink" href="#hardware" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><a class="reference external" href="https://support.apple.com/en-us/HT211814">Apple Silicon</a></p></li>
 </ul>
 </div>
 <div class="section" id="software">
-<h3>Software<a class="headerlink" href="#software" title="Permalink to this headline">¶</a></h3>
+<h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p><a class="reference external" href="https://www.apple.com/macos/sonoma/">macOS Sonoma</a> (for lowering to MPS delegate)</p></li>
 <li><p><a class="reference external" href="https://www.apple.com/ios/ios-17/">iOS 17</a> / <a class="reference external" href="https://www.apple.com/ipados/ipados-17/">iPadOS 17</a> (for running on device)</p></li>
@@ -478,7 +478,7 @@ Tutorials we recommend you complete before this:</div>
 </div>
 </div>
 <div class="section" id="setting-up-developer-environment">
-<h2>Setting up Developer Environment<a class="headerlink" href="#setting-up-developer-environment" title="Permalink to this headline">¶</a></h2>
+<h2>Setting up Developer Environment<a class="headerlink" href="#setting-up-developer-environment" title="Permalink to this heading">¶</a></h2>
 <p><em><strong>Step 1.</strong></em> Please finish tutorial <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a>.</p>
 <p><em><strong>Step 2.</strong></em> Install dependencies needed to lower MPS delegate:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./backends/apple/mps/install_requirements.sh
@@ -486,9 +486,9 @@ Tutorials we recommend you complete before this:</div>
 </div>
 </div>
 <div class="section" id="build">
-<h2>Build<a class="headerlink" href="#build" title="Permalink to this headline">¶</a></h2>
+<h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="aot-ahead-of-time-components">
-<h3>AOT (Ahead-of-time) Components<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this headline">¶</a></h3>
+<h3>AOT (Ahead-of-time) Components<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
 <p><strong>Compiling model for MPS delegate</strong>:</p>
 <ul class="simple">
 <li><p>In this step, you will generate a simple ExecuTorch program that lowers MobileNetV3 model to the MPS delegate. You’ll then pass this Program(the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file) during the runtime to run it using the MPS backend.</p></li>
@@ -499,7 +499,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>unittest<span class="w"
 </div>
 </div>
 <div class="section" id="runtime">
-<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this headline">¶</a></h3>
+<h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p><strong>Building the MPS executor runner</strong></p>
 <ul class="simple">
 <li><p>In this step, you’ll be building the <code class="docutils literal notranslate"><span class="pre">mps_executor_runner</span></code> that is able to run MPS lowered modules.</p></li>
@@ -531,7 +531,7 @@ rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> <
 </div>
 </div>
 <div class="section" id="deploying-and-running-on-device">
-<h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this headline">¶</a></h2>
+<h2>Deploying and Running on Device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
 <p><em><strong>Step 1</strong></em>. Create the ExecuTorch core and MPS delegate frameworks to link on iOS</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
 ./build/build_apple_frameworks.sh<span class="w"> </span>--Release<span class="w"> </span>--mps
@@ -557,7 +557,7 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
 <p>In this tutorial, you have learned how to lower a model to the MPS delegate, build the mps_executor_runner and run a lowered model through the MPS delegate, or directly on device using the MPS delegate static library.</p>
 </div>
 <div class="section" id="frequently-encountered-errors-and-resolution">
-<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Permalink to this headline">¶</a></h2>
+<h2>Frequently encountered errors and resolution.<a class="headerlink" href="#frequently-encountered-errors-and-resolution" title="Permalink to this heading">¶</a></h2>
 <p>If you encountered any bugs or issues following this tutorial please file a bug/issue on the ExecuTorch repository, with hashtag <strong>#mps</strong>.</p>
 </div>
 </div>
@@ -641,7 +641,9 @@ Go to project Target’s  <code class="docutils literal notranslate"><span class
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

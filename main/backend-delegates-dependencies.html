@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="third-party-dependency-management-for-backend-delegates">
-<h1>Third-Party Dependency Management for Backend Delegates<a class="headerlink" href="#third-party-dependency-management-for-backend-delegates" title="Permalink to this headline">¶</a></h1>
+<h1>Third-Party Dependency Management for Backend Delegates<a class="headerlink" href="#third-party-dependency-management-for-backend-delegates" title="Permalink to this heading">¶</a></h1>
 <p>Disclaimer: We are planning to restructure the repository around delegates.
 With that some of these guidelines will change in the future.</p>
 <p>A delegate may depend on external, third-party libraries to efficiently
@@ -434,7 +434,7 @@ in a specific manner. This guide aims to classify different types of third-party
 dependencies a delegate might depend on, and provide a high level guidance on
 how to include them.</p>
 <div class="section" id="ahead-of-time-dependencies">
-<h2>Ahead-of-Time Dependencies<a class="headerlink" href="#ahead-of-time-dependencies" title="Permalink to this headline">¶</a></h2>
+<h2>Ahead-of-Time Dependencies<a class="headerlink" href="#ahead-of-time-dependencies" title="Permalink to this heading">¶</a></h2>
 <p>This includes dependencies used by the delegate’s <code class="docutils literal notranslate"><span class="pre">partitioner()</span></code> and
 <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> functions to generate preprocessed result which
 will be used at later at runtime.</p>
@@ -453,7 +453,7 @@ the ExecuTorch Python package.</p></li>
 <p>More details in the section <a class="reference internal" href="#python-dependencies"><span class="std std-doc">below</span></a>.</p>
 </div>
 <div class="section" id="runtime-dependencies">
-<h2>Runtime Dependencies<a class="headerlink" href="#runtime-dependencies" title="Permalink to this headline">¶</a></h2>
+<h2>Runtime Dependencies<a class="headerlink" href="#runtime-dependencies" title="Permalink to this heading">¶</a></h2>
 <p>This category covers C++ dependencies used by the delegate runtime code.
 It can be as simple as a third-party math library to implement some
 delegate operator, or can be a whole framework handling the lowered
@@ -474,7 +474,7 @@ when the delegate is disabled at build time.</p></li>
 <p>More details in the section <a class="reference internal" href="#runtime-dependencies"><span class="std std-doc">below</span></a>.</p>
 </div>
 <div class="section" id="testing-only-dependencies">
-<h2>Testing-Only Dependencies<a class="headerlink" href="#testing-only-dependencies" title="Permalink to this headline">¶</a></h2>
+<h2>Testing-Only Dependencies<a class="headerlink" href="#testing-only-dependencies" title="Permalink to this heading">¶</a></h2>
 <p>Some libraries or tools are only used for executing the delegate tests. These
 can either be a Python dependency or a C++ dependency depending on the type of
 the test.</p>
@@ -487,9 +487,9 @@ even when the delegate is built/enabled.</p></li>
 </ul>
 </div>
 <div class="section" id="other-considerations">
-<h2>Other Considerations<a class="headerlink" href="#other-considerations" title="Permalink to this headline">¶</a></h2>
+<h2>Other Considerations<a class="headerlink" href="#other-considerations" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="versioning">
-<h3>Versioning<a class="headerlink" href="#versioning" title="Permalink to this headline">¶</a></h3>
+<h3>Versioning<a class="headerlink" href="#versioning" title="Permalink to this heading">¶</a></h3>
 <p>Explicit and specific is preferred. For example a PyPI version (or range) or
 a git tag/release.</p>
 <!---
@@ -501,7 +501,7 @@ to enable/install for both AOT and Runtime
 --->
 </div>
 <div class="section" id="documenting-dependencies">
-<h3>Documenting Dependencies<a class="headerlink" href="#documenting-dependencies" title="Permalink to this headline">¶</a></h3>
+<h3>Documenting Dependencies<a class="headerlink" href="#documenting-dependencies" title="Permalink to this heading">¶</a></h3>
 <p>At a minimum, some documentation under <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/</span></code>
 should be provided when introducing a new dependency which includes,</p>
 <ul class="simple">
@@ -515,7 +515,7 @@ logistics to actually include a dependency for your delegate,</p>
 </div>
 </div>
 <div class="section" id="python-dependencies">
-<h2>Python Dependencies<a class="headerlink" href="#python-dependencies" title="Permalink to this headline">¶</a></h2>
+<h2>Python Dependencies<a class="headerlink" href="#python-dependencies" title="Permalink to this heading">¶</a></h2>
 <p>Python packaging is complicated and continuously evolving. For delegate
 dependencies, we recommend that a delegate specifies its third-party
 dependencies under <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/requirements.txt</span></code> to be
@@ -527,7 +527,7 @@ other
 <a class="reference external" href="https://pip.pypa.io/en/latest/topics/dependency-resolution/#dealing-with-dependency-conflicts">recommended</a>
 ways to mitigate version conflicts.</p>
 <div class="section" id="local-python-packages">
-<h3>Local Python Packages<a class="headerlink" href="#local-python-packages" title="Permalink to this headline">¶</a></h3>
+<h3>Local Python Packages<a class="headerlink" href="#local-python-packages" title="Permalink to this heading">¶</a></h3>
 <p>If it is a git repository, it should be added as a git submodule.</p>
 <!--
 TODO: Add more details. Something like
@@ -537,11 +537,11 @@ but the URLs can't be in the requirements.txt, so not recommending this for now.
 </div>
 </div>
 <div class="section" id="c-dependencies">
-<h2>C++ Dependencies<a class="headerlink" href="#c-dependencies" title="Permalink to this headline">¶</a></h2>
+<h2>C++ Dependencies<a class="headerlink" href="#c-dependencies" title="Permalink to this heading">¶</a></h2>
 <p>The recommended approach is to include a git submodule for a given C++
 dependency in the <code class="docutils literal notranslate"><span class="pre">executorch/backends/&lt;delegate_name&gt;/third-party</span></code> directory.</p>
 <div class="section" id="buck2-cmake-support">
-<h3>buck2/CMake Support<a class="headerlink" href="#buck2-cmake-support" title="Permalink to this headline">¶</a></h3>
+<h3>buck2/CMake Support<a class="headerlink" href="#buck2-cmake-support" title="Permalink to this heading">¶</a></h3>
 <p>At a minimum CMake support is required. Adding buck2 support is optional, but
 will make the delegate available to more ExecuTorch users.</p>
 <!---
@@ -635,7 +635,9 @@ pass through, etc.
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

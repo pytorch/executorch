@@ -20,7 +20,7 @@ const messages = {
   },
   'fr' : {
     'copy': 'Copier',
-    'copy_to_clipboard': 'Copier dans le presse-papier',
+    'copy_to_clipboard': 'Copié dans le presse-papier',
     'copy_success': 'Copié !',
     'copy_failure': 'Échec de la copie',
   },
@@ -102,25 +102,18 @@ const clearSelection = () => {
   }
 }
 
-// Changes tooltip text for a moment, then changes it back
-// We want the timeout of our `success` class to be a bit shorter than the
-// tooltip and icon change, so that we can hide the icon before changing back.
-var timeoutIcon = 2000;
-var timeoutSuccessClass = 1500;
-
+// Changes tooltip text for two seconds, then changes it back
 const temporarilyChangeTooltip = (el, oldText, newText) => {
   el.setAttribute('data-tooltip', newText)
   el.classList.add('success')
-  // Remove success a little bit sooner than we change the tooltip
-  // So that we can use CSS to hide the copybutton first
-  setTimeout(() => el.classList.remove('success'), timeoutSuccessClass)
-  setTimeout(() => el.setAttribute('data-tooltip', oldText), timeoutIcon)
+  setTimeout(() => el.setAttribute('data-tooltip', oldText), 2000)
+  setTimeout(() => el.classList.remove('success'), 2000)
 }
 
 // Changes the copy button icon for two seconds, then changes it back
 const temporarilyChangeIcon = (el) => {
   el.innerHTML = iconCheck;
-  setTimeout(() => {el.innerHTML = iconCopy}, timeoutIcon)
+  setTimeout(() => {el.innerHTML = iconCopy}, 2000)
 }
 
 const addCopyButtonToCodeCells = () => {
@@ -132,8 +125,7 @@ const addCopyButtonToCodeCells = () => {
   }
 
   // Add copybuttons to all of our code cells
-  const COPYBUTTON_SELECTOR = 'div.highlight pre';
-  const codeCells = document.querySelectorAll(COPYBUTTON_SELECTOR)
+  const codeCells = document.querySelectorAll('div.highlight pre')
   codeCells.forEach((codeCell, index) => {
     const id = codeCellId(index)
     codeCell.setAttribute('id', id)
@@ -149,25 +141,10 @@ function escapeRegExp(string) {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }
 
-/**
- * Removes excluded text from a Node.
- *
- * @param {Node} target Node to filter.
- * @param {string} exclude CSS selector of nodes to exclude.
- * @returns {DOMString} Text from `target` with text removed.
- */
-function filterText(target, exclude) {
-    const clone = target.cloneNode(true);  // clone as to not modify the live DOM
-    if (exclude) {
-        // remove excluded nodes
-        clone.querySelectorAll(exclude).forEach(node => node.remove());
-    }
-    return clone.innerText;
-}
-
 // Callback when a copy button is clicked. Will be passed the node that was clicked
 // should then grab the text and replace pieces of text that shouldn't be used in output
 function formatCopyText(textContent, copybuttonPromptText, isRegexp = false, onlyCopyPromptLines = true, removePrompts = true, copyEmptyLines = true, lineContinuationChar = "", hereDocDelim = "") {
+
     var regexp;
     var match;
 
@@ -222,12 +199,7 @@ function formatCopyText(textContent, copybuttonPromptText, isRegexp = false, onl
 
 var copyTargetText = (trigger) => {
   var target = document.querySelector(trigger.attributes['data-clipboard-target'].value);
-
-  // get filtered text
-  let exclude = '.linenos';
-
-  let text = filterText(target, exclude);
-  return formatCopyText(text, '', false, true, true, true, '', '')
+  return formatCopyText(target.innerText, '', false, true, true, true, '', '')
 }
 
   // Initialize with a callback so we can modify the text before copy

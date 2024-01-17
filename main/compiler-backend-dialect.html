@@ -424,15 +424,15 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="backend-dialect">
-<h1>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this headline">¶</a></h1>
+<h1>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this heading">¶</a></h1>
 <div class="section" id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p><em>Backend dialect</em> is a special variant of <a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">edge dialect</span></a>, because it contains backend specific nodes and metadata, after backend specific graph transformations. Backend dialect is an optional stage, only needed if we want to introduce backend-awareness into the graph. More specifically, a graph in backend dialect may contain operators or delegated lowered modules (see <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">delegate doc</span></a>) that are only meaningful to the target backend. One use case is that if we want to fuse operators into a single operator, for example, fusing consecutive addmm + relu to a single operator addmm_relu, we can do that here.</p>
 <p>This document describes how to introduce backend specific operators.</p>
 <p>Difference between custom ops and backend specific ops: while custom ops are showing up in eager mode, ATen dialect, and edge dialect, backend-specific ops are only being introduced by passes happening after edge dialect.</p>
 </div>
 <div class="section" id="when-to-use">
-<h2>When to use<a class="headerlink" href="#when-to-use" title="Permalink to this headline">¶</a></h2>
+<h2>When to use<a class="headerlink" href="#when-to-use" title="Permalink to this heading">¶</a></h2>
 <p>This dialect allows the introduction of operators that do not conform to the schema defined in the canonical ATen operator set, and which do not appear in any of the dialects above (ATen dialect and edge dialect). Consider using backend operators if your use case satisfies one or more of the following criteria:</p>
 <ul class="simple">
 <li><p>Your backend provides a library that optimizes a certain operator that is equivalent to a subgraph. For example, <code class="docutils literal notranslate"><span class="pre">linear_relu</span></code> (equivalent to linear + relu) that can be executed faster on a certain backend.</p></li>
@@ -442,7 +442,7 @@
 </ul>
 </div>
 <div class="section" id="apis">
-<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this headline">¶</a></h2>
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
 <p>For an operator/subgraph replacement, the common flow is:</p>
 <ol class="arabic simple">
 <li><p>Register an operator that has the same input and output as the subgraph. This operator won’t have the target-specific implementations (also, doesn’t need to in the compilation stage), but it needs to give the same result as the subgraph.</p></li>
@@ -451,7 +451,7 @@
 </ol>
 <p>In order to facilitate the process, we provide an API to help reduce the effort for ExecuTorch users to do these steps.</p>
 <div class="section" id="pass-infra-entry-point">
-<h3>Pass Infra Entry Point<a class="headerlink" href="#pass-infra-entry-point" title="Permalink to this headline">¶</a></h3>
+<h3>Pass Infra Entry Point<a class="headerlink" href="#pass-infra-entry-point" title="Permalink to this heading">¶</a></h3>
 <p>To lower edge ops to backend ops, a pass will perform pattern matching to identify the edge ops of interest in the graph, and then replace them with equivalent backend operators. There are two APIs to register such passes:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">transform()</span></code>. An API on ExportProgram that allows users to provide custom passes. Note that this is not guarded by any validator so the soundness of the program is not guaranteed.</p></li>
@@ -460,7 +460,7 @@
 <p>Example: one such pass is QuantFusion. This pass takes a “canonical quantization pattern”, ie. “dequant - some_op - quant” and fuses this pattern into a single operator that is backend specific, i.e. <code class="docutils literal notranslate"><span class="pre">quantized_decomposed::some_op</span></code>. Another simpler example is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20">here</a> where we replace <code class="docutils literal notranslate"><span class="pre">sym_size</span></code> operators to the ones that are understood by ExecuTorch</p>
 </div>
 <div class="section" id="pattern-binding-decorator">
-<h3>Pattern Binding Decorator<a class="headerlink" href="#pattern-binding-decorator" title="Permalink to this headline">¶</a></h3>
+<h3>Pattern Binding Decorator<a class="headerlink" href="#pattern-binding-decorator" title="Permalink to this heading">¶</a></h3>
 <p>We provide a decorator <code class="docutils literal notranslate"><span class="pre">bind_pattern_to_op</span></code> to help users easily register their backend operators into EXIR. This decorator takes:</p>
 <ul class="simple">
 <li><p>a <code class="docutils literal notranslate"><span class="pre">torch.Library</span></code> object, it indicates which library or namespace this backend operator belongs to.</p></li>
@@ -475,7 +475,7 @@
 </div>
 </div>
 <div class="section" id="example">
-<h2>Example<a class="headerlink" href="#example" title="Permalink to this headline">¶</a></h2>
+<h2>Example<a class="headerlink" href="#example" title="Permalink to this heading">¶</a></h2>
 <p>Let’s assume a simple program that contains both add and relu operators:</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
     <span class="n">z</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
@@ -539,7 +539,7 @@
 </pre></div>
 </div>
 <div class="section" id="op-set">
-<h3>Op Set<a class="headerlink" href="#op-set" title="Permalink to this headline">¶</a></h3>
+<h3>Op Set<a class="headerlink" href="#op-set" title="Permalink to this heading">¶</a></h3>
 <p>There are the backend operators currently using <code class="docutils literal notranslate"><span class="pre">bind_pattern_to_op</span></code> API.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::add.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
@@ -702,7 +702,9 @@
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

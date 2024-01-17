@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="running-an-executorch-model-in-c-tutorial">
-<h1>Running an ExecuTorch Model in C++ Tutorial<a class="headerlink" href="#running-an-executorch-model-in-c-tutorial" title="Permalink to this headline">¶</a></h1>
+<h1>Running an ExecuTorch Model in C++ Tutorial<a class="headerlink" href="#running-an-executorch-model-in-c-tutorial" title="Permalink to this heading">¶</a></h1>
 <p><strong>Author:</strong> <a class="reference external" href="https://github.com/JacobSzwejbka">Jacob Szwejbka</a></p>
 <p>In this tutorial, we will cover the APIs to load an ExecuTorch model,
 prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.</p>
@@ -432,12 +432,12 @@ prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.<
 each API please see the <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.
 <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">Here</a> is a fully functional version C++ model runner, and the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a> doc shows how to build and run it.</p>
 <div class="section" id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <p>You will need an ExecuTorch model to follow along. We will be using
 the model <code class="docutils literal notranslate"><span class="pre">SimpleConv</span></code> generated from the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a>.</p>
 </div>
 <div class="section" id="model-loading">
-<h2>Model Loading<a class="headerlink" href="#model-loading" title="Permalink to this headline">¶</a></h2>
+<h2>Model Loading<a class="headerlink" href="#model-loading" title="Permalink to this heading">¶</a></h2>
 <p>The first step towards running your model is to load it. ExecuTorch uses an abstraction called a <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> to handle the specifics of retrieving the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file data, and then <code class="docutils literal notranslate"><span class="pre">Program</span></code> represents the loaded state.</p>
 <p>Users can define their own <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code>s to fit the needs of their particular system. In this tutorial we will be using the <code class="docutils literal notranslate"><span class="pre">FileDataLoader</span></code>, but you can look under <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/data_loader">Example Data Loader Implementations</a> to see other options provided by the ExecuTorch project.</p>
 <p>For the <code class="docutils literal notranslate"><span class="pre">FileDataLoader</span></code> all we need to do is provide a file path to the constructor.</p>
@@ -454,7 +454,7 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 </div>
 </div>
 <div class="section" id="setting-up-the-memorymanager">
-<h2>Setting Up the MemoryManager<a class="headerlink" href="#setting-up-the-memorymanager" title="Permalink to this headline">¶</a></h2>
+<h2>Setting Up the MemoryManager<a class="headerlink" href="#setting-up-the-memorymanager" title="Permalink to this heading">¶</a></h2>
 <p>Next we will set up the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code>.</p>
 <p>One of the principles of ExecuTorch is giving users control over where the memory used by the runtime comes from. Today (late 2023) users need to provide 2 different allocators:</p>
 <ul class="simple">
@@ -499,7 +499,7 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 </div>
 </div>
 <div class="section" id="loading-a-method">
-<h2>Loading a Method<a class="headerlink" href="#loading-a-method" title="Permalink to this headline">¶</a></h2>
+<h2>Loading a Method<a class="headerlink" href="#loading-a-method" title="Permalink to this heading">¶</a></h2>
 <p>In ExecuTorch we load and initialize from the <code class="docutils literal notranslate"><span class="pre">Program</span></code> at a method granularity. Many programs will only have one method ‘forward’. <code class="docutils literal notranslate"><span class="pre">load_method</span></code> is where initialization is done, from setting up tensor metadata, to intializing delegates, etc.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">);</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">method</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
@@ -507,7 +507,7 @@ the model <code class="docutils literal notranslate"><span class="pre">SimpleCon
 </div>
 </div>
 <div class="section" id="setting-inputs">
-<h2>Setting Inputs<a class="headerlink" href="#setting-inputs" title="Permalink to this headline">¶</a></h2>
+<h2>Setting Inputs<a class="headerlink" href="#setting-inputs" title="Permalink to this heading">¶</a></h2>
 <p>Now that we have our method we need to set up its inputs before we can
 perform an inference. In this case we know our model takes a single (1, 3, 256, 256)
 sized float tensor.</p>
@@ -533,7 +533,7 @@ not contain buffer space for your inputs and outputs.</p>
 </div>
 </div>
 <div class="section" id="perform-an-inference">
-<h2>Perform an Inference<a class="headerlink" href="#perform-an-inference" title="Permalink to this headline">¶</a></h2>
+<h2>Perform an Inference<a class="headerlink" href="#perform-an-inference" title="Permalink to this heading">¶</a></h2>
 <p>Now that our method is loaded and our inputs are set we can perform an inference. We do this by calling <code class="docutils literal notranslate"><span class="pre">execute</span></code>.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Error</span><span class="w"> </span><span class="n">execute_error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">execute</span><span class="p">();</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">execute_error</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">);</span>
@@ -541,7 +541,7 @@ not contain buffer space for your inputs and outputs.</p>
 </div>
 </div>
 <div class="section" id="retrieve-outputs">
-<h2>Retrieve Outputs<a class="headerlink" href="#retrieve-outputs" title="Permalink to this headline">¶</a></h2>
+<h2>Retrieve Outputs<a class="headerlink" href="#retrieve-outputs" title="Permalink to this heading">¶</a></h2>
 <p>Once our inference completes we can retrieve our output. We know that our model only returns a single output tensor. One potential pitfall here is that the output we get back is owned by the <code class="docutils literal notranslate"><span class="pre">Method</span></code>. Users should take care to clone their output before performing any mutations on it, or if they need it to have a lifespan separate from the <code class="docutils literal notranslate"><span class="pre">Method</span></code>.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">EValue</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">get_output</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
 <span class="n">assert</span><span class="p">(</span><span class="n">output</span><span class="p">.</span><span class="n">isTensor</span><span class="p">());</span>
@@ -549,7 +549,7 @@ not contain buffer space for your inputs and outputs.</p>
 </div>
 </div>
 <div class="section" id="conclusion">
-<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this headline">¶</a></h2>
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
 <p>In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.</p>
 </div>
 </div>
@@ -628,7 +628,9 @@ not contain buffer space for your inputs and outputs.</p>
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

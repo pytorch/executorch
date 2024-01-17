@@ -424,7 +424,7 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="module-exir">
-<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-exir" title="Permalink to this headline">¶</a></h1>
+<span id="export-to-executorch-api-reference"></span><h1>Export to ExecuTorch API Reference<a class="headerlink" href="#module-exir" title="Permalink to this heading">¶</a></h1>
 <dl class="py function">
 <dt class="sig sig-object py" id="exir.to_edge">
 <span class="sig-prename descclassname"><span class="pre">exir.</span></span><span class="sig-name descname"><span class="pre">to_edge</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">programs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">constant_methods</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_config</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/exir/program/_program.html#to_edge"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.to_edge" title="Permalink to this definition">¶</a></dt>
@@ -595,6 +595,10 @@ If True prints the binary 1-1 with the specification in the schema.</p>
 <span class="target" id="module-exir.backend.backend_api"></span><dl class="py function">
 <dt class="sig sig-object py" id="exir.backend.backend_api.to_backend">
 <span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/exir/backend/backend_api.html#to_backend"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#exir.backend.backend_api.to_backend" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">backend_id</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">compile_specs</span></span></em><span class="sig-paren">)</span></dt>
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">exir.backend.backend_api.</span></span><span class="sig-name descname"><span class="pre">to_backend</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">edge_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">partitioner_instance</span></span></em><span class="sig-paren">)</span></dt>
 <dd><p>A generic function the dispatch happens on the type of the first argument. There are currently to overloaded to_backend function:</p>
 <p>Note: Python is dynamically-typed language and therefore cannot have proper method overloading as that requires the language to
 be able to discriminate between types at compile-time. &#64;to_backend.register will attach the function to to_backend() base on the type of the first
@@ -697,7 +701,36 @@ delegated functions. This is can be created by calling <cite>to_backend</cite>.<
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Export to ExecuTorch API Reference</a></li>
+<li><a class="reference internal" href="#">Export to ExecuTorch API Reference</a><ul>
+<li><a class="reference internal" href="#exir.to_edge"><code class="docutils literal notranslate"><span class="pre">to_edge()</span></code></a></li>
+<li><a class="reference internal" href="#exir.EdgeProgramManager"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code></a><ul>
+<li><a class="reference internal" href="#exir.EdgeProgramManager.config_methods"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.config_methods</span></code></a></li>
+<li><a class="reference internal" href="#exir.EdgeProgramManager.exported_program"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.exported_program()</span></code></a></li>
+<li><a class="reference internal" href="#exir.EdgeProgramManager.methods"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.methods</span></code></a></li>
+<li><a class="reference internal" href="#exir.EdgeProgramManager.to_backend"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.to_backend()</span></code></a></li>
+<li><a class="reference internal" href="#exir.EdgeProgramManager.to_executorch"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.to_executorch()</span></code></a></li>
+<li><a class="reference internal" href="#exir.EdgeProgramManager.transform"><code class="docutils literal notranslate"><span class="pre">EdgeProgramManager.transform()</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#exir.ExecutorchProgramManager"><code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager</span></code></a><ul>
+<li><a class="reference internal" href="#exir.ExecutorchProgramManager.buffer"><code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager.buffer</span></code></a></li>
+<li><a class="reference internal" href="#exir.ExecutorchProgramManager.config_methods"><code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager.config_methods</span></code></a></li>
+<li><a class="reference internal" href="#exir.ExecutorchProgramManager.dump_executorch_program"><code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager.dump_executorch_program()</span></code></a></li>
+<li><a class="reference internal" href="#exir.ExecutorchProgramManager.exported_program"><code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager.exported_program()</span></code></a></li>
+<li><a class="reference internal" href="#exir.ExecutorchProgramManager.methods"><code class="docutils literal notranslate"><span class="pre">ExecutorchProgramManager.methods</span></code></a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#exir.backend.backend_api.to_backend"><code class="docutils literal notranslate"><span class="pre">to_backend()</span></code></a></li>
+<li><a class="reference internal" href="#exir.backend.backend_api.LoweredBackendModule"><code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code></a><ul>
+<li><a class="reference internal" href="#exir.backend.backend_api.LoweredBackendModule.backend_id"><code class="docutils literal notranslate"><span class="pre">LoweredBackendModule.backend_id</span></code></a></li>
+<li><a class="reference internal" href="#exir.backend.backend_api.LoweredBackendModule.buffer"><code class="docutils literal notranslate"><span class="pre">LoweredBackendModule.buffer()</span></code></a></li>
+<li><a class="reference internal" href="#exir.backend.backend_api.LoweredBackendModule.compile_specs"><code class="docutils literal notranslate"><span class="pre">LoweredBackendModule.compile_specs</span></code></a></li>
+<li><a class="reference internal" href="#exir.backend.backend_api.LoweredBackendModule.original_module"><code class="docutils literal notranslate"><span class="pre">LoweredBackendModule.original_module</span></code></a></li>
+<li><a class="reference internal" href="#exir.backend.backend_api.LoweredBackendModule.processed_bytes"><code class="docutils literal notranslate"><span class="pre">LoweredBackendModule.processed_bytes</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 
             </div>
@@ -716,7 +749,9 @@ delegated functions. This is can be created by calling <cite>to_backend</cite>.<
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>

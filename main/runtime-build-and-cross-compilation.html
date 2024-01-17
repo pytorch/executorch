@@ -424,14 +424,14 @@
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
   <div class="section" id="building-with-cmake">
-<h1>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this headline">¶</a></h1>
+<h1>Building with CMake<a class="headerlink" href="#building-with-cmake" title="Permalink to this heading">¶</a></h1>
 <p>Although buck2 is the main build system for the ExecuTorch project, it’s also
 possible to build core pieces of the runtime using <a class="reference external" href="https://cmake.org/">CMake</a>
 for easier integration with other build systems. Even if you don’t use CMake
 directly, CMake can emit scripts for other format like Make, Ninja or Xcode.
 For information, see <a class="reference external" href="https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html">cmake-generators(7)</a>.</p>
 <div class="section" id="targets-built-by-the-cmake-build-system">
-<h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this headline">¶</a></h2>
+<h2>Targets Built by the CMake Build System<a class="headerlink" href="#targets-built-by-the-cmake-build-system" title="Permalink to this heading">¶</a></h2>
 <p>ExecuTorch’s CMake build system doesn’t cover everything that the buck2 build
 system covers. It can only build pieces of the runtime that are likely to be
 useful to embedded systems users.</p>
@@ -456,7 +456,7 @@ implements.</p></li>
 </ul>
 </div>
 <div class="section" id="one-time-setup-to-prepare-for-cmake-build">
-<h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this headline">¶</a></h2>
+<h2>One-time setup to prepare for CMake Build<a class="headerlink" href="#one-time-setup-to-prepare-for-cmake-build" title="Permalink to this heading">¶</a></h2>
 <p>Follow the steps below to have the tools ready before using CMake to build on your machine.</p>
 <ol class="arabic simple">
 <li><p>Clone the repo and install buck2 as described in the “Building a Runtime” section
@@ -483,7 +483,7 @@ one already by following <a class="reference internal" href="getting-started-set
 </ol>
 </div>
 <div class="section" id="configure-the-cmake-build">
-<h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this headline">¶</a></h2>
+<h2>Configure the CMake Build<a class="headerlink" href="#configure-the-cmake-build" title="Permalink to this heading">¶</a></h2>
 <p>Follow these steps after cloning or pulling the upstream repo, since the build
 dependencies may have changed.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
@@ -500,7 +500,7 @@ dependencies may have changed.</p>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
 </div>
 <div class="section" id="build-the-runtime-components">
-<h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this headline">¶</a></h2>
+<h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h2>
 <p>Build all targets with</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of the executorch repo</span>
 <span class="nb">cd</span><span class="w"> </span>executorch
@@ -516,7 +516,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class
 </div>
 </div>
 <div class="section" id="use-an-example-app-executor-runner-to-execute-a-pte-file">
-<h2>Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-app-executor-runner-to-execute-a-pte-file" title="Permalink to this headline">¶</a></h2>
+<h2>Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file<a class="headerlink" href="#use-an-example-app-executor-runner-to-execute-a-pte-file" title="Permalink to this heading">¶</a></h2>
 <p>First, generate an <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> or other ExecuTorch program file using the
 instructions as described in
 <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">Setting up ExecuTorch</span></a>.</p>
@@ -539,10 +539,10 @@ by the output values.</p>
 </div>
 </div>
 <div class="section" id="cross-compilation">
-<h2>Cross compilation<a class="headerlink" href="#cross-compilation" title="Permalink to this headline">¶</a></h2>
+<h2>Cross compilation<a class="headerlink" href="#cross-compilation" title="Permalink to this heading">¶</a></h2>
 <p>Follwing are instruction on how to perform cross compilation for Android and iOS.</p>
 <div class="section" id="android">
-<h3>Android<a class="headerlink" href="#android" title="Permalink to this headline">¶</a></h3>
+<h3>Android<a class="headerlink" href="#android" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Prerequisite: <a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>, choose one of the following:</p>
 <ul>
@@ -572,7 +572,7 @@ adb<span class="w"> </span>shell<span class="w">  </span><span class="s2">&quot;
 </div>
 </div>
 <div class="section" id="ios">
-<h3>iOS<a class="headerlink" href="#ios" title="Permalink to this headline">¶</a></h3>
+<h3>iOS<a class="headerlink" href="#ios" title="Permalink to this heading">¶</a></h3>
 <p>For iOS we’ll build <a class="reference external" href="https://developer.apple.com/documentation/xcode/creating-a-multi-platform-binary-framework-bundle">frameworks</a> instead of static libraries, that will also contain the public headers inside.</p>
 <ol class="arabic simple">
 <li><p>Install Xcode from the
@@ -599,7 +599,7 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 </div>
 </div>
 <div class="section" id="next-steps">
-<h2>Next steps<a class="headerlink" href="#next-steps" title="Permalink to this headline">¶</a></h2>
+<h2>Next steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
 <p>You have successfully cross-compiled <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> binary to iOS and Android platforms. You can start exploring advanced features and capabilities. Here is a list of sections you might want to read next:</p>
 <ul class="simple">
 <li><p><span class="xref myst">Selective build</span> to build the runtime that links to only kernels used by the program, which can provide significant binary size savings.</p></li>
@@ -686,7 +686,9 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
          <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
          <script src="_static/jquery.js"></script>
          <script src="_static/underscore.js"></script>
+         <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
          <script src="_static/doctools.js"></script>
+         <script src="_static/sphinx_highlight.js"></script>
          <script src="_static/clipboard.min.js"></script>
          <script src="_static/copybutton.js"></script>
          <script src="_static/design-tabs.js"></script>
