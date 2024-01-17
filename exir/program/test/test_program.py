@@ -50,12 +50,18 @@ def foo_meta(a, b):
 
 
 def get_exported_programs() -> Dict[str, ExportedProgram]:
-    def forward(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        z = torch.mul(x, y)
-        return torch.add(z, x)
+    class Forward(torch.nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            z = torch.mul(x, y)
+            return torch.add(z, x)
 
-    def foo(x: torch.Tensor) -> torch.Tensor:
-        return torch.add(x, torch.ones(1))
+    forward = Forward()
+
+    class Foo(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.add(x, torch.ones(1))
+
+    foo = Foo()
 
     programs = {}
     programs["forward"] = export(

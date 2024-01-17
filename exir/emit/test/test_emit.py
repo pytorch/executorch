@@ -46,6 +46,15 @@ from torch import nn
 from torch.export import dynamic_dim, export
 
 
+class WrapperModule(torch.nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
+
+
 class TestEmit(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -101,8 +110,11 @@ class TestEmit(unittest.TestCase):
         return res
 
     def test_basic_api(self) -> None:
-        def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            return x * y + x
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                return x * y + x
+
+        f = Foo()
 
         program = (
             to_edge(
@@ -147,12 +159,17 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(exec_plan.outputs[0], 1)
 
     def test_nested_return(self) -> None:
-        def f(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:
-            return (
-                torch.Tensor(1),
-                torch.Tensor(2),
-                [torch.sin(x).max(), torch.cos(x).max()],
-            )
+        class Foo(torch.nn.Module):
+            def forward(
+                self, x: torch.Tensor
+            ) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:
+                return (
+                    torch.Tensor(1),
+                    torch.Tensor(2),
+                    [torch.sin(x).max(), torch.cos(x).max()],
+                )
+
+        f = Foo()
 
         x = (torch.randn(100),)
         program = to_edge(export(f, x)).to_executorch().executorch_program
@@ -171,8 +188,11 @@ class TestEmit(unittest.TestCase):
         )
 
     def test_buffers_with_perfect_alignment(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            return torch.ones(100) + x + (torch.ones(100) * 2)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.ones(100) + x + (torch.ones(100) * 2)
+
+        f = Foo()
 
         program = (
             to_edge(export(f, (torch.randn(100),)))
@@ -214,11 +234,14 @@ class TestEmit(unittest.TestCase):
         )
 
     def test_inplace_ops(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            y = torch.sin(x)
-            z = y.view(100)
-            torch.relu_(z)
-            return z.max()
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = torch.sin(x)
+                z = y.view(100)
+                torch.relu_(z)
+                return z.max()
+
+        f = Foo()
 
         inputs = (torch.ones((10, 10)),)
         edge = to_edge(export(f, inputs))
@@ -269,8 +292,11 @@ class TestEmit(unittest.TestCase):
     def test_list_type(self) -> None:
         """Tests that the types of lists are correctly found"""
 
-        def f(x: torch.Tensor) -> torch.Tensor:
-            return torch.permute(x, (2, 0, 1))
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.permute(x, (2, 0, 1))
+
+        f = Foo()
 
         program = (
             to_edge(export(f, (torch.randn(2, 3, 5),)))
@@ -292,10 +318,13 @@ class TestEmit(unittest.TestCase):
         native_functions.yaml
         """
 
-        def f(x: torch.Tensor) -> torch.Tensor:
-            batch1 = torch.randn(10, 3, 4)
-            batch2 = torch.randn(10, 4, 5)
-            return torch.addbmm(x, batch1, batch2, alpha=2, beta=3)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                batch1 = torch.randn(10, 3, 4)
+                batch2 = torch.randn(10, 4, 5)
+                return torch.addbmm(x, batch1, batch2, alpha=2, beta=3)
+
+        f = Foo()
 
         program = (
             to_edge(export(f, (torch.randn(3, 5),))).to_executorch().executorch_program
@@ -309,9 +338,12 @@ class TestEmit(unittest.TestCase):
         native_functions.yaml
         """
 
-        def f(x: torch.Tensor) -> torch.Tensor:
-            values = torch.randn(3, 2)
-            return torch.searchsorted(x, values, side="right", right=True)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                values = torch.randn(3, 2)
+                return torch.searchsorted(x, values, side="right", right=True)
+
+        f = Foo()
 
         x, _ = torch.sort(torch.randn(3, 4))
         program = to_edge(export(f, (x,))).to_executorch().executorch_program
@@ -330,9 +362,12 @@ class TestEmit(unittest.TestCase):
             self.assertTrue(False)
 
     def test_out(self) -> None:
-        def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            z = y.clone()
-            return torch.mul(x, y, out=z)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                z = y.clone()
+                return torch.mul(x, y, out=z)
+
+        f = Foo()
 
         program = (
             to_edge(export(f, (torch.ones(3), torch.ones(3))))
@@ -375,8 +410,11 @@ class TestEmit(unittest.TestCase):
         def g(x: torch.Tensor) -> torch.Tensor:
             return torch.sin(f(x))
 
-        def h(x: torch.Tensor) -> torch.Tensor:
-            return torch.add(g(x), torch.randn(3, 2))
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.add(g(x), torch.randn(3, 2))
+
+        h = Foo()
 
         x = (torch.randn(3, 2),)
         exec_prog = to_edge(export(h, x)).to_executorch(
@@ -400,7 +438,7 @@ class TestEmit(unittest.TestCase):
             program.execution_plan[0].chains[0].stacktrace[1].items[-2].name, "g"
         )
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[1].items[-3].name, "h"
+            program.execution_plan[0].chains[0].stacktrace[1].items[-3].name, "forward"
         )
 
         # Check the sin operator's stack trace contains g -> h
@@ -408,18 +446,27 @@ class TestEmit(unittest.TestCase):
             program.execution_plan[0].chains[0].stacktrace[2].items[-1].name, "g"
         )
         self.assertEqual(
-            program.execution_plan[0].chains[0].stacktrace[2].items[-2].name, "h"
+            program.execution_plan[0].chains[0].stacktrace[2].items[-2].name, "forward"
         )
 
     def test_stacktrace_off(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            return torch.mul(x, torch.randn(3, 2))
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.mul(x, torch.randn(3, 2))
 
-        def g(x: torch.Tensor) -> torch.Tensor:
-            return torch.sin(f(x))
+        f = Foo()
 
-        def h(x: torch.Tensor) -> torch.Tensor:
-            return torch.add(g(x), torch.randn(3, 2))
+        class Goo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.sin(f(x))
+
+        g = Goo()
+
+        class Hoo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.add(g(x), torch.randn(3, 2))
+
+        h = Hoo()
 
         x = (torch.randn(3, 2),)
         program = to_edge(export(h, x)).to_executorch().executorch_program
@@ -428,9 +475,12 @@ class TestEmit(unittest.TestCase):
         self.assertTrue(program.execution_plan[0].chains[0].stacktrace is None)
 
     def test_positional_argument_default_value(self) -> None:
-        def f(x: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
-            z = torch.ones(6, 2)
-            return torch.ops.aten.cat.out((x, n), out=z)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
+                z = torch.ones(6, 2)
+                return torch.ops.aten.cat.out((x, n), out=z)
+
+        f = Foo()
 
         x = torch.randn(3, 2)
         program = (
@@ -443,8 +493,11 @@ class TestEmit(unittest.TestCase):
         self._assertCallLength(program, 0, 4)
 
     def test_emit_multiple_out(self) -> None:
-        def f(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-            return torch.topk(x, 5)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                return torch.topk(x, 5)
+
+        f = Foo()
 
         x = (torch.randn(10),)
         program = to_edge(export(f, x)).to_executorch().executorch_program
@@ -453,8 +506,11 @@ class TestEmit(unittest.TestCase):
     # Non contiguous tensors are not supported in ExecuTorch
     @unittest.expectedFailure
     def test_emit_layout(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            return torch.ones_like(x)
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return torch.ones_like(x)
+
+        f = Foo()
 
         x = (torch.randn(3, 2),)
         program = to_edge(export(f, x)).to_executorch().executorch_program
@@ -466,10 +522,13 @@ class TestEmit(unittest.TestCase):
                 self.assertEqual(v.layout, 0)
 
     def test_optional_tensor_list(self) -> None:
-        def f(x: torch.Tensor) -> torch.Tensor:
-            a = torch.nonzero(x)
-            b = torch.ops.aten.index.Tensor(x, [a])
-            return b
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                a = torch.nonzero(x)
+                b = torch.ops.aten.index.Tensor(x, [a])
+                return b
+
+        f = Foo()
 
         x = (torch.randn(3, 2),)
         program = (
@@ -544,11 +603,14 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(num_other, 0)
 
     def test_emit_map(self) -> None:
-        def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-            def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-                return x + y
+        class Foo(torch.nn.Module):
+            def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                def map_fn(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+                    return x + y
 
-            return control_flow.map(map_fn, x, y)
+                return control_flow.map(map_fn, x, y)
+
+        f = Foo()
 
         inputs = (torch.ones(4, 4), torch.ones(4))
         module = to_edge(
@@ -745,11 +807,11 @@ class TestEmit(unittest.TestCase):
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
         program_relu = to_edge(
-            export(model.forward_relu, inputs),
+            export(WrapperModule(model.forward_relu), inputs),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         ).to_executorch()
         program_sigmoid = to_edge(
-            export(model.forward_sigmoid, inputs),
+            export(WrapperModule(model.forward_sigmoid), inputs),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         ).to_executorch()
         exir_input = {
@@ -807,8 +869,12 @@ class TestEmit(unittest.TestCase):
 
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
-        program_relu = to_edge(export(model.forward_relu, inputs)).to_executorch()
-        program_sigmoid = to_edge(export(model.forward_sigmoid, inputs)).to_executorch()
+        program_relu = to_edge(
+            export(WrapperModule(model.forward_relu), inputs)
+        ).to_executorch()
+        program_sigmoid = to_edge(
+            export(WrapperModule(model.forward_sigmoid), inputs)
+        ).to_executorch()
         exir_input = {
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
@@ -860,7 +926,7 @@ class TestEmit(unittest.TestCase):
         ) -> "ExecutorchProgramManager":
             return to_edge(
                 export(
-                    fn,
+                    WrapperModule(fn),
                     inputs,
                 )
             ).to_executorch()
@@ -899,9 +965,12 @@ class TestEmit(unittest.TestCase):
         )
 
     def test_upper_bound_memory_planning_respect_input_constraints(self) -> None:
-        def func(k: torch.Tensor) -> torch.Tensor:
-            k = torch.cat((k, torch.ones(1, 4)))
-            return k
+        class Foo(torch.nn.Module):
+            def forward(self, k: torch.Tensor) -> torch.Tensor:
+                k = torch.cat((k, torch.ones(1, 4)))
+                return k
+
+        func = Foo()
 
         k = torch.rand(2, 4)
         constraints = [
@@ -951,7 +1020,7 @@ class TestEmit(unittest.TestCase):
 
         model = Simple()
         inputs = (torch.ones(10, 5),)
-        program = to_edge(export(model.forward, inputs)).to_executorch()
+        program = to_edge(export(model, inputs)).to_executorch()
         exir_input = {
             "forward": program.exported_program(),
         }
