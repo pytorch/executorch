@@ -1023,9 +1023,10 @@ class Inspector:
 
         # Filter out some columns and rows for better readability when printing
         filtered_column_df = combined_df.drop(columns=EXCLUDED_COLUMNS_WHEN_PRINTING)
-        filtered_df = filtered_column_df[
-            ~filtered_column_df["event_name"].isin(EXCLUDED_EVENTS_WHEN_PRINTING)
-        ]
+        for filter_name in EXCLUDED_EVENTS_WHEN_PRINTING:
+            filtered_column_df = filtered_column_df[
+                ~filtered_column_df["event_name"].str.contains(filter_name)
+            ]
         try:
             from IPython import get_ipython
             from IPython.display import display
@@ -1034,7 +1035,7 @@ class Inspector:
                 return f"font-size: {size}px"
 
             if get_ipython() is not None:
-                styled_df = filtered_df.style.applymap(style_text_size)
+                styled_df = filtered_column_df.style.applymap(style_text_size)
                 display(styled_df)
             else:
                 raise Exception(
@@ -1042,7 +1043,8 @@ class Inspector:
                 )
         except:
             print(
-                tabulate(filtered_df, headers="keys", tablefmt="fancy_grid"), file=file
+                tabulate(filtered_column_df, headers="keys", tablefmt="fancy_grid"),
+                file=file,
             )
 
     # TODO: write unit test
