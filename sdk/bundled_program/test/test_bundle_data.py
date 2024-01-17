@@ -48,9 +48,9 @@ class TestBundle(unittest.TestCase):
         method_test_suites = sorted(method_test_suites, key=lambda t: t.method_name)
 
         for plan_id in range(len(executorch_program.executorch_program.execution_plan)):
-            bundled_plan_test = bundled_program._bundled_program.method_test_suites[
-                plan_id
-            ]
+            bundled_plan_test = (
+                bundled_program.serialize_to_schema().method_test_suites[plan_id]
+            )
             method_test_suite = method_test_suites[plan_id]
 
             self.assertEqual(
@@ -68,7 +68,7 @@ class TestBundle(unittest.TestCase):
                 )
 
         self.assertEqual(
-            bundled_program._bundled_program.program,
+            bundled_program.serialize_to_schema().program,
             _serialize_pte_binary(executorch_program.executorch_program),
         )
 

@@ -7,7 +7,7 @@
 import ctypes
 import typing
 from dataclasses import dataclass
-from typing import Dict, List, Sequence, Type, Union
+from typing import Dict, List, Optional, Sequence, Type, Union
 
 import executorch.exir.schema as core_schema
 
@@ -43,11 +43,10 @@ class BundledProgram:
 
     Bundled program contains all information needed to execute and verify the program on device.
 
-    Attributes:
+    Public Attributes:
         method_test_suites: All test suites for verifying methods.
         executorch_program: ExecutorchProgram-like variable for the program to be verified, including
                             ExecutorchProgram, MultiMethodExecutorchProgram or ExecutorchProgramManager.
-        _bundled_program: information will be serialized into a binary format.
     """
 
     executorch_program: Union[
@@ -56,7 +55,73 @@ class BundledProgram:
         ExecutorchProgramManager,
     ]
     method_test_suites: Sequence[MethodTestSuite]
-    _bundled_program: bp_schema.BundledProgram
+
+    # This is the cache for bundled program in schema type.
+    # User should not access this field directly. Please Use `serialize_to_schema` function. instead.
+    _bundled_program_in_schema: Optional[bp_schema.BundledProgram] = None
+
+    def serialize_to_schema(self) -> bp_schema.BundledProgram:
+        # Return cached value if exists
+        if self._bundled_program_in_schema is not None:
+            return self._bundled_program_in_schema
+
+        program = extract_program(self.executorch_program)
+        bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
+
+        # Emit data and metadata of bundled tensor
+        for method_test_suite in self.method_test_suites:
+            bundled_test_cases: List[bp_schema.BundledMethodTestCase] = []
+
+            # emit I/O sets for each method test case
+            for i in range(len(method_test_suite.test_cases)):
+                inputs: List[bp_schema.Value] = []
+                expected_outputs: List[bp_schema.Value] = []
+
+                cur_plan_test_inputs = method_test_suite.test_cases[i].inputs
+                cur_plan_test_expected_outputs = method_test_suite.test_cases[
+                    i
+                ].expected_outputs
+
+                for input_val in cur_plan_test_inputs:
+                    if type(input_val) is torch.Tensor:
+                        emit_bundled_tensor(
+                            TensorSpec.from_tensor(input_val, const=True),
+                            inputs,
+                        )
+                    else:
+                        emit_prim(
+                            input_val,
+                            inputs,
+                        )
+                for expected_output_tensor in cur_plan_test_expected_outputs:
+                    assert (
+                        type(expected_output_tensor) is torch.Tensor
+                    ), "Only tensor outputs are currently supported."
+                    emit_bundled_tensor(
+                        TensorSpec.from_tensor(expected_output_tensor, const=True),
+                        expected_outputs,
+                    )
+                bundled_test_cases.append(
+                    bp_schema.BundledMethodTestCase(
+                        inputs=inputs, expected_outputs=expected_outputs
+                    )
+                )
+
+            # emit the whole execution plan test
+            bundled_method_test_suites.append(
+                bp_schema.BundledMethodTestSuite(
+                    method_name=method_test_suite.method_name,
+                    test_cases=bundled_test_cases,
+                )
+            )
+
+        program_bytes: bytes = _serialize_pte_binary(program)
+        self._bundled_program_in_schema = bp_schema.BundledProgram(
+            version=BUNDLED_PROGRAM_SCHEMA_VERSION,
+            method_test_suites=bundled_method_test_suites,
+            program=program_bytes,
+        )
+        return self._bundled_program_in_schema
 
 
 def emit_bundled_tensor(
@@ -282,6 +347,26 @@ def assert_valid_bundle(
                 )
 
 
+def extract_program(
+    executorch_program: Union[
+        ExecutorchProgram,
+        MultiMethodExecutorchProgram,
+        ExecutorchProgramManager,
+    ]
+):
+    if isinstance(executorch_program, ExecutorchProgramManager):
+        program = executorch_program.executorch_program
+    elif isinstance(executorch_program, ExecutorchProgram):
+        program = executorch_program.program
+    else:
+        assert isinstance(
+            executorch_program, MultiMethodExecutorchProgram
+        ), f"executorch_program should be in type ExecutorchProgram, MultiMethodExecutorchProgram or ExecutorchProgramManager, but got {type(executorch_program)}"
+        program = executorch_program.program
+
+    return program
+
+
 def create_bundled_program(
     executorch_program: Union[
         ExecutorchProgram,
@@ -299,74 +384,12 @@ def create_bundled_program(
     Returns:
         The `BundledProgram` variable contains given ExecuTorch program and test cases.
     """
-    if isinstance(executorch_program, ExecutorchProgramManager):
-        program = executorch_program.executorch_program
-    elif isinstance(executorch_program, ExecutorchProgram):
-        program = executorch_program.program
-    else:
-        assert isinstance(executorch_program, MultiMethodExecutorchProgram)
-        program = executorch_program.program
+    program = extract_program(executorch_program)
 
     method_test_suites = sorted(method_test_suites, key=lambda x: x.method_name)
 
     assert_valid_bundle(program, method_test_suites)
 
-    bundled_method_test_suites: List[bp_schema.BundledMethodTestSuite] = []
-
-    # Emit data and metadata of bundled tensor
-    for method_test_suite in method_test_suites:
-        bundled_test_cases: List[bp_schema.BundledMethodTestCase] = []
-
-        # emit I/O sets for each method test case
-        for i in range(len(method_test_suite.test_cases)):
-            inputs: List[bp_schema.Value] = []
-            expected_outputs: List[bp_schema.Value] = []
-
-            cur_plan_test_inputs = method_test_suite.test_cases[i].inputs
-            cur_plan_test_expected_outputs = method_test_suite.test_cases[
-                i
-            ].expected_outputs
-
-            for input_val in cur_plan_test_inputs:
-                if type(input_val) is torch.Tensor:
-                    emit_bundled_tensor(
-                        TensorSpec.from_tensor(input_val, const=True),
-                        inputs,
-                    )
-                else:
-                    emit_prim(
-                        input_val,
-                        inputs,
-                    )
-            for expected_output_tensor in cur_plan_test_expected_outputs:
-                assert (
-                    type(expected_output_tensor) is torch.Tensor
-                ), "Only tensor outputs are currently supported."
-                emit_bundled_tensor(
-                    TensorSpec.from_tensor(expected_output_tensor, const=True),
-                    expected_outputs,
-                )
-            bundled_test_cases.append(
-                bp_schema.BundledMethodTestCase(
-                    inputs=inputs, expected_outputs=expected_outputs
-                )
-            )
-
-        # emit the whole execution plan test
-        bundled_method_test_suites.append(
-            bp_schema.BundledMethodTestSuite(
-                method_name=method_test_suite.method_name, test_cases=bundled_test_cases
-            )
-        )
-
-    program_bytes: bytes = _serialize_pte_binary(program)
-
     return BundledProgram(
-        executorch_program=executorch_program,
-        method_test_suites=method_test_suites,
-        _bundled_program=bp_schema.BundledProgram(
-            version=BUNDLED_PROGRAM_SCHEMA_VERSION,
-            method_test_suites=bundled_method_test_suites,
-            program=program_bytes,
-        ),
+        executorch_program=executorch_program, method_test_suites=method_test_suites
     )
