@@ -14,42 +14,30 @@ Runner::Runner(
     std::unique_ptr<DataLoader> dataLoader,
     std::unique_ptr<MemoryAllocator> memoryAllocator)
     : dataLoader_(std::move(dataLoader)),
-      memoryAllocator_(std::move(memoryAllocator)) {
-  auto program = Program::load(dataLoader_.get());
-  if (!program.ok()) {
-    throw std::runtime_error(
-        "Failed to load the program: " +
-        std::to_string(error_code_t(program.error())));
-  }
-  program_ = std::make_unique<Program>(std::move(program.get()));
-}
+      memoryAllocator_(std::move(memoryAllocator)) {}
 
-Error Runner::run(
-    const std::string& methodName,
-    const std::vector<EValue>& inputs,
-    std::vector<EValue>& outputs) {
-  auto error = loadMethod(methodName);
-  if (error != Error::Ok) {
-    return error;
-  }
-  auto& method = methods_.at(methodName).method;
-  for (auto index = 0; index < inputs.size(); ++index) {
-    error = method->set_input(inputs[index], index);
-    if (error != Error::Ok) {
-      return error;
+Error Runner::load() {
+  if (!isLoaded()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        dataLoader_, InvalidArgument, "Data loader is null");
+    auto program = Program::load(dataLoader_.get());
+    if (!program.ok()) {
+      return program.error();
     }
+    program_ = std::make_unique<Program>(std::move(program.get()));
   }
-  error = method->execute();
+  return Error::Ok;
+}
+
+bool Runner::isLoaded() const {
+  return program_ != nullptr;
+}
+
+Result<std::vector<std::string>> Runner::methodNames() {
+  const auto error = load();
   if (error != Error::Ok) {
     return error;
   }
-  const auto outputsSize = method->outputs_size();
-  outputs.resize(outputsSize);
-
-  return method->get_outputs(outputs.data(), outputsSize);
-}
-
-std::vector<std::string> Runner::methodNames() const {
   const auto methodCount = program_->num_methods();
   std::vector<std::string> result;
   result.reserve(methodCount);
@@ -61,7 +49,13 @@ std::vector<std::string> Runner::methodNames() const {
 }
 
 Error Runner::loadMethod(const std::string& methodName) {
-  if (!methods_.count(methodName)) {
+  if (!isMethodLoaded(methodName)) {
+    ET_CHECK_OR_RETURN_ERROR(
+        memoryAllocator_, InvalidArgument, "Memory allocator is null");
+    const auto error = load();
+    if (error != Error::Ok) {
+      return error;
+    }
     MethodHolder methodHolder;
     const auto methodMetadata = program_->method_meta(methodName.c_str());
     if (!methodMetadata.ok()) {
@@ -93,6 +87,43 @@ Error Runner::loadMethod(const std::string& methodName) {
     methods_.emplace(methodName, std::move(methodHolder));
   }
   return Error::Ok;
+}
+
+bool Runner::isMethodLoaded(const std::string& methodName) const {
+  return methods_.count(methodName);
+}
+
+Result<MethodMeta> Runner::methodMeta(const std::string& methodName) {
+  const auto error = loadMethod(methodName);
+  if (error != Error::Ok) {
+    return error;
+  }
+  return methods_.at(methodName).method->method_meta();
+}
+
+Error Runner::run(
+    const std::string& methodName,
+    const std::vector<EValue>& inputs,
+    std::vector<EValue>& outputs) {
+  auto error = loadMethod(methodName);
+  if (error != Error::Ok) {
+    return error;
+  }
+  auto& method = methods_.at(methodName).method;
+  for (auto index = 0; index < inputs.size(); ++index) {
+    error = method->set_input(inputs[index], index);
+    if (error != Error::Ok) {
+      return error;
+    }
+  }
+  error = method->execute();
+  if (error != Error::Ok) {
+    return error;
+  }
+  const auto outputsSize = method->outputs_size();
+  outputs.resize(outputsSize);
+
+  return method->get_outputs(outputs.data(), outputsSize);
 }
 
 } // namespace torch::executor
