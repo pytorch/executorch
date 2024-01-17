@@ -98,35 +98,13 @@ Tensor& cumsum_out(
 
   dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;
 
-// Use a two layer switch to handle each possible data pair
-#define CUMSUM_IMPL(SELF_CTYPE, OUT_CTYPE, out_dtype)      \
-  case ScalarType::out_dtype:                              \
-    cumsum_tensors<SELF_CTYPE, OUT_CTYPE>(self, dim, out); \
-    break;
-
-#define CUMSUM_TENSORS(SELF_CTYPE, self_dtype)           \
-  case ScalarType::self_dtype:                           \
-    switch (out.scalar_type()) {                         \
-      ET_FORALL_REAL_TYPES_WITH(SELF_CTYPE, CUMSUM_IMPL) \
-      default:                                           \
-        ET_CHECK_MSG(                                    \
-            false,                                       \
-            "Unhandled output dtype %" PRId8,            \
-            static_cast<int8_t>(out.scalar_type()));     \
-    }                                                    \
-    break;
-
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, CUMSUM_TENSORS)
-    default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled input dtype %" PRId8,
-          static_cast<int8_t>(self.scalar_type()));
-  }
-
-#undef CUMSUM_TENSORS
-#undef CUMSUM_IMPL
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, self.scalar_type(), ctx, "cumsum", CTYPE_SELF, [&] {
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, out.scalar_type(), ctx, "cumsum", CTYPE_OUT, [&] {
+              cumsum_tensors<CTYPE_SELF, CTYPE_OUT>(self, dim, out);
+            });
+      });
 
   return out;
 }

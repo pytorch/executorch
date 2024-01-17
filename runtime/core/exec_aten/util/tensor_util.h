@@ -823,6 +823,10 @@ inline bool tensors_have_same_rank(exec_aten::Tensor a, exec_aten::Tensor b) {
   return true;
 }
 
+inline bool tensor_is_scalar(exec_aten::Tensor t) {
+  return t.dim() == 0 && t.numel() == 1;
+}
+
 /**
  * The expected output size may not be the existing size of any inputs and
  * outputs if the operator supports both broadcast and dynamic shape. Therefore

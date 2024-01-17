@@ -160,10 +160,14 @@ Tensor& clamp_out(
         out);
   }
 
-  ET_CHECK_MSG(
-      has_min || has_max, "At least one of 'min' or 'max' must not be None");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      has_min || has_max,
+      InvalidArgument,
+      out,
+      "At least one of 'min' or 'max' must not be None");
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
     // Extract optional min value
