@@ -101,4 +101,4 @@ class TestXNNHeader(unittest.TestCase):
         header = XNNHeader.from_bytes(EXAMPLE_HEADER_DATA)
 
         to_bytes = header.to_bytes()
-        self.assertEquals(EXAMPLE_HEADER_DATA, to_bytes)
+        self.assertEqual(EXAMPLE_HEADER_DATA, to_bytes)
