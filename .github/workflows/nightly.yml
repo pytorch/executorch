@@ -18,13 +18,11 @@ concurrency:
 jobs:
   update-pytorch-commit-hash:
     runs-on: ubuntu-latest
-    # TODO: JUST FOR TESTING
-    environment: ${{ startsWith(github.event.ref, 'refs/heads/main') && 'update-commit-hash' || 'update-commit-hash' }}
+    environment: ${{ (github.event.ref == 'refs/heads/main') && 'update-commit-hash' || '' }}
     steps:
       - name: update-pytorch-commit-hash
         uses: pytorch/test-infra/.github/actions/update-commit-hash@main
-        # TODO: UNCOMMENT ME BEFORE LANDING
-        # if: ${{ github.event_name == 'schedule' }}
+        if: ${{ github.event_name == 'schedule' }}
         with:
           repo-name: pytorch
           branch: main
