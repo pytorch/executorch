@@ -20,7 +20,7 @@ sphinx-gallery==0.14.0
 breathe==4.34.0
 exhale==0.2.3
 docutils==0.16
-matplotlib==3.5.3
+matplotlib==3.7.2
 # PyTorch Theme
 -e git+https://github.com/pytorch/pytorch_sphinx_theme.git#egg=pytorch_sphinx_theme
 myst-parser==0.18.1
