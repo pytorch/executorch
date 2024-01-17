@@ -65,7 +65,13 @@ void resize_tensor_to_assert_dynamic_unbound(Tensor&& t) {
   ASSERT_LT(t.numel(), 100 * 100)
       << "Need to resize to an 100x100 tensor, so the input size should be < 10000";
   EXPECT_EQ(resize_tensor(t, ArrayRef<SizesType>({1, 1})), Error::Ok);
+
+#ifdef USE_ATEN_LIB
   EXPECT_EQ(resize_tensor(t, ArrayRef<SizesType>({100, 100})), Error::Ok);
+#else
+  // TODO(T175194371): For now, we can't resize past the original capacity.
+  EXPECT_NE(resize_tensor(t, ArrayRef<SizesType>({100, 100})), Error::Ok);
+#endif
 }
 
 #ifndef USE_ATEN_LIB
