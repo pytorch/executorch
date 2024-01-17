@@ -29,7 +29,7 @@ class TestSerialize(unittest.TestCase):
             deserialize_from_flatbuffer_to_bundled_program(flat_buffer_bundled_program)
         )
         self.assertEqual(
-            bundled_program._bundled_program,
+            bundled_program.serialize_to_schema(),
             regenerate_bundled_program_in_schema,
             "Regenerated bundled program mismatches original one",
         )
