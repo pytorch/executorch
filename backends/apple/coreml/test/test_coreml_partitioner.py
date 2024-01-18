@@ -4,12 +4,14 @@
 
 import unittest
 
+import executorch.exir as exir
+
 import torch
 
-import executorch.exir as exir
+from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+    CoreMLPartitioner,
+)
 from executorch.exir.backend.backend_api import to_backend
-
-from executorch.backends.apple.coreml.partition.coreml_partitioner import CoreMLPartitioner
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
@@ -28,12 +30,20 @@ class TestCoreMLPartitioner(unittest.TestCase):
 
         model = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
-        exported_program = exir.capture(model, inputs, exir.CaptureConfig()).to_edge().exported_program
+        exported_program = (
+            exir.capture(model, inputs, exir.CaptureConfig()).to_edge().exported_program
+        )
 
         assert [
-            node.target.__name__ for node in exported_program.graph.nodes if node.op == "call_function"
+            node.target.__name__
+            for node in exported_program.graph.nodes
+            if node.op == "call_function"
         ] == [
-            "aten.mm.default", "aten.add.Tensor", "aten.sub.Tensor", "aten.mm.default", "aten.add.Tensor"
+            "aten.mm.default",
+            "aten.add.Tensor",
+            "aten.sub.Tensor",
+            "aten.mm.default",
+            "aten.add.Tensor",
         ]
 
         exported_to_coreml = to_backend(
@@ -42,9 +52,16 @@ class TestCoreMLPartitioner(unittest.TestCase):
         )
 
         assert [
-            node.target.__name__ for node in exported_to_coreml.graph.nodes if node.op == "call_function"
+            node.target.__name__
+            for node in exported_to_coreml.graph.nodes
+            if node.op == "call_function"
         ] == [
-            "aten.mm.default", "executorch_call_delegate", "getitem", "aten.mm.default", "executorch_call_delegate", "getitem"
+            "aten.mm.default",
+            "executorch_call_delegate",
+            "getitem",
+            "aten.mm.default",
+            "executorch_call_delegate",
+            "getitem",
         ]
 
 
