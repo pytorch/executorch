@@ -238,6 +238,7 @@ add_subdirectory(schema)
 
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
+target_link_options_shared_lib(executorch)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
 # Check if the library was found
@@ -292,7 +293,7 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch portable_ops_lib prim_ops_lib gflags)
+  set(_executor_runner_libs executorch portable_ops_lib gflags)
 
   # Generate lib to register quantized ops
   if(REGISTER_QUANTIZED_OPS)
