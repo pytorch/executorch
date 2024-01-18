@@ -238,6 +238,7 @@ add_subdirectory(schema)
 
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
+target_link_options_shared_lib(executorch)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
 # Check if the library was found
