@@ -262,12 +262,6 @@ endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
 #
-# prim_ops_lib: A library to register primitive ATen ops
-# see kernels/prim_ops/CMakeLists.txt.
-#
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/prim_ops)
-
-#
 # gflags: Commandline flag host library.
 #
 cmake_dependent_option(EXECUTORCH_BUILD_GFLAGS "Build the gflags library." ON
