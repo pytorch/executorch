@@ -40,11 +40,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
         # debug handles: [0, None, 1, None, 2, 3]
         self.nodes = list(program.graph_module.graph.nodes)
 
-        self.handles = [
-            handle
-            for node in self.nodes
-            if (handle := node.meta.get("debug_handle")) is not None
-        ]
+        self.handles = [node.meta.get("debug_handle") for node in self.nodes]
 
     def test_basic_generated_identifier(self):
         delegate_builder = DelegateMappingBuilder(generated_identifiers=True)
@@ -63,8 +59,19 @@ class TestDelegateMapBuilder(unittest.TestCase):
 
         expected_mapping = {0: (0, 1, 2, 3), 1: (0,), 2: (1,)}
         self.assertEqual(
-            delegate_builder.insert_delegate_mapping_entry(handles=self.handles[1]),
+            delegate_builder.insert_delegate_mapping_entry(handles=self.handles[2]),
             2,
+        )
+        self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
+
+        expected_mapping = {
+            0: (0, 1, 2, 3),
+            1: (0,),
+            2: (1,),
+            3: (0, 1, 2, 3),
+        }
+        self.assertEqual(
+            delegate_builder.insert_delegate_mapping_entry(handles=self.handles), 3
         )
         self.assertEqual(delegate_builder.get_delegate_mapping(), expected_mapping)
 
@@ -104,7 +111,7 @@ class TestDelegateMapBuilder(unittest.TestCase):
             ),
         )
 
-    def test_resinsert_delegate_debug_identifier(self):
+    def test_reinsert_delegate_debug_identifier(self):
         delegate_builder = DelegateMappingBuilder()
         delegate_builder.insert_delegate_mapping_entry(
             nodes=self.nodes[0], identifier="1"
@@ -163,6 +170,17 @@ class TestDelegateMapBuilder(unittest.TestCase):
             lambda: delegate_builder.insert_delegate_mapping_entry(
                 nodes=self.nodes, handles=self.handles
             ),
+        )
+
+    def test_missing_handle_filtering(self):
+        delegate_builder = DelegateMappingBuilder()
+        self.assertRaises(
+            Exception,
+            lambda: delegate_builder.insert_delegate_mapping_entry(handles=[None]),
+        )
+        self.assertRaises(
+            Exception,
+            lambda: delegate_builder.insert_delegate_mapping_entry(nodes=[None]),
         )
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
