@@ -1460,9 +1460,11 @@
                     <span class="c1"># in the ExportedProgram</span>
                     <span class="c1"># TODO(who?)</span>
                     <span class="n">p</span><span class="o">.</span><span class="n">update_placeholder_tensor_specs</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
-            <span class="n">new_prog</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
-            <span class="n">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
-            <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_prog</span>
+
+            <span class="c1"># TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work</span>
+
+            <span class="n">_copy_module</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
+            <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
 
         <span class="k">return</span> <span class="n">ExecutorchProgramManager</span><span class="p">(</span>
             <span class="n">execution_programs</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">,</span> <span class="n">config</span>
