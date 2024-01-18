@@ -292,7 +292,7 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch portable_ops_lib gflags)
+  set(_executor_runner_libs executorch portable_ops_lib prim_ops_lib gflags)
 
   # Generate lib to register quantized ops
   if(REGISTER_QUANTIZED_OPS)
