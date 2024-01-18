@@ -3,28 +3,31 @@
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 import logging
-from typing import List
+from typing import List, Optional
+
+import coremltools as ct
 
 import torch
-from torch._export.exported_program import ExportedProgram
-from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
-from torch.fx.passes.operator_support import OperatorSupportBase
 
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
     PartitionResult,
 )
-from executorch.backends.apple.coreml.compiler.coreml_preprocess import CoreMLBackend
-
-import coremltools as ct
+from torch._export.exported_program import ExportedProgram
+from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
+from torch.fx.passes.operator_support import OperatorSupportBase
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
 class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
-    def __init__(self, skip_ops_for_coreml_delegation: List[str] = []) -> None:
+    def __init__(
+        self, skip_ops_for_coreml_delegation: Optional[List[str]] = None
+    ) -> None:
+        if skip_ops_for_coreml_delegation is None:
+            skip_ops_for_coreml_delegation = []
         super().__init__()
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
 
@@ -51,7 +54,11 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
 class CoreMLPartitioner(Partitioner):
     compile_spec = []
 
-    def __init__(self, skip_ops_for_coreml_delegation: List[str] = []) -> None:
+    def __init__(
+        self, skip_ops_for_coreml_delegation: Optional[List[str]] = None
+    ) -> None:
+        if skip_ops_for_coreml_delegation is None:
+            skip_ops_for_coreml_delegation = []
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
         self.delegation_spec = DelegationSpec("CoreMLBackend", self.compile_spec)
 
