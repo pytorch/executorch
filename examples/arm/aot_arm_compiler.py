@@ -14,7 +14,7 @@ import torch
 import torch._export as export
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 
 from ..portable.utils import export_to_edge, save_pte_program
 
@@ -136,7 +136,9 @@ if __name__ == "__main__":
         edge = edge.to_backend(ArmPartitioner())
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
-    exec_prog = edge.to_executorch()
+    exec_prog = edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
 
     model_name = f"{args.model_name}" + (
         "_arm_delegate" if args.delegate is True else ""

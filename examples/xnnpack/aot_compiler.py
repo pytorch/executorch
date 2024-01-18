@@ -12,7 +12,7 @@ import logging
 import torch._export as export
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -90,7 +90,9 @@ if __name__ == "__main__":
     edge = edge.to_backend(XnnpackPartitioner())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
-    exec_prog = edge.to_executorch()
+    exec_prog = edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
 
     quant_tag = "q8" if args.quantize else "fp32"
     model_name = f"{args.model_name}_xnnpack_{quant_tag}"

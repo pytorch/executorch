@@ -56,7 +56,9 @@ def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     exec_prog = (
         exir.capture(lowered_module, example_inputs, _CAPTURE_CONFIG)
         .to_edge(_EDGE_COMPILE_CONFIG)
-        .to_executorch()
+        .to_executorch(
+            config=exir.ExecutorchBackendConfig(extract_constant_segment=False)
+        )
     )
 
     return exec_prog
