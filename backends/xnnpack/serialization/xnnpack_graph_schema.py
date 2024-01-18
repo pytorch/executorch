@@ -301,8 +301,20 @@ class XNNELU:
     flags: int
 
 
+@dataclass
 class XNNPReLU(XNNNode2x1):
     pass
+
+
+@dataclass
+class XNNScaledDotProductAttention:
+    query_id: int
+    key_id: int
+    value_id: int
+    scale_id: int
+    mask_id: int
+    output_id: int
+    flags: int
 
 
 XNodeUnion = Union[
@@ -341,6 +353,7 @@ XNodeUnion = Union[
     XNNConcatenate3,
     XNNConcatenate4,
     XNNStaticSlice,
+    XNNScaledDotProductAttention,
 ]
 
 
