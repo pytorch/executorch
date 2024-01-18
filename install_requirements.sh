@@ -7,7 +7,15 @@
 
 # Install required python dependencies for developing
 # Dependencies are defined in .pyproject.toml
-pip install .
+if [[ -z $BUCK ]];
+then
+  BUCK=buck2
+fi
+
+if [[ -z $PYTHON_EXECUTABLE ]];
+then
+  PYTHON_EXECUTABLE=python3
+fi
 
 # Install pytorch dependencies
 #
@@ -36,6 +44,9 @@ pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
 
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
+
+# Install ExecuTorch after dependencies are installed.
+pip install . --no-build-isolation
 
 # Install flatc dependency
 bash build/install_flatc.sh

@@ -118,7 +118,7 @@ add_library(etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
 
 target_link_libraries(
   etdump
-  PUBLIC etdump_schema
+  PUBLIC etdump_schema flatcc
   PRIVATE executorch)
 
 add_custom_command(

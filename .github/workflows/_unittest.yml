@@ -34,23 +34,7 @@ jobs:
 
         BUILD_TOOL=${{ matrix.build-tool }}
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-
-        # Build //extension/pybindings:portable_lib. Example path:
-        # buck-out/v2/gen/root/524f8da68ea2a374/extension/pybindings/__portable_lib__/portable_lib.so
-        SO_LIB_DIR=$(buck2 build //extension/pybindings:portable_lib --show-output | cut -d' ' -f2 | xargs dirname)
-
-        # Let LD_LIBRARY_PATH include libtorch_python directory
-        PYTHON_LIB_DIR=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
-        export LD_LIBRARY_PATH="${PYTHON_LIB_DIR}/torch/lib"
-
-        # Let PYTHONPATH include the output directory so that portable_lib.so can be loaded into Python.
-        export PYTHONPATH="${SO_LIB_DIR}:${PYTHON_LIB_DIR}/torch/lib"
-
-        # Generate a shim file in extension/pybindings/portable_lib/
-        SHIM_PY="${PYTHON_LIB_DIR}/executorch/extension/pybindings/portable_lib.py"
-        touch ${SHIM_PY}
-        echo "from portable_lib import _load_for_executorch_from_buffer,_load_bundled_program_from_buffer,_load_for_executorch_from_bundled_program" > ${SHIM_PY}
+        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_PYBIND=ON bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
@@ -76,23 +60,7 @@ jobs:
 
         bash .ci/scripts/setup-conda.sh
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-
-        # Build //extension/pybindings:portable_lib. Example path:
-        # buck-out/v2/gen/root/524f8da68ea2a374/extension/pybindings/__portable_lib__/portable_lib.dylib
-        SO_LIB_DIR=$(${CONDA_RUN} buck2 build //extension/pybindings:portable_lib --show-output | cut -d' ' -f2 | xargs dirname)
-
-        # Let LD_LIBRARY_PATH include libtorch_python directory
-        PYTHON_LIB_DIR=$(${CONDA_RUN} python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
-        export LD_LIBRARY_PATH="${PYTHON_LIB_DIR}/torch/lib"
-
-        # Let PYTHONPATH include the output directory so that portable_lib.dylib can be loaded into Python.
-        export PYTHONPATH="${SO_LIB_DIR}:${PYTHON_LIB_DIR}/torch/lib"
-
-        # Generate a shim file in extension/pybindings/portable_lib/
-        SHIM_PY="${PYTHON_LIB_DIR}/executorch/extension/pybindings/portable_lib.py"
-        touch ${SHIM_PY}
-        echo "from portable_lib import _load_for_executorch_from_buffer,_load_bundled_program_from_buffer,_load_for_executorch_from_bundled_program" > ${SHIM_PY}
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_PYBIND=ON bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
