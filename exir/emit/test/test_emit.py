@@ -43,7 +43,7 @@ from executorch.exir.tests.models import Mul
 from functorch.experimental import control_flow
 from torch import nn
 
-from torch.export import dynamic_dim, export
+from torch.export import Dim, export
 
 
 class WrapperModule(torch.nn.Module):
@@ -973,13 +973,12 @@ class TestEmit(unittest.TestCase):
         func = Foo()
 
         k = torch.rand(2, 4)
-        constraints = [
-            dynamic_dim(k, 0) <= 3,
-        ]
+        dim0_k = Dim("dim0_k", max=3)
+        dynamic_shapes = {"k": {0: dim0_k}}
         captured = export(
             func,
             (k,),
-            constraints=constraints,
+            dynamic_shapes=dynamic_shapes,
         )
         edge = to_edge(captured)
         from executorch.exir.passes import MemoryPlanningPass
