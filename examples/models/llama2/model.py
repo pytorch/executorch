@@ -12,7 +12,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -83,6 +83,7 @@ class ModelArgs:
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
+    use_kv_cache: bool = False  # Use key/value cache
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -137,6 +138,7 @@ def apply_rotary_emb(
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
+        self.use_kv_cache = args.use_kv_cache
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
         assert args.n_heads % self.n_kv_heads == 0
         model_parallel_size = 1
@@ -154,11 +156,27 @@ class Attention(nn.Module):
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask)
 
+        # This is what we would use if ExecuTorch could support mutable buffers. We can't at this time, so instead
+        # what is done is this module takes in the cache as io.
+        self.cache_k = torch.zeros(
+            (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        )
+        self.cache_v = torch.zeros(
+            (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        )
+
     def forward(
         self,
         x: torch.Tensor,
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
+        start_pos: Optional[int] = None,
+        cache_k: Optional[
+            torch.Tensor
+        ] = None,  # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        cache_v: Optional[
+            torch.Tensor
+        ] = None,  # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
     ):
         bsz, seqlen, _ = x.shape
 
@@ -171,25 +189,45 @@ class Attention(nn.Module):
         # RoPE relative positional embeddings
         xq, xk = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
+        if self.use_kv_cache:
+            assert cache_k is not None and cache_v is not None
+            # Replace the entry in the cache for this token
+            cache_k[:bsz, start_pos : start_pos + seqlen] = xk  # pyre-ignore[58]
+            cache_v[:bsz, start_pos : start_pos + seqlen] = xv  # pyre-ignore[58]
+
+            keys = cache_k[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
+            values = cache_v[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
+        else:
+            keys = xk
+            values = xv
+
         # grouped multiquery attention: expand out keys and values
-        xk = repeat_kv(xk, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
-        xv = repeat_kv(xv, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
+        keys = repeat_kv(keys, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
+        values = repeat_kv(values, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
 
         # make heads into a batch dimension
         xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        xk = xk.transpose(1, 2)
-        xv = xv.transpose(1, 2)
+        keys = keys.transpose(1, 2)
+        values = values.transpose(1, 2)
 
-        assert hasattr(self, "mask")
-        mask = self.mask[:, :, :seqlen, :seqlen]
+        if self.use_kv_cache:
+            mask = None
+        else:
+            assert hasattr(self, "mask")
+            mask = self.mask[:, :, :seqlen, :seqlen]
+
         output = F.scaled_dot_product_attention(
-            xq, xk, xv, attn_mask=mask, dropout_p=0.0
+            xq, keys, values, attn_mask=mask, dropout_p=0.0
         )
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
         output = self.wo(output)
-        return output
+
+        if self.use_kv_cache:
+            return output, cache_k, cache_v
+        else:
+            return output, None, None
 
 
 class FeedForward(nn.Module):
@@ -250,6 +288,7 @@ class MOEFeedForward(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, layer_id: int, args: ModelArgs):
         super().__init__()
+        self.use_kv_cache = args.use_kv_cache
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.dim // args.n_heads
@@ -266,13 +305,24 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(self, x, freqs_cos, freqs_sin):  # x: 1xN
-        h = x + self.attention.forward(self.attention_norm(x), freqs_cos, freqs_sin)
+    def forward(
+        self, x, freqs_cos, freqs_sin, start_pos=None, cache_k=None, cache_v=None
+    ):  # x: 1xN
+        h, cache_k, cache_v = self.attention.forward(
+            self.attention_norm(x),
+            freqs_cos,
+            freqs_sin,
+            start_pos,
+            cache_k,
+            cache_v,
+        )
+
+        h = x + h
         if hasattr(self, "block_sparse_moe"):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
-        return out
+        return out, cache_k, cache_v
 
 
 class Transformer(nn.Module):
@@ -288,6 +338,7 @@ class Transformer(nn.Module):
             self.layers.append(TransformerBlock(layer_id, params))
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
+        self.use_kv_cache = params.use_kv_cache
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len
@@ -295,20 +346,78 @@ class Transformer(nn.Module):
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
 
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        start_pos: Optional[
+            torch.Tensor
+        ] = None,  # Scalar tensor indicating size of window of the caches
+        cache_k_list: Optional[
+            List[torch.Tensor]
+        ] = None,  # n_layers long, Passed as a list because each Attention needs its own cache with a likely unique shape
+        cache_v_list: Optional[List[torch.Tensor]] = None,  # n_layers long
+    ) -> Union[
+        torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
+    ]:
+
+        if self.use_kv_cache:
+            assert (
+                cache_k_list is not None
+                and cache_v_list is not None
+                and start_pos is not None
+            ), "Caches and start_pos must be provided when use_kv_cache is True"
+            assert (
+                len(cache_k_list) == self.n_layers
+            ), f"{len(cache_k_list)} != {self.n_layers}"
+            assert (
+                len(cache_v_list) == self.n_layers
+            ), f"{len(cache_v_list)} != {self.n_layers}"
+        else:
+            assert (
+                start_pos is None and cache_k_list is None and cache_v_list is None,
+                "Caches and start_pos are unused when use_kv_cache is False",
+            )
+
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         freqs_cos = self.freqs_cos[:seqlen]
         freqs_sin = self.freqs_sin[:seqlen]
 
+        if self.use_kv_cache:
+            sp = start_pos.item()  # pyre-ignore[16]
+            # self.params.max_seq_len - 1 because of 0 based indexing, and - 1 again because our input seq len is 1 and its added to the cache before accessing the cache
+            torch._constrain_as_size(sp, min=0, max=self.params.max_seq_len - 2)
+
+        index = 0
         for layer in self.layers:
-            h = layer(h, freqs_cos, freqs_sin)
-        # h = self.layers[0](h, freqs_cos, freqs_sin) # myuan: hack one layer for debug
+            if self.use_kv_cache:
+                # Export doesnt allow mutations on inputs right now for some reason. Clone "fixes" this and then we can remove this clone in a later pass.
+                cache_k = cache_k_list[index].clone()  # pyre-ignore[16]
+                cache_v = cache_v_list[index].clone()
+
+                h, cache_k, cache_v = layer(
+                    h, freqs_cos, freqs_sin, sp, cache_k, cache_v  # pyre-ignore[61]
+                )
+                cache_k_list[index] = cache_k  # pyre-ignore[16]
+                cache_v_list[index] = cache_v
+
+                index += 1
+            else:
+                h, _, _ = layer(h, freqs_cos, freqs_sin)
 
         h = self.norm(h)
 
         logits = self.output(h)
-        return logits
+        if self.use_kv_cache:
+            return (logits, cache_k_list, cache_v_list)  # pyre-ignore
+        else:
+            # 'None' is not a valid return for export so have to split the return into if else
+            return logits
+
+    # For each layer return the sizes of the needed caches
+    def get_cache_sizes(self):
+        # cache_k and cache_v have the same shape so could pick either here.
+        return [x.attention.cache_k.shape for x in self.layers]
 
 
 class Llama2Model(EagerModelBase):
@@ -344,6 +453,9 @@ class Llama2Model(EagerModelBase):
             kwargs["params"] if "params" in kwargs else ckpt_dir / "demo_config.json"
         )
 
+        self.use_kv_cache = (
+            kwargs["use_kv_cache"] if "use_kv_cache" in kwargs else False
+        )
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
@@ -356,6 +468,7 @@ class Llama2Model(EagerModelBase):
         model_args: ModelArgs = ModelArgs(
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
+            use_kv_cache=self.use_kv_cache,
             **params,
         )
         self.model_ = Transformer(model_args)
@@ -363,10 +476,30 @@ class Llama2Model(EagerModelBase):
             checkpoint, strict=False
         )  # self.model_ = Transformer(gptconf)
 
-    # @staticmethod
     def get_eager_model(self):
         return self.model_
 
-    @staticmethod
-    def get_example_inputs():
-        return (torch.tensor([[1, 2]], dtype=torch.long),)
+    def get_example_inputs(self):
+        if self.use_kv_cache:
+            return self.get_example_inputs_kvcache()
+        else:
+            return (
+                torch.tensor(
+                    [[1, 2, 3]], dtype=torch.long
+                ),  # tokens, with kv cache our input token length is always just 1 token.
+            )
+
+    def get_example_inputs_kvcache(self):
+        cache_sizes = self.model_.get_cache_sizes()
+        cache_k_list = [torch.zeros(x) for x in cache_sizes]
+        cache_v_list = [torch.zeros(x) for x in cache_sizes]
+        return (
+            torch.tensor(
+                [[1]], dtype=torch.long
+            ),  # tokens, with kv cache our input token length is always just 1 token.
+            torch.tensor(
+                0, dtype=torch.long
+            ),  # start_pos, what token of output are we on.
+            cache_k_list,  # key caches
+            cache_v_list,  # value caches
+        )
