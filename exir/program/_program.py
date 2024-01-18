@@ -1038,9 +1038,11 @@ class EdgeProgramManager:
                     # in the ExportedProgram
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
-            new_prog = copy.deepcopy(program)
-            _copy_module(new_prog.graph_module, new_gm)
-            execution_programs[name] = new_prog
+
+            # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
+
+            _copy_module(program.graph_module, new_gm)
+            execution_programs[name] = program
 
         return ExecutorchProgramManager(
             execution_programs, self._config_methods, config
