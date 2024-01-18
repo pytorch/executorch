@@ -45,7 +45,7 @@ class BundledProgram:
 
     Public Attributes:
         method_test_suites: All test suites for verifying methods.
-        executorch_program: ExecutorchProgram-like variable for the program to be verified, including
+        executorch_program: ExecutorchProgram-like variable, containing the Program to be verified by method_test_suites, including
                             ExecutorchProgram, MultiMethodExecutorchProgram or ExecutorchProgramManager.
     """
 
@@ -57,10 +57,11 @@ class BundledProgram:
     method_test_suites: Sequence[MethodTestSuite]
 
     # This is the cache for bundled program in schema type.
-    # User should not access this field directly. Please Use `serialize_to_schema` function. instead.
+    # User should not access this field directly. Please Use `serialize_to_schema` function instead.
     _bundled_program_in_schema: Optional[bp_schema.BundledProgram] = None
 
     def serialize_to_schema(self) -> bp_schema.BundledProgram:
+        """Serialize the current Bundled Program into its schema format for further serialization.."""
         # Return cached value if exists
         if self._bundled_program_in_schema is not None:
             return self._bundled_program_in_schema
@@ -375,10 +376,11 @@ def create_bundled_program(
     ],
     method_test_suites: Sequence[MethodTestSuite],
 ) -> BundledProgram:
-    """Create bp_schema.BundledProgram by bundling the given program and method_test_suites together.
+    """Create BundledProgram by bundling the given program and method_test_suites together.
 
     Args:
-        program: The program to be bundled.
+        executorch_program: ExecutorchProgram-like variable, containing the Program to be verified by method_test_suites, including
+                            ExecutorchProgram, MultiMethodExecutorchProgram and ExecutorchProgramManager.
         method_test_suites: The testcases for certain methods to be bundled.
 
     Returns:
