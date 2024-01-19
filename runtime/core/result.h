@@ -207,13 +207,13 @@ T* Result<T>::operator->() {
  *
  * Note: A function using ET_UNWRAP should itself return a Result or Error.
  *
- * @param[in] _result Expression yielding the result to unwrap.
+ * @param[in] result__ Expression yielding the result to unwrap.
  */
-#define ET_UNWRAP(_result)        \
-  ({                              \
-    auto result_recv = (_result); \
-    if (!result_recv.ok()) {      \
-      return result_recv.error(); \
-    }                             \
-    *result_recv;                 \
+#define ET_UNWRAP(result__)        \
+  ({                               \
+    auto et_result__ = (result__); \
+    if (!et_result__.ok()) {       \
+      return et_result__.error();  \
+    }                              \
+    std::move(*et_result__);       \
   })
