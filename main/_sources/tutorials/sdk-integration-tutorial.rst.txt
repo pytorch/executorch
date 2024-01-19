@@ -159,9 +159,9 @@ In this tutorial, a `Bundled Program` is created from the example model above.
     import torch
 
     from executorch.exir import to_edge
+    from executorch.sdk import BundledProgram
 
     from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-    from executorch.sdk.bundled_program.core import create_bundled_program
     from executorch.sdk.bundled_program.serialize import (
         serialize_from_bundled_program_to_flatbuffer,
     )
@@ -186,7 +186,7 @@ In this tutorial, a `Bundled Program` is created from the example model above.
 
     # Step 3: Generate BundledProgram
     executorch_program = to_edge(method_graphs).to_executorch()
-    bundled_program = create_bundled_program(executorch_program, method_test_suites)
+    bundled_program = BundledProgram(executorch_program, method_test_suites)
 
     # Step 4: Serialize BundledProgram to flatbuffer.
     serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
@@ -418,7 +418,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.881 seconds)
+   **Total running time of the script:** (0 minutes 1.931 seconds)
 
 
 .. _sphx_glr_download_tutorials_sdk-integration-tutorial.py:

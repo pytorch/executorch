@@ -554,9 +554,9 @@ from executing a <a class="reference external" href="../sdk-bundled-io.html">Bun
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">BundledProgram</span>
 
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.config</span> <span class="kn">import</span> <span class="n">MethodTestCase</span><span class="p">,</span> <span class="n">MethodTestSuite</span>
-<span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.core</span> <span class="kn">import</span> <span class="n">create_bundled_program</span>
 <span class="kn">from</span> <span class="nn">executorch.sdk.bundled_program.serialize</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">,</span>
 <span class="p">)</span>
@@ -581,7 +581,7 @@ from executing a <a class="reference external" href="../sdk-bundled-io.html">Bun
 
 <span class="c1"># Step 3: Generate BundledProgram</span>
 <span class="n">executorch_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><a href="https://docs.python.org/3/library/stdtypes.html#dict" title="builtins.dict" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">method_graphs</span></a><span class="p">)</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
-<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">create_bundled_program</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">,</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">method_test_suites</span></a><span class="p">)</span>
+<span class="n">bundled_program</span> <span class="o">=</span> <span class="n">BundledProgram</span><span class="p">(</span><span class="n">executorch_program</span><span class="p">,</span> <a href="https://docs.python.org/3/library/stdtypes.html#list" title="builtins.list" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">method_test_suites</span></a><span class="p">)</span>
 
 <span class="c1"># Step 4: Serialize BundledProgram to flatbuffer.</span>
 <a href="https://docs.python.org/3/library/stdtypes.html#bytes" title="builtins.bytes" class="sphx-glr-backref-module-builtins sphx-glr-backref-type-py-class sphx-glr-backref-instance"><span class="n">serialized_bundled_program</span></a> <span class="o">=</span> <span class="n">serialize_from_bundled_program_to_flatbuffer</span><span class="p">(</span>
@@ -713,7 +713,7 @@ to analyze the model run results.</p>
 <li><p><a class="reference external" href="../sdk-etdump.html">ETDump</a></p></li>
 <li><p><a class="reference external" href="../sdk-inspector.html">Inspector</a></p></li>
 </ul>
-<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.881 seconds)</p>
+<p class="sphx-glr-timing"><strong>Total running time of the script:</strong> (0 minutes 1.931 seconds)</p>
 <div class="sphx-glr-footer sphx-glr-footer-example docutils container" id="sphx-glr-download-tutorials-sdk-integration-tutorial-py">
 <div class="sphx-glr-download sphx-glr-download-python docutils container">
 <p><a class="reference download internal" download="" href="../_downloads/00f28feeccb75cde665e2acd0ca1eb2e/sdk-integration-tutorial.py"><code class="xref download docutils literal notranslate"><span class="pre">Download</span> <span class="pre">Python</span> <span class="pre">source</span> <span class="pre">code:</span> <span class="pre">sdk-integration-tutorial.py</span></code></a></p>
