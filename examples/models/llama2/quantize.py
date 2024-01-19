@@ -1,15 +1,17 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-
-# This source code is licensed under the license found in the
+#
+# This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 import time
 from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sentencepiece import SentencePieceProcessor
+
+# from sentencepiece import SentencePieceProcessor
 
 # try:
 #     from GPTQ import GenericGPTQRunner, InputRecorder, lm_eval
@@ -320,7 +322,13 @@ class GPTQQuantHandler(QuantHandler):
 
 def replace_linear_weight_only_int8_per_channel(module):
     for name, child in module.named_children():
-        if isinstance(child, nn.Linear):
+        print(f"name: {name}")
+        if name == "output":
+            print("skipping quantizing output")
+        elif isinstance(child, nn.Linear):
+            print(f"{name, child}")
+            print(f"in_features: {child.in_features}")
+            print(f"out_features: {child.out_features}")
             setattr(
                 module,
                 name,
@@ -337,8 +345,14 @@ class WeightOnlyInt8QuantHandler:
     @torch.no_grad()
     def create_quantized_state_dict(self):
         cur_state_dict = self.mod.state_dict()
+
         for fqn, mod in self.mod.named_modules():
-            if isinstance(mod, torch.nn.Linear):
+            print(f"quantized {fqn}")
+            if fqn.startswith("tok_embeddings"):
+                print("skip token embeddings")
+            elif fqn.startswith("output"):
+                print("skip output linear")
+            elif isinstance(mod, torch.nn.Linear):
                 int8_weight, scales, _ = dynamically_quantize_per_channel(
                     mod.weight.float(), -128, 127, torch.int8
                 )
@@ -671,7 +685,7 @@ def quantize(
 
         tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
-        tokenizer = SentencePieceProcessor(model_file=str(tokenizer_path))
+        tokenizer = None  # SentencePieceProcessor(model_file=str(tokenizer_path))
 
         quantized_state_dict = quant_handler.create_quantized_state_dict(
             tokenizer,
