@@ -19,6 +19,7 @@ from ...portable.utils import export_to_edge, save_pte_program
 
 from ..model_factory import EagerModelFactory
 
+from .quantize import WeightOnlyInt8QuantHandler
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -30,6 +31,11 @@ def main() -> None:
     ckpt_dir = Path(__file__).absolute().parent / "params"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
+    parser.add_argument(
+        "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
+    )
+    parser.add_argument("-Q", "--quantize", default=None, action="store_true")
+
     parser.add_argument(
         "-c",
         "--checkpoint",
@@ -71,6 +77,17 @@ def main() -> None:
         # only converts floating point dtypes to half
         # input and output are torch.long, so signature unchanged
         model.to(dtype=torch.half)
+
+    if args.quantized_ckpt or args.quantize:
+        model_int8 = WeightOnlyInt8QuantHandler(model)
+        model_int8_state_dict = model_int8.create_quantized_state_dict()
+
+        if args.quantized_ckpt:
+            torch.save(model_int8_state_dict, args.quantized_ckpt)
+
+        model_int8 = model_int8.convert_for_runtime()
+        model_int8.load_state_dict(model_int8_state_dict)
+        model = model_int8
 
     dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
