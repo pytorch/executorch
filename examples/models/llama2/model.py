@@ -19,6 +19,17 @@ import torch.nn.functional as F
 
 from torch import nn
 
+try:
+    from fairseq2.models.llama import create_llama_checkpoint
+
+except ImportError:
+
+    def create_llama_checkpoint(**kwargs):
+        raise NotImplementedError(
+            "Please install fairseq2 with `pip install fairseq2`."
+        )
+
+
 from ..model_base import EagerModelBase
 
 
@@ -477,6 +488,14 @@ class Llama2Model(EagerModelBase):
             **params,
         )
         self.model_ = Transformer(model_args)
+
+        if "int8" in str(checkpoint_path):
+            print("Using int8 weight-only quantization!")
+            from .quantize import WeightOnlyInt8QuantHandler
+
+            simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
+            self.model_ = simple_quantizer.convert_for_runtime()
+
         self.model_.load_state_dict(
             checkpoint, strict=False
         )  # self.model_ = Transformer(gptconf)
