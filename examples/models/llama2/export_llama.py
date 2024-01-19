@@ -47,6 +47,9 @@ def main() -> None:
         "-p", "--params", default=ckpt_dir / "demo_config.json", help="config.json"
     )
 
+    parser.add_argument("-2", "--fairseq2", action="store_true")
+    parser.add_argument("-h", "--half", action="store_true")
+
     args = parser.parse_args()
 
     model, example_inputs, _ = EagerModelFactory.create_model(
@@ -63,6 +66,13 @@ def main() -> None:
     else:
         dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
         dynamic_shapes = {"tokens": {1: dim}}
+
+    if args.half:
+        # only converts floating point dtypes to half
+        # input and output are torch.long, so signature unchanged
+        model.to(dtype=torch.half)
+
+    dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
     edge_manager = export_to_edge(
         model,
