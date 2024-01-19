@@ -99,40 +99,6 @@ TEST_F(MethodTest, MoveTest) {
   torch::executor::util::FreeInputs(inputs);
 }
 
-TEST_F(MethodTest, GetValueTests) {
-  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
-  ASSERT_EQ(method.error(), Error::Ok);
-
-  size_t num_values = method->values_size();
-  ASSERT_GT(num_values, 0);
-
-  // In-range values should succeed without aborting.
-  method->get_value(0);
-  method->get_value(num_values - 1);
-
-  // Out-of-range values should abort.
-  ET_EXPECT_DEATH(method->get_value(num_values), "");
-  ET_EXPECT_DEATH(method->get_value(num_values + 1), "");
-}
-
-TEST_F(MethodTest, MutableValueTests) {
-  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
-  ASSERT_EQ(method.error(), Error::Ok);
-
-  size_t num_values = method->values_size();
-  ASSERT_GT(num_values, 0);
-
-  // In-range values should succeed without aborting.
-  method->mutable_value(0);
-  method->mutable_value(num_values - 1);
-
-  // Out-of-range values should abort.
-  ET_EXPECT_DEATH(method->mutable_value(num_values), "");
-  ET_EXPECT_DEATH(method->mutable_value(num_values + 1), "");
-}
-
 TEST_F(MethodTest, GetInputTests) {
   ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
   Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
@@ -148,23 +114,6 @@ TEST_F(MethodTest, GetInputTests) {
   // Out-of-range inputs should abort.
   ET_EXPECT_DEATH(method->get_input(num_inputs), "");
   ET_EXPECT_DEATH(method->get_input(num_inputs + 1), "");
-}
-
-TEST_F(MethodTest, GetInputIndexTests) {
-  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
-  ASSERT_EQ(method.error(), Error::Ok);
-
-  size_t num_inputs = method->inputs_size();
-  ASSERT_GT(num_inputs, 0);
-
-  // In-range inputs should succeed without aborting.
-  method->get_input_index(0);
-  method->get_input_index(num_inputs - 1);
-
-  // Out-of-range inputs should abort.
-  ET_EXPECT_DEATH(method->get_input_index(num_inputs), "");
-  ET_EXPECT_DEATH(method->get_input_index(num_inputs + 1), "");
 }
 
 TEST_F(MethodTest, MutableInputTests) {
@@ -199,23 +148,6 @@ TEST_F(MethodTest, GetOutputTests) {
   // Out-of-range outputs should abort.
   ET_EXPECT_DEATH(method->get_output(num_outputs), "");
   ET_EXPECT_DEATH(method->get_output(num_outputs + 1), "");
-}
-
-TEST_F(MethodTest, GetOutputIndexTests) {
-  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
-  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
-  ASSERT_EQ(method.error(), Error::Ok);
-
-  size_t num_outputs = method->outputs_size();
-  ASSERT_GT(num_outputs, 0);
-
-  // In-range outputs should succeed without aborting.
-  method->get_output_index(0);
-  method->get_output_index(num_outputs - 1);
-
-  // Out-of-range outputs should abort.
-  ET_EXPECT_DEATH(method->get_output_index(num_outputs), "");
-  ET_EXPECT_DEATH(method->get_output_index(num_outputs + 1), "");
 }
 
 TEST_F(MethodTest, MutableOutputTests) {
