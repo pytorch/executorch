@@ -14,8 +14,7 @@ FOUNDATION_EXPORT NSErrorDomain const ETMobileNetClassifierErrorDomain;
 
 @interface ETMobileNetClassifier : NSObject
 
-- (nullable instancetype)initWithFilePath:(NSString*)filePath
-                                    error:(NSError**)error;
+- (instancetype)initWithFilePath:(NSString*)filePath;
 - (BOOL)classifyWithInput:(float*)input
                    output:(float*)output
                outputSize:(NSInteger)predictionBufferSize
