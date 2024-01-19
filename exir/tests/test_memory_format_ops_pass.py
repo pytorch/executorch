@@ -13,6 +13,8 @@ from executorch.exir.passes import MemoryFormatOpsPass
 from torch.testing import FileCheck
 
 
+# torch._dynamo.exc.UserError: It looks like one of the inputs with type `<class 'torch.memory_format'>` is not supported or pytree-flattenable.
+@unittest.skip("Memory Format is not pytree-flattenable, see #117598")
 class TestMemoryFormatOpsPass(unittest.TestCase):
     def test_op_to_copy_replacement(self) -> None:
         class F(torch.nn.Module):
