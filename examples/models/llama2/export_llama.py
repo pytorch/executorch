@@ -54,7 +54,8 @@ def main() -> None:
     )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
-    parser.add_argument("-h", "--half", action="store_true")
+    parser.add_argument("-H", "--half", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
 
     args = parser.parse_args()
 
@@ -85,20 +86,41 @@ def main() -> None:
         if args.quantized_ckpt:
             torch.save(model_int8_state_dict, args.quantized_ckpt)
 
+        if args.verbose:
+            print("*******quantized checkpoint********")
+            for key, data in model_int8_state_dict.items():
+                print(f"{key}")
+
         model_int8 = model_int8.convert_for_runtime()
         model_int8.load_state_dict(model_int8_state_dict)
         model = model_int8
 
+        if args.verbose:
+            print(f"{model}")
+
+    if args.half:
+        # only converts floating point dtypes to half
+        # input and output are torch.long, so signature unchanged
+        model.to(dtype=torch.half)
+    else:
+        # int8 quantization code has some bf16,
+        # switch all to FP32
+        model.to(dtype=torch.float)
+
     dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
-    edge_manager = export_to_edge(
-        model,
-        example_inputs,
-        dynamic_shapes=dynamic_shapes,
-        edge_compile_config=EdgeCompileConfig(
-            _check_ir_validity=False,
-        ),
-    )
+    with torch.backends.cuda.sdp_kernel(
+        enable_flash=False, enable_mem_efficient=False, enable_math=True
+    ):
+        edge_manager = export_to_edge(
+            model,
+            example_inputs,
+            dynamic_shapes={"tokens": {1: dim}},
+            #            edge_constant_methods=params,
+            edge_compile_config=EdgeCompileConfig(
+                _check_ir_validity=False,
+            ),
+        )
 
     export_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
