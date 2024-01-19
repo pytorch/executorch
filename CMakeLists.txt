@@ -130,8 +130,8 @@ if(NOT BUCK2)
 endif()
 
 # Build dataloader library
-option(EXECUTORCH_BUILD_EXTENSION_RUNNER_MODULE
-       "Build the extension/runner/module directory" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE
+       "Build the extension/module directory" OFF)
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -319,8 +319,8 @@ if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_RUNNER_MODULE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner/module)
+if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
 endif()
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
