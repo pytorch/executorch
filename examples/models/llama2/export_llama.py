@@ -64,6 +64,9 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    with open(args.params, "r") as params_file:
+        params_json = json.load(params_file)
+
     model, example_inputs, _ = EagerModelFactory.create_model(
         "llama2",
         "Llama2Model",
