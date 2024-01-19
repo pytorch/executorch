@@ -53,6 +53,10 @@ MPSStream::~MPSStream() {
   assert(_commandBuffer == nil);
 }
 
+bool MPSStream::hasLiveCommandBuffer() {
+  return _commandBuffer;
+}
+
 MPSCommandBuffer* MPSStream::commandBuffer() {
   if (!_commandBuffer) {
     _commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_commandQueue].retain;

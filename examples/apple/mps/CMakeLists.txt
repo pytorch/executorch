@@ -69,6 +69,7 @@ set(
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 
+set(_mps_schema_headers ${CMAKE_BINARY_DIR}/../../../schema/include/)
 include(${EXECUTORCH_SRCS_FILE})
 target_include_directories(
   bundled_program
@@ -76,12 +77,10 @@ target_include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/include
   ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/bundled_program
   ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  ${_mps_schema_headers}
 )
 list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
-target_include_directories(
-  mps_executor_runner INTERFACE ${CMAKE_BINARY_DIR}/schema/include/
-                          ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 target_link_libraries(mps_executor_runner bundled_program
                                           executorch gflags
                                           mpsdelegate

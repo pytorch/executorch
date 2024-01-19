@@ -11,8 +11,10 @@ import logging
 import torch._export as export
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
+from executorch.exir import EdgeCompileConfig
 
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.sdk import BundledProgram
@@ -23,11 +25,10 @@ from executorch.sdk.bundled_program.serialize import (
 from ....models import MODEL_NAME_TO_MODEL
 from ....models.model_factory import EagerModelFactory
 
-from ....portable.utils import save_pte_program
+from ....portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -36,6 +37,13 @@ if __name__ == "__main__":
         "--model_name",
         required=True,
         help=f"Provide model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
+    )
+
+    parser.add_argument(
+        "--use_fp16",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Whether to automatically convert float32 operations to float16 operations.",
     )
 
     parser.add_argument(
@@ -60,20 +68,21 @@ if __name__ == "__main__":
     # pre-autograd export. eventually this will become torch.export
     model = export.capture_pre_autograd_graph(model, example_inputs)
 
-    edge = exir.capture(
-        model, example_inputs, exir.CaptureConfig(enable_aot=True, _unlift=True)
-    ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-    logging.info(f"Exported graph:\n{edge.exported_program.graph}")
+    edge = export_to_edge(
+        model,
+        example_inputs,
+        edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+    )
 
-    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program, [])
-
-    logging.info(f"Lowered graph:\n{edge.exported_program.graph}")
-
+    compile_specs = [CompileSpec("use_fp16", bytes([args.use_fp16]))]
+    lowered_module = to_backend(
+        MPSBackend.__name__, edge.exported_program(), compile_specs
+    )
     executorch_program = (
         exir.capture(
             lowered_module,
             example_inputs,
-            exir.CaptureConfig(enable_aot=True, _unlift=True),
+            exir.CaptureConfig(enable_aot=True, _unlift=False),
         )
         .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
         .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
@@ -92,12 +101,17 @@ if __name__ == "__main__":
                 ],
             )
         ]
+        logging.info(f"Expected output: {model(*example_inputs)}")
 
         bundled_program = BundledProgram(executorch_program, method_test_suites)
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )
         model_name = f"{model_name}_bundled"
+        extension = "fp16"
+        if not args.use_fp16:
+            extension = "fp32"
+        model_name = f"{model_name}_{extension}"
         program_buffer = bundled_program_buffer
     else:
         program_buffer = executorch_program.buffer

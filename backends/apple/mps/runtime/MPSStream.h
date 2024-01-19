@@ -37,6 +37,7 @@ class MPSStream {
     return _serialQueue;
   }
 
+  bool hasLiveCommandBuffer();
   MPSCommandBuffer* commandBuffer();
   id<MTLComputeCommandEncoder> commandEncoder();
   void endKernelCoalescing();
