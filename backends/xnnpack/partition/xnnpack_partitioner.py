@@ -21,7 +21,7 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_QUANT_OPS,
     UNSUPPORTED_QUANT_MODULES,
 )
-from executorch.backends.xnnpack.partition.graphs.bilinear_2d import bilinear2d_graphs
+from executorch.backends.xnnpack.partition.graphs import bilinear_2d, sdpa
 from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
@@ -699,6 +699,7 @@ class XnnpackPartitioner(Partitioner):
         supported_quant_ops: Optional[List[Callable]] = SUPPORTED_QUANT_OPS,
         quant: Optional[bool] = None,
         _only_ops_with_dynamic_shape_support: Optional[bool] = False,
+        _lower_recomposed_sdpa: Optional[bool] = True,
     ):
         super().__init__()
         self.supported_modules = set(supported_modules)
@@ -712,6 +713,9 @@ class XnnpackPartitioner(Partitioner):
 
         if _only_ops_with_dynamic_shape_support is True:
             self._update_op_lists_for_dynamic_shapes()
+
+        # TODO(T174256335) - remove this once we have a better way to handle >2d Mask
+        self._lower_recomposed_sdpa: bool = _lower_recomposed_sdpa or True
 
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
@@ -955,7 +959,13 @@ class XnnpackPartitioner(Partitioner):
         self, ep, quant: Optional[bool]
     ) -> List[List[torch.fx.Node]]:
         graph_module = ep.graph_module
-        graph_patterns = [gm_pattern.graph for gm_pattern in bilinear2d_graphs.keys()]
+        graphs = bilinear_2d.Graphs
+
+        # Temporary for lowering SDPA
+        if self._lower_recomposed_sdpa:
+            graphs += sdpa.Graphs
+
+        graph_patterns = [gm_pattern.graph for gm_pattern in graphs]
         partitions = generate_pattern_op_partitions(
             graph_module, graph_patterns, ignore_literals=True
         )

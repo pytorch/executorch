@@ -308,6 +308,16 @@ def _extract_constant_data(
     return bytes(constant_segment_data), constant_segment_offsets
 
 
+def pretty_print_xnngraph(xnnpack_graph_json: str):
+    """
+    Pretty print the XNNGraph
+    """
+    from pprint import pprint
+
+    d = json.loads(xnnpack_graph_json)
+    pprint(d)
+
+
 def convert_to_flatbuffer(xnnpack_graph: XNNGraph) -> bytes:
     sanity_check_xnngraph_dataclass(xnnpack_graph)
     xnnpack_graph_json = json.dumps(xnnpack_graph, cls=_DataclassEncoder)

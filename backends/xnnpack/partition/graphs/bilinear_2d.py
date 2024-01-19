@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import Dict, List
 
 import executorch.exir as exir
 import torch
@@ -41,3 +41,5 @@ def get_bilinear_2d_graphs():
 
 
 bilinear2d_graphs: Dict[torch.fx.GraphModule, bool] = get_bilinear_2d_graphs()
+
+Graphs: List[torch.fx.GraphModule] = list(bilinear2d_graphs.keys())
