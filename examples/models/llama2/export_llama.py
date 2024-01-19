@@ -7,6 +7,7 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
+import json
 import logging
 from pathlib import Path
 
@@ -116,6 +117,9 @@ def main() -> None:
 
     dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
+    with open(args.params, "r") as params_file:
+        params_json = json.load(params_file)
+
     with torch.backends.cuda.sdp_kernel(
         enable_flash=False, enable_mem_efficient=False, enable_math=True
     ):
@@ -123,7 +127,7 @@ def main() -> None:
             model,
             example_inputs,
             dynamic_shapes={"tokens": {1: dim}},
-            #            edge_constant_methods=params,
+            edge_constant_methods=params_json,
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
