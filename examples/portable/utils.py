@@ -42,7 +42,7 @@ def _to_core_aten(
 
 def _core_aten_to_edge(
     core_aten_exir_ep: ExportedProgram,
-    edge_constant_methods=None,
+    edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=None,
 ) -> EdgeProgramManager:
     if not edge_compile_config:
