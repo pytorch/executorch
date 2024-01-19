@@ -51,7 +51,7 @@ runtime.python_library(
         "//executorch/extension/pybindings/test:test",
         "//executorch/extension/pybindings/test:test-library",
         "//executorch/profiler/...",
-        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk:lib",
         "//executorch/sdk/bundled_program/serialize:lib",
         "//executorch/sdk/bundled_program/tests/...",
         "//executorch/sdk/experimental/...",

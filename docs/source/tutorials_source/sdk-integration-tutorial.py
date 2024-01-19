@@ -131,9 +131,9 @@ from unittest.mock import patch
 import torch
 
 from executorch.exir import to_edge
+from executorch.sdk import BundledProgram
 
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -158,7 +158,7 @@ method_test_suites = [
 
 # Step 3: Generate BundledProgram
 executorch_program = to_edge(method_graphs).to_executorch()
-bundled_program = create_bundled_program(executorch_program, method_test_suites)
+bundled_program = BundledProgram(executorch_program, method_test_suites)
 
 # Step 4: Serialize BundledProgram to flatbuffer.
 serialized_bundled_program = serialize_from_bundled_program_to_flatbuffer(
