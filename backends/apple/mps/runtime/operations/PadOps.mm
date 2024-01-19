@@ -152,15 +152,6 @@ MPSGraphBuilder::mpsConstantPadNDOp(NodePtr nodePtr) {
   return Error::Ok;
 }
 
-// PyMPSGraphTensor*
-// MPSGraphModule::constant_pad_nd(
-//     MPSGraphTensor* input,
-//     IntArrayRef pad,
-//     const double value) {
-//   return pad_out_template(mpsGraph, input, pad, MPSGraphPaddingModeConstant, value);
-// }
-
-
 } // namespace delegate
 } // namespace mps
 } // namespace executor
