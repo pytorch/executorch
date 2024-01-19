@@ -17,6 +17,7 @@ from executorch.exir import (
     ExportedProgram,
     to_edge,
 )
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.sdk import generate_etrecord
 from torch.export import export
 
@@ -37,7 +38,9 @@ def gen_etrecord(model: torch.nn.Module, inputs: Any, output_path=None):
         aten_dialect, compile_config=EdgeCompileConfig(_check_ir_validity=True)
     )
     edge_program_copy = copy.deepcopy(edge_program)
-    et_program: ExecutorchProgramManager = edge_program_copy.to_executorch()
+    et_program: ExecutorchProgramManager = edge_program_copy.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
     generate_etrecord(
         (DEFAULT_OUTPUT_PATH if not output_path else output_path),
         edge_dialect_program=edge_program,

@@ -9,7 +9,7 @@
 import argparse
 import logging
 
-from executorch.exir.capture import EdgeCompileConfig
+from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
@@ -53,7 +53,9 @@ def main() -> None:
                 _check_ir_validity=False,
             ),
         )
-        prog = edge_manager.to_executorch()
+        prog = edge_manager.to_executorch(
+            config=ExecutorchBackendConfig(extract_constant_segment=False)
+        )
     else:
         prog = export_to_exec_prog(model, example_inputs, dynamic_shapes=dynamic_shapes)
     save_pte_program(prog.buffer, args.model_name, args.output_dir)

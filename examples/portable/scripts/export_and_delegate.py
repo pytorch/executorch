@@ -16,6 +16,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
+from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from ...models import MODEL_NAME_TO_MODEL
 from ...models.model_factory import EagerModelFactory
@@ -94,7 +95,9 @@ def export_composite_module_with_lower_graph():
 
     logging.info(f"Lowered graph:\n{composited_edge.exported_program().graph}")
 
-    exec_prog = composited_edge.to_executorch()
+    exec_prog = composited_edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
     buffer = exec_prog.buffer
 
     model_name = "composite_model"
@@ -145,7 +148,9 @@ def export_and_lower_partitioned_graph():
     edge = edge.to_backend(AddMulPartitionerDemo())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
-    exec_prog = edge.to_executorch()
+    exec_prog = edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
     buffer = exec_prog.buffer
 
     model_name = "partition_lowered_model"
