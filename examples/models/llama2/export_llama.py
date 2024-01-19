@@ -12,6 +12,8 @@ from pathlib import Path
 
 import torch
 
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import to_edge
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
@@ -28,6 +30,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 def main() -> None:
     seed = 42
     torch.manual_seed(seed)
+    modelname = "llama2"
     ckpt_dir = Path(__file__).absolute().parent / "params"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output_dir", default=".", help="output directory")
@@ -56,6 +59,7 @@ def main() -> None:
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("-X", "--xnnpack", action="store_true")
 
     args = parser.parse_args()
 
@@ -78,8 +82,10 @@ def main() -> None:
         # only converts floating point dtypes to half
         # input and output are torch.long, so signature unchanged
         model.to(dtype=torch.half)
+        modelname = f"{modelname}_h"
 
     if args.quantized_ckpt or args.quantize:
+        modelname = f"{modelname}_q"
         model_int8 = WeightOnlyInt8QuantHandler(model)
         model_int8_state_dict = model_int8.create_quantized_state_dict()
 
@@ -96,6 +102,7 @@ def main() -> None:
         model = model_int8
 
         if args.verbose:
+            print(f"{modelname}:")
             print(f"{model}")
 
     if args.half:
@@ -132,7 +139,25 @@ def main() -> None:
         "Required memory for activation in bytes: ",
         export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
     )
-    save_pte_program(export_program.buffer, "llama2", args.output_dir)
+    save_pte_program(export_program.buffer, modelname, args.output_dir)
+
+    if args.xnnpack:
+        with torch.backends.cuda.sdp_kernel(
+            enable_flash=False, enable_mem_efficient=False, enable_math=True
+        ):
+            xnn_model = export_to_edge(
+                model,
+                example_inputs,
+                dynamic_shapes={"tokens": {1: dim}},
+                edge_compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False,
+                ),
+            )
+            xnn_partitioned = xnn_model.to_backend(XnnpackPartitioner())
+            exec_prog = xnn_partitioned.to_executorch()
+
+        with open(f"./xnnpack_{modelname}.pte", "wb") as file:
+            file.write(exec_prog.buffer)
 
 
 if __name__ == "__main__":
