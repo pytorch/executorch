@@ -21,9 +21,11 @@ static int compare_tokens(const void* a, const void* b) {
   return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-Tokenizer::Tokenizer(int32_t vocab_size)
+Tokenizer::Tokenizer(int32_t vocab_size, int32_t bos_tok, int32_t eos_tok)
     : initialized_(false),
       vocab_size_(vocab_size),
+      bos_tok_(bos_tok),
+      eos_tok_(eos_tok),
       vocab_(std::make_unique<char*[]>(vocab_size)),
       vocab_scores_(std::make_unique<float[]>(vocab_size)),
       sorted_vocab_(std::make_unique<TokenIndex[]>(vocab_size)) {
@@ -54,8 +56,8 @@ Error Tokenizer::load(const char* tokenizer_path) {
     ET_LOG(Error, "couldn't load %s", tokenizer_path);
     return Error::InvalidArgument;
   }
-  int32_t metadata[4];
-  for (int i = 0; i < 4; i++) {
+  int32_t metadata[2];
+  for (int i = 0; i < 2; i++) {
     if (fread(metadata + i, sizeof(int32_t), 1, file) != 1) {
       ET_LOG(
           Error,
@@ -82,9 +84,7 @@ Error Tokenizer::load(const char* tokenizer_path) {
         vocab_size_);
   }
 
-  bos_tok_ = metadata[1];
-  eos_tok_ = metadata[2];
-  max_token_length_ = metadata[3];
+  max_token_length_ = metadata[1];
 
   // allocate space for the vocabulary
   vocab_ = std::make_unique<char*[]>(vocab_size_);
