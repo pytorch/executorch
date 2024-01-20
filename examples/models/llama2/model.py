@@ -20,7 +20,7 @@ import torch.nn.functional as F
 from torch import nn
 
 try:
-    from fairseq2.models.llama import create_llama_checkpoint
+    pass  # from fairseq2.models.llama import create_llama_checkpoint
 
 except ImportError:
 
