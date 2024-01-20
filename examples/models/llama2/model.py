@@ -20,11 +20,11 @@ import torch.nn.functional as F
 from torch import nn
 
 try:
-    pass  # from fairseq2.models.llama import create_llama_checkpoint
+    from .fairseq2 import convert_to_llama_checkpoint
 
 except ImportError:
 
-    def create_llama_checkpoint(**kwargs):
+    def convert_to_llama_checkpoint(**kwargs):
         raise NotImplementedError(
             "Please install fairseq2 with `pip install fairseq2`."
         )
@@ -495,7 +495,7 @@ class Llama2Model(EagerModelBase):
         )
         if kwargs.get("fairseq2", False):
             print("Using fairseq2 checkpoint")
-            checkpoint = create_llama_checkpoint(checkpoint=checkpoint)
+            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
         self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):
