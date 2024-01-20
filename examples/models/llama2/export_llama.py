@@ -56,6 +56,7 @@ def main() -> None:
     parser.add_argument(
         "-p", "--params", default=ckpt_dir / "demo_config.json", help="config.json"
     )
+    parser.add_argument("-2", "--fairseq2", action="store_true")
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
@@ -73,6 +74,7 @@ def main() -> None:
         checkpoint=args.checkpoint,
         params=args.params,
         use_kv_cache=args.use_kv_cache,
+        fairseq2=args.fairseq2,
     )
 
     if args.use_kv_cache:
