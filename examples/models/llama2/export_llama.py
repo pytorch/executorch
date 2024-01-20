@@ -57,16 +57,11 @@ def main() -> None:
         "-p", "--params", default=ckpt_dir / "demo_config.json", help="config.json"
     )
     parser.add_argument("-2", "--fairseq2", action="store_true")
-
-    parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
 
     args = parser.parse_args()
-
-    with open(args.params, "r") as params_file:
-        params_json = json.load(params_file)
 
     model, example_inputs, _ = EagerModelFactory.create_model(
         "llama2",
