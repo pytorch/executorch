@@ -12,22 +12,42 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
+from fairseq2.models.llama.builder import LLaMAConfig
+from fairseq2.models.utils.checkpoint import convert_model_state_dict
 
 from torch import nn
 
-try:
-    from fairseq2.models.llama import create_llama_checkpoint
 
-except ImportError:
+def create_llama_checkpoint(
+    checkpoint: Mapping[str, Any], config: Optional[LLaMAConfig] = None
+) -> Mapping[str, Any]:
+    """Convert a reference fairseq2 checkpoint to LLaMA."""
 
-    def create_llama_checkpoint(**kwargs):
-        raise NotImplementedError(
-            "Please install fairseq2 with `pip install fairseq2`."
-        )
+    key_map = {
+        r"decoder.layers.([0-9]+).self_attn.q_proj.": r"layers.\1.attention.wq.",
+        r"decoder.layers.([0-9]+).self_attn.k_proj.": r"layers.\1.attention.wk.",
+        r"decoder.layers.([0-9]+).self_attn.v_proj.": r"layers.\1.attention.wv.",
+        r"decoder.layers.([0-9]+).self_attn.output_proj.": r"layers.\1.attention.wo.",
+        r"decoder.layers.([0-9]+).self_attn_layer_norm.": r"layers.\1.attention_norm.",
+        r"decoder.layers.([0-9]+).ffn.gate_proj.": r"layers.\1.feed_forward.w1.",
+        r"decoder.layers.([0-9]+).ffn.output_proj.": r"layers.\1.feed_forward.w2.",
+        r"decoder.layers.([0-9]+).ffn.inner_proj.": r"layers.\1.feed_forward.w3.",
+        r"decoder.layers.([0-9]+).ffn_layer_norm.": r"layers.\1.ffn_norm.",
+        r"decoder.layer_norm.": r"norm.",
+        r"decoder_frontend.embed.": r"tok_embeddings.",
+        r"final_proj.": r"output.",
+    }
+
+    # We do not need the pre-computed 'rope.freqs' buffers.
+    checkpoint = {k: v for (k, v) in checkpoint.items() if "rope.freqs" not in k}
+
+    checkpoint = convert_model_state_dict(checkpoint, key_map)
+
+    return checkpoint
 
 
 from ..model_base import EagerModelBase
@@ -504,7 +524,6 @@ class Llama2Model(EagerModelBase):
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
-
         self.model_.load_state_dict(
             checkpoint, strict=False
         )  # self.model_ = Transformer(gptconf)

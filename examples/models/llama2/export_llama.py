@@ -9,12 +9,12 @@
 import argparse
 import json
 import logging
+from json import JSONDecodeError
 from pathlib import Path
 
 import torch
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
-from executorch.exir import to_edge
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 
@@ -26,6 +26,21 @@ from .quantize import WeightOnlyInt8QuantHandler
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
+
+
+def quantize(model) -> torch.nn.Module:
+    """
+    Quantizes a model by converting all weights to int8.
+    Args:
+        model: A model to quantize.
+    Returns:
+        A quantized model.
+    """
+    model_int8 = WeightOnlyInt8QuantHandler(model)
+    model_int8_state_dict = model_int8.create_quantized_state_dict()
+    model_int8 = model_int8.convert_for_runtime()
+    model_int8.load_state_dict(model_int8_state_dict)
+    return model_int8
 
 
 def main() -> None:
@@ -56,7 +71,12 @@ def main() -> None:
     parser.add_argument(
         "-p", "--params", default=ckpt_dir / "demo_config.json", help="config.json"
     )
-    parser.add_argument("-2", "--fairseq2", action="store_true")
+    parser.add_argument(
+        "-m",
+        "--metadata",
+        default=None,
+        help='metadata string in json format. Example {"get_bos_id": 3, "get_eos_id": 3, "get_n_bos": 1, "get_n_eos": 2}',
+    )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
@@ -64,9 +84,6 @@ def main() -> None:
     parser.add_argument("-X", "--xnnpack", action="store_true")
 
     args = parser.parse_args()
-
-    with open(args.params, "r") as params_file:
-        params_json = json.load(params_file)
 
     model, example_inputs, _ = EagerModelFactory.create_model(
         "llama2",
@@ -84,28 +101,9 @@ def main() -> None:
         dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
         dynamic_shapes = {"tokens": {1: dim}}
 
-    if args.half:
-        # only converts floating point dtypes to half
-        # input and output are torch.long, so signature unchanged
-        model.to(dtype=torch.half)
-        modelname = f"{modelname}_h"
-
     if args.quantized_ckpt or args.quantize:
         modelname = f"{modelname}_q"
-        model_int8 = WeightOnlyInt8QuantHandler(model)
-        model_int8_state_dict = model_int8.create_quantized_state_dict()
-
-        if args.quantized_ckpt:
-            torch.save(model_int8_state_dict, args.quantized_ckpt)
-
-        if args.verbose:
-            print("*******quantized checkpoint********")
-            for key, data in model_int8_state_dict.items():
-                print(f"{key}")
-
-        model_int8 = model_int8.convert_for_runtime()
-        model_int8.load_state_dict(model_int8_state_dict)
-        model = model_int8
+        model = quantize(model)
 
         if args.verbose:
             print(f"{modelname}:")
@@ -115,15 +113,24 @@ def main() -> None:
         # only converts floating point dtypes to half
         # input and output are torch.long, so signature unchanged
         model.to(dtype=torch.half)
+        modelname = f"{modelname}_h"
     else:
         # int8 quantization code has some bf16,
         # switch all to FP32
         model.to(dtype=torch.float)
 
-    dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
-
-    with open(args.params, "r") as params_file:
-        params_json = json.load(params_file)
+    # metadata that we want to serialize into .pte file
+    metadata = {
+        "get_vocab_size": model.params.vocab_size,
+        "get_max_seq_len": model.params.max_seq_len,
+    }
+    if args.metadata:
+        try:
+            extra = json.loads(args.metadata)
+            for k, v in extra.items():
+                metadata[k] = v
+        except JSONDecodeError:
+            logging.error("Invalid metadata, should be a valid JSON string")
 
     with torch.backends.cuda.sdp_kernel(
         enable_flash=False, enable_mem_efficient=False, enable_math=True
@@ -131,12 +138,15 @@ def main() -> None:
         edge_manager = export_to_edge(
             model,
             example_inputs,
-            dynamic_shapes={"tokens": {1: dim}},
-            edge_constant_methods=params_json,
+            dynamic_shapes=dynamic_shapes,
+            edge_constant_methods=metadata,
             edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
         )
+    if args.xnnpack:
+        edge_manager = edge_manager.to_backend(XnnpackPartitioner())
+        modelname = f"xnnpack_{modelname}"
 
     export_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
@@ -149,24 +159,6 @@ def main() -> None:
         export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
     )
     save_pte_program(export_program.buffer, modelname, args.output_dir)
-
-    if args.xnnpack:
-        with torch.backends.cuda.sdp_kernel(
-            enable_flash=False, enable_mem_efficient=False, enable_math=True
-        ):
-            xnn_model = export_to_edge(
-                model,
-                example_inputs,
-                dynamic_shapes={"tokens": {1: dim}},
-                edge_compile_config=EdgeCompileConfig(
-                    _check_ir_validity=False,
-                ),
-            )
-            xnn_partitioned = xnn_model.to_backend(XnnpackPartitioner())
-            exec_prog = xnn_partitioned.to_executorch()
-
-        with open(f"./xnnpack_{modelname}.pte", "wb") as file:
-            file.write(exec_prog.buffer)
 
 
 if __name__ == "__main__":
