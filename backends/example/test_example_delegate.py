@@ -57,7 +57,7 @@ class TestExampleDelegate(unittest.TestCase):
         m = prepare_pt2e(m, quantizer)
         # calibration
         m(*example_inputs)
-        m = convert_pt2e(m)
+        m = convert_pt2e(m, fold_quantize=True)
 
         quantized_gm = m
         exported_program = exir.capture(
@@ -89,7 +89,7 @@ class TestExampleDelegate(unittest.TestCase):
         m = prepare_pt2e(m, quantizer)
         # calibration
         m(*example_inputs)
-        m = convert_pt2e(m)
+        m = convert_pt2e(m, fold_quantize=True)
 
         quantized_gm = m
         exported_program = exir.capture(
