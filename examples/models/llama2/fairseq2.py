@@ -41,7 +41,7 @@ def convert_model_state_dict(
 
 def convert_to_llama_checkpoint(checkpoint: Dict[str, Any]) -> Dict[str, Any]:
     """Convert a fairseq2 LLaMA checkpoint to the reference format."""
-    state_dict = checkpoint["model"]
+    # state_dict = checkpoint["model"]
 
     key_map = {
         # fmt: off
@@ -60,4 +60,4 @@ def convert_to_llama_checkpoint(checkpoint: Dict[str, Any]) -> Dict[str, Any]:
         # fmt: on
     }
 
-    return convert_model_state_dict(state_dict, key_map)
+    return convert_model_state_dict(checkpoint, key_map)
