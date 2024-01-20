@@ -70,7 +70,7 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
 __ET_NODISCARD Error MPSExecutor::forward(std::vector<const Tensor*>& outputs) {
   Error err = Error::Ok;
   MPSStream* mpsStream = getDefaultMPSStream();
-  if (mpsStream->commitAndContinueEnabled() || mpsStream->hasLiveCommandBuffer() || true) {
+  if (mpsStream->commitAndContinueEnabled() || mpsStream->hasLiveCommandBuffer()) {
     id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
     [executable_ encodeToCommandBuffer:commandBuffer
                           inputsArray:inputsArray_

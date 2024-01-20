@@ -238,10 +238,6 @@ class SplitWithSizesVisitor(NodeVisitor):
         node: torch.fx.Node,
         mps_graph: MPSGraph,
     ) -> None:
-        # mps_node =  self.create_unary_node(
-        #   node, mps_graph, MPSSlice
-        # )
-
         input1_id = self.define_tensor(get_input_node(node, 0), mps_graph)
         output_ids = self.define_tensor_list(node, mps_graph)
         split_sizes = eval_shape(cast(torch.SymInt, node.args[1]))

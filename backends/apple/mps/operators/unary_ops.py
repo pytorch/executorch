@@ -1,3 +1,7 @@
+#  Copyright (c) 2023 Apple Inc. All rights reserved.
+#  Provided subject to the LICENSE file in the top level directory.
+#
+
 import torch
 from executorch.backends.apple.mps.operators.node_visitor import (
     NodeVisitor,
