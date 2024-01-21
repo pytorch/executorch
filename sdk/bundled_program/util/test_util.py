@@ -18,7 +18,7 @@ from executorch.sdk.bundled_program.config import (
     MethodTestCase,
     MethodTestSuite,
 )
-from torch.export import export
+from torch.export import export, WrapperModule
 
 # A hacky integer to deal with a mismatch between execution plan and complier.
 #
@@ -245,7 +245,9 @@ def get_common_executorch_program() -> Tuple[
 
     # Trace to FX Graph and emit the program
     method_graphs = {
-        m_name: export(getattr(eager_model, m_name), capture_inputs[m_name])
+        m_name: export(
+            WrapperModule(getattr(eager_model, m_name)), capture_inputs[m_name]
+        )
         for m_name in eager_model.method_names
     }
 
