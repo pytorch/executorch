@@ -45,18 +45,18 @@ def convert_to_llama_checkpoint(checkpoint: Dict[str, Any]) -> Dict[str, Any]:
 
     key_map = {
         # fmt: off
-        r"^decoder\.layers\.([0-9]+)\.self_attn\.q_proj\.":      r"layers.\1.attention.wq.",
-        r"^decoder\.layers\.([0-9]+)\.self_attn\.k_proj\.":      r"layers.\1.attention.wk.",
-        r"^decoder\.layers\.([0-9]+)\.self_attn\.v_proj\.":      r"layers.\1.attention.wv.",
-        r"^decoder\.layers\.([0-9]+)\.self_attn\.output_proj\.": r"layers.\1.attention.wo.",
-        r"^decoder\.layers\.([0-9]+)\.self_attn_layer_norm\.":   r"layers.\1.attention_norm.",
-        r"^decoder\.layers\.([0-9]+)\.ffn\.gate_proj\.":         r"layers.\1.feed_forward.w1.",
-        r"^decoder\.layers\.([0-9]+)\.ffn\.output_proj\.":       r"layers.\1.feed_forward.w2.",
-        r"^decoder\.layers\.([0-9]+)\.ffn\.inner_proj\.":        r"layers.\1.feed_forward.w3.",
-        r"^decoder\.layers\.([0-9]+)\.ffn_layer_norm\.":         r"layers.\1.ffn_norm.",
-        r"^decoder\.layer_norm\.":                               r"norm.",
-        r"^decoder_frontend\.embed\.":                           r"tok_embeddings.",
-        r"^final_proj\.":                                        r"output.",
+        r"decoder.layers.([0-9]+).self_attn.q_proj.": r"layers.\1.attention.wq.",
+        r"decoder.layers.([0-9]+).self_attn.k_proj.": r"layers.\1.attention.wk.",
+        r"decoder.layers.([0-9]+).self_attn.v_proj.": r"layers.\1.attention.wv.",
+        r"decoder.layers.([0-9]+).self_attn.output_proj.": r"layers.\1.attention.wo.",
+        r"decoder.layers.([0-9]+).self_attn_layer_norm.": r"layers.\1.attention_norm.",
+        r"decoder.layers.([0-9]+).ffn.gate_proj.": r"layers.\1.feed_forward.w1.",
+        r"decoder.layers.([0-9]+).ffn.output_proj.": r"layers.\1.feed_forward.w2.",
+        r"decoder.layers.([0-9]+).ffn.inner_proj.": r"layers.\1.feed_forward.w3.",
+        r"decoder.layers.([0-9]+).ffn_layer_norm.": r"layers.\1.ffn_norm.",
+        r"decoder.layer_norm.": r"norm.",
+        r"decoder_frontend.embed.": r"tok_embeddings.",
+        r"final_proj.": r"output.",
         # fmt: on
     }
 
