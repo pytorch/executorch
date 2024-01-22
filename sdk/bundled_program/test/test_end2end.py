@@ -21,7 +21,7 @@ import executorch.extension.pytree as pytree
 
 import torch
 
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.core import BundledProgram
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -65,7 +65,7 @@ class BundledProgramE2ETest(unittest.TestCase):
         executorch_program, method_test_suites = get_common_executorch_program()
         eager_model = SampleModel()
 
-        bundled_program = create_bundled_program(executorch_program, method_test_suites)
+        bundled_program = BundledProgram(executorch_program, method_test_suites)
 
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program

@@ -36,8 +36,8 @@ runtime.python_test(
     deps = [
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/sdk:lib",
         "//executorch/sdk/bundled_program:config",
-        "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/bundled_program/serialize:lib",
     ],
     external_deps = [
@@ -56,6 +56,7 @@ runtime.python_test(
         "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
         "fbsource//third-party/pypi/transformers:transformers",  # @manual
         "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/examples/models/llama2:llama2_model",
         "//pytorch/vision:torchvision",  # @manual
     ],
     external_deps = [

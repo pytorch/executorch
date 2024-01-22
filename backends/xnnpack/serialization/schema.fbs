@@ -115,6 +115,7 @@ union XNodeUnion {
   XNNConcatenate3: _XNNCat,
   XNNConcatenate4: _XNNCat,
   XNNStaticSlice,
+  XNNScaledDotProductAttention,
 }
 
 union XValueUnion {
@@ -259,6 +260,16 @@ table XNNStaticSlice {
   input_id:uint;
   output_id:uint;
   flags:uint;
+}
+
+table XNNScaledDotProductAttention {
+    query_id:uint;
+    key_id:uint;
+    value_id:uint;
+    scale_id:uint;
+    mask_id:uint;
+    output_id:uint;
+    flags:uint;
 }
 
 table XNNArgMaxPooling2d {

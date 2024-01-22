@@ -20,10 +20,11 @@ import executorch.exir as exir
 
 import torch
 from executorch.exir import ExecutorchBackendConfig
+
 from executorch.exir.passes import MemoryPlanningPass, ToOutVarPass
 from executorch.exir.print_program import pretty_print
+from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -64,7 +65,7 @@ def main() -> None:
         MethodTestSuite(method_name="forward", test_cases=method_test_cases)
     ]
 
-    bundled_program = create_bundled_program(exec_prog, method_test_suites)
+    bundled_program = BundledProgram(exec_prog, method_test_suites)
     pretty_print(bundled_program)
 
     bundled_program_flatbuffer = serialize_from_bundled_program_to_flatbuffer(

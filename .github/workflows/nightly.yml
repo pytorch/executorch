@@ -18,7 +18,7 @@ concurrency:
 jobs:
   update-pytorch-commit-hash:
     runs-on: ubuntu-latest
-    environment: ${{ (github.event.ref == 'refs/heads/main') && 'update-commit-hash' || '' }}
+    environment: ${{ (github.event_name == 'schedule') && 'update-commit-hash' || '' }}
     steps:
       - name: update-pytorch-commit-hash
         uses: pytorch/test-infra/.github/actions/update-commit-hash@main

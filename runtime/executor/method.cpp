@@ -1267,10 +1267,6 @@ MethodMeta Method::method_meta() const {
   return method_meta.get();
 }
 
-size_t Method::values_size() const {
-  return n_value_;
-}
-
 const EValue& Method::get_value(size_t i) const {
   ET_CHECK_MSG(i < n_value_, "%zu >= %zu", i, n_value_);
   return values_[i];

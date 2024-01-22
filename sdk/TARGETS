@@ -6,6 +6,7 @@ python_library(
     name = "lib",
     srcs = ["__init__.py"],
     deps = [
+        "//executorch/sdk/bundled_program:core",
         "//executorch/sdk/etrecord:etrecord",
         "//executorch/sdk/inspector:lib",
     ],

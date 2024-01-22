@@ -34,6 +34,7 @@ from . import (  # noqa
     op_prelu,
     op_quantize_per_tensor,
     op_relu,
+    op_sdpa,
     op_sigmoid,
     op_skip_ops,
     op_slice_copy,

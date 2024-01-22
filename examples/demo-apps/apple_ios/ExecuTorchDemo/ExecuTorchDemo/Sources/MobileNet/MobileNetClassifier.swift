@@ -40,7 +40,7 @@ public class MobileNetClassifier: ImageClassification {
   public init?(modelFilePath: String, labelsFilePath: String) throws {
     labels = try String(contentsOfFile: labelsFilePath, encoding: .utf8)
       .components(separatedBy: .newlines)
-    mobileNetClassifier = try ETMobileNetClassifier(filePath: modelFilePath)
+    mobileNetClassifier = ETMobileNetClassifier(filePath: modelFilePath)
     rawDataBuffer = [UInt8](repeating: 0, count: Int(Self.cropSize * Self.cropSize) * 4)
     normalizedBuffer = [Float](repeating: 0, count: rawDataBuffer.count / 4 * 3)
   }

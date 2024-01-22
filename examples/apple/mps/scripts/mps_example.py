@@ -13,8 +13,9 @@ from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -75,7 +76,7 @@ if __name__ == "__main__":
             exir.CaptureConfig(enable_aot=True, _unlift=True),
         )
         .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        .to_executorch()
+        .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
     )
 
     model_name = f"{args.model_name}_mps"
@@ -92,7 +93,7 @@ if __name__ == "__main__":
             )
         ]
 
-        bundled_program = create_bundled_program(executorch_program, method_test_suites)
+        bundled_program = BundledProgram(executorch_program, method_test_suites)
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )

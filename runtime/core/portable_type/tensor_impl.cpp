@@ -144,13 +144,17 @@ Error TensorImpl::internal_resize_contiguous(ArrayRef<SizesType> new_sizes) {
   auto new_numel = compute_numel(new_sizes.data(), dim_);
 
   // Upper bounded tensors can be reshaped but not beyond upper bound
-  if (shape_dynamism_ == TensorShapeDynamism::DYNAMIC_BOUND) {
+  if (shape_dynamism_ == TensorShapeDynamism::DYNAMIC_BOUND ||
+      // TODO(T175194371): Unbounded tensor resizing is not yet supported: treat
+      // them as upper-bounded.
+      shape_dynamism_ == TensorShapeDynamism::DYNAMIC_UNBOUND) {
     auto new_nbytes = new_numel * elementSize(type_);
     ET_CHECK_OR_RETURN_ERROR(
         new_nbytes <= capacity_,
         NotSupported,
-        "Attempted to resize an upper bounded tensor "
+        "Attempted to resize a tensor with dynamism %d "
         "to %zu which is beyond its capacity %zu",
+        (int)shape_dynamism_,
         new_nbytes,
         capacity_);
   }

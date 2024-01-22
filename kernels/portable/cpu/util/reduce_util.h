@@ -144,7 +144,7 @@ void apply_on_flat_ix_with_dim_mask_and_base(
 // Helper Functions
 //
 
-void check_dim_list_is_valid(
+[[nodiscard]] bool check_dim_list_is_valid(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list);
 
@@ -306,7 +306,7 @@ void apply_over_dim_list(
     const size_t out_ix,
     const int64_t start = 0,
     const int64_t end = -1) {
-  check_dim_list_is_valid(in, dim_list);
+  ET_CHECK(check_dim_list_is_valid(in, dim_list));
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim_list),
       "Out index %zd is out of bounds",
@@ -455,7 +455,7 @@ CTYPE_OUT map_reduce_over_dim_list(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix) {
-  check_dim_list_is_valid(in, dim_list);
+  ET_CHECK(check_dim_list_is_valid(in, dim_list));
 
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim_list),

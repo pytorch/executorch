@@ -97,7 +97,7 @@ __ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
  * @param[out] out_dim The dimension of the broadcasted target
  * tensor
  */
-void get_broadcast_target_size(
+[[nodiscard]] Error get_broadcast_target_size(
     const exec_aten::ArrayRef<Tensor::SizesType> a_size,
     const exec_aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
@@ -115,7 +115,7 @@ void get_broadcast_target_size(
  * @param[out] out_dim The dimension of the broadcasted target
  * tensor
  */
-void get_broadcast_target_size(
+[[nodiscard]] Error get_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     Tensor::SizesType* out_sizes,
@@ -134,8 +134,15 @@ void get_broadcast_target_size(
 resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   size_t expected_output_dim = 0;
-  get_broadcast_target_size(
-      a, b, expected_output_size, kTensorDimensionLimit, &expected_output_dim);
+
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      get_broadcast_target_size(
+          a,
+          b,
+          expected_output_size,
+          kTensorDimensionLimit,
+          &expected_output_dim),
+      "Failed to get broadcast target size");
 
   return resize_tensor(out, {expected_output_size, expected_output_dim});
 }
@@ -158,20 +165,28 @@ resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
   size_t interim_output_dim = 0;
 
   // Obtain the broadcast size of the first two input tensors
-  get_broadcast_target_size(
-      a, b, interim_output_size, kTensorDimensionLimit, &interim_output_dim);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      get_broadcast_target_size(
+          a,
+          b,
+          interim_output_size,
+          kTensorDimensionLimit,
+          &interim_output_dim),
+      "Failed to get broadcast target size");
 
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   size_t expected_output_dim = 0;
 
   // Apply broadcasting to the intermediate broadcast size and the third input
   // tensor
-  get_broadcast_target_size(
-      {interim_output_size, interim_output_dim},
-      c.sizes(),
-      expected_output_size,
-      kTensorDimensionLimit,
-      &expected_output_dim);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      get_broadcast_target_size(
+          {interim_output_size, interim_output_dim},
+          c.sizes(),
+          expected_output_size,
+          kTensorDimensionLimit,
+          &expected_output_dim),
+      "Failed to get broadcast target size");
 
   return resize_tensor(out, {expected_output_size, expected_output_dim});
 }

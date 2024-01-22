@@ -17,12 +17,12 @@ from executorch.exir import (
     ExecutorchProgramManager,
     MultiMethodExecutorchProgram,
 )
+from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import (
     MethodInputType,
     MethodTestCase,
     MethodTestSuite,
 )
-from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -50,7 +50,7 @@ def save_bundled_program(
         output_path: Path to save the bundled program.
     """
 
-    bundled_program = create_bundled_program(executorch_program, method_test_suites)
+    bundled_program = BundledProgram(executorch_program, method_test_suites)
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
         bundled_program
     )

@@ -52,9 +52,9 @@ deps = [
   "executorch",
 ]
 
-[targets.extension_runner_module]
+[targets.extension_module]
 buck_targets = [
-  "//extension/runner/module:module",
+  "//extension/module:module",
 ]
 filters = [
   ".cpp$",
@@ -168,6 +168,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "executorch",
   "xnnpack_backend",
   "portable_kernels",
 ]

@@ -14,7 +14,7 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/kernels/portable:generated_lib_all_ops",
-            "//executorch/extension/runner/module:module",
+            "//executorch/extension/module:module",
         ],
         env = {
             "RESOURCES_PATH": "$(location :resources)/resources",
