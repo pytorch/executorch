@@ -24,7 +24,7 @@ class TokenizerExtensionTest : public ::testing::Test {
         build::getResourcePath(
             "executorch/examples/models/llama2/tokenizer/test/test.bin")
             .string();
-    tokenizer_ = std::make_unique<Tokenizer>(32000);
+    tokenizer_ = std::make_unique<Tokenizer>(32000, 1, 2);
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
