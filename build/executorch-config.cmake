@@ -35,7 +35,7 @@ set_target_properties(
 )
 target_include_directories(portable_kernels INTERFACE ${_root})
 
-if (CMAKE_BUILD_TYPE MATCHES "Debug")
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
     set(FLATCC_LIB flatcc_d)
 else()
     set(FLATCC_LIB flatcc)
