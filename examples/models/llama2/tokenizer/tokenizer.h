@@ -28,7 +28,7 @@ struct TokenIndex {
 
 class Tokenizer {
  public:
-  explicit Tokenizer(int32_t vocab_size);
+  explicit Tokenizer(int32_t vocab_size, int32_t bos_tok, int32_t eos_tok);
   ~Tokenizer();
 
   Error load(const char* tokenizer_path);

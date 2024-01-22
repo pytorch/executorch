@@ -58,10 +58,8 @@ class Tokenizer:
 
         The binary format is:
         1. vocab size: int32
-        2. bos id: int32
-        3. eos id: int32
-        4. max token length: int32
-        5. score: float32, len of bytes: int32, token bytes: [byte] for each token
+        2. max token length: int32
+        3. score: float32, len of bytes: int32, token bytes: [byte] for each token
 
         :param output_path: output path of the new binary.
         :param prepend_padding: a boolean to control if we want to prepend a padding token.
@@ -101,11 +99,7 @@ class Tokenizer:
         # write to a binary file
         with open(output_path, "wb") as f:
             # write the vocab size, bos/eos ids and max token length
-            f.write(
-                struct.pack(
-                    "IIII", self.n_words, self.bos_id, self.eos_id, max_token_length
-                )
-            )
+            f.write(struct.pack("II", self.n_words, max_token_length))
             for bytes, score in zip(tokens, scores):
                 f.write(struct.pack("fI", score, len(bytes)))
                 f.write(bytes)
