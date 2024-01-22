@@ -42,6 +42,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
@@ -77,12 +78,22 @@ target_include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/include
   ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/bundled_program
   ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  ${EXECUTORCH_ROOT}/third-party/flatcc/include
   ${_mps_schema_headers}
 )
 list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
+
+if (CMAKE_BUILD_TYPE MATCHES "Debug")
+    set(FLATCC_LIB flatcc_d)
+else()
+    set(FLATCC_LIB flatcc)
+endif()
+
 target_link_libraries(mps_executor_runner bundled_program
                                           executorch gflags
+                                          etdump
+                                          ${FLATCC_LIB}
                                           mpsdelegate
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
