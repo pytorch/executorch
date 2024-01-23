@@ -122,6 +122,9 @@ class LoweredBackendModule(torch.nn.Module):
     # TODO(chenlai): re-consider recapture instead of manually constructing the program because
     # the meta data construction is done manually.
     def program(self, emit_stacktrace: bool = False) -> Program:
+        # Fix autodpes introuces cyclic dependencies:
+        # program -> verifier -> lowered_backend_module -> program
+        # @manual
         from executorch.exir.program._program import (
             _get_updated_graph_signature,
             _transform,

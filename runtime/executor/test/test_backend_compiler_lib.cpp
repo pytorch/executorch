@@ -12,7 +12,6 @@
 #include <executorch/runtime/platform/profiler.h>
 #include <cstdio>
 #include <cstdlib> /* strtol */
-#include <memory>
 
 namespace torch {
 namespace executor {
@@ -33,7 +32,7 @@ class BackendWithCompiler final : public PyTorchBackendInterface {
   int max_shape = 4;
 
  public:
-  ~BackendWithCompiler() = default;
+  ~BackendWithCompiler() override = default;
 
   bool is_available() const override {
     return true;

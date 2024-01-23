@@ -39,6 +39,8 @@ constexpr size_t kDefaultRuntimeMemBytes = 32 * 1024U;
 class AllocationFailureStressTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    torch::executor::runtime_init();
+
     // Create a loader for the serialized ModuleAdd program.
     const char* path = std::getenv("ET_MODULE_ADD_PATH");
     Result<FileDataLoader> loader = FileDataLoader::from(path);

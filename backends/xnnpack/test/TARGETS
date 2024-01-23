@@ -1,6 +1,8 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load(":targets.bzl", "define_common_targets")
 
+oncall("executorch")
+
 define_common_targets()
 
 runtime.python_test(
@@ -58,5 +60,15 @@ runtime.python_test(
     ],
     external_deps = [
         "libtorch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_serialization",
+    srcs = glob([
+        "serialization/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
     ],
 )

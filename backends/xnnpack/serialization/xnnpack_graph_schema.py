@@ -418,6 +418,12 @@ class Buffer:
 
 
 @dataclass
+class ConstantDataOffset:
+    offset: int
+    size: int
+
+
+@dataclass
 class XNNGraph:
     version: str
     xnodes: List[XNode]
@@ -429,3 +435,5 @@ class XNNGraph:
 
     constant_buffer: List[Buffer]
     mem_buffer_sizes: List[int]
+
+    constant_data: List[ConstantDataOffset]

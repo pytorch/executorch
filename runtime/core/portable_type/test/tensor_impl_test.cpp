@@ -8,8 +8,8 @@
 
 #include <executorch/runtime/core/portable_type/tensor_impl.h>
 
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
 #include <random>
@@ -22,6 +22,7 @@ namespace executor {
 using SizesType = TensorImpl::SizesType;
 using DimOrderType = TensorImpl::DimOrderType;
 using StridesType = TensorImpl::StridesType;
+using torch::executor::internal::resize_tensor_impl;
 
 class TensorImplTest : public ::testing::Test {
  protected:
@@ -57,9 +58,9 @@ TEST_F(TensorImplTest, TestSetSizesContigContract) {
   const int RANK = 5;
   std::default_random_engine generator;
   std::uniform_int_distribution<int> distribution(1, 100);
-  SizesType sizes[RANK] = {2, 2, 2, 2, 2};
+  SizesType sizes[RANK] = {100, 100, 100, 100, 100};
   DimOrderType dim_order[RANK] = {0, 1, 2, 3, 4};
-  StridesType strides[RANK] = {16, 8, 4, 2, 1};
+  StridesType strides[RANK] = {100000000, 1000000, 10000, 100, 1};
   float* data = nullptr;
   TensorImpl t(
       ScalarType::Float,
@@ -68,14 +69,15 @@ TEST_F(TensorImplTest, TestSetSizesContigContract) {
       data,
       dim_order,
       strides,
-      TensorShapeDynamism::DYNAMIC_UNBOUND);
+      TensorShapeDynamism::DYNAMIC_BOUND);
 
   SizesType new_sizes[RANK] = {0, 0, 0, 0, 0};
   // assign random sizes between 1 and 100
   for (int i = 0; i < RANK; i++) {
     new_sizes[i] = distribution(generator);
   }
-  t.set_sizes_contiguous({new_sizes, RANK});
+  Error err = resize_tensor_impl(&t, {new_sizes, RANK});
+  EXPECT_EQ(err, Error::Ok);
 
   auto strides_ref = t.strides();
   StridesType prev = strides_ref[0];
@@ -97,10 +99,11 @@ TEST_F(TensorImplTest, TestSetSizesContigZeroSizes) {
       data,
       dim_order,
       strides,
-      TensorShapeDynamism::DYNAMIC_UNBOUND);
+      TensorShapeDynamism::DYNAMIC_BOUND);
 
   SizesType new_sizes_1[3] = {1, 0, 2};
-  t.set_sizes_contiguous({new_sizes_1, 3});
+  Error err = resize_tensor_impl(&t, {new_sizes_1, 3});
+  EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(t.size(1), 0);
 
   // Treat 0 dimensions as size 1 for stride calculation as thats what aten does
@@ -121,7 +124,8 @@ TEST_F(TensorImplTest, TestSetSizesContigStatic) {
   TensorImpl t(ScalarType::Float, 2, sizes, data, dim_order, strides);
 
   SizesType new_sizes_1[2] = {3, 2};
-  t.set_sizes_contiguous({new_sizes_1, 2});
+  Error err = resize_tensor_impl(&t, {new_sizes_1, 2});
+  EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(t.size(1), 2);
 
   // strides shouldnt change
@@ -130,12 +134,14 @@ TEST_F(TensorImplTest, TestSetSizesContigStatic) {
   EXPECT_EQ(strides_ref[1], 1);
 
   SizesType new_sizes_2[2] = {2, 2};
-  // Cant change size of a StaticShape Tensor
-  ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_2, 2}), "");
+  // Can't change size of a StaticShape Tensor
+  err = resize_tensor_impl(&t, {new_sizes_2, 2});
+  EXPECT_NE(err, Error::Ok);
 
   SizesType new_sizes_3[1] = {2};
-  // Cant change rank of any Tensor
-  ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_3, 1}), "");
+  // Can't change rank of any Tensor
+  err = resize_tensor_impl(&t, {new_sizes_3, 1});
+  EXPECT_NE(err, Error::Ok);
 }
 
 TEST_F(TensorImplTest, TestSetSizesContigUpperBounded) {
@@ -154,7 +160,8 @@ TEST_F(TensorImplTest, TestSetSizesContigUpperBounded) {
 
   SizesType new_sizes_1[2] = {1, 1};
   // Can resize down
-  t.set_sizes_contiguous({new_sizes_1, 2});
+  Error err = resize_tensor_impl(&t, {new_sizes_1, 2});
+  EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(t.size(1), 1);
 
   // strides contiguous
@@ -164,7 +171,8 @@ TEST_F(TensorImplTest, TestSetSizesContigUpperBounded) {
 
   SizesType new_sizes_2[2] = {3, 2};
   // Can resize back up
-  t.set_sizes_contiguous({new_sizes_2, 2});
+  err = resize_tensor_impl(&t, {new_sizes_2, 2});
+  EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(t.size(1), 2);
 
   // Back to original strides
@@ -174,11 +182,13 @@ TEST_F(TensorImplTest, TestSetSizesContigUpperBounded) {
 
   SizesType new_sizes_3[2] = {4, 2};
   // Can't execeed capacity of UpperBounded Tensor
-  ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_3, 2}), "");
+  err = resize_tensor_impl(&t, {new_sizes_3, 2});
+  EXPECT_NE(err, Error::Ok);
 
   SizesType new_sizes_4[1] = {4};
   // Can't change rank of any Tensor
-  ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_4, 1}), "");
+  err = resize_tensor_impl(&t, {new_sizes_4, 1});
+  EXPECT_NE(err, Error::Ok);
 }
 
 TEST_F(TensorImplTest, TestZeroDimSetEmptySizesContig) {
@@ -197,12 +207,64 @@ TEST_F(TensorImplTest, TestZeroDimSetEmptySizesContig) {
 
   ArrayRef<SizesType> new_sizes_empty{};
   // Can resize with empty sizes
-  t.set_sizes_contiguous(new_sizes_empty);
+  Error err = resize_tensor_impl(&t, new_sizes_empty);
+  EXPECT_EQ(err, Error::Ok);
   EXPECT_EQ(t.dim(), 0);
 
   SizesType new_sizes_1[1] = {1};
   // Can't change rank of tensor
-  ET_EXPECT_DEATH(t.set_sizes_contiguous({new_sizes_1, 1}), "");
+  err = resize_tensor_impl(&t, {new_sizes_1, 1});
+  EXPECT_NE(err, Error::Ok);
+}
+
+TEST_F(TensorImplTest, TestSetSizesContigUnbounded) {
+  SizesType sizes[2] = {3, 2};
+  DimOrderType dim_order[2] = {0, 1};
+  StridesType strides[2] = {2, 1};
+  float data[6] = {1.0, 2.0, 3.0, 4.0, 5.0, 6.0};
+  TensorImpl t(
+      ScalarType::Float,
+      2,
+      sizes,
+      data,
+      dim_order,
+      strides,
+      TensorShapeDynamism::DYNAMIC_UNBOUND);
+
+  SizesType new_sizes_1[2] = {1, 1};
+  // Can resize down
+  Error err = resize_tensor_impl(&t, {new_sizes_1, 2});
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(t.size(1), 1);
+
+  // strides contiguous
+  auto strides_ref = t.strides();
+  EXPECT_EQ(strides_ref[0], 1);
+  EXPECT_EQ(strides_ref[1], 1);
+
+  SizesType new_sizes_2[2] = {3, 2};
+  // Can resize back up
+  err = resize_tensor_impl(&t, {new_sizes_2, 2});
+  EXPECT_EQ(err, Error::Ok);
+  EXPECT_EQ(t.size(1), 2);
+
+  // Back to original strides
+  strides_ref = t.strides();
+  EXPECT_EQ(strides_ref[0], 2);
+  EXPECT_EQ(strides_ref[1], 1);
+
+  SizesType new_sizes_4[1] = {4};
+  // Can't change rank of any Tensor
+  err = resize_tensor_impl(&t, {new_sizes_4, 1});
+  EXPECT_NE(err, Error::Ok);
+
+  // TODO(T175194371): For now, we can't resize past the original capacity.
+  // Once we can, this test should check for that ability.
+
+  SizesType new_sizes_3[2] = {4, 2};
+  // Can't execeed original capacity.
+  err = resize_tensor_impl(&t, {new_sizes_3, 2});
+  EXPECT_NE(err, Error::Ok);
 }
 
 TEST_F(TensorImplTest, TestWriteRead) {

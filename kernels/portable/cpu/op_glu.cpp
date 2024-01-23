@@ -149,22 +149,14 @@ glu_out(RuntimeContext& ctx, const Tensor& self, int64_t dim, Tensor& out) {
   const size_t non_negative_dim = dim < 0 ? dim + self.dim() : dim;
   const auto in_dtype = self.scalar_type();
 
-#define GLU_TENSOR(ctype, dtype)                                  \
-  case ScalarType::dtype:                                         \
-    if (out.scalar_type() == ScalarType::Float) {                 \
-      glu_out_tensor<ctype, float>(self, non_negative_dim, out);  \
-    } else {                                                      \
-      glu_out_tensor<ctype, double>(self, non_negative_dim, out); \
-    }                                                             \
-    break;
+  ET_SWITCH_FLOAT_TYPES(in_dtype, ctx, "glu", CTYPE_IN, [&]() {
+    if (out.scalar_type() == ScalarType::Float) {
+      glu_out_tensor<CTYPE_IN, float>(self, non_negative_dim, out);
+    } else {
+      glu_out_tensor<CTYPE_IN, double>(self, non_negative_dim, out);
+    }
+  });
 
-  switch (in_dtype) {
-    ET_FORALL_FLOAT_TYPES(GLU_TENSOR)
-    default:
-      ET_CHECK_MSG(
-          false, "Unhandled dtype %" PRId8, static_cast<int8_t>(in_dtype));
-  }
-#undef GLU_TENSOR
   return out;
 }
 

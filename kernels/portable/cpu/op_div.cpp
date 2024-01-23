@@ -20,11 +20,6 @@ namespace native {
 namespace {
 
 ScalarType get_compute_type(ScalarType a_type, ScalarType b_type) {
-  ET_CHECK(
-      !isComplexType(a_type) && !isQIntType(a_type) && !isBitsType(a_type));
-  ET_CHECK(
-      !isComplexType(b_type) && !isQIntType(b_type) && !isBitsType(b_type));
-
   if (isFloatingType(a_type) && isFloatingType(b_type)) {
     return promoteTypes(a_type, b_type);
   } else if (isFloatingType(a_type)) {
@@ -47,6 +42,18 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
+
+  ET_KERNEL_CHECK(
+      ctx,
+      !isComplexType(a_type) && !isQIntType(a_type) && !isBitsType(a_type),
+      InvalidArgument,
+      out);
+  ET_KERNEL_CHECK(
+      ctx,
+      !isComplexType(b_type) && !isQIntType(b_type) && !isBitsType(b_type),
+      InvalidArgument,
+      out);
+
   ScalarType common_type = get_compute_type(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
@@ -94,7 +101,11 @@ Tensor& div_out_mode(
 
   // Allow casting float -> integral here
   // non-bool -> bool is still disallowed
-  ET_CHECK(!(common_type != ScalarType::Bool && out_type == ScalarType::Bool));
+  ET_KERNEL_CHECK(
+      ctx,
+      !(common_type != ScalarType::Bool && out_type == ScalarType::Bool),
+      InvalidArgument,
+      out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.out_mode", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "div.out_mode", CTYPE_B, [&]() {
@@ -131,15 +142,19 @@ Tensor& div_scalar_out(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType common_type = isFloatingType(a_type) ? a_type : ScalarType::Float;
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "div.Scalar_out", CTYPE_B, [&]() {

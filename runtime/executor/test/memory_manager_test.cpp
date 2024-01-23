@@ -57,6 +57,7 @@ TEST(MemoryManagerTest, DEPRECATEDCtor) {
   MemoryAllocator temp_allocator(0, nullptr);
   MemoryAllocator const_allocator(0, nullptr);
 
+  // NOLINTNEXTLINE(facebook-hte-Deprecated)
   MemoryManager mm(
       /*constant_allocator=*/&const_allocator,
       /*non_constant_allocator=*/&planned_memory,

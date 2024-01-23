@@ -129,6 +129,8 @@ KernelControl KernelControl::singleton_;
 class KernelIntegrationTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    torch::executor::runtime_init();
+
     // Register the controllable kernel hook.
     KernelControl::register_singleton();
     // Ensure that its state is clear.

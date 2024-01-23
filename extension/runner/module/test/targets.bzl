@@ -13,6 +13,7 @@ def define_common_targets():
             "module_test.cpp",
         ],
         deps = [
+            ":resources",
             "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/extension/runner/module:module",
         ],
