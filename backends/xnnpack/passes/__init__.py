@@ -15,6 +15,7 @@ from executorch.backends.xnnpack.passes.convert_to_sdpa import ConvertToSDPAPass
 from executorch.backends.xnnpack.passes.convert_to_upsample_bilinear2d import (
     ConvertToUpsampleBilinear2d,
 )
+from executorch.backends.xnnpack.passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
@@ -54,6 +55,7 @@ class XNNPACKPassManager:
                 ConvertToSDPAPass,
                 ConstPropPass,
                 FuseBatchNormWithConvPass,
+                FuseActivationPass,
                 RemoveGetItemPass,
                 Conv1dUnsqueezePass,
                 PReLUReshapePass,
