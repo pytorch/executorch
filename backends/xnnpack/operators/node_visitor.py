@@ -199,16 +199,31 @@ class NodeVisitor:
             XNNDatatype.xnn_datatype_fp32,
             XNNDatatype.xnn_datatype_invalid,
         )
+
+        # only for static quant
+        def get_per_channel_dtype(
+            quant_params: QuantParams,
+        ) -> XNNDatatype:
+            if quant_params.dtype == torch.int32:
+                return XNNDatatype.xnn_datatype_qcint32
+            elif quant_params.dtype == torch.int8:
+                # 4/8-bit per channel quantized weights
+                return (
+                    XNNDatatype.xnn_datatype_qcint4
+                    if quant_params.is_qc4w
+                    else XNNDatatype.xnn_datatype_qcint8
+                )
+            else:
+                raise RuntimeError(
+                    f"Unable to resolve static quantized tensor dtype using quant params dtype: {quant_params.dtype}, [qmin, qmax]: {quant_params.qmin}, {quant_params.qmax} for per channel quantization"
+                )
+
         if quant_params is not None:
             if quant_params.is_dynamic:
                 dq_dtype = XNNDatatype.xnn_datatype_qint8
             else:
                 if quant_params.per_channel:
-                    dtype = (
-                        XNNDatatype.xnn_datatype_qcint32
-                        if quant_params.dtype == torch.int32
-                        else XNNDatatype.xnn_datatype_qcint8
-                    )
+                    dtype = get_per_channel_dtype(quant_params)
                 else:
                     dtype = (
                         XNNDatatype.xnn_datatype_qint32
@@ -335,6 +350,47 @@ class NodeVisitor:
         if quant_params is not None:
             vals_to_ids[quant_params.q_input] = id_out
 
+    @staticmethod
+    def convert_to_qc4w(inp: torch.Tensor) -> torch.Tensor:
+        """
+        Convert a tensor to a quantized channelwise tensor 4bit tensor
+        """
+
+        import torch.nn.functional as F
+
+        # Assert we got a properly quantized tensor.
+        min, max = inp.min().item(), inp.max().item()
+        assert (
+            max <= 7 and min >= -8
+        ), f"convert_to_qc4w: [min,max] out of [-8, 7] range, got [{min}, {max}]"
+
+        # Assuming we have a 2d tensor
+        if inp.ndim != 2:
+            inp = inp.squeeze()
+            assert (
+                inp.ndim == 2
+            ), f"convert_to_qc4w: expecting input tensor to be 2d, got {inp.ndim}"
+        oc, ic = inp.shape
+
+        # pad ic
+        if ic % 2 != 0:
+            inp = F.pad(input=inp, pad=(0, 1, 0, 0), mode="constant", value=0)
+
+        # Adjust inp tensor for zp
+        inp = inp.to(dtype=torch.uint8) + 8
+
+        # prepare result tensor
+        ric = int((ic + 1) / 2)
+        result = torch.zeros([oc, ric], dtype=torch.uint8)
+
+        for o in range(oc):
+            for i in range(ric):
+                j = 2 * i
+                result[o][i] = inp[o][j]
+                result[o][i] += inp[o][j + 1] << 4
+
+        return result
+
     def get_serialized_buffer(
         self,
         tensor: torch.fx.Node,
@@ -396,8 +452,12 @@ class NodeVisitor:
             const_val = const_val.permute(
                 dims=((1, 0) + tuple(range(2, const_val.dim())))
             ).contiguous()
+
         if convert_to_nhwc:
             const_val = const_val.to(memory_format=torch.channels_last)
+
+        if quant_params is not None and quant_params.is_qc4w:
+            const_val = self.convert_to_qc4w(const_val)
 
         array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
         array = ctypes.cast(

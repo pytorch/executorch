@@ -6,6 +6,9 @@
 
 import unittest
 
+from itertools import product
+from typing import Optional
+
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
@@ -16,6 +19,7 @@ from executorch.backends.xnnpack.test.tester.tester import Partition
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 
 
 class TestLinear(unittest.TestCase):
@@ -79,6 +83,43 @@ class TestLinear(unittest.TestCase):
                 inputs,
                 is_per_channel=True,
                 uses_bias=uses_bias,
+            )
+
+    @staticmethod
+    def _get_4b_dqconfig() -> QuantizationConfig:
+        """
+        Returns a QuantizationConfig for 4b dynamic quantization for XNNPACK.
+        """
+        qconfig: QuantizationConfig = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+            weight_qmin=-8,
+            weight_qmax=7,
+        )
+        return qconfig
+
+    def test_qd8_per_channel_4w_linear(self):
+        qconfig = self._get_4b_dqconfig()
+        input_channels = [2, 63]
+        output_channels = [1, 8, 127]
+        batches = [1, 2]
+        use_bias = [False, True]
+
+        for bs, bias, ipc, opc in product(
+            batches,
+            use_bias,
+            input_channels,
+            output_channels,
+        ):
+            inputs = (torch.rand(bs, ipc),)
+            module = torch.nn.Linear(ipc, opc, bias=bias)
+
+            self._test_dqlinear(
+                module,
+                inputs,
+                is_per_channel=True,
+                uses_bias=bias,
+                qconfig=qconfig,
             )
 
     def test_qd8_per_channel_linear_parallel(self):
@@ -298,7 +339,13 @@ class TestLinear(unittest.TestCase):
             tester.compare_outputs(qtol=quant)
 
     def _test_dqlinear(
-        self, module, inputs, linear_count=1, is_per_channel=False, uses_bias=False
+        self,
+        module,
+        inputs,
+        linear_count=1,
+        is_per_channel=False,
+        uses_bias=False,
+        qconfig: Optional[QuantizationConfig] = None,
     ):
         aten_op, edge_op = (
             (
@@ -312,7 +359,7 @@ class TestLinear(unittest.TestCase):
             )
         )
 
-        quant_config = get_symmetric_quantization_config(
+        quant_config = qconfig or get_symmetric_quantization_config(
             is_per_channel=is_per_channel,
             is_dynamic=True,
         )
