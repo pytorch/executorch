@@ -646,7 +646,7 @@ std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::string& 
 
 void InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_path,
                                    size_t alignment,
-                                   const MetadataReader& metadata_writer,
+                                   const MetadataWriter& metadata_writer,
                                    std::ostream& stream) const noexcept {
     auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
     if (!node) {
@@ -673,7 +673,7 @@ void InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_pat
 
 size_t InMemoryFileSystem::get_serialization_size(const std::vector<std::string>& canonical_path,
                                                   size_t alignment,
-                                                  const MetadataReader& metadata_writer) const noexcept {
+                                                  const MetadataWriter& metadata_writer) const noexcept {
 
     auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
     if (!node) {
@@ -696,7 +696,7 @@ size_t InMemoryFileSystem::get_serialization_size(const std::vector<std::string>
 }
 
 std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::shared_ptr<MemoryBuffer>& buffer,
-                                                             const MetadataWriter& metadata_reader) noexcept {
+                                                             const MetadataReader& metadata_reader) noexcept {
     // read metadata from the end of the stream
     auto istream = ReversedIMemoryStream(buffer);
     auto fs_metadata = metadata_reader(istream);
