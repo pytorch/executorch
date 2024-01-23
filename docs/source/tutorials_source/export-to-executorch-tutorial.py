@@ -116,10 +116,15 @@ print(aten_dialect)
 import traceback as tb
 
 
-def f(x, y):
-    return x + y
+class Basic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return x + y
 
 
+f = Basic()
 example_args = (torch.randn(3, 3), torch.randn(3, 3))
 pre_autograd_aten_dialect = capture_pre_autograd_graph(f, example_args)
 aten_dialect: ExportedProgram = export(f, example_args)
@@ -140,10 +145,15 @@ except Exception:
 from torch.export import Dim
 
 
-def f(x, y):
-    return x + y
+class Basic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return x + y
 
 
+f = Basic()
 example_args = (torch.randn(3, 3), torch.randn(3, 3))
 dim1_x = Dim("dim1_x", min=1, max=10)
 dynamic_shapes = {"x": {1: dim1_x}, "y": {1: dim1_x}}
