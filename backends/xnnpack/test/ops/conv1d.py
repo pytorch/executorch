@@ -81,9 +81,9 @@ class TestConv1d(unittest.TestCase):
             z = torch.add(y, z)
             return z
 
-    def _test_conv1d(self, module, inputs, conv_count):
+    def _test_conv1d(self, module, inputs, conv_count, quantized=False):
         (
-            Tester(module, inputs)
+            (Tester(module, inputs).quantize() if quantized else Tester(module, inputs))
             .export()
             .check_count({"torch.ops.aten.convolution.default": conv_count})
             .to_edge()
@@ -101,10 +101,18 @@ class TestConv1d(unittest.TestCase):
             .compare_outputs()
         )
 
-    def test_conv1d(self):
+    def test_fp32_conv1d(self):
         inputs = (torch.randn(1, 2, 4),)
         self._test_conv1d(self.Conv1d(), inputs, 1)
 
-    def test_conv1d_batchnorm_seq(self):
+    def test_fp32_conv1d_batchnorm_seq(self):
         inputs = (torch.randn(1, 2, 4),)
         self._test_conv1d(self.Conv1dBatchNormSequential(), inputs, 2)
+
+    def test_qs8_conv1d(self):
+        inputs = (torch.randn(1, 2, 4),)
+        self._test_conv1d(self.Conv1d(), inputs, 1, quantized=True)
+
+    def test_qs8_conv1d_batchnorm_seq(self):
+        inputs = (torch.randn(1, 2, 4),)
+        self._test_conv1d(self.Conv1dBatchNormSequential(), inputs, 2, quantized=True)
