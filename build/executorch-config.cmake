@@ -35,8 +35,14 @@ set_target_properties(
 )
 target_include_directories(portable_kernels INTERFACE ${_root})
 
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    set(FLATCC_LIB flatcc_d)
+else()
+    set(FLATCC_LIB flatcc)
+endif()
+
 set(lib_list
-    etdump bundled_program extension_data_loader flatcc mpsdelegate
+    etdump bundled_program extension_data_loader ${FLATCC_LIB} mpsdelegate
     qnn_executorch_backend
 )
 foreach(lib ${lib_list})

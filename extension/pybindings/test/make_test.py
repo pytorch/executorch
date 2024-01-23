@@ -7,12 +7,9 @@
 import unittest
 from typing import Any, Callable, Tuple
 
-import executorch.exir as exir
-
 import torch
-from executorch.exir import CaptureConfig
-from executorch.exir.print_program import pretty_print
-from executorch.exir.schema import Program
+from executorch.exir import ExecutorchProgramManager, to_edge
+from torch.export import export
 
 
 def make_test(  # noqa: C901
@@ -78,7 +75,7 @@ def make_test(  # noqa: C901
 
         def create_program(
             eager_module: torch.nn.Module,
-        ) -> Tuple[Program, Tuple[Any, ...]]:
+        ) -> Tuple[ExecutorchProgramManager, Tuple[Any, ...]]:
             """Returns an executorch program based on ModuleAdd, along with inputs."""
 
             # Trace the test module and create a serialized ExecuTorch program.
@@ -87,16 +84,25 @@ def make_test(  # noqa: C901
             for method in eager_module.get_methods_to_export():
                 input_map[method] = inputs
 
+            class WrapperModule(torch.nn.Module):
+                def __init__(self, fn):
+                    super().__init__()
+                    self.fn = fn
+
+                def forward(self, *args, **kwargs):
+                    return self.fn(*args, **kwargs)
+
+            exported_methods = {}
             # These cleanup passes are required to convert the `add` op to its out
             # variant, along with some other transformations.
-            exec_prog = (
-                exir.capture_multiple(eager_module, input_map, config=CaptureConfig())
-                .to_edge()
-                .to_executorch()
-            )
+            for method_name, method_input in input_map.items():
+                wrapped_mod = WrapperModule(getattr(eager_module, method_name))  # pyre-ignore[16]
+                exported_methods[method_name] = export(wrapped_mod, method_input)
+
+            exec_prog = to_edge(exported_methods).to_executorch()
 
             # Create the ExecuTorch program from the graph.
-            pretty_print(exec_prog.program)
+            exec_prog.dump_executorch_program(verbose=True)
             return (exec_prog, inputs)
 
         ######### TEST CASES #########
