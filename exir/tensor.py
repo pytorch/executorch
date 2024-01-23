@@ -148,6 +148,9 @@ class TensorSpec:
         self.alignment = new_alignment
         return self.allocated_memory
 
+    def nbytes(self) -> int:
+        return num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+
     @classmethod
     def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
         if const:
