@@ -22,6 +22,8 @@ from executorch.exir import (
     MultiMethodExirExportedProgram,
 )
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
+
+from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.serialize import deserialize, serialize
 from executorch.sdk.bundled_program.core import BundledProgram
 
@@ -54,10 +56,13 @@ def _handle_exported_program(
     etrecord_zip: ZipFile, module_name: str, method_name: str, ep: ExportedProgram
 ) -> None:
     assert isinstance(ep, ExportedProgram)
-    serialized_ep, serialized_state_dict = serialize(ep)
-    etrecord_zip.writestr(f"{module_name}/{method_name}", serialized_ep)
+    serialized_artifact = serialize(ep)
+    assert isinstance(serialized_artifact.exported_program, bytes)
     etrecord_zip.writestr(
-        f"{module_name}/{method_name}_state_dict", serialized_state_dict
+        f"{module_name}/{method_name}", serialized_artifact.exported_program
+    )
+    etrecord_zip.writestr(
+        f"{module_name}/{method_name}_state_dict", serialized_artifact.state_dict
     )
 
 
@@ -108,15 +113,16 @@ def _handle_export_module(
 def _handle_edge_dialect_exported_program(
     etrecord_zip: ZipFile, edge_dialect_exported_program: ExportedProgram
 ) -> None:
-    serialized_ep, serialized_state_dict = serialize(edge_dialect_exported_program)
+    serialized_artifact = serialize(edge_dialect_exported_program)
+    assert isinstance(serialized_artifact.exported_program, bytes)
 
     etrecord_zip.writestr(
         ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM,
-        serialized_ep,
+        serialized_artifact.exported_program,
     )
     etrecord_zip.writestr(
         f"{ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM}_state_dict",
-        serialized_state_dict,
+        serialized_artifact.state_dict,
     )
 
 
@@ -287,12 +293,14 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         elif entry == ETRecordReservedFileNames.ETRECORD_IDENTIFIER:
             continue
         elif entry == ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM:
-            edge_dialect_program = deserialize(
+            serialized_artifact = SerializedArtifact(
                 etrecord_zip.read(
                     ETRecordReservedFileNames.EDGE_DIALECT_EXPORTED_PROGRAM
                 ),
                 etrecord_zip.read(f"{entry}_state_dict"),
+                b"",
             )
+            edge_dialect_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
             # @lint-ignore PYTHONPICKLEISBAD
             reference_outputs = pickle.loads(
@@ -309,10 +317,12 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         assert (
             serialized_state_dict_file in serialized_state_dict_files
         ), f"Could not find corresponding state dict file for {serialized_file}."
-        graph_map[serialized_file] = deserialize(
+        serialized_artifact = SerializedArtifact(
             etrecord_zip.read(serialized_file),
             etrecord_zip.read(serialized_state_dict_file),
+            b"",
         )
+        graph_map[serialized_file] = deserialize(serialized_artifact)
 
     return ETRecord(
         edge_dialect_program=edge_dialect_program,

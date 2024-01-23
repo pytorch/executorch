@@ -16,8 +16,8 @@ from executorch.exir import ExecutorchProgram, ExirExportedProgram
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
 
 from executorch.exir.print_program import print_program
+from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -203,7 +203,7 @@ class TestMPS(unittest.TestCase):
 
         logging.info("  -> Test suites generated successfully")
 
-        bundled_program = create_bundled_program(executorch_program, method_test_suites)
+        bundled_program = BundledProgram(executorch_program, method_test_suites)
         bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )

@@ -8,10 +8,12 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
 
+#include <pybind11/iostream.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -23,6 +25,7 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/assert.h>
+#include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/bundled_program/bundled_program.h>
@@ -52,6 +55,21 @@
       throw std::runtime_error(msg_buf);                          \
     }                                                             \
   })
+
+// Our logs work by writing to stderr. By default this is done through fprintf
+// (as defined in Posix.cpp) which then does not show up in python environments.
+// Here we override the pal to use std::cerr which can be properly redirected by
+// scoped_estream_redirect.
+void et_pal_emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    __ET_UNUSED const char* function,
+    size_t line,
+    const char* message,
+    __ET_UNUSED size_t length) {
+  std::cerr << "[" << filename << ":" << line << "] " << message << std::endl;
+}
 
 namespace py = pybind11;
 namespace torch {
@@ -135,7 +153,9 @@ class Module final {
   /// outputs.
   std::vector<EValue> run_method(
       const std::string& method_name,
-      const std::vector<EValue>& args) {
+      const std::vector<EValue>& args,
+      const std::optional<std::vector<Span<uint8_t>>>& output_storages =
+          std::nullopt) {
     auto& method = methods_[method_name];
     exec_aten::ArrayRef<EValue> input_evalue_list(args.data(), args.size());
 
@@ -159,6 +179,27 @@ class Module final {
     c10::impl::ExcludeDispatchKeyGuard no_autograd(
         c10::autograd_dispatch_keyset);
 #endif
+    if (output_storages) {
+      if (output_storages->size() != method->outputs_size()) {
+        THROW_IF_ERROR(
+            Error(),
+            "number of output storages %zu does not match number of outputs %zu",
+            output_storages->size(),
+            method->outputs_size());
+      }
+      for (size_t i = 0; i < output_storages->size(); ++i) {
+        Error output_status = method->set_output_data_ptr(
+            (*output_storages)[i].data(), (*output_storages)[i].size(), i);
+        if (output_status != Error::Ok) {
+          // This can error if the outputs are already pre-allocated. Ignore
+          // this error because it doesn't affect correctness, but log it.
+          ET_LOG(
+              Error,
+              "ignoring error from set_output_data_ptr(): 0x%" PRIx32,
+              output_status);
+        }
+      }
+    }
     Error execute_status = method->execute();
     THROW_IF_ERROR(
         execute_status,
@@ -443,7 +484,34 @@ struct PyModule final {
       }
     }
 
-    auto outputs = module_->run_method(method_name, cpp_inputs);
+    const auto& method = module_->get_method(method_name);
+    const auto num_outputs = method.outputs_size();
+    // These output storages will not be used if the ExecuTorch program already
+    // pre-allocated output space. That is represented by an error from
+    // set_output_data_ptr.
+    std::vector<std::unique_ptr<uint8_t[]>> output_storages(num_outputs);
+    std::vector<Span<uint8_t>> output_storage_spans(num_outputs);
+    for (size_t i = 0; i < num_outputs; ++i) {
+      const auto& output_tensor_meta =
+          method.method_meta().output_tensor_meta(i);
+      if (!output_tensor_meta.ok()) {
+        // If the output isn't a tensor it won't have a tensor meta.
+        ET_LOG(
+            Info,
+            "Tensor meta doesn't exist for output %zu, error is 0x%" PRIx32
+            ", skipping allocating storage",
+            i,
+            output_tensor_meta.error());
+        output_storage_spans[i] = Span<uint8_t>();
+        continue;
+      }
+      const size_t output_size = output_tensor_meta.get().nbytes();
+      std::unique_ptr<uint8_t[]> output(new uint8_t[output_size]);
+      output_storage_spans[i] = Span<uint8_t>(output.get(), output_size);
+      output_storages[i] = std::move(output);
+    }
+    auto outputs =
+        module_->run_method(method_name, cpp_inputs, output_storage_spans);
 
     // Retrieve outputs
     const auto outputs_size = outputs.size();
@@ -500,6 +568,12 @@ struct PyModule final {
       fwrite((uint8_t*)result.buf, 1, result.size, f);
       fclose(f);
       free(result.buf);
+    } else {
+      ET_LOG(
+          Info,
+          "No etdump data found, try rebuilding with "
+          "the CMake option EXECUTORCH_ENABLE_EVENT_TRACER or with "
+          "buck run --config executorch.event_tracer_enabled=true");
     }
   }
 
@@ -547,41 +621,66 @@ void create_profile_block(const std::string& name) {
   EXECUTORCH_PROFILE_CREATE_BLOCK(name.c_str());
 }
 
+py::list get_operator_names() {
+  ArrayRef<Kernel> kernels = get_kernels();
+  py::list res;
+  for (const Kernel& k : kernels) {
+    if (k.name_ != nullptr) {
+      res.append(py::cast(k.name_));
+    }
+  }
+  return res;
+}
+
 } // namespace
 
 PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
+  // Redirects cout and cerr for function calls this guards to the python env.
+  auto call_guard = py::
+      call_guard<py::scoped_ostream_redirect, py::scoped_estream_redirect>();
   m.def(
       "_load_for_executorch",
       PyModule::load_from_file,
       py::arg("path"),
-      py::arg("enable_etdump") = false);
+      py::arg("enable_etdump") = false,
+      call_guard);
   m.def(
       "_load_for_executorch_from_buffer",
       &PyModule::load_from_buffer,
       py::arg("buffer"),
-      py::arg("enable_etdump") = false);
+      py::arg("enable_etdump") = false,
+      call_guard);
   m.def(
       "_load_for_executorch_from_bundled_program",
       &PyModule::load_from_bundled_program,
       py::arg("ptr"),
-      py::arg("enable_etdump") = false);
+      py::arg("enable_etdump") = false,
+      call_guard);
   m.def(
       "_load_bundled_program_from_buffer",
       &PyBundledModule::load_from_buffer,
       py::arg("buffer"),
-      py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE);
-  m.def("_dump_profile_results", []() {
-    prof_result_t prof_result;
-    EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-    return py::bytes(
-        reinterpret_cast<const char*>(prof_result.prof_data),
-        prof_result.num_bytes);
-  });
-  m.def("_create_profile_block", &create_profile_block);
-  m.def("_reset_profile_results", []() { EXECUTORCH_RESET_PROFILE_RESULTS(); });
+      py::arg("non_const_pool_size") = kDEFAULT_BUNDLED_INPUT_POOL_SIZE,
+      call_guard);
+  m.def(
+      "_dump_profile_results",
+      []() {
+        prof_result_t prof_result;
+        EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
+        return py::bytes(
+            reinterpret_cast<const char*>(prof_result.prof_data),
+            prof_result.num_bytes);
+      },
+      call_guard);
+  m.def("_get_operator_names", &get_operator_names);
+  m.def("_create_profile_block", &create_profile_block, call_guard);
+  m.def(
+      "_reset_profile_results",
+      []() { EXECUTORCH_RESET_PROFILE_RESULTS(); },
+      call_guard);
 
-  py::class_<PyModule>(m, "ExecutorchModule")
-      .def("load_bundled_input", &PyModule::load_bundled_input)
+  py::class_<PyModule>(m, "ExecuTorchModule")
+      .def("load_bundled_input", &PyModule::load_bundled_input, call_guard)
       .def(
           "verify_result_with_bundled_expected_output",
           &PyModule::verify_result_with_bundled_expected_output,
@@ -589,15 +688,18 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("method_name"),
           py::arg("testset_idx"),
           py::arg("rtol") = 1e-5,
-          py::arg("atol") = 1e-8)
-      .def("plan_execute", &PyModule::plan_execute)
-      .def("run_method", &PyModule::run_method)
-      .def("forward", &PyModule::forward)
-      .def("has_etdump", &PyModule::has_etdump)
+          py::arg("atol") = 1e-8,
+          call_guard)
+      .def("plan_execute", &PyModule::plan_execute, call_guard)
+      .def("run_method", &PyModule::run_method, call_guard)
+      .def("forward", &PyModule::forward, call_guard)
+      .def("has_etdump", &PyModule::has_etdump, call_guard)
       .def(
-          "write_etdump_result_to_file", &PyModule::write_etdump_result_to_file)
-      .def("__call__", &PyModule::forward)
-      .def("__call__", &PyModule::forward_single_input);
+          "write_etdump_result_to_file",
+          &PyModule::write_etdump_result_to_file,
+          call_guard)
+      .def("__call__", &PyModule::forward, call_guard)
+      .def("__call__", &PyModule::forward_single_input, call_guard);
 
   py::class_<PyBundledModule>(m, "BundledModule");
 }

@@ -19,7 +19,7 @@ install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory
-  pip install .
+  pip install . --no-build-isolation
   # Just print out the list of packages for debugging
   pip list
 }
@@ -119,4 +119,15 @@ build_executorch_runner() {
     echo "Invalid build tool $1. Only buck2 and cmake are supported atm"
     exit 1
   fi
+}
+
+cmake_install_executorch_lib() {
+  echo "Installing libexecutorch.a and libportable_kernels.a"
+  rm -rf cmake-out
+  retry cmake -DBUCK2="$BUCK" \
+          -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+          -Bcmake-out .
+  cmake --build cmake-out -j9 --target install --config Release
 }

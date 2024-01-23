@@ -43,7 +43,10 @@ def exported_headers(buck2: str, target: str) -> Set[str]:
     deps = query(buck2, target, "exported_deps")
     headers = set(query(buck2, target, "exported_headers"))
     headers.update(
-        header for dep in deps for header in exported_headers(buck2, dep.split()[0])
+        header
+        for dep in deps
+        for header in exported_headers(buck2, dep.split()[0])
+        if header.endswith(".h")
     )
     return headers
 

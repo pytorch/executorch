@@ -24,10 +24,12 @@ Tensor& gt_tensor_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  (void)ctx;
-
   // Determine output size and resize for dynamic shapes
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -67,8 +69,12 @@ Tensor& gt_scalar_out(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

@@ -87,6 +87,13 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
+option(EXECUTORCH_ENABLE_EVENT_TRACER
+       "Build with ET_EVENT_TRACER_ENABLED=ON"
+       OFF)
+if(EXECUTORCH_ENABLE_EVENT_TRACER)
+  add_definitions(-DET_EVENT_TRACER_ENABLED)
+endif()
+
 # -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
@@ -97,32 +104,12 @@ if(NOT APPLE)
 endif()
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
-# Option to register custom operator `my_ops::mul3` or `my_ops::mul4` or no
-# custom ops at all. Custom ops are defined in
-# `examples/portable/custom_ops/custom_ops_1.py` and
-# `examples/portable/custom_ops/custom_ops_2.cpp`.
-option(
-  REGISTER_EXAMPLE_CUSTOM_OP
-  "Register whether custom op 1 (my_ops::mul3) or custom op 2 (my_ops::mul4) \
-  or no custom op at all." OFF)
-
 # Option to register quantized ops with quantized kernels. See
 # kernels/quantized/CMakeLists.txt
 option(REGISTER_QUANTIZED_OPS
        "Register quantized ops defined in kernels/quantized/" OFF)
 
-option(BUILD_SELECTIVE_BUILD_TEST
-       "Whether to build binary for demo selective build" OFF)
-
 option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
-
-# Option to register op list
-option(EXECUTORCH_SELECT_OPS_LIST "Register the following list of ops" OFF)
-
-# Do not enable select all ops if any of the other select options is on.
-if(EXECUTORCH_SELECT_OPS_LIST OR EXECUTORCH_SELECT_OPS_YAML)
-  set(EXECUTORCH_SELECT_ALL_OPS OFF)
-endif()
 
 # Build xnn_executor_runner which depends on XNNPACK
 option(EXECUTORCH_BUILD_XNNPACK
@@ -131,14 +118,20 @@ option(EXECUTORCH_BUILD_XNNPACK
 option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
-option(EXECUTORCH_BUILD_EXAMPLES "Build the ExecuTorch examples.")
-option(EXECUTORCH_BUILD_XTENSA_EXAMPLE
-       "Build the example targeted for the Xtensa Hifi4 DSP" OFF)
-
 # Build mps_executor_runner which depends on MPSGraph framework
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
 
+# Build dataloader library
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
+       "Build the extension/data_loader directory" OFF)
+if(NOT BUCK2)
+  set(BUCK2 buck2)
+endif()
+
+# Build dataloader library
+option(EXECUTORCH_BUILD_EXTENSION_MODULE
+       "Build the extension/module directory" OFF)
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -245,6 +238,7 @@ add_subdirectory(schema)
 
 add_library(executorch ${_executorch__srcs})
 target_link_libraries(executorch PRIVATE program_schema)
+target_link_options_shared_lib(executorch)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
 # Check if the library was found
@@ -295,12 +289,6 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch portable_ops_lib gflags)
 
-  # Generate custom_ops_lib based on REGISTER_EXAMPLE_CUSTOM_OP
-  if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 1 OR REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/portable/custom_ops)
-    list(APPEND _executor_runner_libs custom_ops_lib)
-  endif()
-
   # Generate lib to register quantized ops
   if(REGISTER_QUANTIZED_OPS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
@@ -325,14 +313,14 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/util)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/sdk)
 endif()
 
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-       "Build the extension/data_loader directory" OFF)
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_MODULE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
 endif()
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
@@ -343,7 +331,6 @@ endif()
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/qualcomm)
 endif()
 
 # Build Arm Baremetal backend
@@ -353,10 +340,8 @@ if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
-option(EXECUTORCH_BUILD_MPS "Build the backends/apple/mps directory" OFF)
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/apple/mps)
 endif()
 
 # Build CoreML backend
@@ -371,23 +356,53 @@ if(EXECUTORCH_BUILD_COREML)
   endif()
 endif()
 
-# Add selective build subdirectory
-if(BUILD_SELECTIVE_BUILD_TEST)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/selective_build)
-endif()
+# Build pybind
+option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
+if(EXECUTORCH_BUILD_PYBIND)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
 
-# Add size test subdirectory
-if(EXECUTORCH_BUILD_SIZE_TEST)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/test)
-endif()
+  # find pytorch lib, to allow pybind to take at::Tensor as input/output
+  find_package(Torch CONFIG REQUIRED)
+  find_library(TORCH_PYTHON_LIBRARY torch_python
+               PATHS "${TORCH_INSTALL_PREFIX}/lib")
 
-if(EXECUTORCH_BUILD_EXAMPLES)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples)
-endif()
+  # compile options for pybind
 
-if(EXECUTORCH_BUILD_XTENSA_EXAMPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/xtensa)
-endif()
+  set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti
+                              -fexceptions)
+  # util lib
+  add_library(
+    util
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
+  )
+  target_include_directories(util PUBLIC ${_common_include_directories}
+                                         ${TORCH_INCLUDE_DIRS})
+  target_compile_options(util PUBLIC ${_pybind_compile_options})
+  target_link_libraries(util PRIVATE torch c10 executorch)
 
+  # pybind portable_lib
+  pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
+  target_compile_definitions(portable_lib
+                             PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
+  target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
+  target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
+  target_link_libraries(
+    portable_lib
+    PUBLIC ${TORCH_PYTHON_LIBRARY}
+           portable_ops_lib
+           executorch
+           extension_data_loader
+           bundled_program
+           etdump
+           flatcc
+           util)
+
+  install(TARGETS portable_lib
+          LIBRARY DESTINATION executorch/extension/pybindings)
+endif()
 # Print all summary
 executorch_print_configuration_summary()

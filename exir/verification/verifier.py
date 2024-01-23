@@ -144,6 +144,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
 
         def __init__(self) -> None:
             self.check_edge_ops = check_edge_ops
+            self.aten_op_verifier = EXIRATenDialectVerifier()
+            self.check_valid_aten_op = self.aten_op_verifier.check_valid_op
 
             if self.check_edge_ops:
                 self.check_valid_op = self.check_valid_edge_op
@@ -177,20 +179,6 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 self.check_valid_aten_op(op._op)
             if isinstance(op, types.FunctionType):
                 assert op.__name__ in ("alloc",)
-
-        def check_valid_aten_op(self, op) -> None:
-            if isinstance(op, OpOverload):
-                if (
-                    torch.Tag.core not in op.tags  # type: ignore[attr-defined]
-                    and torch.Tag.view_copy not in op.tags  # type: ignore[attr-defined]
-                ):
-                    # NOTE(qihan): whether view_copy operators are marked as canonical is still under
-                    #            discussion.
-                    raise SpecViolationError(
-                        "Operator {}.{} is not Aten Canonical.".format(
-                            op.__module__, op.__name__
-                        )
-                    )
 
         def check_additional(self, gm: GraphModule) -> None:
             if not enable:

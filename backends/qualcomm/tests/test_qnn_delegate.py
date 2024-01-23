@@ -3,1187 +3,1066 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import math
+import argparse
+import json
+import subprocess
+import sys
 import unittest
+from multiprocessing.connection import Listener
 
 import torch
+from executorch.backends.qualcomm.tests.utils import TestQNN
 
-from executorch.backends.qualcomm.tests.qnn_test_utils import (
-    get_qdq_module,
-    save_model_and_expected_output,
-    TestQNN,
+from executorch.backends.qualcomm.utils.utils import (
+    generate_qnn_executorch_compiler_spec,
 )
+from executorch.backends.qualcomm.tests.models import *  # noqa: F403
+
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
+from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 from executorch.exir.backend.backend_api import disable_validation
 
 
-@unittest.skip("skip this for now until e2e test is enabled")
-class TestQNNFloatingPoint(TestQNN):
-    def test_qnn_backend_sequential_conv2d(self):
-        class TwoConv(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.first = torch.nn.Conv2d(
-                    in_channels=1,
-                    out_channels=3,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=True,
-                )
-                self.second = torch.nn.Conv2d(
-                    in_channels=3,
-                    out_channels=2,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=True,
-                )
-
-            def forward(self, x):
-                return self.second(self.first(x))
-
-        instance = TwoConv()
-        example_inputs = (torch.ones([1, 1, 3, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
+class TestQNNFloatingPointOperator(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1e-1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=True,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
         )
-        model_name = "qnn_two_conv2d_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_element_wise_add(self):
-        class Add(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.add = torch.add
-
-            def forward(self, x, y):
-                return self.add(x, y)
-
-        instance = Add()
-        example_inputs = (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_add_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_relu(self):
-        class Relu(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.relu = torch.nn.ReLU()
-
-            def forward(self, x):
-                return self.relu(x)
-
-        instance = Relu()
-        example_inputs = (torch.ones([2, 5, 1, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_relu_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_hardtanh(self):
-        class Hardtanh(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
-
-            def forward(self, x):
-                return self.hardtanh(x)
-
-        instance = Hardtanh()
-        example_inputs = (torch.ones([2, 5, 1, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_hardtanh_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_mean_dim(self):
-        class MeanDim(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.mean(x, (-1, -2), keepdim=True)
-
-        instance = MeanDim()
-        example_inputs = (torch.ones([2, 5, 1, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_mean_dim_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_linear(self):
-        class Linear(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(4, 5).eval()
-
-            def forward(self, x):
-                return self.linear(x)
-
-        instance = Linear()
-        example_inputs = (torch.ones([3, 4]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_linear_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_reshape(self):
-        class Reshape(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return x.reshape(1, 12)
-
-        instance = Reshape()
-        example_inputs = (torch.ones([3, 4]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_reshape_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_sequential_conv2d_bn_hardtanh_mean(self):
-        groups = 1
-        stride = [2, 2]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 1
-        out_channels = 1
-
-        class Conv2dBnHardtanhMeanSequenceModule(torch.nn.Module):
-            def __init__(self):
-                super(Conv2dBnHardtanhMeanSequenceModule, self).__init__()
-                self.conv = torch.nn.Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=(3, 3),
-                    stride=stride,
-                    padding=padding,
-                    groups=groups,
-                    dilation=dilation,
-                    bias=True,
-                )
-                self.conv.weight = torch.nn.Parameter(
-                    10 * torch.randn(self.conv.weight.size())
-                )
-                self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=100)
-                self.eval()
-
-            def forward(self, x):
-                x1 = self.conv(x)
-                x2 = self.native_batchnorm(x1)
-                x3 = self.hardtanh(x2)
-                x4 = torch.mean(x3, (1), keepdim=True)
-                return x4
-
-        instance = Conv2dBnHardtanhMeanSequenceModule()
-        example_inputs = (torch.ones(1, 1, 6, 6),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_conv2d_bn_hardtanh_mean_sequence_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_residual_block(self):
-        groups = 1
-        stride = [1, 1]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 32
-        out_channels = 32
-
-        class ResidualBlockModule(torch.nn.Module):
-            def __init__(self):
-                super(ResidualBlockModule, self).__init__()
-                self.conv = torch.nn.Conv2d(
-                    in_channels=in_channels,
-                    out_channels=out_channels,
-                    kernel_size=(3, 3),
-                    stride=stride,
-                    padding=padding,
-                    groups=groups,
-                    dilation=dilation,
-                    bias=True,
-                )
-                self.conv.weight = torch.nn.Parameter(
-                    10 * torch.randn(self.conv.weight.size())
-                )
-                self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=1000)
-                self.eval()
-
-            def forward(self, x):
-                x1 = self.conv(x)
-                x2 = self.native_batchnorm(x1)
-                x3 = self.conv(x2)
-                x4 = self.native_batchnorm(x3)
-                x5 = self.hardtanh(x4)
-                x6 = torch.add(x5, x2)
-                return x6
-
-        instance = ResidualBlockModule()
-        example_inputs = (torch.ones(1, in_channels, 28, 28),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_residual_block_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_mobilenet_v2(self):
-        from executorch.examples.models.mobilenet_v2 import MV2Model
-
-        instance = MV2Model().get_eager_model().eval()
-        example_inputs = MV2Model().get_example_inputs()
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_mobilenet_v2_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_select_copy(self):
-        class SelectCopy(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv = torch.nn.Conv2d(
-                    in_channels=3,
-                    out_channels=2,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=True,
-                )
-
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=1000)
-
-            def forward(self, x):
-                return self.conv(x)[0, 1, 1:2]
-
-        instance = SelectCopy()
-        example_inputs = (torch.randn([1, 3, 3, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_select_copy_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_unsqueeze(self):
-        class Unsqueeze(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return x.unsqueeze(0)
-
-        instance = Unsqueeze()
-        example_inputs = (torch.randn([1, 3, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_unsqueeze_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_mul(self):
-        class Mul(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                return x * y
-
-        instance = Mul()
-        example_inputs = (torch.randn([1, 3, 3]), torch.randn([1, 3, 3]))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_mul_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_cat2(self):
-        class Cat(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                return torch.cat((x, y), axis=2)
-
-        instance = Cat()
-        example_inputs = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_cat2_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_cat3(self):
-        class Cat(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                return torch.concat((y, y, x), axis=2)
-
-        instance = Cat()
-        example_inputs = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_cat3_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_cat4(self):
-        class Cat(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                return torch.cat((y, y, x, x), axis=2)
-
-        instance = Cat()
-        example_inputs = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_cat4_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_deeplabv3(self):
-        instance = DeepLabV3ResNet101Model().get_eager_model().eval()
-        example_inputs = DeepLabV3ResNet101Model().get_example_inputs()
-        # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
-        disable_validation()
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_deeplabv3_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_maxpool2d(self):
-        class MaxPool2d(torch.nn.Module):
-            def __init__(
-                self,
-                kernel_size=3,
-                stride=1,
-                padding=1,
-                dilation=1,
-            ):
-                super().__init__()
-                self.max_pool2d_module = torch.nn.MaxPool2d(
-                    kernel_size=kernel_size,
-                    stride=stride,
-                    padding=padding,
-                    dilation=dilation,
-                    ceil_mode=True,
-                )
-
-            def forward(self, x):
-                return self.max_pool2d_module(x)
-
-        instance = MaxPool2d()
-        example_inputs = (torch.randn(4, 3, 24, 24),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_maxpool2d_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
     def test_qnn_backend_arange(self):
-        class Arange(torch.nn.Module):
-            def __init__(self, x):
-                super().__init__()
-                self.x = x
-
-            def forward(self, y):
-                return torch.arange(self.x, dtype=torch.float32) + y
-
-        instance = Arange(5)
-        example_inputs = (torch.randn(5),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_arange_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_clamp(self):
-        class Clamp(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.clamp(x, max=0)
-
-        instance = Clamp()
-        example_inputs = (torch.randn((9, 4, 5, 3)),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_clamp_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_cast(self):
-        class Cast(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return x.type(torch.IntTensor)
-
-        instance = Cast()
-        example_inputs = (10 * torch.rand((9, 4, 5, 3)),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_cast_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_element_wise_sub(self):
-        class Sub(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.sub = torch.sub
-
-            def forward(self, x, y):
-                return self.sub(x, y)
-
-        instance = Sub()
-        example_inputs = (
-            torch.ones([2, 5, 1, 3]),
-            torch.ones([4, 1]),
-        )
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_sub_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_element_wise_ceil(self):
-        class Ceil(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.ceil = torch.ceil
-
-            def forward(self, x):
-                return self.ceil(x)
-
-        instance = Ceil()
-        example_inputs = (torch.randn([2, 5, 1, 3]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_ceil_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_element_wise_sub_constant(self):
-        class Sub(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, extended_attention_mask):
-                dtype = extended_attention_mask.dtype
-                return (1.0 - extended_attention_mask) * torch.finfo(dtype).min
-
-        instance = Sub()
-        example_inputs = (torch.ones([28], dtype=torch.float32),)
-        buffer = self.lower_module_and_test_output(
-            instance,
-            example_inputs,
-            is_fp16=True,
-        )
-        model_name = "qnn_sub_constant_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_interpolate(self):
-        class StaticResizeBilinear2DSizeModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                output_shape = [dim * 2 for dim in x.shape[-2:]]
-                a = torch.nn.functional.interpolate(
-                    x,
-                    size=list(torch.randn(output_shape).shape),
-                    mode="bilinear",
-                    align_corners=False,
-                )
-                return a
-
-        instance = StaticResizeBilinear2DSizeModule()
-        example_inputs = (torch.randn(2, 3, 4, 5),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_interpolate_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_inceptionv4(self):
-        model = InceptionV4Model()
-        instance = model.get_eager_model().eval()
-        example_inputs = model.get_example_inputs()
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_inceptionv4_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+        module = Arange(5)  # noqa: F405
+        sample_input = (torch.randn(5),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_avg_pool2d(self):
-        class AvgPoolModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.avgPool = torch.nn.AvgPool2d(
-                    kernel_size=(2, 2),
-                    padding=(1, 1),
-                    stride=(1, 1),
-                    count_include_pad=False,
-                )
-
-            def forward(self, x):
-                return self.avgPool(x)
-
-        instance = AvgPoolModule()
-
-        example_inputs = (torch.ones(1, 3, 2, 2),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_avg_pool2d_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_element_wise_div(self):
-        class Div(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.div = torch.divide
-
-            def forward(self, x, y):
-                return self.div(x, y)
-
-        instance = Div()
-        example_inputs = (
-            torch.randn([2, 5, 1, 3]),
-            torch.randn([4, 1]),
-        )
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_div_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_slice_copy(self):
-        class SliceCopy(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.position_ids = torch.randn([1, 512])
-
-            def forward(self, x, y):
-                seq_length = y.size()[1]
-                return x[:, :seq_length] + self.position_ids[:, :seq_length]
-
-        instance = SliceCopy()
-        example_inputs = (
-            torch.randn([1, 512]),
-            torch.randn([1, 8]),
-        )
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_slice_copy_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_softmax(self):
-        class Softmax(torch.nn.Module):
-            def forward(self, x):
-                return torch.nn.functional.softmax(x, dim=-1)
-
-        instance = Softmax()
-        example_inputs = (torch.randn([1, 4, 8, 8]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_softmax_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_pad(self):
-        class Pad(torch.nn.Module):
-            def forward(self, x):
-                return torch.nn.functional.pad(
-                    x[:, 1:], [0, 0, 0, 1, 0, 0], value=0.0, mode="constant"
-                )
-
-        instance = Pad()
-        example_inputs = (torch.randn([1, 8, 128]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_pad_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+        module = AvgPoolModule()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 2, 2),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_bmm(self):
-        class Bmm(torch.nn.Module):
-            def forward(self, x, y):
-                return torch.matmul(x, y)
+        module = Bmm()  # noqa: F405
+        sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
+        self.lower_module_and_test_output(module, sample_input)
 
-        instance = Bmm()
-        example_inputs = (
-            torch.randn([4, 8, 32]),
-            torch.randn([4, 32, 8]),
-        )
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_bmm_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+    def test_qnn_backend_cast(self):
+        module = Cast()  # noqa: F405
+        sample_input = (10 * torch.rand((9, 4, 5, 3)),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cat(self):
+        modules = [Cat2(), Cat3(), Cat4()]  # noqa: F405
+        sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_clamp(self):
+        module = Clamp()  # noqa: F405
+        sample_input = (torch.randn((9, 4, 5, 3)),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d(self):
+        module = ConvSequential()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_element_wise_add(self):
+        test_comb = [
+            {
+                "module": [Add()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [AddConstantFloat()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    def test_qnn_backend_element_wise_ceil(self):
+        module = Ceil()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_element_wise_div(self):
+        test_comb = [
+            {
+                "module": [Div()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [DivConstantFloat()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    def test_qnn_backend_element_wise_mul(self):
+        test_comb = [
+            {
+                "module": [Mul()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [MulConstantFloat()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    @unittest.skip("not yet implemented")
+    def test_qnn_backend_element_wise_sqrt(self):
+        modules = [Sqrt(), SqrtConstant()]  # noqa: F405
+        sample_input = (torch.randn([3, 1]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_element_wise_sub(self):
+        test_comb = [
+            {
+                "module": [Sub()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [SubConstantFloat()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
 
     @unittest.expectedFailure
     def test_qnn_backend_embedding(self):
-        class Embedding(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.embedding = torch.nn.Embedding(10, 3)
-
-            def forward(self, x):
-                return self.embedding(x)
-
-        instance = Embedding()
+        module = Embedding()  # noqa: F405
         # QNN does not support int64 datatype
-        example_inputs = (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_embedding_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_view(self):
-        class View(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.first_size = 2
-                self.second_size = 256
-
-            def forward(self, x, y):
-                new_shape = x.size()[:-1] + (self.first_size, self.second_size)
-                x = x.view(new_shape)
-                x = x.permute(0, 2, 1, 3)
-                return torch.matmul(x, y.transpose(-1, -2))
-
-        instance = View()
-        example_inputs = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_view_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+        sample_input = (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_expand_copy(self):
-        class ExpandCopy(torch.nn.Module):
-            def forward(self, x):
-                return x.expand(3, 4)
-
-        instance = ExpandCopy()
-        example_inputs = (torch.randn([3, 1]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_expand_copy_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_mobilebert(self):
-        instance = MobileBertModelExample().get_eager_model().eval()
-        example_inputs = MobileBertModelExample().get_example_inputs()
-        # TODO: Due to triggering maximum recursion depth exceeded, need to check it.
-        disable_validation()
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_mobilebert_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_sqrt(self):
-        class Sqrt(torch.nn.Module):
-            def forward(self, x):
-                return x / math.sqrt(64)
-
-        instance = Sqrt()
-        example_inputs = (torch.ones([3, 1]),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_sqrt_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_hardswish(self):
-        class Hardswish(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.hardswish = torch.nn.Hardswish()
-
-            def forward(self, x):
-                return self.hardswish(x)
-
-        instance = Hardswish()
-        example_inputs = (torch.randn(2, 5, 1, 3),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
-        )
-        model_name = "qnn_hardswish_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+        module = ExpandCopy()  # noqa: F405
+        sample_input = (torch.randn([3, 1]),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_hardsigmoid(self):
-        class Hardswigmoid(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.hardsigmoid = torch.nn.Hardsigmoid()
+        module = HardSigmoid()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
 
-            def forward(self, x):
-                return self.hardsigmoid(x)
+    def test_qnn_backend_hardswish(self):
+        module = HardSwish()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
 
-        instance = Hardswigmoid()
-        example_inputs = (torch.randn(2, 5, 1, 3),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
+    def test_qnn_backend_hardtanh(self):
+        module = HardTanh()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_interpolate(self):
+        module = StaticResizeBilinear2DSizeModule()  # noqa: F405
+        sample_input = (torch.randn(2, 3, 4, 5),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_linear(self):
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_max_pool2d(self):
+        module = MaxPool2d()  # noqa: F405
+        sample_input = (torch.randn(4, 3, 24, 24),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_mean_dim(self):
+        modules = [MeanWKeppDim(), MeanWOKeppDim()]  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pad(self):
+        module = Pad()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 128]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pixel_shuffle(self):
+        module = PixelShuffle()  # noqa: F405
+        sample_input = (torch.ones([2, 4, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_relu(self):
+        module = Relu()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_reshape(self):
+        module = Reshape()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_select_copy(self):
+        module = SelectCopy()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_slice_copy(self):
+        module = SliceCopy()  # noqa: F405
+        sample_input = (
+            torch.randn([1, 512]),
+            torch.randn([1, 8]),
         )
-        model_name = "qnn_hardsigmoid_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_softmax(self):
+        module = Softmax()  # noqa: F405
+        sample_input = (torch.randn([1, 4, 8, 8]),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_tanh(self):
-        class Tanh(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
+        module = Tanh()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
 
-            def forward(self, x):
-                return torch.tanh(x)
+    def test_qnn_backend_unsqueeze(self):
+        module = Unsqueeze()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
 
-        instance = Tanh()
-        example_inputs = (torch.randn(2, 5, 1, 3),)
-        buffer = self.lower_module_and_test_output(
-            instance, example_inputs, is_fp16=True
+    def test_qnn_backend_view(self):
+        module = View()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        self.lower_module_and_test_output(module, sample_input)
+
+
+class TestQNNFloatingPointModel(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1e-1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=True,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
         )
-        model_name = "qnn_tanh_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
-    def test_qnn_backend_mobilenet_v3(self):
-        model = MV3Model()
-        instance = model.get_eager_model().eval()
-        example_inputs = model.get_example_inputs()
-        buffer = self.lower_module_and_test_output(instance, example_inputs)
-        model_name = "qnn_mobilenet_v3_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+    def test_qnn_backend_conv2d_avg_pool2d(self):
+        module = Conv2dAvgPool2d()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 16, 16),)
+        self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_edsr(self):
-        model = EdsrModel()
-        instance = model.get_eager_model().eval()
-        example_inputs = model.get_example_inputs()
-        buffer = self.lower_module_and_test_output(instance, example_inputs)
-        model_name = "qnn_edsr_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+    def test_qnn_backend_conv2d_bn_hardtanh_mean(self):
+        module = Conv2dBnHardtanhMean()  # noqa: F405
+        sample_input = (torch.randn(1, 1, 6, 6),)
+        self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv2d_cat(self):
+        module = Conv2dCat()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 5, 5), torch.randn(1, 3, 5, 5))
+        self.lower_module_and_test_output(module, sample_input)
 
-@unittest.skip("skip this for now until e2e test is enabled")
-class TestQNNQuantized(TestQNN):
-    def test_qnn_backend_ptq_sequential_conv2d(self):
-        class TwoConv(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.first = torch.nn.Conv2d(
-                    in_channels=1,
-                    out_channels=3,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=True,
-                )
-                self.second = torch.nn.Conv2d(
-                    in_channels=3,
-                    out_channels=2,
-                    kernel_size=(3, 3),
-                    padding=1,
-                    bias=True,
-                )
+    def test_qnn_backend_conv2d_max_pool2d(self):
+        module = Conv2dMaxPool2d()  # noqa: F405
+        sample_input = (torch.rand(1, 2, 14, 14),)
+        self.lower_module_and_test_output(module, sample_input)
 
-            def forward(self, x):
-                return self.second(self.first(x))
+    def test_qnn_backend_residual_block(self):
+        module = ResidualBlockModule()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        self.lower_module_and_test_output(module, sample_input)
 
-        instance = TwoConv()
-        example_inputs = (torch.randn([1, 1, 3, 3]),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_two_conv2d_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+    def test_qnn_backend_simple_model(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_ptq_element_wise_add(self):
-        class Add(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.add = torch.add
+    def test_qnn_backend_view_permute_matmul(self):
+        module = ViewPermuteMatMul()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        self.lower_module_and_test_output(module, sample_input)
 
-            def forward(self, x, y):
-                return self.add(x, y)
-
-        example_inputs = (
-            torch.ones([2, 5, 1, 3]),
-            torch.ones([4, 1]),
-        )
-        quant_instance = get_qdq_module(Add(), example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_add_model"
-        save_model_and_expected_output(Add(), buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_relu(self):
-        class Relu(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.relu = torch.nn.ReLU()
-
-            def forward(self, x):
-                return self.relu(x)
-
-        example_inputs = (torch.ones([2, 5, 1, 3]),)
-        quant_instance = get_qdq_module(Relu(), example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_relu_model"
-        save_model_and_expected_output(Relu(), buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_linear(self):
-        class Linear(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(4, 5).eval()
-
-            def forward(self, x):
-                return self.linear(x)
-
-        example_inputs = (torch.ones([3, 4]),)
-        instance = Linear()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_linear_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_simple_model(self):
-        class SimpleModel(torch.nn.Module):
-            k_sz = 32
-
-            def __init__(self):
-                super().__init__()
-                self.conv1 = torch.nn.Conv2d(
-                    self.k_sz, self.k_sz, 3, padding=1, bias=True
-                )
-                self.conv2 = torch.nn.Conv2d(
-                    self.k_sz, self.k_sz, 3, padding=1, bias=True
-                )
-                self.conv3 = torch.nn.Conv2d(
-                    self.k_sz, self.k_sz, 3, padding=1, bias=False
-                )
-                self.conv4 = torch.nn.Conv2d(
-                    self.k_sz, self.k_sz, 3, padding=1, bias=False
-                )
-                self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
-                self.relu = torch.nn.ReLU()
-                self.batch_norm = torch.nn.BatchNorm2d(self.k_sz)
-                self.add = torch.add
-                self.mean = torch.mean
-                self.reshape = torch.reshape
-                self.linear = torch.nn.Linear(4, 10)
-                self.permute = torch.permute
-                self.eval()
-
-            def forward(self, x, y):
-                x1 = self.conv1(x)
-                x2 = self.batch_norm(x1)
-                x3 = self.relu(x2)
-                x4 = self.conv2(x3)
-                x5 = self.relu(x4)
-                y1 = self.conv3(y)
-                y2 = self.batch_norm(y1)
-                y3 = self.relu(y2)
-                y4 = self.conv4(y3)
-                y5 = self.relu(y4)
-                z = self.add(x5, y5)
-                z1 = self.permute(z, (0, 3, 2, 1))
-                z2 = torch.mean(z1, [1, 2], True)
-                z3 = self.reshape(z2, (8, -1))
-                z4 = self.linear(z3)
-                z5 = self.hardtanh(z4)
-                return z5
-
-        instance = SimpleModel()
-        k_sz = instance.k_sz
-        example_inputs = (torch.ones(1, k_sz, 28, 28), torch.ones(1, k_sz, 28, 28))
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_simple_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_maxpool2d(self):
-        class ConvMaxPool2d(torch.nn.Module):
-            def __init__(self):
-                super(ConvMaxPool2d, self).__init__()
-                self.conv = torch.nn.Conv2d(
-                    in_channels=2,
-                    out_channels=2,
-                    kernel_size=(1, 1),
-                    padding=1,
-                    bias=True,
-                )
-                self.pool = torch.nn.MaxPool2d(1, 1)
-
-            def forward(self, x):
-                return self.pool(self.conv(x))
-
-        example_inputs = (torch.rand(1, 2, 14, 14),)
-        instance = ConvMaxPool2d()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_maxpool2d_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_avgpool2d(self):
-        class Conv2dAvgPool2d(torch.nn.Module):
-            def __init__(
-                self,
-            ):
-                super().__init__()
-                self.conv = torch.nn.Conv2d(
-                    3, 16, 7, bias=True, stride=2, padding=3, dilation=1
-                )
-                self.avgpool = torch.nn.AvgPool2d(3, stride=2, padding=1)
-
-            def forward(self, x):
-                return self.avgpool(self.conv(x))
-
-        example_inputs = (torch.randn(16, 3, 16, 16),)
-        instance = Conv2dAvgPool2d()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_avgpool2d_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_cat(self):
-        class Conv2dWithCat(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.conv1 = torch.nn.Conv2d(3, 3, 3)
-                self.conv2 = torch.nn.Conv2d(3, 3, 3)
-
-            def forward(self, x, y):
-                x = self.conv1(x)
-                y = self.conv2(y)
-                z = torch.cat([x, y], dim=1)
-                return z
-
-        example_inputs = (
-            torch.randn(1, 3, 5, 5),
-            torch.randn(1, 3, 5, 5),
-        )
-        instance = Conv2dWithCat()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_cat_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_interpolate(self):
-        class StaticResizeBilinear2DSizeModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                output_shape = [dim * 2 for dim in x.shape[-2:]]
-                a = torch.nn.functional.interpolate(
-                    x,
-                    size=list(torch.randn(output_shape).shape),
-                    mode="bilinear",
-                    align_corners=False,
-                )
-                return a
-
-        instance = StaticResizeBilinear2DSizeModule()
-        example_inputs = (torch.randn(2, 3, 4, 5),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_interpolate_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_unsqueeze(self):
-        class Unsqueeze(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.linear = torch.nn.Linear(4, 5)
-
-            def forward(self, x):
-                return x[:, None, None, :]
-
-        example_inputs = (torch.ones([3, 4]),)
-        instance = Unsqueeze()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_unsqueeze_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_constant_mul(self):
-        class ConstantMul(torch.nn.Module):
-            def forward(self, x):
-                return x * 255
-
-        example_inputs = (torch.ones([3, 4]),)
-        instance = ConstantMul()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_constant_mul_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_hardswish(self):
-        class Hardswish(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.hardswish = torch.nn.Hardswish()
-
-            def forward(self, x):
-                return self.hardswish(x)
-
-        instance = Hardswish()
-        example_inputs = (torch.randn(2, 5, 1, 3),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_hardswish_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_hardsigmoid(self):
-        class Hardswigmoid(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.hardsigmoid = torch.nn.Hardsigmoid()
-
-            def forward(self, x):
-                return self.hardsigmoid(x)
-
-        instance = Hardswigmoid()
-        example_inputs = (torch.randn(2, 5, 3, 3),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_hardsigmoid_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_bmm(self):
-        class Bmm(torch.nn.Module):
-            def forward(self, x, y):
-                return torch.matmul(x, y)
-
-        instance = Bmm()
-        example_inputs = (
-            torch.randn([4, 8, 32]),
-            torch.randn([4, 32, 8]),
-        )
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_bmm_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_mean_dim(self):
-        class MeanDim(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x):
-                return torch.mean(x, (-1, -2), keepdim=True)
-
-        instance = MeanDim()
-        example_inputs = (torch.ones([2, 5, 1, 3]),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_mean_dim_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_pixel_shuffle(self):
-        class PixelShuffle(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.pixel_shuffle = torch.nn.PixelShuffle(2)
-
-            def forward(self, x):
-                return self.pixel_shuffle(x)
-
-        instance = PixelShuffle()
-        example_inputs = (torch.ones([2, 4, 3, 3]),)
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_pixel_shuffle_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_mobilenet_v2(self):
-        model = MV2Model()
-        instance = model.get_eager_model().eval()
-        example_inputs = model.get_example_inputs()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_mobilenet_v2_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_mobilenet_v3(self):
-        model = MV3Model()
-        instance = model.get_eager_model().eval()
-        example_inputs = model.get_example_inputs()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_mobilenet_v3_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_inceptionv4(self):
-        instance = InceptionV4Model().get_eager_model().eval()
-        example_inputs = InceptionV4Model().get_example_inputs()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_inceptionv4_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
-
-    def test_qnn_backend_ptq_deeplabv3(self):
-        instance = DeepLabV3ResNet101Model().get_eager_model().eval()
-        example_inputs = DeepLabV3ResNet101Model().get_example_inputs()
-        quant_instance = get_qdq_module(instance, example_inputs)
+    def test_qnn_backend_example_models(self):
+        instances = [
+            DeepLabV3ResNet101Model(),
+            EdsrModel(),
+            InceptionV3Model(),
+            InceptionV4Model(),
+            MV2Model(),
+            MV3Model(),
+            MobileBertModelExample(),
+        ]
+        expected_partitions = [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+        ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
         disable_validation()
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_deeplabv3_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+        for i, instance in enumerate(instances):
+            with self.subTest(i=i):
+                module = instance.get_eager_model().eval()
+                sample_input = instance.get_example_inputs()
+                self.lower_module_and_test_output(
+                    module,
+                    sample_input,
+                    expected_partitions=expected_partitions[i],
+                    assert_output_equal=False,
+                )
 
-    def test_qnn_backend_ptq_edsr(self):
-        from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 
-        model = EdsrModel()
-        instance = model.get_eager_model().eval()
-        example_inputs = model.get_example_inputs()
-        quant_instance = get_qdq_module(
-            instance,
-            example_inputs,
-            is_conv_per_channel=False,
-            custom_quant_annotations=(annotate_forward,),
+class TestQNNQuantizedOperator(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=False,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
         )
-        buffer = self.lower_module_and_test_output(quant_instance, example_inputs)
-        model_name = "ptq_qnn_edsr_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
 
-    def test_qnn_backend_ptq_mobilebert(self):
-        instance = MobileBertModelExample().get_eager_model().eval()
-        example_inputs = MobileBertModelExample().get_example_inputs()
-        quant_instance = get_qdq_module(instance, example_inputs)
-        # TODO: Due to triggering maximum recursion depth exceeded, need to check it.
+    def test_qnn_backend_arange(self):
+        module = Arange(5)  # noqa: F405
+        sample_input = (torch.randn(5),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_avg_pool2d(self):
+        module = AvgPoolModule()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 2, 2),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_bmm(self):
+        module = Bmm()  # noqa: F405
+        sample_input = (torch.randn([4, 8, 32]), torch.randn([4, 32, 8]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skip("not applicable")
+    def test_qnn_backend_cast(self):
+        module = Cast()  # noqa: F405
+        sample_input = (10 * torch.rand((9, 4, 5, 3)),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_cat(self):
+        modules = [Cat2(), Cat3(), Cat4()]  # noqa: F405
+        sample_input = (torch.randn(1, 1, 2, 2), torch.randn(1, 1, 4, 2))
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_clamp(self):
+        module = Clamp()  # noqa: F405
+        sample_input = (torch.randn((9, 4, 5, 3)),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d(self):
+        module = ConvSequential()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_element_wise_add(self):
+        test_comb = [
+            {
+                "module": [Add()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [AddConstantFloat(), AddConstantLong()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    def test_qnn_backend_element_wise_ceil(self):
+        module = Ceil()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_element_wise_div(self):
+        test_comb = [
+            {
+                "module": [Div()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [DivConstantFloat(), DivConstantLong()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    def test_qnn_backend_element_wise_mul(self):
+        test_comb = [
+            {
+                "module": [Mul()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [MulConstantFloat(), MulConstantLong()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    @unittest.skip("not yet implemented")
+    def test_qnn_backend_element_wise_sqrt(self):
+        modules = [Sqrt(), SqrtConstant()]  # noqa: F405
+        sample_input = (torch.randn([3, 1]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_element_wise_sub(self):
+        test_comb = [
+            {
+                "module": [Sub()],  # noqa: F405
+                "sample_inputs": [
+                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                ],
+            },
+            {
+                "module": [SubConstantFloat(), SubConstantLong()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
+        ]
+
+        index = 0
+        for comb in test_comb:
+            for module in comb["module"]:
+                for sample_input in comb["sample_inputs"]:
+                    with self.subTest(i=index):
+                        module = self.get_qdq_module(module, sample_input)
+                        self.lower_module_and_test_output(module, sample_input)
+                        index += 1
+
+    @unittest.expectedFailure
+    def test_qnn_backend_embedding(self):
+        module = Embedding()  # noqa: F405
+        # QNN does not support int64 datatype
+        sample_input = (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_expand_copy(self):
+        module = ExpandCopy()  # noqa: F405
+        sample_input = (torch.randn([3, 1]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_hardsigmoid(self):
+        module = HardSigmoid()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_hardswish(self):
+        module = HardSwish()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_hardtanh(self):
+        module = HardTanh()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_interpolate(self):
+        module = StaticResizeBilinear2DSizeModule()  # noqa: F405
+        sample_input = (torch.randn(2, 3, 4, 5),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_linear(self):
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_max_pool2d(self):
+        module = MaxPool2d()  # noqa: F405
+        sample_input = (torch.randn(4, 3, 24, 24),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_mean_dim(self):
+        modules = [MeanWKeppDim(), MeanWOKeppDim()]  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        for i, module in enumerate(modules):
+            with self.subTest(i=i):
+                module = self.get_qdq_module(module, sample_input)
+                self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pad(self):
+        module = Pad()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 128]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_pixel_shuffle(self):
+        module = PixelShuffle()  # noqa: F405
+        sample_input = (torch.ones([2, 4, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_relu(self):
+        module = Relu()  # noqa: F405
+        sample_input = (torch.randn([2, 5, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_reshape(self):
+        module = Reshape()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_select_copy(self):
+        module = SelectCopy()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_slice_copy(self):
+        module = SliceCopy()  # noqa: F405
+        sample_input = (
+            torch.randn([1, 512]),
+            torch.randn([1, 8]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_softmax(self):
+        module = Softmax()  # noqa: F405
+        sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_tanh(self):
+        module = Tanh()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_unsqueeze(self):
+        module = Unsqueeze()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_view(self):
+        module = View()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+
+class TestQNNQuantizedModel(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=False,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
+        )
+
+    def test_qnn_backend_conv2d_avg_pool2d(self):
+        module = Conv2dAvgPool2d()  # noqa: F405
+        sample_input = (torch.randn(16, 3, 16, 16),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_bn_hardtanh_mean(self):
+        module = Conv2dBnHardtanhMean()  # noqa: F405
+        sample_input = (torch.randn(1, 1, 6, 6),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_cat(self):
+        module = Conv2dCat()  # noqa: F405
+        sample_input = (torch.randn(1, 3, 5, 5), torch.randn(1, 3, 5, 5))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_conv2d_max_pool2d(self):
+        module = Conv2dMaxPool2d()  # noqa: F405
+        sample_input = (torch.rand(1, 2, 14, 14),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_residual_block(self):
+        module = ResidualBlockModule()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_simple_model(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_view_permute_matmul(self):
+        module = ViewPermuteMatMul()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_example_models(self):
+        instances = [
+            {"module": DeepLabV3ResNet101Model(), "annotation": ()},
+            {"module": EdsrModel(), "annotation": (annotate_forward,)},
+            {"module": InceptionV3Model(), "annotation": ()},
+            {"module": InceptionV4Model(), "annotation": ()},
+            {"module": MV2Model(), "annotation": ()},
+            {"module": MV3Model(), "annotation": ()},
+            # only works on QNN 2.12 so far
+            # { 'module': MobileBertModelExample(), 'annotation': () },
+        ]
+        expected_partitions = [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+        ]
+        # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
         disable_validation()
-        buffer = self.lower_module_and_test_output(
-            quant_instance,
-            example_inputs,
+        for i, instance in enumerate(instances):
+            with self.subTest(i=i):
+                module = instance["module"].get_eager_model().eval()
+                sample_input = instance["module"].get_example_inputs()
+                module = self.get_qdq_module(
+                    module,
+                    sample_input,
+                    custom_quant_annotations=instance["annotation"],
+                )
+                self.lower_module_and_test_output(
+                    module,
+                    sample_input,
+                    expected_partitions=expected_partitions[i],
+                    assert_output_equal=False,
+                )
+
+
+class TestExampleScript(TestQNN):
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
         )
-        model_name = "ptq_qnn_mobilebert_model"
-        save_model_and_expected_output(instance, buffer, example_inputs, model_name)
+
+    def test_mobilenet_v2(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/mobilenet_v2.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_inception_v3(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/inception_v3.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_inception_v4(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/inception_v4.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_edsr(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/edsr.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--default_dataset",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["PNSR"], 25)
+            self.assertGreaterEqual(msg["SSIM"], 0.8)
+
+    def test_deeplab_v3(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/deeplab_v3.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--download",
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["PA"], 0.85)
+            self.assertGreaterEqual(msg["MPA"], 0.70)
+            self.assertGreaterEqual(msg["MIoU"], 0.55)
+
+    def test_mobilebert(self):
+        if not self.required_envs([self.pretrained_weight]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/mobilebert_fine_tune.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            cpu, htp = msg["CPU"], msg["HTP"]
+            for k, v in cpu.items():
+                self.assertLessEqual(abs(v[0] - htp[k][0]), 1)
+
+    def test_ptq_mobilebert(self):
+        if not self.required_envs([self.pretrained_weight]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/ptq_mobilebert_fine_tune.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--pretrained_weight",
+            self.pretrained_weight,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            cpu, htp = msg["CPU"], msg["HTP"]
+            for k, v in cpu:
+                self.assertLessEqual(abs(v[0] - htp[k][0]), 3)
+
+
+def setup_environement():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-b",
+        "--build_folder",
+        help="path to cmake binary directory for android, e.g., /path/to/build_android",
+        type=str,
+        required=True,
+    )
+    parser.add_argument(
+        "-s",
+        "--device",
+        help="serial number for android device communicated via ADB.",
+        type=str,
+        required=True,
+    )
+    parser.add_argument(
+        "-H",
+        "--host",
+        help="hostname where android device is connected.",
+        default=None,
+        type=str,
+    )
+    parser.add_argument(
+        "-m",
+        "--model",
+        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
+        type=str,
+        required=True,
+    )
+    parser.add_argument(
+        "-r",
+        "--executorch_root",
+        help="Root location of current repo",
+        type=str,
+    )
+    parser.add_argument(
+        "-a",
+        "--artifact_dir",
+        help="Location for putting generated artifacts",
+        type=str,
+    )
+    parser.add_argument(
+        "-i",
+        "--image_dataset",
+        help="Location for imagenet dataset",
+        type=str,
+    )
+    parser.add_argument(
+        "-p",
+        "--pretrained_weight",
+        help="Location for pretrained weighting",
+        type=str,
+    )
+    parser.add_argument(
+        "-e",
+        "--error_only",
+        help="Emit log only when error happened",
+        action="store_true",
+    )
+
+    args, ns_args = parser.parse_known_args(namespace=unittest)
+    TestQNN.host = args.host
+    TestQNN.device = args.device
+    TestQNN.model = args.model
+    TestQNN.build_folder = args.build_folder
+    TestQNN.executorch_root = args.executorch_root
+    TestQNN.artifact_dir = args.artifact_dir
+    TestQNN.image_dataset = args.image_dataset
+    TestQNN.pretrained_weight = args.pretrained_weight
+    TestQNN.error_only = args.error_only
+    return sys.argv[:1] + ns_args
 
 
 if __name__ == "__main__":
-    unittest.main()
+    ut_args = setup_environement()
+    unittest.main(argv=ut_args)

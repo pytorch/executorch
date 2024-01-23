@@ -411,6 +411,24 @@ using ScalarType = exec_aten::ScalarType;
 //
 // Utility functions for checking tensor attributes
 //
+//
+
+/*
+ * Returns true if the given dimension value is between -upper_bound and
+ * upper_bound - 1, inclusive.
+ */
+inline bool dim_is_valid(int64_t dim, int64_t upper_bound) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim >= -upper_bound && dim < upper_bound,
+      "Dimension %" PRId64
+      " is out of range. Dimension should be between %" PRId64 " and %" PRId64
+      ", inclusive.",
+      dim,
+      -upper_bound,
+      upper_bound - 1);
+
+  return true;
+}
 
 /*
  * Returns the tensor's number of dimensions, except when the tensor is zero
@@ -563,6 +581,13 @@ inline bool tensor_has_dim(exec_aten::Tensor t, int64_t d) {
   return true;
 }
 
+inline bool tensor_has_non_empty_dim(exec_aten::Tensor t, int64_t d) {
+  const size_t udim = ET_NORMALIZE_IX(d, t.dim());
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(t, d));
+  ET_LOG_AND_RETURN_IF_FALSE(t.size(udim) != 0);
+  return true;
+}
+
 inline bool tensor_dim_has_index(exec_aten::Tensor t, int64_t d, int64_t ix) {
   // Indexing ops don't support zero-dim tensors
   ET_CHECK(t.dim() != 0);
@@ -689,16 +714,6 @@ inline bool tensors_have_same_shape_and_dtype(
   return tensors_have_same_shape(a, b, c) && tensors_have_same_dtype(a, b, c);
 }
 
-#define ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(t__)           \
-  ({                                                             \
-    ET_CHECK_MSG(                                                \
-        is_default_dim_order(                                    \
-            t__.dim_order().data(), t__.dim_order().size()) ||   \
-            is_channels_last_dim_order(                          \
-                t__.dim_order().data(), t__.dim_order().size()), \
-        "Tensor must have default or channels last dim order");  \
-  })
-
 inline bool tensor_has_expected_size(
     exec_aten::Tensor a,
     exec_aten::ArrayRef<exec_aten::SizesType> expected_sizes) {
@@ -797,6 +812,19 @@ inline bool tensor_is_contiguous(exec_aten::Tensor t) {
         static_cast<size_t>(strides[i - 1]));
   }
   return true;
+}
+
+inline bool tensors_have_same_rank(exec_aten::Tensor a, exec_aten::Tensor b) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim(),
+      ET_TENSOR_CHECK_PREFIX__ ": rank={%zd, %zd}",
+      ssize_t(a.dim()),
+      ssize_t(b.dim()));
+  return true;
+}
+
+inline bool tensor_is_scalar(exec_aten::Tensor t) {
+  return t.dim() == 0 && t.numel() == 1;
 }
 
 /**

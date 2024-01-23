@@ -24,11 +24,18 @@ Tensor& unary_ufunc_realb_to_bool(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
-  ET_CHECK_MSG(
+  ET_KERNEL_CHECK_MSG(
+      ctx,
       out.scalar_type() == exec_aten::ScalarType::Bool,
+      InvalidArgument,
+      out,
       "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
       static_cast<int8_t>(out.scalar_type()));
 

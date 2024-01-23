@@ -12,6 +12,8 @@ from typing import Any, Callable, cast, Dict, List, Optional, Set, Union
 import torch
 
 from executorch.backends.xnnpack.partition.configs import (
+    _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE,
+    _SUPPORTED_OPS_WITH_DYNAMIC_SHAPE,
     SUPPORTED_DYN_QUANT_MODULES,
     SUPPORTED_MODULES,
     SUPPORTED_OPS,
@@ -19,7 +21,10 @@ from executorch.backends.xnnpack.partition.configs import (
     SUPPORTED_QUANT_OPS,
     UNSUPPORTED_QUANT_MODULES,
 )
-from executorch.backends.xnnpack.partition.graphs.bilinear_2d import bilinear2d_graphs
+from executorch.backends.xnnpack.partition.graphs import bilinear_2d, sdpa
+from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
+    FuseBatchNormWithConvPass,
+)
 from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
@@ -225,10 +230,12 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         For node q, if op1 or op2 is good, q should be good
         TODO: q -> op -> dq, real q not handled right now
         """
-        first = XnnpackOperatorSupport.check_constraint(q.args[0], ep)
-        dq = list(q.users.keys())[0]
-        op2 = list(dq.users.keys())[0]
-        return first or XnnpackOperatorSupport.check_constraint(op2, ep)
+        if XnnpackOperatorSupport.check_constraint(q.args[0], ep):
+            return True
+        else:
+            dq = list(q.users.keys())[0]
+            op2 = list(dq.users.keys())[0]
+            return XnnpackOperatorSupport.check_constraint(op2, ep)
 
     @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default)
     def dequant_per_tensor_default(
@@ -369,6 +376,23 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         is_keep_dim = (len(node.args) == 3) and (cast(bool, node.args[3]) is True)
         dim_arg_val = cast(int, node.args[1])
         return is_keep_dim and (dim_arg_val == 2 or dim_arg_val == 3)
+
+    @_constraint(exir_ops.edge.aten._native_batch_norm_legit_no_training.default)
+    def batch_norm(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
+        """
+        Only support batch norms that can be fused with convolutions.
+        This will be removed once standalone batch norm is supported.
+        """
+
+        # TODO(gjcomer) Remove after standalone batch norm (T171796544).
+
+        conv_node = node.args[0]
+        assert isinstance(conv_node, torch.fx.Node)
+
+        if conv_node.target != exir_ops.edge.aten.convolution.default:
+            return False
+
+        return FuseBatchNormWithConvPass.can_fuse(conv_node, node, ep)
 
 
 class XnnpackFloatingPointPartitioner(Partitioner):
@@ -529,8 +553,6 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
             supported_modules, supported_ops + self._QUANT_OPS, unsupported_modules
         )
 
-    # TODO Refactor this
-    # TODO Don't be greedy when pulling q->dq pairs for a given op, add convert tracker pass
     def get_input_deps(  # noqa
         self, input_nodes: List[torch.fx.Node], ep: ExportedProgram
     ) -> List[torch.fx.Node]:
@@ -538,50 +560,76 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
         For each input node, walk up and pull necessary quant/attr nodes in the partition
         """
         nodes = set()
+
+        def is_param(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and is_param_node(ep, node)
+
+        def is_q(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and node.target in self._Q_OPS
+
+        def is_dq(ep: ExportedProgram, node) -> bool:
+            return isinstance(node, torch.fx.Node) and node.target in self._DQ_OPS
+
+        def is_qparam(node) -> bool:
+            return isinstance(node, torch.fx.Node) and node.target in self._QPARAM_OPS
+
+        def is_getitem(node) -> bool:
+            return (
+                isinstance(node, torch.fx.Node)
+                and node.op == "call_function"
+                and node.target == operator.getitem
+            )
+
         for inp in input_nodes:
-            if inp.target in self._DQ_OPS:
-                # dequant node
-                nodes.add(inp)
+            if is_dq(ep, inp):
+                dq = inp
+
+                # Possible graph we want to partition
+                #                  op(...)
+                #                     ^
+                #                     |
+                #                     dq(0,   1, 2)
+                #                        ^    ^  ^
+                #                        |    |  |
+                #                        q(0, 1, 2) # optional, only when not folded by the quantizer
+                #                          ^  ^  ^
+                #                          |  |  |
+                # parameter ---------------'  |  |
+                #                  [choose_qparams --> get_item(s)]  # optional, only with dynamic quant
+                # per_channel_zp* ------------'  |
+                # per_channel_scale* ------------'
+
+                # The dequant node
+                nodes.add(dq)
 
                 # possible per_channel scale/zp for the dequant node args{1, 2}
                 for i in [1, 2]:
-                    node = inp.args[i]
-                    if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
+                    node = dq.args[i]
+                    if is_param(ep, node):
                         nodes.add(node)
 
-                # quant node
-                q_prod = inp.args[0]
-                assert (
-                    isinstance(q_prod, torch.fx.Node) and q_prod.target in self._Q_OPS
-                )
-                nodes.add(q_prod)
+                # is it quant or param node?
+                prod = dq.args[0]
 
-                # possible weight for the quant node arg{0}
-                node = q_prod.args[0]
-                if isinstance(node, torch.fx.Node) and is_param_node(ep, node):
-                    nodes.add(node)
+                assert is_q(ep, prod) or is_param(
+                    ep, prod
+                ), f"Expecting quant or param node as an input to a dq node, but got {prod.target} for {prod} node"
 
-                # possible nodes for quant node args{1, 2}
-                for i in [1, 2]:
-                    node = q_prod.args[i]
-                    # possible choose_qparam
-                    if (
-                        isinstance(node, torch.fx.Node)
-                        and node.op == "call_function"
-                        and node.target == operator.getitem
-                    ):
-                        parent = node.args[0]
-                        if (
-                            isinstance(parent, torch.fx.Node)
-                            and parent.op == "call_function"
-                            and parent.target in self._QPARAM_OPS
-                        ):
+                nodes.add(prod)
+
+                if is_q(ep, prod):
+                    # possible nodes for quant node args{0, 1, 2}: 0: weight, 1: scale, 2: zero_point
+                    for i in [0, 1, 2]:
+                        node = prod.args[i]  # pyre-ignore
+
+                        # possible choose_qparam
+                        if is_getitem(node) and is_qparam(node.args[0]):
                             nodes.add(node)
-                            nodes.add(parent)
+                            nodes.add(node.args[0])
 
-                    # possible per_channel scale/zp for the quant node
-                    elif isinstance(node, torch.fx.Node) and is_param_node(ep, node):
-                        nodes.add(node)
+                        # weights or possible per_channel scale/zp for the quant node
+                        elif is_param(ep, node):
+                            nodes.add(node)
         return list(nodes)
 
     def get_output_deps(
@@ -650,18 +698,57 @@ class XnnpackPartitioner(Partitioner):
         supported_quant_modules: List[Callable] = SUPPORTED_QUANT_MODULES,
         supported_quant_ops: Optional[List[Callable]] = SUPPORTED_QUANT_OPS,
         quant: Optional[bool] = None,
+        _only_ops_with_dynamic_shape_support: Optional[bool] = False,
+        _lower_recomposed_sdpa: Optional[bool] = True,
     ):
         super().__init__()
         self.supported_modules = set(supported_modules)
         self.supported_ops = set(supported_ops or [])
         self.supported_quant_modules = set(supported_quant_modules)
+
         supported_quant_ops = supported_quant_ops or []
         self.supported_quant_ops = set(supported_quant_ops + self._QUANT_OPS)
 
         self.quant = quant
 
+        if _only_ops_with_dynamic_shape_support is True:
+            self._update_op_lists_for_dynamic_shapes()
+
+        # TODO(T174256335) - remove this once we have a better way to handle >2d Mask
+        self._lower_recomposed_sdpa: bool = _lower_recomposed_sdpa or True
+
         self.delegation_spec = DelegationSpec(XnnpackBackend.__name__, [])
         self.partition_tags: Dict[str, DelegationSpec] = {}
+
+    def _update_op_lists_for_dynamic_shapes(self):
+        # Not ready for quants yet
+        assert (
+            self.quant is not True
+        ), "Dynamic shape only supported for valid FP32 ops, no quants support yet."
+        self.supported_quant_ops = set()
+        self.supported_quant_modules = set()
+
+        # for supported ops
+        self.supported_ops_with_dynamic_shape = set(_SUPPORTED_OPS_WITH_DYNAMIC_SHAPE)
+        assert self.supported_ops_with_dynamic_shape.issubset(
+            self.supported_ops
+        ), "All ops with dynamic shape support must be in SUPPORTED_OPS"
+        self.supported_ops = self.supported_ops_with_dynamic_shape
+        log.info(
+            f"Xnnpack Partitioner updated supported op for dynamic shapes: {self.supported_ops}"
+        )
+
+        # for supported modules
+        self.supported_modules_with_dynamic_shape = set(
+            _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE
+        )
+        assert self.supported_modules_with_dynamic_shape.issubset(
+            self.supported_modules
+        ), "All modules with dynamic shape support must be in SUPPORTED_MODULES"
+        self.supported_modules = self.supported_modules_with_dynamic_shape
+        log.info(
+            f"Xnnpack Partitioner updated supported modules with dynamic shapes: {self.supported_modules}"
+        )
 
     def get_supported_modules(self, quant: bool) -> Set[Callable]:
         """
@@ -872,7 +959,13 @@ class XnnpackPartitioner(Partitioner):
         self, ep, quant: Optional[bool]
     ) -> List[List[torch.fx.Node]]:
         graph_module = ep.graph_module
-        graph_patterns = [gm_pattern.graph for gm_pattern in bilinear2d_graphs.keys()]
+        graphs = bilinear_2d.Graphs
+
+        # Temporary for lowering SDPA
+        if self._lower_recomposed_sdpa:
+            graphs += sdpa.Graphs
+
+        graph_patterns = [gm_pattern.graph for gm_pattern in graphs]
         partitions = generate_pattern_op_partitions(
             graph_module, graph_patterns, ignore_literals=True
         )

@@ -37,9 +37,9 @@ from executorch.exir.tests.models import (
     Mul,
     Repeat,
 )
+from executorch.sdk import BundledProgram
 
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -80,7 +80,7 @@ def run_model(
 ):
     logging.info(f"Step 1: Retrieving model: {model}...")
     if model_type == MODEL_TYPE.EXIR_DEFAULT_MODEL:
-        m, m_inputs = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[model])
+        m, m_inputs, _ = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[model])
     elif model_type == MODEL_TYPE.EXIR_TEST_MODEL:
         m, m_inputs = EXIR_MODEL_NAME_TO_MODEL.get(model)()
     elif model_type == MODEL_TYPE.MPS_TEST_MODEL:
@@ -141,7 +141,7 @@ def run_model(
 
     logging.info("  -> Test suites generated successfully")
 
-    bundled_program = create_bundled_program(executorch_program, method_test_suites)
+    bundled_program = BundledProgram(executorch_program, method_test_suites)
     logging.info("  -> Bundled program generated successfully")
 
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(

@@ -205,21 +205,23 @@ Tensor broadcast_tensor(
   return out;
 }
 
-void get_broadcast_target_size(
+[[nodiscard]] Error get_broadcast_target_size(
     const exec_aten::ArrayRef<Tensor::SizesType> a_size,
     const exec_aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       tensors_are_broadcastable_between(a_size, b_size),
+      InvalidArgument,
       "Two input tensors should be broadcastable.\n");
 
   auto a_dim = a_size.size();
   auto b_dim = b_size.size();
 
-  ET_CHECK_MSG(
+  ET_CHECK_OR_RETURN_ERROR(
       a_dim <= out_sizes_len && b_dim <= out_sizes_len,
+      InvalidArgument,
       "Dim of input tensors should be smaller than the limitation, but find %zu, %zu and %zu.",
       a_dim,
       b_dim,
@@ -240,15 +242,17 @@ void get_broadcast_target_size(
           a_idx >= 0 ? a_size[a_idx] : b_size[b_idx];
     }
   }
+
+  return Error::Ok;
 }
 
-void get_broadcast_target_size(
+[[nodiscard]] Error get_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     Tensor::SizesType* out_sizes,
     const size_t out_sizes_len,
     size_t* out_dim) {
-  get_broadcast_target_size(
+  return get_broadcast_target_size(
       a.sizes(), b.sizes(), out_sizes, out_sizes_len, out_dim);
 }
 

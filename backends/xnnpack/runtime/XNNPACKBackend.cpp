@@ -60,8 +60,11 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
+    // TODO merge these two in a single struct?
     std::vector<Tensor*> input_pointers;
     std::vector<Tensor*> output_pointers;
+    std::vector<xnnpack::delegate::XNNShape> input_shapes;
+    std::vector<xnnpack::delegate::XNNShape> output_shapes;
 
     ET_CHECK_OR_RETURN_ERROR(
         executor->get_args_size() ==
@@ -69,33 +72,58 @@ class XnnpackBackend final : public PyTorchBackendInterface {
         Internal,
         "External id and expected delegate args mismatch");
 
+    // Intialize XNNShapes for both inputs and outputs.
+    // That will allow us to gradually build up shape inference support for
+    // xnnpack ops without breaking existing models when we always try to resize
+    // delegate output tensor(s).
+    input_shapes.resize(executor->getNumInputs());
+    output_shapes.resize(executor->getNumOutputs());
+
     for (int i = 0; i < executor->get_args_size(); i++) {
       int index = executor->get_arg_index(i);
+
+      if (!args[index]->isTensor()) {
+        ET_LOG(Error, "Expected argument to be a tensor");
+      }
+
+      Tensor* tensor = &args[index]->toTensor();
+      size_t num_dims = tensor->dim();
+      struct xnnpack::delegate::XNNShape* shape = nullptr;
+
       if (i < executor->getNumInputs()) {
-        input_pointers.push_back(&args[index]->toTensor());
+        input_pointers.push_back(tensor);
+        shape = &input_shapes[i];
       } else {
-        output_pointers.push_back(&args[index]->toTensor());
+        output_pointers.push_back(tensor);
+        shape = &output_shapes[i - executor->getNumInputs()];
+      }
+
+      shape->num_dims = num_dims;
+      for (int d = 0; d < num_dims; ++d) {
+        shape->dim[d] = tensor->size(d);
       }
     }
 
-    if (executor->needsResizeOutput()) {
-      Error err =
-          executor->resizeOutput(input_pointers.at(0), output_pointers.at(0));
-      if (err != Error::Ok) {
-        return err;
-      }
-    }
-
-    Error err = executor->set_inputs(input_pointers, output_pointers);
+    Error err = executor->set_inputs(
+        input_pointers, output_pointers, input_shapes, output_shapes);
 
     if (err != Error::Ok) {
       return err;
     }
 
     err = executor->forward();
+
 #ifdef ENABLE_XNNPACK_PROFILING
     executor->log_op_timings(); // Log the op execution time.
 #endif
+
+    // Resize output tensors - should be a no-op for static models
+    for (int i = 0; i < executor->getNumOutputs(); i++) {
+      err = executor->resizeOutput(output_pointers[i], &output_shapes[i]);
+      if (err != Error::Ok) {
+        return err;
+      }
+    }
 
     for (int i = executor->getNumInputs();
          i < executor->getNumInputs() + executor->getNumOutputs();

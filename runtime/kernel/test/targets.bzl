@@ -25,7 +25,7 @@ def define_common_targets():
             "operator_registry_max_kernel_num_test.cpp",
         ],
         deps = [
-            "//executorch/runtime/kernel:operator_registry_TWO_KERNELS_TEST_ONLY",
+            "//executorch/runtime/kernel:operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
             "//executorch/runtime/kernel:kernel_runtime_context",
         ],
     )

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -16,72 +17,6 @@ namespace executor {
 namespace native {
 
 using Tensor = exec_aten::Tensor;
-
-namespace {
-
-// A helper function for comparsion to make sure the info the error msg shows in
-// check function is in line with what user enters to `unsqueeze_copy_out`
-int64_t compare_with_dim(int64_t d, int64_t dim, int64_t out_dim) {
-  if (dim < 0) {
-    dim += out_dim;
-  }
-  return d - dim;
-}
-
-void check_and_update_unsqueeze_copy_out_args(
-    const Tensor input,
-    int64_t dim,
-    const Tensor out) {
-  // The input and out shall share same dtype
-  ET_CHECK_SAME_DTYPE2(input, out);
-
-  ET_CHECK_MSG(
-      dim >= -out.dim() && dim < out.dim(),
-      "dim %" PRId64 " out of range [-%zd,%zd)",
-      dim,
-      out.dim(),
-      out.dim());
-
-  // The shape of input and out shall obey the relationship:
-  // 1. input.dim() == out.dim()-1
-  // 2. input.size(i) == out.size(i) for all i < dim
-  // 3. input.size(i-1) == out.size(i) for all i >= dim
-  // 4. out.size(dim) == 1
-  ET_CHECK(input.dim() == out.dim() - 1);
-
-  for (size_t d = 0; d < out.dim(); d++) {
-    int64_t compared = compare_with_dim(d, dim, out.dim());
-    if (compared < 0) {
-      // d < dim
-      ET_CHECK_MSG(
-          input.size(d) == out.size(d),
-          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
-          d,
-          input.size(d),
-          d,
-          out.size(d),
-          dim);
-    } else if (compared > 0) {
-      // d > dim
-      ET_CHECK_MSG(
-          input.size(d - 1) == out.size(d),
-          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
-          d - 1,
-          input.size(d),
-          d,
-          out.size(d),
-          dim);
-    } else { // d == dim
-      ET_CHECK_MSG(
-          out.size(d) == 1,
-          "out.size(%zu) %zd shall equal 1 | dim = %" PRId64,
-          d,
-          out.size(d),
-          dim);
-    }
-  }
-}
-} // namespace
 
 // unsqueeze_copy.out(Tensor self, int dim, *, Tensor(a!) out) -> Tensor(a!)
 // -> Tensor(a!)
@@ -107,11 +42,17 @@ Tensor& unsqueeze_copy_out(
       expected_output_size[i] = 1;
     }
   }
-  auto error = resize_tensor(
-      out, {expected_output_size, static_cast<size_t>(out.dim())});
-  // TODO: Construct error message with requested output sizes.
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-  check_and_update_unsqueeze_copy_out_args(/*input=*/self, dim, out);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(
+          out, {expected_output_size, static_cast<size_t>(out.dim())}) ==
+          Error::Ok,
+      InvalidArgument,
+      out);
+
+  ET_KERNEL_CHECK(
+      ctx, check_unsqueeze_copy_args(self, dim, out), InvalidArgument, out);
 
   if (self.nbytes() > 0) {
     // Note that this check is important. It's valid for a tensor with numel 0

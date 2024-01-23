@@ -7,7 +7,15 @@
 
 # Install required python dependencies for developing
 # Dependencies are defined in .pyproject.toml
-pip install .
+if [[ -z $BUCK ]];
+then
+  BUCK=buck2
+fi
+
+if [[ -z $PYTHON_EXECUTABLE ]];
+then
+  PYTHON_EXECUTABLE=python3
+fi
 
 # Install pytorch dependencies
 #
@@ -17,12 +25,12 @@ pip install .
 # models in executorch/examples/models.
 # The version in this file will be the correct version for the
 # corresponsing version of the repo.
-NIGHTLY_VERSION=dev20231129
+NIGHTLY_VERSION=dev20240118
 
-TORCH_VERSION=2.2.0.${NIGHTLY_VERSION}
+TORCH_VERSION=2.3.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
-TORCH_VISION_VERSION=0.17.0.${NIGHTLY_VERSION}
+TORCH_VISION_VERSION=0.18.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
 TORCH_AUDIO_VERSION=2.2.0.${NIGHTLY_VERSION}
@@ -36,6 +44,9 @@ pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
 
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
+
+# Install ExecuTorch after dependencies are installed.
+pip install . --no-build-isolation
 
 # Install flatc dependency
 bash build/install_flatc.sh

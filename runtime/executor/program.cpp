@@ -146,30 +146,33 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Constant data may live inside the flatbuffer data (constant_buffer) or in a
   // separate segment (constant_segment). It should not be in both.
-  const auto& constant_buffer = flatbuffer_program->constant_buffer();
-  const auto& constant_segment = flatbuffer_program->constant_segment();
-
-  // Check if the constant data is inside a separate segment.
-  if (constant_segment != nullptr && constant_segment->offsets()->size() > 0) {
+  const auto* constant_segment = flatbuffer_program->constant_segment();
+  if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
+      constant_segment->offsets()->size() > 0) {
+    // The constant data is inside a separate segment.
+    const auto* constant_buffer = flatbuffer_program->constant_buffer();
     ET_CHECK_OR_RETURN_ERROR(
-        constant_buffer->size() == 0,
-        InvalidState,
-        "constant_buffer contains %u items, constant_segment.offsets contains %u items. Only one should be used.",
+        constant_buffer == nullptr || constant_buffer->size() == 0,
+        InvalidProgram,
+        "constant_buffer contains %u items, "
+        "constant_segment.offsets contains %u items. Only one should be used.",
         constant_buffer->size(),
         constant_segment->offsets()->size());
+    const auto* segments = flatbuffer_program->segments();
+    ET_CHECK_OR_RETURN_ERROR(
+        segments != nullptr, InvalidProgram, "No segments in program");
 
     // Load constant segment.
     // TODO(T171839323): Add test for segment_index > num available segments.
     ET_CHECK_OR_RETURN_ERROR(
-        constant_segment->segment_index() <
-            flatbuffer_program->segments()->size(),
-        InvalidArgument,
+        constant_segment->segment_index() < segments->size(),
+        InvalidProgram,
         "Constant segment index %d invalid for program segments range %d",
         constant_segment->segment_index(),
-        flatbuffer_program->segments()->size());
+        segments->size());
 
     const executorch_flatbuffer::DataSegment* data_segment =
-        flatbuffer_program->segments()->Get(constant_segment->segment_index());
+        segments->Get(constant_segment->segment_index());
     Result<FreeableBuffer> constant_segment_data = loader->Load(
         segment_base_offset + data_segment->offset(), data_segment->size());
     if (!constant_segment_data.ok()) {
@@ -199,7 +202,12 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 size_t Program::num_methods() const {
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->execution_plan()->size();
+  const auto execution_plan = internal_program->execution_plan();
+  if (execution_plan != nullptr) {
+    return execution_plan->size();
+  } else {
+    return 0;
+  }
 }
 
 Result<const char*> Program::get_method_name(size_t plan_index) const {
@@ -208,7 +216,12 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
   }
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->execution_plan()->Get(plan_index)->name()->c_str();
+  // We know that the execution plan exists because num_methods() returned > 0.
+  auto name = internal_program->execution_plan()->Get(plan_index)->name();
+  if (name == nullptr) {
+    return Error::InvalidProgram;
+  }
+  return name->c_str();
 }
 
 Result<Method> Program::load_method(
@@ -219,6 +232,13 @@ Result<Method> Program::load_method(
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileScope event_tracer_scope =
       internal::EventTracerProfileScope(event_tracer, "Program::load_method");
+  // If we can't create a MethodMeta for the Method, the Method is corrupt;
+  // Method::method_meta() assumes success, so we must fail here.
+  Result<MethodMeta> meta = method_meta(method_name);
+  if (!meta.ok()) {
+    return meta.error();
+  }
+
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
@@ -231,6 +251,20 @@ Result<MethodMeta> Program::method_meta(const char* method_name) const {
   if (!plan.ok()) {
     return plan.error();
   }
+  // Check any fields whose accessors don't return Result<> in case they're
+  // missing or corrupt.
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->name() != nullptr, InvalidProgram, "Missing name field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->non_const_buffer_sizes() != nullptr,
+      InvalidProgram,
+      "Missing non_const_buffer_sizes field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->inputs() != nullptr, InvalidProgram, "Missing inputs field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->outputs() != nullptr,
+      InvalidProgram,
+      "Missing outputs field");
   return MethodMeta(plan.get());
 }
 

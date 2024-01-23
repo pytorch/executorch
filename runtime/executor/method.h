@@ -220,19 +220,12 @@ class Method final {
 
   EventTracer* get_event_tracer();
 
-  __ET_DEPRECATED size_t values_size() const;
-  __ET_DEPRECATED const EValue& get_value(size_t i) const;
-  __ET_DEPRECATED EValue& mutable_value(size_t i);
-  /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
-  /// update Method inputs.
-  __ET_DEPRECATED size_t get_input_index(size_t i) const;
   /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
   /// update Method inputs.
   __ET_DEPRECATED const EValue& get_input(size_t i) const;
   /// DEPRECATED: Use MethodMeta instead to access metadata, and set_input to
   /// update Method inputs.
   __ET_DEPRECATED EValue& mutable_input(size_t i);
-  __ET_DEPRECATED size_t get_output_index(size_t i) const;
   /// DEPRECATED: Use MethodMeta instead to access metadata, and get_output to
   /// retrieve Method outputs.
   __ET_DEPRECATED EValue& mutable_output(size_t i);
@@ -299,6 +292,11 @@ class Method final {
   inline bool initialized() const {
     return init_state_ == InitializationState::Initialized;
   }
+
+  const EValue& get_value(size_t i) const;
+  EValue& mutable_value(size_t i);
+  size_t get_input_index(size_t i) const;
+  size_t get_output_index(size_t i) const;
 
   // Executes a single instruction using the state in step_state_
   __ET_NODISCARD Error execute_instruction();

@@ -15,17 +15,6 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
-cmake_install_executorch_lib() {
-    echo "Installing libexecutorch.a and libportable_kernels.a"
-    rm -rf cmake-out
-    retry cmake -DBUCK2="$BUCK" \
-            -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-            -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Release
-}
-
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"

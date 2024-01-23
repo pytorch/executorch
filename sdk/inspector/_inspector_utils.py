@@ -64,8 +64,53 @@ TIME_SCALE_DICT = {
 
 
 # Model Debug Output
-InferenceOutput: TypeAlias = Union[torch.Tensor, int, float, str, bool, None]
+InferenceOutput: TypeAlias = Union[
+    torch.Tensor, List[torch.Tensor], int, float, str, bool, None
+]
 ProgramOutput: TypeAlias = List[InferenceOutput]
+
+
+# Given a ETDump Tensor object and offset, extract into a torch.Tensor
+def _parse_tensor_value(
+    tensor: Optional[Tensor], output_buffer: Optional[bytes]
+) -> torch.Tensor:
+    def get_scalar_type_size(scalar_type: ScalarType) -> Tuple[torch.dtype, int]:
+        """
+        Return the size of the scalar type in bytes
+        """
+        if scalar_type == ScalarType.INT:
+            return (torch.int, 4)
+        elif scalar_type == ScalarType.BOOL:
+            return (torch.bool, 1)
+        elif scalar_type == ScalarType.FLOAT:
+            return (torch.float, 4)
+        elif scalar_type == ScalarType.DOUBLE:
+            return (torch.double, 8)
+        elif scalar_type == ScalarType.LONG:
+            return (torch.long, 8)
+        else:
+            raise RuntimeError(
+                f"Unsupported scalar type in get_scalar_type_size : {scalar_type}"
+            )
+
+    if tensor is None or tensor.offset is None:
+        raise ValueError("Tensor cannot be None")
+
+    torch_dtype, dtype_size = get_scalar_type_size(tensor.scalar_type)
+
+    if output_buffer is None:
+        # Empty buffer provided. Cannot deserialize tensors.
+        return torch.zeros(tensor.sizes, dtype=torch_dtype)
+
+    tensor_bytes_size = math.prod(tensor.sizes) * dtype_size
+
+    if tensor.offset is None:
+        raise ValueError("Tensor offset cannot be None")
+
+    return torch.frombuffer(
+        output_buffer[tensor.offset : tensor.offset + tensor_bytes_size],
+        dtype=torch_dtype,
+    ).view(tensor.sizes)
 
 
 def inflate_runtime_output(
@@ -75,63 +120,30 @@ def inflate_runtime_output(
     Parse the given ETDump Value object into an InferenceOutput object
     """
 
-    def get_scalar_type_size(scalar_type: ScalarType) -> Tuple[torch.dtype, int]:
-        """
-        Return the size of the scalar type in bytes
-        """
-        match scalar_type:
-            case ScalarType.INT:
-                return (torch.int, 4)
-            case ScalarType.BOOL:
-                return (torch.bool, 1)
-            case ScalarType.FLOAT:
-                return (torch.float, 4)
-            case ScalarType.DOUBLE:
-                return (torch.double, 8)
-            case ScalarType.LONG:
-                return (torch.long, 8)
-            case _:
-                raise RuntimeError(
-                    f"Unsupported scalar type in get_scalar_type_size : {scalar_type}"
-                )
-
-    # Given a ETDump Tensor object and offset, extract into a torch.Tensor
-    def parse_tensor_value(tensor: Optional[Tensor]) -> torch.Tensor:
-        if output_buffer is None:
-            raise ValueError("Empty buffer provided. Cannot deserialize tensors.")
-        if tensor is None or tensor.offset is None:
-            raise ValueError("Tensor cannot be None")
-
-        torch_dtype, dtype_size = get_scalar_type_size(tensor.scalar_type)
-        tensor_bytes_size = math.prod(tensor.sizes) * dtype_size
-
-        if tensor.offset is None:
-            raise ValueError("Tensor offset cannot be None")
-
-        return torch.frombuffer(
-            output_buffer[tensor.offset : tensor.offset + tensor_bytes_size],
-            dtype=torch_dtype,
-        ).view(tensor.sizes)
-
-    match value.val:
-        case ValueType.INT.value:
-            if value.int_value is None:
-                raise ValueError("Expected Int value, `None` provided")
-            return value.int_value.int_val
-        case ValueType.BOOL.value:
-            if value.bool_value is None:
-                raise ValueError("Expected Bool value, `None` provided")
-            return value.bool_value.bool_val
-        case ValueType.FLOAT.value:
-            if value.float_value is None:
-                raise ValueError("Expected Float value, `None` provided")
-            return value.float_value.float_val
-        case ValueType.DOUBLE.value:
-            if value.double_value is None:
-                raise ValueError("Expected Double value, `None` provided")
-            return value.double_value.double_val
-        case ValueType.TENSOR.value:
-            return parse_tensor_value(value.tensor)
+    if value.val == ValueType.INT.value:
+        if value.int_value is None:
+            raise ValueError("Expected Int value, `None` provided")
+        return value.int_value.int_val
+    if value.val == ValueType.BOOL.value:
+        if value.bool_value is None:
+            raise ValueError("Expected Bool value, `None` provided")
+        return value.bool_value.bool_val
+    if value.val == ValueType.FLOAT.value:
+        if value.float_value is None:
+            raise ValueError("Expected Float value, `None` provided")
+        return value.float_value.float_val
+    if value.val == ValueType.DOUBLE.value:
+        if value.double_value is None:
+            raise ValueError("Expected Double value, `None` provided")
+        return value.double_value.double_val
+    if value.val == ValueType.TENSOR.value:
+        return _parse_tensor_value(value.tensor, output_buffer)
+    if value.val == ValueType.TENSOR_LIST.value:
+        if value.tensor_list is None:
+            raise ValueError("Expected TensorList value, `None` provided")
+        return [
+            _parse_tensor_value(t, output_buffer) for t in value.tensor_list.tensors
+        ]
 
 
 def find_populated_event(event: flatcc.Event) -> Union[ProfileEvent, DebugEvent]:
@@ -185,17 +197,21 @@ def is_debug_output(value: Value) -> bool:
 
 
 def gen_graphs_from_etrecord(
-    etrecord: ETRecord,
+    etrecord: ETRecord, enable_module_hierarchy: bool = False
 ) -> Mapping[str, OperatorGraph]:
     op_graph_map = {}
     if etrecord.graph_map is not None:
         op_graph_map = {
-            name: FXOperatorGraph.gen_operator_graph(exported_program.graph_module)
+            name: FXOperatorGraph.gen_operator_graph(
+                exported_program.graph_module,
+                enable_module_hierarchy=enable_module_hierarchy,
+            )
             for name, exported_program in etrecord.graph_map.items()
         }
     if etrecord.edge_dialect_program is not None:
         op_graph_map[EDGE_DIALECT_GRAPH_KEY] = FXOperatorGraph.gen_operator_graph(
-            etrecord.edge_dialect_program.graph_module
+            etrecord.edge_dialect_program.graph_module,
+            enable_module_hierarchy=enable_module_hierarchy,
         )
 
     return op_graph_map

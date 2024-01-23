@@ -6,6 +6,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ from executorch.backends.qualcomm.utils.utils import (
     SoCModel,
 )
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -36,6 +38,7 @@ class SimpleADB:
         device_id,
         soc_model,
         host_id=None,
+        error_only=False,
     ):
         self.qnn_sdk = qnn_sdk
         self.artifact_path = artifact_path
@@ -47,11 +50,13 @@ class SimpleADB:
         self.input_list_filename = "input_list.txt"
         self.output_folder = f"{self.workspace}/outputs"
         arch_table = {
+            "SM8650": "75",
             "SM8550": "73",
             "SM8475": "69",
             "SM8450": "69",
         }
         self.soc_model = arch_table[soc_model]
+        self.error_only = error_only
 
     def _adb(self, cmd):
         if not self.host_id:
@@ -59,7 +64,10 @@ class SimpleADB:
         else:
             cmds = ["adb", "-H", self.host_id, "-s", self.device_id]
         cmds.extend(cmd)
-        subprocess.run(cmds)
+
+        subprocess.run(
+            cmds, stdout=subprocess.DEVNULL if self.error_only else sys.stdout
+        )
 
     def push(self, inputs, input_list):
         self._adb(["shell", f"rm -rf {self.workspace}"])
@@ -85,6 +93,7 @@ class SimpleADB:
             ),
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
             f"{self.artifact_path}/examples/qualcomm/qnn_executor_runner",
+            f"{self.artifact_path}/backends/qualcomm/libqnn_executorch_backend.so",
             input_list_file,
         ]:
             self._adb(["push", artifact, self.workspace])
@@ -154,12 +163,13 @@ def build_executorch_binary(
         edge_prog = capture_program(model, inputs)
 
     arch_table = {
+        "SM8650": SoCModel.SM8650,
         "SM8550": SoCModel.SM8550,
         "SM8475": SoCModel.SM8475,
         "SM8450": SoCModel.SM8450,
     }
 
-    QnnPartitioner.set_compiler_spec(
+    qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
             is_fp16=use_fp16,
             soc_model=arch_table[soc_model],
@@ -167,11 +177,11 @@ def build_executorch_binary(
             saver=False,
         )
     )
-    edge_prog.exported_program = to_backend(
-        edge_prog.exported_program, QnnPartitioner()
-    )
+    edge_prog.exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
     edge_prog.exported_program.graph_module.graph.print_tabular()
-    exec_prog = edge_prog.to_executorch()
+    exec_prog = edge_prog.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
 

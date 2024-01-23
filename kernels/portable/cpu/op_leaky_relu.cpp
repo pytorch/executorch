@@ -27,14 +27,19 @@ Tensor& leaky_relu_out(
     Tensor& out) {
   (void)ctx;
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType in_type = in.scalar_type();
   ScalarType sc_type = utils::get_scalar_dtype(negative_slope);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(in_type == out_type);
+  ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_FLOAT_TYPES(in_type, ctx, "leaky_relu.out", CTYPE, [&]() {
     CTYPE negative_slope_casted;

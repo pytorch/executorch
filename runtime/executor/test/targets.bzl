@@ -9,6 +9,7 @@ def define_common_targets(is_fbcode = False):
 
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
+
         runtime.cxx_library(
             name = "test_backend_compiler_lib" + aten_suffix,
             srcs = [
@@ -57,6 +58,23 @@ def define_common_targets(is_fbcode = False):
             link_whole = True,
         )
 
+        runtime.cxx_test(
+            name = "executor_test" + aten_suffix,
+            srcs = [
+                "executor_test.cpp",
+            ],
+            deps = [
+                "//executorch/extension/pytree:pytree",
+                "//executorch/kernels/portable:generated_lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/platform:platform",
+            ],
+        )
+
     runtime.cxx_library(
         name = "managed_memory_manager",
         srcs = [],
@@ -85,6 +103,8 @@ def define_common_targets(is_fbcode = False):
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
+            "ET_MODULE_LINEAR_CONSTANT_BUFFER_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear-no-constant-segment.pte])",
+            "ET_MODULE_LINEAR_CONSTANT_SEGMENT_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleLinear.pte])",
             "ET_MODULE_MULTI_ENTRY_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleMultipleEntry.pte])",
         }
 
@@ -125,7 +145,6 @@ def define_common_targets(is_fbcode = False):
             ],
             deps = [
                 "//executorch/runtime/executor:program",
-                "//executorch/util:util",
                 "//executorch/extension/data_loader:file_data_loader",
             ],
             env = modules_env,
@@ -140,6 +159,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/schema:program",
             ],
             env = modules_env,
         )

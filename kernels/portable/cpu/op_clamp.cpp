@@ -85,29 +85,35 @@ bool is_out_of_bounds(CTYPE_VAL val) {
       val_cast > std::numeric_limits<CTYPE_OUT>::max();
 }
 
-void check_bounds(
+[[nodiscard]] bool check_bounds(
     const Scalar& val_scalar,
     const torch::executor::native::ScalarType& val_type,
     const torch::executor::native::ScalarType& out_type,
     const char* val_name) {
+  auto is_valid = true;
+
   ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, "clamp.out", CTYPE_VAL, [&]() {
     CTYPE_VAL val = 0;
     ET_EXTRACT_SCALAR(val_scalar, val);
     if (isIntegralType(out_type, /*includeBool=*/false)) {
       ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
         if (is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, long>(val)) {
-          ET_CHECK_MSG(false, "%s value out of bounds", val_name);
+          ET_LOG(Error, "%s value out of bounds", val_name);
+          is_valid = false;
         }
       });
     } else if (isFloatingType(out_type)) {
       ET_SWITCH_FLOAT_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
         if (std::isfinite(val) &&
             is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, double>(val)) {
-          ET_CHECK_MSG(false, "%s value out of bounds", val_name);
+          ET_LOG(Error, "%s value out of bounds", val_name);
+          is_valid = false;
         }
       });
     }
   });
+
+  return is_valid;
 }
 
 } // namespace
@@ -120,8 +126,12 @@ Tensor& clamp_out(
     Tensor& out) {
   (void)ctx;
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = in_type;
@@ -133,19 +143,31 @@ Tensor& clamp_out(
   if (has_min) {
     min_type = utils::get_scalar_dtype(min_opt.value());
     common_type = utils::promote_type_with_scalar(common_type, min_opt.value());
-    check_bounds(min_opt.value(), min_type, out_type, "minimum");
+    ET_KERNEL_CHECK(
+        ctx,
+        check_bounds(min_opt.value(), min_type, out_type, "minimum"),
+        InvalidArgument,
+        out);
   }
   bool has_max = max_opt.has_value();
   if (has_max) {
     max_type = utils::get_scalar_dtype(max_opt.value());
     common_type = utils::promote_type_with_scalar(common_type, max_opt.value());
-    check_bounds(max_opt.value(), max_type, out_type, "maximum");
+    ET_KERNEL_CHECK(
+        ctx,
+        check_bounds(max_opt.value(), max_type, out_type, "maximum"),
+        InvalidArgument,
+        out);
   }
 
-  ET_CHECK_MSG(
-      has_min || has_max, "At least one of 'min' or 'max' must not be None");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      has_min || has_max,
+      InvalidArgument,
+      out,
+      "At least one of 'min' or 'max' must not be None");
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(out_type, ctx, "clamp", CTYPE_OUT, [&]() {
     // Extract optional min value

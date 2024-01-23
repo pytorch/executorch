@@ -370,6 +370,8 @@ void apply_kernel_2d_reduce_then_map_fn(
 // Operator specific utility functions
 //
 
+bool check_arange_args(double start, double end, double step, Tensor& out);
+
 bool check_avg_pool2d_args(
     const Tensor& in,
     const IntArrayRef kernel_size,
@@ -410,6 +412,12 @@ void get_convolution_out_target_size(
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_cumsum_args(
+    const Tensor& self,
+    int64_t dim,
+    optional<ScalarType> enforced_dtype,
+    Tensor& out);
+
 bool check_max_pool2d_with_indices_args(
     const Tensor& in,
     IntArrayRef kernel_size,
@@ -429,6 +437,56 @@ void get_max_pool2d_with_indices_out_target_size(
     bool ceil_mode,
     exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
+
+bool check_nonzero_args(const Tensor& in, const Tensor& out);
+
+bool check_slice_scatter_args(
+    const Tensor& input,
+    const Tensor& src,
+    int64_t dim,
+    int64_t num_values,
+    int64_t step,
+    Tensor output);
+
+int64_t adjust_slice_indices(
+    int64_t dim_length,
+    int64_t* start,
+    int64_t* end,
+    int64_t step);
+
+bool check_select_scatter_args(
+    const Tensor& in,
+    const Tensor& src,
+    int64_t dim,
+    int64_t index,
+    Tensor& output);
+
+bool check_masked_fill_args(
+    const Tensor& in,
+    const Tensor& mask,
+    const Scalar& value,
+    Tensor& out);
+
+bool check_constant_pad_args(
+    const Tensor& in,
+    IntArrayRef pad,
+    const Scalar& value,
+    Tensor& out);
+
+Error resize_constant_pad_output(
+    const Tensor& in,
+    IntArrayRef pad,
+    Tensor& out);
+
+bool check_embedding_args(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& out);
+
+Error resize_embedding_output(
+    const Tensor& weight,
+    const Tensor& indices,
+    const Tensor& out);
 
 } // namespace executor
 } // namespace torch

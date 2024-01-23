@@ -186,6 +186,30 @@ TEST_F(ProfilerETDumpTest, DebugEvent) {
   }
 }
 
+TEST_F(ProfilerETDumpTest, DebugEventTensorList) {
+  for (size_t i = 0; i < 2; i++) {
+    testing::TensorFactory<ScalarType::Int> tf;
+    exec_aten::Tensor storage[2] = {tf.ones({3, 2}), tf.ones({3, 2})};
+    EValue evalue_1(storage[0]);
+    EValue evalue_2(storage[1]);
+    EValue* values_p[2] = {&evalue_1, &evalue_2};
+
+    BoxedEvalueList<exec_aten::Tensor> a_box(values_p, storage, 2);
+    EValue evalue(a_box);
+    evalue.tag = Tag::ListTensor;
+
+    etdump_gen[i]->create_event_block("test_block");
+
+    void* ptr = malloc(2048);
+    Span<uint8_t> buffer((uint8_t*)ptr, 2048);
+
+    etdump_gen[i]->set_debug_buffer(buffer);
+    etdump_gen[i]->log_evalue(evalue);
+
+    free(ptr);
+  }
+}
+
 TEST_F(ProfilerETDumpTest, VerifyLogging) {
   testing::TensorFactory<ScalarType::Float> tf;
   EValue evalue(tf.ones({3, 2}));

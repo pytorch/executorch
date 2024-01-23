@@ -19,29 +19,6 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-
-void check_preconditions(
-    const Tensor& in,
-    const ArrayRef<int64_t>& dim_list,
-    bool keepdim,
-    Tensor& out) {
-  ET_CHECK_SAME_DTYPE2(in, out);
-  check_dim_list_is_valid(in, dim_list);
-  if (in.dim() != 0) {
-    for (const auto& d : dim_list) {
-      ET_CHECK_NON_ZERO_DIM_SIZE(d, in);
-    }
-  }
-  ET_CHECK_MSG(
-      out.dim() == compute_reduced_out_dim(in, dim_list, keepdim),
-      "Number of dims of out tensor is not compatible with inputs and params");
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
-}
-
-} // namespace
-
 Tensor& amin_out(
     RuntimeContext& ctx,
     const Tensor& in,
@@ -50,10 +27,17 @@ Tensor& amin_out(
     Tensor& out) {
   (void)ctx;
 
-  check_preconditions(in, dim_list, keepdim, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_amin_amax_args(in, dim_list, keepdim, out),
+      InvalidArgument,
+      out);
 
-  Error e = resize_reduction_out(in, dim_list, keepdim, out);
-  ET_CHECK_MSG(e == Error::Ok, "Failed to resize out tensor in amin_out");
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in.scalar_type(), ctx, "amin.out", CTYPE, [&]() {

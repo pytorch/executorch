@@ -7,7 +7,7 @@
 import copy
 import sys
 from abc import ABC, abstractmethod
-from collections import OrderedDict
+from collections import Counter, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
@@ -128,11 +128,13 @@ class Quantize(Stage):
         self,
         quantizer: Optional[Quantizer] = None,
         quantization_config: Optional[QuantizationConfig] = None,
+        calibrate: bool = True,
     ):
         self.quantizer = quantizer or XNNPACKQuantizer()
         self.quantization_config = (
             quantization_config or get_symmetric_quantization_config()
         )
+        self.calibrate = calibrate
 
         self.quantizer.set_global(self.quantization_config)
 
@@ -141,8 +143,16 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        captured_graph = torch._export.capture_pre_autograd_graph(artifact, inputs)
+        captured_graph = torch.export._trace._export(
+            artifact, inputs, pre_dispatch=True
+        ).module()
+
         prepared = prepare_pt2e(captured_graph, self.quantizer)
+
+        if self.calibrate:
+            # Calibrate prepared model to provide data to quantization observers.
+            prepared(*inputs)
+
         converted = convert_pt2e(prepared, fold_quantize=True)
         self.converted_graph = converted
 
@@ -320,19 +330,19 @@ class Tester:
         self.inputs = inputs
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
-            self._stage_name(Quantize): [self._stage_name(Export)],
-            self._stage_name(Export): [
-                self._stage_name(ToEdge),
+            self.stage_name(Quantize): [self.stage_name(Export)],
+            self.stage_name(Export): [
+                self.stage_name(ToEdge),
             ],
-            self._stage_name(ToEdge): [
-                self._stage_name(Partition),
-                self._stage_name(RunPasses),
+            self.stage_name(ToEdge): [
+                self.stage_name(Partition),
+                self.stage_name(RunPasses),
             ],
-            self._stage_name(RunPasses): [self._stage_name(Partition)],
+            self.stage_name(RunPasses): [self.stage_name(Partition)],
             # TODO Make this Stage optional
-            self._stage_name(Partition): [self._stage_name(ToExecutorch)],
-            self._stage_name(ToExecutorch): [self._stage_name(Serialize)],
-            self._stage_name(Serialize): [],
+            self.stage_name(Partition): [self.stage_name(ToExecutorch)],
+            self.stage_name(ToExecutorch): [self.stage_name(Serialize)],
+            self.stage_name(Serialize): [],
         }
         assert all(
             stage in self.pipeline for stage in self.stages
@@ -341,19 +351,22 @@ class Tester:
         # Current stage name
         self.cur: str = ""
 
-        # Reference output from Eager mode
+        # Reference output from eager mode
         self.reference_output = None
+
+        # Quantization scale from eager mode
+        self.quantization_scale: Optional[float] = None
 
         # Artifact output from stage
         self.stage_output = None
 
     @staticmethod
-    def _stage_name(stage) -> str:
+    def stage_name(stage) -> str:
         t = stage if isinstance(stage, type) else type(stage)
         return t.__qualname__
 
     def _pre(self, stage):
-        name: str = self._stage_name(stage)
+        name: str = self.stage_name(stage)
         assert isinstance(name, str) and name in self.stages and not self.stages[name]
 
         last_artifact = self.original_module
@@ -366,7 +379,7 @@ class Tester:
         return last_artifact
 
     def _post(self, stage):
-        name = self._stage_name(stage)
+        name = self.stage_name(stage)
         assert name in self.stages
         self.stages[name] = stage
 
@@ -427,14 +440,35 @@ class Tester:
             )
         return self
 
+    def check_node_count(self, input: Dict[Any, int]):
+        # Count the occurances of each target in the graph.
+        target_ops = [
+            node.target
+            for node in self.stages[self.cur].graph_module.graph.nodes
+            if node.op == "call_function"
+        ]
+        op_counts = Counter(target_ops)
+
+        for key, count in input.items():
+            if count != op_counts[key]:
+                print(f"Nodes: {op_counts}")
+                raise AssertionError(
+                    f"Expected {count} {key} nodes but found {op_counts[key]}."
+                )
+
+        return self
+
     def run_method(
         self, stage: Optional[str] = None, inputs: Optional[Tuple[torch.Tensor]] = None
     ):
         inputs_to_run = inputs or self.inputs
-        # Reference Output
-        self.reference_output = self.stages[self._stage_name(Export)].run_artifact(
-            inputs_to_run
-        )
+        export_stage = self.stages[self.stage_name(Export)]
+
+        # Reference output (and quantization scale)
+        (
+            self.reference_output,
+            self.quantization_scale,
+        ) = self._calculate_reference_output(export_stage.artifact, inputs_to_run)
 
         # Output from running artifact at stage
         stage = stage or self.cur
@@ -448,12 +482,14 @@ class Tester:
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
         the XNNPACK's backend, we relax the detal such that absolute tolerance is 1e-3. and
-        relative tolerance is 1e-3.
+        relative tolerance is 1e-3. In the event that the computation was quantized, we
+        further relax the tolerance to one quantized step (equal to the quantization scale).
+        This allows the quantized value to differ by 1 between the reference and model output.
         """
 
-        # Multiple outputs executor always returns tuple, even if there is one output
-        assert len(ref_output) == len(model_output)
-        for i in range(len(ref_output)):
+        assert len(model_output) == len(ref_output)
+
+        for i in range(len(model_output)):
             assert torch.allclose(
                 model_output[i],
                 ref_output[i],
@@ -461,11 +497,11 @@ class Tester:
                 rtol=rtol,
             )
 
-    def compare_outputs(self, atol=1e-03, rtol=1e-03):
+    def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
         """
         Compares the original of the original nn module with the output of the generated artifact.
         This requres calling run_method before calling compare_outputs. As that runs the generated
-        artifact on the sample inputs and sets the stage output to be compared against the reference
+        artifact on the sample inputs and sets the stage output to be compared against the reference.
         """
         assert self.reference_output is not None
         assert self.stage_output is not None
@@ -475,7 +511,62 @@ class Tester:
             self.reference_output = (self.reference_output,)
         if isinstance(self.stage_output, torch.Tensor):
             self.stage_output = (self.stage_output,)
+
+        # If a qtol is provided and we found an dequantization node prior to the output, relax the
+        # atol by qtol quant units.
+        if self.quantization_scale is not None:
+            atol += self.quantization_scale * qtol
+
         self._assert_outputs_equal(
-            self.stage_output, self.reference_output, atol=atol, rtol=rtol
+            self.stage_output,
+            self.reference_output,
+            atol=atol,
+            rtol=rtol,
         )
         return self
+
+    @staticmethod
+    def _calculate_reference_output(
+        program: ExportedProgram, inputs
+    ) -> Tuple[torch.Tensor, Optional[float]]:
+        """
+        Execute the reference program and return the output. If the output comes from a dequantize node,
+        return the quantization scale as well.
+        """
+
+        # Locate the output node.
+        output_node = None
+        for node in program.graph.nodes:
+            if node.op == "output":
+                output_node = node
+                break
+        assert output_node is not None
+
+        # Look for a dequantization node in the output node args. Returned values are found in the first
+        # argument of the output node.
+        dequant_node = None
+        for arg_node in output_node.args[0]:
+            if (
+                arg_node.op == "call_function"
+                and arg_node.target
+                == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+            ):
+                dequant_node = arg_node
+                break
+
+        scale = None
+        if dequant_node is not None:
+            original_target = dequant_node.target
+
+            # Replace the dequant node with shim to intercept the quantization parameters.
+            # It will be invoked when we evaluate the program to find the reference outputs.
+            def dequant_shim(*args):
+                nonlocal scale
+                scale = args[1]
+                result = original_target(*args)
+                return result
+
+            dequant_node.target = dequant_shim
+
+        output = program(*inputs)
+        return output, scale

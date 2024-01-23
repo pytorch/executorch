@@ -640,19 +640,22 @@ class _Emitter(torch.fx.Interpreter):
             selcect_copy op # if not continue. return add_tensor
         """
         assert isinstance(
-            subemitter_binding_output_values, list
+            subemitter_binding_output_values, (list, tuple)
         ), f"Expect a list for subemitter_binding_output_values for map. Got {subemitter_binding_output_values}."
 
         if len(subemitter_binding_output_values) != 1:
             raise RuntimeError(
                 f"Multiple outputs are not supported. Got {len(subemitter_binding_output_values)}."
             )
-        f, num_mapped_args = args[:2]
+        f, mapped_args, inputs = args
+        assert isinstance(mapped_args, (list, tuple))
+        num_mapped_args: int = len(mapped_args)
         if num_mapped_args != 1:
             raise RuntimeError(
                 f"Emitting map with more than one mapped args is not supported. Got {num_mapped_args}."
             )
-        x, *inputs = args[2:]
+        x = mapped_args[0]
+
         assert isinstance(f, torch.fx.GraphModule)
 
         # Generate the EValue that we will use as our iterator index to keep track of which
@@ -1271,7 +1274,6 @@ class _TopLevelEmitter(_Emitter):
             if spec is None:
                 return ""
             assert isinstance(spec, pytree.TreeSpec), type(spec)
-            # pyre-fixme[16]: `TreeSpec` has no attribute `num_leaves`.
             dummy_leaves = [0] * spec.num_leaves
             tree = torch.utils._pytree.tree_unflatten(dummy_leaves, spec)
             # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.

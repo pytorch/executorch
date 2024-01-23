@@ -42,9 +42,9 @@ class TestPrintProgram(unittest.TestCase):
         number_of_stack_trace = 0
         for node in exir_exported_program.exported_program.graph.nodes:
             node_info = inspect_node(exir_exported_program.exported_program.graph, node)
-            self.assertRegexpMatches(node_info, r".*-->.*")
+            self.assertRegex(node_info, r".*-->.*")
             if "stack_trace" in node.meta:
-                self.assertRegexpMatches(
+                self.assertRegex(
                     node_info, r".*Traceback \(most recent call last\)\:.*"
                 )
                 number_of_stack_trace = number_of_stack_trace + 1

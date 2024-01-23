@@ -7,80 +7,40 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNExecutor.h>
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-#include <executorch/backends/xnnpack/runtime/utils/utils.h>
-#endif
 
 namespace torch {
 namespace executor {
 namespace xnnpack {
 namespace delegate {
 
-Error XNNExecutor::set_external_input(uint32_t id, Tensor* input) {
-  auto qinput_pair = qinputs_.find(id);
-  if (qinput_pair != qinputs_.end()) {
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-    auto qinput = qinput_pair->second;
-    // dq the input and copy it in to qinput
-    float input_min, input_max;
-    std::tie(input_min, input_max) = qnnpack_utils::GetMinMax(*input);
-
-    qnnpack_utils::QuantizationParams input_qparam;
-
-    int8_t qmin = std::numeric_limits<int8_t>::min();
-    int8_t qmax = std::numeric_limits<int8_t>::max();
-    Error e = qnnpack_utils::ChooseQuantizationParams(
-        input_min,
-        input_max,
-        qmin,
-        qmax,
-        input_qparam,
-        false, /* preserve_sparsity */
-        false, /* force_scale_power_of_two */
-        false /* reduce_range */
-    );
-    ET_CHECK_OR_RETURN_ERROR(
-        e == Error::Ok, Internal, "ChooseQuantizationParams() failed");
-
-    ET_CHECK_OR_RETURN_ERROR(
-        input_qparam.zero_point <= qmax && input_qparam.zero_point >= qmin,
-        Internal,
-        "ChooseQuantizationParams() selected invalid input_zero_point: %d",
-        input_qparam.zero_point);
-
-    e = qnnpack_utils::QuantizePerTensor<int8_t>(
-        *input, qinput, input_qparam.scale, input_qparam.zero_point);
-
-    size_t batch_size = 1;
-    for (int i = 0; i < input->dim() - 1; i++) {
-      batch_size *= input->size(i);
+Error XNNExecutor::set_external_input(
+    uint32_t id,
+    Tensor* input,
+    struct XNNShape* shape) {
+  // TODO(T165403530): Test insure accuracy for int64 --> float32 conversion
+  if (input->scalar_type() == ScalarType::Long) {
+    // Input data type is int64. However, XNNPACK doesn't support
+    // int64. This means that the data needs to be casted to float
+    // In order for XNNPACK to properly use it.
+    const int64_t* data_64 = input->const_data_ptr<int64_t>();
+    float* data_f32 = input->mutable_data_ptr<float>();
+    for (int j = 0; j < input->numel(); j++) {
+      data_f32[j] = data_64[j];
     }
-    ET_CHECK_OR_RETURN_ERROR(
-        e == Error::Ok, Internal, "QuantizePerTensor() failed");
-    externals_.emplace_back(xnn_external_value{
-        id,
-        qinput.mutable_data_ptr(),
-        {static_cast<float>(input_qparam.scale),
-         static_cast<int8_t>(input_qparam.zero_point)},
-        batch_size});
-#else
-    ET_LOG(Error, "Dynamic Quantization is not supported");
-    return Error::NotSupported;
-#endif
-  } else {
-    // TODO(T165403530): Test insure accuracy for int64 --> float32 conversion
-    if (input->scalar_type() == ScalarType::Long) {
-      // Input data type is int64. However, XNNPACK doesn't support
-      // int64. This means that the data needs to be casted to float
-      // In order for XNNPACK to properly use it.
-      const int64_t* data_64 = input->const_data_ptr<int64_t>();
-      float* data_f32 = input->mutable_data_ptr<float>();
-      for (int j = 0; j < input->numel(); j++) {
-        data_f32[j] = data_64[j];
-      }
-    }
-    externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
   }
+  if (input->dim() != shape->num_dims) {
+    ET_LOG(Error, "Input dim mismatch between tensor and shape struct");
+  }
+
+#ifdef ENABLE_DYNAMIC_QUANTIZATION
+  externals_.emplace_back(xnn_external_value{
+      id,
+      input->mutable_data_ptr(),
+      static_cast<size_t>(shape->num_dims),
+      shape->dim});
+#else
+  externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
+#endif
   return Error::Ok;
 }
 

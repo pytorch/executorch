@@ -57,16 +57,8 @@ class QnnOperatorSupport(OperatorSupportBase):
 
 
 class QnnPartitioner(Partitioner):
-    compiler_specs = []
-
-    @classmethod
-    def set_compiler_spec(cls, compiler_specs: List[CompileSpec]):
-        # note: operations on compiler specs are not thread-safe
-        # please pay attention to it
-        QnnPartitioner.compiler_specs = compiler_specs
-
-    def __init__(self):
-        self.compiler_specs_snapshot = copy.deepcopy(QnnPartitioner.compiler_specs)
+    def __init__(self, compiler_specs: List[CompileSpec]):
+        self.compiler_specs_snapshot = copy.deepcopy(compiler_specs)
         self.delegation_spec = DelegationSpec(
             QnnBackend.__name__, self.compiler_specs_snapshot
         )

@@ -118,7 +118,7 @@ add_library(etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
 
 target_link_libraries(
   etdump
-  PUBLIC etdump_schema
+  PUBLIC etdump_schema flatcc
   PRIVATE executorch)
 
 add_custom_command(
@@ -145,3 +145,10 @@ target_include_directories(
 target_include_directories(
   etdump PUBLIC ${_program_schema__include_dir}
                 ${CMAKE_SOURCE_DIR}/third-party/flatcc/include)
+
+# Install libraries
+install(
+  TARGETS bundled_program etdump flatcc
+  DESTINATION ${CMAKE_BINARY_DIR}/lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})

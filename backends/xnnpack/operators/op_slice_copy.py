@@ -7,6 +7,7 @@
 from typing import cast, Dict
 
 import torch
+from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
@@ -53,16 +54,14 @@ class SliceCopyVisitor(NodeVisitor):
             "val" in input_node.meta,
             "Missing val in tensor metadata for input when serializing XNNStaticSlice",
         )
-        input_tensor_val = input_node.meta["val"]
-        input_shape = list(input_tensor_val.shape)
+        input_shape = get_shape(input_node)
 
         # output shape
         check_or_raise(
             "val" in node.meta,
             "Missing val in tensor metadata for input when serializing XNNStaticSlice",
         )
-        output_tensor_val = node.meta["val"]
-        output_shape = list(output_tensor_val.shape)
+        output_shape = get_shape(node)
         dim_of_slice = cast(int, node.args[1])
 
         if "XNN_NHWC_NODE" in node.meta:

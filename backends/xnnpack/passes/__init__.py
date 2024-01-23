@@ -11,6 +11,7 @@ from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import
 )
 from executorch.backends.xnnpack.passes.conv1d_unsqueeze_pass import Conv1dUnsqueezePass
 from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack.passes.convert_to_sdpa import ConvertToSDPAPass
 from executorch.backends.xnnpack.passes.convert_to_upsample_bilinear2d import (
     ConvertToUpsampleBilinear2d,
 )
@@ -25,6 +26,8 @@ from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.exir.pass_base import ExportPass
 
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+
+from executorch.exir.program._program import _transform
 from torch._export.pass_base import PassType
 
 from torch.export import ExportedProgram
@@ -48,6 +51,7 @@ class XNNPACKPassManager:
             self.passes = [
                 ConvertToUpsampleBilinear2d,
                 ConvertToLinearPass,
+                ConvertToSDPAPass,
                 ConstPropPass,
                 FuseBatchNormWithConvPass,
                 RemoveGetItemPass,
@@ -77,5 +81,5 @@ class XNNPACKPassManager:
                 raise RuntimeError(
                     f"Expecting ExportPass or ExportPass(), but got pass: {pass_} with type: {type(pass_)}"
                 )
-            ep = ep._transform(transform_pass)
+            ep = _transform(ep, transform_pass)
         return ep

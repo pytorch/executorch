@@ -18,7 +18,7 @@ namespace executor {
  */
 class BackendInitContext final {
  public:
-  BackendInitContext(MemoryAllocator* runtime_allocator)
+  explicit BackendInitContext(MemoryAllocator* runtime_allocator)
       : runtime_allocator_(runtime_allocator) {}
 
   /** Get the runtime allocator passed from Method. It's the same runtime

@@ -18,16 +18,18 @@ namespace native {
 
 Tensor&
 mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
-  (void)ctx;
-
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(canCast(common_type, out_type));
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "mul.out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "mul.out", CTYPE_B, [&]() {
@@ -62,15 +64,19 @@ Tensor& mul_scalar_out(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(common_type == out_type);
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "mul.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "mul.Scalar_out", CTYPE_B, [&]() {

@@ -45,11 +45,9 @@ build_cmake_executor_runner() {
 
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
-    cd examples/third-party/llama
-    pip install -e .
-    cd ../../..
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama
   fi
-
+  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
 
   # Run test model
@@ -77,7 +75,6 @@ build_cmake_xnn_executor_runner() {
     && retry cmake -DBUCK2=buck2 \
       -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DREGISTER_QUANTIZED_OPS=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 

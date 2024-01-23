@@ -12,7 +12,7 @@
 namespace torch {
 namespace executor {
 
-PyTorchBackendInterface::~PyTorchBackendInterface(){};
+PyTorchBackendInterface::~PyTorchBackendInterface() {}
 
 // Task t128866626: Remove global static variables.
 // We want to be able to run multiple Executor instances

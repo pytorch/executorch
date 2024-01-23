@@ -115,6 +115,7 @@ union XNodeUnion {
   XNNConcatenate3: _XNNCat,
   XNNConcatenate4: _XNNCat,
   XNNStaticSlice,
+  XNNScaledDotProductAttention,
 }
 
 union XValueUnion {
@@ -261,6 +262,16 @@ table XNNStaticSlice {
   flags:uint;
 }
 
+table XNNScaledDotProductAttention {
+    query_id:uint;
+    key_id:uint;
+    value_id:uint;
+    scale_id:uint;
+    mask_id:uint;
+    output_id:uint;
+    flags:uint;
+}
+
 table XNNArgMaxPooling2d {
   padding_top: uint;
   padding_right: uint;
@@ -281,6 +292,17 @@ table XNNLeakyReLU {
   flags: uint;
 }
 
+// Describes data offsets for constant data
+table ConstantDataOffset {
+  // Constant data offsets are relative to the constant data base offset provided
+  // in the XNNPACKHeader.
+  offset: uint64;
+
+  // The size in bytes of valid data starting at the offset. The constant data
+  // may be followed by padding before the next piece of constant data
+  size: uint64;
+}
+
 table XNNGraph {
   // Schema version.
   version:string;
@@ -299,11 +321,16 @@ table XNNGraph {
   // Tables of constant data, used for constant Values (e.g.
   // data field of weight tensors). Each constant is assigned an index into the table
   // which are each individually aligned. 0 index is reserved to be pointed to by non-constant
-  // Tensors
+  // Tensors. Exactly one of constant_buffer and constant_data must be non-empty
   constant_buffer:[Buffer];
 
   // the list index is memory buffer id, the value is the memory buffer size.
   mem_buffer_sizes: [uint];
+
+  // List of the constant data that follows the XNNGraph in this file. Each constant data is assigned an index into
+  // the table. 0 index is reserved to be pointed to by non-constant Tensor. Exactly one of constant_buffer and
+  // constant_data must be non-empty
+  constant_data:[ConstantDataOffset];
 }
 
 root_type XNNGraph;

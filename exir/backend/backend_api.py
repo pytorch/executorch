@@ -28,6 +28,7 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.pass_base import ExportPass
+from torch._export.utils import is_buffer, is_param
 from torch.export import ExportedProgram
 
 
@@ -146,18 +147,44 @@ def validation_disabled() -> Generator[None, None, None]:
         _ENABLE_VALIDATION = existing_setting
 
 
-def _partition_and_lower(
+def _get_node_list_with_same_tag(
+    tagged_graph_module: torch.fx.GraphModule,
+    tag: str,
+    owning_program: ExportedProgram,
+) -> List[torch.fx.Node]:
+    """
+    Return a list of nodes with the same tag.
+    """
+    node_list = []
+    for node in tagged_graph_module.graph.nodes:
+        if node.meta.get("delegation_tag", "") == tag:
+            if node.op == "output":
+                raise RuntimeError(f"output node {node} should not be tagged")
+            if node.op == "placeholder":
+                if not is_param(owning_program, node) and not is_buffer(
+                    owning_program, node
+                ):
+                    raise RuntimeError(
+                        f"placeholder node for non-params and non-buffer should not be tagged: {node} "
+                    )
+            node_list.append(node)
+    return node_list
+
+
+def _partition_and_lower_one_graph_module(
     tagged_graph_module: torch.fx.GraphModule,
     partition_result: PartitionResult,
     owning_program: ExportedProgram,
 ) -> torch.fx.GraphModule:
+    """
+    Partitioned and lowered the graph module based on the partition tag, this is to handle one graph module.
+    """
     for tag, delegation_spec in partition_result.partition_tags.items():
         # Create partition with nodes containing this tag. There should only be
         # one contained submodule per tag
-        node_list = []
-        for node in tagged_graph_module.graph.nodes:
-            if node.meta.get("delegation_tag", "") == tag:
-                node_list.append(node)
+        node_list = _get_node_list_with_same_tag(
+            tagged_graph_module, tag, owning_program
+        )
 
         if len(node_list) == 0:
             logging.debug(f"Did not find any nodes for tag {tag}")
@@ -233,9 +260,24 @@ def _partition_and_lower(
                 tagged_graph_module.graph.erase_node(node)
 
         tagged_graph_module.recompile()
+    return tagged_graph_module
+
+
+def _partition_and_lower(
+    tagged_graph_module: torch.fx.GraphModule,
+    partition_result: PartitionResult,
+    owning_program: ExportedProgram,
+) -> torch.fx.GraphModule:
+    """
+    Partitions the graph module into submodules based on tags, and then lowered the nodes with the same tag as one lowered module, including the submodule from control flow
+    """
+
+    partitioned_module = _partition_and_lower_one_graph_module(
+        tagged_graph_module, partition_result, owning_program
+    )
 
     # Recursively partition and lower for submodules
-    for name, submod, _node in get_control_flow_submodules(tagged_graph_module):
+    for name, submod, _node in get_control_flow_submodules(partitioned_module):
         partitioned_submodule = _partition_and_lower(
             submod, partition_result, owning_program
         )
@@ -312,13 +354,12 @@ def _(
         edge_program, tagged_graph_module
     )
     return ExportedProgram(
-        tagged_graph_module,
-        tagged_graph_module.graph,
-        new_signature,
-        new_state_dict,
-        copy.deepcopy(edge_program.range_constraints),
-        copy.deepcopy(edge_program.equality_constraints),
-        copy.deepcopy(edge_program.module_call_graph),
-        None,
-        edge_program.verifier,
+        root=tagged_graph_module,
+        graph=tagged_graph_module.graph,
+        graph_signature=new_signature,
+        state_dict=new_state_dict,
+        range_constraints=copy.deepcopy(edge_program.range_constraints),
+        module_call_graph=copy.deepcopy(edge_program.module_call_graph),
+        example_inputs=None,
+        verifier=edge_program.verifier,
     )

@@ -155,7 +155,9 @@ class ModuleMultipleEntry(torch.nn.Module):
 #
 
 
-def export_module_to_program(module_class: Type[nn.Module]):
+def export_module_to_program(
+    module_class: Type[nn.Module], extract_constant_segment: bool
+):
     """Exports the module and returns the serialized program data."""
     # Look for an optional @staticmethod that defines custom trace params.
     export_kwargs: Dict[str, Any] = {}
@@ -167,7 +169,12 @@ def export_module_to_program(module_class: Type[nn.Module]):
         methods = module_class.get_method_names_to_export()
     else:
         methods = ["forward"]
-    module = ExportedModule.export(module_class, methods, **export_kwargs)
+    module = ExportedModule.export(
+        module_class,
+        methods,
+        extract_constant_segment=extract_constant_segment,
+        **export_kwargs,
+    )
     return module.executorch_program.buffer
 
 
@@ -205,10 +212,16 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
-        outfile = os.path.join(args.outdir, f"{module_name}.pte")
-        with open(outfile, "wb") as fp:
-            fp.write(export_module_to_program(module_class))
-        print(f"Exported {module_name} and wrote program data to {outfile}")
+        for extract_constant_segment in (True, False):
+            suffix = "" if extract_constant_segment else "-no-constant-segment"
+            outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
+            with open(outfile, "wb") as fp:
+                fp.write(
+                    export_module_to_program(
+                        module_class, extract_constant_segment=extract_constant_segment
+                    )
+                )
+            print(f"Exported {module_name} and wrote program data to {outfile}")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 
+oncall("executorch")
+
 python_library(
     name = "lib",
     srcs = [
@@ -29,7 +31,7 @@ python_library(
         "//executorch/exir/emit:emit",
         "//executorch/exir/emit:lib",
         "//executorch/exir/passes:lib",
-        "//executorch/exir/passes:remove_assert_async_pass",
+        "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/verification:verifier",
     ],

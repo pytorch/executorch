@@ -10,6 +10,8 @@
 
 cmake_minimum_required(VERSION 3.19)
 
+project(mps_runner_example)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_CXX_STANDARD)
@@ -31,6 +33,21 @@ endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+# Find prebuilt libraries. executorch package should contain
+# portable_ops_lib, etdump, bundled_program.
+find_package(executorch CONFIG REQUIRED)
+target_include_directories(executorch INTERFACE ${_common_include_directories})
+
+find_package(
+  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
+)
+
+
 # ios can only build library but not binary
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   #
@@ -41,13 +58,33 @@ set(mps_executor_runner_libs "-framework Foundation"
                               "-weak_framework MetalPerformanceShaders"
                               "-weak_framework MetalPerformanceShadersGraph"
                               "-weak_framework Metal")
+
+#
+# The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
+#
+set(
+  EXECUTORCH_SRCS_FILE
+  "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
+)
+
+extract_sources(${EXECUTORCH_SRCS_FILE})
+
+include(${EXECUTORCH_SRCS_FILE})
+target_include_directories(
+  bundled_program
+  INTERFACE
+  ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/include
+  ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/bundled_program
+  ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+)
 list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 target_include_directories(
   mps_executor_runner INTERFACE ${CMAKE_BINARY_DIR}/schema/include/
                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
-target_link_libraries(mps_executor_runner bundled_program program_schema
-                                          ${_executor_runner_libs}
+target_link_libraries(mps_executor_runner bundled_program
+                                          executorch gflags
+                                          mpsdelegate
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
 endif()

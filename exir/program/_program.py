@@ -24,7 +24,7 @@ from executorch.exir.passes import (
     EdgeToBackendOpsPass,
     OpReplacePass,
 )
-from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
@@ -36,12 +36,99 @@ from executorch.exir.verification.verifier import (
 )
 from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
-from torch.export.exported_program import InputKind, InputSpec, TensorArgument
+from torch.export.exported_program import (
+    _get_updated_range_constraints,
+    ConstantArgument,
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputSpec,
+    TensorArgument,
+)
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
+from torch.fx.passes.infra.pass_manager import PassManager
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+def _get_updated_graph_signature(
+    old_signature: ExportGraphSignature,
+    new_gm: torch.fx.GraphModule,
+) -> ExportGraphSignature:
+    """
+    Update the graph signature's user_input/user_outputs.
+    """
+    new_input_specs = []
+    i = 0
+    for node in new_gm.graph.nodes:
+        if node.op != "placeholder":
+            continue
+
+        assert i < len(
+            old_signature.input_specs
+        ), "Number of inputs changed after transformation"
+        old_input_spec = old_signature.input_specs[i]
+        arg = (
+            old_input_spec.arg
+            if isinstance(old_input_spec.arg, ConstantArgument)
+            else type(old_input_spec.arg)(node.name)
+        )
+        new_input_specs.append(
+            InputSpec(old_input_spec.kind, arg, old_input_spec.target)
+        )
+        i += 1
+
+    output_node = list(new_gm.graph.nodes)[-1]
+    assert output_node.op == "output"
+
+    new_output_specs = []
+    for i, node in enumerate(output_node.args[0]):
+        assert i < len(
+            old_signature.output_specs
+        ), "Number of outputs changed after transformation"
+        old_output_spec = old_signature.output_specs[i]
+        arg = (
+            old_output_spec.arg
+            if isinstance(old_output_spec.arg, ConstantArgument)
+            else type(old_output_spec.arg)(node.name)
+        )
+        new_output_specs.append(
+            OutputSpec(old_output_spec.kind, arg, old_output_spec.target)
+        )
+
+    new_signature = ExportGraphSignature(
+        input_specs=new_input_specs, output_specs=new_output_specs
+    )
+    return new_signature
+
+
+def _transform(self, *passes: PassType) -> "ExportedProgram":
+    pm = PassManager(list(passes))
+    res = pm(self.graph_module)
+    transformed_gm = res.graph_module if res is not None else self.graph_module
+    assert transformed_gm is not None
+
+    if transformed_gm is self.graph_module and not res.modified:
+        return self
+
+    transformed_ep = ExportedProgram(
+        root=transformed_gm,
+        graph=transformed_gm.graph,
+        graph_signature=_get_updated_graph_signature(
+            self.graph_signature, transformed_gm
+        ),
+        state_dict=self.state_dict,
+        range_constraints=_get_updated_range_constraints(transformed_gm),
+        module_call_graph=copy.deepcopy(self._module_call_graph),
+        example_inputs=self.example_inputs,
+        verifier=self.verifier,
+        tensor_constants=self.tensor_constants,
+    )
+    transformed_ep.graph_module.meta.update(self.graph_module.meta)
+    transformed_ep.graph_module.meta.update(res.graph_module.meta)
+    return transformed_ep
 
 
 def _copy_module(new_prog, new_gm):
@@ -140,21 +227,19 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
         call_spec,
         state_dict,
         range_constraints,
-        equality_constraints,
         module_call_graph,
         example_inputs,
         verifier,
     ):
         super().__init__(
-            root,
-            graph,
-            graph_signature,
-            state_dict,
-            range_constraints,
-            equality_constraints,
-            module_call_graph,
-            example_inputs,
-            verifier,
+            root=root,
+            graph=graph,
+            graph_signature=graph_signature,
+            state_dict=state_dict,
+            range_constraints=range_constraints,
+            module_call_graph=module_call_graph,
+            example_inputs=example_inputs,
+            verifier=verifier,
         )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -231,7 +316,7 @@ class ExirExportedProgram:
         self.after_to_edge_passes = after_to_edge_passes
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
-        self.exported_program = self.exported_program._transform(*passes)
+        self.exported_program = _transform(self.exported_program, *passes)
         return self
 
     def __call__(self, *args: Any) -> Any:
@@ -271,6 +356,7 @@ class ExirExportedProgram:
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
             extract_delegate_segments=config.extract_delegate_segments,
+            extract_constant_segment=config.extract_constant_segment,
             segment_alignment=config.segment_alignment,
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
@@ -299,6 +385,7 @@ class ExecutorchProgram:
         exir_exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
         extract_delegate_segments: bool,
+        extract_constant_segment: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -312,6 +399,7 @@ class ExecutorchProgram:
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
         self._extract_delegate_segments: bool = extract_delegate_segments
+        self._extract_constant_segment: bool = extract_constant_segment
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -322,6 +410,7 @@ class ExecutorchProgram:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
                 extract_delegate_segments=self._extract_delegate_segments,
+                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -377,14 +466,13 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if dialect == "ATEN":
         ep = ExirExportedProgram(
             ExportedProgram(
-                ep.exported_program.graph_module,
-                ep.exported_program.graph_module.graph,
-                ep.exported_program.graph_signature,
-                ep.exported_program.state_dict,
-                ep.exported_program.range_constraints,
-                ep.exported_program.equality_constraints,
-                ep.exported_program.module_call_graph,
-                ep.exported_program.example_inputs,
+                root=ep.exported_program.graph_module,
+                graph=ep.exported_program.graph_module.graph,
+                graph_signature=ep.exported_program.graph_signature,
+                state_dict=ep.exported_program.state_dict,
+                range_constraints=ep.exported_program.range_constraints,
+                module_call_graph=ep.exported_program.module_call_graph,
+                example_inputs=ep.exported_program.example_inputs,
                 verifier=get_aten_verifier(enable=config._check_ir_validity),
                 tensor_constants=ep.exported_program.tensor_constants,
             ),
@@ -413,14 +501,15 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm = new_gm_res.graph_module
 
     new_ep.exported_program = ExportedProgram(
-        new_gm,
-        new_gm.graph,
-        new_ep.exported_program.graph_signature,
-        new_ep.exported_program.state_dict,
-        new_ep.exported_program.range_constraints,
-        new_ep.exported_program.equality_constraints,
-        new_ep.exported_program.module_call_graph,
-        new_ep.exported_program.example_inputs,
+        root=new_gm,
+        graph=new_gm.graph,
+        graph_signature=_get_updated_graph_signature(
+            new_ep.exported_program.graph_signature, new_gm
+        ),
+        state_dict=new_ep.exported_program.state_dict,
+        range_constraints=new_ep.exported_program.range_constraints,
+        module_call_graph=new_ep.exported_program.module_call_graph,
+        example_inputs=new_ep.exported_program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
             check_edge_ops=config._use_edge_ops,
             enable=config._check_ir_validity,
@@ -441,7 +530,7 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         # this pass, passes cannot be Interpreter-based, because it will fail if
         # there exists an unbacked symint operation.
         EdgeToBackendOpsPass(),
-        RemoveAssertAsyncPass(),
+        RemoveGraphAssertsPass(),
         config.sym_shape_eval_pass,
         config.to_out_var_pass,
         config.memory_planning_pass,
@@ -599,6 +688,7 @@ class MultiMethodExecutorchProgram:
         executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
         extract_delegate_segments: bool,
+        extract_constant_segment: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -615,6 +705,7 @@ class MultiMethodExecutorchProgram:
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
         self._extract_delegate_segments: bool = extract_delegate_segments
+        self._extract_constant_segment: bool = extract_constant_segment
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -626,6 +717,7 @@ class MultiMethodExecutorchProgram:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
                 extract_delegate_segments=self._extract_delegate_segments,
+                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -677,6 +769,7 @@ def multi_method_program_to_executorch(
         executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
         extract_delegate_segments=config.extract_delegate_segments,
+        extract_constant_segment=config.extract_constant_segment,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
@@ -747,10 +840,11 @@ def to_edge(
         edge_program = ExportedProgram(
             root=gm,
             graph=gm.graph,
-            graph_signature=edge_program.graph_signature,
+            graph_signature=_get_updated_graph_signature(
+                edge_program.graph_signature, gm
+            ),
             state_dict=edge_program.state_dict,
             range_constraints=edge_program.range_constraints,
-            equality_constraints=edge_program.equality_constraints,
             module_call_graph=edge_program.module_call_graph,
             example_inputs=edge_program.example_inputs,
             verifier=EXIREdgeDialectVerifier(
@@ -762,7 +856,7 @@ def to_edge(
         )
         passes = []
         passes.extend(aten_to_edge_passes.passes[-2:])
-        edge_program = edge_program._transform(*passes)
+        edge_program = _transform(edge_program, *passes)
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
@@ -848,7 +942,7 @@ class EdgeProgramManager:
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
-                    new_programs[name] = program._transform(*passes[name])
+                    new_programs[name] = _transform(program, *passes[name])
                     EXIREdgeDialectVerifier(enable=check_ir_validity)(
                         new_programs[name].graph_module
                     )
@@ -857,7 +951,7 @@ class EdgeProgramManager:
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
-                new_programs[name] = program._transform(*passes)
+                new_programs[name] = _transform(program, *passes)
                 EXIREdgeDialectVerifier(enable=check_ir_validity)(
                     new_programs[name].graph_module
                 )
@@ -944,9 +1038,11 @@ class EdgeProgramManager:
                     # in the ExportedProgram
                     # TODO(who?)
                     p.update_placeholder_tensor_specs(program, new_gm)
-            new_prog = copy.deepcopy(program)
-            _copy_module(new_prog.graph_module, new_gm)
-            execution_programs[name] = new_prog
+
+            # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
+
+            _copy_module(program.graph_module, new_gm)
+            execution_programs[name] = program
 
         return ExecutorchProgramManager(
             execution_programs, self._config_methods, config
@@ -1005,6 +1101,7 @@ class ExecutorchProgramManager:
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
             extract_delegate_segments=backend_config.extract_delegate_segments,
+            extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,

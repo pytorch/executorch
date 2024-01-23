@@ -8,9 +8,9 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
-#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
@@ -33,20 +33,47 @@ Result<torch::executor::Tensor> parseTensor(
       "Non-zero storage offset %" PRId32 " not supported",
       s_tensor->storage_offset());
 
+  ScalarType scalar_type = static_cast<ScalarType>(s_tensor->scalar_type());
+  ET_CHECK_OR_RETURN_ERROR(
+      isValid(scalar_type) &&
+          // Types that do not yet have deserialization support.
+          scalar_type != exec_aten::ScalarType::Half &&
+          scalar_type != exec_aten::ScalarType::ComplexHalf &&
+          scalar_type != exec_aten::ScalarType::ComplexFloat &&
+          scalar_type != exec_aten::ScalarType::ComplexDouble &&
+          scalar_type != exec_aten::ScalarType::BFloat16,
+      InvalidProgram,
+      "Invalid or unsupported ScalarType %" PRId8,
+      static_cast<int8_t>(scalar_type));
+
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
-  // TODO(T133200526): Remove this check once fully dynamic shapes are
+  // TODO(T175194371): Remove this check once fully dynamic shapes are
   // supported.
   ET_CHECK_OR_RETURN_ERROR(
       dynamism != TensorShapeDynamism::DYNAMIC_UNBOUND,
       NotSupported,
-      "Fully dynamic tensor shapes not yet supported: T133200526");
+      "Fully dynamic tensor shapes not yet supported: T175194371");
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
+  const auto serialized_sizes = s_tensor->sizes()->data();
+  const auto dim = s_tensor->sizes()->size();
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidProgram,
+      "Missing dim_order field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order()->size() == dim,
+      InvalidProgram,
+      "dim_order size %" PRIu32 " != dim %" PRIu32,
+      s_tensor->dim_order()->size(),
+      dim);
+  const auto serialized_dim_order = s_tensor->dim_order()->data();
 
   exec_aten::SizesType* sizes = nullptr;
   exec_aten::DimOrderType* dim_order = nullptr;
-  const auto dim = s_tensor->sizes()->size();
-  const auto serialized_sizes = s_tensor->sizes()->data();
-  const auto serialized_dim_order = s_tensor->dim_order()->data();
   // For dynamic shape tensors, allocate local buffers to allow mutable sizes
   // and strides
   if (dynamism != TensorShapeDynamism::STATIC) {
@@ -90,7 +117,7 @@ Result<torch::executor::Tensor> parseTensor(
   // Placement new on the allocated memory space. Note that we create this first
   // with null data so we can find its expected size before getting its memory.
   new (tensor_impl) torch::executor::TensorImpl(
-      static_cast<ScalarType>(s_tensor->scalar_type()),
+      scalar_type,
       dim,
       sizes,
       /*data=*/nullptr,
