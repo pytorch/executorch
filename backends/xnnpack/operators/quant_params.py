@@ -67,6 +67,13 @@ class QuantParams:
         self.is_output = is_output
         self.is_input = is_input
         self.is_dynamic = is_dynamic
+        self.is_qc4w = (
+            self.per_channel
+            and not self.is_dynamic
+            and self.qmin == -8
+            and self.qmax == 7
+            and self.dtype == torch.int8
+        )
 
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # Do nothing if already quantized by the Quantizer
@@ -77,6 +84,14 @@ class QuantParams:
             assert (
                 tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
             ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
+
+            assert (
+                tensor.shape[self.axis] == cast(torch.Tensor, self.zp).shape[0]
+            ), f"Invalid size of per channel quantization zero-points, axis: {self.axis}, zp size: {self.zp.shape}, tensor shape: {tensor.shape}"
+
+            # Assuming folded quant weights
+            # TODO Add support for unfolded weights
+            assert not self.is_qc4w, "Not expecting QC4W per channel tensor"
 
             return exir_ops.edge.quantized_decomposed.quantize_per_channel.default(
                 tensor, self.scale, self.zp, self.axis, self.qmin, self.qmax, self.dtype
