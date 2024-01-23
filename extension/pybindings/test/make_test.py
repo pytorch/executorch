@@ -96,7 +96,9 @@ def make_test(  # noqa: C901
             # These cleanup passes are required to convert the `add` op to its out
             # variant, along with some other transformations.
             for method_name, method_input in input_map.items():
-                wrapped_mod = WrapperModule(getattr(eager_module, method_name))  # pyre-ignore[16]
+                wrapped_mod = WrapperModule(
+                    getattr(eager_module, method_name)
+                )  # pyre-ignore[16]
                 exported_methods[method_name] = export(wrapped_mod, method_input)
 
             exec_prog = to_edge(exported_methods).to_executorch()
