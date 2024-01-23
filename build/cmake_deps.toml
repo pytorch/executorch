@@ -157,6 +157,14 @@ deps = [
   "executorch",
 ]
 
+[targets.mps_schema]
+buck_targets = [
+  "//backends/apple/mps:mps_schema",
+]
+filters = [
+  ".fbs$",
+]
+
 [targets.xnn_executor_runner]
 buck_targets = [
   "//examples/xnnpack:xnn_executor_runner",

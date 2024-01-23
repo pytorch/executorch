@@ -37,7 +37,11 @@ class MPSBackend final : public PyTorchBackendInterface {
     // destructible, we must call the destructor manually in destroy().
     new (executor) mps::delegate::MPSExecutor;
     Error err = mps::delegate::MPSCompiler::compileModel(
-        processed->data(), processed->size(), executor, context.get_runtime_allocator(), compile_specs);
+        processed->data(),
+        processed->size(),
+        executor,
+        context.get_runtime_allocator(),
+        compile_specs);
     ET_CHECK_OR_RETURN_ERROR(
       err == Error::Ok,
       Internal,

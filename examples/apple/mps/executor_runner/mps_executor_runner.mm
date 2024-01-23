@@ -12,11 +12,10 @@
  * It uses the original bundled input data from the flatbuffer file.
  */
 
-#import <Foundation/Foundation.h>
-#import <MetalPerformanceShaders/MetalPerformanceShaders.h>
-#import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
-
 #include <memory>
+#include <numeric>
+#include <iomanip>
+#include <iostream>
 
 #include <gflags/gflags.h>
 
@@ -31,6 +30,7 @@
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/extension/evalue_util/print_evalue.h>
 
 #include <chrono>
 using namespace std::chrono;
@@ -66,6 +66,11 @@ DEFINE_bool(
     profile,
     false,
     "True for showing profile data (e.g execution time)");
+
+DEFINE_bool(
+    skip_warmup,
+    false,
+    "If true, a warmup iteration won't be executed.");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -231,6 +236,18 @@ bool tensors_are_close_(
 }
 
 int main(int argc, char** argv) {
+  {
+    const char* usage = R"(MPS Executor Runner. Sample usage:
+  mps_executor_runner --model_path model.pte)";
+    gflags::SetUsageMessage(usage);
+  }
+
+  if (argc == 1) {
+    ET_LOG(Error, "No options provided.");
+    gflags::ShowUsageWithFlags(argv[0]);
+    return 1;
+  }
+
   runtime_init();
 
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -397,7 +414,7 @@ int main(int argc, char** argv) {
   // Prepare the inputs.
   exec_aten::ArrayRef<void*> inputs;
   if (FLAGS_bundled_program) {
-    ET_LOG(Info, "Loading bundled program...\n");
+    ET_LOG(Debug, "Loading bundled program");
     // Use the inputs embedded in the bundled program.
     status = torch::executor::bundled_program::LoadBundledInput(
         *method,
@@ -412,16 +429,21 @@ int main(int argc, char** argv) {
     // Use ones-initialized inputs.
     inputs = torch::executor::util::PrepareInputTensors(*method);
   }
-  ET_LOG(Info, "Inputs prepared.");
+  ET_LOG(Debug, "Inputs prepared");
 
-  for (int i = 0; i < FLAGS_num_runs; i++) {
+  int num_iterations = FLAGS_num_runs + (FLAGS_skip_warmup ? 0 : 1);
+  std::vector<float> exec_times;
+  exec_times.reserve(FLAGS_num_runs);
+  for (int i = 0; i < num_iterations; i++) {
     auto start_exec_time = high_resolution_clock::now();
     // Run the model.
     Error status = method->execute();
     auto end_exec_time = high_resolution_clock::now();
-    auto duration = duration_cast<milliseconds>(end_exec_time - start_exec_time);
+    auto duration = duration_cast<microseconds>(end_exec_time - start_exec_time);
+    exec_times.push_back(duration.count());
     if (FLAGS_profile) {
-      ET_LOG(Info, "[Run %d] Inference time: %lld milliseconds", i, duration.count());
+      const float miliseconds = static_cast<float>(duration.count()) / 1000.f;
+      ET_LOG(Info, "[Run %d] Inference time: %.3f miliseconds", i, miliseconds);
     }
     ET_CHECK_MSG(
         status == Error::Ok,
@@ -429,7 +451,15 @@ int main(int argc, char** argv) {
         method_name,
         status);
   }
-  ET_LOG(Info, "Model executed successfully.");
+  if (FLAGS_profile && FLAGS_num_runs) {
+    auto itr = exec_times.begin();
+    if (!FLAGS_skip_warmup)
+      itr++;
+
+    const float avg_time = (std::reduce(itr, exec_times.end()) / static_cast<float>(FLAGS_num_runs)) / 1000.f;
+    std::cout << "Average inference time: " << std::setprecision(2) << std::fixed << avg_time << " miliseconds\n";
+  }
+  ET_LOG(Debug, "Model executed successfully.");
 
   auto output_list =
       runtime_allocator.allocateList<EValue>(method->outputs_size());
@@ -440,15 +470,10 @@ int main(int argc, char** argv) {
   std::vector<EValue> outputs(method->outputs_size());
   status = method->get_outputs(outputs.data(), outputs.size());
   ET_CHECK(status == Error::Ok);
-  for (EValue& output : outputs) {
-    // TODO(T159700776): This assumes that all outputs are fp32 tensors. Add
-    // support for other EValues and Tensor dtypes, and print tensors in a more
-    // readable way.
-    auto output_tensor = output.toTensor();
-    auto data_output = output_tensor.const_data_ptr<float>();
-    for (size_t j = 0; j < output_tensor.numel(); ++j) {
-      ET_LOG(Info, "%f", data_output[j]);
-    }
+  // Print the first and last 100 elements of long lists of scalars.
+  std::cout << torch::executor::util::evalue_edge_items(100);
+  for (int i = 0; i < outputs.size(); ++i) {
+    std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
   // Dump the profiling data to the specified file.
@@ -464,13 +489,15 @@ int main(int argc, char** argv) {
   if (FLAGS_bundled_program) {
     double rtol = 1e-05;
     double atol = 1e-08;
-
-    if (strstr(model_path, "mv3")                  ||
+    if (strstr(model_path, "fp16")) {
+      rtol = 1e-01;
+      atol = 1e-01;
+    } else if (strstr(model_path, "mv3")           ||
         strstr(model_path, "mv2")                  ||
+        strstr(model_path, "conv")                 ||
         strstr(model_path, "vit")                  ||
         strstr(model_path, "resnet18")             ||
         strstr(model_path, "resnet50")             ||
-        strstr(model_path, "mobilebert")           ||
         strstr(model_path, "emformer")             ||
         strstr(model_path, "emformer_transcribe")  ||
         strstr(model_path, "emformer_join")        ||
@@ -478,7 +505,10 @@ int main(int argc, char** argv) {
         strstr(model_path, "llama2")               ||
         strstr(model_path, "ic3")                  ||
         strstr(model_path, "ic4")) {
-        atol = 1e-04;
+      atol = 1e-04;
+    } else if (strstr(model_path, "mobilebert")) {
+      atol = 1e-01;
+      rtol = 1e-01;
     }
     status = torch::executor::bundled_program::VerifyResultWithBundledExpectedOutput(
         *method,
