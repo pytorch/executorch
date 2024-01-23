@@ -3,12 +3,10 @@
 //  Provided subject to the LICENSE file in the top level directory.
 //
 
-#define EXIR_MPS_DELEGATE 1
-
-#include <executorch/backends/apple/mps/runtime/MPSStream.h>
-#include <executorch/backends/apple/mps/utils/OperationUtils.h>
-
-#include "MPSExecutor.h"
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/backends/apple/mps/schema_generated.h>
+#include <executorch/backends/apple/mps/runtime/MPSExecutor.h>
 
 @interface MPSNDArray ()
 -(nonnull instancetype) initWithBuffer:(id<MTLBuffer> _Nonnull) buffer
@@ -47,7 +45,7 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
     MPSNDArrayDescriptor *tensorDesc = [MPSNDArrayDescriptor descriptorWithDataType:[inputShapes_[i] dataType]
                                                                               shape:[inputShapes_[i] shape]];
     tensorDesc.preferPackedRows = YES;
-    id<MTLBuffer> inputBuffer = ::mps::getMTLBufferStorage(*inputs[i]);
+    id<MTLBuffer> inputBuffer = getMTLBufferStorage(*inputs[i]);
     MPSNDArray *ndArrayData = [[MPSNDArray alloc] initWithBuffer:inputBuffer descriptor:tensorDesc];
     MPSGraphTensorData* tensorData = [[MPSGraphTensorData alloc] initWithMPSNDArray:ndArrayData];
     [inputsArray_ addObject:tensorData];
@@ -57,7 +55,7 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
     MPSNDArrayDescriptor *tensorDesc = [MPSNDArrayDescriptor descriptorWithDataType:[outputShapes_[i] dataType]
                                                                               shape:[outputShapes_[i] shape]];
     tensorDesc.preferPackedRows = YES;
-    id<MTLBuffer> outputBuffer = ::mps::getMTLBufferStorage(*outputs[i]);
+    id<MTLBuffer> outputBuffer = getMTLBufferStorage(*outputs[i]);
     MPSNDArray *ndArrayData = [[MPSNDArray alloc] initWithBuffer:outputBuffer descriptor:tensorDesc];
     MPSGraphTensorData* tensorData = [[MPSGraphTensorData alloc] initWithMPSNDArray:ndArrayData];
     [outputsArray_ addObject:tensorData];
@@ -72,12 +70,20 @@ MPSExecutor::set_inputs_outputs(std::vector<const Tensor*>& inputs, std::vector<
 __ET_NODISCARD Error MPSExecutor::forward(std::vector<const Tensor*>& outputs) {
   Error err = Error::Ok;
   MPSStream* mpsStream = getDefaultMPSStream();
-  id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
-  [executable_ encodeToCommandBuffer:commandBuffer
-                        inputsArray:inputsArray_
-                        resultsArray:outputsArray_
-                executionDescriptor:nil];
-  if (mps::delegate::getDefaultMPSStream()->commitAndContinueEnabled()) {
+  if (mpsStream->commitAndContinueEnabled() || mpsStream->hasLiveCommandBuffer()) {
+    id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
+    [executable_ encodeToCommandBuffer:commandBuffer
+                          inputsArray:inputsArray_
+                          resultsArray:outputsArray_
+                  executionDescriptor:nil];
+  } else {
+    [executable_ runWithMTLCommandQueue:mpsStream->commandQueue()
+                            inputsArray:inputsArray_
+                           resultsArray:outputsArray_
+                    executionDescriptor:nil];
+  }
+
+  if (mpsStream->commitAndContinueEnabled()) {
     err = mpsStream->synchronize(SyncType::COMMIT_AND_CONTINUE);
   } else {
     err = mpsStream->synchronize(SyncType::COMMIT_AND_WAIT);

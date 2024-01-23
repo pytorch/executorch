@@ -5,12 +5,12 @@
 // clang-format off
 #pragma once
 
-#import <Foundation/Foundation.h>
-#include <MetalPerformanceShaders/MetalPerformanceShaders.h>
-#include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+
+#include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
+#include <executorch/backends/apple/mps/runtime/MPSStream.h>
 
 #include <map>
 #include <memory>

@@ -12,6 +12,7 @@ def define_common_targets(is_xplat = False, platforms = []):
     TARGETS and BUCK files that call this function.
     """
     kwargs = {
+        "name": "mps",
         "compiler_flags": [
             "-DEXIR_MPS_DELEGATE=1",
             "-Wno-global-constructors",
@@ -23,26 +24,20 @@ def define_common_targets(is_xplat = False, platforms = []):
         "deps": [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            ":mps_schema",
         ],
         "exported_deps": [
             "//executorch/runtime/backend:interface",
+            ":mps_schema",
         ],
-        "headers": [
-            "runtime/MPSCompiler.h",
-            "runtime/MPSDevice.h",
-            "runtime/MPSExecutor.h",
-            "runtime/MPSStream.h",
-            "utils/MPSGraphPackageExport.h",
-            "utils/OperationUtils.h",
-        ],
-        "name": "mps",
-        "srcs": [
-            "runtime/MPSBackend.mm",
-            "runtime/MPSCompiler.mm",
-            "runtime/MPSDevice.mm",
-            "runtime/MPSExecutor.mm",
-            "runtime/MPSStream.mm",
-        ],
+        "headers": native.glob([
+            "runtime/*.h",
+            "runtime/operations/*.h",
+        ]),
+        "srcs": native.glob([
+            "runtime/*.mm",
+            "runtime/operations/*.mm",
+        ]),
         "visibility": [
             "//executorch/backends/apple/...",
             "//executorch/examples/...",
@@ -65,4 +60,36 @@ def define_common_targets(is_xplat = False, platforms = []):
         kwargs["platforms"] = platforms
 
     if runtime.is_oss or is_xplat:
+        runtime.genrule(
+            name = "gen_mps_schema",
+            srcs = [
+                "serialization/schema.fbs",
+            ],
+            outs = {
+                "schema_generated.h": ["schema_generated.h"],
+            },
+            cmd = " ".join([
+                "$(exe {})".format(runtime.external_dep_location("flatc")),
+                "--cpp",
+                "--cpp-std c++11",
+                "--scoped-enums",
+                "-o ${OUT}",
+                "${SRCS}",
+            ]),
+            default_outs = ["."],
+        )
+
+        runtime.cxx_library(
+            name = "mps_schema",
+            srcs = [],
+            exported_headers = {
+                "schema_generated.h": ":gen_mps_schema[schema_generated.h]",
+            },
+            exported_external_deps = ["flatbuffers-api"],
+            visibility = [
+                "//executorch/backends/apple/...",
+                "//executorch/examples/...",
+            ],
+        )
+
         runtime.cxx_library(**kwargs)
