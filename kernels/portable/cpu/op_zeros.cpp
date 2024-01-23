@@ -29,7 +29,7 @@ bool check_sizes(
   }
 
   return true;
-};
+}
 
 } // namespace
 
