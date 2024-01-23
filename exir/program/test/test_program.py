@@ -339,6 +339,9 @@ class TestProgramManagers(unittest.TestCase):
             one,
             two,
         )
+        if not isinstance(callable, torch.nn.Module):
+            callable = torch.export.WrapperModule(callable)
+
         exported_foo = export(callable, inputs)
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 
