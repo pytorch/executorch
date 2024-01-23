@@ -202,7 +202,7 @@ filters = [
 
 [targets.xnnpack_schema]
 buck_targets = [
-  "//backends/xnnpack:xnnpack_schema",
+  "//backends/xnnpack/serialization:xnnpack_flatbuffer_header",
 ]
 filters = [
   ".fbs$",
