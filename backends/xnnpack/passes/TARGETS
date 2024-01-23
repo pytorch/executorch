@@ -24,6 +24,7 @@ python_library(
         "//executorch/backends/xnnpack/partition:configs",
         "//executorch/backends/xnnpack/partition:partitioner_graphs",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:lib",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/passes:const_prop_pass",
