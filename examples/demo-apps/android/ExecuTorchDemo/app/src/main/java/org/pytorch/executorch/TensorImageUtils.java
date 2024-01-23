@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package com.example.executorchdemo.executor;
+package org.pytorch.executorch;
 
 import android.graphics.Bitmap;
 import android.graphics.ImageFormat;
