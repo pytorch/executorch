@@ -379,6 +379,7 @@ class XNNDatatype(IntEnum):
     xnn_datatype_qint32 = 5
     xnn_datatype_qcint8 = 6
     xnn_datatype_qcint32 = 7
+    xnn_datatype_qcint4 = 8
 
 
 @dataclass
