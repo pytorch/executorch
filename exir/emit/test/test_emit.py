@@ -1273,3 +1273,32 @@ class TestEmit(unittest.TestCase):
         self.assertTrue(
             len(exec_prog.delegate_map.get("forward").get(0).get("delegate_map")) != 0
         )
+
+    def test_emit_weight_view(self) -> None:
+        class ModWithWeightViews(nn.Module):
+            def __init__(self):
+                super(ModWithWeightViews, self).__init__()
+                self.W = torch.nn.Parameter(torch.randn(2))
+                self.W1 = self.W[:1]
+                self.W2 = self.W[1:]
+
+            def forward(self, x):
+                return self.W1 + self.W2 + x
+
+        model = ModWithWeightViews()
+        # each weight is a view of the same storage
+        self.assertEqual(model.W1.nbytes, 4)
+        self.assertEqual(model.W1.untyped_storage().nbytes(), 8)
+        self.assertEqual(model.W2.nbytes, 4)
+        self.assertEqual(model.W2.untyped_storage().nbytes(), 8)
+        program = to_edge(
+            export(
+                model,
+                (torch.ones(1),),
+            )
+        ).to_executorch()
+
+        program = program._emitter_output.program
+        # each emitted weight is not a view
+        self.assertEqual(len(program.constant_buffer[1].storage), 4)
+        self.assertEqual(len(program.constant_buffer[2].storage), 4)
