@@ -464,7 +464,8 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 
 # Passes to convert a graph module from ATen to Edge IR
-aten_to_edge_passes = PassManager(
+
+pre_op_replace_passes = PassManager(
     passes=[
         # ReplaceSymSizeOpPass need to be run before other passes which inherits
         # from ExportPass. ExportPass can not handle OpOverloadPacket in its
@@ -475,27 +476,16 @@ aten_to_edge_passes = PassManager(
         ReplaceBrokenOpsWithFunctionalOpsPass(),
         ScalarToTensorPass(),
         SymToTensorPass(),
-        RemoveMixedTypeOperators(),
         RemoveNoopPass(),
+    ]
+).passes
+
+post_op_replace_passes = PassManager(
+    passes=[
         dead_code_elimination_pass,
         DebugHandleGeneratorPass(),
     ]
-)
-
-
-def register_passes() -> None:
-    """
-    Register an aten-to-edge collection of passes, and instances of PassBase
-    subclasses declared in this file.
-    """
-
-    PassRegistry.register("aten_to_edge_passes")(aten_to_edge_passes)
-    PassRegistry.register("debug_pass")(DebugPass())
-    PassRegistry.register("memory_planning_pass")(MemoryPlanningPass())
-    PassRegistry.register("to_out_var_pass")(ToOutVarPass())
-
-
-register_passes()
+).passes
 
 
 def propagate_dynamic_shape(
