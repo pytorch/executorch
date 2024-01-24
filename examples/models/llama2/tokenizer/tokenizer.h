@@ -9,15 +9,18 @@
 // A simple Byte Pair Encoding (BPE) Tokenizer. Note that the vanila tokenizer
 // model won't work with this class, it needs to go through tokenizer.py first.
 #pragma once
-#include <executorch/runtime/core/error.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/core/result.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
+
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+
+#include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/result.h>
+#include <executorch/runtime/kernel/kernel_includes.h>
+
 namespace torch {
 namespace executor {
 
