@@ -13,6 +13,7 @@
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
+using torch::executor::util::MmapDataLoader;
 
 namespace torch {
 namespace executor {
@@ -221,37 +222,3 @@ void LlamaRunner::generate(const char* prompt) {
 LlamaRunner::~LlamaRunner() {}
 } // namespace executor
 } // namespace torch
-
-DEFINE_string(
-    model_path,
-    "llama2.pte",
-    "Model serialized in flatbuffer format.");
-
-DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
-
-DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
-
-using namespace torch::executor;
-using torch::executor::util::MmapDataLoader;
-
-int32_t main(int32_t argc, char** argv) {
-  runtime_init();
-
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Create a loader to get the data of the program file. There are other
-  // DataLoaders that use mmap() or point32_t to data that's already in memory,
-  // and users can create their own DataLoaders to load from arbitrary sources.
-  const char* model_path = FLAGS_model_path.c_str();
-
-  const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
-
-  const char* prompt = FLAGS_prompt.c_str();
-
-  // create llama runner
-  LlamaRunner llama_runner(model_path, tokenizer_path);
-
-  // generate
-  llama_runner.generate(prompt);
-  return 0;
-}

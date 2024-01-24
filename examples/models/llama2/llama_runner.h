@@ -12,8 +12,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include <gflags/gflags.h>
-
 #include <executorch/examples/models/llama2/sampler/sampler.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/examples/models/llama2/util.h>
