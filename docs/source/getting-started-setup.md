@@ -129,6 +129,11 @@ Follow these steps:
    ./install_requirements.sh
    ```
 
+   **Optional:** Install ExecuTorch as an editable installation:
+   ```bash
+   pip install --editable . --config-settings editable_mode=strict --no-build-isolation
+   ```
+
 1. Expose FlatBuffers compiler:
 
    ExecuTorch uses `flatc` to export models and builds it from sources at
