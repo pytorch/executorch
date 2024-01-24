@@ -9,6 +9,7 @@
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -30,10 +31,13 @@ Tensor& add_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
+  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add.out", CTYPE_A, [&]() {
     ET_SWITCH_REAL_TYPES_AND(Bool, b_type, ctx, "add.out", CTYPE_B, [&]() {
@@ -42,7 +46,7 @@ Tensor& add_out(
             ET_SWITCH_REAL_TYPES_AND(
                 Bool, out_type, ctx, "add.out", CTYPE_OUT, [&]() {
                   CTYPE_IN alpha_val;
-                  ET_EXTRACT_SCALAR(alpha, alpha_val);
+                  utils::extract_scalar(alpha, &alpha_val);
 
                   apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
                       [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {
@@ -81,10 +85,12 @@ Tensor& add_scalar_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
+  ScalarType alpha_type = utils::get_scalar_dtype(alpha);
   ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+  ET_KERNEL_CHECK(ctx, canCast(alpha_type, common_type), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
@@ -93,10 +99,10 @@ Tensor& add_scalar_out(
             ET_SWITCH_REAL_TYPES_AND(
                 Bool, out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
                   CTYPE_B b_val;
-                  ET_EXTRACT_SCALAR(b, b_val);
+                  utils::extract_scalar(b, &b_val);
                   CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
                   CTYPE_IN alpha_val;
-                  ET_EXTRACT_SCALAR(alpha, alpha_val);
+                  utils::extract_scalar(alpha, &alpha_val);
 
                   apply_unary_map_fn(
                       [b_casted, alpha_val](const CTYPE_A val_a) {

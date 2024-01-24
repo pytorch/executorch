@@ -127,7 +127,7 @@ Tensor& remainder_Scalar_out(
         ET_SWITCH_SCALAR_OBJ_TYPES(
             b_type, ctx, "remainder.Scalar_out", CTYPE_B, [&]() {
               CTYPE_B val_b = 0;
-              ET_EXTRACT_SCALAR(b, val_b);
+              utils::extract_scalar(b, &val_b);
               ET_SWITCH_REAL_TYPES(
                   common_type, ctx, "remainder.Scalar_out", CTYPE_IN, [&]() {
                     ET_SWITCH_REAL_TYPES(

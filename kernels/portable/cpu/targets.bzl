@@ -33,6 +33,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":scalar_utils",
         ],
     ),
@@ -649,6 +650,7 @@ _ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -659,6 +661,7 @@ _ATEN_OPS = (
         name = "op_scatter_add",
         deps = [
             "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -762,6 +765,7 @@ _ATEN_OPS = (
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
