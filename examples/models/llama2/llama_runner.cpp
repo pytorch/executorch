@@ -112,7 +112,7 @@ void LlamaRunner::generate(const char* prompt) {
   // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
   int* prompt_tokens = new int[strlen(prompt) + 1 + n_bos_ + n_eos_];
 
-  tokenizer_->encode(prompt, n_bos_, n_eos_, prompt_tokens, &num_prompt_tokens);
+  tokenizer_->encode(prompt, n_bos_, 0, prompt_tokens, &num_prompt_tokens);
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
 
