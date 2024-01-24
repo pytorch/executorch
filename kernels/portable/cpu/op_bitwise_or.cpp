@@ -120,7 +120,7 @@ Tensor& bitwise_or_Scalar_out(
         ET_SWITCH_SCALAR_OBJ_INTB_TYPES(
             b_type, ctx, "bitwise_or.Scalar_out", CTYPE_B, [&]() {
               CTYPE_B val_b = 0;
-              ET_EXTRACT_SCALAR(b, val_b);
+              utils::extract_scalar(b, &val_b);
               ET_SWITCH_INT_TYPES_AND(
                   Bool,
                   common_type,

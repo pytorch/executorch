@@ -36,7 +36,7 @@ Tensor& full_out(
 
   ET_SWITCH_REAL_TYPES_AND(Bool, val_type, ctx, "full.out", CTYPE_VAL, [&] {
     CTYPE_VAL val;
-    ET_EXTRACT_SCALAR(fill_value, val);
+    utils::extract_scalar(fill_value, &val);
 
     ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "full.out", CTYPE_OUT, [&] {
       CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);

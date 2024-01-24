@@ -109,7 +109,7 @@ Tensor& pow_Tensor_Scalar_out(
                         CTYPE_OUT,
                         [&]() {
                           CTYPE_B val_b = 0;
-                          ET_EXTRACT_SCALAR(b, val_b);
+                          utils::extract_scalar(b, &val_b);
                           apply_unary_map_fn(
                               [val_b](const CTYPE_A val_a) {
                                 CTYPE_IN a_casted =
@@ -161,7 +161,7 @@ Tensor& pow_Scalar_out(
                 ET_SWITCH_REAL_TYPES(
                     out_type, ctx, "pow.Scalar_out", CTYPE_OUT, [&]() {
                       CTYPE_A val_a = 0;
-                      ET_EXTRACT_SCALAR(a, val_a);
+                      utils::extract_scalar(a, &val_a);
 
                       apply_unary_map_fn(
                           [val_a](const CTYPE_B val_b) {

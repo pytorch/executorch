@@ -147,6 +147,7 @@ TEST(OpAddOutKernelTest, BoolAndIntInputTensor) {
 }
 
 TEST(OpAddOutKernelTest, BoolAndBoolInputTensor) {
+  et_pal_init();
   TensorFactory<ScalarType::Bool> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -387,6 +388,8 @@ TEST(OpAddOutKernelTest, MismatchedOutputShapesDies) {
 }
 
 TEST(OpAddOutKernelTest, SimpleGeneratedCase) {
+  et_pal_init();
+
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
