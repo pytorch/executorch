@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <math.h>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

@@ -7,7 +7,7 @@
  */
 
 #include <executorch/examples/models/llama2/sampler/sampler.h>
-#include <executorch/runtime/platform/runtime.h>
+
 #include <gtest/gtest.h>
 #include <torch/torch.h>
 
@@ -16,12 +16,7 @@ using namespace ::testing;
 namespace torch {
 namespace executor {
 
-class SamplerTest : public ::testing::Test {
- public:
-  void SetUp() override {
-    torch::executor::runtime_init();
-  }
-};
+class SamplerTest : public Test {};
 
 TEST_F(SamplerTest, TestArgMax) {
   torch::executor::Sampler sampler{

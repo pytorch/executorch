@@ -64,7 +64,7 @@ int32_t Sampler::sample_mult(float* probabilities, float coin) {
   return vocab_size_ - 1; // in case of rounding errors
 }
 
-int32_t compare(const void* a, const void* b) {
+static int32_t compare(const void* a, const void* b) {
   ProbIndex* a_ = (ProbIndex*)a;
   ProbIndex* b_ = (ProbIndex*)b;
   if (a_->prob > b_->prob) {
@@ -129,7 +129,7 @@ Sampler::Sampler(
       topp_(topp),
       rng_state_(rng_seed) {}
 
-void softmax(float* x, int size) {
+static void softmax(float* x, int size) {
   // find max value (for numerical stability)
   float max_val = x[0];
   for (int i = 1; i < size; i++) {
@@ -149,7 +149,7 @@ void softmax(float* x, int size) {
   }
 }
 
-unsigned int random_u32(unsigned long long* state) {
+static unsigned int random_u32(unsigned long long* state) {
   // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
   *state ^= *state >> 12;
   *state ^= *state << 25;
@@ -157,7 +157,7 @@ unsigned int random_u32(unsigned long long* state) {
   return (*state * 0x2545F4914F6CDD1Dull) >> 32;
 }
 
-float random_f32(unsigned long long* state) { // random float32 in [0,1)
+static float random_f32(unsigned long long* state) { // random float32 in [0,1)
   return (random_u32(state) >> 8) / 16777216.0f;
 }
 
