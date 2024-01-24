@@ -377,6 +377,14 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.cached_spec_hash_values[hashed] = buffer_idx
             self.program_state.constant_buffer.append(buffer)
 
+        if spec.const and spec.nbytes() != len(buffer_data):
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+                )
+            )
+
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
