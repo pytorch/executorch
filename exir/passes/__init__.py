@@ -37,11 +37,8 @@ from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGenera
 
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
-from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
-from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
@@ -464,7 +461,8 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 
 # Passes to convert a graph module from ATen to Edge IR
-aten_to_edge_passes = PassManager(
+
+pre_op_replace_passes = PassManager(
     passes=[
         # ReplaceSymSizeOpPass need to be run before other passes which inherits
         # from ExportPass. ExportPass can not handle OpOverloadPacket in its
@@ -475,27 +473,16 @@ aten_to_edge_passes = PassManager(
         ReplaceBrokenOpsWithFunctionalOpsPass(),
         ScalarToTensorPass(),
         SymToTensorPass(),
-        RemoveMixedTypeOperators(),
         RemoveNoopPass(),
+    ]
+).passes
+
+post_op_replace_passes = PassManager(
+    passes=[
         dead_code_elimination_pass,
         DebugHandleGeneratorPass(),
     ]
-)
-
-
-def register_passes() -> None:
-    """
-    Register an aten-to-edge collection of passes, and instances of PassBase
-    subclasses declared in this file.
-    """
-
-    PassRegistry.register("aten_to_edge_passes")(aten_to_edge_passes)
-    PassRegistry.register("debug_pass")(DebugPass())
-    PassRegistry.register("memory_planning_pass")(MemoryPlanningPass())
-    PassRegistry.register("to_out_var_pass")(ToOutVarPass())
-
-
-register_passes()
+).passes
 
 
 def propagate_dynamic_shape(
