@@ -156,6 +156,9 @@ class TensorSpec:
         if const:
             # for non-contigous tensors, convert to a contiguous one
             tensor = tensor.contiguous()
+            # Weights cannot be views during emission or serialization
+            if tensor.nbytes != tensor.untyped_storage().nbytes():
+                tensor = tensor.clone()
 
         spec = cls(
             dtype=tensor.dtype,
