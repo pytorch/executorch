@@ -494,10 +494,12 @@ To convert(From val) {
 /**
  * Implements type promotion rules that are consistent with ATen behaviour,
  * which in turn is consistent with NumPy's promote_types.
+ * If half_to_float is set to true, then half will be promoted to float instead
  */
 inline exec_aten::ScalarType promoteTypes(
     exec_aten::ScalarType a,
-    exec_aten::ScalarType b) {
+    exec_aten::ScalarType b,
+    bool half_to_float = false) {
   // This is generated according to NumPy's promote_types
   constexpr auto u1 = exec_aten::ScalarType::Byte;
   constexpr auto i1 = exec_aten::ScalarType::Char;
@@ -548,7 +550,14 @@ inline exec_aten::ScalarType promoteTypes(
           /* b1 */ {u1, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, b1},
       };
 
-  return _promoteTypesLookup[static_cast<int>(a)][static_cast<int>(b)];
+  exec_aten::ScalarType promoted_type =
+      _promoteTypesLookup[static_cast<int>(a)][static_cast<int>(b)];
+
+  if (half_to_float && promoted_type == ScalarType::Half) {
+    promoted_type = ScalarType::Float;
+  }
+
+  return promoted_type;
 }
 
 //
@@ -657,6 +666,14 @@ inline exec_aten::ScalarType promoteTypes(
   ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, __VA_ARGS__)               \
   ET_INTERNAL_SWITCH_CASE(                                                   \
       exec_aten::ScalarType::ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                    \
+    ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, ...)                     \
+  ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, __VA_ARGS__)      \
+  ET_INTERNAL_SWITCH_CASE(                                          \
+      exec_aten::ScalarType::ADDITIONAL1, CTYPE_ALIAS, __VA_ARGS__) \
+  ET_INTERNAL_SWITCH_CASE(                                          \
+      exec_aten::ScalarType::ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, ...)   \
   ET_INTERNAL_SWITCH_CASE(                                    \
@@ -786,6 +803,15 @@ inline exec_aten::ScalarType promoteTypes(
       NAME,                                            \
       ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND(          \
           ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_REAL_TYPES_AND2(                                   \
+    ADDITIONAL1, ADDITIONAL2, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                \
+      TYPE,                                                          \
+      CONTEXT,                                                       \
+      NAME,                                                          \
+      ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                       \
+          ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__))
 
 #define ET_SWITCH_INT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                              \
