@@ -173,8 +173,19 @@ MPSGraphTensor* mpsTruncTensor(MPSGraphTensor* inputTensor, MPSGraph* mpsGraph) 
     return inputTensor;
   }
 
-  return [mpsGraph truncateWithTensor:inputTensor
-                                  name:nil];
+  if (!isMacOS13OrNewer(MacOSVersion::MACOS_VER_13_0_PLUS)) {
+    MPSGraphTensor* zeroTensor = [mpsGraph constantWithScalar:0.0 dataType:inputTensor.dataType];
+    MPSGraphTensor* predicateTensor = [mpsGraph lessThanWithPrimaryTensor:inputTensor
+                                                          secondaryTensor:zeroTensor
+                                                                     name:nil];
+    return [mpsGraph selectWithPredicateTensor:predicateTensor
+                           truePredicateTensor:[mpsGraph ceilWithTensor:inputTensor name:nil]
+                          falsePredicateTensor:[mpsGraph floorWithTensor:inputTensor name:nil]
+                                          name:nil];
+  } else {
+    return [mpsGraph truncateWithTensor:inputTensor
+                                    name:nil];
+  }
 };
 
 static

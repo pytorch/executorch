@@ -11,7 +11,7 @@ namespace executor {
 namespace mps {
 namespace delegate {
 
-MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer) : _buffer_pointer(buffer_pointer) {
+MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer, std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) : _buffer_pointer(buffer_pointer), _mpsGraphTensorToId(mpsGraphTensorToId) {
   _mpsGraph = [MPSGraph new];
   _feeds = [NSMutableDictionary dictionary];
   _targetTensors = [NSMutableArray new];
@@ -76,11 +76,13 @@ MPSGraphBuilder::mpsGraphRankedPlaceholder(int32_t id) {
   ET_LOG(Debug, "%s: %d", __FUNCTION__, id);
   MPSShape* mpsShape = getMPSShape(id);
   MPSDataType mpsDataType = getMPSDataType(id);
-  _idToMPSGraphTensor[id] = [_mpsGraph placeholderWithShape:mpsShape
+  MPSGraphTensor* placeholder = [_mpsGraph placeholderWithShape:mpsShape
                                                   dataType:mpsDataType
                                                       name:nil];
-  _feeds[_idToMPSGraphTensor[id]] = [[MPSGraphShapedType alloc] initWithShape:mpsShape
-                                                                     dataType:mpsDataType];
+  _idToMPSGraphTensor[id] = placeholder;
+  _feeds[placeholder] = [[MPSGraphShapedType alloc] initWithShape:mpsShape
+                                                         dataType:mpsDataType];
+  _mpsGraphTensorToId[placeholder] = id;
   return Error::Ok;
 }
 
@@ -94,19 +96,14 @@ MPSGraphBuilder::getMPSGraphExecutable() {
   if (_mpsGraphExecutable) {
     return _mpsGraphExecutable;
   }
-
   _mpsGraphExecutable = [_mpsGraph compileWithDevice:[MPSGraphDevice deviceWithMTLDevice:MPSDevice::getInstance()->device()]
                                                feeds:_feeds
                                        targetTensors:_targetTensors
                                     targetOperations:nil
                                compilationDescriptor:nil];
 
-
-  // [_mpsGraphExecutable specializeWithDevice:[MPSGraphDevice deviceWithMTLDevice:MPSDevice::getInstance()->device()]
-  //                 inputTypes:[_feeds allValues]
-  //      compilationDescriptor:nil];
-
   return _mpsGraphExecutable;
+
 }
 
 } // namespace delegate

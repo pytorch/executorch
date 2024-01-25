@@ -47,6 +47,42 @@ MPSDevice* MPSDevice::getInstance() {
   return mps_device.get();
 }
 
+bool MPSDevice::isMacOS13Plus(MacOSVersion version) const {
+  id mpsCD = NSClassFromString(@"MPSGraph");
+  static auto compileOptions = [[[MTLCompileOptions alloc] init] autorelease];
+  static bool _macos_13_0_plus = [mpsCD instancesRespondToSelector:@selector(cumulativeSumWithTensor:
+                                                                                                axis:name:)] == YES;
+  static bool _macos_13_1_plus =
+      [mpsCD instancesRespondToSelector:@selector
+             (sampleGridWithSourceTensor:
+                        coordinateTensor:layout:normalizeCoordinates:relativeCoordinates:alignCorners:paddingMode
+                                        :samplingMode:constantValue:name:)] == YES;
+  static bool _macos_13_2_plus =
+      [mpsCD instancesRespondToSelector:@selector(convolution3DWithSourceTensor:weightsTensor:descriptor:name:)] == YES;
+  static bool _macos_13_3_plus = [compileOptions respondsToSelector:@selector(maxTotalThreadsPerThreadgroup)] == YES;
+
+  static bool _macos_14_0_plus = [mpsCD instancesRespondToSelector:@selector(conjugateWithTensor:name:)] == YES;
+
+  switch (version) {
+    case MacOSVersion::MACOS_VER_13_0_PLUS:
+      return _macos_13_0_plus;
+    case MacOSVersion::MACOS_VER_13_1_PLUS:
+      return _macos_13_1_plus;
+    case MacOSVersion::MACOS_VER_13_2_PLUS:
+      return _macos_13_2_plus;
+    case MacOSVersion::MACOS_VER_13_3_PLUS:
+      return _macos_13_3_plus;
+    case MacOSVersion::MACOS_VER_14_0_PLUS:
+      return _macos_14_0_plus;
+    default:
+      return false;
+  }
+}
+
+bool isMacOS13OrNewer(MacOSVersion version) {
+  return MPSDevice::getInstance()->isMacOS13Plus(version);
+}
+
 } // namespace delegate
 } // namespace mps
 } // namespace executor
