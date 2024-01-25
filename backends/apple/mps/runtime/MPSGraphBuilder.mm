@@ -11,7 +11,7 @@ namespace executor {
 namespace mps {
 namespace delegate {
 
-MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer, std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) : _buffer_pointer(buffer_pointer), _mpsGraphTensorToId(mpsGraphTensorToId) {
+MPSGraphBuilder::MPSGraphBuilder(const void* buffer_pointer, std::unordered_map<MPSGraphTensor*, int32_t>& mpsGraphTensorToId) : _mpsGraphTensorToId(mpsGraphTensorToId), _buffer_pointer(buffer_pointer) {
   _mpsGraph = [MPSGraph new];
   _feeds = [NSMutableDictionary dictionary];
   _targetTensors = [NSMutableArray new];
