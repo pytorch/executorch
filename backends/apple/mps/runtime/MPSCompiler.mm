@@ -23,11 +23,6 @@
 
 #define MPS_UNUSED(x) ( (void)(x) )
 
-@interface MPSGraphExecutable()
--(NSArray<MPSGraphShapedType *> *) getInputShapes;
--(NSArray<MPSGraphShapedType *> *) getOutputShapes;
-@end
-
 namespace torch {
 namespace executor {
 namespace mps {
@@ -47,22 +42,24 @@ __ET_NODISCARD Error MPSCompiler::compileModel(
 
   Error err = Error::Ok;
 
-  std::unique_ptr<MPSGraphBuilder> mpsGraphBuilder(new MPSGraphBuilder(buffer_pointer));
+  std::unique_ptr<MPSGraphBuilder> mpsGraphBuilder(
+    new MPSGraphBuilder(buffer_pointer, executor->_mpsGraphTensorToId));
   err = mpsGraphBuilder->compileModel();
   ET_CHECK_OR_RETURN_ERROR(
     err == Error::Ok, Internal, "Failed to construct the MPS graph object");
 
-  executor->executable_ = mpsGraphBuilder->getMPSGraphExecutable();
+  executor->_executable = mpsGraphBuilder->getMPSGraphExecutable();
   ET_CHECK_OR_RETURN_ERROR(
-      executor->executable_ != nil,
+      executor->_executable != nil,
       InvalidProgram,
       "Invalid FlatBuffer contents - could not create MPSGraphExecutable");
 
-  executor->inputShapes_ = [[executor->executable_ getInputShapes] retain];
-  executor->outputShapes_ = [[executor->executable_ getOutputShapes] retain];
+  err = executor->initDataBuffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      err == Error::Ok, Internal, "Could not allocate data buffers");
 
-  ET_LOG(Debug, "MPSGraphExecutable num inputs: %lu", [executor->inputShapes_ count]);
-  ET_LOG(Debug, "MPSGraphExecutable num outputs: %lu", [executor->outputShapes_ count]);
+  ET_LOG(Debug, "MPSGraphExecutable total inputs: %lu", [executor->_inputShapes count]);
+  ET_LOG(Debug, "MPSGraphExecutable total outputs: %lu", [executor->_outputShapes count]);
 
   return err;
 }

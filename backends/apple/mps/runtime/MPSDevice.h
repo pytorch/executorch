@@ -16,6 +16,15 @@ namespace executor {
 namespace mps {
 namespace delegate {
 
+// Helper enum to check if a MPSGraph op is supported in a given macOS version
+enum class MacOSVersion : uint32_t {
+  MACOS_VER_13_0_PLUS = 0,
+  MACOS_VER_13_1_PLUS,
+  MACOS_VER_13_2_PLUS,
+  MACOS_VER_13_3_PLUS,
+  MACOS_VER_14_0_PLUS,
+};
+
 class MPSDevice {
  public:
   /**
@@ -37,6 +46,11 @@ class MPSDevice {
     return _mtl_device;
   }
 
+  /**
+   * Returns whether running on Ventura or newer
+   */
+  bool isMacOS13Plus(MacOSVersion version) const;
+
   ~MPSDevice();
 
  private:
@@ -44,6 +58,8 @@ class MPSDevice {
   id<MTLDevice> _mtl_device;
   MPSDevice();
 };
+
+bool isMacOS13OrNewer(MacOSVersion version = MacOSVersion::MACOS_VER_13_0_PLUS);
 
 } // namespace delegate
 } // namespace mps
