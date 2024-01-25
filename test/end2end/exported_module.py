@@ -131,26 +131,25 @@ class ExportedModule:
         for method in methods:
             method_name_to_args[method] = trace_inputs
 
-        method_name_to_constraints = None
-        if hasattr(eager_module, "get_constraints"):
+        method_name_to_dynamic_shapes = None
+        if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
-            trace_constraints = eager_module.get_constraints()
-            method_name_to_constraints = {}
+            trace_dynamic_shapes = eager_module.get_dynamic_shapes()
+            method_name_to_dynamic_shapes = {}
             for method in methods:
-                method_name_to_constraints[method] = trace_constraints
+                method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
         memory_planning_pass = MemoryPlanningPass("greedy")
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()
-
         # Capture an executorch program.
         executorch_program = (
             exir.capture_multiple(
                 eager_module,
                 method_name_to_args,
                 capture_config,
-                constraints=method_name_to_constraints,
+                dynamic_shapes=method_name_to_dynamic_shapes,
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .to_executorch(

@@ -45,10 +45,9 @@ from executorch.exir.types import ValueSpec
 
 from torch._C import _EnableTorchFunction, DisableTorchFunctionSubclass  # @manual
 from torch._decomp import core_aten_decompositions, get_decompositions
-from torch._dynamo.eval_frame import Constraint
 from torch._dynamo.guards import Guard
-
 from torch._functorch.eager_transforms import _maybe_unwrap_functional_tensor
+from torch.export.dynamic_shapes import _process_dynamic_shapes
 from torch.func import functionalize
 from torch.fx.operator_schemas import normalize_function
 from torch.utils._pytree import TreeSpec
@@ -643,7 +642,7 @@ def dynamo_trace(
     aten_graph: bool,
     tracing_mode: str = "real",
     dynamo_config: Optional[ExirDynamoConfig] = None,
-    constraints: Optional[List[Constraint]] = None,
+    dynamic_shapes: Optional[List[Any]] = None,
     _use_old_decomp_table: bool = False,
 ) -> Tuple[torch.fx.GraphModule, Set[Guard]]:
     """
@@ -671,7 +670,9 @@ def dynamo_trace(
                 decomposition_table=_default_decomposition_table(_use_old_decomp_table)
                 if aten_graph
                 else None,
-                constraints=constraints,
+                constraints=_process_dynamic_shapes(
+                    f, args, dynamic_shapes=dynamic_shapes
+                ),
             )(
                 *copy.deepcopy(args),
             )
