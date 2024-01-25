@@ -5,14 +5,16 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
+from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 
 
 def is_parameter(
     node: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ) -> bool:
     return (
-        node.name in edge_program.graph_signature.inputs_to_parameters
-        or node.name in edge_program.graph_signature.inputs_to_buffers
+        is_param(edge_program, node)
+        or is_buffer(edge_program, node)
+        or node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants
     )
 
 
@@ -20,14 +22,13 @@ def get_parameter(
     node: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ) -> torch.Tensor:
     param = None
-    if node.name in edge_program.graph_signature.inputs_to_parameters:
-        param = edge_program.state_dict[
-            edge_program.graph_signature.inputs_to_parameters[node.name]
-        ].data
-    if node.name in edge_program.graph_signature.inputs_to_buffers:
-        param = edge_program.state_dict[
-            edge_program.graph_signature.inputs_to_buffers[node.name]
-        ]
+    if is_param(edge_program, node):
+        param = get_param(edge_program, node)
+    if is_buffer(edge_program, node):
+        param = get_buffer(edge_program, node)
+    if node.name in edge_program.graph_signature.inputs_to_lifted_tensor_constants:
+        name = edge_program.graph_signature.inputs_to_lifted_tensor_constants[node.name]
+        param = edge_program.constants[name]
     if param is not None:
         # update node.meta["val"] to qualified QNN datatype (e.g. i64 to i32)
         assert isinstance(param, torch.Tensor), "Expect parameter to be tensor"
@@ -39,15 +40,17 @@ def set_parameter(
     param: torch.Tensor, node: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ):
     status = False
-    if node.name in edge_program.graph_signature.inputs_to_parameters:
+    if is_param(edge_program, node):
         edge_program.state_dict[
             edge_program.graph_signature.inputs_to_parameters[node.name]
         ] = param
         status = True
-    if node.name in edge_program.graph_signature.inputs_to_buffers:
-        edge_program.state_dict[
-            edge_program.graph_signature.inputs_to_buffers[node.name]
-        ].data = param
+    if is_buffer(edge_program, node):
+        buffer_name = edge_program.graph_signature.inputs_to_buffers[node.name]
+        if buffer_name in edge_program.graph_signature.non_persistent_buffers:
+            edge_program.constants[buffer_name] = param
+        else:
+            edge_program.state_dict[buffer_name] = param
         status = True
     assert status, "Failed to set parameter"
 

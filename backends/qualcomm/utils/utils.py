@@ -17,10 +17,8 @@ import torch
 from executorch.backends.qualcomm.passes.annotate_and_quant_scalar import (
     AnnotateAndQuantScalar,
 )
+from executorch.backends.qualcomm.passes.annotate_decomposed import AnnotateDecomposed
 from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQuantAttrs
-from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
-    ConvertAddmmmmWithLinear,
-)
 from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
     ConvertBinaryOpsWithScalar,
 )
@@ -30,6 +28,7 @@ from executorch.backends.qualcomm.passes.convert_hardswish import ConvertHardswi
 from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
     ConvertInterpolateWithUpsample2D,
 )
+from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
@@ -73,7 +72,7 @@ def capture_program(
     edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
-    ConvertAddmmmmWithLinear()(graph_module)
+    ConvertToLinear()(graph_module)
     ConvertHardsigmoid()(graph_module)
     ConvertHardswish()(graph_module)
     ConvertBmmToMatmul()(graph_module)
@@ -81,6 +80,7 @@ def capture_program(
     I64toI32(edge_program)(graph_module)
     AnnotateQuantAttrs(edge_program)(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)
+    AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
     LayoutTransform(edge_program)(graph_module)
     return ex_prog
