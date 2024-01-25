@@ -12,8 +12,8 @@ def define_common_targets():
         srcs = [
             "unary_ufunc_realhb_to_bool.cpp",
             "unary_ufunc_realhb_to_floath.cpp",
+            "unary_ufunc_realh.cpp",
             "binary_ufunc_realb_realb_to_realb_logical.cpp",
-            "unary_ufunc_real.cpp",
         ],
         exported_headers = [
             "pattern.h",
