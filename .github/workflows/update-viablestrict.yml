@@ -1,6 +1,8 @@
 name: Update viable/strict
 
 on:
+  # TODO: Remove pull_request trigger after finish testing before landing the change
+  pull_request:
   schedule:
     - cron: 17,47 * * * *
   workflow_dispatch:
