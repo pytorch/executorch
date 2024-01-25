@@ -8,6 +8,7 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -48,6 +49,21 @@ TEST(OpReciprocalTest, HandleBoolInput) {
   Tensor a = tf_bool.make(sizes, /*data=*/{false, true});
   Tensor out = tf_float.zeros(sizes);
   Tensor res = tf_float.make(sizes, /*data=*/{INFINITY, 1.0});
+
+  EXPECT_TENSOR_CLOSE(op_reciprocal_out(a, out), res);
+}
+
+TEST(OpReciprocalTest, HandleHalfInput) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+  TensorFactory<ScalarType::Half> tf_half;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_half.make(sizes, /*data=*/{5.0, -2.0});
+  Tensor out = tf_half.zeros(sizes);
+  Tensor res = tf_half.make(sizes, /*data=*/{0.2, -0.5});
 
   EXPECT_TENSOR_CLOSE(op_reciprocal_out(a, out), res);
 }

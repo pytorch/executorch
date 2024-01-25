@@ -133,6 +133,15 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(float, Float)                \
   _(double, Double)
 
+#define ET_FORALL_FLOAT_TYPES_AND(SCALARTYPE, _)    \
+  _(float, Float)                                   \
+  _(double, Double)                                 \
+  _(::torch::executor::ScalarTypeToCppType<         \
+        ::exec_aten::ScalarType::SCALARTYPE>::type, \
+    SCALARTYPE)
+
+#define ET_FORALL_FLOATH_TYPES(_) ET_FORALL_FLOAT_TYPES_AND(Half, _)
+
 // Here `ANOTHER_INPUT` should be another variable to be forwarded to a given
 // function. Not to be confused with another scalar type as in
 // `ET_FORALL_FLOAT_TYPES_AND`.
@@ -189,6 +198,8 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(::torch::executor::ScalarTypeToCppType<         \
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
+
+#define ET_FORALL_REALH_TYPES(_) ET_FORALL_REAL_TYPES_AND(Half, _)
 
 #define ET_FORALL_REAL_TYPES_AND_WITH(SCALARTYPE, ANOTHER_INPUT, _) \
   _(ANOTHER_INPUT, uint8_t, Byte)                                   \
