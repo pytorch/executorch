@@ -157,20 +157,48 @@ void LlamaRunner::generate(const char* prompt) {
         "Expecting output to have at least one evalue. Got %zu",
         outputs.size());
 
-    float* logits = outputs[0].toTensor().mutable_data_ptr<float>();
+    int32_t next_tok;
+    switch (outputs[0].toTensor().scalar_type()) {
+      case ScalarType::Float: {
+        float* logits = outputs[0].toTensor().mutable_data_ptr<float>();
+
+        // Since the logits are for all tokens, get the last token probabilities
+        float* logits_last = logits + pos * tokenizer_->vocab_size();
+        next_tok = sampler_->sample(logits_last);
+        break;
+      }
+      case ScalarType::Half: {
+#ifdef USE_ATEN_LIB
+        // TODO:(larryliu) get rid of this check once we have Half support in
+        // portable kernels.
+
+        c10::Half* half_logits =
+            outputs[0].toTensor().mutable_data_ptr<c10::Half>();
+        c10::Half* logits_last = half_logits + pos * tokenizer_->vocab_size();
+        next_tok = sampler_->sample(logits_last);
+        break;
+#else
+        __ET_FALLTHROUGH; // fallthrough
+#endif
+      }
+      default:
+        ET_CHECK_MSG(
+            false,
+            "Unsupported dtype output %hhd",
+            outputs[0].toTensor().scalar_type());
+    }
+
     // debug
     // torch::Tensor t = torch::from_blob(
     //     (void*)logits, {1, num_prompt_tokens, 32000}, torch::kFloat);
 
-    // Since the logits are for all tokens, get the last token probabilities
-    float* logits_last = logits + pos * tokenizer_->vocab_size();
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
       // prefill, force the next token to be the next prompt token
       next = prompt_tokens[pos + 1];
     } else {
       // otherwise sample the next token from the logits
-      next = sampler_->sample(logits_last);
+      next = next_tok;
     }
     // ET_LOG(Info, "Output saved, next = %d", next);
     pos++;
