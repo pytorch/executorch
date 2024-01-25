@@ -160,7 +160,10 @@ def export_llama(modelname, args) -> str:
         use_kv_cache=args.use_kv_cache,
         fairseq2=args.fairseq2,
     )
-
+    edge_config = EdgeCompileConfig(
+        _check_ir_validity=False,
+        _skip_type_promotion=bool(args.half),
+    )
     if args.use_kv_cache:
         # seq length is fixed to 1 with current kv cache impl
         dynamic_shapes = None
@@ -209,9 +212,7 @@ def export_llama(modelname, args) -> str:
             example_inputs,
             dynamic_shapes=dynamic_shapes,
             edge_constant_methods=metadata,
-            edge_compile_config=EdgeCompileConfig(
-                _check_ir_validity=False,
-            ),
+            edge_compile_config=edge_config,
         )
     if args.xnnpack:
         edge_manager = edge_manager.to_backend(XnnpackPartitioner())

@@ -34,6 +34,7 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    _skip_type_promotion: bool = False
 
 
 @compatibility(is_backward_compatible=False)
