@@ -9,7 +9,6 @@
 import argparse
 import json
 import logging
-import os
 import shlex
 from json import JSONDecodeError
 
@@ -22,7 +21,6 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from libfb.py import parutil
 
 from ...portable.utils import export_to_edge, save_pte_program
 

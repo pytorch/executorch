@@ -15,7 +15,7 @@ from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
-from torch._export import dynamic_dim
+from torch.export import Dim
 
 """Traces and exports nn.Modules to ExecuTorch .pte program files.
 
@@ -98,10 +98,8 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
     def get_random_inputs(self):
         return self._inputs
 
-    def get_constraints(self):
-        return [
-            dynamic_dim(self._inputs[0], 0) <= 3,
-        ]
+    def get_dynamic_shapes(self):
+        return ({0: Dim("dim0_k", max=3)},)
 
     def get_memory_planning_pass(self):
         return MemoryPlanningPass(
