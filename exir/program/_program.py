@@ -20,11 +20,13 @@ from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
-    aten_to_edge_passes,
     EdgeToBackendOpsPass,
     OpReplacePass,
+    post_op_replace_passes,
+    pre_op_replace_passes,
 )
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
+from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
@@ -482,10 +484,11 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
     # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
     # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
-    pre_op_replace_passes = aten_to_edge_passes.passes[:-2]
-    post_op_replace_passes = aten_to_edge_passes.passes[-2:]
 
-    new_ep = copy.deepcopy(ep).transform(*pre_op_replace_passes)
+    passes = pre_op_replace_passes + (
+        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
+    )
+    new_ep = copy.deepcopy(ep).transform(*passes)
     if dialect == "ATEN":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
@@ -824,16 +827,16 @@ def to_edge(
         passes.append(
             ReplaceViewOpsWithViewCopyOpsPass()
         )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
-        passes.extend(aten_to_edge_passes.passes[:-2])
+        passes.extend(pre_op_replace_passes)
+        if not config._skip_type_promotion:
+            passes.append(RemoveMixedTypeOperators())
+        if config._use_edge_ops:
+            passes.append(OpReplacePass())
+
         gm = program.graph_module
         edge_program = program
         for p in passes:
             gm_res = p(gm)
-            assert gm_res is not None
-            gm = gm_res.graph_module
-
-        if config._use_edge_ops:
-            gm_res = OpReplacePass()(gm)
             assert gm_res is not None
             gm = gm_res.graph_module
 
@@ -854,9 +857,7 @@ def to_edge(
             ),
             tensor_constants=edge_program.tensor_constants,
         )
-        passes = []
-        passes.extend(aten_to_edge_passes.passes[-2:])
-        edge_program = _transform(edge_program, *passes)
+        edge_program = _transform(edge_program, *post_op_replace_passes)
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
