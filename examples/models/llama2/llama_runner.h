@@ -32,7 +32,7 @@ class LlamaRunner {
  public:
   explicit LlamaRunner(const char* model_path, const char* tokenizer_path);
 
-  void generate(const char* prompt);
+  void generate(const char* prompt, bool eos = false);
 
   ~LlamaRunner();
 
