@@ -9,23 +9,16 @@ import random
 import unittest
 from enum import Enum
 
-import executorch.exir as exir
 import torch
-import torch._export as export
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.models.model_factory import EagerModelFactory
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.test.test_mps_models import MPS_MODEL_NAME_TO_MODEL
 from executorch.backends.apple.mps.test.test_mps_utils import (
-    _CAPTURE_CONFIG,
-    _EDGE_COMPILE_CONFIG,
     OpSequencesAddConv2d,
     randomize_bn,
     TestMPS,
 )
 
-from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.tests.models import (
     BasicSinMax,
     CompositeDelegateModule,
@@ -35,12 +28,6 @@ from executorch.exir.tests.models import (
     ModelWithUnusedArg,
     Mul,
     Repeat,
-)
-from executorch.sdk import BundledProgram
-
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
 )
 
 
@@ -75,6 +62,7 @@ def run_model(
     model: str,
     model_type: MODEL_TYPE = MODEL_TYPE.EXIR_DEFAULT_MODEL,
     use_fp16: bool = False,
+    lowering_func=None,
 ):
     logging.info(f"Step 1: Retrieving model: {model}...")
     if model_type == MODEL_TYPE.EXIR_DEFAULT_MODEL:
@@ -84,110 +72,102 @@ def run_model(
     elif model_type == MODEL_TYPE.MPS_TEST_MODEL:
         m, m_inputs = MPS_MODEL_NAME_TO_MODEL.get(model)()
 
-    m = m.eval()
-
-    pre_autograd_graph = export.capture_pre_autograd_graph(m, m_inputs)
-
-    logging.info("Step 2: EXIR capturing of original module...")
-    edge = exir.capture(pre_autograd_graph, m_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
-
-    # Step 3: Lower to MPSGraph
-    logging.info("Step 3: Lowering to MPSGraph...")
-    compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
-    lowered_module = to_backend(
-        MPSBackend.__name__, edge.exported_program, compile_specs
-    )
-
-    logging.info("Step 4: Capturing executorch program with lowered module...")
-
-    # Step 4: Create a new composite module with our lowered MPS module
-    # This composite module calls into the lowered module
-    class WrappedModule(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.mps_module = lowered_module
-
-        def forward(self, *args):
-            return self.mps_module(*args)
-
-    executorch_program = (
-        exir.capture(WrappedModule(), m_inputs, _CAPTURE_CONFIG)
-        .to_edge(_EDGE_COMPILE_CONFIG)
-        .to_executorch()
-    )
-
-    logging.info("Step 5: Generating bundled program... ")
-
-    logging.info(
-        f"  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
-    )
-
-    method_test_suites = [
-        MethodTestSuite(
-            method_name="forward",
-            test_cases=[MethodTestCase(inputs=m_inputs, expected_outputs=m(*m_inputs))],
-        )
-    ]
-
-    logging.info("  -> Test suites generated successfully")
-
-    bundled_program = BundledProgram(executorch_program, method_test_suites)
-    logging.info("  -> Bundled program generated successfully")
-
-    bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
-        bundled_program
-    )
-    logging.info("  -> Bundled program serialized successfully to flatbuffer")
-
-    filename = f"{model}.pte"
-    logging.info(f"Step 6: Saving exported program to {filename}...")
-    with open(filename, "wb") as file:
-        file.write(bundled_program_buffer)
+    lowering_func(m, m_inputs, model)
 
 
-class TestMPSBackendExirModels(unittest.TestCase):
+class TestMPSBackendExirModels(TestMPS):
     def test_model_with_unused_arg(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_mlp(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_mul_2(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_element_wise_add(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_emformer(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
 
-class TestMPSBackendMPSModels(unittest.TestCase):
+class TestMPSBackendMPSModels(TestMPS):
     def test_conv2D(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_norm(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_add(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_toy_model_for_mem_planning(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_mem_planning_with_scratch_tensor(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_ops_return_tensor_list(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_contiguous_tensor(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_input_dynamic_shape(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
 
 class TestMPSUnitOpTesting(TestMPS):
@@ -1323,6 +1303,30 @@ class TestMPSUnitOpTesting(TestMPS):
                 values=torch.tensor(float("nan")),
             ),
         )
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_backend_partitioner(self):
+        # `index.Tensor`` is not yet natively supported
+        # It will fall back to MPSPartitioner. Once implemented,
+        # replace the op with an unsupported one.
+        class IndexTensorModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.indices = torch.tensor([0, 5, 2, 3])
+
+            def forward(self, x):
+                y = torch.add(x, 2.0)
+                z = y[self.indices]
+                r = z + x[self.indices]
+                d = r - 2
+                p = torch.pow(d, 4)
+                return p / 10
+
+        module = IndexTensorModule()
+
+        model_inputs = (torch.randn(8, 3, 4, 5),)
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
