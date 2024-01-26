@@ -32,17 +32,17 @@ Tensor& sub_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type = promoteTypes(a_type, b_type);
+  ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(
       ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.out", CTYPE_A, [&]() {
-    ET_SWITCH_REAL_TYPES(b_type, ctx, "sub.out", CTYPE_B, [&]() {
+  ET_SWITCH_REALH_TYPES(a_type, ctx, "sub.out", CTYPE_A, [&]() {
+    ET_SWITCH_REALH_TYPES(b_type, ctx, "sub.out", CTYPE_B, [&]() {
       ET_SWITCH_REAL_TYPES(common_type, ctx, "sub.out", CTYPE_IN, [&]() {
-        ET_SWITCH_REAL_TYPES(out_type, ctx, "sub.out", CTYPE_OUT, [&]() {
+        ET_SWITCH_REALH_TYPES(out_type, ctx, "sub.out", CTYPE_OUT, [&]() {
           CTYPE_IN alpha_val;
           utils::extract_scalar(alpha, &alpha_val);
 
@@ -84,18 +84,19 @@ Tensor& sub_scalar_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType alpha_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
+  ScalarType common_type =
+      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, canCast(alpha_type, common_type), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
+  ET_SWITCH_REALH_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_REAL_TYPES(
         b_type, ctx, "sub.Scalar_out", CTYPE_B, [&]() {
           ET_SWITCH_REAL_TYPES(
               common_type, ctx, "sub.Scalar_out", CTYPE_IN, [&]() {
-                ET_SWITCH_REAL_TYPES(
+                ET_SWITCH_REALH_TYPES(
                     out_type, ctx, "sub.Scalar_out", CTYPE_OUT, [&]() {
                       CTYPE_B b_val;
                       utils::extract_scalar(b, &b_val);
