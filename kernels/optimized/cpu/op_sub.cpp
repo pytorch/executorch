@@ -99,10 +99,14 @@ Tensor& opt_sub_scalar_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType common_type =
-      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ true);
+      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
   ScalarType out_type = out.scalar_type();
 
   ET_CHECK(common_type == out_type);
+
+  if (common_type == ScalarType::Half) {
+    common_type = ScalarType::Float;
+  }
 
   // Resize for dynamic shape
   auto error = resize_tensor(out, a.sizes());
