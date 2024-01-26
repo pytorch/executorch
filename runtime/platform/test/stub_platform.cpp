@@ -57,6 +57,11 @@ et_timestamp_t et_pal_current_ticks(void) {
   return platform_intercept->current_ticks();
 }
 
+et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+  ASSERT_INTERCEPT_INSTALLED();
+  return platform_intercept->ticks_to_ns_multiplier();
+}
+
 void et_pal_emit_log_message(
     et_timestamp_t timestamp,
     et_pal_log_level_t level,
