@@ -84,18 +84,19 @@ Tensor& add_scalar_out(
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType alpha_type = utils::get_scalar_dtype(alpha);
-  ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
+  ScalarType common_type =
+      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ true);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, canCast(alpha_type, common_type), InvalidArgument, out);
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
+  ET_SWITCH_REALHB_TYPES(a_type, ctx, "add.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "add.Scalar_out", CTYPE_B, [&]() {
-      ET_SWITCH_REAL_TYPES_AND(
-          Bool, common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
-            ET_SWITCH_REAL_TYPES_AND(
-                Bool, out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
+      ET_SWITCH_REALB_TYPES(
+          common_type, ctx, "add.Scalar_out", CTYPE_IN, [&]() {
+            ET_SWITCH_REALHB_TYPES(
+                out_type, ctx, "add.Scalar_out", CTYPE_OUT, [&]() {
                   CTYPE_B b_val;
                   utils::extract_scalar(b, &b_val);
                   CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
