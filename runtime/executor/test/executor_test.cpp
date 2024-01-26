@@ -58,6 +58,31 @@ TEST_F(ExecutorTest, EValue) {
   ASSERT_EQ(v.toTensor().nbytes(), 16);
 }
 
+/**
+ * According to the precision limitations listed here:
+ * https://en.wikipedia.org/wiki/Half-precision_floating-point_format#Precision_limitations
+ * The max precision error for a half in the range [2^n, 2^(n+1)] is 2^(n-10)
+ */
+float toleranceFloat16(float f) {
+  return pow(2, static_cast<int>(log2(fabs(f))) - 10);
+}
+
+TEST_F(ExecutorTest, TensorHalf) {
+  TensorFactory<ScalarType::Half> tf;
+  Tensor a = tf.make({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f});
+
+  ASSERT_EQ(a.nbytes(), 8);
+  ASSERT_EQ(a.element_size(), 2);
+  ASSERT_EQ(a.numel(), 4);
+  ASSERT_EQ(a.scalar_type(), ScalarType::Half);
+
+  auto data_p = a.const_data_ptr<exec_aten::Half>();
+  ASSERT_NEAR(
+      data_p[0], 1.0f, toleranceFloat16(fmax(fabs(1.0f), fabs(data_p[0]))));
+  ASSERT_NEAR(
+      data_p[1], 2.0f, toleranceFloat16(fmax(fabs(2.0f), fabs(data_p[1]))));
+}
+
 TEST_F(ExecutorTest, RegistryLookupAndCall) {
   const char* op_name = "aten::add.out";
   ASSERT_TRUE(hasOpsFn(op_name));
