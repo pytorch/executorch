@@ -17,7 +17,7 @@ namespace native {
 using exec_aten::Tensor;
 
 Tensor& floor_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_real(std::floor, ctx, in, out);
+  return internal::unary_ufunc_realh(std::floor, ctx, in, out);
 }
 
 } // namespace native

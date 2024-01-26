@@ -8,6 +8,7 @@
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
+#include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
@@ -26,6 +27,22 @@ Tensor& op_floor_out(const Tensor& self, Tensor& out) {
 
 TEST(OpFloorTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
+
+  Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
+  Tensor out = tf.zeros({1, 7});
+  Tensor expected = tf.make({1, 7}, {-3.0, -3.0, -2.0, 0.0, 1.0, 2.0, 3.0});
+
+  Tensor ret = op_floor_out(in, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpFloorTest, HalfSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+  TensorFactory<ScalarType::Half> tf;
 
   Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
   Tensor out = tf.zeros({1, 7});
