@@ -5,25 +5,20 @@
 
 # Example script for exporting simple models to flatbuffer
 
-import copy
 import argparse
+import copy
 import logging
 
 import torch._export as export
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
-from executorch.exir import EdgeCompileConfig
 
-from executorch.exir import (
-    EdgeCompileConfig,
-    EdgeProgramManager,
-)
-from executorch.sdk import generate_etrecord
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.sdk import BundledProgram
+from executorch.sdk import BundledProgram, generate_etrecord
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -154,8 +149,8 @@ if __name__ == "__main__":
         program_buffer = executorch_program.buffer
 
     if args.generate_etrecord:
-      etrecord_path = "etrecord.bin"
-      logging.info("generating etrecord.bin")
-      generate_etrecord(etrecord_path, edge_program_manager_copy, executorch_program)
+        etrecord_path = "etrecord.bin"
+        logging.info("generating etrecord.bin")
+        generate_etrecord(etrecord_path, edge_program_manager_copy, executorch_program)
 
     save_pte_program(program_buffer, model_name)
