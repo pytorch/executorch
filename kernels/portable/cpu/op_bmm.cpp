@@ -32,25 +32,26 @@ Tensor& bmm_out(
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "bmm.out", CTYPE, [&]() {
-    const CTYPE* in_data = in.const_data_ptr<CTYPE>();
-    const CTYPE* mat2_data = mat2.const_data_ptr<CTYPE>();
-    CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+  ET_SWITCH_REAL_TYPES_AND(
+      Half, in.scalar_type(), ctx, "bmm.out", CTYPE, [&]() {
+        const CTYPE* in_data = in.const_data_ptr<CTYPE>();
+        const CTYPE* mat2_data = mat2.const_data_ptr<CTYPE>();
+        CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
-    int64_t batch_size = in.size(0);
-    int64_t m = in.size(1);
-    int64_t n = in.size(2);
-    int64_t p = mat2.size(2);
+        int64_t batch_size = in.size(0);
+        int64_t m = in.size(1);
+        int64_t n = in.size(2);
+        int64_t p = mat2.size(2);
 
-    for (int i = 0; i < batch_size; ++i) {
-      const CTYPE* in_data_offset = in_data + i * m * n;
-      const CTYPE* mat2_data_offset = mat2_data + i * n * p;
-      CTYPE* out_data_offset = out_data + i * m * p;
+        for (int i = 0; i < batch_size; ++i) {
+          const CTYPE* in_data_offset = in_data + i * m * n;
+          const CTYPE* mat2_data_offset = mat2_data + i * n * p;
+          CTYPE* out_data_offset = out_data + i * m * p;
 
-      vec_matmul<CTYPE>(
-          out_data_offset, in_data_offset, mat2_data_offset, m, n, p);
-    }
-  });
+          vec_matmul<CTYPE>(
+              out_data_offset, in_data_offset, mat2_data_offset, m, n, p);
+        }
+      });
 
   return out;
 }
