@@ -5,6 +5,7 @@
 
 # Example script for exporting simple models to flatbuffer
 
+import copy
 import argparse
 import logging
 
@@ -14,6 +15,11 @@ from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
 from executorch.exir import EdgeCompileConfig
 
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+)
+from executorch.sdk import generate_etrecord
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -63,6 +69,15 @@ if __name__ == "__main__":
         default=False,
         help="Flag for bundling inputs and outputs in the final flatbuffer program",
     )
+
+    parser.add_argument(
+        "--generate_etrecord",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Generate ETRecord metadata to link with runtime results (used for profiling)",
+    )
+
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -77,11 +92,12 @@ if __name__ == "__main__":
     # pre-autograd export. eventually this will become torch.export
     model = export.capture_pre_autograd_graph(model, example_inputs)
 
-    edge = export_to_edge(
+    edge: EdgeProgramManager = export_to_edge(
         model,
         example_inputs,
         edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
+    edge_program_manager_copy = copy.deepcopy(edge)
 
     compile_specs = [CompileSpec("use_fp16", bytes([args.use_fp16]))]
 
@@ -136,5 +152,10 @@ if __name__ == "__main__":
         program_buffer = bundled_program_buffer
     else:
         program_buffer = executorch_program.buffer
+
+    if args.generate_etrecord:
+      etrecord_path = "etrecord.bin"
+      logging.info("generating etrecord.bin")
+      generate_etrecord(etrecord_path, edge_program_manager_copy, executorch_program)
 
     save_pte_program(program_buffer, model_name)
