@@ -37,7 +37,8 @@ class LlamaRunner {
   ~LlamaRunner();
 
  private:
-  std::vector<int32_t> readMetadata(std::vector<std::string> method_names);
+  std::vector<int32_t> readMetadata(
+      std::unordered_set<std::string> method_names);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
