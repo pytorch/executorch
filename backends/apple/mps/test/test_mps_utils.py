@@ -11,6 +11,7 @@ from typing import Any, Tuple, Union
 import executorch.exir as exir
 import torch
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
+from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
 from executorch.exir import (
     EdgeCompileConfig,
     EdgeProgramManager,
@@ -18,9 +19,9 @@ from executorch.exir import (
     ExirExportedProgram,
     to_edge,
 )
-from executorch.exir.backend.backend_api import to_backend, validation_disabled
-
+from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from executorch.exir.tracer import Value
 from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
@@ -29,7 +30,6 @@ from executorch.sdk.bundled_program.serialize import (
 )
 from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
-
 
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=True)
@@ -147,7 +147,7 @@ class TestMPS(unittest.TestCase):
         module: Any,
         sample_inputs: Tuple[torch.Tensor],
         func_name: str,
-        use_partitioner: bool = False,
+        use_partitioner: bool = True,
         use_fp16: bool = False,
     ) -> ExirExportedProgram:
         """
@@ -156,7 +156,7 @@ class TestMPS(unittest.TestCase):
         outputs with the outputs of the eager module.
         """
 
-        logging.info("Step 1: EXIR capturing of original module...")
+        logging.info("Step 1: EXIR capturing of original module")
 
         class WrappedModule(torch.nn.Module):
             def __init__(self):
@@ -176,25 +176,35 @@ class TestMPS(unittest.TestCase):
             edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
         )
 
-        logging.info("Step 2: Lowering to MPSGraph...")
+        logging.info(
+            f"Step 2: Lowering to MPSGraph {'with' if use_partitioner else 'without'} partitioner"
+        )
+        compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
+
         if use_partitioner:
-            with validation_disabled():
-                None
+            logging.info(f"Edge IR graph:\n{edge_program.exported_program().graph}")
+            edge = edge_program.to_backend(MPSPartitioner(compile_specs=compile_specs))
+            logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+
+            executorch_program = edge.to_executorch(
+                config=ExecutorchBackendConfig(extract_constant_segment=False)
+            )
         else:
-            compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
             delegated_program = to_backend(
                 MPSBackend.__name__, edge_program.exported_program(), compile_specs
             )
 
-        logging.info("Step 3: Capturing executorch program with lowered module...")
-
-        class WrappedModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.mps_module = delegated_program
-
-            def forward(self, *args):
-                return self.mps_module(*args)
+            executorch_program = (
+                exir.capture(
+                    delegated_program,
+                    sample_inputs,
+                    exir.CaptureConfig(enable_aot=True, _unlift=False),
+                )
+                .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+                .to_executorch(
+                    config=ExecutorchBackendConfig(extract_constant_segment=False)
+                )
+            )
 
         exported_program: ExirExportedProgram = exir.capture(
             WrappedModule(), sample_inputs, _CAPTURE_CONFIG
@@ -202,7 +212,7 @@ class TestMPS(unittest.TestCase):
 
         executorch_program: ExecutorchProgram = exported_program.to_executorch()
 
-        logging.info("Step 4: Generating bundled program...")
+        logging.info("Step 3: Generating bundled program")
         logging.info(
             "  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
         )
@@ -229,7 +239,7 @@ class TestMPS(unittest.TestCase):
         )
 
         filename = f"{func_name}.pte"
-        logging.info(f"Step 5: Saving bundled program to {filename}")
+        logging.info(f"Step 4: Saving bundled program to {filename}")
         with open(filename, "wb") as file:
             file.write(bundled_program_buffer)
 
@@ -245,7 +255,7 @@ class TestMPS(unittest.TestCase):
         self.lower_module_and_test_output(
             graph_module,
             example_inputs,
-            use_partitioner=False,
+            use_partitioner=True,
             func_name=func_name,
             use_fp16=use_fp16,
         )

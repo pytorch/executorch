@@ -31,6 +31,11 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
+# Source root directory for pytorch.
+if(NOT TORCH_ROOT)
+  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
+endif()
+
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
@@ -54,6 +59,16 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   # mps_executor_runner: Like executor_runner but with MPS, the binary will
   # be at ${CMAKE_BINARY_DIR}/examples/apple/executor_runner/mps
   #
+
+# portable_ops_lib
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+gen_selected_ops("" "" "ON")
+generate_bindings_for_kernels(
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+)
+gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+
 set(mps_executor_runner_libs "-framework Foundation"
                               "-weak_framework MetalPerformanceShaders"
                               "-weak_framework MetalPerformanceShadersGraph"
@@ -84,6 +99,7 @@ add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 target_link_libraries(mps_executor_runner bundled_program
                                           executorch gflags
                                           mpsdelegate
+                                          portable_ops_lib
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
 endif()
