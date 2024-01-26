@@ -447,8 +447,10 @@ It uses <code class="docutils literal notranslate"><span class="pre">std::chrono
 in one of your application’s <code class="docutils literal notranslate"><span class="pre">.c</span></code> or <code class="docutils literal notranslate"><span class="pre">.cpp</span></code> files.</p></li>
 <li><p>Defining an implementation of one or more of the <code class="docutils literal notranslate"><span class="pre">et_pal_*()</span></code> functions.</p></li>
 </ul>
-<p>No build system changes necessary. The default PAL functions are weak symbols,
-so providing your own strong-symbol definition will override them at link time.</p>
+<p>The default PAL functions are weak symbols, so providing your own strong-symbol
+definition can override them at link time. To ensure that your definitions take
+precedence, you may need to ensure that the strong definitions precede the weak
+definitions in the link order.</p>
 </div>
 <div class="section" id="minimal-pal">
 <h2>Minimal PAL<a class="headerlink" href="#minimal-pal" title="Permalink to this heading">¶</a></h2>
