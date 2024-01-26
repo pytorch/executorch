@@ -12,7 +12,7 @@
 #include <type_traits>
 
 #include <executorch/kernels/optimized/blas/BlasKernel.h>
-#include <executorch/kernels/optimized/blas/half.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 namespace executorch {
 namespace cpublas {

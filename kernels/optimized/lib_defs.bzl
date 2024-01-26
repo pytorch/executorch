@@ -137,5 +137,6 @@ def define_libs():
         ],
         exported_deps = [
             "//executorch/kernels/optimized:libutils",
+            "//executorch/runtime/core/exec_aten:lib",
         ],
     )
