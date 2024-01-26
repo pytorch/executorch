@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 
 Tensor& isinf_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realb_to_bool(std::isinf, ctx, in, out);
+  return internal::unary_ufunc_realhb_to_bool(std::isinf, ctx, in, out);
 }
 
 } // namespace native
