@@ -813,6 +813,16 @@ inline exec_aten::ScalarType promoteTypes(
       ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                       \
           ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_REALH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_REALB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND(Bool, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_REALHB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND2(                                          \
+      Half, Bool, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
 #define ET_SWITCH_INT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                              \
       TYPE,                                                        \
@@ -844,6 +854,9 @@ inline exec_aten::ScalarType promoteTypes(
       NAME,                                            \
       ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND(         \
           ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_FLOATH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_FLOAT_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_SWITCH_QINT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                               \
