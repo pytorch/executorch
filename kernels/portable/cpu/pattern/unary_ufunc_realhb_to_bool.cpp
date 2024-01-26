@@ -16,7 +16,7 @@ namespace executor {
 namespace native {
 namespace internal {
 
-Tensor& unary_ufunc_realb_to_bool(
+Tensor& unary_ufunc_realhb_to_bool(
     FunctionRef<bool(double)> fn,
     RuntimeContext& ctx,
     const Tensor& in,
@@ -41,7 +41,7 @@ Tensor& unary_ufunc_realb_to_bool(
 
   const auto in_type = in.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&] {
+  ET_SWITCH_REALHB_TYPES(in_type, ctx, __func__, CTYPE_IN, [&] {
     apply_unary_map_fn(
         [fn](const CTYPE_IN val_in) { return fn(val_in); },
         in.const_data_ptr<CTYPE_IN>(),

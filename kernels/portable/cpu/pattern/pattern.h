@@ -68,11 +68,11 @@ Tensor& unary_ufunc_real(
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * realb dtye (real and boolean), no additional arguments, and outputs a
+ * realhb dtye (real, half and boolean), no additional arguments, and outputs a
  * boolean tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
  */
-Tensor& unary_ufunc_realb_to_bool(
+Tensor& unary_ufunc_realhb_to_bool(
     FunctionRef<bool(double)> fn,
     RuntimeContext& ctx,
     const Tensor& in,
