@@ -62,6 +62,14 @@ template <class CTYPE, exec_aten::ScalarType DTYPE>
 void test_dtype() {
   TensorFactory<DTYPE> tf;
 
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    if (DTYPE == ScalarType::Half) {
+      GTEST_SKIP()
+          << "skip Half because torch::executor::aten::mm_out does not support Half";
+      return;
+    }
+  }
+
   // matmul gives 4 * 2 * 3 = 24
   Tensor x = tf.full({3, 4}, 2);
   Tensor y = tf.full({4, 5}, 3);
@@ -78,7 +86,7 @@ void test_dtype() {
 
 TEST(OpMmOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
-  ET_FORALL_REAL_TYPES(TEST_ENTRY);
+  ET_FORALL_REAL_TYPES_AND(Half, TEST_ENTRY);
 #undef TEST_ENTRY
   // TODO: Also add tests for half, complex, quantized, and other types. Easiest
   // way to do that would be to make TensorFactory support zeros() and ones()
