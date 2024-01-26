@@ -92,7 +92,7 @@ def build_model(
 
 
 def build_args_parser() -> argparse.ArgumentParser:
-    ckpt_dir = Path(__file__).absolute().parent / "params"
+    ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}/params"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
     parser.add_argument(
@@ -103,7 +103,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=ckpt_dir / "demo_rand_params.pth",
+        default=f"{ckpt_dir}/llama2.pt",
         help="checkpoint.pth",
     )
     parser.add_argument(
@@ -114,7 +114,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to epxort a model using kv cache",
     )
     parser.add_argument(
-        "-p", "--params", default=ckpt_dir / "demo_config.json", help="config.json"
+        "-p", "--params", default=f"{ckpt_dir}/llama2_params.json", help="config.json"
     )
     parser.add_argument(
         "-m",
@@ -159,6 +159,7 @@ def export_llama(modelname, args) -> str:
         params=params_path,
         use_kv_cache=args.use_kv_cache,
         fairseq2=args.fairseq2,
+        verbose=args.verbose,
     )
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,

@@ -499,6 +499,15 @@ class Llama2Model(EagerModelBase):
             use_kv_cache=self.use_kv_cache,
             **params,
         )
+        if kwargs.get("fairseq2", False):
+            print("Using fairseq2 checkpoint")
+            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if kwargs.get("verbose", False):
+            print("============= weights ================")
+            print("{key} : {weights.numel()} : {weights.size()}")
+            for key, weights in checkpoint.items():
+                print(f"{key} : {weights.numel()} : {weights.size()}")
+            print("============= /weights ================")
         self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):
