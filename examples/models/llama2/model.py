@@ -482,6 +482,7 @@ class Llama2Model(EagerModelBase):
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
         # flake8: noqa: TOR102
+        print(f"==== DEBUG {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=device)
         with open(params_path, "r") as f:
             params = json.loads(f.read())

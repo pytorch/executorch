@@ -27,6 +27,8 @@ CUSTOM_RUNNERS = {
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",
+        # This is running too slow on 2xlarge and timeout
+        "mobilebert": "linux.4xlarge",
     }
 }
 
@@ -72,7 +74,9 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit"]
+        # TODO: Add mobilebert and llama2 here to test them on PR, revert the change before
+        # landing
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "mobilebert", "llama2"]
     return True
 
 
