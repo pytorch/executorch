@@ -6,16 +6,12 @@
 
 import unittest
 
-import torch
-
-from executorch.extension.pybindings import aten_lib
-
 from .export_llama import build_model
 
 
 class LlamaTest(unittest.TestCase):
     def test_quantized_llama(self):
-        output_path = build_model(
+        _ = build_model(
             modelname="model",
             extra_opts="--fairseq2 -Q",
             par_local_output=True,
@@ -23,7 +19,7 @@ class LlamaTest(unittest.TestCase):
         )
 
     def test_half_llama(self):
-        output_path = build_model(
+        _ = build_model(
             modelname="model",
             extra_opts="--fairseq2 -H",
             par_local_output=True,
