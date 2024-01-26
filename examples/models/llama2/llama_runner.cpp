@@ -31,7 +31,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
   // n_EOS max_seq_len from the model
   ET_LOG(Info, "Reading metadata from model");
-  Result<std::vector<std::string>> method_names = module_->methodNames();
+  const auto method_names = module_->methodNames();
   ET_CHECK_MSG(
       method_names.ok(),
       "Failed to read method names from model: %s",
@@ -68,7 +68,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
 }
 
 std::vector<int32_t> LlamaRunner::readMetadata(
-    std::vector<std::string> model_methods) {
+    std::unordered_set<std::string> model_methods) {
   std::vector<std::string> methods = {
       "get_vocab_size",
       "get_bos_id",
@@ -80,8 +80,7 @@ std::vector<int32_t> LlamaRunner::readMetadata(
   std::vector<int32_t> result;
   for (int i = 0; i < methods.size(); ++i) {
     int32_t res = default_values[i];
-    if (std::find(model_methods.begin(), model_methods.end(), methods[i]) !=
-        model_methods.end()) {
+    if (model_methods.count(methods[i])) {
       Result<std::vector<EValue>> outputs = module_->execute(methods[i]);
       if (outputs.ok()) {
         std::vector<EValue> outs = outputs.get();

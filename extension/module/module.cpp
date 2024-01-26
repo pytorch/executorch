@@ -80,14 +80,14 @@ bool Module::isLoaded() const {
   return program_ != nullptr;
 }
 
-Result<std::vector<std::string>> Module::methodNames() {
+Result<std::unordered_set<std::string>> Module::methodNames() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
   const auto methodCount = program_->num_methods();
-  std::vector<std::string> result;
+  std::unordered_set<std::string> result;
   result.reserve(methodCount);
 
   for (auto index = 0; index < methodCount; ++index) {
-    result.emplace_back(program_->get_method_name(index).get());
+    result.emplace(program_->get_method_name(index).get());
   }
   return result;
 }
