@@ -1,0 +1,22 @@
+load("@fbsource//tools/build_defs/android:fb_android_cxx_library.bzl", "fb_android_cxx_library")
+
+fb_android_cxx_library(
+    name = "executorch_jni",
+    srcs = ["jni_layer.cpp"],
+    compiler_flags = [
+        "-std=c++17",
+        "-frtti",
+        "-fexceptions",
+
+    ],
+    soname = "libexecutorch.$(ext)",
+    allow_jni_merging = False,
+    visibility = ["PUBLIC"],
+    deps = [
+        "//fbandroid/native/fb:fb",
+        "//third-party/glog:glog",
+        "//fbandroid/libraries/fbjni:fbjni",
+        "//xplat/executorch/extension/module:module",
+    ],
+)
+

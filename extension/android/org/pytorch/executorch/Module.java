@@ -34,7 +34,7 @@ public class Module {
     }
 
     /**
-     * Loads a serialized ExecuTorch module from the specified path on the disk to run on CPU.
+     * Loads a serialized ExecuTorch module from the specified path on the disk to run.
      *
      * @param modelPath path to file that contains the serialized ExecuTorch module.
      * @return new {@link org.pytorch.executorch.Module} object which owns torch::jit::Module.
