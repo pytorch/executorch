@@ -11,6 +11,7 @@ import logging
 import torch._export as export
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
+from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
 from executorch.exir import EdgeCompileConfig
 
 from executorch.exir.backend.backend_api import to_backend
@@ -47,6 +48,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--use_partitioner",
+        action="store_true",
+        required=False,
+        default=True,
+        help="Use MPS partitioner to run the model instead of using whole graph lowering.",
+    )
+
+    parser.add_argument(
         "-b",
         "--bundled",
         action="store_true",
@@ -75,18 +84,30 @@ if __name__ == "__main__":
     )
 
     compile_specs = [CompileSpec("use_fp16", bytes([args.use_fp16]))]
-    lowered_module = to_backend(
-        MPSBackend.__name__, edge.exported_program(), compile_specs
-    )
-    executorch_program = (
-        exir.capture(
-            lowered_module,
-            example_inputs,
-            exir.CaptureConfig(enable_aot=True, _unlift=False),
+
+    logging.info(f"Edge IR graph:\n{edge.exported_program().graph}")
+    if args.use_partitioner:
+        edge = edge.to_backend(MPSPartitioner(compile_specs=compile_specs))
+        logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+
+        executorch_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(extract_constant_segment=False)
         )
-        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
-    )
+    else:
+        lowered_module = to_backend(
+            MPSBackend.__name__, edge.exported_program(), compile_specs
+        )
+        executorch_program = (
+            exir.capture(
+                lowered_module,
+                example_inputs,
+                exir.CaptureConfig(enable_aot=True, _unlift=False),
+            )
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_executorch(
+                config=ExecutorchBackendConfig(extract_constant_segment=False)
+            )
+        )
 
     model_name = f"{args.model_name}_mps"
 
