@@ -20,4 +20,7 @@ def define_common_targets():
             external_deps = [
                 "libtorch",
             ] if aten else [],
+            exported_deps = [
+                "//executorch/runtime/core/exec_aten:lib",
+            ],
         )
