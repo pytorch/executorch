@@ -99,7 +99,7 @@ target_include_directories(
 list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
 
-if (CMAKE_BUILD_TYPE MATCHES "Debug")
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
     set(FLATCC_LIB flatcc_d)
 else()
     set(FLATCC_LIB flatcc)

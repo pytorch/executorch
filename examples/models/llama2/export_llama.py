@@ -6,11 +6,7 @@
 
 # Example script for exporting Llama2 to flatbuffer
 
-import argparse
-import json
 import logging
-import os
-import shlex
 
 import torch
 
