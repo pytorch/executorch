@@ -236,7 +236,9 @@ class Attention(nn.Module):
             # This is needed to support XNNPACK which requires mask shape to be 2D.
             # This is a temporary workaround. Once we update XNNPACK we should be able to handle this.
             # Shape before: [1, 1, L, S], after: [L, S]
-            mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen])
+            # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
+            # tensor will be 2-dimensional, regarldess of the values of L & S
+            mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1])
 
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
