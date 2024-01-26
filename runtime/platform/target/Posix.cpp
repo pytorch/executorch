@@ -106,6 +106,19 @@ et_timestamp_t et_pal_current_ticks(void) {
 }
 
 /**
+ * Return the conversion rate from system ticks to nanoseconds, as a fraction.
+ * To convert an interval from system ticks to nanoseconds, multiply the tick
+ * count by the numerator and then divide by the denominator:
+ *   nanoseconds = ticks * numerator / denominator
+ *
+ * @retval The ratio of nanoseconds to system ticks.
+ */
+et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+  // The system tick interval is 1 nanosecond, so the conversion factor is 1.
+  return {1, 1};
+}
+
+/**
  * Emit a log message via platform output (serial port, console, etc).
  *
  * @param[in] timestamp Timestamp of the log event in system ticks since boot.

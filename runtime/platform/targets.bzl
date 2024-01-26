@@ -66,6 +66,7 @@ def define_common_targets():
         exported_headers = [
             "abort.h",
             "assert.h",
+            "clock.h",
             "log.h",
             "profiler.h",
             "runtime.h",
