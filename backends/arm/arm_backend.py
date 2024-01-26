@@ -62,6 +62,22 @@ def generate_ethosu_compile_spec(
     return compile_spec
 
 
+def generate_tosa_compile_spec(
+    output_path: Optional[str] = None,
+) -> List[CompileSpec]:
+    """
+    Generate compile spec for TOSA flatbuffer output
+    """
+    compile_spec = [
+        CompileSpec("output_format", "tosa".encode()),
+    ]
+
+    if output_path is not None:
+        compile_spec.append(CompileSpec("debug_tosa_path", output_path.encode()))
+
+    return compile_spec
+
+
 @final
 class ArmBackend(BackendDetails):
     @staticmethod

@@ -11,10 +11,10 @@ import tempfile
 import executorch.exir as exir
 
 import numpy as np
+from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -158,10 +158,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     # Debug flags for compilers
     # - Emit some debug files into /tmp
     # - output_format TOSA for this test (and pure tosa flows)
-    compile_spec = [
-        CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8")),
-        CompileSpec("output_format", bytes("tosa", "utf8")),
-    ]
+    compile_spec = generate_tosa_compile_spec(TOSA_OUT_PATH)
 
     model, inputs, torch_output = prepare_model_and_ref(op, profile)
 

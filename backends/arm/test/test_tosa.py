@@ -11,11 +11,11 @@ import copy
 import unittest
 
 import executorch.exir as exir
+from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.exir import EdgeCompileConfig
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._export import capture_pre_autograd_graph
 from torch.export import export
 
@@ -45,7 +45,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+                model, inputs, generate_tosa_compile_spec()
             )
 
     def test_minimal_BI(self):
@@ -56,7 +56,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+                model, inputs, generate_tosa_compile_spec()
             )
 
     def test_minimal_BI_INT(self):
@@ -69,7 +69,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+                model, inputs, generate_tosa_compile_spec()
             )
 
 
