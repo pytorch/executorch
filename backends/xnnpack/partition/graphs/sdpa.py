@@ -69,7 +69,6 @@ def get_sdpa_graphs() -> List[torch.fx.GraphModule]:
             )
         )
         gm = edge.exported_program().graph_module
-        print(f"mask: {mask}, graph: {gm}")
         graphs.append(gm)
 
     return graphs
