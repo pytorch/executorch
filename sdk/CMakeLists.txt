@@ -108,6 +108,9 @@ add_custom_command(
     ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/flatcc -cwr -o
     ${_program_schema__include_dir}/executorch/sdk/etdump
     ${_etdump_schema__srcs}
+  COMMAND
+    rm -f ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/*
+    ${CMAKE_SOURCE_DIR}/third-party/flatcc/lib/*
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   DEPENDS flatcc_project
   COMMENT "Generating etdump headers"

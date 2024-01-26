@@ -131,6 +131,7 @@ add_library(qnn_implementation STATIC)
 add_library(qnn_sys_function_interface INTERFACE)
 add_library(qnn_sys_implementation STATIC)
 add_library(qnn_logger STATIC)
+add_library(qnn_profiler STATIC)
 add_library(qnn_device STATIC)
 add_library(qnn_context STATIC)
 add_library(qnn_backend_cache STATIC)
@@ -179,6 +180,10 @@ target_link_libraries(qnn_executorch_logging
     PRIVATE
     qnn_schema
 )
+target_link_libraries(qnn_profiler
+    PRIVATE
+    qnn_executorch_logging
+)
 target_link_libraries(qnn_logger
     PRIVATE
     qnn_implementation
@@ -213,6 +218,7 @@ target_link_libraries(qnn_graph
     qnn_executorch_logging
     qnn_implementation
     qnn_context
+    qnn_profiler
 )
 target_link_libraries(qnn_factory
     PUBLIC
@@ -248,6 +254,12 @@ target_link_libraries(utils
 # add linker option
 #
 target_link_options_shared_lib(qnn_executorch_backend)
+
+#
+# add compile option
+#
+target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
+
 
 #
 # add sources

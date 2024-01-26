@@ -51,6 +51,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             saver=False,
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_arange(self):
@@ -383,6 +384,7 @@ class TestQNNFloatingPointModel(TestQNN):
             saver=False,
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -477,6 +479,7 @@ class TestQNNQuantizedOperator(TestQNN):
             saver=False,
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_arange(self):
@@ -856,6 +859,7 @@ class TestQNNQuantizedModel(TestQNN):
             saver=False,
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -1034,6 +1038,23 @@ class TestQNNFloatingPointUtils(TestQNN):
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
 
+    def test_qnn_backend_profile_op(self):
+        TestQNN.enable_profile = True
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            profile=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_profile_events=25,
+        )
+
 
 class TestQNNQuantizedUtils(TestQNN):
     # TODO: refactor to support different backends
@@ -1117,6 +1138,24 @@ class TestQNNQuantizedUtils(TestQNN):
         canonicalize_program(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_profile_op(self):
+        TestQNN.enable_profile = True
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            profile=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_profile_events=26,
+        )
 
 
 class TestExampleScript(TestQNN):
@@ -1500,6 +1539,12 @@ def setup_environment():
         action="store_true",
     )
     parser.add_argument(
+        "-P",
+        "--enable_profile",
+        help="Profile the performance of each operator with kProfileDetailed profile level",
+        action="store_true",
+    )
+    parser.add_argument(
         "-e",
         "--error_only",
         help="Emit log only when error happened",
@@ -1516,6 +1561,7 @@ def setup_environment():
     TestQNN.image_dataset = args.image_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
     TestQNN.online_prepare = args.online_prepare
+    TestQNN.enable_profile = args.enable_profile
     TestQNN.error_only = args.error_only
     return sys.argv[:1] + ns_args
 
