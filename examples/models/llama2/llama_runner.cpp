@@ -13,6 +13,7 @@
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
+using torch::executor::util::MmapDataLoader;
 
 namespace torch {
 namespace executor {
@@ -30,7 +31,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
   // n_EOS max_seq_len from the model
   ET_LOG(Info, "Reading metadata from model");
-  Result<std::vector<std::string>> method_names = module_->methodNames();
+  const auto method_names = module_->methodNames();
   ET_CHECK_MSG(
       method_names.ok(),
       "Failed to read method names from model: %s",
@@ -67,7 +68,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
 }
 
 std::vector<int32_t> LlamaRunner::readMetadata(
-    std::vector<std::string> model_methods) {
+    std::unordered_set<std::string> model_methods) {
   std::vector<std::string> methods = {
       "get_vocab_size",
       "get_bos_id",
@@ -79,8 +80,7 @@ std::vector<int32_t> LlamaRunner::readMetadata(
   std::vector<int32_t> result;
   for (int i = 0; i < methods.size(); ++i) {
     int32_t res = default_values[i];
-    if (std::find(model_methods.begin(), model_methods.end(), methods[i]) !=
-        model_methods.end()) {
+    if (model_methods.count(methods[i])) {
       Result<std::vector<EValue>> outputs = module_->execute(methods[i]);
       if (outputs.ok()) {
         std::vector<EValue> outs = outputs.get();
@@ -101,7 +101,7 @@ std::vector<int32_t> LlamaRunner::readMetadata(
   return result;
 }
 
-void LlamaRunner::generate(const char* prompt) {
+void LlamaRunner::generate(const char* prompt, bool eos) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
@@ -111,7 +111,8 @@ void LlamaRunner::generate(const char* prompt) {
   // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
   int* prompt_tokens = new int[strlen(prompt) + 1 + n_bos_ + n_eos_];
 
-  tokenizer_->encode(prompt, n_bos_, n_eos_, prompt_tokens, &num_prompt_tokens);
+  tokenizer_->encode(
+      prompt, n_bos_, eos ? n_eos_ : 0, prompt_tokens, &num_prompt_tokens);
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
 
@@ -156,20 +157,48 @@ void LlamaRunner::generate(const char* prompt) {
         "Expecting output to have at least one evalue. Got %zu",
         outputs.size());
 
-    float* logits = outputs[0].toTensor().mutable_data_ptr<float>();
+    int32_t next_tok;
+    switch (outputs[0].toTensor().scalar_type()) {
+      case ScalarType::Float: {
+        float* logits = outputs[0].toTensor().mutable_data_ptr<float>();
+
+        // Since the logits are for all tokens, get the last token probabilities
+        float* logits_last = logits + pos * tokenizer_->vocab_size();
+        next_tok = sampler_->sample(logits_last);
+        break;
+      }
+      case ScalarType::Half: {
+#ifdef USE_ATEN_LIB
+        // TODO:(larryliu) get rid of this check once we have Half support in
+        // portable kernels.
+
+        c10::Half* half_logits =
+            outputs[0].toTensor().mutable_data_ptr<c10::Half>();
+        c10::Half* logits_last = half_logits + pos * tokenizer_->vocab_size();
+        next_tok = sampler_->sample(logits_last);
+        break;
+#else
+        __ET_FALLTHROUGH; // fallthrough
+#endif
+      }
+      default:
+        ET_CHECK_MSG(
+            false,
+            "Unsupported dtype output %hhd",
+            outputs[0].toTensor().scalar_type());
+    }
+
     // debug
     // torch::Tensor t = torch::from_blob(
     //     (void*)logits, {1, num_prompt_tokens, 32000}, torch::kFloat);
 
-    // Since the logits are for all tokens, get the last token probabilities
-    float* logits_last = logits + pos * tokenizer_->vocab_size();
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
       // prefill, force the next token to be the next prompt token
       next = prompt_tokens[pos + 1];
     } else {
       // otherwise sample the next token from the logits
-      next = sampler_->sample(logits_last);
+      next = next_tok;
     }
     // ET_LOG(Info, "Output saved, next = %d", next);
     pos++;
@@ -221,37 +250,3 @@ void LlamaRunner::generate(const char* prompt) {
 LlamaRunner::~LlamaRunner() {}
 } // namespace executor
 } // namespace torch
-
-DEFINE_string(
-    model_path,
-    "llama2.pte",
-    "Model serialized in flatbuffer format.");
-
-DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
-
-DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
-
-using namespace torch::executor;
-using torch::executor::util::MmapDataLoader;
-
-int32_t main(int32_t argc, char** argv) {
-  runtime_init();
-
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
-
-  // Create a loader to get the data of the program file. There are other
-  // DataLoaders that use mmap() or point32_t to data that's already in memory,
-  // and users can create their own DataLoaders to load from arbitrary sources.
-  const char* model_path = FLAGS_model_path.c_str();
-
-  const char* tokenizer_path = FLAGS_tokenizer_path.c_str();
-
-  const char* prompt = FLAGS_prompt.c_str();
-
-  // create llama runner
-  LlamaRunner llama_runner(model_path, tokenizer_path);
-
-  // generate
-  llama_runner.generate(prompt);
-  return 0;
-}

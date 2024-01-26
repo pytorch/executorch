@@ -23,6 +23,8 @@ enum XNNDatatype : short {
   xnn_datatype_qcint8 = 6,
   /// Quantized 32-bit signed integer with shared per-channel quantization parameters.
   xnn_datatype_qcint32 = 7,
+  /// Quantized 4-bit signed integer with shared per-channel quantization parameters.
+  xnn_datatype_qcint4 = 8,
 }
 
 // type of quantization

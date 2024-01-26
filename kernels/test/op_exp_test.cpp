@@ -92,6 +92,21 @@ TEST(OpExpOutKernelTest, HandleBoolInput) {
   EXPECT_TENSOR_CLOSE(op_exp_out(a, out), res);
 }
 
+TEST(OpExpOutKernelTest, HandleHalfInput) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+  TensorFactory<ScalarType::Half> tf_half;
+
+  const std::vector<int32_t> sizes = {1, 2};
+
+  Tensor a = tf_half.make(sizes, /*data=*/{-2.5, -3.0});
+  Tensor out = tf_half.zeros(sizes);
+  Tensor res = tf_half.make(sizes, /*data=*/{0.082085, 0.049787});
+
+  EXPECT_TENSOR_CLOSE(op_exp_out(a, out), res);
+}
+
 // Mismatched shape tests.
 TEST(OpExpOutKernelTest, MismatchedShapesDies) {
   if (SupportedFeatures::get()->is_aten) {

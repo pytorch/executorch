@@ -658,5 +658,17 @@ Error resize_embedding_output(
   return resize_tensor(out, output_size);
 }
 
+bool check_alpha_type(
+    const ScalarType alpha_type,
+    const ScalarType common_type) {
+  // Verify that alpha type is compatible with common type,
+  // as used by ops such as add and sub.
+  ET_LOG_AND_RETURN_IF_FALSE(
+      canCast(alpha_type, common_type) ||
+      (common_type == ScalarType::Bool && isIntegralType(alpha_type, true)));
+
+  return true;
+}
+
 } // namespace executor
 } // namespace torch

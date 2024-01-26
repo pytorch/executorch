@@ -484,6 +484,12 @@ class Llama2Model(EagerModelBase):
         # flake8: noqa: TOR102
         print(f"==== DEBUG {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=device)
+        if kwargs.get("fairseq2", False):
+            print("Using fairseq2 checkpoint")
+            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if "model" in checkpoint:
+            # NB: some checkpoint contains a "model" field, which is the actual weights dict
+            checkpoint = checkpoint["model"]
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128
@@ -497,6 +503,12 @@ class Llama2Model(EagerModelBase):
         if kwargs.get("fairseq2", False):
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if kwargs.get("verbose", False):
+            print("============= weights ================")
+            print("{key} : {weights.numel()} : {weights.size()}")
+            for key, weights in checkpoint.items():
+                print(f"{key} : {weights.numel()} : {weights.size()}")
+            print("============= /weights ================")
         self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):

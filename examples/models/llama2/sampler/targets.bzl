@@ -1,21 +1,23 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
-    runtime.cxx_library(
-        name = "sampler",
-        exported_headers = ["sampler.h"],
-        srcs = ["sampler.cpp"],
-        visibility = [
-            "//executorch/...",
-        ],
-    )
-
-    runtime.cxx_test(
-        name = "test_sampler",
-        srcs = ["test/test_sampler.cpp"],
-        deps = [
-            ":sampler",
-            "//caffe2:torch-cpp",
-            "//executorch/runtime/platform:platform",
-        ],
-    )
+    for aten in (True, False):
+        aten_postfix = "_aten" if aten else ""
+        runtime.cxx_library(
+            name = "sampler" + aten_postfix,
+            exported_headers = [
+                "sampler.h",
+            ],
+            preprocessor_flags = [
+                "-DUSE_ATEN_LIB",
+            ] if aten else [],
+            srcs = [
+                "sampler.cpp",
+            ],
+            visibility = [
+                "//executorch/...",
+            ],
+            external_deps = [
+                "libtorch",
+            ] if aten else [],
+        )

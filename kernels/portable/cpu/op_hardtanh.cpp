@@ -96,14 +96,14 @@ Tensor& hardtanh_out(
     CTYPE min_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "hardtanh.out", CTYPE_MIN, [&]() {
       CTYPE_MIN min_val;
-      ET_EXTRACT_SCALAR(min, min_val);
+      utils::extract_scalar(min, &min_val);
       min_casted = static_cast<CTYPE>(min_val);
     });
 
     CTYPE max_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "hardtanh.out", CTYPE_MAX, [&]() {
       CTYPE_MAX max_val;
-      ET_EXTRACT_SCALAR(max, max_val);
+      utils::extract_scalar(max, &max_val);
       max_casted = static_cast<CTYPE>(max_val);
     });
 

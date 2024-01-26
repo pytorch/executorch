@@ -1022,7 +1022,7 @@ class TestBackends(unittest.TestCase):
         orig_res = f(*inputs)
         orig = to_edge(
             export(
-                f,
+                torch.export.WrapperModule(f),
                 inputs,
             )
         )
@@ -1074,7 +1074,7 @@ class TestBackends(unittest.TestCase):
         orig_res = f(*inputs)
         orig = to_edge(
             export(
-                f,
+                torch.export.WrapperModule(f),
                 inputs,
             )
         )
@@ -1146,7 +1146,7 @@ class TestBackends(unittest.TestCase):
         orig_res = f(*inputs)
         orig = to_edge(
             export(
-                f,
+                torch.export.WrapperModule(f),
                 inputs,
             )
         )
@@ -1210,7 +1210,7 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
-        edge_prog = to_edge(export(f, inputs))
+        edge_prog = to_edge(export(torch.export.WrapperModule(f), inputs))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
@@ -1232,7 +1232,7 @@ class TestBackends(unittest.TestCase):
             return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = to_edge(export(f, inputs))
+        edge_prog = to_edge(export(torch.export.WrapperModule(f), inputs))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )

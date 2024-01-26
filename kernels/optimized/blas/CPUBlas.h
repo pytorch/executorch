@@ -12,9 +12,12 @@
 #include <type_traits>
 
 #include <executorch/kernels/optimized/blas/BlasKernel.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 
 namespace executorch {
 namespace cpublas {
+
+using Half = torch::executor::Half;
 
 enum class TransposeType {
   NoTranspose,
@@ -90,6 +93,17 @@ void gemm(
     const float *b, int64_t ldb,
     const float beta,
     float *c, int64_t ldc);
+// clang-format on
+
+// clang-format off
+void gemm(
+    TransposeType transa, TransposeType transb,
+    int64_t m, int64_t n, int64_t k,
+    const Half alpha,
+    const Half *a, int64_t lda,
+    const Half *b, int64_t ldb,
+    const Half beta,
+    Half *c, int64_t ldc);
 // clang-format on
 
 // clang-format off

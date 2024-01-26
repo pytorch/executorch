@@ -12,8 +12,6 @@
 #include <memory>
 #include <unordered_map>
 
-#include <gflags/gflags.h>
-
 #include <executorch/examples/models/llama2/sampler/sampler.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/examples/models/llama2/util.h>
@@ -34,12 +32,13 @@ class LlamaRunner {
  public:
   explicit LlamaRunner(const char* model_path, const char* tokenizer_path);
 
-  void generate(const char* prompt);
+  void generate(const char* prompt, bool eos = false);
 
   ~LlamaRunner();
 
  private:
-  std::vector<int32_t> readMetadata(std::vector<std::string> method_names);
+  std::vector<int32_t> readMetadata(
+      std::unordered_set<std::string> method_names);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;

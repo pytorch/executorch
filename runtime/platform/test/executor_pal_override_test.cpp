@@ -31,6 +31,10 @@ class PalSpy : public PlatformIntercept {
     return kTimestamp;
   }
 
+  et_tick_ratio_t ticks_to_ns_multiplier() override {
+    return tick_ns_multiplier;
+  }
+
   void emit_log_message(
       et_timestamp_t timestamp,
       et_pal_log_level_t level,
@@ -54,6 +58,7 @@ class PalSpy : public PlatformIntercept {
   size_t init_call_count = 0;
   size_t current_ticks_call_count = 0;
   size_t emit_log_message_call_count = 0;
+  et_tick_ratio_t tick_ns_multiplier = {1, 1};
 
   /// The args that were passed to the most recent call to emit_log_message().
   struct {
@@ -137,4 +142,19 @@ TEST(ExecutorPalOverrideTest, LogLevels) {
   ET_LOG(NumLevels, "Test log");
   EXPECT_EQ(args.level, et_pal_log_level_t::kUnknown);
 }
+
+TEST(ExecutorPalOverrideTest, TickToNsMultiplier) {
+  PalSpy spy;
+  InterceptWith iw(spy);
+
+  // Validate that tick to ns multipliers are overridden.
+  spy.tick_ns_multiplier = {2, 3};
+  EXPECT_EQ(et_pal_ticks_to_ns_multiplier().numerator, 2);
+  EXPECT_EQ(et_pal_ticks_to_ns_multiplier().denominator, 3);
+
+  spy.tick_ns_multiplier = {3, 1};
+  EXPECT_EQ(et_pal_ticks_to_ns_multiplier().numerator, 3);
+  EXPECT_EQ(et_pal_ticks_to_ns_multiplier().denominator, 1);
+}
+
 #endif

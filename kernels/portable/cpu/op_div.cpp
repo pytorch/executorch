@@ -163,7 +163,7 @@ Tensor& div_scalar_out(
             ET_SWITCH_FLOAT_TYPES(
                 out_type, ctx, "div.Scalar_out", CTYPE_OUT, [&]() {
                   CTYPE_B b_val;
-                  ET_EXTRACT_SCALAR(b, b_val);
+                  utils::extract_scalar(b, &b_val);
                   CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
 
                   apply_unary_map_fn(

@@ -488,5 +488,9 @@ Error resize_embedding_output(
     const Tensor& indices,
     const Tensor& out);
 
+bool check_alpha_type(
+    const ScalarType alpha_type,
+    const ScalarType common_type);
+
 } // namespace executor
 } // namespace torch

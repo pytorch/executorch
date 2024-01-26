@@ -9,22 +9,18 @@
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
-#include "tools/cxx/Resources.h"
 
 using namespace ::testing;
 
 namespace torch {
 namespace executor {
 
-class TokenizerExtensionTest : public ::testing::Test {
+class TokenizerExtensionTest : public Test {
  public:
   void SetUp() override {
     torch::executor::runtime_init();
-    modelPath_ =
-        build::getResourcePath(
-            "executorch/examples/models/llama2/tokenizer/test/test.bin")
-            .string();
     tokenizer_ = std::make_unique<Tokenizer>(32000, 1, 2);
+    modelPath_ = std::getenv("RESOURCES_PATH") + std::string("/test.bin");
   }
 
   std::unique_ptr<Tokenizer> tokenizer_;
