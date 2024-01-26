@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include <executorch/runtime/executor/program.h>
@@ -83,10 +84,10 @@ class Module final {
    * Get a list of method names available in the loaded program.
    * Loads the program and method if needed.
    *
-   * @returns A vector of strings containing the names of the methods, or an
-   * error if the program or method failed to load.
+   * @returns A set of strings containing the names of the methods, or an error
+   * if the program or method failed to load.
    */
-  Result<std::vector<std::string>> methodNames();
+  Result<std::unordered_set<std::string>> methodNames();
 
   /**
    * Load a specific method from the program and set up memory management if
