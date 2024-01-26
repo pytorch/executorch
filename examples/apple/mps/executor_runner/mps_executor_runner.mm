@@ -38,8 +38,6 @@ using namespace std::chrono;
 
 static constexpr size_t kRuntimeMemorySize = 4 * 1024U * 1024U; // 4 MB
 static uint8_t runtime_pool[kRuntimeMemorySize];
-static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;
-static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 
 DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
 DEFINE_string(
@@ -232,35 +230,6 @@ bool data_is_close_(
     }
   }
   return true;
-}
-
-static
-bool tensors_are_close_(
-    ScalarType scalar_type,
-    ssize_t numel,
-    size_t nbytes,
-    void* a_data_ptr,
-    void* b_data_ptr,
-    double rtol = 1e-05,
-    double atol = 1e-08) {
-  if (scalar_type == ScalarType::Float) {
-    return data_is_close_<float>(
-        (float*)a_data_ptr,
-        (float*)b_data_ptr,
-        numel,
-        rtol,
-        atol);
-  } else if (scalar_type == ScalarType::Double) {
-    return data_is_close_<double>(
-        (double*)a_data_ptr,
-        (double*)b_data_ptr,
-        numel,
-        rtol,
-        atol);
-  } else {
-    // Non-floating-point types can be compared bitwise.
-    return memcmp(a_data_ptr, b_data_ptr, nbytes) == 0;
-  }
 }
 
 int main(int argc, char** argv) {

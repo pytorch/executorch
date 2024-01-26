@@ -16,9 +16,11 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 // MPS headers
+#include <executorch/backends/apple/mps/runtime/operations/MPSGraphVenturaOps.h>
 #include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
 #include <executorch/backends/apple/mps/schema_generated.h>
 
+#include <unordered_map>
 #include <vector>
 
 namespace torch {

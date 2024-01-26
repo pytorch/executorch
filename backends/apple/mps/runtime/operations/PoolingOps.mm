@@ -11,7 +11,6 @@ namespace executor {
 namespace mps {
 namespace delegate {
 
-
 Error
 MPSGraphBuilder::mpsMaxPool2DWithIndicesOp(NodePtr nodePtr) {
   auto graphNode = nodePtr->mpsnode_union_as_MPSMaxPool2DWithIndices();
@@ -37,8 +36,12 @@ MPSGraphBuilder::mpsMaxPool2DWithIndicesOp(NodePtr nodePtr) {
                                                 paddingStyle:MPSGraphPaddingStyleExplicit
                                                   dataLayout:MPSGraphTensorNamedDataLayoutNCHW];
   desc.ceilMode = graphNode->ceil_mode();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunknown-warning-option"
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
   desc.returnIndicesMode = MPSGraphPoolingReturnIndicesGlobalFlatten2D;
   desc.returnIndicesDataType = MPSDataTypeInt32;
+#pragma clang diagnostic pop
 
   NSArray<MPSGraphTensor*>* outputs =
     [_mpsGraph maxPooling2DReturnIndicesWithSourceTensor:getMPSGraphTensor(graphNode->input1_id())

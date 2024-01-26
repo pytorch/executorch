@@ -16,10 +16,6 @@ namespace executor {
 namespace mps {
 namespace delegate {
 
-// threshold to perform adaptive commit if the accumulated size
-// of resources encoded on the command buffer exceeds that.
-static const size_t kCmdBufAdaptiveCommitThreshold = MB(64);
-
 //-----------------------------------------------------------------
 //  MPSStream
 //-----------------------------------------------------------------
@@ -27,29 +23,11 @@ static const size_t kCmdBufAdaptiveCommitThreshold = MB(64);
 MPSStream::MPSStream() {
   _commandQueue = [MPSDevice::getInstance()->device() newCommandQueue];
   _serialQueue = dispatch_queue_create("metal gpu stream", nullptr);
-  _executionDescriptor = [MPSGraphExecutionDescriptor new];
-  _executableExecutionDescriptor = [MPSGraphExecutableExecutionDescriptor new];
-  _compilationDescriptor = [MPSGraphCompilationDescriptor new];
-
-  // internal CommitAndContinue heuristic of MPSGraph is disabled, and we
-  // control it via Adaptive Commit in Executorch-side
-  _executionDescriptor.enableCommitAndContinue = false;
-
-  // Choose level which optimizes for GPU
-  _compilationDescriptor.optimizationLevel = MPSGraphOptimizationLevel0;
-  _executionDescriptor.compilationDescriptor =  _compilationDescriptor;
 }
 
 MPSStream::~MPSStream() {
   [_commandQueue release];
   _commandQueue = nil;
-  [_executionDescriptor release];
-  [_compilationDescriptor release];
-  [_executableExecutionDescriptor release];
-
-  _executionDescriptor = nil;
-  _compilationDescriptor = nil;
-  _executableExecutionDescriptor = nil;
 
   assert(_commandBuffer == nil);
 }
