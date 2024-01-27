@@ -319,6 +319,21 @@ TEST(OpMeanOutTest, AllRealInputFloatOutputPasses) {
 #undef TEST_KERNEL
 }
 
+TEST(OpMeanOutTest, HalfSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype) \
+  test_mean_dim_out_dtype<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+
+#define TEST_ENTRY(ctype, dtype) \
+  test_mean_dim_out_dtype<ScalarType::Half, ScalarType::dtype>();
+  ET_FORALL_FLOATH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST(OpMeanOutTest, InfinityAndNANTest) {
   TensorFactory<ScalarType::Float> tf_float;
   // clang-format off
