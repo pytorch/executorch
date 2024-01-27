@@ -27,7 +27,6 @@ MPSGraphTensor* padOutTemplate(
               "invalid padding argument of size %d", padding_size);
 
   auto input_sizes = getMPSShapeVec(input.shape);
-  int64_t nbatch = 1;
   int64_t ndims = input_sizes.size();
 
   ET_CHECK_MSG(
@@ -39,7 +38,6 @@ MPSGraphTensor* padOutTemplate(
   int dim_w = padding_dim;
   int dim_h = padding_dim - 1;
   int dim_d = padding_dim - 2;
-  int dim_slices = 0;
 
   if (mode != MPSGraphPaddingModeConstant && ndims > padding_dim) {
     bool valid_dims = input_sizes[1] != 0 && input_sizes[padding_dim] != 0;
@@ -59,8 +57,6 @@ MPSGraphTensor* padOutTemplate(
     dim_w += dim_diff;
     dim_h += dim_diff;
     dim_d += dim_diff;
-    dim_slices++;
-    nbatch = input_sizes[0];
   }
 
   int64_t pad_l = padding[0];
@@ -70,13 +66,11 @@ MPSGraphTensor* padOutTemplate(
   int64_t pad_front = padding_size > 4 ? padding[4] : 0;
   int64_t pad_back  = padding_size > 4 ? padding[5] : 0;
 
-  int64_t nplane = input_sizes[dim_slices];
   int64_t input_w = input_sizes[dim_w];
   int64_t output_w  = input_w + pad_l + pad_r;
   int64_t input_h = padding_dim > 1 ? input_sizes[dim_h] : 0;
   int64_t output_h = padding_dim > 1 ? input_h + pad_t + pad_b : 0;
   int64_t input_d = padding_dim > 2 ? input_sizes[dim_d] : 0;
-  int64_t output_d = padding_dim > 2 ? input_d + pad_front + pad_back : 0;
 
   ET_CHECK_MSG(
     output_w >= 1 || output_h >= padding_dim - 1,

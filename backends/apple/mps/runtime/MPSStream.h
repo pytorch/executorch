@@ -91,9 +91,6 @@ class MPSStream {
   MPSCommandBuffer* _commandBuffer = nil;
   MPSCommandBuffer* _prevCommandBuffer = nil;
   id<MTLComputeCommandEncoder> _commandEncoder = nil;
-  MPSGraphExecutionDescriptor* _executionDescriptor = nil;
-  MPSGraphExecutableExecutionDescriptor* _executableExecutionDescriptor = nil;
-  MPSGraphCompilationDescriptor* _compilationDescriptor = nil;
   dispatch_queue_t _serialQueue = nullptr;
   // CommitAndContinue is disabled by default
   bool _enableCommitAndContinue = false;

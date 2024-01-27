@@ -374,7 +374,10 @@ def process_placeholder_nodes(
             input_id = placeholder_visitor.define_tensor(node, mps_graph)
             mps_graph.input_ids.append(input_id)
 
-            if placeholder_visitor.convert_model_to_fp16:
+            if (
+                placeholder_visitor.convert_model_to_fp16
+                and node.meta["val"].dtype == torch.float32
+            ):
                 mps_node = MPSNode(
                     mpsnode_union=MPSCast(
                         input1_id=input_id,
@@ -393,7 +396,10 @@ def process_output_node(
     output_id = output_visitor.define_tensor(output_node, mps_graph)
     mps_graph.output_ids.append(output_id)
 
-    if output_visitor.convert_model_to_fp16:
+    if (
+        output_visitor.convert_model_to_fp16
+        and output_node.meta["val"].dtype == torch.float32
+    ):
         mps_node = MPSNode(
             mpsnode_union=MPSCast(
                 input1_id=output_id,
