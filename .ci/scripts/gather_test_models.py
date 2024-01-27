@@ -27,9 +27,20 @@ CUSTOM_RUNNERS = {
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",
-        # This is running too slow on 2xlarge and timeout
-        "mobilebert": "linux.4xlarge",
     }
+}
+
+DEFAULT_TIMEOUT = 90
+CUSTOM_TIMEOUT = {
+    "linux": {
+        # This is running too slow timeout, increasing to a bigger runner doesn't help
+        # because testing utilized only one core. These slower cases should only be run
+        # in trunk, not in every pull request till they can be finished faster.
+        "mobilebert": 120,
+    },
+    "macos": {
+        "mobilebert": 120,
+    },
 }
 
 
@@ -74,9 +85,8 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        # TODO: Add mobilebert and llama2 here to test them on PR, revert the change before
-        # landing
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "mobilebert", "llama2"]
+        # TODO: Add mobilebert to test it on PR, revert the change before landing
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "mobilebert"]
     return True
 
 
@@ -100,12 +110,13 @@ def export_models_for_ci() -> dict[str, dict]:
                 "model": "mv3",
                 "backend": backend,
                 "runner": "linux.2xlarge",
+                "timeout": DEFAULT_TIMEOUT,
             }
             models["include"].append(record)
 
     # Add all models for CMake E2E validation
     # CMake supports both linux and macos
-    for (name, backend) in itertools.product(
+    for name, backend in itertools.product(
         MODEL_NAME_TO_MODEL.keys(), ["portable", "xnnpack"]
     ):
         if not model_should_run_on_event(name, event):
@@ -125,7 +136,12 @@ def export_models_for_ci() -> dict[str, dict]:
             "model": name,
             "backend": backend,
             "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
+            "timeout": DEFAULT_TIMEOUT,
         }
+
+        # Set the custom timeout if needed
+        if target_os in CUSTOM_TIMEOUT and name in CUSTOM_TIMEOUT[target_os]:
+            record["timeout"] = CUSTOM_TIMEOUT[target_os].get(name, DEFAULT_TIMEOUT)
 
         # NB: Some model requires much bigger Linux runner to avoid
         # running OOM. The team is investigating the root cause

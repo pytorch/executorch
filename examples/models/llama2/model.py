@@ -381,7 +381,6 @@ class Transformer(nn.Module):
     ) -> Union[
         torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
     ]:
-
         if self.use_kv_cache:
             assert (
                 cache_k_list is not None
