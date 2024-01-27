@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
-from typing import final, List
+from typing import Dict, final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -20,6 +20,7 @@ from executorch.exir.backend.backend_details import (
 )
 from torch import dtype, float32, Tensor
 from torch.fx import Node
+from torch.fx.node import Argument
 
 DEFAULT_DEBUG_HANDLE = 65535
 
@@ -27,7 +28,9 @@ DEFAULT_DEBUG_HANDLE = 65535
 @final
 class VulkanBackend(BackendDetails):
     @staticmethod
-    def get_vk_op_type(target_name: str) -> vk_graph_schema.VkArithmeticOpType:
+    def get_vk_op_type(
+        target_name: str, kwargs: Dict[str, "Argument"]
+    ) -> vk_graph_schema.VkArithmeticOpType:
         if target_name == "aten.add.Tensor":
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_add
         elif target_name == "aten.sub.Tensor":
@@ -36,6 +39,17 @@ class VulkanBackend(BackendDetails):
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_mul
         elif target_name == "aten.div.Tensor":
             return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_div
+        elif target_name == "aten.div.Tensor_mode":
+            if kwargs.get("rounding_mode", None) == "floor":
+                return (
+                    vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_floor_div
+                )
+
+            raise AssertionError(
+                f"Invalid node kwargs for vulkan_preprocess (target_name: {target_name}, "
+                f"kwargs: {kwargs})"
+            )
+
         else:
             raise AssertionError(
                 f"Invalid node target name for vulkan_preprocess ({target_name})"
@@ -101,7 +115,9 @@ class VulkanBackend(BackendDetails):
                             input1_id=node_vk_value_ids[node.all_input_nodes[0]],
                             input2_id=node_vk_value_ids[node.all_input_nodes[1]],
                             output_id=assign_non_const_vk_value_id(node),
-                            op_type=VulkanBackend.get_vk_op_type(node.target.__name__),
+                            op_type=VulkanBackend.get_vk_op_type(
+                                target_name=node.target.__name__, kwargs=node.kwargs
+                            ),
                             flags=0,
                         ),
                         debug_handle=node.meta.get(
