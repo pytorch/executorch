@@ -168,18 +168,12 @@ void LlamaRunner::generate(const char* prompt, bool eos) {
         break;
       }
       case ScalarType::Half: {
-#ifdef USE_ATEN_LIB
-        // TODO:(larryliu) get rid of this check once we have Half support in
-        // portable kernels.
-
-        c10::Half* half_logits =
-            outputs[0].toTensor().mutable_data_ptr<c10::Half>();
-        c10::Half* logits_last = half_logits + pos * tokenizer_->vocab_size();
+        exec_aten::Half* half_logits =
+            outputs[0].toTensor().mutable_data_ptr<exec_aten::Half>();
+        exec_aten::Half* logits_last =
+            half_logits + pos * tokenizer_->vocab_size();
         next_tok = sampler_->sample(logits_last);
         break;
-#else
-        __ET_FALLTHROUGH; // fallthrough
-#endif
       }
       default:
         ET_CHECK_MSG(
