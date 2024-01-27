@@ -464,7 +464,7 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 # Passes to convert a graph module from ATen to Edge IR
 
-pre_op_replace_passes = PassManager(
+pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = PassManager(
     passes=[
         # ReplaceSymSizeOpPass need to be run before other passes which inherits
         # from ExportPass. ExportPass can not handle OpOverloadPacket in its
@@ -479,7 +479,7 @@ pre_op_replace_passes = PassManager(
     ]
 ).passes
 
-post_op_replace_passes = PassManager(
+post_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = PassManager(
     passes=[
         dead_code_elimination_pass,
         DebugHandleGeneratorPass(),

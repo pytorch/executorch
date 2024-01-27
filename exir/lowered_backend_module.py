@@ -271,10 +271,6 @@ class LoweredBackendModule(torch.nn.Module):
                 ),
                 lowered_exported_program.graph_module,
             ),
-            # TODO: May need to set lowered_exported_program.call_spec = CallSpec(None, None)
-            # somewhere as we should pass it a list of tensors to the lowered module and output a
-            # list of tensors. Putting call_spec=lowered_exported_program.call_spec is correct here as the
-            # inputs/outputs to the toplevel program will be in the format of the eager module.
             state_dict={},  # None because all data are consumed by delegate
             range_constraints=lowered_exported_program.range_constraints,
             module_call_graph=lowered_exported_program.module_call_graph,
