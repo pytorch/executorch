@@ -27,3 +27,9 @@ TEST(ExecutorPalTest, TimestampCoherency) {
   et_timestamp_t time_b = et_pal_current_ticks();
   ASSERT_TRUE(time_b >= time_a);
 }
+
+TEST(ExecutorPalTest, TickRateRatioSanity) {
+  auto tick_ns_ratio = et_pal_ticks_to_ns_multiplier();
+  ASSERT_TRUE(tick_ns_ratio.numerator > 0);
+  ASSERT_TRUE(tick_ns_ratio.denominator > 0);
+}

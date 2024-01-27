@@ -47,7 +47,7 @@ Tensor& full_like_out(
   ET_SWITCH_REAL_TYPES_AND(
       Bool, val_type, ctx, "full_like.out", CTYPE_VAL, [&] {
         CTYPE_VAL val;
-        ET_EXTRACT_SCALAR(fill_value, val);
+        utils::extract_scalar(fill_value, &val);
 
         ET_SWITCH_REAL_TYPES_AND(
             Bool, out_type, ctx, "full_like.out", CTYPE_OUT, [&] {

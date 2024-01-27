@@ -88,7 +88,7 @@ Tensor& lt_scalar_out(
             ET_SWITCH_REAL_TYPES_AND(
                 Bool, out_type, ctx, "lt.Scalar_out", CTYPE_OUT, [&]() {
                   CTYPE_B val_b = 0;
-                  ET_EXTRACT_SCALAR(b, val_b);
+                  utils::extract_scalar(b, &val_b);
                   apply_unary_map_fn(
                       [val_b](const CTYPE_A val_a) {
                         CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);

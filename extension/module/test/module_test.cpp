@@ -46,7 +46,7 @@ TEST_F(ModuleTest, testMethodNames) {
 
   const auto methodNames = module.methodNames();
   EXPECT_TRUE(methodNames.ok());
-  EXPECT_EQ(methodNames.get(), std::vector<std::string>{"forward"});
+  EXPECT_EQ(methodNames.get(), std::unordered_set<std::string>{"forward"});
 }
 
 TEST_F(ModuleTest, testNonExistentMethodNames) {

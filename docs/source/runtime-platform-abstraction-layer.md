@@ -22,8 +22,10 @@ But, if they don't work for your system, you can override the default PAL by:
   in one of your application's `.c` or `.cpp` files.
 - Defining an implementation of one or more of the `et_pal_*()` functions.
 
-No build system changes necessary. The default PAL functions are weak symbols,
-so providing your own strong-symbol definition will override them at link time.
+The default PAL functions are weak symbols, so providing your own strong-symbol
+definition can override them at link time. To ensure that your definitions take
+precedence, you may need to ensure that the strong definitions precede the weak
+definitions in the link order.
 
 ## Minimal PAL
 

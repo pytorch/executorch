@@ -8,19 +8,23 @@
 
 #pragma once
 
-#include <math.h>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#ifdef USE_ATEN_LIB
+#include <torch/torch.h>
+#endif
 
 namespace torch {
 namespace executor {
 // A simple llama2 sampler.
 
+template <typename T>
 struct ProbIndex {
-  float prob;
+  T prob;
   int32_t index;
 }; // struct used when sorting probabilities during top-p sampling
 
@@ -32,16 +36,19 @@ class Sampler {
       float topp,
       unsigned long long rng_seed);
 
-  int32_t sample(float* logits);
+  template <typename T>
+  int32_t sample(T* logits);
 
  private:
-  int32_t sample_topp(float* probabilities, float coin);
-  int32_t sample_mult(float* probabilities, float coin);
-  int32_t sample_argmax(float* probabilities);
+  template <typename T>
+  int32_t sample_topp(T* probabilities, float coin);
+  template <typename T>
+  int32_t sample_mult(T* probabilities, float coin);
+  template <typename T>
+  int32_t sample_argmax(T* probabilities);
 
  private:
   int32_t vocab_size_;
-  std::unique_ptr<ProbIndex[]> probindex_; // buffer used in top-p sampling
   float temperature_;
   float topp_;
   unsigned long long rng_state_;

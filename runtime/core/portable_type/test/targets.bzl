@@ -23,6 +23,14 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "half_test",
+        srcs = ["half_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/portable_type:portable_type",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "scalar_test",
         srcs = ["scalar_test.cpp"],
         deps = [

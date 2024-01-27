@@ -26,9 +26,10 @@ MPSGraphBuilder::mpsPermuteOp(NodePtr nodePtr) {
   for(int64_t i = 0; i < graphNode->num_dims(); i++) {
     [permutation addObject:[NSNumber numberWithInteger:graphNode->perm()->Get(i)]];
   }
-  _idToMPSGraphTensor[graphNode->output_id()] = [_mpsGraph transposeTensor:getMPSGraphTensor(graphNode->input1_id())
-                                                               permutation:permutation
-                                                                      name:@"permutation"];
+  MPSGraphTensor* outputTensor = permuteTensor(
+    _mpsGraph, getMPSGraphTensor(graphNode->input1_id()), permutation
+  );
+  _idToMPSGraphTensor[graphNode->output_id()] = outputTensor;
 
   return Error::Ok;
 }

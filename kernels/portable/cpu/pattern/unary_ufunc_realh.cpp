@@ -16,8 +16,8 @@ namespace executor {
 namespace native {
 namespace internal {
 
-Tensor& unary_ufunc_realb_to_bool(
-    FunctionRef<bool(double)> fn,
+Tensor& unary_ufunc_realh(
+    FunctionRef<double(double)> fn,
     RuntimeContext& ctx,
     const Tensor& in,
     Tensor& out) {
@@ -31,21 +31,14 @@ Tensor& unary_ufunc_realb_to_bool(
       out,
       "Failed to resize output tensor.");
 
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      out.scalar_type() == exec_aten::ScalarType::Bool,
-      InvalidArgument,
-      out,
-      "Expected out tensor to have dtype Bool, but got %" PRId8 " instead.",
-      static_cast<int8_t>(out.scalar_type()));
+  ET_KERNEL_CHECK(
+      ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
 
-  const auto in_type = in.scalar_type();
-
-  ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, __func__, CTYPE_IN, [&] {
+  ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
     apply_unary_map_fn(
-        [fn](const CTYPE_IN val_in) { return fn(val_in); },
-        in.const_data_ptr<CTYPE_IN>(),
-        out.mutable_data_ptr<bool>(),
+        [fn](const CTYPE val_in) { return static_cast<CTYPE>(fn(val_in)); },
+        in.const_data_ptr<CTYPE>(),
+        out.mutable_data_ptr<CTYPE>(),
         in.numel());
   });
 

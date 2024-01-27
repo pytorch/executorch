@@ -18,7 +18,9 @@ def define_common_targets(is_xplat = False, platforms = []):
             "-Wno-global-constructors",
             "-Wno-missing-prototypes",
             "-Wno-nullable-to-nonnull-conversion",
+            "-Wno-undeclared-selector",
             "-Wno-unused-const-variable",
+            "-Wno-unused-variable",
             "-fno-objc-arc",
         ],
         "deps": [
