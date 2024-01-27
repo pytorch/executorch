@@ -123,8 +123,14 @@ enum class Error : error_code_t {
  * @param[in] ... Optional format string for the log error message and its
  * arguments.
  */
-#define ET_CHECK_OK_OR_RETURN_ERROR(...) \
-  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT(__VA_ARGS__, 2, 1)(__VA_ARGS__)
+#define ET_CHECK_OK_OR_RETURN_ERROR(error__, ...) \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(error__, ##__VA_ARGS__)
+
+// Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR(...) \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT(    \
+      __VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1) \
+  (__VA_ARGS__)
 
 /**
  * Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
@@ -150,7 +156,8 @@ enum class Error : error_code_t {
  * ET_CHECK_OK_OR_RETURN_ERROR(error_code); // Calls v1
  * ET_CHECK_OK_OR_RETURN_ERROR(error_code, "Error message", ...); // Calls v2
  */
-#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT(_1, _2, N, ...) \
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_SELECT( \
+    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) \
   ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_##N
 
 // Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
@@ -171,3 +178,21 @@ enum class Error : error_code_t {
       return et_error__;                                                \
     }                                                                   \
   } while (0)
+
+// Internal only: Use ET_CHECK_OK_OR_RETURN_ERROR() instead.
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_3 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_4 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_5 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_6 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_7 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_8 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_9 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
+#define ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_10 \
+  ET_INTERNAL_CHECK_OK_OR_RETURN_ERROR_2
