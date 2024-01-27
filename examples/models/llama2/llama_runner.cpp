@@ -101,7 +101,7 @@ std::vector<int32_t> LlamaRunner::readMetadata(
   return result;
 }
 
-void LlamaRunner::generate(const char* prompt, bool eos) {
+Error LlamaRunner::generate(const char* prompt, bool eos) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
@@ -120,19 +120,29 @@ void LlamaRunner::generate(const char* prompt, bool eos) {
   long start =
       0; // used to time our code, only initialized after first iteration
   int next; // will store the next token in the sequence
-  int pos = 0; // position in the sequence
+  int pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
   void* data =
-      malloc(max_seq_len_ * sizeof(long)); // allocate space for the tokens
+      malloc(max_seq_len_ * sizeof(int64_t)); // allocate space for the tokens
+  // copy prompt tokens into data
+  for (int i = 0; i < num_prompt_tokens; ++i) {
+    ((int64_t*)data)[i] = prompt_tokens[i];
+    if (i > 0) {
+      printf(
+          "%s",
+          ET_UNWRAP(
+              tokenizer_->decode(prompt_tokens[i - 1], prompt_tokens[i])));
+    }
+  }
   // create a 1xN int tensor with next as value
-  exec_aten::SizesType sizes[2]{1, 1};
+  exec_aten::SizesType sizes[2]{1, pos};
   exec_aten::DimOrderType dim_order[2]{0, 1};
 
   while (pos < max_seq_len_) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
-    ((long*)data)[pos] = token;
+    ((int64_t*)data)[pos] = token;
     sizes[1] = pos + 1;
 #ifdef USE_ATEN_LIB
     exec_aten::Tensor tensor =
@@ -239,6 +249,7 @@ void LlamaRunner::generate(const char* prompt, bool eos) {
 
   delete[] prompt_tokens;
   free(data);
+  return Error::Ok;
 }
 
 LlamaRunner::~LlamaRunner() {}
