@@ -1,8 +1,6 @@
 name: Update viable/strict
 
 on:
-  # TODO: Remove pull_request trigger after finish testing before landing the change
-  pull_request:
   schedule:
     - cron: 17,47 * * * *
   workflow_dispatch:
@@ -15,8 +13,7 @@ jobs:
   do_update_viablestrict:
     if: ${{ github.repository_owner == 'pytorch' }}
     runs-on: ubuntu-20.04
-    # TODO: Clean up the else part to restrict the env before landing the change
-    environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || 'update-viable-strict' }}
+    environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
     steps:
       - name: Update viable/strict
         uses: pytorch/test-infra/.github/actions/update-viablestrict@main
