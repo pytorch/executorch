@@ -36,10 +36,10 @@ CUSTOM_TIMEOUT = {
         # This is running too slow and timeout, switching to a bigger runner doesn't help
         # because the test utilizes only one core.  These slower cases should only be run
         # in trunk, not in every pull request till they can be finished faster.
-        "mobilebert": 120,
+        "mobilebert": 180,
     },
     "macos": {
-        "mobilebert": 120,
+        "mobilebert": 180,
     },
 }
 
