@@ -24,11 +24,11 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
@@ -151,9 +151,14 @@ int main(int argc, char** argv) {
       (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
-  // Prepare the inputs.
-  // Use ones-initialized inputs.
-  auto inputs = util::PrepareInputTensors(*method);
+  // Allocate input tensors and set all of their elements to 1. The `inputs`
+  // variable owns the allocated memory and must live past the last call to
+  // `execute()`.
+  auto inputs = util::prepare_input_tensors(*method);
+  ET_CHECK_MSG(
+      inputs.ok(),
+      "Could not prepare inputs: 0x%" PRIx32,
+      (uint32_t)inputs.error());
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
@@ -176,6 +181,5 @@ int main(int argc, char** argv) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
-  util::FreeInputs(inputs);
   return 0;
 }
