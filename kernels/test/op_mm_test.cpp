@@ -93,6 +93,28 @@ TEST(OpMmOutTest, AllDtypesSupported) {
   // for those types.
 }
 
+TEST(OpMmOutTest, HalfInputInt8Mat2) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+  TensorFactory<ScalarType::Half> tf_half;
+  TensorFactory<ScalarType::Char> tf_char;
+
+  Tensor x = tf_half.ones({3, 4});
+  Tensor y = tf_char.ones({4, 5});
+  Tensor out = tf_half.zeros({3, 5});
+
+  Tensor ret = op_mm_out(x, y, out);
+
+  // Should always return the provided out Tensor.
+  EXPECT_TENSOR_EQ(ret, out);
+
+  // Expected tensor, filled with 4.
+  Tensor expected = tf_half.full({3, 5}, 4);
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
 TEST(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 
