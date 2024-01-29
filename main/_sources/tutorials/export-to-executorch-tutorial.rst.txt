@@ -221,11 +221,11 @@ different than the ones we used while tracing, we will run into an error:
         print(aten_dialect(torch.ones(3, 2), torch.ones(3, 2)))
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 274, in __call__
         self._check_input_constraints(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 575, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 579, in _check_input_constraints
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 99, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 108, in _check_input_constraints_for_graph
         check(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 40, in check
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 49, in check
         raise RuntimeError(msg)
     RuntimeError: Expected input l_x_.shape[1] to be equal to 3, but got 2
 
@@ -339,11 +339,11 @@ Now let's try running the model with different shapes:
         print(aten_dialect(torch.ones(3, 15), torch.ones(3, 15)))
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 274, in __call__
         self._check_input_constraints(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 575, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 579, in _check_input_constraints
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 93, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 102, in _check_input_constraints_for_graph
         check(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 40, in check
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 49, in check
         raise RuntimeError(msg)
     RuntimeError: Expected input l_x_.shape[1] to be <= 10, but got 15
     Traceback (most recent call last):
@@ -351,11 +351,11 @@ Now let's try running the model with different shapes:
         print(aten_dialect(torch.ones(3, 3), torch.ones(3, 2)))
       File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 274, in __call__
         self._check_input_constraints(*args)
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 575, in _check_input_constraints
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/export/exported_program.py", line 579, in _check_input_constraints
         _check_input_constraints_for_graph(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 73, in _check_input_constraints_for_graph
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 82, in _check_input_constraints_for_graph
         check(
-      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 40, in check
+      File "/opt/conda/envs/py_3.10/lib/python3.10/site-packages/torch/_export/utils.py", line 49, in check
         raise RuntimeError(msg)
     RuntimeError: Expected input l_y_.shape[1] to be equal to 3, but got 2
 
@@ -1338,7 +1338,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 1.963 seconds)
+   **Total running time of the script:** (0 minutes 1.988 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:
