@@ -8,7 +8,7 @@
 
 #include <gflags/gflags.h>
 
-#include <executorch/examples/models/llama2/llama_runner.h>
+#include <executorch/examples/models/llama2/runner/runner.h>
 
 DEFINE_string(
     model_path,

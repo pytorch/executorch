@@ -2,9 +2,10 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     for aten in (True, False):
-        aten_postfix = "_aten" if aten else ""
+        aten_suffix = "_aten" if aten else ""
+
         runtime.cxx_library(
-            name = "sampler" + aten_postfix,
+            name = "sampler" + aten_suffix,
             exported_headers = [
                 "sampler.h",
             ],
@@ -15,12 +16,12 @@ def define_common_targets():
                 "sampler.cpp",
             ],
             visibility = [
-                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
             ],
             external_deps = [
                 "libtorch",
             ] if aten else [],
             exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib",
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],
         )
