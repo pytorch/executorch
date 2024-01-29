@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -12,6 +12,9 @@ from enum import Enum
 import numpy as np
 
 import torch
+
+import torchvision.models as models
+from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
 TestList = {}
 
@@ -646,3 +649,18 @@ class TorchBuilder:
             x = x + input
 
             return x
+
+    #@register_test
+    class mobilenetv2(torch.nn.Module):
+        inputs = {
+            TosaProfile.BI: (torch.ones(1, 3, 224, 224),),
+            TosaProfile.MI: (torch.ones(1, 3, 224, 224),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.mv = models.mobilenet_v2(
+                weights=MobileNet_V2_Weights)
+
+        def forward(self, x):
+            return self.mv(x)

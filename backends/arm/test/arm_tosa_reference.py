@@ -47,6 +47,7 @@ SUPPORTED_BI_TEST_LIST = [
     "simple_conv2d_2x2_3x1x40x40_non_bias",
     "block_two_conv2d",
     "block_two_conv2d_non_bias",
+    "mobilenetv2"
 ]
 
 
