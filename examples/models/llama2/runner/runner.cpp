@@ -9,7 +9,7 @@
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/models/llama2/llama_runner.h>
+#include <executorch/examples/models/llama2/runner/runner.h>
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif

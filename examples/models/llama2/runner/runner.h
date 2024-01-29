@@ -12,9 +12,9 @@
 #include <memory>
 #include <unordered_map>
 
+#include <executorch/examples/models/llama2/runner/util.h>
 #include <executorch/examples/models/llama2/sampler/sampler.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
-#include <executorch/examples/models/llama2/util.h>
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
