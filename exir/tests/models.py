@@ -192,7 +192,7 @@ class TensorSplit(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-    def forward(self, input: Tensor, sections: int, dim: int = 0) -> List[Tensor]:
+    def forward(self, input: Tensor, sections: int, dim: int = 0) -> Tuple[Tensor]:
         return torch.tensor_split(input, sections, dim)
 
 

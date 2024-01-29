@@ -699,7 +699,7 @@ class GraphModuleSerializer:
             # serialize/deserialize function.
             custom_obj_name = f"_custom_obj_{len(self.custom_objs)}"
             self.custom_objs[custom_obj_name] = arg
-            return Argument.create(as_custom_obj=CustomObjArgument(custom_obj_name))
+            return Argument.create(as_custom_obj=CustomObjArgument(custom_obj_name, ""))
         else:
             raise SerializeError(f"Unsupported argument type: {type(arg)}")
 

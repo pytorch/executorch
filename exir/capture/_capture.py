@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import dataclasses
 import warnings
 from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
@@ -26,10 +27,12 @@ from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
 from torch._dynamo.eval_frame import Constraint
-from torch._export import CallSpec, export, ExportedProgram, ExportGraphSignature
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
+from torch.export import export
 from torch.export.exported_program import (
+    ExportedProgram,
+    ExportGraphSignature,
     InputKind,
     InputSpec,
     ModuleCallEntry,
@@ -51,6 +54,12 @@ Val = Any
 CompileSpec = namedtuple(
     "CompileSpec", ["method_name", "callable", "args", "constraints"]
 )
+
+
+@dataclasses.dataclass
+class CallSpec:
+    in_spec: Optional[pytree.TreeSpec]
+    out_spec: Optional[pytree.TreeSpec]
 
 
 @compatibility(is_backward_compatible=False)
@@ -128,7 +137,7 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
 
 @compatibility(is_backward_compatible=False)
 def capture(  # noqa: C901
-    f: Callable[..., Any],
+    f: torch.nn.Module,
     args: Tuple[Value, ...],
     config: Optional[CaptureConfig] = None,
     constraints: Optional[List[Constraint]] = None,

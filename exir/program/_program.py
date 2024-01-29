@@ -36,11 +36,12 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch.export.exported_program import (
     _get_updated_range_constraints,
     ConstantArgument,
+    CustomObjArgument,
+    ExportedProgram,
     ExportGraphSignature,
     InputKind,
     InputSpec,
@@ -74,7 +75,8 @@ def _get_updated_graph_signature(
         old_input_spec = old_signature.input_specs[i]
         arg = (
             old_input_spec.arg
-            if isinstance(old_input_spec.arg, ConstantArgument)
+            if isinstance(old_input_spec.arg, (ConstantArgument, CustomObjArgument))
+            # pyre-ignore
             else type(old_input_spec.arg)(node.name)
         )
         new_input_specs.append(
@@ -93,7 +95,8 @@ def _get_updated_graph_signature(
         old_output_spec = old_signature.output_specs[i]
         arg = (
             old_output_spec.arg
-            if isinstance(old_output_spec.arg, ConstantArgument)
+            if isinstance(old_output_spec.arg, (ConstantArgument, CustomObjArgument))
+            # pyre-ignore
             else type(old_output_spec.arg)(node.name)
         )
         new_output_specs.append(
