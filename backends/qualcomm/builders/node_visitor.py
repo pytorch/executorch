@@ -197,25 +197,59 @@ class NodeVisitor:
         else:
             return QNN_TENSOR_TYPE_MAP[tensor.dtype]
 
+    def define_custom_tensor_wrapper(
+        self,
+        node_name: str,
+        tensor_type: PyQnnWrapper.Qnn_TensorType_t,
+        dtype: PyQnnWrapper.Qnn_DataType_t,
+        quant_encoding: PyQnnWrapper.Qnn_QuantizationEncoding_t,
+        quant_configs: dict,
+        dims: torch.Size,
+        tensor: torch.Tensor,
+        is_fake_tensor: bool,
+        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+    ) -> PyQnnWrapper.TensorWrapper:
+        if node_name in nodes_to_wrappers:
+            return nodes_to_wrappers[node_name]
+        if is_fake_tensor:
+            tensor_wrapper = PyQnnWrapper.TensorWrapper(
+                node_name,
+                tensor_type,
+                dtype,
+                quant_encoding,
+                quant_configs,
+                len(dims),
+                dims,
+                np.array([]),
+                False,
+            )
+        else:
+            # Can implement non-fake tensor when there is a need
+            return None
+        nodes_to_wrappers[node_name] = tensor_wrapper
+        return tensor_wrapper
+
     def define_value(
         self,
         node: torch.fx.Node,
         tensor: torch.Tensor,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
         is_tensor: bool,
+        node_name: str = None,
     ) -> PyQnnWrapper.TensorWrapper:
-        if node in nodes_to_wrappers:
-            return nodes_to_wrappers[node]
+        if node_name is None:
+            node_name = node.name
 
+        if node_name in nodes_to_wrappers:
+            return nodes_to_wrappers[node_name]
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
         tensor_type = self.get_tensor_type(node, tensor_type)
         quant_encoding, quant_configs = self.get_quant_encoding_conf(node)
         dtype = self.get_data_type(tensor, quant_configs, is_tensor)
-
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
-                node.name,
+                node_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
@@ -229,7 +263,7 @@ class NodeVisitor:
             if quant_configs:
                 tensor = self.get_quant_tensor_value(node, tensor, dtype)
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
-                node.name,
+                node_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
@@ -239,7 +273,7 @@ class NodeVisitor:
                 tensor.detach().numpy(),
                 True,
             )
-        nodes_to_wrappers[node] = tensor_wrapper
+        nodes_to_wrappers[node_name] = tensor_wrapper
         return tensor_wrapper
 
     def define_scalar(
@@ -269,7 +303,8 @@ class NodeVisitor:
         node: torch.fx.Node,
         tensor: torch.Tensor,
         tensor_type: PyQnnWrapper.Qnn_TensorType_t,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
+        node_name: str = None,
     ) -> PyQnnWrapper.TensorWrapper:
         """
         Covert torch.Tensor to TensorWrapper
@@ -284,12 +319,13 @@ class NodeVisitor:
             tensor_type,
             nodes_to_wrappers,
             is_tensor=True,
+            node_name=node_name,
         )
 
     def define_node(
         self,
         node: torch.fx.Node,
-        nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
+        nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         """Convert torch.fx.Node to OpWrapper"""
         raise NotImplementedError("NodeVisitor must be extended!")

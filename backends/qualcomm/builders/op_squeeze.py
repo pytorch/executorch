@@ -3,20 +3,19 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-from typing import cast, Dict
+from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 
-import numpy as np
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpSoftmax, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class Softmax(NodeVisitor):
-    target = "aten._softmax.default"
+class Squeeze(NodeVisitor):
+    target = "aten.squeeze_copy.dims"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -28,13 +27,13 @@ class Softmax(NodeVisitor):
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = node.args[0]
         input_tensor = self.get_tensor(input_node, node)
-        softmax_inp_tensor_wrapper = self.define_tensor(
+
+        input_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        softmax_input_tensors = [softmax_inp_tensor_wrapper]
 
         output_tensor = self.get_tensor(node, node)
         output_tensor_wrapper = self.define_tensor(
@@ -43,30 +42,13 @@ class Softmax(NodeVisitor):
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
         )
-        softmax_output_tensors = [output_tensor_wrapper]
 
-        dim = cast(int, node.args[1])
-        if dim < 0:
-            dim = dim % len(input_tensor.shape)
-        if "axis_order" in node.meta:
-            dim = node.meta["axis_order"].index(dim)
-
-        # softmax only supports last dimension for now, which is channel in QNN
-        if dim != input_tensor.dim() - 1:
-            return None
-
-        softmax_op = PyQnnWrapper.PyQnnOpWrapper(
+        squeeze_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpSoftmax.op_name,
+            OpReshape.op_name,
         )
-        softmax_op.AddInputTensors(softmax_input_tensors)
-        softmax_op.AddOutputTensors(softmax_output_tensors)
+        squeeze_op.AddInputTensors([input_tensor_wrapper])
+        squeeze_op.AddOutputTensors([output_tensor_wrapper])
 
-        softmax_op.AddScalarParam(
-            OpSoftmax.param_axis,
-            PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_32,
-            {"data": np.uint32(dim)},
-        )
-
-        return softmax_op
+        return squeeze_op

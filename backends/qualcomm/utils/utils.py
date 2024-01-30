@@ -72,10 +72,10 @@ def capture_program(
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
-    LayoutTransform(edge_program)(graph_module)
     AnnotateQuantAttrs(edge_program)(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)
     FoldQDQ()(graph_module)
+    LayoutTransform(edge_program)(graph_module)
     return ex_prog
 
 

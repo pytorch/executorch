@@ -111,7 +111,30 @@ class Clamp(torch.nn.Module):
         return torch.clamp(x, max=0)
 
 
-class ConvSequential(torch.nn.Module):
+class Conv1DSequential(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv1d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3),
+            padding=1,
+            bias=True,
+        )
+
+        self.second = torch.nn.Conv1d(
+            in_channels=3,
+            out_channels=2,
+            kernel_size=(3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.second(self.first(x))
+
+
+class Conv2DSequential(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.first = torch.nn.Conv2d(
@@ -334,6 +357,14 @@ class Softmax(torch.nn.Module):
         return torch.nn.functional.softmax(x, dim=-1)
 
 
+class LogSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.log_softmax(x, dim=-1)
+
+
 class Sqrt(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -388,6 +419,14 @@ class SubConstantLong(torch.nn.Module):
         return 10 - x
 
 
+class Squeeze(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.squeeze()
+
+
 class Tanh(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -416,6 +455,20 @@ class View(torch.nn.Module):
 
 
 # small models
+class Conv1dReluLogSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(
+            in_channels=2, out_channels=2, kernel_size=1, stride=1, padding=1
+        )
+        self.logsoftmax = torch.nn.LogSoftmax(dim=1)
+
+    def forward(self, x):
+        x = torch.nn.functional.relu(self.conv(x))
+        x = self.logsoftmax(x)
+        return x
+
+
 class Conv2dBnHardtanhMean(torch.nn.Module):
     def __init__(self):
         super(Conv2dBnHardtanhMean, self).__init__()

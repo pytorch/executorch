@@ -259,6 +259,11 @@ def annotate_softmax(node: Node, quantization_config: QuantizationConfig) -> Non
     annotate_single_in_single_out(node, quantization_config)
 
 
+@register_annotator([torch.ops.aten.log_softmax.int])
+def annotate_log_softmax(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
 @register_annotator([torch.ops.aten.pad.default])
 def annotate_pad(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
@@ -282,6 +287,18 @@ def annotate_mean_dim(node: Node, quantization_config: QuantizationConfig) -> No
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator(
+    [
+        torch.ops.aten.squeeze.default,
+        torch.ops.aten.squeeze.dim,
+    ]
+)
+def annotate_squeeze(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.unsqueeze.default])
@@ -356,7 +373,7 @@ def annotate_matmul(node: Node, quantization_config: QuantizationConfig) -> None
     )
 
 
-@register_annotator([torch.ops.aten.conv2d.default])
+@register_annotator([torch.ops.aten.conv2d.default, torch.ops.aten.conv1d.default])
 def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
         return

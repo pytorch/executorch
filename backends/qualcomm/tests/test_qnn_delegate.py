@@ -25,6 +25,7 @@ from executorch.examples.models.inception_v4 import InceptionV4Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 from executorch.exir.backend.backend_api import disable_validation
 
@@ -72,8 +73,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn((9, 4, 5, 3)),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv1d(self):
+        module = Conv1DSequential()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d(self):
-        module = ConvSequential()  # noqa: F405
+        module = Conv2DSequential()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -219,6 +225,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_log_softmax(self):
+        module = LogSoftmax()  # noqa: F405
+        sample_input = (torch.randn([1, 4, 8, 8]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -269,6 +280,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([1, 4, 8, 8]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_squeeze(self):
+        module = Squeeze()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -295,6 +311,11 @@ class TestQNNFloatingPointModel(TestQNN):
             debug=False,
             saver=False,
         )
+
+    def test_qnn_backend_conv1d_relu_log_softmax(self):
+        module = Conv1dReluLogSoftmax()  # noqa: F405
+        sample_input = (torch.rand(1, 2, 28),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_avg_pool2d(self):
         module = Conv2dAvgPool2d()  # noqa: F405
@@ -340,8 +361,10 @@ class TestQNNFloatingPointModel(TestQNN):
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
+            Wav2LetterModel(),
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
@@ -414,8 +437,14 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_conv1d(self):
+        module = Conv1DSequential()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_conv2d(self):
-        module = ConvSequential()  # noqa: F405
+        module = Conv2DSequential()  # noqa: F405
         sample_input = (torch.randn([1, 1, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -575,6 +604,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_log_softmax(self):
+        module = LogSoftmax()  # noqa: F405
+        sample_input = (torch.randn([1, 4, 8, 8]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_max_pool2d(self):
         module = MaxPool2d()  # noqa: F405
         sample_input = (torch.randn(4, 3, 24, 24),)
@@ -634,6 +669,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_squeeze(self):
+        module = Squeeze()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -663,6 +704,12 @@ class TestQNNQuantizedModel(TestQNN):
             debug=False,
             saver=False,
         )
+
+    def test_qnn_backend_conv1d_relu_log_softmax(self):
+        module = Conv1dReluLogSoftmax()  # noqa: F405
+        sample_input = (torch.rand(1, 2, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_conv2d_avg_pool2d(self):
         module = Conv2dAvgPool2d()  # noqa: F405
@@ -714,6 +761,7 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": InceptionV4Model(), "annotation": ()},
             {"module": MV2Model(), "annotation": ()},
             {"module": MV3Model(), "annotation": ()},
+            {"module": Wav2LetterModel(), "annotation": ()},
             # only works on QNN 2.12 so far
             # { 'module': MobileBertModelExample(), 'annotation': () },
         ]
