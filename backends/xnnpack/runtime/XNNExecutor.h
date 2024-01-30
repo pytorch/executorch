@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNStatus.h>
+#include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -33,6 +34,8 @@ class XNNExecutor {
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
       nullptr,
       &xnn_delete_runtime};
+
+  profiling::XNNProfiler profiler_;
   std::vector<uint32_t> input_ids_;
   std::vector<uint32_t> output_ids_;
   std::vector<uint32_t> external_id_args_;
@@ -42,27 +45,8 @@ class XNNExecutor {
 
   Error set_external_input(uint32_t id, Tensor* input, struct XNNShape* shape);
 
-  // XNNPACK Profiling
-  // Used to hold profiling data
-  //  * To hold op names and duration (in usec) for each operator execution
-  //  * Both indexed with xnn_node_idx (0.. node_id)
-  using microsecond_t = uint64_t;
-  size_t num_ops_;
-  std::vector<char> op_names_;
-  // op_timings[i][j] represents the runtime of operator j on the ith run
-  std::vector<std::vector<microsecond_t>> op_timings_;
-
-  void get_runtime_operator_names(std::vector<char>& operator_names);
-  void get_runtime_num_operators(size_t& num_operators);
-  void get_runtime_operator_timings(std::vector<uint64_t>& timing_stats);
-
  public:
   XNNExecutor() = default;
-
-  // XNNPACK Profiling public fn
-  void init_profiler();
-  void log_op_timings();
-  void print_avg_op_timings();
 
   inline void append_arg(uint32_t id) {
     external_id_args_.push_back(id);
@@ -96,6 +80,13 @@ class XNNExecutor {
 
   inline size_t getNumOutputs() {
     return output_ids_.size();
+  }
+
+  inline void initialize(xnn_runtime_t runtime) {
+    runtime_ = std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
+        runtime, xnn_delete_runtime);
+
+    profiler_.initialize(runtime);
   }
 
   inline void addDynamicQinput(uint32_t id) {
@@ -144,7 +135,7 @@ class XNNExecutor {
     return Error::Ok;
   }
 
-  __ET_NODISCARD Error forward() {
+  __ET_NODISCARD Error forward(BackendExecutionContext& context) {
     ET_CHECK_OR_RETURN_ERROR(
         runtime_ != nullptr,
         Internal,
@@ -158,7 +149,23 @@ class XNNExecutor {
         "XNN Runtime setup failed with code: %s",
         xnn_status_to_string(status));
 
+    auto error = profiler_.start(context.event_tracer());
+    if (error != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to start profiling: %u.",
+          static_cast<unsigned int>(error));
+    }
+
     status = xnn_invoke_runtime(runtime_.get());
+
+    error = profiler_.end();
+    if (error != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to end profiling: %u.",
+          static_cast<unsigned int>(error));
+    }
 
     ET_CHECK_OR_RETURN_ERROR(
         status == xnn_status_success,
