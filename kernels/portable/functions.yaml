@@ -279,6 +279,11 @@
     - arg_meta: null
       kernel_name: torch::executor::expand_copy_out
 
+- op: expm1.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expm1_out
+
 - op: fill.Scalar_out
   kernels:
     - arg_meta: null

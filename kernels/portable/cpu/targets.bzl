@@ -301,6 +301,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_expm1",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
         name = "op_fill",
         deps = [
             ":scalar_utils",
