@@ -64,6 +64,17 @@ deps = [
   "extension_data_loader",
 ]
 
+[targets.extension_runner_util]
+buck_targets = [
+  "//extension/runner_util:inputs",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
 [targets.portable_kernels]
 buck_targets = [
   # //kernels/portable:operators would be more appropriate, but buck2 doesn't

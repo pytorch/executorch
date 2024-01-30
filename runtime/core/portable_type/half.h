@@ -11,6 +11,7 @@
 #include <math.h>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 namespace torch {
 namespace executor {
