@@ -8,33 +8,24 @@
 
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
+
 #pragma once
+
 #include <memory>
 #include <unordered_map>
 
-#include <executorch/examples/models/llama2/runner/util.h>
 #include <executorch/examples/models/llama2/sampler/sampler.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
-#include <executorch/extension/data_loader/mmap_data_loader.h>
-#include <executorch/extension/evalue_util/print_evalue.h>
-#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/method.h>
-#include <executorch/runtime/executor/program.h>
-#include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/runtime.h>
 
 namespace torch {
 namespace executor {
 
-class LlamaRunner {
+class Runner {
  public:
-  explicit LlamaRunner(const char* model_path, const char* tokenizer_path);
+  explicit Runner(const char* model_path, const char* tokenizer_path);
 
   Error generate(const char* prompt, bool eos = false);
-
-  ~LlamaRunner();
 
  private:
   std::vector<int32_t> readMetadata(

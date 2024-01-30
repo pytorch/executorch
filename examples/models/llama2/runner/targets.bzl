@@ -22,14 +22,10 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
                 "//executorch/examples/models/llama2/tokenizer:tokenizer",
-                "//executorch/extension/data_loader:mmap_data_loader",
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
-                "//executorch/extension/memory_allocator:malloc_memory_allocator",
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/portable:" + ("generated_lib_aten" if aten else "generated_lib_all_ops"),
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                "//executorch/runtime/executor:program" + aten_suffix,
-                "//executorch/runtime/platform:platform",
             ],
             external_deps = [
                 "libtorch",

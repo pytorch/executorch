@@ -11,15 +11,20 @@
 
 #include <executorch/examples/models/llama2/runner/runner.h>
 
+#include <ctime>
+
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
-using torch::executor::util::MmapDataLoader;
+
+#include <executorch/examples/models/llama2/runner/util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace torch {
 namespace executor {
 
-LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
+Runner::Runner(const char* model_path, const char* tokenizer_path) {
   // Constants definition
   float temperature = 0.8f;
   float topp = 0.9f;
@@ -68,7 +73,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
       std::make_unique<Sampler>(vocab_size_, temperature, topp, rng_seed);
 }
 
-std::vector<int32_t> LlamaRunner::readMetadata(
+std::vector<int32_t> Runner::readMetadata(
     std::unordered_set<std::string> model_methods) {
   std::vector<std::string> methods = {
       "get_vocab_size",
@@ -102,7 +107,7 @@ std::vector<int32_t> LlamaRunner::readMetadata(
   return result;
 }
 
-Error LlamaRunner::generate(const char* prompt, bool eos) {
+Error Runner::generate(const char* prompt, bool eos) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
@@ -256,6 +261,5 @@ Error LlamaRunner::generate(const char* prompt, bool eos) {
   return Error::Ok;
 }
 
-LlamaRunner::~LlamaRunner() {}
 } // namespace executor
 } // namespace torch
