@@ -116,7 +116,7 @@ if __name__ == "__main__":
             )
             .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
             .to_executorch(
-                config=ExecutorchBackendConfig(extract_constant_segment=False)
+                config=ExecutorchBackendConfig(extract_constant_segment=False, extract_delegate_segments=True)
             )
         )
 
