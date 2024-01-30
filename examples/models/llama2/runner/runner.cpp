@@ -10,6 +10,7 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
+
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
@@ -115,6 +116,9 @@ Error LlamaRunner::generate(const char* prompt, bool eos) {
       prompt, n_bos_, eos ? n_eos_ : 0, prompt_tokens, &num_prompt_tokens);
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
+  ET_CHECK_MSG(
+      num_prompt_tokens < max_seq_len_,
+      "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
 
   // start the main loop
   long start =
