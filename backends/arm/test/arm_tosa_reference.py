@@ -224,7 +224,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     subprocess.run([cmd_flatc], shell=True, check=True)
 
     ### Run the TOSA flatbuffer through TOSA Ref_Model and print the results
-    DESC_FILE_NAME = "/desc.json"
+    DESC_FILE_NAME = "desc.json"
     DESC_FILE_PATH = TOSA_OUT_PATH + DESC_FILE_NAME
     cmd_ref_model = TOSA_REF_MODEL_PATH + " --test_desc " + DESC_FILE_PATH
     subprocess.run([cmd_ref_model], shell=True, check=True)
