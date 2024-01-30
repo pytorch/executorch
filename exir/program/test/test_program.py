@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pye-strict
+# pyre-strict
 
 import unittest
 from typing import Any, Dict
@@ -38,12 +38,16 @@ lib.define("foo(Tensor self, Tensor other) -> Tensor")
 
 
 @impl(lib, "foo", "CPU")
+# pyre-fixme[3]: Return type must be annotated.
+# pyre-fixme[2]: Parameter must be annotated.
 def foo(a, b):
     # do nothing and return a.
     return a + b
 
 
 @impl(lib, "foo", "Meta")
+# pyre-fixme[3]: Return type must be annotated.
+# pyre-fixme[2]: Parameter must be annotated.
 def foo_meta(a, b):
     # do nothing and return a.
     return torch.empty_like(a)
@@ -79,9 +83,11 @@ def get_exported_programs() -> Dict[str, ExportedProgram]:
 
 
 def get_config_methods() -> Dict[str, Any]:
+    # pyre-fixme[3]: Return type must be annotated.
     def bam():
         return 3
 
+    # pyre-fixme[3]: Return type must be annotated.
     def bar():
         return "bar"
 
@@ -89,6 +95,8 @@ def get_config_methods() -> Dict[str, Any]:
 
 
 class AddToMulPassEdge(ExportPass):
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
     def call_operator(self, op, args, kwargs, meta):
         if op == exir_ops.edge.aten.add.Tensor:
             return super().call_operator(
@@ -99,6 +107,7 @@ class AddToMulPassEdge(ExportPass):
 
 
 class TestProgramManagers(unittest.TestCase):
+    # pyre-fixme[3]: Return type must be annotated.
     def test_edge_manager_basic_api(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -115,8 +124,10 @@ class TestProgramManagers(unittest.TestCase):
             )
             EXIREdgeDialectVerifier()(edge_manager.exported_program("foo").graph_module)
         except ExportError as e:
+            # pyre-fixme[16]: `ExportError` has no attribute `msg`.
             self.assertTrue(False, msg="Graph not in edge dialect : " + e.msg)
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_executorch_manager_basic_api(self):
         executorch_manager: ExecutorchProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -150,6 +161,7 @@ class TestProgramManagers(unittest.TestCase):
             3,
         )
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_edge_manager_transform(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -183,6 +195,7 @@ class TestProgramManagers(unittest.TestCase):
             original_res,  # x * y + x
         )
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_transform_dict_api(self):
         edge_manager = to_edge(get_exported_programs(), get_config_methods())
 
@@ -206,6 +219,7 @@ class TestProgramManagers(unittest.TestCase):
             torch.ones(1) + 1,  # x + 1
         )
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_edge_to_backend_replaces_subgraph(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -268,6 +282,7 @@ class TestProgramManagers(unittest.TestCase):
             1,
         )
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_edge_to_backend_selective(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -320,12 +335,15 @@ class TestProgramManagers(unittest.TestCase):
             1,
         )
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_edge_manager_dialect(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
         )
         self.assertTrue(edge_manager.exported_program().dialect == "EDGE")
 
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
     def _test_edge_dialect_verifier(self, callable, validate_ir=True):
         from executorch.exir import EdgeCompileConfig
 
@@ -345,7 +363,9 @@ class TestProgramManagers(unittest.TestCase):
         exported_foo = export(callable, inputs)
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 
+    # pyre-fixme[3]: Return type must be annotated.
     def test_edge_dialect_custom_op(self):
+        # pyre-fixme[3]: Return type must be annotated.
         def _use_foo_add(a: torch.Tensor, b: torch.Tensor):
             return torch.ops.test_op.foo(a, b)
 

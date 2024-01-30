@@ -193,6 +193,7 @@ class TensorSplit(nn.Module):
         super().__init__()
 
     def forward(self, input: Tensor, sections: int, dim: int = 0) -> List[Tensor]:
+        # pyre-fixme[7]: Expected `List[Tensor]` but got `Tuple[Tensor, ...]`.
         return torch.tensor_split(input, sections, dim)
 
 
