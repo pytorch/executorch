@@ -50,9 +50,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--use_partitioner",
-        action="store_true",
-        required=False,
-        default=True,
+        default=False,
+        action=argparse.BooleanOptionalAction,
         help="Use MPS partitioner to run the model instead of using whole graph lowering.",
     )
 
