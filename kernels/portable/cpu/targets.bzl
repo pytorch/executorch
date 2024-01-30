@@ -540,6 +540,13 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_maximum",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            ":scalar_utils",
+        ],
+    ),
+    op_target(
         name = "op_max_pool2d_with_indices",
         deps = [
             "//executorch/kernels/portable/cpu/util:kernel_ops_util",
