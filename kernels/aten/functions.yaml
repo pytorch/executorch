@@ -128,6 +128,8 @@
 
 - op: expand_copy.out
 
+- op: expm1.out
+
 - op: eye.out
 
 - op: fill.Scalar_out
@@ -185,6 +187,12 @@
 - op: linalg_vector_norm.out
 
 - op: log.out
+
+- op: log10.out
+
+- op: log1p.out
+
+- op: log2.out
 
 - op: logical_and.out
 
