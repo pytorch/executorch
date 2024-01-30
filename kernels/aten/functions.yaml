@@ -57,6 +57,8 @@
 
 - op: atan.out
 
+- op: atan2.out
+
 - op: atanh.out
 
 - op: avg_pool2d.out
@@ -128,6 +130,8 @@
 
 - op: expand_copy.out
 
+- op: expm1.out
+
 - op: eye.out
 
 - op: fill.Scalar_out
@@ -185,6 +189,12 @@
 - op: linalg_vector_norm.out
 
 - op: log.out
+
+- op: log10.out
+
+- op: log1p.out
+
+- op: log2.out
 
 - op: logical_and.out
 
@@ -315,6 +325,8 @@
 - op: transpose_copy.int_out
 
 - op: tril.out
+
+- op: trunc.out
 
 - op: unbind_copy.int_out
 
