@@ -66,6 +66,7 @@ class ExportedModule:
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
         capture_config=None,
         extract_constant_segment: bool = True,
+        skip_type_promotion: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -169,7 +170,9 @@ class ExportedModule:
 
         exec_prog = to_edge(
             exported_methods,
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _skip_type_promotion=skip_type_promotion
+            ),
         ).to_executorch(
             ExecutorchBackendConfig(
                 passes=[
