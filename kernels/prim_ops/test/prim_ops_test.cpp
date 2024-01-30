@@ -266,7 +266,7 @@ TEST_F(RegisterPrimOpsTest, LocalScalarDenseReturnsCorrectValue) {
     stack[i] = &values[i];
   }
 
-  getOpsFn("aten::_local_scalar_dense.default")(context, stack);
+  getOpsFn("aten::_local_scalar_dense")(context, stack);
 
   int64_t expected = 1;
   EXPECT_EQ(stack[1]->toInt(), expected);

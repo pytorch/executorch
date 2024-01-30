@@ -24,6 +24,7 @@ from executorch.backends.qualcomm.utils.utils import (
     SoCModel,
 )
 from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.capture._config import ExecutorchBackendConfig
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -155,7 +156,7 @@ def build_executorch_binary(
         # calibration
         for data in dataset:
             annotated_model(*data)
-        quantized_model = convert_pt2e(annotated_model)
+        quantized_model = convert_pt2e(annotated_model, fold_quantize=True)
 
         edge_prog = capture_program(quantized_model, inputs)
     else:
@@ -178,7 +179,9 @@ def build_executorch_binary(
     )
     edge_prog.exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
     edge_prog.exported_program.graph_module.graph.print_tabular()
-    exec_prog = edge_prog.to_executorch()
+    exec_prog = edge_prog.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
 

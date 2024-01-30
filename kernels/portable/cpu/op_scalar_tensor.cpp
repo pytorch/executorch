@@ -27,7 +27,7 @@ Tensor& scalar_tensor_out(RuntimeContext& ctx, const Scalar& s, Tensor& out) {
         ET_SWITCH_SCALAR_OBJ_TYPES(
             s_type, ctx, "scalar_tensor.out", CTYPE_S, [&]() {
               CTYPE_S val_s;
-              ET_EXTRACT_SCALAR(s, val_s);
+              utils::extract_scalar(s, &val_s);
               out.mutable_data_ptr<CTYPE>()[0] = convert<CTYPE, CTYPE_S>(val_s);
             });
       });

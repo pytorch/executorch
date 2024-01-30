@@ -29,7 +29,7 @@ struct DemoOpList {
 
 class BackendWithDelegateMapping final : public PyTorchBackendInterface {
  public:
-  ~BackendWithDelegateMapping() = default;
+  ~BackendWithDelegateMapping() override = default;
 
   bool is_available() const override {
     return true;
@@ -51,8 +51,9 @@ class BackendWithDelegateMapping final : public PyTorchBackendInterface {
     char* copy = strdup(str);
 
     while (true) {
-      op_name = strtok(copy, ",");
-      delegate_debug_identifier = strtok(nullptr, ",");
+      char* saveptr = nullptr;
+      op_name = strtok_r(copy, ",", &saveptr);
+      delegate_debug_identifier = strtok_r(nullptr, ",", &saveptr);
 
       if (op_name == nullptr || delegate_debug_identifier == nullptr) {
         break;

@@ -49,7 +49,7 @@ Exporting to ExecuTorch Tutorial
 #
 # Both APIs take in a model (any callable or ``torch.nn.Module``), a tuple of
 # positional arguments, optionally a dictionary of keyword arguments (not shown
-# in the example), and a list of constraints (covered later).
+# in the example), and a list of dynamic shapes (covered later).
 
 import torch
 from torch._export import capture_pre_autograd_graph
@@ -116,10 +116,15 @@ print(aten_dialect)
 import traceback as tb
 
 
-def f(x, y):
-    return x + y
+class Basic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return x + y
 
 
+f = Basic()
 example_args = (torch.randn(3, 3), torch.randn(3, 3))
 pre_autograd_aten_dialect = capture_pre_autograd_graph(f, example_args)
 aten_dialect: ExportedProgram = export(f, example_args)
@@ -134,31 +139,28 @@ except Exception:
     tb.print_exc()
 
 ######################################################################
-# To express that some input shapes are dynamic, we can insert constraints to
-# the exporting flow. This is done through the ``dynamic_dim`` API:
+# To express that some input shapes are dynamic, we can insert dynamic
+#  shapes to the exporting flow. This is done through the ``Dim`` API:
 
-from torch.export import dynamic_dim
-
-
-def f(x, y):
-    return x + y
+from torch.export import Dim
 
 
+class Basic(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        return x + y
+
+
+f = Basic()
 example_args = (torch.randn(3, 3), torch.randn(3, 3))
-constraints = [
-    # Input 0, dimension 1 is dynamic
-    dynamic_dim(example_args[0], 1),
-    # Input 0, dimension 1 must be greater than or equal to 1
-    1 <= dynamic_dim(example_args[0], 1),
-    # Input 0, dimension 1 must be less than or equal to 10
-    dynamic_dim(example_args[0], 1) <= 10,
-    # Input 1, dimension 1 is equal to input 0, dimension 1
-    dynamic_dim(example_args[1], 1) == dynamic_dim(example_args[0], 1),
-]
+dim1_x = Dim("dim1_x", min=1, max=10)
+dynamic_shapes = {"x": {1: dim1_x}, "y": {1: dim1_x}}
 pre_autograd_aten_dialect = capture_pre_autograd_graph(
-    f, example_args, constraints=constraints
+    f, example_args, dynamic_shapes=dynamic_shapes
 )
-aten_dialect: ExportedProgram = export(f, example_args, constraints=constraints)
+aten_dialect: ExportedProgram = export(f, example_args, dynamic_shapes=dynamic_shapes)
 print("ATen Dialect Graph")
 print(aten_dialect)
 
@@ -168,10 +170,7 @@ print(aten_dialect)
 # of values.
 #
 # Additionally, we can see in the **Range constraints** that value of ``s0`` has
-# the range [1, 10], which was specified by our constraints. We also see in the
-# **Equality constraints**, the tuple ``(InputDim(input_name='arg1_1', dim=1),
-# InputDim(input_name='arg0_1', dim=1))```, meaning that input 0's dimension 1
-# is equal to input 1's dimension 1, which was also specified by our constraints.
+# the range [1, 10], which was specified by our dynamic shapes.
 #
 # Now let's try running the model with different shapes:
 

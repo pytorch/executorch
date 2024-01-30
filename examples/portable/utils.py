@@ -42,6 +42,7 @@ def _to_core_aten(
 
 def _core_aten_to_edge(
     core_aten_exir_ep: ExportedProgram,
+    edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=None,
 ) -> EdgeProgramManager:
     if not edge_compile_config:
@@ -49,7 +50,9 @@ def _core_aten_to_edge(
             _check_ir_validity=False,  # quant ops currently break ir verification
         )
     edge_manager: EdgeProgramManager = to_edge(
-        core_aten_exir_ep, compile_config=edge_compile_config
+        core_aten_exir_ep,
+        constant_methods=edge_constant_methods,
+        compile_config=edge_compile_config,
     )
     logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
     return edge_manager
@@ -59,16 +62,18 @@ def export_to_edge(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
+    edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
 ) -> EdgeProgramManager:
     core_aten_ep = _to_core_aten(model, example_inputs, dynamic_shapes)
-    return _core_aten_to_edge(core_aten_ep, edge_compile_config)
+    return _core_aten_to_edge(core_aten_ep, edge_constant_methods, edge_compile_config)
 
 
 def export_to_exec_prog(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
+    edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
 ) -> ExecutorchProgramManager:
@@ -78,7 +83,9 @@ def export_to_exec_prog(
 
     core_aten_ep = _to_core_aten(m, example_inputs, dynamic_shapes)
 
-    edge_m = _core_aten_to_edge(core_aten_ep, edge_compile_config)
+    edge_m = _core_aten_to_edge(
+        core_aten_ep, edge_constant_methods, edge_compile_config
+    )
 
     exec_prog = edge_m.to_executorch(backend_config)
     return exec_prog

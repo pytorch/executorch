@@ -714,16 +714,6 @@ inline bool tensors_have_same_shape_and_dtype(
   return tensors_have_same_shape(a, b, c) && tensors_have_same_dtype(a, b, c);
 }
 
-#define ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(t__)           \
-  ({                                                             \
-    ET_CHECK_MSG(                                                \
-        is_default_dim_order(                                    \
-            t__.dim_order().data(), t__.dim_order().size()) ||   \
-            is_channels_last_dim_order(                          \
-                t__.dim_order().data(), t__.dim_order().size()), \
-        "Tensor must have default or channels last dim order");  \
-  })
-
 inline bool tensor_has_expected_size(
     exec_aten::Tensor a,
     exec_aten::ArrayRef<exec_aten::SizesType> expected_sizes) {
@@ -822,6 +812,19 @@ inline bool tensor_is_contiguous(exec_aten::Tensor t) {
         static_cast<size_t>(strides[i - 1]));
   }
   return true;
+}
+
+inline bool tensors_have_same_rank(exec_aten::Tensor a, exec_aten::Tensor b) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim(),
+      ET_TENSOR_CHECK_PREFIX__ ": rank={%zd, %zd}",
+      ssize_t(a.dim()),
+      ssize_t(b.dim()));
+  return true;
+}
+
+inline bool tensor_is_scalar(exec_aten::Tensor t) {
+  return t.dim() == 0 && t.numel() == 1;
 }
 
 /**

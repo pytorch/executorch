@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {
@@ -147,6 +148,76 @@ void get_cat_out_target_size(
   }
 }
 
+bool check_expand_copy_args(
+    const Tensor& input,
+    ArrayRef<int64_t> expand_sizes,
+    bool implicit,
+    Tensor& out) {
+  (void)out;
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      implicit == false,
+      "This operator is not implemented for when implicit == true.");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      expand_sizes.size() >= input.sizes().size(),
+      "The number of sizes provided (%zu) must at least be equal to the number of dimensions in the tensor (%zu)",
+      expand_sizes.size(),
+      input.sizes().size());
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      expand_sizes.size() <= kTensorDimensionLimit,
+      "The number of expanded dims (%zu) exceeds the configured maximum (%zu). Increase this limit.",
+      expand_sizes.size(),
+      kTensorDimensionLimit);
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, out));
+
+  return true;
+}
+
+bool get_expand_copy_out_target_size(
+    exec_aten::ArrayRef<exec_aten::SizesType> self_sizes,
+    exec_aten::ArrayRef<int64_t> expand_sizes,
+    exec_aten::SizesType* output_sizes,
+    size_t* output_rank) {
+  auto j{expand_sizes.size()};
+  *output_rank = 0;
+
+  for (size_t i{self_sizes.size()}; i > 0 && j > 0;) {
+    --i;
+    --j;
+
+    output_sizes[j] = expand_sizes[j];
+
+    if (expand_sizes[j] == -1) {
+      // -1 can use for replacing any corresponding dimension
+      output_sizes[j] = self_sizes[i];
+    } else if (self_sizes[i] != 1) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          expand_sizes[j] == self_sizes[i],
+          "The expanded size of the tensor (%zu) must match the existing size (%zu) at non-singleton dimension %zu.",
+          (size_t)expand_sizes[j],
+          (size_t)self_sizes[i],
+          i);
+    }
+  }
+
+  // The leading expand_sizes cannot be negative
+  while (j > 0) {
+    --j;
+    output_sizes[j] = expand_sizes[j];
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        expand_sizes[j] >= 0,
+        "The expanded size of the tensor (%zu) isn't allowed in a leading, non-existing dimension %zu",
+        (size_t)expand_sizes[j],
+        j);
+  }
+
+  *output_rank = expand_sizes.size();
+  return true;
+}
+
 bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, dims.size()));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
@@ -163,13 +234,65 @@ bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out) {
     size_t dim = dims[i] >= 0 ? dims[i] : in.dim() + dims[i];
 
     // Internal check, since we have already validated this
-    ET_CHECK(dim < kTensorDimensionLimit && dim >= 0);
+    ET_LOG_AND_RETURN_IF_FALSE(dim < kTensorDimensionLimit && dim >= 0);
 
     // Check that the dimension hasn't been seen previously.
     ET_LOG_MSG_AND_RETURN_IF_FALSE(
         dim_exist[dim] == false, "duplicate dims are not allowed.");
 
     dim_exist[dim] = true;
+  }
+
+  return true;
+}
+
+bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      in.dim() > 0, "in must have at least one dimension; saw %zd", in.dim());
+
+  ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, in.dim()));
+
+  const ssize_t dim_size = in.size(dim);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim_size == out.size(),
+      "out tensorlist's length %zd must equal unbind dim %" PRId64
+      " size = %zd.",
+      out.size(),
+      dim,
+      dim_size);
+
+  // Validate each output.
+  for (size_t i = 0; i < out.size(); ++i) {
+    // All output dtypes must be the same.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].scalar_type() == out[0].scalar_type(),
+        "out[%zu] dtype %" PRId8 " != out[0] dtype %" PRId8,
+        i,
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
+
+    // output tensor must have # of dims = in.dim() -1
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].dim() == (in.dim() - 1),
+        "out[%zu] dim %zd != in dim %zd",
+        i,
+        out[i].dim(),
+        in.dim() - 1);
+
+    // Check the shape of the output.
+    for (ssize_t d = 0, out_d = 0; d < in.dim(); ++d) {
+      if (d != dim) {
+        ET_LOG_MSG_AND_RETURN_IF_FALSE(
+            out[i].size(out_d) == in.size(d),
+            "out[%zu].size(%zd) %zd != in.size(%zd) %zd",
+            i,
+            d,
+            out[i].size(out_d),
+            d,
+            in.size(d));
+        out_d++;
+      }
+    }
   }
 
   return true;
@@ -467,6 +590,254 @@ void get_stack_out_target_size(
 bool check_tril_args(const Tensor& in, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 2));
+  return true;
+}
+
+bool check_split_copy_args(
+    const Tensor& input,
+    int64_t split_size,
+    int64_t dim,
+    TensorList out) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      input.dim() > 0,
+      "input must have at least one dimension; saw %zd",
+      input.dim());
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      dim >= 0 && dim < input.dim(),
+      "dim %" PRId64 " out of range [0,%zd)",
+      dim,
+      input.dim());
+
+  const ssize_t dim_size = input.size(dim);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      split_size >= 0,
+      "split_size %" PRId64 " must be non-negative",
+      split_size);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      split_size > 0 || dim_size == 0,
+      "split_size is zero but input.size(%" PRId64 ") %zd is non-zero",
+      dim,
+      dim_size);
+
+  // Check the number of outputs.
+  //
+  // The specified dimension will be split into split_size-sized chunks, with
+  // the final chunk possibly being smaller. So, the expected output length is
+  // ceil(dim_size / split_size).
+  //
+  // E.g., splitting dim 0 of a [5,2] tensor with split_size 2 would produce
+  // three tensors with size [2,2], [2,2], [1,2].
+  int64_t remainder; // The size of the split dimension of the final out tensor.
+  if (split_size >= dim_size) {
+    // Note that this also handles the case where split_size == 0, avoiding a
+    // division by zero in the other branch. When dim_size == 0 && split_size ==
+    // 0, core PyTorch expects 1 output element.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out.size() == 1,
+        "Unexpected out.size() %zu: should be 1 because split_size %" PRId64
+        " >= input.size(%" PRId64 ") %zd",
+        out.size(),
+        split_size,
+        dim,
+        dim_size);
+    remainder = dim_size;
+  } else {
+    int64_t expected_out_len = (dim_size + split_size - 1) / split_size;
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out.size() == expected_out_len,
+        "Unexpected out.size() %zu: ceil(input.size(%" PRId64
+        ")=%zd"
+        " / split_size=%" PRId64 ") is %" PRId64,
+        out.size(),
+        dim,
+        dim_size,
+        split_size,
+        expected_out_len);
+    remainder = dim_size % split_size;
+    if (remainder == 0) {
+      remainder = split_size;
+    }
+  }
+
+  // Validate each output.
+  for (size_t i = 0; i < out.size(); ++i) {
+    // All output dtypes must be the same.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].scalar_type() == out[0].scalar_type(),
+        "out[%zu] dtype %" PRId8 " != out[0] dtype %" PRId8,
+        i,
+        static_cast<int8_t>(out[i].scalar_type()),
+        static_cast<int8_t>(out[0].scalar_type()));
+
+    // All outputs must have the same number of dimensions as the input.
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        out[i].dim() == input.dim(),
+        "out[%zu] dim %zd != input dim %zd",
+        i,
+        out[i].dim(),
+        input.dim());
+
+    // Check the shape of the output.
+    for (ssize_t d = 0; d < out[i].dim(); ++d) {
+      if (d == dim) {
+        // This is the split dimension, which may be different.
+        if (i < out.size() - 1) {
+          // All outputs except the final one: split dimension should be
+          // split_size.
+          ET_LOG_MSG_AND_RETURN_IF_FALSE(
+              out[i].size(d) == split_size,
+              "out[%zu].size(%zd) %zd != split_size %" PRId64,
+              i,
+              d,
+              out[i].size(d),
+              split_size);
+        } else {
+          // The final output: split dimension should be the remainder of
+          // split_size.
+          ET_LOG_MSG_AND_RETURN_IF_FALSE(
+              out[i].size(d) == remainder,
+              "out[%zu].size(%zd) %zd != remainder %" PRId64,
+              i,
+              d,
+              out[i].size(d),
+              remainder);
+        }
+      } else {
+        // Non-split output dimensions must be the same as the input dimension.
+        ET_LOG_AND_RETURN_IF_FALSE(
+            tensors_have_same_size_at_dims(out[i], d, input, d));
+      }
+    }
+  }
+
+  return true;
+}
+
+bool check_to_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    Tensor& out) {
+  (void)input;
+  (void)out;
+
+  // Right now we only support blocking data transfer
+  ET_LOG_AND_RETURN_IF_FALSE(non_blocking == false);
+
+  // Right now we only focus on contiguous memory, memory_format shall be
+  // exec::aten::MemoryFormat::Contiguous or none.
+  ET_LOG_AND_RETURN_IF_FALSE(
+      !memory_format.has_value() ||
+      memory_format.value() == MemoryFormat::Contiguous);
+
+  return true;
+}
+
+bool check_unsqueeze_copy_args(
+    const Tensor input,
+    int64_t dim,
+    const Tensor out) {
+  // The input and out shall share same dtype
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(input, out));
+
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(out, dim));
+
+  // The shape of input and out shall obey the relationship:
+  // 1. input.dim() == out.dim()-1
+  // 2. input.size(i) == out.size(i) for all i < dim
+  // 3. input.size(i-1) == out.size(i) for all i >= dim
+  // 4. out.size(dim) == 1
+  ET_LOG_AND_RETURN_IF_FALSE(input.dim() == out.dim() - 1);
+
+  for (size_t d = 0; d < out.dim(); d++) {
+    auto dim_normalized = dim;
+    if (dim_normalized < 0) {
+      dim_normalized += out.dim();
+    }
+
+    if (d < dim_normalized) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          input.size(d) == out.size(d),
+          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
+          d,
+          input.size(d),
+          d,
+          out.size(d),
+          dim);
+    } else if (d > dim_normalized) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          input.size(d - 1) == out.size(d),
+          "input.size(%zu) %zd != out.size(%zu) %zd | dim = %" PRId64,
+          d - 1,
+          input.size(d),
+          d,
+          out.size(d),
+          dim);
+    } else { // d == dim
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          out.size(d) == 1,
+          "out.size(%zu) %zd shall equal 1 | dim = %" PRId64,
+          d,
+          out.size(d),
+          dim);
+    }
+  }
+
+  return true;
+}
+
+bool check_view_copy_args(
+    const Tensor& self,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == out.sizes().size());
+
+  // The input and out shall share same dtype and numel
+  ET_LOG_AND_RETURN_IF_FALSE(self.numel() == out.numel());
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, out));
+
+  // The size of out should equal target size.
+  bool size_inferred = false;
+  for (int i = 0; i < size_int64_t.size(); i++) {
+    // If this value is -1 it implies that this dimension is inferred.
+    if (size_int64_t[i] == -1) {
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          !size_inferred, "Multiple dimensions cannot be inferred.");
+      size_inferred = true;
+    }
+    ET_LOG_AND_RETURN_IF_FALSE(
+        ((int64_t)out.sizes()[i] == size_int64_t[i]) ||
+        (size_int64_t[i] == -1));
+  }
+
+  return true;
+}
+
+bool get_view_copy_target_size(
+    const Tensor input,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    int64_t dim,
+    Tensor::SizesType* out_sizes) {
+  size_t out_numels_without_minus_1 = 1;
+  int32_t minus_1_dim = -1;
+
+  ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == dim);
+
+  for (size_t i = 0; i < dim; ++i) {
+    if (size_int64_t[i] != -1) {
+      out_sizes[i] = static_cast<Tensor::SizesType>(size_int64_t[i]);
+      out_numels_without_minus_1 = out_numels_without_minus_1 * size_int64_t[i];
+    } else {
+      // TODO(kimishpatel): Add test to hit this line
+      ET_LOG_MSG_AND_RETURN_IF_FALSE(
+          minus_1_dim == -1, "At most one view copy dim can be -1.");
+      minus_1_dim = i;
+    }
+  }
+  if (minus_1_dim >= 0) {
+    out_sizes[minus_1_dim] = input.numel() / out_numels_without_minus_1;
+  }
+
   return true;
 }
 

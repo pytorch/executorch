@@ -15,6 +15,7 @@
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/executor/test/managed_memory_manager.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <executorch/test/utils/DeathTest.h>
 #include <executorch/util/util.h>
 #include <gtest/gtest.h>
 
@@ -51,6 +52,8 @@ class MethodTest : public ::testing::Test {
   }
 
   void SetUp() override {
+    torch::executor::runtime_init();
+
     load_program(std::getenv("ET_MODULE_ADD_PATH"), "add");
     load_program(std::getenv("ET_MODULE_INDEX_PATH"), "index");
     load_program(
@@ -94,6 +97,74 @@ TEST_F(MethodTest, MoveTest) {
   ASSERT_EQ(err, Error::Ok);
 
   torch::executor::util::FreeInputs(inputs);
+}
+
+TEST_F(MethodTest, GetInputTests) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  size_t num_inputs = method->inputs_size();
+  ASSERT_GT(num_inputs, 0);
+
+  // In-range inputs should succeed without aborting.
+  method->get_input(0);
+  method->get_input(num_inputs - 1);
+
+  // Out-of-range inputs should abort.
+  ET_EXPECT_DEATH(method->get_input(num_inputs), "");
+  ET_EXPECT_DEATH(method->get_input(num_inputs + 1), "");
+}
+
+TEST_F(MethodTest, MutableInputTests) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  size_t num_inputs = method->inputs_size();
+  ASSERT_GT(num_inputs, 0);
+
+  // In-range inputs should succeed without aborting.
+  method->mutable_input(0);
+  method->mutable_input(num_inputs - 1);
+
+  // Out-of-range inputs should abort.
+  ET_EXPECT_DEATH(method->mutable_input(num_inputs), "");
+  ET_EXPECT_DEATH(method->mutable_input(num_inputs + 1), "");
+}
+
+TEST_F(MethodTest, GetOutputTests) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  size_t num_outputs = method->outputs_size();
+  ASSERT_GT(num_outputs, 0);
+
+  // In-range outputs should succeed without aborting.
+  method->get_output(0);
+  method->get_output(num_outputs - 1);
+
+  // Out-of-range outputs should abort.
+  ET_EXPECT_DEATH(method->get_output(num_outputs), "");
+  ET_EXPECT_DEATH(method->get_output(num_outputs + 1), "");
+}
+
+TEST_F(MethodTest, MutableOutputTests) {
+  ManagedMemoryManager mmm(kDefaultNonConstMemBytes, kDefaultRuntimeMemBytes);
+  Result<Method> method = programs_["add"]->load_method("forward", &mmm.get());
+  ASSERT_EQ(method.error(), Error::Ok);
+
+  size_t num_outputs = method->outputs_size();
+  ASSERT_GT(num_outputs, 0);
+
+  // In-range outputs should succeed without aborting.
+  method->mutable_output(0);
+  method->mutable_output(num_outputs - 1);
+
+  // Out-of-range outputs should abort.
+  ET_EXPECT_DEATH(method->mutable_output(num_outputs), "");
+  ET_EXPECT_DEATH(method->mutable_output(num_outputs + 1), "");
 }
 
 TEST_F(MethodTest, SetPrimInputTest) {

@@ -15,6 +15,8 @@ namespace executor {
 
 bool check_gelu_args(const Tensor& in, string_view approximate, Tensor& out);
 
+bool check_glu_args(const Tensor& in, int64_t dim, Tensor& out);
+
 bool check_log_softmax_args(
     const Tensor& in,
     int64_t dim,
@@ -26,6 +28,8 @@ bool check_softmax_args(
     int64_t dim,
     bool half_to_float,
     Tensor& out);
+
+Error resize_glu_out(const Tensor& in, int64_t dim, Tensor& out);
 
 } // namespace executor
 } // namespace torch

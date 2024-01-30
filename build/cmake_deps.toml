@@ -52,9 +52,9 @@ deps = [
   "executorch",
 ]
 
-[targets.extension_runner_module]
+[targets.extension_module]
 buck_targets = [
-  "//extension/runner/module:module",
+  "//extension/module:module",
 ]
 filters = [
   ".cpp$",
@@ -157,6 +157,14 @@ deps = [
   "executorch",
 ]
 
+[targets.mps_schema]
+buck_targets = [
+  "//backends/apple/mps:mps_schema",
+]
+filters = [
+  ".fbs$",
+]
+
 [targets.xnn_executor_runner]
 buck_targets = [
   "//examples/xnnpack:xnn_executor_runner",
@@ -168,6 +176,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "executorch",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -193,7 +202,7 @@ filters = [
 
 [targets.xnnpack_schema]
 buck_targets = [
-  "//backends/xnnpack:xnnpack_schema",
+  "//backends/xnnpack/serialization:xnnpack_flatbuffer_header",
 ]
 filters = [
   ".fbs$",

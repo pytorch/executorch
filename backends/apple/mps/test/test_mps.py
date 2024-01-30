@@ -9,24 +9,16 @@ import random
 import unittest
 from enum import Enum
 
-import executorch.exir as exir
 import torch
-import torch._export as export
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.models.model_factory import EagerModelFactory
-from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.test.test_mps_models import MPS_MODEL_NAME_TO_MODEL
 from executorch.backends.apple.mps.test.test_mps_utils import (
-    _CAPTURE_CONFIG,
-    _EDGE_COMPILE_CONFIG,
-    dump_executorch_program_info,
     OpSequencesAddConv2d,
     randomize_bn,
     TestMPS,
 )
 
-from executorch.exir import ExirExportedProgram
-from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.tests.models import (
     BasicSinMax,
     CompositeDelegateModule,
@@ -36,12 +28,6 @@ from executorch.exir.tests.models import (
     ModelWithUnusedArg,
     Mul,
     Repeat,
-)
-
-from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
-from executorch.sdk.bundled_program.serialize import (
-    serialize_from_bundled_program_to_flatbuffer,
 )
 
 
@@ -75,174 +61,113 @@ EXIR_MODEL_NAME_TO_MODEL = {
 def run_model(
     model: str,
     model_type: MODEL_TYPE = MODEL_TYPE.EXIR_DEFAULT_MODEL,
-    dump_non_lowered_module: bool = False,
-    dump_lowered_module: bool = False,
+    use_fp16: bool = False,
+    lowering_func=None,
 ):
     logging.info(f"Step 1: Retrieving model: {model}...")
     if model_type == MODEL_TYPE.EXIR_DEFAULT_MODEL:
-        m, m_inputs, _ = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[model])
+        m, m_inputs = EagerModelFactory.create_model(*MODEL_NAME_TO_MODEL[model])
     elif model_type == MODEL_TYPE.EXIR_TEST_MODEL:
         m, m_inputs = EXIR_MODEL_NAME_TO_MODEL.get(model)()
     elif model_type == MODEL_TYPE.MPS_TEST_MODEL:
         m, m_inputs = MPS_MODEL_NAME_TO_MODEL.get(model)()
 
-    m = m.eval()
-
-    pre_autograd_graph = export.capture_pre_autograd_graph(m, m_inputs)
-
-    logging.info("Step 2: EXIR capturing of original module...")
-    edge = exir.capture(pre_autograd_graph, m_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
-
-    if dump_non_lowered_module:
-        dump_executorch_program_info(edge=edge, module_info="Non-lowered")
-
-    # Step 3: Lower to MPSGraph
-    logging.info("Step 3: Lowering to MPSGraph...")
-    lowered_module = to_backend(MPSBackend.__name__, edge.exported_program, [])
-
-    logging.info("Step 4: Capturing executorch program with lowered module...")
-
-    # Step 4: Create a new composite module with our lowered MPS module
-    # This composite module calls into the lowered module
-    class WrappedModule(torch.nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.mps_module = lowered_module
-
-        def forward(self, *args):
-            return self.mps_module(*args)
-
-    executorch_program = (
-        exir.capture(WrappedModule(), m_inputs, _CAPTURE_CONFIG)
-        .to_edge(_EDGE_COMPILE_CONFIG)
-        .to_executorch()
-    )
-
-    if dump_lowered_module:
-        tmp_exported_program: ExirExportedProgram = exir.capture(
-            lowered_module, m_inputs, _CAPTURE_CONFIG
-        ).to_edge(_EDGE_COMPILE_CONFIG)
-        dump_executorch_program_info(edge=tmp_exported_program, module_info="Lowered")
-
-    logging.info("Step 5: Generating bundled program... ")
-
-    logging.info(
-        f"  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
-    )
-
-    method_test_suites = [
-        MethodTestSuite(
-            method_name="forward",
-            test_cases=[MethodTestCase(inputs=m_inputs, expected_outputs=m(*m_inputs))],
-        )
-    ]
-
-    logging.info("  -> Test suites generated successfully")
-
-    bundled_program = create_bundled_program(executorch_program, method_test_suites)
-    logging.info("  -> Bundled program generated successfully")
-
-    bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
-        bundled_program
-    )
-    logging.info("  -> Bundled program serialized successfully to flatbuffer")
-
-    filename = f"{model}.pte"
-    logging.info(f"Step 6: Saving exported program to {filename}...")
-    with open(filename, "wb") as file:
-        file.write(bundled_program_buffer)
+    lowering_func(m, m_inputs, model)
 
 
-class TestMPSBackend_ExampleModels(unittest.TestCase):
-    def test_mul(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_linear(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_add(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_add_mul(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_emformer_transcribe(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_emformer_join(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_mobilebert(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_mv2(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_mv3(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_vit(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_ic3(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_ic4(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_resnet18(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_resnet50(self):
-        run_model(inspect.stack()[0].function[5:])
-
-    def test_edsr(self):
-        run_model(inspect.stack()[0].function[5:])
-
-
-class TestMPSBackendExirModels(unittest.TestCase):
+class TestMPSBackendExirModels(TestMPS):
     def test_model_with_unused_arg(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_mlp(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_mul_2(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_element_wise_add(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_emformer(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.EXIR_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.EXIR_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
 
-class TestMPSBackendMPSModels(unittest.TestCase):
+class TestMPSBackendMPSModels(TestMPS):
     def test_conv2D(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_norm(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_add(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_toy_model_for_mem_planning(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_mem_planning_with_scratch_tensor(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_ops_return_tensor_list(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_contiguous_tensor(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
     def test_module_input_dynamic_shape(self):
-        run_model(inspect.stack()[0].function[5:], MODEL_TYPE.MPS_TEST_MODEL)
+        run_model(
+            inspect.stack()[0].function[5:],
+            MODEL_TYPE.MPS_TEST_MODEL,
+            lowering_func=self.lower_and_test_with_partitioner,
+        )
 
 
 class TestMPSUnitOpTesting(TestMPS):
@@ -390,7 +315,21 @@ class TestMPSUnitOpTesting(TestMPS):
                 super().__init__()
 
             def forward(self, x):
-                return torch.squeeze(x, 2)
+                y = torch.squeeze(x, 2)
+                return torch.squeeze(y, 0)
+
+        example_inputs = (torch.randn(1, 5, 1, 1, 4),)
+        self.lower_and_test_with_partitioner(
+            Squeeze(), example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_backend_unsqueeze_dim_1(self):
+        class Squeeze(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.unsqueeze(x, 1)
 
         example_inputs = (torch.randn(1, 5, 1, 4),)
         self.lower_and_test_with_partitioner(
@@ -464,7 +403,7 @@ class TestMPSUnitOpTesting(TestMPS):
             TwoConv(), example_inputs, func_name=inspect.stack()[0].function[5:]
         )
 
-    def test_mps_backend_conv2d_bn(self):
+    def test_mps_backend_conv2d_bn_1(self):
         class ModelConvBN(torch.nn.Module):
             def __init__(self, in_features: int, out_features: int, kernel_size):
                 super().__init__()
@@ -503,6 +442,76 @@ class TestMPSUnitOpTesting(TestMPS):
             dilation=dilation,
             bias=True,
         )
+        conv.eval()
+        self.lower_and_test_with_partitioner(
+            conv, example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_conv1d(self):
+        example_inputs = (torch.randn(1, 57, 40),)
+        stride = random.randint(1, 4)
+        padding = random.randint(1, 4)
+        conv = torch.nn.Conv1d(
+            57,
+            20,
+            stride=stride,
+            padding=padding,
+            kernel_size=3,
+            bias=random.choice([True, False]),
+        )
+        conv.eval()
+        self.lower_and_test_with_partitioner(
+            conv, example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_conv2d_simple(self):
+        N = 10
+        C = 10
+        H = 4
+        W = 6
+        groups = 2
+        input_memory_format = torch.contiguous_format
+        weight_memory_format = torch.contiguous_format
+        strideX = random.randint(1, 4)
+        strideY = random.randint(1, 4)
+        example_inputs = (
+            torch.randn(N, C, H, W).to(memory_format=input_memory_format),
+        )
+        conv = torch.nn.Conv2d(
+            in_channels=N,
+            out_channels=C,
+            kernel_size=H,
+            groups=groups,
+            stride=(strideX, strideY),
+            bias=False,
+        )
+        conv.weight.data = conv.weight.to(memory_format=weight_memory_format)
+        conv.eval()
+        self.lower_and_test_with_partitioner(
+            conv, example_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_conv2d_to_depthwise_conv_3d(self):
+        N = 10
+        C = 10
+        H = 4
+        W = 6
+        groups = 10
+        input_memory_format = torch.contiguous_format
+        weight_memory_format = torch.contiguous_format
+        strideX = random.randint(1, 4)
+        strideY = random.randint(1, 4)
+        example_inputs = (
+            torch.randn(N, C, H, W).to(memory_format=input_memory_format),
+        )
+        conv = torch.nn.Conv2d(
+            in_channels=N,
+            out_channels=C,
+            kernel_size=H,
+            groups=groups,
+            stride=(strideX, strideY),
+        )
+        conv.weight.data = conv.weight.to(memory_format=weight_memory_format)
         conv.eval()
         self.lower_and_test_with_partitioner(
             conv, example_inputs, func_name=inspect.stack()[0].function[5:]
@@ -577,6 +586,27 @@ class TestMPSUnitOpTesting(TestMPS):
             self.lower_and_test_with_partitioner(
                 linear, example_input, func_name=inspect.stack()[0].function[5:]
             )
+
+    def test_mps_backend_bmm(self):
+        class BmmModule(torch.nn.Module):
+            def __init__(
+                self,
+            ):
+                super().__init__()
+                self.bmm = torch.bmm
+
+            def forward(self, x, y):
+                return self.bmm(x, y)
+
+        mul_module = BmmModule()
+        model_inputs = (
+            torch.randn((3, 1, 8)),
+            torch.randn((3, 8, 1)),
+        )
+
+        self.lower_and_test_with_partitioner(
+            mul_module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
 
     def test_mps_backend_addmm(self):
         in_sizes = [1, 4, 4]
@@ -1277,6 +1307,30 @@ class TestMPSUnitOpTesting(TestMPS):
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
 
+    def test_mps_backend_partitioner(self):
+        # `index.Tensor`` is not yet natively supported
+        # It will fall back to MPSPartitioner. Once implemented,
+        # replace the op with an unsupported one.
+        class IndexTensorModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.indices = torch.tensor([0, 5, 2, 3])
+
+            def forward(self, x):
+                y = torch.add(x, 2.0)
+                z = y[self.indices]
+                r = z + x[self.indices]
+                d = r - 2
+                p = torch.pow(d, 4)
+                return p / 10
+
+        module = IndexTensorModule()
+
+        model_inputs = (torch.randn(8, 3, 4, 5),)
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
     def test_mps_backend_isinf(self):
         class IsInfModule(torch.nn.Module):
             def __init__(self):
@@ -1496,6 +1550,23 @@ class TestMPSUnitOpTesting(TestMPS):
             ReluModule(), (example_input,), func_name=inspect.stack()[0].function[5:]
         )
 
+    def test_mps_backend_GELU(self):
+        class GELUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gelu = torch.nn.GELU()
+                self.gelu_tanh = torch.nn.GELU(approximate="tanh")
+
+            def forward(self, x):
+                return self.gelu(x)
+                # MPS TODO: MPS Gelu tanh fails
+                # return self.gelu_tanh(y)
+
+        example_input = torch.randn(2, 3, 4)
+        self.lower_and_test_with_partitioner(
+            GELUModule(), (example_input,), func_name=inspect.stack()[0].function[5:]
+        )
+
     def test_mps_backend_leaky_Relu(self):
         class LeakyReluModule(torch.nn.Module):
             def __init__(self):
@@ -1641,7 +1712,29 @@ class TestMPSUnitOpTesting(TestMPS):
             func_name=inspect.stack()[0].function[5:],
         )
 
-    def test_mps_clamp(self):
+    def test_mps_clamp_min_max(self):
+        class Clamp(torch.nn.Module):
+            def __init__(self, min_val, max_val):
+                super().__init__()
+                self.clamp = torch.clamp
+                self.min_val = min_val
+                self.max_val = max_val
+
+            def forward(self, *x):
+                out1 = self.clamp(x[0], min=-0.5, max=0.5)
+                out2 = self.clamp(x[0], min=-5, max=5)
+                return out1, out2
+
+        model_inputs = (
+            torch.randn(1, 4, 122, 122) * 2,
+            torch.randint(-100, 100, (1, 4, 15, 20)),
+        )
+        module = Clamp(-0.5, 0.5)
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_clamp_min(self):
         class Clamp(torch.nn.Module):
             def __init__(self, min_val, max_val):
                 super().__init__()
@@ -1653,7 +1746,24 @@ class TestMPSUnitOpTesting(TestMPS):
                 return self.clamp(x, min=self.min_val, max=self.max_val)
 
         model_inputs = (torch.randn(1, 4, 122, 122) * 2,)
-        module = Clamp(-0.5, 0.5)
+        module = Clamp(-0.5, None)
+        self.lower_and_test_with_partitioner(
+            module, model_inputs, func_name=inspect.stack()[0].function[5:]
+        )
+
+    def test_mps_clamp_max(self):
+        class Clamp(torch.nn.Module):
+            def __init__(self, min_val, max_val):
+                super().__init__()
+                self.clamp = torch.clamp
+                self.min_val = min_val
+                self.max_val = max_val
+
+            def forward(self, x):
+                return self.clamp(x, min=self.min_val, max=self.max_val)
+
+        model_inputs = (torch.randn(1, 4, 122, 122) * 2,)
+        module = Clamp(None, 0.5)
         self.lower_and_test_with_partitioner(
             module, model_inputs, func_name=inspect.stack()[0].function[5:]
         )
@@ -2383,6 +2493,7 @@ class TestMPSUnitOpTesting(TestMPS):
             def forward(self):
                 out1 = torch.ops.aten.scalar_tensor(self._scalar)
                 out2 = torch.ops.aten.scalar_tensor(self._scalar, dtype=torch.int32)
+                # issue 121117206
                 out3 = torch.ops.aten.scalar_tensor(self._bool, dtype=torch.bool)
                 return out1 + out2 + out3
 

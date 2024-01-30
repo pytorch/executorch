@@ -60,6 +60,16 @@ void test_floating_point_tan_out(
   // clang-format on
 }
 
+TEST(OpTanOutKernelTest, AllRealInputHalfOutputStaticDynamismSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype) \
+  test_floating_point_tan_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST(OpTanOutKernelTest, AllRealInputFloatOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_tan_out<ScalarType::dtype, ScalarType::Float>();
@@ -71,6 +81,17 @@ TEST(OpTanOutKernelTest, AllRealInputDoubleOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_tan_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST(OpTanOutKernelTest, AllRealInputHalfOutputBoundDynamismSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype)                                    \
+  test_floating_point_tan_out<ScalarType::dtype, ScalarType::Half>( \
+      {10, 10}, TensorShapeDynamism::DYNAMIC_BOUND);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

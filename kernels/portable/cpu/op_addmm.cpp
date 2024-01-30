@@ -47,54 +47,60 @@ Tensor& addmm_out(
 
   ScalarType alpha_dtype = utils::get_scalar_dtype(alpha);
   ScalarType beta_dtype = utils::get_scalar_dtype(beta);
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "addmm.out", CTYPE, [&]() {
-    ET_SWITCH_SCALAR_OBJ_TYPES(alpha_dtype, ctx, "addmm.out", ALPHA_T, [&]() {
-      ET_SWITCH_SCALAR_OBJ_TYPES(beta_dtype, ctx, "addmm.out", BETA_T, [&]() {
-        size_t m = mat1.size(0);
-        size_t n = mat1.size(1);
-        size_t p = mat2.size(1);
+  ET_SWITCH_REAL_TYPES_AND(
+      Half, in.scalar_type(), ctx, "addmm.out", CTYPE, [&]() {
+        ET_SWITCH_SCALAR_OBJ_TYPES(
+            alpha_dtype, ctx, "addmm.out", ALPHA_T, [&]() {
+              ET_SWITCH_SCALAR_OBJ_TYPES(
+                  beta_dtype, ctx, "addmm.out", BETA_T, [&]() {
+                    size_t m = mat1.size(0);
+                    size_t n = mat1.size(1);
+                    size_t p = mat2.size(1);
 
-        if (out.sizes() == in.sizes()) {
-          // vec_addmm assumes that no broadcasting is required.
-          vec_addmm<CTYPE, CTYPE>(
-              out.mutable_data_ptr<CTYPE>(),
-              in.const_data_ptr<CTYPE>(),
-              mat1.const_data_ptr<CTYPE>(),
-              mat2.const_data_ptr<CTYPE>(),
-              m,
-              n,
-              p,
-              convert<CTYPE>(beta.to<BETA_T>()),
-              convert<CTYPE>(alpha.to<ALPHA_T>()));
-        } else {
-          // If broadcasting is required, them compute the matmul and addition
-          // separately, using apply_binary_elementwise_fn to perform the
-          // addition while applying broadcasting
-          vec_matmul<CTYPE, CTYPE>(
-              out.mutable_data_ptr<CTYPE>(),
-              mat1.const_data_ptr<CTYPE>(),
-              mat2.const_data_ptr<CTYPE>(),
-              m,
-              n,
-              p);
+                    if (out.sizes() == in.sizes()) {
+                      // vec_addmm assumes that no broadcasting is required.
+                      vec_addmm<CTYPE, CTYPE>(
+                          out.mutable_data_ptr<CTYPE>(),
+                          in.const_data_ptr<CTYPE>(),
+                          mat1.const_data_ptr<CTYPE>(),
+                          mat2.const_data_ptr<CTYPE>(),
+                          m,
+                          n,
+                          p,
+                          convert<CTYPE>(beta.to<BETA_T>()),
+                          convert<CTYPE>(alpha.to<ALPHA_T>()));
+                    } else {
+                      // If broadcasting is required, them compute the matmul
+                      // and addition separately, using
+                      // apply_binary_elementwise_fn to perform the addition
+                      // while applying broadcasting
+                      vec_matmul<CTYPE, CTYPE>(
+                          out.mutable_data_ptr<CTYPE>(),
+                          mat1.const_data_ptr<CTYPE>(),
+                          mat2.const_data_ptr<CTYPE>(),
+                          m,
+                          n,
+                          p);
 
-          CTYPE alpha_val = convert<CTYPE>(alpha.to<ALPHA_T>());
-          CTYPE beta_val = convert<CTYPE>(beta.to<BETA_T>());
-          apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
-              [alpha_val, beta_val](const CTYPE val_a, const CTYPE val_b) {
-                CTYPE a_casted = static_cast<CTYPE>(val_a);
-                CTYPE b_casted = static_cast<CTYPE>(val_b);
-                CTYPE value = a_casted * alpha_val + b_casted * beta_val;
+                      CTYPE alpha_val = convert<CTYPE>(alpha.to<ALPHA_T>());
+                      CTYPE beta_val = convert<CTYPE>(beta.to<BETA_T>());
+                      apply_binary_elementwise_fn<CTYPE, CTYPE, CTYPE>(
+                          [alpha_val, beta_val](
+                              const CTYPE val_a, const CTYPE val_b) {
+                            CTYPE a_casted = static_cast<CTYPE>(val_a);
+                            CTYPE b_casted = static_cast<CTYPE>(val_b);
+                            CTYPE value =
+                                a_casted * alpha_val + b_casted * beta_val;
 
-                return value;
-              },
-              out,
-              in,
-              out);
-        }
+                            return value;
+                          },
+                          out,
+                          in,
+                          out);
+                    }
+                  });
+            });
       });
-    });
-  });
 
   return out;
 }

@@ -11,7 +11,8 @@ import inspect
 from typing import Callable, Sequence, Type
 
 import executorch.exir as exir
-from executorch.exir import ExecutorchBackendConfig, ExecutorchProgram
+import torch
+from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
@@ -21,6 +22,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from torch import nn
+from torch.export import export
 from torch.fx import GraphModule
 
 
@@ -39,7 +41,7 @@ class ExportedModule:
         self,
         eager_module: nn.Module,
         methods: Sequence[str],
-        executorch_program: ExecutorchProgram,
+        executorch_program: ExecutorchProgramManager,
         graph_module: GraphModule,
         trace_inputs: Sequence,
         get_random_inputs_fn: Callable[[], Sequence],
@@ -47,7 +49,7 @@ class ExportedModule:
         """INTERNAL ONLY: Use ExportedModule.export() instead."""
         self.eager_module: nn.Module = eager_module
         self.methods: Sequence[str] = methods
-        self.executorch_program: ExecutorchProgram = executorch_program
+        self.executorch_program: ExecutorchProgramManager = executorch_program
         self.graph_module: GraphModule = graph_module
         self.trace_inputs: Sequence = trace_inputs
         self.__get_random_inputs_fn = get_random_inputs_fn
@@ -144,36 +146,50 @@ class ExportedModule:
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()
 
-        # Capture an executorch program.
-        executorch_program = (
-            exir.capture_multiple(
-                eager_module,
-                method_name_to_args,
-                capture_config,
-                constraints=method_name_to_constraints,
+        class WrapperModule(torch.nn.Module):
+            def __init__(self, fn):
+                super().__init__()
+                self.fn = fn
+
+            def forward(self, *args, **kwargs):
+                return self.fn(*args, **kwargs)
+
+        exported_methods = {}
+        # These cleanup passes are required to convert the `add` op to its out
+        # variant, along with some other transformations.
+        for method_name, method_input in method_name_to_args.items():
+            module = WrapperModule(getattr(eager_module, method_name))
+            exported_methods[method_name] = export(
+                module,
+                method_input,
+                constraints=method_name_to_constraints[method_name]
+                if method_name_to_constraints
+                else None,
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .to_executorch(
-                ExecutorchBackendConfig(
-                    passes=[
-                        DebugPass(
-                            show_src=True,
-                            show_spec=False,
-                            show_full_path=True,
-                            show_all_frames=True,
-                        ),
-                        to_scratch_op_pass,
-                    ],
-                    dynamic_memory_planning_mode=dynamic_memory_planning_mode,
-                    memory_planning_pass=memory_planning_pass,
-                    to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
-                    extract_constant_segment=extract_constant_segment,
-                )
+
+        exec_prog = to_edge(
+            exported_methods,
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                passes=[
+                    DebugPass(
+                        show_src=True,
+                        show_spec=False,
+                        show_full_path=True,
+                        show_all_frames=True,
+                    ),
+                    to_scratch_op_pass,
+                ],
+                dynamic_memory_planning_mode=dynamic_memory_planning_mode,
+                memory_planning_pass=memory_planning_pass,
+                to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
+                extract_constant_segment=extract_constant_segment,
             )
         )
 
         # Generate the graph module created during capture.
-        graph_module = executorch_program.dump_graph_module()
+        graph_module = exec_prog.exported_program().graph_module
         graph_module = PassManager(
             passes=[DebugPass(show_spec=True)], run_checks_after_each_pass=True
         )(graph_module).graph_module
@@ -189,7 +205,7 @@ class ExportedModule:
         return ExportedModule(
             eager_module=eager_module,
             methods=methods,
-            executorch_program=executorch_program,
+            executorch_program=exec_prog,
             graph_module=graph_module,
             trace_inputs=trace_inputs,
             get_random_inputs_fn=get_random_inputs_fn,

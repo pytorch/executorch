@@ -43,6 +43,16 @@ void test__log_out() {
       out, tf_out.make(sizes, /*data=*/{-INFINITY, 0, 0.693147, 1.386294}));
 }
 
+TEST(OpLogOutKernelTest, AllRealInputHalfOutputSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype) \
+  test__log_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST(OpLogOutKernelTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test__log_out<ScalarType::dtype, ScalarType::Float>();

@@ -3,8 +3,9 @@
 //  Provided subject to the LICENSE file in the top level directory.
 //
 
-#include "MPSStream.h"
+#include <executorch/backends/apple/mps/runtime/MPSStream.h>
 #include <executorch/runtime/platform/assert.h>
+#include <vector>
 
 @interface MPSGraphExecutionDescriptor ()
 @property (readwrite, atomic) BOOL enableCommitAndContinue;
@@ -15,10 +16,6 @@ namespace executor {
 namespace mps {
 namespace delegate {
 
-// threshold to perform adaptive commit if the accumulated size
-// of resources encoded on the command buffer exceeds that.
-static const size_t kCmdBufAdaptiveCommitThreshold = MB(64);
-
 //-----------------------------------------------------------------
 //  MPSStream
 //-----------------------------------------------------------------
@@ -26,31 +23,17 @@ static const size_t kCmdBufAdaptiveCommitThreshold = MB(64);
 MPSStream::MPSStream() {
   _commandQueue = [MPSDevice::getInstance()->device() newCommandQueue];
   _serialQueue = dispatch_queue_create("metal gpu stream", nullptr);
-  _executionDescriptor = [MPSGraphExecutionDescriptor new];
-  _executableExecutionDescriptor = [MPSGraphExecutableExecutionDescriptor new];
-  _compilationDescriptor = [MPSGraphCompilationDescriptor new];
-
-  // internal CommitAndContinue heuristic of MPSGraph is disabled, and we
-  // control it via Adaptive Commit in Executorch-side
-  _executionDescriptor.enableCommitAndContinue = false;
-
-  // Choose level which optimizes for GPU
-  _compilationDescriptor.optimizationLevel = MPSGraphOptimizationLevel0;
-  _executionDescriptor.compilationDescriptor =  _compilationDescriptor;
 }
 
 MPSStream::~MPSStream() {
   [_commandQueue release];
   _commandQueue = nil;
-  [_executionDescriptor release];
-  [_compilationDescriptor release];
-  [_executableExecutionDescriptor release];
-
-  _executionDescriptor = nil;
-  _compilationDescriptor = nil;
-  _executableExecutionDescriptor = nil;
 
   assert(_commandBuffer == nil);
+}
+
+bool MPSStream::hasLiveCommandBuffer() {
+  return _commandBuffer;
 }
 
 MPSCommandBuffer* MPSStream::commandBuffer() {
@@ -78,6 +61,8 @@ Error MPSStream::synchronize(SyncType syncType) {
       break;
     case SyncType::COMMIT_AND_WAIT:
       commitAndWait();
+      break;
+    case SyncType::COMMIT_ADAPTIVE:
       break;
     case SyncType::COMMIT_AND_CONTINUE:
       ET_CHECK_OR_RETURN_ERROR(
@@ -154,6 +139,90 @@ void MPSStream::flush() {
     }
     _commandBuffer = nil;
   }
+}
+
+void MPSStream::copy(id<MTLBuffer> srcBuffer,
+                     id<MTLBuffer> dstBuffer,
+                     size_t length,
+                     size_t srcOffset,
+                     size_t dstOffset,
+                     SyncType syncType) {
+  dispatch_sync(_serialQueue, ^() {
+    @autoreleasepool {
+      endKernelCoalescing();
+      id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer() blitCommandEncoder];
+
+      [blitEncoder copyFromBuffer:srcBuffer
+                     sourceOffset:(NSUInteger)srcOffset
+                         toBuffer:dstBuffer
+                destinationOffset:(NSUInteger)dstOffset
+                             size:(NSUInteger)length];
+      [blitEncoder endEncoding];
+      ET_CHECK(synchronize(syncType) == Error::Ok);
+    }
+  });
+}
+
+void MPSStream::copy_and_sync(id<MTLBuffer> srcBuffer,
+                              id<MTLBuffer> dstBuffer,
+                              size_t length,
+                              size_t srcOffset,
+                              size_t dstOffset,
+                              bool non_blocking) {
+  copy(srcBuffer,
+       dstBuffer,
+       length,
+       srcOffset,
+       dstOffset,
+       !non_blocking ? SyncType::COMMIT_AND_WAIT : SyncType::COMMIT_ADAPTIVE);
+}
+
+void MPSStream::copy(std::vector<CPUBufferWrapper>& dataBuffers,
+                     SyncType syncType) {
+  dispatch_sync(_serialQueue, ^() {
+    @autoreleasepool {
+#if TARGET_OS_SIMULATOR
+      if (dataBuffers[0].dstCpu) {
+        // If the destination is a CPU buffer,
+        // wait for the GPU to finish executing
+        // before copying into the CPU buffers.
+        synchronize(SyncType::COMMIT_AND_WAIT);
+      }
+      for (int i = 0; i < dataBuffers.size(); i++) {
+        uint8_t* src = nil;
+        uint8_t* dst = nil;
+        if (dataBuffers[i].srcCpu) {
+          src = static_cast<uint8_t*>(dataBuffers[i].srcBuffer) + dataBuffers[i].srcOffset;
+          dst = (uint8_t*)([(id<MTLBuffer>)dataBuffers[i].dstBuffer contents]) + dataBuffers[i].dstOffset;
+        } else {
+          ET_CHECK(dataBuffers[i].dstCpu);
+          src = (uint8_t*)([(id<MTLBuffer>)dataBuffers[i].srcBuffer contents]) + dataBuffers[i].srcOffset;
+          dst = static_cast<uint8_t*>(dataBuffers[i].dstBuffer) + dataBuffers[i].dstOffset;
+        }
+        memcpy(dst, src, dataBuffers[i].length);
+      }
+#else
+      endKernelCoalescing();
+      id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer() blitCommandEncoder];
+
+      for (int i = 0; i < dataBuffers.size(); i++) {
+        [blitEncoder copyFromBuffer:(id<MTLBuffer>)dataBuffers[i].srcBuffer
+                       sourceOffset:(NSUInteger)dataBuffers[i].srcOffset
+                           toBuffer:(id<MTLBuffer>)dataBuffers[i].dstBuffer
+                  destinationOffset:(NSUInteger)dataBuffers[i].dstOffset
+                               size:(NSUInteger)dataBuffers[i].length];
+      }
+      [blitEncoder endEncoding];
+      ET_CHECK(synchronize(syncType) == Error::Ok);
+#endif
+    }
+  });
+}
+
+void MPSStream::copy_and_sync(std::vector<CPUBufferWrapper>& dataBuffers,
+                              bool non_blocking) {
+  copy(dataBuffers,
+       !non_blocking ? SyncType::COMMIT_AND_WAIT : SyncType::COMMIT_ADAPTIVE);
 }
 
 //-----------------------------------------------------------------

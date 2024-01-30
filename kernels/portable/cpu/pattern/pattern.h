@@ -23,9 +23,12 @@ We currently support the following sets of dtypes:
  - int    {Byte, Char, Short, Int, Long}
  - intb   {Byte, Char, Short, Int, Long, Bool}
  - float  {Float, Double}
+ - floath {Half, Float, Double}
  - floatb {Float, Double, Bool}
  - real   {Byte, Char, Short, Int, Long, Float, Double}
  - realb  {Byte, Char, Short, Int, Long, Float, Double, Bool}
+ - realh  {Byte, Char, Short, Int, Long, Half, Float, Double}
+ - realhb {Byte, Char, Short, Int, Long, Half, Float, Double, Bool}
 
 Input types are separated from output types by the "to" word.
 Input types are separated by underscores. Output types as well, in the cases
@@ -53,11 +56,11 @@ namespace internal {
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * real dtye, no additional arguments, and outputs a tensor of the same size
+ * realh dtye, no additional arguments, and outputs a tensor of the same size
  * and dtype. The function fn specifies the math operation which is applied to
  * the input tensor element-wise.
  */
-Tensor& unary_ufunc_real(
+Tensor& unary_ufunc_realh(
     FunctionRef<double(double)> fn,
     RuntimeContext& ctx,
     const Tensor& in,
@@ -65,11 +68,11 @@ Tensor& unary_ufunc_real(
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * realb dtye (real and boolean), no additional arguments, and outputs a
+ * realhb dtye (real, half and boolean), no additional arguments, and outputs a
  * boolean tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
  */
-Tensor& unary_ufunc_realb_to_bool(
+Tensor& unary_ufunc_realhb_to_bool(
     FunctionRef<bool(double)> fn,
     RuntimeContext& ctx,
     const Tensor& in,
@@ -77,11 +80,11 @@ Tensor& unary_ufunc_realb_to_bool(
 
 /**
  * Implements an op pattern for ops that take a single input tensor of any
- * realb dtye (real and boolean), no additional arguments, and outputs a
+ * realhb dtye (real, half and boolean), no additional arguments, and outputs a
  * floating point tensor of the same size. The function fn specifies the math
  * operation which is applied to the input tensor element-wise.
  */
-Tensor& unary_ufunc_realb_to_float(
+Tensor& unary_ufunc_realhb_to_floath(
     FunctionRef<double(double)> fn,
     RuntimeContext& ctx,
     const Tensor& in,

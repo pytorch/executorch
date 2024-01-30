@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
@@ -85,60 +86,25 @@ Tensor& cumsum_out(
     optional<ScalarType> enforced_dtype,
     Tensor& out) {
   (void)ctx;
-  // Ensure dim is valid
-  if (self.dim() == 0) {
-    ET_CHECK(dim == 0 || dim == -1);
-  } else {
-    ET_CHECK_MSG(
-        dim >= -self.dim() && dim < self.dim(),
-        "dim %" PRId64 " >= 0 && dim %" PRId64 " < self.dim() %zd",
-        dim,
-        dim,
-        self.dim());
-  }
 
-  torch::executor::Error err = resize_tensor(out, self.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in cumsum_out");
+  ET_KERNEL_CHECK(
+      ctx,
+      check_cumsum_args(self, dim, enforced_dtype, out),
+      InvalidArgument,
+      out);
 
-  ET_CHECK_SAME_SHAPE2(self, out);
-  if (enforced_dtype.has_value()) {
-    ET_CHECK_MSG(
-        enforced_dtype.value() == out.scalar_type(),
-        "dtype must be equal to the type of out tensor");
-  }
+  ET_KERNEL_CHECK(
+      ctx, resize_tensor(out, self.sizes()) == Error::Ok, InvalidArgument, out);
+
   dim = (self.dim() == 0) ? 0 : dim < 0 ? dim + self.dim() : dim;
 
-// Use a two layer switch to hanldle each possible data pair
-#define CUMSUM_IMPL(SELF_CTYPE, OUT_CTYPE, out_dtype)      \
-  case ScalarType::out_dtype:                              \
-    cumsum_tensors<SELF_CTYPE, OUT_CTYPE>(self, dim, out); \
-    break;
-
-#define CUMSUM_TENSORS(SELF_CTYPE, self_dtype)           \
-  case ScalarType::self_dtype:                           \
-    switch (out.scalar_type()) {                         \
-      ET_FORALL_REAL_TYPES_WITH(SELF_CTYPE, CUMSUM_IMPL) \
-      default:                                           \
-        ET_CHECK_MSG(                                    \
-            false,                                       \
-            "Unhandled output dtype %" PRId8,            \
-            static_cast<int8_t>(out.scalar_type()));     \
-    }                                                    \
-    break;
-
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, CUMSUM_TENSORS)
-    default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled input dtype %" PRId8,
-          static_cast<int8_t>(self.scalar_type()));
-  }
-
-#undef CUMSUM_TENSORS
-#undef CUMSUM_IMPL
+  ET_SWITCH_REAL_TYPES_AND(
+      Bool, self.scalar_type(), ctx, "cumsum", CTYPE_SELF, [&] {
+        ET_SWITCH_REAL_TYPES_AND(
+            Bool, out.scalar_type(), ctx, "cumsum", CTYPE_OUT, [&] {
+              cumsum_tensors<CTYPE_SELF, CTYPE_OUT>(self, dim, out);
+            });
+      });
 
   return out;
 }

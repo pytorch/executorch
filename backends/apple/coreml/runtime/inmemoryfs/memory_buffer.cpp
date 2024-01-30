@@ -7,6 +7,7 @@
 
 #include <memory_buffer.hpp>
 
+#include <functional>
 #include <iostream>
 #include <stdio.h>
 #include <sys/mman.h>

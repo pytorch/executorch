@@ -17,7 +17,6 @@
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
 		032C01B92AC32ADF002955E1 /* CameraController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B82AC32ADF002955E1 /* CameraController.swift */; };
 		032C01E82AC34B60002955E1 /* MobileNetClassifier.mm in Sources */ = {isa = PBXBuildFile; fileRef = 032C01902AC22B16002955E1 /* MobileNetClassifier.mm */; };
-		032C01E92AC34B63002955E1 /* Module.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 032C01942AC22B16002955E1 /* Module.cpp */; };
 		032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */; };
 		032C02032AC47CFB002955E1 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
@@ -50,6 +49,11 @@
 		03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
 		03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
 		03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
+		03D494DE2B5B7AD400FCF524 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931F2AD1008A00D4EBE0 /* Metal.framework */; };
+		03D494DF2B5B7AD600FCF524 /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */; };
+		03D494E02B5B7AD900FCF524 /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */; };
+		03D494E12B5B7AE100FCF524 /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
+		03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -109,8 +113,6 @@
 		032C018E2AC22B16002955E1 /* MobileNet-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "MobileNet-Bridging-Header.h"; sourceTree = "<group>"; };
 		032C01902AC22B16002955E1 /* MobileNetClassifier.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = MobileNetClassifier.mm; sourceTree = "<group>"; };
 		032C01912AC22B16002955E1 /* MobileNetClassifier.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MobileNetClassifier.h; sourceTree = "<group>"; };
-		032C01932AC22B16002955E1 /* Module.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Module.h; sourceTree = "<group>"; };
-		032C01942AC22B16002955E1 /* Module.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Module.cpp; sourceTree = "<group>"; };
 		032C01B62AC329B6002955E1 /* CustomViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomViews.swift; sourceTree = "<group>"; };
 		032C01B82AC32ADF002955E1 /* CameraController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraController.swift; sourceTree = "<group>"; };
 		032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libMobileNetClassifier.a; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -163,11 +165,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */,
+				03D494DF2B5B7AD600FCF524 /* MetalPerformanceShaders.framework in Frameworks */,
 				0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */,
+				03D494E02B5B7AD900FCF524 /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */,
 				03C8DC7D2AE253490064384A /* Accelerate.framework in Frameworks */,
+				03D494E12B5B7AE100FCF524 /* mps_backend.xcframework in Frameworks */,
 				03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */,
 				0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */,
+				03D494DE2B5B7AD400FCF524 /* Metal.framework in Frameworks */,
 				03C818282AC760650084CC29 /* libMobileNetClassifier.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -242,8 +248,6 @@
 				032C018E2AC22B16002955E1 /* MobileNet-Bridging-Header.h */,
 				032C01912AC22B16002955E1 /* MobileNetClassifier.h */,
 				032C01902AC22B16002955E1 /* MobileNetClassifier.mm */,
-				032C01932AC22B16002955E1 /* Module.h */,
-				032C01942AC22B16002955E1 /* Module.cpp */,
 			);
 			path = MobileNet;
 			sourceTree = "<group>";
@@ -463,6 +467,7 @@
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
 				03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */,
+				03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -488,7 +493,6 @@
 			files = (
 				03C818252AC75E580084CC29 /* MobileNetClassifier.swift in Sources */,
 				032C01E82AC34B60002955E1 /* MobileNetClassifier.mm in Sources */,
-				032C01E92AC34B63002955E1 /* Module.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

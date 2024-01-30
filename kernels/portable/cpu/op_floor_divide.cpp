@@ -63,14 +63,20 @@ Tensor& floor_divide_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(canCast(common_type, out_type));
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+
+  auto div_by_zero_error = false;
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, a_type, ctx, "floor_divide.out", CTYPE_A, [&]() {
@@ -84,11 +90,14 @@ Tensor& floor_divide_out(
                               CTYPE_A,
                               CTYPE_B,
                               CTYPE_OUT>(
-                              [common_type](
+                              [common_type, &div_by_zero_error](
                                   const CTYPE_A val_a, const CTYPE_B val_b) {
                                 if (isIntegralType(
                                         common_type, /*includeBool=*/true)) {
-                                  ET_CHECK(val_b != 0);
+                                  if (val_b == 0) {
+                                    div_by_zero_error = true;
+                                    return static_cast<CTYPE_OUT>(0);
+                                  }
                                 }
                                 CTYPE_IN a_casted =
                                     static_cast<CTYPE_IN>(val_a);
@@ -106,6 +115,13 @@ Tensor& floor_divide_out(
                   });
             });
       });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Floor divide operation encountered integer division by zero");
 
   return out;
 }

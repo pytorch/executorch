@@ -8,7 +8,7 @@
 
 #import "MobileNetClassifier.h"
 
-#import <executorch/extension/runner/module.h>
+#import <executorch/extension/module/module.h>
 
 using namespace ::torch::executor;
 
@@ -21,26 +21,10 @@ const int32_t kChannels = 3;
   std::unique_ptr<Module> _module;
 }
 
-- (nullable instancetype)initWithFilePath:(NSString*)filePath
-                                    error:(NSError**)error {
+- (instancetype)initWithFilePath:(NSString*)filePath {
   self = [super init];
   if (self) {
-    try {
-      _module = std::make_unique<Module>(filePath.UTF8String);
-    } catch (const std::exception& exception) {
-      if (error) {
-        *error = [NSError
-            errorWithDomain:ETMobileNetClassifierErrorDomain
-                       code:-1
-                   userInfo:@{
-                     NSLocalizedDescriptionKey : [NSString
-                         stringWithFormat:
-                             @"Failed to initialize the torch module: %s",
-                             exception.what()]
-                   }];
-      }
-      return nil;
-    }
+    _module = std::make_unique<Module>(filePath.UTF8String);
   }
   return self;
 }
@@ -50,31 +34,25 @@ const int32_t kChannels = 3;
                outputSize:(NSInteger)outputSize
                     error:(NSError**)error {
   int32_t sizes[] = {1, kChannels, kSize, kSize};
-  uint8_t order[] = {0, 1, 2, 3};
-  int32_t strides[] = {kChannels * kSize * kSize, kSize * kSize, kSize, 1};
-  TensorImpl tensorImpl(
-      ScalarType::Float, std::size(sizes), sizes, input, order, strides);
-  std::vector<EValue> inputs = {EValue(Tensor(&tensorImpl))};
-  std::vector<EValue> outputs;
+  TensorImpl inputTensor(ScalarType::Float, std::size(sizes), sizes, input);
+  const auto result = _module->forward({EValue(Tensor(&inputTensor))});
 
-  const auto torchError = _module->forward(inputs, outputs);
-  if (torchError != Error::Ok) {
+  if (!result.ok()) {
     if (error) {
       *error = [NSError
           errorWithDomain:ETMobileNetClassifierErrorDomain
-                     code:NSInteger(torchError)
+                     code:NSInteger(result.error())
                  userInfo:@{
                    NSLocalizedDescriptionKey : [NSString
                        stringWithFormat:
                            @"Failed to run forward on the torch module, error code: %i",
-                           torchError]
+                           result.error()]
                  }];
     }
     return NO;
   }
-  const auto outputTensor = outputs[0].toTensor();
-  const auto data = outputTensor.const_data_ptr<float>();
-  std::copy(data, data + outputSize, output);
+  const auto outputData = result->at(0).toTensor().const_data_ptr<float>();
+  std::copy(outputData, outputData + outputSize, output);
 
   return YES;
 }

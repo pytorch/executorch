@@ -48,14 +48,18 @@ class VulkanBackend final : public PyTorchBackendInterface {
                 vk_arithmetic_op_type_div): {
         return at::native::vulkan::arithmetic::OpType::DIV;
       }
+      case (at::vulkan::delegate::VkArithmeticOpType::
+                vk_arithmetic_op_type_floor_div): {
+        return at::native::vulkan::arithmetic::OpType::FLOOR_DIV;
+      }
     }
   }
 
-  c10::ScalarType get_scalar_type(
+  at::native::vulkan::api::ScalarType get_scalar_type(
       const at::vulkan::delegate::VkDatatype& vk_datatype) const {
     switch (vk_datatype) {
       case (at::vulkan::delegate::VkDatatype::vk_datatype_fp32): {
-        return c10::kFloat;
+        return at::native::vulkan::api::kFloat;
       }
     }
   }
@@ -87,7 +91,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
         "Only constant buffers are supported when adding tensors to compute graph (indicated by constant_buffer_idx == 0), but got constant_buffer_idx of %d",
         vk_tensor->constant_buffer_idx());
 
-    const c10::ScalarType& tensor_dtype =
+    const at::native::vulkan::api::ScalarType& tensor_dtype =
         get_scalar_type(vk_tensor->datatype());
 
     const flatbuffers_fbsource::Vector<uint32_t>* tensor_dims_fb =
@@ -177,7 +181,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
           input_id,
           input_vk_tensor->constant_buffer_idx());
 
-      const c10::ScalarType& input_dtype =
+      const at::native::vulkan::api::ScalarType& input_dtype =
           get_scalar_type(input_vk_tensor->datatype());
 
       const flatbuffers_fbsource::Vector<uint32_t>* input_dims_fb =

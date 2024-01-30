@@ -82,7 +82,7 @@ static Kernel prim_ops[] = {
         }),
     // aten::_local_scalar_dense(Tensor self) -> Scalar
     Kernel(
-        "aten::_local_scalar_dense.default",
+        "aten::_local_scalar_dense",
         [](RuntimeContext& context, EValue** stack) {
           (void)context;
           EValue& self = *stack[0];
@@ -91,7 +91,7 @@ static Kernel prim_ops[] = {
           ET_SWITCH_REAL_TYPES(
               self_tensor.scalar_type(),
               context,
-              "_local_scalar_dense.default",
+              "_local_scalar_dense",
               CTYPE,
               [&]() {
                 out = EValue(Scalar(self_tensor.const_data_ptr<CTYPE>()[0]));

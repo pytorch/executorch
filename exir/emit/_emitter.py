@@ -377,6 +377,14 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.cached_spec_hash_values[hashed] = buffer_idx
             self.program_state.constant_buffer.append(buffer)
 
+        if spec.const and spec.nbytes() != len(buffer_data):
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+                )
+            )
+
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
@@ -647,12 +655,15 @@ class _Emitter(torch.fx.Interpreter):
             raise RuntimeError(
                 f"Multiple outputs are not supported. Got {len(subemitter_binding_output_values)}."
             )
-        f, num_mapped_args = args[:2]
+        f, mapped_args, inputs = args
+        assert isinstance(mapped_args, (list, tuple))
+        num_mapped_args: int = len(mapped_args)
         if num_mapped_args != 1:
             raise RuntimeError(
                 f"Emitting map with more than one mapped args is not supported. Got {num_mapped_args}."
             )
-        x, *inputs = args[2:]
+        x = mapped_args[0]
+
         assert isinstance(f, torch.fx.GraphModule)
 
         # Generate the EValue that we will use as our iterator index to keep track of which

@@ -246,7 +246,7 @@ class DelegateMappingBuilder:
     def insert_delegate_mapping_entry(
         self,
         nodes: Optional[Union[Node, List[Node]]] = None,
-        handles: Optional[Union[int, List[int]]] = None,
+        handles: Optional[Union[int, List[Optional[int]]]] = None,
         identifier: Optional[Union[int, str]] = None,
     ) -> Union[int, str]:
         """
@@ -261,11 +261,12 @@ class DelegateMappingBuilder:
 
         Args:
             nodes (Union[Node, List[Node]]): A (list of) Node(s)
-            handles (Union[int, List[int]]): A (list of) debug handle(s)
+            handles (Union[int, List[Optional[int]]]): A (list of) debug handle(s)
             identifier (Optional[Union[int, str]]):
                 Debug identifier corresponding to the Node(s)
 
         Note: Exactly one of nodes and handles must be provided
+        Note: If a debug handle is missing or None, it is skipped
 
         Returns:
             Union[int, str]:
@@ -299,19 +300,24 @@ class DelegateMappingBuilder:
                     "No identifier provided. Failed to add or update entry."
                 )
 
+        # Collect debug handles
         if nodes is not None:
-            # Get all debug handles found in the nodes
-            # Note that missing debug handles are not surfaced
             new_debug_handles = {
-                handle
+                node.meta.get("debug_handle")
                 for node in (nodes if isinstance(nodes, List) else [nodes])
-                if (handle := node.meta.get("debug_handle")) is not None
             }
         else:
             new_debug_handles = (
-                set(handles) if isinstance(handles, (tuple, List)) else {handles}
+                handles if isinstance(handles, (tuple, List)) else [handles]
             )
 
+        # Filter for empty debug handles
+        filtered_debug_handles = {
+            handle for handle in new_debug_handles if handle is not None
+        }
+        if len(filtered_debug_handles) == 0:
+            raise Exception("No valid debug handles found. Failed to add entry.")
+
         # pyre-ignore Warning from Union[int, st] keys
-        self._debug_handle_map[identifier].update(new_debug_handles)
+        self._debug_handle_map[identifier] = filtered_debug_handles
         return identifier

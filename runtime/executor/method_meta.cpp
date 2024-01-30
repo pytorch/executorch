@@ -173,10 +173,14 @@ Result<TensorInfo> MethodMeta::output_tensor_meta(size_t index) const {
 }
 
 size_t MethodMeta::num_memory_planned_buffers() const {
+  if (s_plan_->non_const_buffer_sizes() == nullptr) {
+    return 0;
+  }
+  const size_t size = s_plan_->non_const_buffer_sizes()->size();
   // Index zero is reserved internally, and we hide it from users. The actual
   // number of buffers is one fewer than the actual size of this list in the
   // program.
-  return s_plan_->non_const_buffer_sizes()->size() - 1;
+  return size > 0 ? size - 1 : 0;
 }
 
 Result<int64_t> MethodMeta::memory_planned_buffer_size(size_t index) const {

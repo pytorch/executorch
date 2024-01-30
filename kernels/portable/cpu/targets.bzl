@@ -33,6 +33,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":scalar_utils",
         ],
     ),
@@ -74,6 +75,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_arange",
         deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":scalar_utils",
@@ -204,7 +206,10 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_constant_pad_nd",
-        deps = [":scalar_utils"],
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
     ),
     op_target(
         name = "op_convolution",
@@ -239,6 +244,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -257,6 +263,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_embedding",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
     ),
     op_target(
         name = "op_eq",
@@ -286,6 +295,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
             "//executorch/kernels/portable/cpu/util:repeat_util",
             ":scalar_utils",
         ],
@@ -354,6 +364,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_glu",
         deps = [
+            "//executorch/kernels/portable/cpu/util:activation_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -484,6 +495,7 @@ _ATEN_OPS = (
         name = "op_masked_fill",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             ":scalar_utils",
         ],
     ),
@@ -573,6 +585,8 @@ _ATEN_OPS = (
         name = "op_nonzero",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -636,6 +650,7 @@ _ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -646,6 +661,7 @@ _ATEN_OPS = (
         name = "op_scatter_add",
         deps = [
             "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -659,8 +675,10 @@ _ATEN_OPS = (
     op_target(
         name = "op_select_scatter",
         deps = [
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),
     op_target(
@@ -691,10 +709,15 @@ _ATEN_OPS = (
         name = "op_slice_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:index_util",
         ],
     ),
     op_target(
         name = "op_slice_scatter",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:index_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
+        ],
     ),
     op_target(
         name = "op_softmax",
@@ -707,6 +730,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_split_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_split_with_sizes_copy",
@@ -739,6 +765,7 @@ _ATEN_OPS = (
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:kernel_ops_util",
         ],
     ),
     op_target(
@@ -767,6 +794,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_to_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_transpose_copy",
@@ -780,9 +810,15 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_unbind_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_unsqueeze_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_var",
@@ -794,6 +830,9 @@ _ATEN_OPS = (
     ),
     op_target(
         name = "op_view_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
     ),
     op_target(
         name = "op_where",

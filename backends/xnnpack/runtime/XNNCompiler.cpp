@@ -7,7 +7,8 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNCompiler.h>
-#include <executorch/backends/xnnpack/schema_generated.h>
+#include <executorch/backends/xnnpack/runtime/XNNHeader.h>
+#include <executorch/backends/xnnpack/serialization/schema_generated.h>
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <unordered_map>
@@ -68,6 +69,8 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qcint8;
     case DataType::xnn_datatype_qcint32:
       return xnn_datatype::xnn_datatype_qcint32;
+    case DataType::xnn_datatype_qcint4:
+      return xnn_datatype::xnn_datatype_qcint4;
     default:
       return xnn_datatype::xnn_datatype_invalid;
   }
@@ -80,6 +83,7 @@ bool isQuantizedDataType(const xnn_datatype data_type) {
     case xnn_datatype::xnn_datatype_qint32:
     case xnn_datatype::xnn_datatype_qcint8:
     case xnn_datatype::xnn_datatype_qcint32:
+    case xnn_datatype::xnn_datatype_qcint4:
       return true;
     default:
       return false;
@@ -104,6 +108,34 @@ std::vector<T> flatbufferDimsToVector(
 }
 
 /**
+Gets the constant data pointer associated with the given tensor value.
+Obtaining the constant data pointer can either be from within the flatbuffer
+payload (deprecated) or via offsets to the constant_data_ptr. If no constant
+data associated with the tensor value, then returns nullptr.
+*/
+const uint8_t* getConstantDataPtr(
+    const fb_xnnpack::XNNTensorValue* tensor_value,
+    GraphPtr flatbuffer_graph,
+    const uint8_t* constant_data_ptr) {
+  auto buffer_idx = tensor_value->constant_buffer_idx();
+  if (buffer_idx) {
+    if (!constant_data_ptr) {
+      // TODO(T172265611): Remove constant_buffer in flatbuffer path after BC
+      // window
+      const auto& constant_buffer = *flatbuffer_graph->constant_buffer();
+      return constant_buffer[buffer_idx]->storage()->data();
+    } else {
+      const auto& constant_data_offsets = *flatbuffer_graph->constant_data();
+      uint64_t constant_data_offset =
+          constant_data_offsets[buffer_idx]->offset();
+      return constant_data_ptr + constant_data_offset;
+    }
+  }
+
+  return nullptr;
+}
+
+/**
 Define serialized tensor value into
 the subgraph. While also keeping track of the remapped ids from
 the serialized id to the newly generated id.
@@ -113,6 +145,7 @@ Error defineTensor(
     std::unordered_map<uint32_t, uint32_t>& remapped_ids,
     ValuePtr value,
     GraphPtr flatbuffer_graph,
+    const uint8_t* constant_data_ptr,
     XNNExecutor* executor,
     MemoryAllocator* runtime_allocator) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
@@ -151,11 +184,9 @@ Error defineTensor(
 
   // Get Pointer to constant data from flatbuffer, if its non-constant
   // it is a nullptr
-  const auto& constant_buffer = *flatbuffer_graph->constant_buffer();
-  auto buffer_idx = tensor_value->constant_buffer_idx();
-  const auto buffer_ptr = buffer_idx == 0
-      ? nullptr
-      : constant_buffer[buffer_idx]->storage()->data();
+  const uint8_t* buffer_ptr =
+      getConstantDataPtr(tensor_value, flatbuffer_graph, constant_data_ptr);
+
   xnn_status status;
   // The type we might have to convert to
   auto dq_datatype = getDataType(tensor_value->dq_datatype());
@@ -282,15 +313,23 @@ Error defineTensor(
       }
       case fb_xnnpack::XNNQuantParams::PerChannelQuant: {
         auto qparams = qtensor_value->quant_params_as_PerChannelQuant();
+        enum xnn_datatype dtype = getDataType(tensor_value->datatype());
+        int32_t zero_point =
+            (dtype == xnn_datatype::xnn_datatype_qcint4 ? 8 : 0);
+
         ET_LOG(
             Debug,
-            "define quant tensor (per channel): buffer_ptr: %p, scale.numel(): %u, channel_dim: %u\n",
+            "define quant tensor (per channel): buffer_ptr: %p, scale.numel(): %u, channel_dim: %u, dtype: %u, zero_point: %d\n",
             buffer_ptr,
             qparams->scale()->size(),
-            qparams->channel_dim());
-        status = xnn_define_channelwise_quantized_tensor_value(
+            qparams->channel_dim(),
+            dtype,
+            zero_point);
+
+        status = xnn_define_channelwise_quantized_tensor_value_v2(
             /*subgraph=*/subgraph_ptr,
-            /*datatype=*/getDataType(tensor_value->datatype()),
+            /*datatype=*/dtype,
+            /*zero_point=*/zero_point,
             /*scale=*/qparams->scale()->data(),
             /*num_dims=*/tensor_value->num_dims(),
             /*channel_dim*/ qparams->channel_dim(),
@@ -1352,6 +1391,38 @@ Error defineStaticSliceNode(
 }
 
 /*
+Defines Scaled Dot Product Attention (SDPA) node into the subgraph,
+using the remapped ids to map the serialized ids,
+to the new ids generated when defining the tensor value
+*/
+Error defineScaledDotProductAttentionNode(
+    xnn_subgraph_t subgraph_ptr,
+    const std::unordered_map<uint32_t, uint32_t>& remapped_ids,
+    const NodePtr node) noexcept {
+  auto graph_node = node->xnode_union_as_XNNScaledDotProductAttention();
+
+  xnn_status status = xnn_define_scaled_dot_product_attention(
+      subgraph_ptr,
+      xnn_attention_logits_cap_type_none, // cap_type
+      nullptr, // cap_value - not used
+      remapped_ids.at(graph_node->query_id()),
+      remapped_ids.at(graph_node->key_id()),
+      remapped_ids.at(graph_node->value_id()),
+      remapped_ids.at(graph_node->scale_id()),
+      remapped_ids.at(graph_node->mask_id()),
+      remapped_ids.at(graph_node->output_id()),
+      graph_node->flags());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Failed to create SDPA node %i with code: %s",
+      node->debug_handle(),
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+/*
 Returns not Implemented Error code. This function is meant to be
 called when the compiler encountes a XNodeType from the flatbuffer
 that has not yet been implemented
@@ -1412,6 +1483,7 @@ DefineNodeFunc getDefineNodeFunc(fb_xnnpack::XNodeUnion nodeType) {
     _DEFINE(Concatenate3)
     _DEFINE(Concatenate4)
     _DEFINE(StaticSlice)
+    _DEFINE(ScaledDotProductAttention)
     case fb_xnnpack::XNodeUnion::NONE:
     default: // Adding here as a catch all, just in case
       return &defineNotImplementedNode;
@@ -1429,14 +1501,31 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
     size_t num_bytes,
     XNNExecutor* executor,
     MemoryAllocator* runtime_allocator) {
+  Result<XNNHeader> header = XNNHeader::Parse(buffer_pointer, num_bytes);
+  const uint8_t* flatbuffer_data = nullptr;
+  const uint8_t* constant_data = nullptr;
+
+  // Header status can only either be Error::Ok or Error::NotFound
+  if (header.ok()) {
+    flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
+        header->flatbuffer_offset;
+    constant_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
+        header->constant_data_offset;
+  } else if (header.error() == Error::NotFound) {
+    flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer);
+  } else {
+    ET_LOG(Error, "XNNHeader may be corrupt");
+    return header.error();
+  }
+
   ET_CHECK_OR_RETURN_ERROR(
-      fb_xnnpack::XNNGraphBufferHasIdentifier(buffer_pointer),
+      fb_xnnpack::XNNGraphBufferHasIdentifier(flatbuffer_data),
       DelegateInvalidCompatibility,
       "XNNPACK Delegate Serialization Format version identifier '%.4s' != expected '%.4s'",
-      flatbuffers::GetBufferIdentifier(buffer_pointer),
+      flatbuffers::GetBufferIdentifier(flatbuffer_data),
       fb_xnnpack::XNNGraphIdentifier());
 
-  auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(buffer_pointer);
+  auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(flatbuffer_data);
   // initialize xnnpack
   xnn_status status = xnn_initialize(/*allocator =*/nullptr);
   ET_CHECK_OR_RETURN_ERROR(
@@ -1476,6 +1565,7 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
         remapped_ids,
         value,
         flatbuffer_graph,
+        constant_data,
         executor,
         runtime_allocator);
 

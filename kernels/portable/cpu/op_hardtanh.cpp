@@ -77,28 +77,33 @@ Tensor& hardtanh_out(
     Tensor& out) {
   (void)ctx;
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(err == Error::Ok, "Could not resize output");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType in_type = in.scalar_type();
   ScalarType min_type = utils::get_scalar_dtype(min);
   ScalarType max_type = utils::get_scalar_dtype(max);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(in_type == out_type);
+  ET_KERNEL_CHECK(ctx, in_type == out_type, InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES(in_type, ctx, "hardtanh.out", CTYPE, [&]() {
     CTYPE min_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "hardtanh.out", CTYPE_MIN, [&]() {
       CTYPE_MIN min_val;
-      ET_EXTRACT_SCALAR(min, min_val);
+      utils::extract_scalar(min, &min_val);
       min_casted = static_cast<CTYPE>(min_val);
     });
 
     CTYPE max_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "hardtanh.out", CTYPE_MAX, [&]() {
       CTYPE_MAX max_val;
-      ET_EXTRACT_SCALAR(max, max_val);
+      utils::extract_scalar(max, &max_val);
       max_casted = static_cast<CTYPE>(max_val);
     });
 

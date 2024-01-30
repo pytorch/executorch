@@ -49,6 +49,23 @@ TEST(OpSoftmaxOutTest, Smoke) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
+TEST(OpSoftmaxOutTest, HalfSupport) {
+  TensorFactory<ScalarType::Half> tfh;
+  std::vector<int32_t> sizes = {1, 4};
+  Tensor in = tfh.ones(sizes);
+  Tensor out = tfh.zeros(sizes);
+
+  Tensor ret = op_softmax_out(in, /*dim=*/1, /*half_to_float=*/false, out);
+
+  // Should always return the provided out Tensor.
+  EXPECT_TENSOR_EQ(ret, out);
+
+  // Expected tensor.
+  Tensor expected = tfh.make({1, 4}, {0.25, 0.25, 0.25, 0.25});
+
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
 /// A generic smoke test that works for the supported dtypes.
 template <class CTYPE, exec_aten::ScalarType DTYPE>
 void test_dtype() {

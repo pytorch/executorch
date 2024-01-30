@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,11 +14,12 @@ import numpy as np
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
-from executorch.exir import to_edge
-
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from executorch.exir.program import to_edge
 
 from torch.export import export
 
@@ -185,7 +186,9 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         ) = get_output_quantization_param(model_edge)
 
     model_edge = model_edge.to_backend(ArmPartitioner())
-    exec_prog = model_edge.to_executorch()
+    exec_prog = model_edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
 
     # Save ground truth results to file
     with open(TORCH_OUT_PATH + "/torch_output.npy", "wb") as f:

@@ -89,7 +89,14 @@ inline bool scalars_have_same_dtype(Scalar a, Scalar b) {
  *
  * If t is a complex type, then it will be preserved.
  */
-inline ScalarType promote_type_with_scalar(ScalarType t, Scalar scalar) {
+inline ScalarType promote_type_with_scalar(
+    ScalarType t,
+    Scalar scalar,
+    bool half_to_float = false) {
+  if (half_to_float && t == ScalarType::Half) {
+    t = ScalarType::Float;
+  }
+
   // QInt, and Bits types not supported
   ET_CHECK(!isQIntType(t));
   ET_CHECK(!isBitsType(t));

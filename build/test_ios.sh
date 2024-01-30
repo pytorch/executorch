@@ -52,7 +52,6 @@ cd "$OUTPUT"
 
 say "Updating the Submodules"
 
-git submodule sync
 git submodule update --init
 
 say "Activating a Virtual Environment"
@@ -62,14 +61,14 @@ source .venv/bin/activate
 
 say "Installing Requirements"
 
-pip install cmake
+pip install --upgrade pip cmake zstd
+
+curl -LO "https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst"
+zstd -cdq buck2-aarch64-apple-darwin.zst > .venv/bin/buck2 && chmod +x .venv/bin/buck2
+
 ./install_requirements.sh
 export PATH="$(realpath third-party/flatbuffers/cmake-out):$PATH"
 ./build/install_flatc.sh
-
-curl -LO "https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst"
-pip install zstd
-zstd -cdq buck2-aarch64-apple-darwin.zst > .venv/bin/buck2 && chmod +x .venv/bin/buck2
 
 say "Installing CoreML Backend Requirements"
 

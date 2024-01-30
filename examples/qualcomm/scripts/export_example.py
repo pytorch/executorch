@@ -15,6 +15,7 @@ from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 from executorch.examples.portable.utils import save_pte_program
 from executorch.exir.backend.backend_api import to_backend, validation_disabled
+from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -50,7 +51,7 @@ if __name__ == "__main__":
     # Calibration
     m(*example_inputs)
     # Get the quantized model
-    m = convert_pt2e(m)
+    m = convert_pt2e(m, fold_quantize=True)
 
     # Capture program for edge IR
     edge_program = capture_program(m, example_inputs)
@@ -70,5 +71,7 @@ if __name__ == "__main__":
             edge_program.exported_program, qnn_partitioner
         )
 
-    executorch_program = delegated_program.to_executorch()
+    executorch_program = delegated_program.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
     save_pte_program(executorch_program.buffer, args.model_name)

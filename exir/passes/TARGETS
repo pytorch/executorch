@@ -13,10 +13,8 @@ python_library(
         ":memory_format_ops_pass",
         ":memory_planning_pass",
         ":normalize_transpose_pass",
-        ":pass_registry",
         ":prim_ops_py_registry",
         ":quant_fusion_pass",
-        ":remove_mixed_type_operators",
         ":remove_noop_pass",
         ":replace_aten_with_edge_pass",
         ":replace_broken_ops_with_function_ops_pass",
@@ -87,9 +85,9 @@ python_library(
 )
 
 python_library(
-    name = "remove_assert_async_pass",
+    name = "remove_graph_asserts_pass",
     srcs = [
-        "remove_assert_async_pass.py",
+        "remove_graph_asserts_pass.py",
     ],
     deps = [
         "//caffe2:torch",

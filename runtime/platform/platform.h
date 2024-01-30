@@ -38,6 +38,15 @@
 extern "C" {
 
 /**
+ * Represents the conversion ratio from system ticks to nanoseconds.
+ * To convert, use nanoseconds = ticks * numerator / denominator.
+ */
+typedef struct {
+  uint64_t numerator;
+  uint64_t denominator;
+} et_tick_ratio_t;
+
+/**
  * Initialize the platform abstraction layer.
  *
  * This function should be called before any other function provided by the PAL
@@ -57,6 +66,21 @@ __ET_NORETURN void et_pal_abort(void) ET_INTERNAL_PLATFORM_WEAKNESS;
  * @retval Timestamp value in system ticks.
  */
 et_timestamp_t et_pal_current_ticks(void) ET_INTERNAL_PLATFORM_WEAKNESS;
+
+/**
+ * Return the conversion rate from system ticks to nanoseconds as a fraction.
+ * To convert a system ticks to nanoseconds, multiply the tick count by the
+ * numerator and then divide by the denominator:
+ *   nanoseconds = ticks * numerator / denominator
+ *
+ * The utility method torch::executor::ticks_to_ns(et_timestamp_t) can also
+ * be used to perform the conversion for a given tick count.
+ * It is defined in torch/executor/runtime/platform/clock.h.
+ *
+ * @retval The ratio of nanoseconds to system ticks.
+ */
+et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void)
+    ET_INTERNAL_PLATFORM_WEAKNESS;
 
 /**
  * Severity level of a log message. Values must map to printable 7-bit ASCII

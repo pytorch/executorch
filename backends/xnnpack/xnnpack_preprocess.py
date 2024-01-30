@@ -28,7 +28,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XValue,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
-    convert_to_flatbuffer,
+    serialize_xnnpack_binary,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
 
@@ -231,6 +231,7 @@ class XnnpackBackend(BackendDetails):
             output_ids=[],
             constant_buffer=[Buffer(storage=b"")],
             mem_buffer_sizes=[0],
+            constant_data=[],
         )
 
         node_visitors = get_node_visitors(ep, node_to_external_map)
@@ -257,4 +258,5 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
-        return PreprocessResult(processed_bytes=convert_to_flatbuffer(xnnpack_graph))
+
+        return PreprocessResult(processed_bytes=serialize_xnnpack_binary(xnnpack_graph))

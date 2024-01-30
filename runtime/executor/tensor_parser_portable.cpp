@@ -8,7 +8,6 @@
 
 #include <executorch/runtime/executor/tensor_parser.h>
 
-#include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
@@ -38,7 +37,6 @@ Result<torch::executor::Tensor> parseTensor(
   ET_CHECK_OR_RETURN_ERROR(
       isValid(scalar_type) &&
           // Types that do not yet have deserialization support.
-          scalar_type != exec_aten::ScalarType::Half &&
           scalar_type != exec_aten::ScalarType::ComplexHalf &&
           scalar_type != exec_aten::ScalarType::ComplexFloat &&
           scalar_type != exec_aten::ScalarType::ComplexDouble &&
@@ -49,12 +47,12 @@ Result<torch::executor::Tensor> parseTensor(
 
   TensorShapeDynamism dynamism =
       static_cast<TensorShapeDynamism>(s_tensor->shape_dynamism());
-  // TODO(T133200526): Remove this check once fully dynamic shapes are
+  // TODO(T175194371): Remove this check once fully dynamic shapes are
   // supported.
   ET_CHECK_OR_RETURN_ERROR(
       dynamism != TensorShapeDynamism::DYNAMIC_UNBOUND,
       NotSupported,
-      "Fully dynamic tensor shapes not yet supported: T133200526");
+      "Fully dynamic tensor shapes not yet supported: T175194371");
 
   ET_CHECK_OR_RETURN_ERROR(
       s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");

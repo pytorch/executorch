@@ -7,7 +7,8 @@ on:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
       - requirements-lintrunner.txt
-      - examples/arm/**
+      - examples/arm/setup.sh
+      - examples/arm/ethos-u-setup/**
   push:
     branches:
       - main
@@ -16,7 +17,8 @@ on:
       - .ci/docker/**
       - .github/workflows/docker-builds.yml
       - requirements-lintrunner.txt
-      - examples/arm/**
+      - examples/arm/setup.sh
+      - examples/arm/ethos-u-setup/**
   schedule:
     - cron: 1 3 * * 3
 
@@ -63,6 +65,7 @@ jobs:
           docker-image-name: ${{ matrix.docker-image-name }}
           always-rebuild: true
           push: true
+          force-push: true
 
       - name: Teardown Linux
         uses: pytorch/test-infra/.github/actions/teardown-linux@main
