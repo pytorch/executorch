@@ -276,6 +276,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_to_copy_test", ["aten", "portable"])
     _common_op_test("op_transpose_copy_test", ["aten", "portable"])
     _common_op_test("op_tril_test", ["aten", "portable"])
+    _common_op_test("op_trunc_test", ["aten", "portable"])
     _common_op_test("op_unbind_copy_test", ["aten", "portable"])
     _common_op_test("op_unsqueeze_copy_test", ["aten", "portable"])
     _common_op_test("op_var_test", ["aten", "portable"])
