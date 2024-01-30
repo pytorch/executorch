@@ -24,11 +24,7 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 
-using namespace torch::executor;
-
 int32_t main(int32_t argc, char** argv) {
-  runtime_init();
-
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   // Create a loader to get the data of the program file. There are other
@@ -41,9 +37,10 @@ int32_t main(int32_t argc, char** argv) {
   const char* prompt = FLAGS_prompt.c_str();
 
   // create llama runner
-  LlamaRunner llama_runner(model_path, tokenizer_path);
+  ::torch::executor::Runner runner(model_path, tokenizer_path);
 
   // generate
-  llama_runner.generate(prompt, FLAGS_eos);
+  runner.generate(prompt, FLAGS_eos);
+
   return 0;
 }
