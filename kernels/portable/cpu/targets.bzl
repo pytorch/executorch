@@ -444,6 +444,24 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_log10",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
+        name = "op_log1p",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
+        name = "op_log2",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
         name = "op_log_softmax",
         deps = [
             ":vec_ops",
