@@ -29,19 +29,35 @@ mm_out(RuntimeContext& ctx, const Tensor& in, const Tensor& mat2, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_SWITCH_REAL_TYPES_AND(Half, in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
-    size_t m = in.size(0);
-    size_t n = in.size(1);
-    size_t p = mat2.size(1);
+  if (mat2.scalar_type() == ScalarType::Char) {
+    ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
+      size_t m = in.size(0);
+      size_t n = in.size(1);
+      size_t p = mat2.size(1);
 
-    vec_matmul<CTYPE>(
-        out.mutable_data_ptr<CTYPE>(),
-        in.const_data_ptr<CTYPE>(),
-        mat2.const_data_ptr<CTYPE>(),
-        m,
-        n,
-        p);
-  });
+      vec_matmul_int8<CTYPE>(
+          out.mutable_data_ptr<CTYPE>(),
+          in.const_data_ptr<CTYPE>(),
+          mat2.const_data_ptr<int8_t>(),
+          m,
+          n,
+          p);
+    });
+  } else {
+    ET_SWITCH_REALH_TYPES(in.scalar_type(), ctx, "mm.out", CTYPE, [&]() {
+      size_t m = in.size(0);
+      size_t n = in.size(1);
+      size_t p = mat2.size(1);
+
+      vec_matmul<CTYPE>(
+          out.mutable_data_ptr<CTYPE>(),
+          in.const_data_ptr<CTYPE>(),
+          mat2.const_data_ptr<CTYPE>(),
+          m,
+          n,
+          p);
+    });
+  }
 
   return out;
 }
