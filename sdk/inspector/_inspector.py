@@ -802,6 +802,16 @@ class EventBlock:
             # For non-delegated event, handles are found in handle_map
             if (delegate_debug_id := event.delegate_debug_identifier) is None:
                 event.debug_handles = handle_map[instruction_id]
+
+                # DELEGATE_CALL is a special non-delegated event and benefits from having the name populated
+                if (
+                    event.name == "DELEGATE_CALL"
+                    and delegate_map is not None
+                    and (delegate_metadata := delegate_map.get(instruction_id))
+                    is not None
+                ):
+                    event.delegate_backend_name = delegate_metadata.get("name", "")
+
                 continue
 
             # Check that the delegated event has a corresponding mapping
