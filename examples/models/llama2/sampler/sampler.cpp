@@ -197,9 +197,7 @@ int32_t Sampler::sample(T* logits) {
 }
 
 template int32_t Sampler::sample<float>(float* logits);
-#ifdef USE_ATEN_LIB
-template int32_t Sampler::sample<c10::Half>(c10::Half* logits);
-#endif
+template int32_t Sampler::sample<exec_aten::Half>(exec_aten::Half* logits);
 
 } // namespace executor
 } // namespace torch

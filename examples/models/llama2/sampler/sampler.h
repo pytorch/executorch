@@ -18,6 +18,8 @@
 #include <torch/torch.h>
 #endif
 
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+
 namespace torch {
 namespace executor {
 // A simple llama2 sampler.

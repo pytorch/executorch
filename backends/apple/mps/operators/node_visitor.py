@@ -161,22 +161,10 @@ class NodeVisitor:
             return self.tensor_to_id[val]
 
         id = self.get_serialized_id(val, mps_graph)
-
-        if (
-            self.convert_model_to_fp16
-            and mps_data_type == MPSDataType.mps_data_type_float32
-        ):
-            mps_data_type = MPSDataType.mps_data_type_float16
-
-        if isinstance(val, int):
-            array = bytes(ctypes.c_int32(val))
-        elif isinstance(val, float):
-            array = bytes(ctypes.c_float(val))
-        else:
-            raise RuntimeError("Unknown data type!")
-
-        constant_buffer = Buffer(storage=array)
-        constant_buffer_size = len(array)
+        tensor = torch.tensor(val)
+        constant_buffer_size, constant_buffer, mps_data_type = self.get_serialized_data(
+            tensor, mps_graph, mps_data_type, id
+        )
 
         mps_tensor = MPSTensor(
             datatype=mps_data_type,
@@ -185,9 +173,6 @@ class NodeVisitor:
             constant_buffer_size=constant_buffer_size,
             constant_buffer=constant_buffer,
         )
-
-        if id not in mps_graph.constant_ids:
-            mps_graph.constant_ids.append(id)
 
         mps_graph.mps_values.append(mps_tensor)
         return id
@@ -218,12 +203,25 @@ class NodeVisitor:
         tensor = get_param_tensor(self.exported_program, node)
         assert tensor is not None and isinstance(tensor, torch.Tensor)
         tensor = tensor.contiguous()
-        if self.convert_model_to_fp16 and tensor.dtype == torch.float32:
+
+        return self.get_serialized_data(tensor, mps_graph, mps_data_type, node_id)
+
+    def get_serialized_data(
+        self,
+        tensor: torch.tensor,
+        mps_graph: MPSGraph,
+        mps_data_type: MPSDataType,
+        id: int,
+    ) -> Tuple[int, Buffer, MPSDataType]:
+        if (
+            self.convert_model_to_fp16
+            and mps_data_type == MPSDataType.mps_data_type_float32
+        ):
             tensor = tensor.half()
             mps_data_type = MPSDataType.mps_data_type_float16
 
-        if node_id not in mps_graph.constant_ids:
-            mps_graph.constant_ids.append(node_id)
+        if id not in mps_graph.constant_ids:
+            mps_graph.constant_ids.append(id)
 
         array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
         array = ctypes.cast(
@@ -374,7 +372,10 @@ def process_placeholder_nodes(
             input_id = placeholder_visitor.define_tensor(node, mps_graph)
             mps_graph.input_ids.append(input_id)
 
-            if placeholder_visitor.convert_model_to_fp16:
+            if (
+                placeholder_visitor.convert_model_to_fp16
+                and node.meta["val"].dtype == torch.float32
+            ):
                 mps_node = MPSNode(
                     mpsnode_union=MPSCast(
                         input1_id=input_id,
@@ -393,7 +394,10 @@ def process_output_node(
     output_id = output_visitor.define_tensor(output_node, mps_graph)
     mps_graph.output_ids.append(output_id)
 
-    if output_visitor.convert_model_to_fp16:
+    if (
+        output_visitor.convert_model_to_fp16
+        and output_node.meta["val"].dtype == torch.float32
+    ):
         mps_node = MPSNode(
             mpsnode_union=MPSCast(
                 input1_id=output_id,

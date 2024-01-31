@@ -48,6 +48,10 @@ class VulkanBackend final : public PyTorchBackendInterface {
                 vk_arithmetic_op_type_div): {
         return at::native::vulkan::arithmetic::OpType::DIV;
       }
+      case (at::vulkan::delegate::VkArithmeticOpType::
+                vk_arithmetic_op_type_floor_div): {
+        return at::native::vulkan::arithmetic::OpType::FLOOR_DIV;
+      }
     }
   }
 

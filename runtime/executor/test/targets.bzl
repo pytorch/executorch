@@ -100,6 +100,7 @@ def define_common_targets(is_fbcode = False):
             # The tests use this var to find the program file to load. This uses
             # an fbcode target path because the authoring/export tools
             # intentionally don't work in xplat (since they're host-only tools).
+            "ET_MODULE_ADD_HALF_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAddHalf.pte])",
             "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
             "ET_MODULE_DYNAMIC_CAT_UNALLOCATED_IO_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleDynamicCatUnallocatedIO.pte])",
             "ET_MODULE_INDEX_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleIndex.pte])",
@@ -230,4 +231,19 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core:memory_allocator",
                 "//executorch/runtime/executor:memory_manager",
             ],
+        )
+
+        runtime.cxx_test(
+            name = "tensor_parser_test",
+            srcs = [
+                "tensor_parser_test.cpp",
+            ],
+            deps = [
+                ":managed_memory_manager",
+                "//executorch/runtime/executor:program",
+                "//executorch/extension/data_loader:file_data_loader",
+                "//executorch/kernels/portable:generated_lib",
+                "//executorch/schema:program",
+            ],
+            env = modules_env,
         )

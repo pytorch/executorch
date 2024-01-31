@@ -205,7 +205,6 @@ MPSGraphBuilder::mpsSliceOp(NodePtr nodePtr) {
 
   MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
   int64_t dim = graphNode->dim();
-  int64_t dimLen = inputTensor.shape[dim].intValue;
 
   // Define input arrays as required by MPSGraph API
   NSMutableArray<NSNumber*>* start_arr = [NSMutableArray arrayWithCapacity: inputTensor.shape.count];

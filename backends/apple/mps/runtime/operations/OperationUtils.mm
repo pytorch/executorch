@@ -227,7 +227,6 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
 
 MPSGraphTensor*
 MPSGraphBuilder::getMPSGraphTensor(int32_t id) {
-  static int32_t cacheEntries = _idToMPSGraphTensor.size();
   return _idToMPSGraphTensor[id];
 }
 

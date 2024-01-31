@@ -15,7 +15,6 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
-            "//executorch/...",
         ],
     )
 
