@@ -4,7 +4,6 @@ on:
   schedule:
     - cron: 17,47 * * * *
   workflow_dispatch:
-  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}
@@ -14,13 +13,13 @@ jobs:
   do_update_viablestrict:
     if: ${{ github.repository_owner == 'pytorch' }}
     runs-on: ubuntu-20.04
-    environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || 'update-viable-strict' }}
+    environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
     steps:
       - name: Update viable/strict
         uses: pytorch/test-infra/.github/actions/update-viablestrict@main
         with:
           repository: pytorch/executorch
           stable-branch: viable/strict
-          requires: '[\"lint\", \"Build documentation\"]'
+          requires: '[\"pull\", \"lint\", \"Build documentation\"]'
           secret-bot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           rockset-api-key: ${{ secrets.ROCKSET_API_KEY }}
