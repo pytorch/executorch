@@ -19,7 +19,11 @@ import torch
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from torch._export import capture_pre_autograd_graph
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
@@ -40,6 +44,42 @@ def set_pkg_name(name: str) -> None:
 
 def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
+
+
+def apply_embedding_bag_quantization(
+    exported_model, example_inputs, so_library
+) -> torch.nn.Module:
+    """
+    Applies embedding bag quantization on a model.
+    Args:
+        model: A model to apply embedding bag quantization on.
+    Returns:
+        An embedding bag quantized model.
+    """
+    try:
+        _ = torch.ops.quantized_decomposed.embedding_byte.out
+    except AttributeError:
+        if so_library:
+            print(f"Loading library {args.so_library}")
+            torch.ops.load_library(args.so_library)
+        else:
+            raise RuntimeError(
+                "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
+                "Follow the following steps to build the needed lib via cmake.\n"
+                'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
+                "Set that as TORCH_PACKAGE_DIR.\n"
+                "Then from root executorch dir do the following:\n"
+                "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DREGISTER_QUANTIZED_OPS=ON ..) && cmake --build . -j16\n"
+                'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
+                "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
+            )
+
+    embedding_quantizer = EmbeddingQuantizer()
+    m = prepare_pt2e(exported_model, embedding_quantizer)
+    # Calibrate
+    m(*example_inputs)
+    m = convert_pt2e(m)
+    return m
 
 
 def quantize(model) -> torch.nn.Module:
@@ -84,6 +124,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     )
     parser.add_argument("-Q", "--quantize", default=None, action="store_true")
+    parser.add_argument(
+        "-QE", "--quantize_embedding", default=None, action="store_true"
+    )
 
     parser.add_argument(
         "-c",
@@ -106,6 +149,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--metadata",
         default=None,
         help='metadata string in json format. Example {"get_bos_id": 3, "get_eos_id": 3, "get_n_bos": 1, "get_n_eos": 2}',
+    )
+    parser.add_argument(
+        "-s",
+        "--so_library",
+        required=False,
+        help="shared library for quantized operators",
     )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
@@ -204,8 +253,13 @@ def export_llama(modelname, args) -> str:
     with torch.backends.cuda.sdp_kernel(
         enable_flash=False, enable_mem_efficient=False, enable_math=True
     ), torch.no_grad():
+        m = capture_pre_autograd_graph(
+            model, example_inputs, dynamic_shapes=dynamic_shapes
+        )
+        if args.quantize_embedding:
+            m = apply_embedding_bag_quantization(m, example_inputs, args.so_library)
         edge_manager = export_to_edge(
-            model,
+            m,
             example_inputs,
             dynamic_shapes=dynamic_shapes,
             edge_constant_methods=metadata,
@@ -220,6 +274,9 @@ def export_llama(modelname, args) -> str:
     export_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
             extract_constant_segment=True,
+            passes=[
+                QuantFusionPass(),
+            ],
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         )
     )
