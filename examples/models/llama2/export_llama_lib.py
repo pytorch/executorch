@@ -24,7 +24,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
 from .model import ModelArgs
-from .quantize import WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -84,6 +84,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     )
     parser.add_argument("-Q", "--quantize", default=None, action="store_true")
+    parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
 
     parser.add_argument(
         "-c",
@@ -193,6 +194,19 @@ def export_llama(modelname, args) -> str:
         model.to(dtype=torch.float)
         metadata["get_dtype"] = 6
 
+    if args.embedding_quantize:
+        modelname = f"{modelname}_e"
+        model = EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
+
+    if args.verbose:
+        print(f"{modelname}:")
+        print(f"{model}")
+
+    # metadata that we want to serialize into .pte file
+    metadata = {
+        "get_vocab_size": model.params.vocab_size,
+        "get_max_seq_len": model.params.max_seq_len,
+    }
     if args.metadata:
         try:
             extra = json.loads(args.metadata)
