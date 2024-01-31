@@ -398,6 +398,8 @@ def _get_new_signature(
     )
     new_state_dict = {}
 
+    non_persistent_buffers = set(old_signature.non_persistent_buffers)
+
     for node in gm.graph.nodes:
         if node.op == "placeholder":
             if node.name in old_signature.inputs_to_parameters:
@@ -423,6 +425,7 @@ def _get_new_signature(
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=node.name),
                         target=buffer_name,
+                        persistent=buffer_name not in non_persistent_buffers,
                     )
                 )
 
