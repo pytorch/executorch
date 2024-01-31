@@ -150,6 +150,22 @@ class TestProgramManagers(unittest.TestCase):
             3,
         )
 
+    def test_constraint_present_after_dce(self):
+        import executorch.exir as exir
+
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                z = y.item()
+                torch._constrain_as_value(z, 0, 4)
+                return x[z : z + y.shape[0]]
+
+        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))
+
+        edge_manager = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        edge_manager.to_executorch()
+
     def test_edge_manager_transform(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
