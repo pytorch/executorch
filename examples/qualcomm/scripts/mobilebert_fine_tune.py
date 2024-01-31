@@ -4,9 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import argparse
 import json
 import os
+import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -15,6 +15,8 @@ import torch
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
+    parse_skip_delegation_node,
+    setup_common_args_and_variables,
     SimpleADB,
 )
 from transformers import BertTokenizer, MobileBertForSequenceClassification
@@ -66,7 +68,7 @@ def get_dataset(data_val):
     return inputs, input_list
 
 
-def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight):
+def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight, batch_size):
     from io import BytesIO
 
     import pandas as pd
@@ -148,7 +150,7 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight):
     dataset_train = TensorDataset(input_ids_train, attention_masks_train, labels_train)
     dataset_val = TensorDataset(input_ids_val, attention_masks_val, labels_val)
 
-    batch_size, epochs = 3, 5
+    epochs = 5
     dataloader_train = DataLoader(
         dataset_train,
         sampler=RandomSampler(dataset_train),
@@ -201,11 +203,12 @@ def get_fine_tuned_mobilebert(artifacts_dir, pretrained_weight):
         ),
     )
 
-    return model.eval(), dataloader_val, batch_size, labels
+    return model.eval(), dataloader_val, labels
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = setup_common_args_and_variables()
+
     parser.add_argument(
         "-a",
         "--artifact",
@@ -213,87 +216,77 @@ if __name__ == "__main__":
         default="./mobilebert_fine_tune",
         type=str,
     )
-    parser.add_argument(
-        "-b",
-        "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-s",
-        "--device",
-        help="serial number for android device communicated via ADB.",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-H",
-        "--host",
-        help="hostname where android device is connected.",
-        default=None,
-        type=str,
-    )
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
-        type=str,
-        required=True,
-    )
+
     parser.add_argument(
         "-p",
         "--pretrained_weight",
         help="Location of pretrained weight",
-        default="",
+        default=None,
         type=str,
     )
+
     parser.add_argument(
-        "--ip",
-        help="IPC address for delivering execution result",
-        default="",
-        type=str,
-    )
-    parser.add_argument(
-        "--port",
-        help="IPC port for delivering execution result",
-        default=-1,
-        type=int,
+        "-u",
+        "--use_16bit_quant",
+        help="If specified, quantize model with 16 bits, otherwise, quantize model with 8 bits. Will only be used when ptq set to true.",
+        action="store_true",
+        default=False,
     )
 
-    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
-    # So maybe it's fine to just use the environment.
-    if "QNN_SDK_ROOT" not in os.environ:
-        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
-    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
+    parser.add_argument(
+        "-P",
+        "--ptq",
+        help="If specified, will do PTQ.",
+        action="store_true",
+        default=False,
+    )
 
     args = parser.parse_args()
+
+    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    pte_filename = "mb_qnn"
-    model, data_val, batch_size, labels = get_fine_tuned_mobilebert(
-        args.artifact, args.pretrained_weight
+    if not args.compile_only and args.device is None:
+        raise RuntimeError(
+            "device serial is required if not compile only. "
+            "Please specify a device serial by -s/--device argument."
+        )
+
+    pte_filename = "ptq_mb_qnn" if args.ptq else "mb_qnn"
+    batch_size = 1 if args.ptq else 3
+    model, data_val, labels = get_fine_tuned_mobilebert(
+        args.artifact, args.pretrained_weight, batch_size
     )
     inputs, input_list = get_dataset(data_val)
 
-    build_executorch_binary(
-        model,
-        inputs[0],
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        None,
-        use_fp16=True,
-    )
+    if args.ptq:
+        build_executorch_binary(
+            model,
+            inputs[0],
+            args.model,
+            f"{args.artifact}/{pte_filename}",
+            inputs,
+            use_fp16=False,
+            use_16bit_quant=args.use_16bit_quant,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
+    else:
+        build_executorch_binary(
+            model,
+            inputs[0],
+            args.model,
+            f"{args.artifact}/{pte_filename}",
+            None,
+            use_fp16=True,
+            skip_node_id_set=skip_node_id_set,
+            skip_node_op_set=skip_node_op_set,
+        )
+
+    if args.compile_only:
+        sys.exit(0)
 
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
