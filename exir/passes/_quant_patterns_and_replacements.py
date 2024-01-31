@@ -25,7 +25,7 @@ __all__ = [
 # TODO: extending an existing library that is defined in OSS might be a bit
 # confusing, we can investigate if it is possible to define a new library
 quantized_decomposed_lib.define(
-    "embedding_byte(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, "
+    "embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor",
 )
 
