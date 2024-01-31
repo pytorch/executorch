@@ -420,7 +420,9 @@ class Transformer(nn.Module):
             # self.params.max_seq_len - 1 because of 0 based indexing, and - 1 again because our input seq len is 1 and its added to the cache before accessing the cache
             torch._constrain_as_size(sp, min=0, max=self.params.max_seq_len - 2)
             torch._constrain_as_value(
-                cache_k.shape[0], min=self.n_layers, max=self.n_layers  # pyre-ignore[16]
+                cache_k.shape[0],  # pyre-ignore[16]
+                min=self.n_layers,
+                max=self.n_layers,
             )
             torch._constrain_as_value(
                 cache_v.shape[0], min=self.n_layers, max=self.n_layers
@@ -433,7 +435,12 @@ class Transformer(nn.Module):
                 cache_v_copy = cache_v[index, :].clone()
 
                 h, updated_cache_k, updated_cache_v = layer(
-                    h, freqs_cos, freqs_sin, sp, cache_k_copy, cache_v_copy  # pyre-ignore[61]
+                    h,
+                    freqs_cos,
+                    freqs_sin,
+                    sp,  # pyre-ignore[61]
+                    cache_k_copy,
+                    cache_v_copy,
                 )
                 cache_k[index, :] = updated_cache_k  # pyre-ignore[16]
                 cache_v[index, :] = updated_cache_v
