@@ -96,7 +96,6 @@ class ModelArgs:
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
     # Additional Model Metadata needed at runtime
-    vocab_size: int = 256206
     bos_idx: int = 1
     eos_idx: int = 3
     bos_count: int = -1  # i.e., a single EOS is used as BOS

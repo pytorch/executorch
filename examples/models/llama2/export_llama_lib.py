@@ -12,6 +12,7 @@ import logging
 import shlex
 from json import JSONDecodeError
 from pathlib import Path
+from typing import Any, Dict
 
 import pkg_resources
 import torch
@@ -22,6 +23,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
+from .model import ModelArgs
 from .quantize import WeightOnlyInt8QuantHandler
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -129,6 +131,17 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return return_val
 
 
+def get_metadata(params: ModelArgs) -> Dict[str, Any]:
+    return {
+        "get_vocab_size": params.vocab_size,
+        "get_max_seq_len": params.max_seq_len,
+        "get_n_layers": params.n_layers,
+        "get_max_batch_size": params.max_batch_size,
+        "get_n_kv_heads": params.n_kv_heads,
+        "get_head_dim": params.dim // params.n_heads,
+    }
+
+
 def export_llama(modelname, args) -> str:
 
     checkpoint_path = canonical_path(args.checkpoint)
@@ -147,12 +160,18 @@ def export_llama(modelname, args) -> str:
         _check_ir_validity=False,
         _skip_type_promotion=bool(args.half),
     )
+
+    # metadata that we want to serialize into .pte file
+    metadata = get_metadata(model.params)
+
     if args.use_kv_cache:
         # seq length is fixed to 1 with current kv cache impl
         dynamic_shapes = None
+        metadata["use_kv_cache"] = True
     else:
         dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
         dynamic_shapes = {"tokens": {1: dim}}
+        metadata["use_kv_cache"] = False
 
     if args.quantized_ckpt or args.quantize:
         modelname = f"{modelname}_q"
@@ -167,16 +186,13 @@ def export_llama(modelname, args) -> str:
         # input and output are torch.long, so signature unchanged
         model.to(dtype=torch.half)
         modelname = f"{modelname}_h"
+        metadata["get_dtype"] = 5
     else:
         # int8 quantization code has some bf16,
         # switch all to FP32
         model.to(dtype=torch.float)
+        metadata["get_dtype"] = 6
 
-    # metadata that we want to serialize into .pte file
-    metadata = {
-        "get_vocab_size": model.params.vocab_size,
-        "get_max_seq_len": model.params.max_seq_len,
-    }
     if args.metadata:
         try:
             extra = json.loads(args.metadata)
@@ -184,8 +200,6 @@ def export_llama(modelname, args) -> str:
                 metadata[k] = v
         except JSONDecodeError:
             logging.error("Invalid metadata, should be a valid JSON string")
-
-    dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
 
     with torch.backends.cuda.sdp_kernel(
         enable_flash=False, enable_mem_efficient=False, enable_math=True
@@ -213,24 +227,5 @@ def export_llama(modelname, args) -> str:
     )
     save_pte_program(export_program.buffer, modelname, output_dir_path)
     output_file = f"{output_dir_path}/{modelname}.pte"
-
-    if args.xnnpack:
-        with torch.backends.cuda.sdp_kernel(
-            enable_flash=False, enable_mem_efficient=False, enable_math=True
-        ):
-            xnn_model = export_to_edge(
-                model,
-                example_inputs,
-                dynamic_shapes={"tokens": {1: dim}},
-                edge_compile_config=EdgeCompileConfig(
-                    _check_ir_validity=False,
-                ),
-            )
-            xnn_partitioned = xnn_model.to_backend(XnnpackPartitioner())
-            exec_prog = xnn_partitioned.to_executorch()
-
-        output_file = f"{output_dir_path}/xnnpack_{modelname}.pte"
-        with open(output_file, "wb") as file:
-            file.write(exec_prog.buffer)
 
     return output_file
