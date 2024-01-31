@@ -203,7 +203,7 @@ def export_llama(modelname, args) -> str:
 
     with torch.backends.cuda.sdp_kernel(
         enable_flash=False, enable_mem_efficient=False, enable_math=True
-    ):
+    ), torch.no_grad():
         edge_manager = export_to_edge(
             model,
             example_inputs,
