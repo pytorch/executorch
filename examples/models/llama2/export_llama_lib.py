@@ -273,8 +273,6 @@ def export_llama(modelname, args) -> str:
             edge_compile_config=edge_config,
         )
     if args.xnnpack:
-        if args.half:
-            raise RuntimeError("XNNPACK does not support fp16")
         edge_manager = edge_manager.to_backend(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
 
