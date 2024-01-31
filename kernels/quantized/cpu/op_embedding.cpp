@@ -27,7 +27,7 @@ namespace {
 void check_embedding_byte_args(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const Tensor& weight_zero_points,
+    const optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -39,26 +39,28 @@ void check_embedding_byte_args(
       static_cast<int8_t>(weight.scalar_type()));
 
   ET_CHECK_MSG(
-      weight_scales.scalar_type() == ScalarType::Float,
-      "weight_scales.scalar_type() %" PRId8
-      " is not float only float is supported:",
-      static_cast<int8_t>(weight_scales.scalar_type()));
+      out.scalar_type() == ScalarType::Float ||
+          out.scalar_type() == ScalarType::Half,
+      "out.scalar_type() %" PRId8 " is not supported:",
+      static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
-      weight_zero_points.scalar_type() == ScalarType::Float,
-      "weight_zero_points.scalar_type() %" PRId8
-      " is not Float only Float is supported for embedding:",
-      static_cast<int8_t>(weight_zero_points.scalar_type()));
+      weight_scales.scalar_type() == out.scalar_type(),
+      "weight scales scalar type %" PRId8 " does not match out.scalar_type()",
+      static_cast<int8_t>(weight_scales.scalar_type()));
+
+  if (opt_weight_zero_points.has_value()) {
+    ET_CHECK_MSG(
+        opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
+        "weight zero points scalar type %" PRId8
+        " does not match out.scalar_type()",
+        static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
+  }
 
   ET_CHECK_MSG(
       indices.scalar_type() == ScalarType::Long,
       "indices.scalar_type() %" PRId8 " is not Long only Long is supported:",
       static_cast<int8_t>(indices.scalar_type()));
-
-  ET_CHECK_MSG(
-      out.scalar_type() == ScalarType::Float,
-      "out.scalar_type() %" PRId8 " is not supported:",
-      static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
       weight_quant_min <= weight_quant_max,
@@ -72,34 +74,41 @@ void check_embedding_byte_args(
  * Retrieves the embeddings specified by indices, dequantizes them, and stores
  * them in out
  */
-template <class WEIGHT_CTYPE, class OUT_CTYPE>
+template <class CTYPE_WEIGHT, class CTYPE_OUT>
 void embedding_byte_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
-    const Tensor& weight_zero_points,
+    const optional<Tensor>& opt_weight_zero_points,
     const Tensor& indices,
     Tensor& out) {
   // An embedding layer nn.Embedding(num_embeddings, embedding_dim) has a weight
   // of shape (num_embeddings, embedding_dim).
   auto embedding_dim = weight.size(1);
 
-  OUT_CTYPE* out_data = out.data_ptr<OUT_CTYPE>();
-  const int64_t* indices_ptr = indices.data_ptr<int64_t>();
+  CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
+  const int64_t* indices_ptr = indices.const_data_ptr<int64_t>();
 
-  const float* scales = weight_scales.data_ptr<float>();
-  const float* zero_points = weight_zero_points.data_ptr<float>();
+  const CTYPE_OUT* scales = weight_scales.const_data_ptr<CTYPE_OUT>();
+  const CTYPE_OUT* zero_points = nullptr;
+  if (opt_weight_zero_points.has_value()) {
+    zero_points = opt_weight_zero_points.value().const_data_ptr<CTYPE_OUT>();
+  }
 
   for (int i = 0; i < indices.numel(); i++) {
     int64_t index = indices_ptr[i];
-    float zp = zero_points[index];
-    float scale = scales[index];
+    CTYPE_OUT zp = 0.0;
+    if (opt_weight_zero_points.has_value()) {
+      zp = zero_points[index];
+    }
+    CTYPE_OUT scale = scales[index];
 
-    const WEIGHT_CTYPE* w_data =
-        weight.data_ptr<WEIGHT_CTYPE>() + embedding_dim * index;
+    const CTYPE_WEIGHT* w_data =
+        weight.data_ptr<CTYPE_WEIGHT>() + embedding_dim * index;
 
     for (int j = 0; j < embedding_dim; ++j) {
-      out_data[j] =
-          static_cast<OUT_CTYPE>((static_cast<float>(w_data[j]) - zp) * scale);
+      out_data[j] = static_cast<CTYPE_OUT>(
+          (static_cast<float>(w_data[j]) - static_cast<float>(zp)) *
+          static_cast<float>(scale));
     }
     out_data += embedding_dim;
   }
@@ -144,7 +153,7 @@ Tensor& quantized_embedding_byte_out(
     // non quant input and returns fp output
     const Tensor& weight,
     const Tensor& weight_scales,
-    const Tensor& weight_zero_points,
+    const optional<Tensor>& opt_weight_zero_points,
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
@@ -154,39 +163,22 @@ Tensor& quantized_embedding_byte_out(
   check_embedding_byte_args(
       weight,
       weight_scales,
-      weight_zero_points,
+      opt_weight_zero_points,
       weight_quant_min,
       weight_quant_max,
       indices,
       out);
 
-#define FETCH_EMBEDDINGS(WEIGHT_CTYPE)                              \
-  switch (out.scalar_type()) {                                      \
-    case ScalarType::Float:                                         \
-      embedding_byte_per_channel<WEIGHT_CTYPE, float>(              \
-          weight, weight_scales, weight_zero_points, indices, out); \
-      break;                                                        \
-    default:                                                        \
-      ET_CHECK_MSG(                                                 \
-          false,                                                    \
-          "Unhandled output dtype %" PRId8,                         \
-          static_cast<int8_t>(out.scalar_type()));                  \
-  }
+  ScalarType w_type = weight.scalar_type();
+  ScalarType out_type = out.scalar_type();
 
-  switch (weight.scalar_type()) {
-    case ScalarType::Byte:
-      FETCH_EMBEDDINGS(uint8_t)
-      break;
-    case ScalarType::Char:
-      FETCH_EMBEDDINGS(int8_t)
-      break;
-    default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled weight dtype %" PRId8,
-          static_cast<int8_t>(weight.scalar_type()));
-  }
-#undef CALCULATE_OUT_DTYPE
+  ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, "q_embedding", CTYPE_W, [&]() {
+    ET_SWITCH_TWO_TYPES(
+        Float, Half, out_type, ctx, "q_embedding", CTYPE_OUT, [&]() {
+          embedding_byte_per_channel<CTYPE_W, CTYPE_OUT>(
+              weight, weight_scales, opt_weight_zero_points, indices, out);
+        });
+  });
 
   return out;
 }
@@ -195,7 +187,7 @@ Tensor& quantized_embedding_byte_out(
     RuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
-    const Tensor& weight_zero_points,
+    const optional<Tensor>& opt_weight_zero_points,
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
@@ -207,7 +199,7 @@ Tensor& quantized_embedding_byte_out(
   return quantized_embedding_byte_out(
       weight,
       weight_scales,
-      weight_zero_points,
+      opt_weight_zero_points,
       weight_quant_min,
       weight_quant_max,
       indices,
