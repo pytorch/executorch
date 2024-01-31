@@ -39,23 +39,24 @@ class Module final {
    * Constructs an instance by loading a program from a file with specified
    * memory locking behavior.
    *
-   * @param[in] filePath The path to the ExecuTorch program file to load.
-   * @param[in] mlockConfig The memory locking configuration to use.
+   * @param[in] file_path The path to the ExecuTorch program file to load.
+   * @param[in] mlock_config The memory locking configuration to use.
    */
   explicit Module(
-      const std::string& filePath,
-      const MlockConfig mlockConfig = MlockConfig::UseMlock);
+      const std::string& file_path,
+      const MlockConfig mlock_config = MlockConfig::UseMlock);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.
    *
-   * @param[in] dataLoader A DataLoader used for loading program data.
-   * @param[in] memoryAllocator A MemoryAllocator used for memory management.
+   * @param[in] data_loader A DataLoader used for loading program data.
+   * @param[in] memory_allocator A MemoryAllocator used for memory management.
+   * @param[in] event_tracer A EventTracer used for tracking and logging events.
    */
   explicit Module(
-      std::unique_ptr<DataLoader> dataLoader,
-      std::unique_ptr<MemoryAllocator> memoryAllocator = nullptr,
-      std::unique_ptr<EventTracer> eventTracer = nullptr);
+      std::unique_ptr<DataLoader> data_loader,
+      std::unique_ptr<MemoryAllocator> memory_allocator = nullptr,
+      std::unique_ptr<EventTracer> event_tracer = nullptr);
   Module(const Module&) = delete;
   Module& operator=(const Module&) = delete;
   Module(Module&&) = default;
@@ -66,6 +67,7 @@ class Module final {
    *
    * @param[in] verification The type of verification to do before returning
    * success.
+   *
    * @returns An Error to indicate success or failure of the loading process.
    */
   __ET_NODISCARD
@@ -78,7 +80,7 @@ class Module final {
    *
    * @returns true if the program is loaded, false otherwise.
    */
-  bool isLoaded() const;
+  bool is_loaded() const;
 
   /**
    * Get a list of method names available in the loaded program.
@@ -87,44 +89,45 @@ class Module final {
    * @returns A set of strings containing the names of the methods, or an error
    * if the program or method failed to load.
    */
-  Result<std::unordered_set<std::string>> methodNames();
+  Result<std::unordered_set<std::string>> method_names();
 
   /**
    * Load a specific method from the program and set up memory management if
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
-   * @param[in] methodName The name of the method to load.
+   * @param[in] method_name The name of the method to load.
    *
    * @returns An Error to indicate success or failure.
    */
   __ET_NODISCARD
-  Error loadMethod(const std::string& methodName);
+  Error load_method(const std::string& method_name);
 
   /**
    * Checks if a specific method is loaded.
    *
-   * @param[in] methodName The name of the method to check.
-   * @returns true if the method specified by methodName is loaded, false
+   * @param[in] method_name The name of the method to check.
+   *
+   * @returns true if the method specified by method_name is loaded, false
    * otherwise.
    */
-  bool isMethodLoaded(const std::string& methodName) const;
+  bool is_method_loaded(const std::string& method_name) const;
 
   /**
    * Get a method metadata struct by method name.
    * Loads the program and method if needed.
    *
-   * @param[in] methodName The name of the method to get the metadata for.
+   * @param[in] method_name The name of the method to get the metadata for.
    *
    * @returns A method metadata, or an error if the program or method failed to
    * load.
    */
-  Result<MethodMeta> methodMeta(const std::string& methodName);
+  Result<MethodMeta> method_meta(const std::string& method_name);
 
   /**
    * Execute a specific method with the given input and retrieve output.
    * Loads the program and method before executing if needed.
    *
-   * @param[in] methodName The name of the method to execute.
+   * @param[in] method_name The name of the method to execute.
    * @param[in] input A vector of input values to be passed to the method.
    *
    * @returns A Result object containing either a vector of output values
@@ -132,21 +135,21 @@ class Module final {
    */
   __ET_NODISCARD
   Result<std::vector<EValue>> execute(
-      const std::string& methodName,
+      const std::string& method_name,
       const std::vector<EValue>& input);
 
   /**
    * Execute a specific method without any input values.
    * Loads the program and method before executing if needed.
    *
-   * @param[in] methodName The name of the method to execute.
+   * @param[in] method_name The name of the method to execute.
    *
    * @returns A Result object containing either a vector of output values
    *          from the method or an error to indicate failure.
    */
   __ET_NODISCARD
-  Result<std::vector<EValue>> execute(const std::string& methodName) {
-    return execute(methodName, {});
+  Result<std::vector<EValue>> execute(const std::string& method_name) {
+    return execute(method_name, {});
   }
 
   /**
@@ -183,25 +186,25 @@ class Module final {
    * @returns A pointer to the EventTracer instance. Returns nullptr if no
    * EventTracer is set.
    */
-  EventTracer* eventTracer() const {
-    return eventTracer_.get();
+  EventTracer* event_tracer() const {
+    return event_tracer_.get();
   }
 
  private:
   struct MethodHolder {
-    std::vector<std::vector<uint8_t>> plannedBuffers;
-    std::vector<Span<uint8_t>> plannedSpans;
-    std::unique_ptr<HierarchicalAllocator> plannedMemory;
-    std::unique_ptr<MemoryManager> memoryManager;
+    std::vector<std::vector<uint8_t>> planned_buffers;
+    std::vector<Span<uint8_t>> planned_spans;
+    std::unique_ptr<HierarchicalAllocator> planned_memory;
+    std::unique_ptr<MemoryManager> memory_manager;
     std::unique_ptr<Method> method;
   };
 
  private:
-  std::string filePath_;
-  MlockConfig mlockConfig_{MlockConfig::NoMlock};
-  std::unique_ptr<DataLoader> dataLoader_;
-  std::unique_ptr<MemoryAllocator> memoryAllocator_;
-  std::unique_ptr<EventTracer> eventTracer_;
+  std::string file_path_;
+  MlockConfig mlock_config_{MlockConfig::NoMlock};
+  std::unique_ptr<DataLoader> data_loader_;
+  std::unique_ptr<MemoryAllocator> memory_allocator_;
+  std::unique_ptr<EventTracer> event_tracer_;
   std::unique_ptr<Program> program_;
   std::unordered_map<std::string, MethodHolder> methods_;
 };
