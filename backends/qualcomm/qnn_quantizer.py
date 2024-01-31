@@ -202,7 +202,6 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.conv2d.default,
         torch.ops.aten.div.Tensor,
         torch.ops.aten.divide.Tensor,
-        torch.ops.aten.embedding.default,
         torch.ops.aten.expand.default,
         torch.ops.aten.flatten.using_ints,
         torch.ops.aten.hardsigmoid.default,
