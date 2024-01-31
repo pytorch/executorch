@@ -101,6 +101,10 @@ class ModelArgs:
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
 
+    def __post_init__(self):
+        if self.n_kv_heads is None:
+            self.n_kv_heads = self.n_heads
+
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
