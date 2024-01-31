@@ -20,7 +20,12 @@ namespace executor {
  * pytorch core.
  */
 struct alignas(2) Half {
-  uint16_t x;
+  union {
+#ifdef NATIVE_FP16
+    _Float16 y;
+#endif
+    uint16_t x;
+  };
 
   struct from_bits_t {};
   static constexpr from_bits_t from_bits() {
@@ -332,17 +337,77 @@ inline uint16_t fp16_ieee_from_fp32_value(float f) {
 } // namespace internal
 
 /// Constructors
-
+#ifdef NATIVE_FP16
+inline Half::Half(float value) : y(value) {}
+#else
 inline Half::Half(float value)
     : x(internal::fp16_ieee_from_fp32_value(value)) {}
+#endif
 
 /// Implicit conversions
-
+#ifdef NATIVE_FP16
+inline Half::operator float() const {
+  return (float)y;
+}
+#else
 inline Half::operator float() const {
   return internal::fp16_ieee_to_fp32_value(x);
 }
+#endif
 
 /// Arithmetic
+
+#ifdef NATIVE_FP16
+
+#define return_half(r) \
+  do {                 \
+    Half ret;          \
+    ret.y = r;         \
+    return ret;        \
+  } while (0)
+
+inline Half operator+(const Half& a, const Half& b) {
+  return_half(a.y + b.y);
+}
+
+inline Half operator-(const Half& a, const Half& b) {
+  return_half(a.y - b.y);
+  return static_cast<float>(a) - static_cast<float>(b);
+}
+
+inline Half operator*(const Half& a, const Half& b) {
+  return_half(a.y * b.y);
+}
+
+inline Half operator/(const Half& a, const Half& b) {
+  return_half(a.y / b.y);
+}
+
+inline Half operator-(const Half& a) {
+  return_half(-a.y);
+}
+
+inline Half& operator+=(Half& a, const Half& b) {
+  a.y += b.y;
+  return a;
+}
+
+inline Half& operator-=(Half& a, const Half& b) {
+  a.y -= b.y;
+  return a;
+}
+
+inline Half& operator*=(Half& a, const Half& b) {
+  a.y *= b.y;
+  return a;
+}
+
+inline Half& operator/=(Half& a, const Half& b) {
+  a.y /= b.y;
+  return a;
+}
+
+#else
 
 inline Half operator+(const Half& a, const Half& b) {
   return static_cast<float>(a) + static_cast<float>(b);
@@ -383,6 +448,8 @@ inline Half& operator/=(Half& a, const Half& b) {
   a = a / b;
   return a;
 }
+
+#endif
 
 /// Arithmetic with floats
 
@@ -455,6 +522,36 @@ inline double operator/(double a, Half b) {
 
 /// Arithmetic with ints
 
+#ifdef NATIVE_FP16
+
+inline Half operator+(Half a, int32_t b) {
+  return_half(a.y + b);
+}
+inline Half operator-(Half a, int32_t b) {
+  return_half(a.y - b);
+}
+inline Half operator*(Half a, int32_t b) {
+  return_half(a.y * b);
+}
+inline Half operator/(Half a, int32_t b) {
+  return_half(a.y / b);
+}
+
+inline Half operator+(int32_t a, Half b) {
+  return_half(a + b.y);
+}
+inline Half operator-(int32_t a, Half b) {
+  return_half(a - b.y);
+}
+inline Half operator*(int32_t a, Half b) {
+  return_half(a * b.y);
+}
+inline Half operator/(int32_t a, Half b) {
+  return_half(a / b.y);
+}
+
+#else
+
 inline Half operator+(Half a, int32_t b) {
   return a + static_cast<Half>(b);
 }
@@ -481,7 +578,39 @@ inline Half operator/(int32_t a, Half b) {
   return static_cast<Half>(a) / b;
 }
 
+#endif
+
 //// Arithmetic with int64_t
+
+#ifdef NATIVE_FP16
+
+inline Half operator+(Half a, int64_t b) {
+  return_half(a.y + b);
+}
+inline Half operator-(Half a, int64_t b) {
+  return_half(a.y - b);
+}
+inline Half operator*(Half a, int64_t b) {
+  return_half(a.y * b);
+}
+inline Half operator/(Half a, int64_t b) {
+  return_half(a.y / b);
+}
+
+inline Half operator+(int64_t a, Half b) {
+  return_half(a + b.y);
+}
+inline Half operator-(int64_t a, Half b) {
+  return_half(a - b.y);
+}
+inline Half operator*(int64_t a, Half b) {
+  return_half(a * b.y);
+}
+inline Half operator/(int64_t a, Half b) {
+  return_half(a / b.y);
+}
+
+#else
 
 inline Half operator+(Half a, int64_t b) {
   return a + static_cast<Half>(b);
@@ -508,6 +637,8 @@ inline Half operator*(int64_t a, Half b) {
 inline Half operator/(int64_t a, Half b) {
   return static_cast<Half>(a) / b;
 }
+
+#endif
 
 /// NOTE: we do not define comparisons directly and instead rely on the implicit
 /// conversion Half to float.
