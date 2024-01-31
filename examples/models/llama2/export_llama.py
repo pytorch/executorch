@@ -23,7 +23,9 @@ def main() -> None:
     modelname = "llama2"
     parser = build_args_parser()
     args = parser.parse_args()
-    export_llama(modelname, args)
+    from executorch.util.python_profiler import CProfilerFlameGraph
+    with CProfilerFlameGraph("/tmp/llama7b_profiler.html"):
+        export_llama(modelname, args)
 
 
 if __name__ == "__main__":

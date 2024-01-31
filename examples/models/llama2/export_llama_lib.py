@@ -135,11 +135,16 @@ def get_metadata(params: ModelArgs) -> Dict[str, Any]:
     return {
         "get_vocab_size": params.vocab_size,
         "get_max_seq_len": params.max_seq_len,
-        "get_n_layers": params.n_layers,
-        "get_max_batch_size": params.max_batch_size,
-        "get_n_kv_heads": params.n_kv_heads,
-        "get_head_dim": params.dim // params.n_heads,
     }
+    # return {
+    #     "get_vocab_size": params.vocab_size,
+    #     "get_max_seq_len": params.max_seq_len,
+    #     "get_n_layers": params.n_layers,
+    #     "get_max_batch_size": params.max_batch_size,
+    #     "get_n_kv_heads": params.n_kv_heads,
+    #     "get_head_dim": params.dim // params.n_heads,
+    # }
+    # return {"dim": 64, "multiple_of": 4, "n_heads": 8, "n_layers": 5, "norm_eps": 1e-05, "vocab_size": 512}
 
 
 def export_llama(modelname, args) -> str:
