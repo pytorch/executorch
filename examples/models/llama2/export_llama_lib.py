@@ -21,6 +21,7 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPar
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
@@ -156,6 +157,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         required=False,
         help="shared library for quantized operators",
     )
+    parser.add_argument(
+        "--profile_memory",
+        required=False,
+        action="store_true",
+        help="Generate chrome trace of activation memory for intermediate tensors.",
+    )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
@@ -280,6 +287,9 @@ def export_llama(modelname, args) -> str:
             sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         )
     )
+    if args.profile_memory:
+        generate_memory_trace(export_program, "memory_profile.json")
+
     print(
         "Required memory for activation in bytes: ",
         export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
