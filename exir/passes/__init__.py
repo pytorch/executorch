@@ -464,6 +464,7 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 # Passes to convert a graph module from ATen to Edge IR
 
+# pyre-fixme[5]: Global expression must be annotated.
 pre_op_replace_passes = PassManager(
     passes=[
         # ReplaceSymSizeOpPass need to be run before other passes which inherits
@@ -479,6 +480,7 @@ pre_op_replace_passes = PassManager(
     ]
 ).passes
 
+# pyre-fixme[5]: Global expression must be annotated.
 post_op_replace_passes = PassManager(
     passes=[
         dead_code_elimination_pass,

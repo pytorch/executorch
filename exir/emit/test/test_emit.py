@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pye-strict
+# pyre-strict
 
 import typing
 import unittest
@@ -47,10 +47,15 @@ from torch.export import Dim, export
 
 
 class WrapperModule(torch.nn.Module):
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
     def __init__(self, fn):
         super().__init__()
+        # pyre-fixme[4]: Attribute must be annotated.
         self.fn = fn
 
+    # pyre-fixme[3]: Return type must be annotated.
+    # pyre-fixme[2]: Parameter must be annotated.
     def forward(self, *args, **kwargs):
         return self.fn(*args, **kwargs)
 
@@ -921,7 +926,9 @@ class TestEmit(unittest.TestCase):
         inputs = (torch.ones(10, 5),)
 
         def make_program(
+            # pyre-fixme[2]: Parameter must be annotated.
             fn,
+            # pyre-fixme[2]: Parameter must be annotated.
             inputs,
         ) -> "ExecutorchProgramManager":
             return to_edge(
