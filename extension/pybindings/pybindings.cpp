@@ -409,7 +409,8 @@ struct PyModule final {
     cpp_inputs.reserve(inputs_size);
 
 #ifndef USE_ATEN_LIB // Portable mode
-    // So the ETensors and their metadata stay in scope for Module->run_method.
+    // So the ETensors and their metadata stay in scope for
+    // Module->run_method.
     std::vector<torch::executor::TensorImpl> input_tensors;
     std::vector<std::vector<torch::executor::Tensor::SizesType>> input_sizes;
     std::vector<std::vector<torch::executor::Tensor::StridesType>>
@@ -691,7 +692,12 @@ PYBIND11_MODULE(EXECUTORCH_PYTHON_MODULE_NAME, m) {
           py::arg("atol") = 1e-8,
           call_guard)
       .def("plan_execute", &PyModule::plan_execute, call_guard)
-      .def("run_method", &PyModule::run_method, call_guard)
+      .def(
+          "run_method",
+          &PyModule::run_method,
+          py::arg("method_name"),
+          py::arg("inputs") = py::list(),
+          call_guard)
       .def("forward", &PyModule::forward, call_guard)
       .def("has_etdump", &PyModule::has_etdump, call_guard)
       .def(
