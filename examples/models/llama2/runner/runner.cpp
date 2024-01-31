@@ -37,7 +37,7 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
   // n_EOS max_seq_len from the model
   ET_LOG(Info, "Reading metadata from model");
-  const auto method_names = module_->methodNames();
+  const auto method_names = module_->method_names();
   ET_CHECK_MSG(
       method_names.ok(),
       "Failed to read method names from model: %s",
