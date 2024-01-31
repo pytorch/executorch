@@ -170,7 +170,7 @@ class QuantHandler:
 def replace_linear_weight_only_int8_per_channel(module):
     for name, child in module.named_children():
         print(f"name: {name}")
-        if name == "output":
+        if name == "XXXXoutputXXXXXXX":
             print("skipping quantizing output")
         elif isinstance(child, nn.Linear):
             print(f"{name, child}")
@@ -195,11 +195,7 @@ class WeightOnlyInt8QuantHandler:
 
         for fqn, mod in self.mod.named_modules():
             print(f"quantized {fqn}")
-            if fqn.startswith("tok_embeddings"):
-                print("skip token embeddings")
-            elif fqn.startswith("output"):
-                print("skip output linear")
-            elif isinstance(mod, torch.nn.Linear):
+            if isinstance(mod, torch.nn.Linear):
                 int8_weight, scales, _ = dynamically_quantize_per_channel(
                     mod.weight.float(), -128, 127, torch.int8
                 )
