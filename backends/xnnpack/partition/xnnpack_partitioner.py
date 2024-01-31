@@ -125,6 +125,11 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             if arg_val is None or isinstance(arg_val, tuple):
                 continue
 
+            # Being conservative for now, UX >> Perf
+            # TODO: We need a pass to scrub these out.
+            if not isinstance(arg_val, torch.Tensor):
+                return False
+
             if arg_val.dtype not in valid_dtypes:
                 return False
 
@@ -135,6 +140,9 @@ class XnnpackOperatorSupport(OperatorSupportBase):
                 node_val = (node_val,)
 
             for val in node_val:
+                if not isinstance(val, torch.Tensor):
+                    return False
+
                 if val.dtype not in valid_dtypes:
                     return False
 
