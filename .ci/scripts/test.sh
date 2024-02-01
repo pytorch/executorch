@@ -45,7 +45,7 @@ build_cmake_executor_runner() {
 
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama
+    test_export_llama
   fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
   "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
@@ -62,6 +62,25 @@ test_model() {
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
   fi
+}
+
+test_export_llama() {
+  "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_rand_params.pth -p examples/models/llama2/params/demo_config.json
+
+  # Run test model
+  if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+    buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
+  elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+    if [[ ! -f ${CMAKE_OUTPUT_DIR}/executor_runner ]]; then
+      build_cmake_executor_runner
+    fi
+    ./${CMAKE_OUTPUT_DIR}/executor_runner --model_path "./${MODEL_NAME}.pte"
+  else
+    echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
+    exit 1
+  fi
+  # clean up
+  rm "./${MODEL_NAME}.pte"
 }
 
 build_cmake_xnn_executor_runner() {
