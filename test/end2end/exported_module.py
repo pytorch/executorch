@@ -159,9 +159,9 @@ class ExportedModule:
         # These cleanup passes are required to convert the `add` op to its out
         # variant, along with some other transformations.
         for method_name, method_input in method_name_to_args.items():
-            # if not isinstance(eager_module, torch.nn.Module):
+            module = WrapperModule(getattr(eager_module, method_name))
             exported_methods[method_name] = export(
-                eager_module,
+                module,
                 method_input,
                 constraints=method_name_to_constraints[method_name]
                 if method_name_to_constraints

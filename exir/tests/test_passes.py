@@ -617,12 +617,8 @@ class TestPasses(unittest.TestCase):
         model: torch.nn.Linear = torch.nn.Linear(5, 5)
 
         class Foo(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.model = model
-
             def forward(self, inp: torch.Tensor) -> torch.Tensor:
-                return self.model(inp)
+                return model(inp)
 
         f = Foo()
 
