@@ -94,7 +94,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
         # Quantize
         prepared_model = prepare_pt2e(captured_model_graph_module, quantizer)
         prepared_model(*model.inputs[profile])
-        model = convert_pt2e(prepared_model, fold_quantize=True)
+        model = convert_pt2e(prepared_model)
 
     model_outputs = model.forward(*model_inputs)
     return model, model_inputs, model_outputs

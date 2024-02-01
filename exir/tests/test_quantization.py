@@ -62,7 +62,7 @@ class TestQuantization(unittest.TestCase):
                 id(m.activation_post_process_3), id(m.activation_post_process_2)
             )
             after_prepare_result = m(*example_inputs)[0]
-            m = convert_pt2e(m, fold_quantize=True)
+            m = convert_pt2e(m)
 
             # TODO: conv, conv_relu, linear delegation
             # quantized ops to implement: add_relu

@@ -67,7 +67,7 @@ def verify_xnnpack_quantizer_matching_fx_quant_model(model_name, model, example_
     # calibration
     after_prepare_result = m(*example_inputs)
     logging.info(f"prepare_pt2e: {m}")
-    m = convert_pt2e(m, fold_quantize=True)
+    m = convert_pt2e(m)
     after_quant_result = m(*example_inputs)
 
     # 2. the previous fx graph mode quantization reference flow

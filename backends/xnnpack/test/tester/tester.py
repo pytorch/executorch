@@ -153,7 +153,7 @@ class Quantize(Stage):
             # Calibrate prepared model to provide data to quantization observers.
             prepared(*inputs)
 
-        converted = convert_pt2e(prepared, fold_quantize=True)
+        converted = convert_pt2e(prepared)
         self.converted_graph = converted
 
     @property
