@@ -722,6 +722,11 @@
     - arg_meta: null
       kernel_name: torch::executor::tril_out
 
+- op: trunc.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::trunc_out
+
 - op: unbind_copy.int_out
   kernels:
     - arg_meta: null
