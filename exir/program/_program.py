@@ -78,12 +78,7 @@ def _get_updated_graph_signature(
             else type(old_input_spec.arg)(node.name)
         )
         new_input_specs.append(
-            InputSpec(
-                old_input_spec.kind,
-                arg,
-                old_input_spec.target,
-                persistent=old_input_spec.persistent,
-            )
+            InputSpec(old_input_spec.kind, arg, old_input_spec.target)
         )
         i += 1
 
@@ -201,7 +196,6 @@ def lift_constant_tensor_pass(ep):
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=const_placeholder_node.name),
                         target=constant_tensor_fqn,
-                        persistent=True,
                     )
                 )
                 buffers.append(constant_tensor_fqn)
