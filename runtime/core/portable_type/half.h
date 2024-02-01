@@ -13,6 +13,12 @@
 #include <cstring>
 
 #if defined(__GNUC__) || defined(__clang__)
+#if defined(__aarch64__)
+#define NATIVE_FP16 1
+#endif // __aarch64__
+#endif // GNUC or clang
+
+#if defined(__GNUC__) || defined(__clang__)
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || \
     defined(_M_IX86)
 #if defined(__AVX2__)
