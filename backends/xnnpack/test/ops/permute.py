@@ -31,8 +31,7 @@ class TestPermute(unittest.TestCase):
             z = torch.permute_copy(y, self.dims)
             return z
 
-    def test_fp32_permute(self):
-        inputs = (torch.randn(1, 1, 4, 4),)
+    def _test_permute(self, inputs):
         (
             Tester(self.Permute([0, 2, 3, 1]), inputs)
             .export()
@@ -49,6 +48,15 @@ class TestPermute(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_permute(self):
+        inputs = (torch.randn(1, 1, 4, 4).to(torch.float16),)
+        self._test_permute(inputs)
+
+    def test_fp32_permute(self):
+        inputs = (torch.randn(1, 1, 4, 4),)
+        self._test_permute(inputs)
+
 
     def test_fp32_permute_copy(self):
         inputs = (torch.randn(1, 1, 4, 4),)

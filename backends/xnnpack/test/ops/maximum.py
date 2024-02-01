@@ -18,11 +18,7 @@ class TestMaximum(unittest.TestCase):
         def forward(self, x, y):
             return torch.maximum(x, y)
 
-    def test_fp32_maximum(self):
-        inputs = (
-            torch.randn(2, 3, 4),
-            torch.randn(2, 3, 4),
-        )
+    def _test_maximum(self, inputs):
         (
             Tester(self.Maximum(), inputs)
             .export()
@@ -37,6 +33,21 @@ class TestMaximum(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_maximum(self):
+        inputs = (
+            torch.randn(2, 3, 4).to(torch.float16),
+            torch.randn(2, 3, 4).to(torch.float16),
+        )
+        self._test_maximum(inputs)
+
+    def test_fp32_maximum(self):
+        inputs = (
+            torch.randn(2, 3, 4),
+            torch.randn(2, 3, 4),
+        )
+        self._test_maximum(inputs)
+
 
     def test_fp32_maximum_broadcast(self):
         inputs = (

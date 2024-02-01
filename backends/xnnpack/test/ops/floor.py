@@ -19,16 +19,8 @@ class TestFloor(unittest.TestCase):
             z = torch.floor(x)
             return z
 
-    def test_fp32_floor(self):
-        inputs = (
-            torch.Tensor(
-                [
-                    [0.0, 0.1, 0.5, 0.499],
-                    [-0.6, -0.4, 100.1, -1000.1],
-                ],
-            ),
-        )
-        (
+    def _test_floor(self, inputs):
+       (
             Tester(self.Floor(), inputs)
             .export()
             .check_count({"torch.ops.aten.floor.default": 1})
@@ -42,3 +34,25 @@ class TestFloor(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_floor(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ],
+            ).to(torch.float16),
+        )
+        self._test_floor(inputs)
+
+    def test_fp32_floor(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ],
+            ),
+        )
+        self._test_floor(inputs)

@@ -19,9 +19,7 @@ class TestSoftmax(unittest.TestCase):
         def forward(self, x):
             return torch.nn.Softmax(dim=self.dim)(x)
 
-    def test_fp32_softmax(self):
-        inputs = (torch.rand((3, 5, 7)),)
-
+    def _test_softmax(self, inputs):
         # Dim can be either the last dimension index or -1 (last dimension),
         # as xnnpack only supports softmax on the last dimension.
         valid_dims = [len(inputs[0]) - 1, -1]
@@ -43,6 +41,15 @@ class TestSoftmax(unittest.TestCase):
                 .run_method()
                 .compare_outputs()
             )
+
+    def test_fp16_softmax(self):
+        inputs = (torch.rand((3, 5, 7)).to(torch.float16),)
+        self._test_softmax(inputs)
+
+    def test_fp32_softmax(self):
+        inputs = (torch.rand((3, 5, 7)),)
+        self._test_softmax(inputs)
+
 
     def test_fp32_softmax_unsupported(self):
         inputs = (torch.rand((3, 5, 7)),)

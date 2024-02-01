@@ -14,7 +14,7 @@ from executorch.backends.xnnpack.test.tester import Tester
 
 class TestConv1d(unittest.TestCase):
     class Conv1d(torch.nn.Module):
-        def __init__(self):
+        def __init__(self, dtype: torch.dtype = torch.float):
             groups = 1
             stride = [2]
             padding = [1]
@@ -34,7 +34,7 @@ class TestConv1d(unittest.TestCase):
                 groups=groups,
                 dilation=dilation,
                 bias=True,
-            )
+            ).to(dtype)
 
         def forward(self, x):
             return self.conv1d(x)
@@ -100,6 +100,10 @@ class TestConv1d(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_conv1d(self):
+        inputs = (torch.randn(1, 2, 4).to(torch.float16),)
+        self._test_conv1d(self.Conv1d(dtype=torch.float16), inputs, conv_count=1)
 
     def test_fp32_conv1d(self):
         inputs = (torch.randn(1, 2, 4),)
