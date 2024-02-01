@@ -172,6 +172,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_asin_test", ["aten", "portable"])
     _common_op_test("op_asinh_test", ["aten", "portable"])
     _common_op_test("op_atan_test", ["aten", "portable"])
+    _common_op_test("op_atan2_test", ["aten", "portable"])
     _common_op_test("op_atanh_test", ["aten", "portable"])
     _common_op_test("op_avg_pool2d_test", ["aten", "portable"])
     _common_op_test("op_bitwise_and_test", ["aten", "portable"])

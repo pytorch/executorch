@@ -118,6 +118,13 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_atan2",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:functional_util",
+        ],
+    ),
+    op_target(
         name = "op_atanh",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
