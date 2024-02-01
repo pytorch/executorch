@@ -833,6 +833,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_trunc",
+        deps = [
+            "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
         name = "op_unbind_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
