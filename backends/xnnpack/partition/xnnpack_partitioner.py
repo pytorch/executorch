@@ -105,9 +105,10 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             return True
 
         valid_dtypes = {
-            torch.float32,
             torch.int8,
             torch.qint8,
+            torch.float16,
+            torch.float32,
         }
         if (
             node.op != "placeholder"
@@ -180,6 +181,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             node
         )
 
+    @staticmethod
     def _constraint(target):  # noqa
         """
         Decorator to register a constraint fn for a node
