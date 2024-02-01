@@ -45,6 +45,7 @@ build_cmake_executor_runner() {
 
 test_model() {
   if [[ "${MODEL_NAME}" == "llama2" ]]; then
+    # Test export_llama script: python3 -m examples.models.llama2.export_llama
     test_export_llama
   fi
   # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
