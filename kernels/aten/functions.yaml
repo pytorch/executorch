@@ -128,6 +128,8 @@
 
 - op: expand_copy.out
 
+- op: expm1.out
+
 - op: eye.out
 
 - op: fill.Scalar_out
