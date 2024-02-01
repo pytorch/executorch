@@ -172,12 +172,12 @@ Tensor& quantized_embedding_byte_out(
   ScalarType w_type = weight.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, "q_embedding", CTYPE_W, [&]() {
-    ET_SWITCH_TWO_TYPES(
-        Float, Half, out_type, ctx, "q_embedding", CTYPE_OUT, [&]() {
-          embedding_byte_per_channel<CTYPE_W, CTYPE_OUT>(
-              weight, weight_scales, opt_weight_zero_points, indices, out);
-        });
+  constexpr auto name = "quantized_decomposed::embedding_byte.out";
+  ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, name, CTYPE_W, [&]() {
+    ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
+      embedding_byte_per_channel<CTYPE_W, CTYPE_OUT>(
+          weight, weight_scales, opt_weight_zero_points, indices, out);
+    });
   });
 
   return out;
