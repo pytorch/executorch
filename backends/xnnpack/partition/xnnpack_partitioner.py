@@ -100,22 +100,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         self.ep = ep
         assert len(self.constraints)
 
-    def check_node_has_valid_dtype(self, node):
-        if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
-            return True
-
-        valid_dtypes = {
-            torch.float32,
-            torch.int8,
-            torch.qint8,
-        }
-        if (
-            node.op != "placeholder"
-            and node.op != "call_function"
-            and node.op != "get_attr"
-        ):
-            return False
-
+    def _check_inputs_are_valid_dtypes(self, node, valid_dtypes):
         # Check inputs are valid dtypes
         for arg in node.args:
             if not isinstance(arg, torch.fx.Node):
@@ -133,20 +118,45 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             if arg_val.dtype not in valid_dtypes:
                 return False
 
+        return True
+
+    def _check_outputs_are_valid_dtypes(self, node, valid_dtypes):
         # Check outputs are valid dtype
         node_val = node.meta.get("val", None)
-        if node_val is not None:
-            if not isinstance(node_val, tuple):
-                node_val = (node_val,)
+        if node_val is None:
+            return True
 
-            for val in node_val:
-                if not isinstance(val, torch.Tensor):
-                    return False
+        if not isinstance(node_val, tuple):
+            node_val = (node_val,)
 
-                if val.dtype not in valid_dtypes:
-                    return False
+        for val in node_val:
+            if not isinstance(val, torch.Tensor):
+                return False
+
+            if val.dtype not in valid_dtypes:
+                return False
 
         return True
+
+    def check_node_has_valid_dtype(self, node):
+        if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
+            return True
+
+        valid_dtypes = {
+            torch.float32,
+            torch.int8,
+            torch.qint8,
+        }
+        if (
+            node.op != "placeholder"
+            and node.op != "call_function"
+            and node.op != "get_attr"
+        ):
+            return False
+
+        return self._check_inputs_are_valid_dtypes(
+            node, valid_dtypes
+        ) and self._check_outputs_are_valid_dtypes(node, valid_dtypes)
 
     def check_common_constraints(self, node) -> bool:
         has_valid_dtypes = self.check_node_has_valid_dtype(node)
