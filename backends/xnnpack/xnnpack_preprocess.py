@@ -210,6 +210,7 @@ class XnnpackBackend(BackendDetails):
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=False, enable=False, class_only=True
             ),
+            constants=ep.constants,
         )
 
         # XNNPACK Delegate Specific Passes
