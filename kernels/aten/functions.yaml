@@ -57,6 +57,8 @@
 
 - op: atan.out
 
+- op: atan2.out
+
 - op: atanh.out
 
 - op: avg_pool2d.out
