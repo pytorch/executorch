@@ -25,10 +25,9 @@ class TestLeakyRelu(unittest.TestCase):
         def forward(self, x):
             return torch.nn.functional.leaky_relu(x)
 
-    def test_fp32_leaky_relu(self):
-        inputs = (torch.randn(1, 3, 3),)
+    def _test_leaky_relu(self, module, inputs):
         (
-            Tester(self.LeakyReLU(negative_slope=0.2), inputs)
+            Tester(module, inputs)
             .export()
             .check_count({"torch.ops.aten.leaky_relu.default": 1})
             .to_edge()
@@ -47,6 +46,16 @@ class TestLeakyRelu(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_leaky_relu(self):
+        inputs = (torch.randn(1, 3, 3).to(torch.float16),)
+        module = self.LeakyReLUFunctional()
+        self._test_leaky_relu(module, inputs)
+
+    def test_fp32_leaky_relu(self):
+        inputs = (torch.randn(1, 3, 3),)
+        module = self.LeakyReLU(negative_slope=0.2)
+        self._test_leaky_relu(module, inputs)
 
     def test_fp32_leaky_relu_functional(self):
         inputs = (torch.randn(1, 3, 3),)
