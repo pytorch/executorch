@@ -83,8 +83,7 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        # TODO: Add mobilebert to test it on PR, revert the change before landing
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "mobilebert"]
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit"]
     return True
 
 
