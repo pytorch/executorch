@@ -144,6 +144,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
 
         valid_dtypes = {
             torch.float32,
+            torch.float16,
             torch.int8,
             torch.qint8,
         }
@@ -190,6 +191,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             node
         )
 
+    @staticmethod
     def _constraint(target):  # noqa
         """
         Decorator to register a constraint fn for a node
