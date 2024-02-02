@@ -7,7 +7,7 @@
 # pyre-strict
 import random
 import string
-from typing import Callable, List, Tuple
+from typing import List, Tuple
 
 import torch
 
@@ -18,7 +18,7 @@ from executorch.sdk.bundled_program.config import (
     MethodTestCase,
     MethodTestSuite,
 )
-from torch.export import export, WrapperModule
+from torch.export import export
 from torch.export.unflatten import _assign_attr, _AttrKind
 
 # A hacky integer to deal with a mismatch between execution plan and complier.
