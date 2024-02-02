@@ -393,7 +393,6 @@ class Transformer(nn.Module):
     ) -> Union[
         torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
     ]:
-
         if self.use_kv_cache:
             assert (
                 cache_k is not None and cache_v is not None and start_pos is not None
