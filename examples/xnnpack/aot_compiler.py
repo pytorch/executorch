@@ -10,8 +10,7 @@ import argparse
 import copy
 import logging
 
-import torch._export as export
-
+import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.sdk import generate_etrecord
@@ -79,7 +78,7 @@ if __name__ == "__main__":
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    model = export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
     if args.quantize:
         logging.info("Quantizing Model...")

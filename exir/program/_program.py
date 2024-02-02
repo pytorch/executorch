@@ -36,8 +36,8 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch.export import ExportedProgram
 from torch.export.exported_program import (
     _get_updated_range_constraints,
     ConstantArgument,

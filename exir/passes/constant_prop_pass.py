@@ -5,9 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch._export import ExportedProgram
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch._guards import detect_fake_mode
+from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
 
 
