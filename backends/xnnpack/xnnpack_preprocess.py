@@ -258,5 +258,6 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
-
-        return PreprocessResult(processed_bytes=serialize_xnnpack_binary(xnnpack_graph))
+        return PreprocessResult(
+            processed_bytes=serialize_xnnpack_binary(xnnpack_graph), debug_handle_map={}
+        )

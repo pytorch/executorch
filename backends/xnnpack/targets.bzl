@@ -22,9 +22,11 @@ def define_common_targets():
         name = "xnnpack_backend",
         srcs = native.glob([
             "runtime/*.cpp",
+            "runtime/profiling/*.cpp",
         ]),
         headers = native.glob([
             "runtime/*.h",
+            "runtime/profiling/*.h",
         ]),
         visibility = [
             "//executorch/exir/backend:backend_lib",
