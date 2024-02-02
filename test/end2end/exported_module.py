@@ -155,9 +155,9 @@ class ExportedModule:
         # These cleanup passes are required to convert the `add` op to its out
         # variant, along with some other transformations.
         for method_name, method_input in method_name_to_args.items():
-            module = WrapperModule(getattr(eager_module, method_name))
+            # if not isinstance(eager_module, torch.nn.Module):
             exported_methods[method_name] = export(
-                module,
+                eager_module,
                 method_input,
                 dynamic_shapes=method_name_to_dynamic_shapes[method_name]
                 if method_name_to_dynamic_shapes
