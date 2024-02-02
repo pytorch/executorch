@@ -32,14 +32,12 @@ CUSTOM_RUNNERS = {
 
 DEFAULT_TIMEOUT = 90
 CUSTOM_TIMEOUT = {
+    # Just some examples on how custom timeout can be set
     "linux": {
-        # This is running too slow and timeout, switching to a bigger runner doesn't help
-        # because the test utilizes only one core.  These slower cases should only be run
-        # in trunk, not in every pull request till they can be finished faster.
-        "mobilebert": 180,
+        "mobilebert": 90,
     },
     "macos": {
-        "mobilebert": 180,
+        "mobilebert": 90,
     },
 }
 
