@@ -36,7 +36,16 @@ class ConvertToSDPAPass(XNNPACKPass):
                 and node.target == exir_ops.edge.aten.mul.Scalar
             ):
                 scale = node.args[1]
+
+                dtype = torch.float
+                mul_val = node.meta.get("val", None)
+                if mul_val is not None:
+                    dtype = mul_val.dtype
+
                 if isinstance(scale, float):
+                    # Convert scale value to fp16 (reducing precision)
+                    scale = torch.tensor(scale, dtype=dtype).item()
+
                     # since scale we extracted this before the QK^T.
                     return scale**2
                 break
