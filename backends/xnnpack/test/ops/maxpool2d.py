@@ -38,12 +38,11 @@ class TestMaxPool2d(unittest.TestCase):
         def forward(self, x):
             return self.max_pool2d_module(x)[1]
 
-    def test_fp32_maxpool2d(self):
+    def _test_maxpool2d(self, inputs):
         """
         Note that the export process generates aten.max_pool2d_with_indices. The remove_getitem_op
         pass transforms it into aten.max_pool2d (if supported).
         """
-        inputs = (torch.randn(4, 3, 24, 24),)
         (
             Tester(self.MaxPool2d(3, 1, 0, 1), inputs)
             .export()
@@ -68,6 +67,14 @@ class TestMaxPool2d(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_maxpool2d(self):
+        inputs = (torch.randn(4, 3, 24, 24).to(torch.float16),)
+        self._test_maxpool2d(inputs)
+
+    def test_fp32_maxpool2d(self):
+        inputs = (torch.randn(4, 3, 24, 24),)
+        self._test_maxpool2d(inputs)
 
     def test_fp32_maxpool2d_unsupported(self):
         """
