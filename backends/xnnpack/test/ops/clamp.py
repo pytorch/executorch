@@ -21,10 +21,9 @@ class TestClamp(unittest.TestCase):
             z = torch.clamp(x, min=self.min_val, max=self.max_val)
             return z + z
 
-    def test_fp32_clamp(self):
-        inputs = (torch.randn(1, 4, 122, 122) * 2,)
+    def _test_clamp(self, module, inputs):
         (
-            Tester(self.Clamp(-0.5, 0.5), inputs)
+            Tester(module, inputs)
             .export()
             .check_count({"torch.ops.aten.clamp.default": 1})
             .to_edge()
@@ -37,40 +36,26 @@ class TestClamp(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_clamp(self):
+        inputs = (torch.randn(1, 4, 122, 122).to(torch.float16) * 2,)
+        module = self.Clamp(-0.5, 0.5)
+        self._test_clamp(module, inputs)
+
+    def test_fp32_clamp(self):
+        inputs = (torch.randn(1, 4, 122, 122) * 2,)
+        module = self.Clamp(-0.5, 0.5)
+        self._test_clamp(module, inputs)
 
     def test_fp32_clamp_lower(self):
         inputs = (torch.randn(1, 4, 122, 122) * 2,)
-        (
-            Tester(self.Clamp(min_val=-0.5), inputs)
-            .export()
-            .check_count({"torch.ops.aten.clamp.default": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_clamp_default": 1})
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
-            .to_executorch()
-            .serialize()
-            .run_method()
-            .compare_outputs()
-        )
+        module = self.Clamp(min_val=-0.5)
+        self._test_clamp(module, inputs)
 
     def test_fp32_clamp_upper(self):
         inputs = (torch.randn(1, 4, 122, 122) * 2,)
-        (
-            Tester(self.Clamp(max_val=0.5), inputs)
-            .export()
-            .check_count({"torch.ops.aten.clamp.default": 1})
-            .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_clamp_default": 1})
-            .partition()
-            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
-            .check_not(["executorch_exir_dialects_edge__ops_aten_clamp_default"])
-            .to_executorch()
-            .serialize()
-            .run_method()
-            .compare_outputs()
-        )
+        module = self.Clamp(max_val=0.5)
+        self._test_clamp(module, inputs)
 
     def test_qs8_clamp(self):
         inputs = (torch.randn(1, 4, 122, 122),)
