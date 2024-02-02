@@ -58,7 +58,7 @@ class RemoveMixedTypeOperators(ExportPass):
         promote_dtype: torch.dtype = elementwise_dtypes(
             *arg_tensor,
             type_promotion_kind=promotion_kind,
-        )[0]
+        )[1]
 
         def try_coerce(value: PyTree, arg: torch.Argument) -> PyTree:
             if type(arg.type) != torch.TensorType:
