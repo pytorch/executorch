@@ -107,7 +107,10 @@ std::vector<int32_t> Runner::readMetadata(
   return result;
 }
 
-Error Runner::generate(const char* prompt, bool eos) {
+Error Runner::generate(
+    const char* prompt,
+    bool eos,
+    std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
@@ -224,6 +227,10 @@ Error Runner::generate(const char* prompt, bool eos) {
     // same as printf("%s", piece), but skips "unsafe" bytes
     util::safe_printf(piece);
     fflush(stdout);
+
+    if (callback) {
+      callback(piece);
+    }
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && next == eos_id_) {
