@@ -19,15 +19,7 @@ class TestCeil(unittest.TestCase):
             z = torch.ceil(x)
             return z
 
-    def test_fp32_ceil(self):
-        inputs = (
-            torch.Tensor(
-                [
-                    [0.0, 0.1, 0.5, 0.499],
-                    [-0.6, -0.4, 100.1, -1000.1],
-                ]
-            ),
-        )
+    def _test_ceil(self, inputs):
         (
             Tester(self.Ceil(), inputs)
             .export()
@@ -42,3 +34,25 @@ class TestCeil(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_ceil(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ]
+            ).to(torch.float16),
+        )
+        self._test_ceil(inputs)
+
+    def test_fp32_ceil(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ]
+            ),
+        )
+        self._test_ceil(inputs)
