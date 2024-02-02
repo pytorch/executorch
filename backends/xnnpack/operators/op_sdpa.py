@@ -55,9 +55,11 @@ class SDPAVisitor(NodeVisitor):
 
         # Make sure mask is not bool
         mask_node = get_input_node(node, 3)
-        assert (
-            mask_node.meta["val"].dtype == torch.float
-        ), "SDPA Mask must be a float tensor"
+        mask_dtype = mask_node.meta["val"].dtype
+        assert mask_dtype in [
+            torch.float,
+            torch.float16,
+        ], "SDPA Mask must be a float (or half) tensor"
 
         # Make sure mask is not >2D
         assert len(get_shape(mask_node)) == 2, "SDPA Mask must be 2D"
@@ -66,7 +68,7 @@ class SDPAVisitor(NodeVisitor):
         q_shape = get_shape(get_input_node(node, 0))
         scale = cast(float, node.kwargs["scale"])
 
-        t = torch.full((q_shape[-1],), scale, dtype=torch.float32)
+        t = torch.full((q_shape[-1],), scale, dtype=mask_dtype)
         scale_node = self.get_fake_attr("scale", t)
         self.define_tensor(
             scale_node,
