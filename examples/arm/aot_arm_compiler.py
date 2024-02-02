@@ -11,7 +11,6 @@ import argparse
 import logging
 
 import torch
-import torch._export as export
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
@@ -121,7 +120,7 @@ if __name__ == "__main__":
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
-    model = export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
     edge = export_to_edge(
         model,

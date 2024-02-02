@@ -11,7 +11,7 @@ import torch
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 
 # A simple way to represent an op used in BackendWithCompilerDemo

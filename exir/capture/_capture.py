@@ -10,7 +10,6 @@ from collections import namedtuple
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-import torch._export
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
@@ -25,11 +24,12 @@ from executorch.exir.tracer import (
 from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
-from torch._export import CallSpec, ExportedProgram, ExportGraphSignature
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
 from torch.export import export
 from torch.export.exported_program import (
+    ExportedProgram,
+    ExportGraphSignature,
     InputKind,
     InputSpec,
     ModuleCallEntry,
@@ -51,6 +51,9 @@ Val = Any
 CompileSpec = namedtuple(
     "CompileSpec", ["method_name", "callable", "args", "dynamic_shapes"]
 )
+
+
+CallSpec = namedtuple("CallSpec", ["in_spec", "out_spec"])
 
 
 @compatibility(is_backward_compatible=False)
