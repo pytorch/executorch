@@ -22,6 +22,7 @@ regular_tensor_dtypes_to_str = {
     torch.int16: "Short",
     torch.int32: "Int",
     torch.int64: "Long",
+    torch.float16: "Half",
     torch.float: "Float",
     torch.double: "Double",
 }
