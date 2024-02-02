@@ -11,7 +11,9 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <string>
 #include <unordered_map>
 
 #include <executorch/examples/models/llama2/sampler/sampler.h>
@@ -25,7 +27,10 @@ class Runner {
  public:
   explicit Runner(const char* model_path, const char* tokenizer_path);
 
-  Error generate(const char* prompt, bool eos = false);
+  Error generate(
+      const char* prompt,
+      bool eos = false,
+      std::function<void(const std::string&)> callback = {});
 
  private:
   std::vector<int32_t> readMetadata(
