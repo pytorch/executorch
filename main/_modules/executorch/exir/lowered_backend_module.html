@@ -810,7 +810,11 @@
 <span class="c1"># TODO Don&#39;t regenerate new signature manually.</span>
 <span class="k">def</span> <span class="nf">_get_new_signature</span><span class="p">(</span>
     <span class="n">original_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">gm</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">ExportGraphSignature</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]]]:</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span>
+    <span class="n">ExportGraphSignature</span><span class="p">,</span>
+    <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Parameter</span><span class="p">]],</span>
+    <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">ScriptObject</span><span class="p">]],</span>
+<span class="p">]:</span>
     <span class="n">old_signature</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">graph_signature</span>
 
     <span class="n">input_specs</span> <span class="o">=</span> <span class="p">[]</span>
@@ -819,6 +823,9 @@
         <span class="n">input_specs</span><span class="o">=</span><span class="n">input_specs</span><span class="p">,</span> <span class="n">output_specs</span><span class="o">=</span><span class="n">output_specs</span>
     <span class="p">)</span>
     <span class="n">new_state_dict</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="n">new_constants</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="n">non_persistent_buffers</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">old_signature</span><span class="o">.</span><span class="n">non_persistent_buffers</span><span class="p">)</span>
 
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
@@ -839,17 +846,24 @@
                 <span class="p">]</span>
             <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="p">:</span>
                 <span class="n">buffer_name</span> <span class="o">=</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span><span class="p">[</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">]</span>
+                <span class="n">persistent</span> <span class="o">=</span> <span class="n">buffer_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">non_persistent_buffers</span>
                 <span class="c1"># add buffer to graph signature</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">InputSpec</span><span class="p">(</span>
                         <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">,</span>
                         <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
                         <span class="n">target</span><span class="o">=</span><span class="n">buffer_name</span><span class="p">,</span>
+                        <span class="n">persistent</span><span class="o">=</span><span class="n">persistent</span><span class="p">,</span>
                     <span class="p">)</span>
                 <span class="p">)</span>
 
                 <span class="c1"># add param to new_state_dict</span>
-                <span class="n">new_state_dict</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">persistent</span><span class="p">:</span>
+                    <span class="n">new_state_dict</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span>
+                        <span class="n">buffer_name</span>
+                    <span class="p">]</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">new_constants</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="c1"># not param or buffer then user input</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -871,7 +885,7 @@
                     <span class="p">)</span>
                 <span class="p">)</span>
 
-    <span class="k">return</span> <span class="n">new_signature</span><span class="p">,</span> <span class="n">new_state_dict</span>
+    <span class="k">return</span> <span class="n">new_signature</span><span class="p">,</span> <span class="n">new_state_dict</span><span class="p">,</span> <span class="n">new_constants</span>
 
 
 <span class="k">def</span> <span class="nf">create_exported_program_from_submodule</span><span class="p">(</span>
@@ -894,7 +908,7 @@
     <span class="n">submodule</span> <span class="o">=</span> <span class="n">arrange_graph_placeholders</span><span class="p">(</span><span class="n">submodule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">)</span>
 
     <span class="c1"># Get updated graph signature</span>
-    <span class="n">subgraph_signature</span><span class="p">,</span> <span class="n">subgraph_state_dict</span> <span class="o">=</span> <span class="n">_get_new_signature</span><span class="p">(</span>
+    <span class="n">subgraph_signature</span><span class="p">,</span> <span class="n">subgraph_state_dict</span><span class="p">,</span> <span class="n">subgraph_constants</span> <span class="o">=</span> <span class="n">_get_new_signature</span><span class="p">(</span>
         <span class="n">owning_program</span><span class="p">,</span> <span class="n">submodule</span>
     <span class="p">)</span>
 
@@ -906,6 +920,7 @@
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
         <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[],</span>
         <span class="n">verifier</span><span class="o">=</span><span class="n">owning_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
+        <span class="n">constants</span><span class="o">=</span><span class="n">subgraph_constants</span><span class="p">,</span>
     <span class="p">)</span>
 
 
