@@ -458,8 +458,8 @@
     <span class="n">EXIREdgeDialectVerifier</span><span class="p">,</span>
     <span class="n">get_aten_verifier</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span> <span class="nn">torch._export.passes</span> <span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">_get_updated_range_constraints</span><span class="p">,</span>
     <span class="n">ConstantArgument</span><span class="p">,</span>
