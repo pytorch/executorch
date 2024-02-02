@@ -33,7 +33,7 @@ class TestAdd(unittest.TestCase):
     class AddConstant(torch.nn.Module):
         def __init__(self, constant):
             super().__init__()
-            self._constant = constant
+            self.register_buffer("_constant", constant, persistent=False)
 
         def forward(self, x):
             out1 = x + self._constant
