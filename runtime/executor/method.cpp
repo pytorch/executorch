@@ -809,8 +809,9 @@ Method::set_input(const EValue& input_evalue, size_t input_idx) {
     ET_CHECK_OR_RETURN_ERROR(
         t_dst.scalar_type() == t_src.scalar_type(),
         InvalidArgument,
-        "The input tensor's scalartype does not meet requirement: found %" PRId8
+        "The %zu-th input tensor's scalartype does not meet requirement: found %" PRId8
         " but expected %" PRId8,
+        input_idx,
         static_cast<int8_t>(t_src.scalar_type()),
         static_cast<int8_t>(t_dst.scalar_type()));
     // Reset the shape for the Method's input as the size of forwarded input
