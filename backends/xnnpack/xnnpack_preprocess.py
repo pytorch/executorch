@@ -38,7 +38,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
 XNN_VALUE_FLAG_EXTERNAL_INPUT = 1

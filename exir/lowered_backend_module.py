@@ -25,9 +25,9 @@ from executorch.exir.schema import Program
 
 from executorch.exir.tracer import Value
 
-from torch._export.exported_program import ExportedProgram
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import (
+    ExportedProgram,
     ExportGraphSignature,
     InputKind,
     InputSpec,
