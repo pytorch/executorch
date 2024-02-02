@@ -193,12 +193,22 @@ class NodeVisitor:
         return ext_id, id_out, flag
 
     def get_serialized_dtype(
-        self, quant_params: Optional[QuantParams]
+        self, quant_params: Optional[QuantParams], node: torch.fx.Node
     ) -> Tuple[XNNDatatype, XNNDatatype]:
+        # Default initialization
         dtype, dq_dtype = (
             XNNDatatype.xnn_datatype_fp32,
             XNNDatatype.xnn_datatype_invalid,
         )
+
+        def get_node_dtype(node: torch.fx.Node) -> Optional[torch.dtype]:
+            """
+            Extract the tensor.dtype from the node meta data if possible
+            """
+            node_val = node.meta.get("val", None)
+            if node_val is not None:
+                if isinstance(node_val, torch.Tensor):
+                    return node_val.dtype
 
         # only for static quant
         def get_per_channel_dtype(
@@ -230,6 +240,10 @@ class NodeVisitor:
                         if quant_params.dtype == torch.int32
                         else XNNDatatype.xnn_datatype_qint8
                     )
+        else:
+            node_dtype = get_node_dtype(node)
+            if node_dtype is not None and node_dtype == torch.float16:
+                dtype = XNNDatatype.xnn_datatype_fp16
 
         return (dtype, dq_dtype)
 
@@ -309,7 +323,7 @@ class NodeVisitor:
             check_or_raise(len(dims) == 4, "Converting to nhwc requires 4d tensor")
             dims = [dims[i] for i in PERM_NCHW_TO_NHWC]
 
-        dtype, dq_dtype = self.get_serialized_dtype(quant_params)
+        dtype, dq_dtype = self.get_serialized_dtype(quant_params, tensor)
 
         tvalue = XNNTensorValue(
             datatype=dtype,
@@ -444,7 +458,7 @@ class NodeVisitor:
         # Quantize buffer if static data is indeed quantized
         if quant_params is not None and not quant_params.is_dynamic:
             const_val = quant_params.quantize_tensor(const_val).contiguous()
-        else:
+        elif const_val.dtype != torch.float16:
             # ensure that the const is fp32
             const_val = const_val.to(dtype=torch.float32).contiguous()
 
