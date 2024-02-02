@@ -8,6 +8,7 @@ import copy
 from typing import Callable, List, Tuple
 
 import torch
+import torch.nn.functional as F
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
 
 from executorch.exir.passes.replace_aten_with_edge_pass import (
@@ -15,7 +16,8 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
     should_lower_to_edge,
 )
 from torch import fx
-from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
+from torch.ao.quantization.fx._decomposed import impl, quantized_decomposed_lib
+from torch.library import impl_abstract
 
 
 __all__ = [
@@ -24,10 +26,64 @@ __all__ = [
 
 # TODO: extending an existing library that is defined in OSS might be a bit
 # confusing, we can investigate if it is possible to define a new library
+
 quantized_decomposed_lib.define(
     "embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor",
 )
+
+# quantized_decomposed_lib.define(
+#    "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+#    "int weight_quant_min, int weight_quant_max, Tensor indices, Tensor(a!) out) -> Tensor(a!)",
+# )
+
+
+# @impl(quantized_decomposed_lib, "embedding_byte", "Meta")
+@impl_abstract("quantized_decomposed::embedding_byte")
+def embedding_byte_meta(
+    weight,
+    weight_scales,
+    weight_zero_points,
+    weight_quant_min,
+    weight_quant_max,
+    indices,
+):
+    assert weight_zero_points is None or weight.size(0) == weight_zero_points.size(
+        0
+    ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and  {weight_zero_points.size()}"
+    assert (
+        weight_zero_points is None or weight_zero_points.dim() == 1
+    ), f"Expecting weight_zero_points tensor to be None or have dim()==1, but found {weight_zero_points.dim()}"
+    assert weight_scales.size(0) == weight.size(
+        0
+    ), f"Expecting weight and scale tensor to have same number of rows, but found {weight.size()} and {weight_scales.size()}"
+    assert (
+        weight_scales.dim() == 1
+    ), f"Expecting weight_scales tensor to have dim()==1, but found {weight_scales.dim()}"
+    assert (
+        weight_zero_points is None or weight_scales.dtype == weight_zero_points.dtype
+    ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and  {weight_zero_points.size()}"
+    return F.embedding(indices, weight).to(weight_scales.dtype)
+
+
+## @impl(quantized_decomposed_lib, "embedding_byte", "Meta")
+# @impl_abstract("quantized_decomposed::embedding_byte.out")
+# def embedding_byte_out_meta(
+#    weight,
+#    weight_scales,
+#    weight_zero_points,
+#    weight_quant_min,
+#    weight_quant_max,
+#    indices,
+#    out,
+# ):
+#    assert weight_zero_points is None or weight.size(0) == weight_zero_points.size(
+#        0
+#    ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and  {weight_zero_points.size()}"
+#    assert weight_scales.size(0) == weight.size(
+#        0
+#    ), f"Expecting weight and scale tensor to have same number of rows, but found {weight.size()} and {weight_scales.size()}"
+#    return F.embedding(indices, weight).to(weight_scales.dtype)
 
 
 quantized_decomposed_lib.define(

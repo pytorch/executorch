@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict
+from typing import Dict, Tuple
+
+import executorch.exir.passes._quant_patterns_and_replacements
 
 import torch
 import torch.nn as nn
@@ -170,7 +172,7 @@ class QuantHandler:
 def replace_linear_weight_only_int8_per_channel(module):
     for name, child in module.named_children():
         print(f"name: {name}")
-        if name == "output":
+        if name == "XXXXoutputXXXXXXX":
             print("skipping quantizing output")
         elif isinstance(child, nn.Linear):
             print(f"{name, child}")
@@ -195,11 +197,7 @@ class WeightOnlyInt8QuantHandler:
 
         for fqn, mod in self.mod.named_modules():
             print(f"quantized {fqn}")
-            if fqn.startswith("tok_embeddings"):
-                print("skip token embeddings")
-            elif fqn.startswith("output"):
-                print("skip output linear")
-            elif isinstance(mod, torch.nn.Linear):
+            if isinstance(mod, torch.nn.Linear):
                 int8_weight, scales, _ = dynamically_quantize_per_channel(
                     mod.weight.float(), -128, 127, torch.int8
                 )
@@ -236,4 +234,100 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
+        #        return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
+        return F.linear(input, self.weight) * self.scales
+
+
+##### embedding table quantization ######
+
+
+def embedding_quant(weight) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Embedding quantization with per-row group scaling
+    """
+    # group_size = 8
+    group_size = 2048
+    weight_fp16 = weight.to(torch.half)
+    weight_rows = weight_fp16.shape[0]
+    weight_cols = weight_fp16.shape[1]
+    assert weight_cols % group_size == 0, "colums must be a multiple of group size"
+    groups_per_row = weight_cols // group_size
+    weights_int8 = torch.zeros(weight_fp16.shape, dtype=torch.int8)
+    scales_fp16 = torch.empty((weight_rows, groups_per_row), dtype=torch.float16)
+    print("weights shape: ", weights_int8.shape)
+    print("scales shape: ", scales_fp16.shape)
+    for r in range(0, weight_cols, group_size):
+        weights_group, scales, _ = dynamically_quantize_per_channel(
+            weight_fp16[:, r : r + group_size], -128, 127, torch.int8
+        )
+        weights_int8[:, r : r + group_size] = weights_group
+        scales_fp16[:, r // group_size] = scales
+
+    # Drop the group if there's only 1 group to work with current quantized
+    # embedding operator
+    scales_fp16 = scales_fp16.squeeze()
+
+    return weights_int8, scales_fp16
+
+
+def replace_embedding_weight_only_grouped_int8_per_channel(module):
+    for name, child in module.named_children():
+        print(f"name: {name}")
+        if name == "XXXXoutputXXXXXXX":
+            print("skipping quantizing output")
+        elif isinstance(child, nn.Embedding):
+            print(f"{name, child}")
+            print(f"weights size: {child.weight.size()}")
+            weight_int8, scales_fp16 = embedding_quant(child.weight)
+            setattr(
+                module,
+                name,
+                QuantizedGroupEmbedding(weight_int8, scales_fp16),
+            )
+        else:
+            replace_linear_weight_only_int8_per_channel(child)
+
+
+class EmbeddingOnlyInt8QuantHandler:
+    def __init__(self, mod):
+        self.mod = mod
+
+    def convert_for_runtime(self) -> nn.Module:
+        replace_embedding_weight_only_grouped_int8_per_channel(self.mod)
+        return self.mod
+
+
+class QuantizedGroupEmbedding(torch.nn.Module):
+    def __init__(
+        self,
+        weight_int8: torch.Tensor,
+        scales_fp16: torch.Tensor,
+        group_size: int = 8,
+        device=None,
+        dtype=torch.half,
+    ) -> None:
+        super().__init__()
+        self.group_size = group_size
+        self.dtype = dtype
+        weight_cols = weight_int8.shape[1]
+        assert weight_cols % group_size == 0, "colums must be a multiple of group size"
+        self.groups_per_row = weight_cols // group_size
+        self.register_buffer("weight_int8", weight_int8)
+        self.register_buffer("scales_fp16", scales_fp16)
+
+    # torch.no_grad()
+    def forward(self, indices: torch.Tensor) -> torch.Tensor:
+        return torch.ops.quantized_decomposed.embedding_byte.default(
+            self.weight_int8, self.scales_fp16, None, 0, 0, indices
+        )
+
+        #################### computes the following:
+        # els = indices.numel()
+        #
+        # result_weights = self.weight_int8.index_select(0, indices.view(-1))
+        # result_scales = self.scales_fp16.index_select(0, indices.view(-1))
+
+        # result = result_weights.view(
+        #    els, self.group_size, self.groups_per_row
+        # ) * result_scales.view(els, 1, self.groups_per_row)
+        # return result.view(indices.size() + (-1,))

@@ -65,7 +65,9 @@ bool check_mm_args(const Tensor& in, const Tensor& mat2, Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(mat2, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 2));
 
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mat2, out));
+  if (mat2.scalar_type() != ScalarType::Char) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mat2, out));
+  }
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 1, mat2, 0));
 

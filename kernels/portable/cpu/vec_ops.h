@@ -83,6 +83,25 @@ inline void vec_matmul(
   }
 }
 
+template <typename T, typename U = T>
+inline void vec_matmul_int8(
+    T* __restrict__ z,
+    const U* __restrict__ x,
+    const int8_t* __restrict__ y,
+    int64_t m,
+    int64_t n,
+    int64_t p) {
+  for (size_t i = 0; i < m; ++i) {
+    for (size_t j = 0; j < p; ++j) {
+      T sum = 0;
+      for (size_t k = 0; k < n; ++k) {
+        sum += x[i * n + k] * y[k * p + j];
+      }
+      z[i * p + j] = sum;
+    }
+  }
+}
+
 // mat1 (m x n), mat2 (n x p), out (m, p), self (m x p)
 // z[i][j] = sum(x[i][k] * y[k][j]), for k in range(n)
 // T for tensor dtype, U for scalar type
