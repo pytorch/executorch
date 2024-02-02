@@ -15,7 +15,6 @@ def define_common_targets():
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",
-            "//executorch/...",
         ],
     )
 
@@ -28,7 +27,9 @@ def define_common_targets():
         base_module = "executorch.examples.models.llama2.tokenizer",
         visibility = [
             "//executorch/examples/...",
+            "//bento/...",
         ],
+        _is_external_target = True,
         deps = [
             "fbsource//third-party/pypi/sentencepiece:sentencepiece",
             "//caffe2:torch",

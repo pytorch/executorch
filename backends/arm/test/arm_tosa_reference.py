@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -14,11 +14,12 @@ import numpy as np
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
-
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.capture._config import ExecutorchBackendConfig, to_edge
+from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from executorch.exir.program import to_edge
 
 from torch.export import export
 

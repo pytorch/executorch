@@ -9,16 +9,22 @@
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
 
-#include <executorch/examples/models/llama2/llama_runner.h>
+#include <executorch/examples/models/llama2/runner/runner.h>
+
+#include <ctime>
+
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #endif
-using torch::executor::util::MmapDataLoader;
+
+#include <executorch/examples/models/llama2/runner/util.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/platform/log.h>
 
 namespace torch {
 namespace executor {
 
-LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
+Runner::Runner(const char* model_path, const char* tokenizer_path) {
   // Constants definition
   float temperature = 0.8f;
   float topp = 0.9f;
@@ -31,7 +37,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
   // n_EOS max_seq_len from the model
   ET_LOG(Info, "Reading metadata from model");
-  const auto method_names = module_->methodNames();
+  const auto method_names = module_->method_names();
   ET_CHECK_MSG(
       method_names.ok(),
       "Failed to read method names from model: %s",
@@ -67,7 +73,7 @@ LlamaRunner::LlamaRunner(const char* model_path, const char* tokenizer_path) {
       std::make_unique<Sampler>(vocab_size_, temperature, topp, rng_seed);
 }
 
-std::vector<int32_t> LlamaRunner::readMetadata(
+std::vector<int32_t> Runner::readMetadata(
     std::unordered_set<std::string> model_methods) {
   std::vector<std::string> methods = {
       "get_vocab_size",
@@ -101,7 +107,7 @@ std::vector<int32_t> LlamaRunner::readMetadata(
   return result;
 }
 
-void LlamaRunner::generate(const char* prompt, bool eos) {
+Error Runner::generate(const char* prompt, bool eos) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
@@ -115,24 +121,37 @@ void LlamaRunner::generate(const char* prompt, bool eos) {
       prompt, n_bos_, eos ? n_eos_ : 0, prompt_tokens, &num_prompt_tokens);
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
+  ET_CHECK_MSG(
+      num_prompt_tokens < max_seq_len_,
+      "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
 
   // start the main loop
   long start =
       0; // used to time our code, only initialized after first iteration
   int next; // will store the next token in the sequence
-  int pos = 0; // position in the sequence
+  int pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
   void* data =
-      malloc(max_seq_len_ * sizeof(long)); // allocate space for the tokens
+      malloc(max_seq_len_ * sizeof(int64_t)); // allocate space for the tokens
+  // copy prompt tokens into data
+  for (int i = 0; i < num_prompt_tokens; ++i) {
+    ((int64_t*)data)[i] = prompt_tokens[i];
+    if (i > 0) {
+      printf(
+          "%s",
+          ET_UNWRAP(
+              tokenizer_->decode(prompt_tokens[i - 1], prompt_tokens[i])));
+    }
+  }
   // create a 1xN int tensor with next as value
-  exec_aten::SizesType sizes[2]{1, 1};
+  exec_aten::SizesType sizes[2]{1, pos};
   exec_aten::DimOrderType dim_order[2]{0, 1};
 
   while (pos < max_seq_len_) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
-    ((long*)data)[pos] = token;
+    ((int64_t*)data)[pos] = token;
     sizes[1] = pos + 1;
 #ifdef USE_ATEN_LIB
     exec_aten::Tensor tensor =
@@ -168,18 +187,12 @@ void LlamaRunner::generate(const char* prompt, bool eos) {
         break;
       }
       case ScalarType::Half: {
-#ifdef USE_ATEN_LIB
-        // TODO:(larryliu) get rid of this check once we have Half support in
-        // portable kernels.
-
-        c10::Half* half_logits =
-            outputs[0].toTensor().mutable_data_ptr<c10::Half>();
-        c10::Half* logits_last = half_logits + pos * tokenizer_->vocab_size();
+        exec_aten::Half* half_logits =
+            outputs[0].toTensor().mutable_data_ptr<exec_aten::Half>();
+        exec_aten::Half* logits_last =
+            half_logits + pos * tokenizer_->vocab_size();
         next_tok = sampler_->sample(logits_last);
         break;
-#else
-        __ET_FALLTHROUGH; // fallthrough
-#endif
       }
       default:
         ET_CHECK_MSG(
@@ -245,8 +258,8 @@ void LlamaRunner::generate(const char* prompt, bool eos) {
 
   delete[] prompt_tokens;
   free(data);
+  return Error::Ok;
 }
 
-LlamaRunner::~LlamaRunner() {}
 } // namespace executor
 } // namespace torch

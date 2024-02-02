@@ -85,11 +85,15 @@ Tensor& sub_scalar_out(
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType alpha_type = utils::get_scalar_dtype(b);
   ScalarType common_type =
-      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ true);
+      utils::promote_type_with_scalar(a_type, b, /*half_to_float*/ false);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, canCast(alpha_type, common_type), InvalidArgument, out);
+
+  if (common_type == ScalarType::Half) {
+    common_type = ScalarType::Float;
+  }
 
   ET_SWITCH_REALH_TYPES(a_type, ctx, "sub.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_REAL_TYPES(

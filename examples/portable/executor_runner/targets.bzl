@@ -16,7 +16,7 @@ def define_common_targets():
             "//executorch/runtime/executor:program",
             "//executorch/extension/data_loader:file_data_loader",
             "//executorch/extension/evalue_util:print_evalue",
-            "//executorch/util:util",
+            "//executorch/extension/runner_util:inputs",
         ],
         external_deps = [
             "gflags",

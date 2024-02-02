@@ -37,7 +37,6 @@ Result<torch::executor::Tensor> parseTensor(
   ET_CHECK_OR_RETURN_ERROR(
       isValid(scalar_type) &&
           // Types that do not yet have deserialization support.
-          scalar_type != exec_aten::ScalarType::Half &&
           scalar_type != exec_aten::ScalarType::ComplexHalf &&
           scalar_type != exec_aten::ScalarType::ComplexFloat &&
           scalar_type != exec_aten::ScalarType::ComplexDouble &&

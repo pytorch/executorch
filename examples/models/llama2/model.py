@@ -96,7 +96,6 @@ class ModelArgs:
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
     # Additional Model Metadata needed at runtime
-    vocab_size: int = 256206
     bos_idx: int = 1
     eos_idx: int = 3
     bos_count: int = -1  # i.e., a single EOS is used as BOS
@@ -163,6 +162,8 @@ class Attention(nn.Module):
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
+        self.max_batch_size = args.max_batch_size
+        self.max_seq_len = args.max_seq_len
         # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -208,6 +209,18 @@ class Attention(nn.Module):
 
         if self.use_kv_cache:
             assert cache_k is not None and cache_v is not None
+            torch._constrain_as_value(x.shape[1], min=0, max=self.max_seq_len)
+            for i, size in enumerate(self.cache_k.shape):
+                torch._constrain_as_value(
+                    cache_k.shape[i],
+                    min=0,
+                    max=size,
+                )
+                torch._constrain_as_value(
+                    cache_v.shape[i],
+                    min=0,
+                    max=size,
+                )
             # Replace the entry in the cache for this token
             cache_k[:bsz, start_pos : start_pos + seqlen] = xk  # pyre-ignore[58]
             cache_v[:bsz, start_pos : start_pos + seqlen] = xv  # pyre-ignore[58]
@@ -227,16 +240,15 @@ class Attention(nn.Module):
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
 
-        if self.use_kv_cache:
-            mask = None
-        else:
-            assert hasattr(self, "mask")
-            mask = self.mask[:, :, :seqlen, :seqlen]
+        assert hasattr(self, "mask")
+        mask = self.mask[:, :, :seqlen, :seqlen]
 
-            # This is needed to support XNNPACK which requires mask shape to be 2D.
-            # This is a temporary workaround. Once we update XNNPACK we should be able to handle this.
-            # Shape before: [1, 1, L, S], after: [L, S]
-            mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen])
+        # This is needed to support XNNPACK which requires mask shape to be 2D.
+        # This is a temporary workaround. Once we update XNNPACK we should be able to handle this.
+        # Shape before: [1, 1, L, S], after: [L, S]
+        # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
+        # tensor will be 2-dimensional, regarldess of the values of L & S
+        mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1])
 
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
@@ -374,28 +386,26 @@ class Transformer(nn.Module):
         start_pos: Optional[
             torch.Tensor
         ] = None,  # Scalar tensor indicating size of window of the caches
-        cache_k_list: Optional[
-            List[torch.Tensor]
-        ] = None,  # n_layers long, Passed as a list because each Attention needs its own cache with a likely unique shape
-        cache_v_list: Optional[List[torch.Tensor]] = None,  # n_layers long
+        cache_k: Optional[
+            torch.Tensor
+        ] = None,  # n_layers long, it should be a list of tensors to accommodate the potential size difference among attention layers. The current implementation is overly simplified.
+        cache_v: Optional[torch.Tensor] = None,  # n_layers long
     ) -> Union[
         torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
     ]:
         if self.use_kv_cache:
             assert (
-                cache_k_list is not None
-                and cache_v_list is not None
-                and start_pos is not None
+                cache_k is not None and cache_v is not None and start_pos is not None
             ), "Caches and start_pos must be provided when use_kv_cache is True"
             assert (
-                len(cache_k_list) == self.n_layers
-            ), f"{len(cache_k_list)} != {self.n_layers}"
+                cache_k.size(0) == self.n_layers
+            ), f"{cache_k.size(0)} != {self.n_layers}"
             assert (
-                len(cache_v_list) == self.n_layers
-            ), f"{len(cache_v_list)} != {self.n_layers}"
+                cache_v.size(0) == self.n_layers
+            ), f"{cache_v.size(0)} != {self.n_layers}"
         else:
             assert (
-                start_pos is None and cache_k_list is None and cache_v_list is None,
+                start_pos is None and cache_k is None and cache_v is None,
                 "Caches and start_pos are unused when use_kv_cache is False",
             )
 
@@ -408,21 +418,32 @@ class Transformer(nn.Module):
             sp = start_pos.item()  # pyre-ignore[16]
             # self.params.max_seq_len - 1 because of 0 based indexing, and - 1 again because our input seq len is 1 and its added to the cache before accessing the cache
             torch._constrain_as_size(sp, min=0, max=self.params.max_seq_len - 2)
+            torch._constrain_as_value(
+                cache_k.shape[0],  # pyre-ignore[16]
+                min=self.n_layers,
+                max=self.n_layers,
+            )
+            torch._constrain_as_value(
+                cache_v.shape[0], min=self.n_layers, max=self.n_layers
+            )
 
-        index = 0
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
             if self.use_kv_cache:
                 # Export doesnt allow mutations on inputs right now for some reason. Clone "fixes" this and then we can remove this clone in a later pass.
-                cache_k = cache_k_list[index].clone()  # pyre-ignore[16]
-                cache_v = cache_v_list[index].clone()
+                cache_k_copy = cache_k[index, :].clone()  # pyre-ignore[16]
+                cache_v_copy = cache_v[index, :].clone()
 
-                h, cache_k, cache_v = layer(
-                    h, freqs_cos, freqs_sin, sp, cache_k, cache_v  # pyre-ignore[61]
+                h, updated_cache_k, updated_cache_v = layer(
+                    h,
+                    freqs_cos,
+                    freqs_sin,
+                    sp,  # pyre-ignore[61]
+                    cache_k_copy,
+                    cache_v_copy,
                 )
-                cache_k_list[index] = cache_k  # pyre-ignore[16]
-                cache_v_list[index] = cache_v
+                cache_k[index, :] = updated_cache_k  # pyre-ignore[16]
+                cache_v[index, :] = updated_cache_v
 
-                index += 1
             else:
                 h, _, _ = layer(h, freqs_cos, freqs_sin)
 
@@ -430,7 +451,7 @@ class Transformer(nn.Module):
 
         logits = self.output(h)
         if self.use_kv_cache:
-            return (logits, cache_k_list, cache_v_list)  # pyre-ignore
+            return (logits, cache_k, cache_v)  # pyre-ignore
         else:
             # 'None' is not a valid return for export so have to split the return into if else
             return logits
@@ -438,7 +459,7 @@ class Transformer(nn.Module):
     # For each layer return the sizes of the needed caches
     def get_cache_sizes(self):
         # cache_k and cache_v have the same shape so could pick either here.
-        return [x.attention.cache_k.shape for x in self.layers]
+        return [self.n_layers, *self.layers[0].attention.cache_k.shape]
 
 
 class Llama2Model(EagerModelBase):
@@ -535,8 +556,8 @@ class Llama2Model(EagerModelBase):
 
     def get_example_inputs_kvcache(self):
         cache_sizes = self.model_.get_cache_sizes()
-        cache_k_list = [torch.zeros(x) for x in cache_sizes]
-        cache_v_list = [torch.zeros(x) for x in cache_sizes]
+        cache_k = torch.zeros(cache_sizes)
+        cache_v = torch.zeros(cache_sizes)
         return (
             torch.tensor(
                 [[1]], dtype=torch.long
@@ -544,6 +565,6 @@ class Llama2Model(EagerModelBase):
             torch.tensor(
                 0, dtype=torch.long
             ),  # start_pos, what token of output are we on.
-            cache_k_list,  # key caches
-            cache_v_list,  # value caches
+            cache_k,  # key caches
+            cache_v,  # value caches
         )
