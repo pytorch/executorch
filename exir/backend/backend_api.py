@@ -350,7 +350,7 @@ def _(
 
     # TODO(angelayi): Update this signature in a less manual way (maybe through
     # retracing)
-    new_signature, new_state_dict = _get_new_signature(
+    new_signature, new_state_dict, new_constants = _get_new_signature(
         edge_program, tagged_graph_module
     )
     return ExportedProgram(
@@ -362,4 +362,5 @@ def _(
         module_call_graph=copy.deepcopy(edge_program.module_call_graph),
         example_inputs=None,
         verifier=edge_program.verifier,
+        constants=new_constants,
     )

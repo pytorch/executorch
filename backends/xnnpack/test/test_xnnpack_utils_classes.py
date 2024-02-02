@@ -18,10 +18,12 @@ class OpSequencesAddConv2d(torch.nn.Module):
         super().__init__()
         self.num_ops = num_sequences * ops_per_sequence
         self.num_sequences = num_sequences
-        self.op_sequence = [[] for _ in range(num_sequences)]
-        for seq in range(num_sequences):
+
+        self.op_sequence = torch.nn.ModuleList()
+        for _ in range(num_sequences):
+            inner = torch.nn.ModuleList()
             for _ in range(ops_per_sequence):
-                self.op_sequence[seq].append(
+                inner.append(
                     torch.nn.Conv2d(
                         in_channels=1,
                         out_channels=1,
@@ -30,6 +32,7 @@ class OpSequencesAddConv2d(torch.nn.Module):
                         bias=False,
                     )
                 )
+            self.op_sequence.append(inner)
 
     def forward(self, x):
         for seq in self.op_sequence:
