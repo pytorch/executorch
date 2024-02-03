@@ -176,12 +176,18 @@ class Attention(nn.Module):
 
         # This is what we would use if ExecuTorch could support mutable buffers. We can't at this time, so instead
         # what is done is this module takes in the cache as io.
-        self.cache_k = torch.zeros(
-            (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        )
-        self.cache_v = torch.zeros(
-            (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        )
+        # self.cache_k = torch.zeros(
+        #     (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        # )
+        # self.cache_v = torch.zeros(
+        #     (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        # )
+        self.kv_cache_sizes = [
+            args.max_batch_size,
+            args.max_seq_len,
+            self.n_kv_heads,
+            self.head_dim,
+        ]
 
     def forward(
         self,
@@ -210,17 +216,7 @@ class Attention(nn.Module):
         if self.use_kv_cache:
             assert cache_k is not None and cache_v is not None
             torch._constrain_as_value(x.shape[1], min=0, max=self.max_seq_len)
-            for i, size in enumerate(self.cache_k.shape):
-                torch._constrain_as_value(
-                    cache_k.shape[i],
-                    min=0,
-                    max=size,
-                )
-                torch._constrain_as_value(
-                    cache_v.shape[i],
-                    min=0,
-                    max=size,
-                )
+
             # Replace the entry in the cache for this token
             cache_k[:bsz, start_pos : start_pos + seqlen] = xk  # pyre-ignore[58]
             cache_v[:bsz, start_pos : start_pos + seqlen] = xv  # pyre-ignore[58]
@@ -429,20 +425,16 @@ class Transformer(nn.Module):
 
         for index, layer in enumerate(self.layers):
             if self.use_kv_cache:
-                # Export doesnt allow mutations on inputs right now for some reason. Clone "fixes" this and then we can remove this clone in a later pass.
-                cache_k_copy = cache_k[index, :].clone()  # pyre-ignore[16]
-                cache_v_copy = cache_v[index, :].clone()
-
                 h, updated_cache_k, updated_cache_v = layer(
                     h,
                     freqs_cos,
                     freqs_sin,
                     sp,  # pyre-ignore[61]
-                    cache_k_copy,
-                    cache_v_copy,
+                    cache_k[index],  # pyre-ignore[16]
+                    cache_v[index],
                 )
-                cache_k[index, :] = updated_cache_k  # pyre-ignore[16]
-                cache_v[index, :] = updated_cache_v
+                cache_k[index] = updated_cache_k  # pyre-ignore[16]
+                cache_v[index] = updated_cache_v
 
             else:
                 h, _, _ = layer(h, freqs_cos, freqs_sin)
@@ -459,7 +451,7 @@ class Transformer(nn.Module):
     # For each layer return the sizes of the needed caches
     def get_cache_sizes(self):
         # cache_k and cache_v have the same shape so could pick either here.
-        return [self.n_layers, *self.layers[0].attention.cache_k.shape]
+        return [self.n_layers, *self.layers[0].attention.kv_cache_sizes]
 
 
 class Llama2Model(EagerModelBase):
