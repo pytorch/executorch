@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -39,6 +40,7 @@ class Runner {
   template <typename T>
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
+  std::vector<exec_aten::SizesType> getKVCacheShape();
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -46,6 +48,7 @@ class Runner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
+  bool use_kv_cache_;
   std::unordered_set<std::string> model_methods_;
   // module
   std::unique_ptr<Module> module_;
