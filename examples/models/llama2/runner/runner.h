@@ -33,8 +33,12 @@ class Runner {
       std::function<void(const std::string&)> callback = {});
 
  private:
-  std::vector<int32_t> readMetadata(
-      std::unordered_set<std::string> method_names);
+  // metadata
+  template <typename T>
+  T getMetadataHelper(std::string method_name, T default_val);
+  template <typename T>
+  int32_t
+  logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -42,6 +46,7 @@ class Runner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
+  std::unordered_set<std::string> model_methods_;
   // module
   std::unique_ptr<Module> module_;
   // tokenizer
