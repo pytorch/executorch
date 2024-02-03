@@ -179,6 +179,8 @@ def _export_llama(modelname, args) -> str:
 
     # metadata that we want to serialize into .pte file
     metadata = get_metadata(model.params)
+    # For language llama, tell the runtime to always append EOS toekn(s) to prompt.
+    metadata["append_eos_to_prompt"] = args.fairseq2
 
     if args.use_kv_cache:
         # seq length is fixed to 1 with current kv cache impl

@@ -30,7 +30,6 @@ class Runner {
 
   Error generate(
       const char* prompt,
-      bool eos = false,
       std::function<void(const std::string&)> callback = {});
 
  private:
@@ -49,6 +48,7 @@ class Runner {
   int32_t n_eos_;
   int32_t max_seq_len_;
   bool use_kv_cache_;
+  bool append_eos_;
   std::unordered_set<std::string> model_methods_;
   // module
   std::unique_ptr<Module> module_;
