@@ -53,6 +53,7 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
   use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
   tokenizer_ = std::make_unique<Tokenizer>(vocab_size_, bos_id_, eos_id_);
@@ -134,7 +135,6 @@ int32_t Runner::logitsToToken(
 
 Error Runner::generate(
     const char* prompt,
-    bool eos,
     std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
@@ -146,7 +146,11 @@ Error Runner::generate(
   int* prompt_tokens = new int[strlen(prompt) + 1 + n_bos_ + n_eos_];
 
   tokenizer_->encode(
-      prompt, n_bos_, eos ? n_eos_ : 0, prompt_tokens, &num_prompt_tokens);
+      prompt,
+      n_bos_,
+      append_eos_ ? n_eos_ : 0,
+      prompt_tokens,
+      &num_prompt_tokens);
   for (int i = 0; i < num_prompt_tokens; i++) {
     ET_LOG(Info, "prompt_tokens[%d]: %d", i, prompt_tokens[i]);
   }
