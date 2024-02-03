@@ -20,10 +20,13 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
+                "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
                 "//executorch/examples/models/llama2/tokenizer:tokenizer",
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
+                "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
+                "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/kernels/portable:" + ("generated_lib_aten" if aten else "generated_lib_all_ops"),
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ],
