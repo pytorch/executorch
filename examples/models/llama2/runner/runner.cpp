@@ -10,8 +10,10 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
+#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
+#include <memory>
 
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
@@ -19,6 +21,7 @@
 
 #include <executorch/examples/models/llama2/runner/util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace torch {
@@ -49,6 +52,7 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
   n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
+  use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
 
   // Load tokenizer
   tokenizer_ = std::make_unique<Tokenizer>(vocab_size_, bos_id_, eos_id_);
@@ -94,6 +98,24 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
   return res;
 }
 
+std::vector<exec_aten::SizesType> Runner::getKVCacheShape() {
+  // shape: (n_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads,
+  // self.head_dim)
+  std::vector<std::string> methods = {
+      "get_n_layers",
+      "get_max_batch_size",
+      "get_max_seq_len",
+      "get_n_kv_heads",
+      "get_head_dim"};
+  std::vector<int64_t> default_values = {12, 1, 128, 32, 128};
+  std::vector<exec_aten::SizesType> result;
+  for (int i = 0; i < methods.size(); ++i) {
+    // convert from int64_t to int32_t
+    result.push_back(getMetadataHelper<int64_t>(methods[i], default_values[i]));
+  }
+  return result;
+}
+
 template <typename T>
 int32_t Runner::logitsToToken(
     const exec_aten::Tensor& logits_tensor,
@@ -103,7 +125,10 @@ int32_t Runner::logitsToToken(
   T* logits = logits_tensor.mutable_data_ptr<T>();
 
   // Since the logits are for all tokens, get the last token probabilities
-  T* logits_last = logits + pos * tokenizer_->vocab_size();
+  T* logits_last = logits;
+  if (!use_kv_cache_) {
+    logits_last += pos * tokenizer_->vocab_size();
+  }
   return sampler_->sample(logits_last);
 }
 
@@ -134,14 +159,47 @@ Error Runner::generate(
   long start =
       0; // used to time our code, only initialized after first iteration
   int next; // will store the next token in the sequence
-  int pos = num_prompt_tokens - 1; // position in the sequence
+  int64_t pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
-  void* data =
-      malloc(max_seq_len_ * sizeof(int64_t)); // allocate space for the tokens
+  int logits_index = 0; // index of the logits tensor in the output
+  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
+  std::vector<exec_aten::SizesType> input_shape = {1, 1};
+  std::vector<exec_aten::SizesType> pos_shape = {};
+  std::vector<uint8_t> k_data;
+  std::vector<uint8_t> v_data;
+  std::vector<int64_t> token_data; // allocate space for the tokens
+  ScalarType dtype = static_cast<ScalarType>(
+      getMetadataHelper("get_dtype", (int64_t)ScalarType::Float));
+
+  if (use_kv_cache_) {
+    // set pos to 0, refill token by token
+    pos = 0;
+    logits_index = 2;
+    // initialize kv cache
+    size_t n_bytes = 1;
+    for (exec_aten::SizesType shape : kv_cache_shape) {
+      n_bytes *= shape;
+    }
+    n_bytes *= elementSize(dtype);
+
+    k_data.resize(n_bytes);
+    v_data.resize(n_bytes);
+    token_data.resize(1);
+  } else {
+    // reserve data for tokens, notice the size is still 0.
+    token_data.resize(max_seq_len_);
+  }
+
+  // initialize tensor wrappers
+  ManagedTensor k_managed(k_data.data(), k_data.size(), kv_cache_shape, dtype);
+  ManagedTensor v_managed(v_data.data(), v_data.size(), kv_cache_shape, dtype);
+  ManagedTensor pos_managed(&pos, 0, {}, ScalarType::Long);
+
   // copy prompt tokens into data
-  for (int i = 0; i < num_prompt_tokens; ++i) {
-    ((int64_t*)data)[i] = prompt_tokens[i];
+  for (int i = 0; i <= pos; ++i) {
+    // @lint-ignore CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
+    token_data[i] = prompt_tokens[i];
     if (i > 0) {
       printf(
           "%s",
@@ -150,24 +208,28 @@ Error Runner::generate(
     }
   }
   // create a 1xN int tensor with next as value
-  exec_aten::SizesType sizes[2]{1, pos};
-  exec_aten::DimOrderType dim_order[2]{0, 1};
-
   while (pos < max_seq_len_) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
-    ((int64_t*)data)[pos] = token;
-    sizes[1] = pos + 1;
-#ifdef USE_ATEN_LIB
-    exec_aten::Tensor tensor =
-        torch::from_blob(data, /*dim*/ sizes, torch::kLong);
-#else
-    exec_aten::TensorImpl tensor_impl(
-        ScalarType::Long, /*dim*/ 2, sizes, data, dim_order);
-    exec_aten::Tensor tensor(&tensor_impl);
-#endif
-    Result<std::vector<EValue>> outputs_res =
-        module_->forward({EValue(tensor)});
+    std::vector<EValue> inputs;
+    if (use_kv_cache_) {
+      token_data[0] = token;
+      input_shape[1] = 1;
+      // inputs: [tokens, start_pos, k_cache, v_cache]
+      inputs.emplace_back(pos_managed.get_aliasing_tensor());
+      inputs.emplace_back(k_managed.get_aliasing_tensor());
+      inputs.emplace_back(v_managed.get_aliasing_tensor());
+    } else {
+      // @lint-ignore CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
+      token_data[pos] = token;
+      input_shape[1] = pos + 1;
+    }
+    ManagedTensor token_managed(
+        token_data.data(), token_data.size(), input_shape, ScalarType::Long);
+    inputs.insert(inputs.begin(), token_managed.get_aliasing_tensor());
+    // For kv cache, inputs: [tokens, start_pos, k_cache, v_cache]
+    // Otherwise inputs: [tokens]
+    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
     ET_CHECK_MSG(
         outputs_res.ok(),
         "Execution of method forward failed with status 0x%" PRIx32,
@@ -182,7 +244,7 @@ Error Runner::generate(
         outputs.size());
 
     int32_t next_tok;
-    exec_aten::Tensor logits_tensor = outputs.at(2).toTensor();
+    exec_aten::Tensor logits_tensor = outputs.at(logits_index).toTensor();
 
     switch (logits_tensor.scalar_type()) {
       case ScalarType::Float: {
@@ -199,10 +261,6 @@ Error Runner::generate(
             "Unsupported dtype output %hhd",
             logits_tensor.scalar_type());
     }
-
-    // debug
-    // torch::Tensor t = torch::from_blob(
-    //     (void*)logits, {1, num_prompt_tokens, 32000}, torch::kFloat);
 
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
@@ -245,6 +303,17 @@ Error Runner::generate(
     if (start == 0) {
       start = util::time_in_ms();
     }
+    if (use_kv_cache_) {
+      // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
+      memcpy(
+          k_data.data(),
+          outputs.at(0).toTensor().const_data_ptr(),
+          k_data.size());
+      memcpy(
+          v_data.data(),
+          outputs.at(1).toTensor().const_data_ptr(),
+          v_data.size());
+    }
   }
   printf("\n");
 
@@ -260,7 +329,6 @@ Error Runner::generate(
   }
 
   delete[] prompt_tokens;
-  free(data);
   return Error::Ok;
 }
 
