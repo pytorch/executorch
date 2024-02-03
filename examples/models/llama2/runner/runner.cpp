@@ -42,14 +42,13 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
       method_names.ok(),
       "Failed to read method names from model: %s",
       model_path);
-  auto metadata = readMetadata(method_names.get());
-  ET_CHECK_MSG(metadata.size() == 6, "Invalid metadata size");
-  vocab_size_ = metadata[0];
-  bos_id_ = metadata[1];
-  eos_id_ = metadata[2];
-  n_bos_ = metadata[3];
-  n_eos_ = metadata[4];
-  max_seq_len_ = metadata[5];
+  model_methods_ = method_names.get();
+  vocab_size_ = getMetadataHelper<int64_t>("get_vocab_size", 32000);
+  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", 1);
+  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", 2);
+  n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
+  n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
+  max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
 
   // Load tokenizer
   tokenizer_ = std::make_unique<Tokenizer>(vocab_size_, bos_id_, eos_id_);
@@ -73,38 +72,39 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
       std::make_unique<Sampler>(vocab_size_, temperature, topp, rng_seed);
 }
 
-std::vector<int32_t> Runner::readMetadata(
-    std::unordered_set<std::string> model_methods) {
-  std::vector<std::string> methods = {
-      "get_vocab_size",
-      "get_bos_id",
-      "get_eos_id",
-      "get_n_bos",
-      "get_n_eos",
-      "get_max_seq_len"};
-  std::vector<int32_t> default_values = {32000, 1, 2, 1, 1, 128};
-  std::vector<int32_t> result;
-  for (int i = 0; i < methods.size(); ++i) {
-    int32_t res = default_values[i];
-    if (model_methods.count(methods[i])) {
-      Result<std::vector<EValue>> outputs = module_->execute(methods[i]);
-      if (outputs.ok()) {
-        std::vector<EValue> outs = outputs.get();
-        if (outs.size() > 0) {
-          res = outs[0].toInt();
-        }
+template <typename T>
+T Runner::getMetadataHelper(std::string method_name, T default_val) {
+  T res = default_val;
+  if (model_methods_.count(method_name)) {
+    Result<std::vector<EValue>> outputs = module_->execute(method_name);
+    if (outputs.ok()) {
+      std::vector<EValue> outs = outputs.get();
+      if (outs.size() > 0) {
+        res = outs[0].to<T>();
       }
-    } else {
-      ET_LOG(
-          Info,
-          "The model does not contain %s method, using default value %d",
-          methods[i].c_str(),
-          default_values[i]);
     }
-    ET_LOG(Info, "%s: %d", methods[i].c_str(), res);
-    result.push_back(res);
+  } else {
+    ET_LOG(
+        Info,
+        "The model does not contain %s method, using default value %ld",
+        method_name.c_str(),
+        (int64_t)default_val);
   }
-  return result;
+  ET_LOG(Info, "%s: %ld", method_name.c_str(), (int64_t)res);
+  return res;
+}
+
+template <typename T>
+int32_t Runner::logitsToToken(
+    const exec_aten::Tensor& logits_tensor,
+    int64_t pos,
+    T _) {
+  (void)_;
+  T* logits = logits_tensor.mutable_data_ptr<T>();
+
+  // Since the logits are for all tokens, get the last token probabilities
+  T* logits_last = logits + pos * tokenizer_->vocab_size();
+  return sampler_->sample(logits_last);
 }
 
 Error Runner::generate(
@@ -122,7 +122,9 @@ Error Runner::generate(
 
   tokenizer_->encode(
       prompt, n_bos_, eos ? n_eos_ : 0, prompt_tokens, &num_prompt_tokens);
-
+  for (int i = 0; i < num_prompt_tokens; i++) {
+    ET_LOG(Info, "prompt_tokens[%d]: %d", i, prompt_tokens[i]);
+  }
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
       num_prompt_tokens < max_seq_len_,
@@ -180,28 +182,22 @@ Error Runner::generate(
         outputs.size());
 
     int32_t next_tok;
-    switch (outputs[0].toTensor().scalar_type()) {
-      case ScalarType::Float: {
-        float* logits = outputs[0].toTensor().mutable_data_ptr<float>();
+    exec_aten::Tensor logits_tensor = outputs.at(2).toTensor();
 
-        // Since the logits are for all tokens, get the last token probabilities
-        float* logits_last = logits + pos * tokenizer_->vocab_size();
-        next_tok = sampler_->sample(logits_last);
+    switch (logits_tensor.scalar_type()) {
+      case ScalarType::Float: {
+        next_tok = logitsToToken<float>(logits_tensor, pos, 0);
         break;
       }
       case ScalarType::Half: {
-        exec_aten::Half* half_logits =
-            outputs[0].toTensor().mutable_data_ptr<exec_aten::Half>();
-        exec_aten::Half* logits_last =
-            half_logits + pos * tokenizer_->vocab_size();
-        next_tok = sampler_->sample(logits_last);
+        next_tok = logitsToToken<exec_aten::Half>(logits_tensor, pos, 0);
         break;
       }
       default:
         ET_CHECK_MSG(
             false,
             "Unsupported dtype output %hhd",
-            outputs[0].toTensor().scalar_type());
+            logits_tensor.scalar_type());
     }
 
     // debug
@@ -268,5 +264,12 @@ Error Runner::generate(
   return Error::Ok;
 }
 
+// explicit instantiation of template methods
+template int64_t Runner::getMetadataHelper<int64_t>(
+    std::string method_name,
+    int64_t default_val);
+template bool Runner::getMetadataHelper<bool>(
+    std::string method_name,
+    bool default_val);
 } // namespace executor
 } // namespace torch
