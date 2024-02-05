@@ -99,7 +99,7 @@ class ConvertToSDPAPass(XNNPACKPass):
         logger.debug("ConvertToSDPA Begin: ")
         logger.debug(graph_module.print_readable(print_output=False))
 
-        for pattern in sdpa.Graphs:
+        for pattern in sdpa.get_graphs():
             sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
             matches = list(sm.match(graph_module.graph))
             for partition_to_replace in matches:
