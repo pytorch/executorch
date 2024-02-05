@@ -51,6 +51,8 @@ class WrapperModule(torch.nn.Module):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
+        if hasattr(fn, "__self__"):
+            self.mod = fn.__self__
 
     def forward(self, *args, **kwargs):
         return self.fn(*args, **kwargs)
@@ -293,8 +295,8 @@ class TestEmit(unittest.TestCase):
         class OpRepeatedModule(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = torch.ones(2, 2)
-                self.b = 2 * torch.ones(2, 2)
+                self.register_buffer("a", torch.ones(2, 2))
+                self.register_buffer("b", 2 * torch.ones(2, 2))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 for _ in range(10):
@@ -403,8 +405,8 @@ class TestEmit(unittest.TestCase):
         class Module_out(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.a = 3 * torch.ones(2, 2, dtype=torch.int32)
-                self.b = 2 * torch.ones(2, 2, dtype=torch.int32)
+                self.register_buffer("a", 3 * torch.ones(2, 2, dtype=torch.int32))
+                self.register_buffer("b", 2 * torch.ones(2, 2, dtype=torch.int32))
 
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 z = x.clone()
@@ -1300,8 +1302,8 @@ class TestEmit(unittest.TestCase):
             def __init__(self):
                 super(ModWithWeightViews, self).__init__()
                 self.W = torch.nn.Parameter(torch.randn(2))
-                self.W1 = self.W[:1]
-                self.W2 = self.W[1:]
+                self.register_buffer("W1", self.W[:1])
+                self.register_buffer("W2", self.W[1:])
 
             def forward(self, x):
                 return self.W1 + self.W2 + x
