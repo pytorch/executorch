@@ -6,3 +6,19 @@ load(":targets.bzl", "define_common_targets")
 oncall("executorch")
 
 define_common_targets()
+
+runtime.python_library(
+    name = "memory_profiler",
+    srcs = [
+        "activation_memory_profiler.py",
+    ],
+    _is_external_target = True,
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
