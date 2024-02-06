@@ -11,6 +11,7 @@
 #include <math.h>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #if defined(__GNUC__) || defined(__clang__)
 #if defined(__aarch64__)
