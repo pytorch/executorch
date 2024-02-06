@@ -10,7 +10,7 @@ import executorch.exir as exir
 import torch
 
 
-def get_bilinear_2d_graphs():
+def _get_bilinear_2d_graphs():
     class bilinear2d(torch.nn.Module):
         def __init__(self, align_corners):
             super().__init__()
@@ -40,6 +40,9 @@ def get_bilinear_2d_graphs():
     return _bilinear2d_graphs
 
 
-bilinear2d_graphs: Dict[torch.fx.GraphModule, bool] = get_bilinear_2d_graphs()
+def get_graphs() -> List[torch.fx.GraphModule]:
+    return list(_get_bilinear_2d_graphs().keys())
 
-Graphs: List[torch.fx.GraphModule] = list(bilinear2d_graphs.keys())
+
+def get_graphs_dict() -> Dict[torch.fx.GraphModule, bool]:
+    return _get_bilinear_2d_graphs()

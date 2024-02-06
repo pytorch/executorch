@@ -21,8 +21,8 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPar
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.util.python_profiler import CProfilerFlameGraph
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from executorch.util.python_profiler import CProfilerFlameGraph
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
