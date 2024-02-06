@@ -13,12 +13,14 @@ from typing import Dict, final, Optional, Sequence, Type
 import executorch.exir as exir
 
 import torch
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from torch import nn
+from torch.export import export
 
 """Traces and exports delegated nn.Modules to ExecuTorch .pte program files.
 
@@ -82,15 +84,20 @@ def export_module_to_program(
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
         inputs = eager_module.get_random_inputs()
-    capture_config = exir.CaptureConfig()
 
-    edge: exir.ExirExportedProgram = exir.capture(
-        getattr(eager_module, method),
-        args=inputs,
-        config=capture_config,
-    ).to_edge()
+    class WrapperModule(torch.nn.Module):
+        def __init__(self, fn):
+            super().__init__()
+            self.fn = fn
 
-    lowered_module = to_backend(backend_id, edge.exported_program, compile_specs=[])
+        def forward(self, *args, **kwargs):
+            return self.fn(*args, **kwargs)
+
+    edge: exir.EdgeProgramManager = to_edge(
+        export(WrapperModule(getattr(eager_module, method)), args=inputs)
+    )
+
+    lowered_module = to_backend(backend_id, edge.exported_program(), compile_specs=[])
 
     class CompositeModule(nn.Module):
         def __init__(self):
@@ -103,19 +110,11 @@ def export_module_to_program(
     composite_module = CompositeModule()
     composite_module(*inputs)
 
-    executorch_program = (
-        exir.capture(
-            composite_module,
-            args=inputs,
-            config=capture_config,
-        )
-        .to_edge()
-        .to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                extract_delegate_segments=extract_delegate_segments,
-                constant_tensor_alignment=constant_tensor_alignemnt,
-                delegate_alignment=delegate_alignment,
-            )
+    executorch_program = to_edge(export(composite_module, args=inputs)).to_executorch(
+        config=exir.ExecutorchBackendConfig(
+            extract_delegate_segments=extract_delegate_segments,
+            constant_tensor_alignment=constant_tensor_alignemnt,
+            delegate_alignment=delegate_alignment,
         )
     )
 
