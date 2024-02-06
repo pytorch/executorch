@@ -54,18 +54,3 @@ def define_common_targets():
             visibility = ["@EXECUTORCH_CLIENTS"],
             _is_external_target = True,
         )
-        runtime.python_library(
-            name = "memory_profiler",
-            srcs = [
-                "activation_memory_profiler.py",
-            ],
-            deps = [
-                "//caffe2:torch",
-                "//executorch/exir:lib",
-            ],
-            visibility = [
-                "//executorch/...",
-                "@EXECUTORCH_CLIENTS",
-            ],
-            _is_external_target = True,
-        )
