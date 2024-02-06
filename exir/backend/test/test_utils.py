@@ -8,7 +8,7 @@ import unittest
 
 import torch
 from executorch import exir
-from executorch.exir import CaptureConfig
+from executorch.exir import CaptureConfig, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
@@ -16,6 +16,7 @@ from executorch.exir.backend.utils import (
     get_delegates,
     get_non_lowered_nodes,
     is_identical_graph,
+    print_delegated_graph,
     remove_first_quant_and_last_dequant,
     replace_quantized_partition_with_op,
 )
@@ -406,3 +407,35 @@ class TestUtils(unittest.TestCase):
         number_of_delegates = get_delegates(edge.exported_program.graph)
         # there will be 2 delegates: (mm + add) -> sub -> (mm + add)
         self.assertEqual(len(number_of_delegates), 2)
+
+    def test_print_delegted_graph(self):
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, a, x, b):
+                y = torch.mm(a, x)
+                z = y + b
+                a = z - a
+                y = torch.mm(a, x)
+                z = y + b
+                return z
+
+        m = Model()
+        inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
+
+        edge = to_edge(torch.export.export(m, inputs)).to_backend(
+            AddMulPartitionerDemo()
+        )
+
+        graph_str = print_delegated_graph(edge.exported_program().graph_module)
+        self.assertIn(
+            "BackendWithCompilerDemo",
+            graph_str,
+            "Expect to find the backend id in the graph format string",
+        )
+        self.assertIn(
+            "executorch.exir.dialects.edge._ops.aten.mm.default",
+            graph_str,
+            "Expect to see the aten.mm in the delegated graph",
+        )
