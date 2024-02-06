@@ -7,12 +7,13 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import copy
 import logging
 
-import torch._export as export
-
+import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.sdk import generate_etrecord
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -31,7 +32,7 @@ if __name__ == "__main__":
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {list(MODEL_NAME_TO_OPTIONS.keys())}",
+        help=f"Model name. Valid ones: {list(MODEL_NAME_TO_OPTIONS.keys())}",
     )
     parser.add_argument(
         "-q",
@@ -39,7 +40,7 @@ if __name__ == "__main__":
         action="store_true",
         required=False,
         default=False,
-        help="Flag for producing quantized or floating-point model",
+        help="Produce an 8-bit quantized model",
     )
     parser.add_argument(
         "-d",
@@ -47,7 +48,13 @@ if __name__ == "__main__":
         action="store_true",
         required=False,
         default=True,
-        help="Flag for producing XNNPACK delegated model",
+        help="Produce an XNNPACK delegated model",
+    )
+    parser.add_argument(
+        "-r",
+        "--etrecord",
+        required=False,
+        help="Generate and save an ETRecord to the given file location",
     )
 
     args = parser.parse_args()
@@ -71,7 +78,7 @@ if __name__ == "__main__":
 
     model = model.eval()
     # pre-autograd export. eventually this will become torch.export
-    model = export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
     if args.quantize:
         logging.info("Quantizing Model...")
@@ -87,12 +94,19 @@ if __name__ == "__main__":
     )
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
+    # this is needed for the ETRecord as lowering modifies the graph in-place
+    edge_copy = copy.deepcopy(edge)
+
     edge = edge.to_backend(XnnpackPartitioner())
     logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_constant_segment=False)
     )
+
+    if args.etrecord is not None:
+        generate_etrecord(args.etrecord, edge_copy, exec_prog)
+        logging.info(f"Saved ETRecord to {args.etrecord}")
 
     quant_tag = "q8" if args.quantize else "fp32"
     model_name = f"{args.model_name}_xnnpack_{quant_tag}"

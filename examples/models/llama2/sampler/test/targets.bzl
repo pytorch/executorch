@@ -16,7 +16,7 @@ def define_common_targets():
             "//executorch/examples/models/llama2/sampler:sampler_aten",
         ],
         xplat_deps = [
-            "//caffe2:torch_mobile_all_ops",
+            "//caffe2:torch_mobile_all_ops_et",
         ],
         fbcode_deps = [
             "//caffe2:torch-cpp",

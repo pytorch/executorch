@@ -1583,7 +1583,7 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   }
   uint32_t runtime_flags = 0;
 
-#ifdef ENABLE_XNNPACK_PROFILING
+#if defined(ENABLE_XNNPACK_PROFILING) || defined(ET_EVENT_TRACER_ENABLED)
   runtime_flags |= XNN_FLAG_BASIC_PROFILING;
 #endif
 
@@ -1599,13 +1599,9 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
       "XNN Runtime creation failed with code: %s",
       xnn_status_to_string(status));
 
-  executor->runtime_ =
-      std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
-          runtime_ptr, xnn_delete_runtime);
+  executor->initialize(runtime_ptr); // NOLINT: runtime_ptr is non-null as
+                                     // error is checked above.
 
-#ifdef ENABLE_XNNPACK_PROFILING
-  executor->init_profiler();
-#endif
   // HACK FOR FC/BC this is only to support old dq_datatype
   if (executor->qinputs_.size() > 0) {
     // qinputs_ is only set when using the old dq linear path. At which point

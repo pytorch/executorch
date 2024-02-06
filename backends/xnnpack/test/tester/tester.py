@@ -495,7 +495,7 @@ class Tester:
                 ref_output[i],
                 atol=atol,
                 rtol=rtol,
-            )
+            ), f" Output {i} does not match reference output. Max difference: {torch.max(torch.abs(model_output[i] - ref_output[i]))}"
 
     def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
         """

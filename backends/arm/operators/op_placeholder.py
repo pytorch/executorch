@@ -15,7 +15,7 @@ from executorch.backends.arm.tosa_quant_utils import (
 )
 from executorch.backends.arm.tosa_utils import getNodeArgs, is_bias_node_for_addmm
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 
 def process_placeholder(

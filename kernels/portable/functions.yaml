@@ -127,6 +127,11 @@
     - arg_meta: null
       kernel_name: torch::executor::atan_out
 
+- op: atan2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atan2_out
+
 - op: atanh.out
   kernels:
     - arg_meta: null
@@ -264,6 +269,11 @@
     - arg_meta: null
       kernel_name: torch::executor::eq_scalar_out
 
+- op: eq.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::eq_tensor_out
+
 - op: erf.out
   kernels:
     - arg_meta: null
@@ -278,6 +288,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::expand_copy_out
+
+- op: expm1.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expm1_out
 
 - op: fill.Scalar_out
   kernels:
@@ -407,6 +422,21 @@
     - arg_meta: null
       kernel_name: torch::executor::log_out
 
+- op: log10.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log10_out
+
+- op: log1p.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log1p_out
+
+- op: log2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log2_out
+
 - op: logical_and.out
   kernels:
     - arg_meta: null
@@ -451,6 +481,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::max_out
+
+- op: maximum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::maximum_out
 
 - op: max_pool2d_with_indices.out
   kernels:
@@ -701,6 +736,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::tril_out
+
+- op: trunc.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::trunc_out
 
 - op: unbind_copy.int_out
   kernels:

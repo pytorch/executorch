@@ -31,12 +31,14 @@ class Conv2d(torch.nn.Module):
         batches=1,
         width=8,
         height=8,
+        dtype=torch.float,
     ):
         super().__init__()
         self.batches = batches
         self.width = width
         self.height = height
         self.in_channels = in_channels
+        self.dtype = dtype
 
         self.conv = torch.nn.Conv2d(
             in_channels=in_channels,
@@ -48,13 +50,17 @@ class Conv2d(torch.nn.Module):
             groups=groups,
             bias=bias,
             padding_mode=padding_mode,
-        )
+        ).to(dtype)
 
     def forward(self, x):
         return self.conv(x)
 
     def get_inputs(self):
-        return (torch.randn(self.batches, self.in_channels, self.height, self.width),)
+        return (
+            torch.randn(self.batches, self.in_channels, self.height, self.width).to(
+                self.dtype
+            ),
+        )
 
 
 class Conv2dSeq(torch.nn.Module):
@@ -124,6 +130,7 @@ class TestConv2d(unittest.TestCase):
         m: torch.nn.Module,
         quant_config: Optional[QuantizationConfig] = None,
         conv_count=1,
+        dtype: torch.dtype = torch.float,
     ):
         tester = Tester(m.eval(), m.get_inputs())
 
@@ -148,6 +155,10 @@ class TestConv2d(unittest.TestCase):
             .run_method()
             .compare_outputs(qtol=1)
         )
+
+    def test_fp16_conv2d(self) -> None:
+        for has_bias in (True, False):
+            self._test(Conv2d(bias=has_bias, dtype=torch.float16))
 
     def test_fp32_conv2d(self) -> None:
         for has_bias in (True, False):
