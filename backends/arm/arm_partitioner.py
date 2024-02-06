@@ -53,11 +53,8 @@ class TOSASupportedOperators(OperatorSupportBase):
 
 @final
 class ArmPartitioner(Partitioner):
-    compile_spec: List[CompileSpec]
-
     def __init__(self, compile_spec: List[CompileSpec]) -> None:
-        self.compile_spec = compile_spec
-        self.delegation_spec = DelegationSpec(ArmBackend.__name__, self.compile_spec)
+        self.delegation_spec = DelegationSpec(ArmBackend.__name__, compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible
