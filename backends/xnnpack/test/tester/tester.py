@@ -11,6 +11,7 @@ from collections import Counter, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
+import torch.export._trace as export_trace
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -143,7 +144,7 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        captured_graph = torch.export._trace._export(
+        captured_graph = export_trace._export(
             artifact, inputs, pre_dispatch=True
         ).module()
 
