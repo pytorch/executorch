@@ -13,7 +13,7 @@ import torch
 from executorch.exir import ExecutorchProgramManager
 from executorch.exir.memory_planning import get_node_tensor_specs
 from executorch.exir.tensor import num_bytes_from_shape_and_dtype
-from torch._export import ExportedProgram
+from torch.export import ExportedProgram
 
 
 @dataclass

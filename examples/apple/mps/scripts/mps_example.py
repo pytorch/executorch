@@ -9,7 +9,7 @@ import argparse
 import copy
 import logging
 
-import torch._export as export
+import torch
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
-    model = export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
     edge: EdgeProgramManager = export_to_edge(
         model,

@@ -7,9 +7,9 @@
 import unittest
 
 import torch
-from executorch import exir
-from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes import MemoryFormatOpsPass
+from torch.export import export
 from torch.testing import FileCheck
 
 
@@ -45,32 +45,28 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         edge_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
 
         for sample_input in sample_inputs:
-            before = exir.capture(
-                module,
-                sample_input,
-                CaptureConfig(enable_dynamic_shape=True),
-            )
+            before = export(module, sample_input)
 
             # check op strings before
             FileCheck().check_count(aten_op_str, 1, exactly=True).check_not(
                 edge_op_str
-            ).run(before.exported_program.graph_module.code)
+            ).run(before.graph_module.code)
 
-            ep = before.to_edge(
-                config=EdgeCompileConfig(_check_ir_validity=False)
+            ep = to_edge(
+                before, compile_config=EdgeCompileConfig(_check_ir_validity=False)
             )  # Only replacing edge_ops
 
             # Run the pass - TODO move this in to_edge passes
-            after = ep.transform(MemoryFormatOpsPass())
+            after = ep.transform([MemoryFormatOpsPass()])
 
             # check op strings
             FileCheck().check_not(aten_op_str).check_count(
                 edge_op_str, 1, exactly=True
-            ).run(after.exported_program.graph_module.code)
+            ).run(after.exported_program().graph_module.code)
 
             # check EdgeOp and the new BackendOp should behave the same
             expected = before(*sample_input)
-            actual = after(*sample_input)
+            actual = after.exported_program()(*sample_input)
             self.assertTrue(torch.allclose(actual, expected))
 
             # TODO - more

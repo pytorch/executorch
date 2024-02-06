@@ -40,8 +40,8 @@ class TestLinear(unittest.TestCase):
         class AddMMModule(torch.nn.Module):
             def __init__(self, in_size, out_size):
                 super().__init__()
-                self.mat = torch.randn(out_size, in_size)
-                self.bias = torch.randn(1, out_size)
+                self.mat = torch.nn.Parameter(torch.randn(out_size, in_size))
+                self.bias = torch.nn.Parameter(torch.randn(1, out_size))
 
             def forward(self, x):
                 return torch.addmm(self.bias, x, torch.transpose(self.mat, 0, 1))

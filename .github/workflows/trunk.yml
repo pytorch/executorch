@@ -44,7 +44,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: ${{ matrix.timeout }}
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"

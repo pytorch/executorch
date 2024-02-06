@@ -11,7 +11,6 @@ import inspect
 from typing import Callable, Sequence, Type
 
 import executorch.exir as exir
-import torch
 from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
 from executorch.exir.pass_manager import PassManager
@@ -134,37 +133,34 @@ class ExportedModule:
         for method in methods:
             method_name_to_args[method] = trace_inputs
 
-        method_name_to_constraints = None
-        if hasattr(eager_module, "get_constraints"):
+        method_name_to_dynamic_shapes = None
+        if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
-            trace_constraints = eager_module.get_constraints()
-            method_name_to_constraints = {}
+            trace_dynamic_shapes = eager_module.get_dynamic_shapes()
+            method_name_to_dynamic_shapes = {}
             for method in methods:
-                method_name_to_constraints[method] = trace_constraints
+                method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
         memory_planning_pass = MemoryPlanningPass("greedy")
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()
 
-        class WrapperModule(torch.nn.Module):
-            def __init__(self, fn):
+        class WrapperModule(nn.Module):
+            def __init__(self, method):
                 super().__init__()
-                self.fn = fn
-
-            def forward(self, *args, **kwargs):
-                return self.fn(*args, **kwargs)
+                self.forward = method
 
         exported_methods = {}
         # These cleanup passes are required to convert the `add` op to its out
         # variant, along with some other transformations.
         for method_name, method_input in method_name_to_args.items():
-            module = WrapperModule(getattr(eager_module, method_name))
+            # if not isinstance(eager_module, torch.nn.Module):
             exported_methods[method_name] = export(
-                module,
+                eager_module,
                 method_input,
-                constraints=method_name_to_constraints[method_name]
-                if method_name_to_constraints
+                dynamic_shapes=method_name_to_dynamic_shapes[method_name]
+                if method_name_to_dynamic_shapes
                 else None,
             )
 

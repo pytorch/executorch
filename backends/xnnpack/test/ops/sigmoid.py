@@ -20,8 +20,7 @@ class TestSigmoid(unittest.TestCase):
             z = self.sigmoid(x)
             return z
 
-    def test_fp32_sigmoid(self):
-        inputs = (torch.ones(4),)
+    def _test_sigmoid(self, inputs):
         (
             Tester(self.Sigmoid(), inputs)
             .export()
@@ -36,3 +35,11 @@ class TestSigmoid(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_sigmoid(self):
+        inputs = (torch.ones(4).to(torch.float16),)
+        self._test_sigmoid(inputs)
+
+    def test_fp32_sigmoid(self):
+        inputs = (torch.ones(4),)
+        self._test_sigmoid(inputs)

@@ -8,6 +8,8 @@
 
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 
+#include <string>
+
 namespace torch {
 namespace executor {
 

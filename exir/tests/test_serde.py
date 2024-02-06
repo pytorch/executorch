@@ -21,8 +21,8 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch import nn
-from torch._export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.export import export
+from torch.export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.utils import _pytree as pytree
 
 

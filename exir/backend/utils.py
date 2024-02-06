@@ -25,7 +25,8 @@ T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.def
 log: logging.Logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=128)
+# NB: Set this to None to handle validation from MobileBert
+@lru_cache(maxsize=None)
 def is_same_node(
     node_left: Iterable[torch.fx.Node],
     node_right: Iterable[torch.fx.Node],
