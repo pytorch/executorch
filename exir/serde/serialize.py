@@ -18,8 +18,8 @@ import executorch.exir as exir
 import executorch.exir.memory as memory
 import executorch.exir.serde.export_serialize as export_serialize
 import torch
-import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
+import torch.export.exported_program as ep
 from executorch.exir import delegate
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,

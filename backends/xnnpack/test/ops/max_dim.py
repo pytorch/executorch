@@ -25,9 +25,7 @@ class TestMaxDim(unittest.TestCase):
             max_values_2, _ = torch.max(x, dim=3, keepdim=True)
             return (max_values_1, max_values_2)
 
-    @unittest.skip("T171468483 - Fails to partition due to index output dtype.")
-    def test_fp32_max_dim(self):
-        inputs = (torch.randn(16, 3, 12, 12),)
+    def _test_max_dim(self, inputs):
         (
             Tester(self.Max(), inputs)
             .export()
@@ -42,6 +40,16 @@ class TestMaxDim(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    @unittest.skip("T171468483 - Fails to partition due to index output dtype.")
+    def test_fp16_max_dim(self):
+        inputs = (torch.randn(16, 3, 12, 12).to(torch.float16),)
+        self._test_max_dim(inputs)
+
+    @unittest.skip("T171468483 - Fails to partition due to index output dtype.")
+    def test_fp32_max_dim(self):
+        inputs = (torch.randn(16, 3, 12, 12),)
+        self._test_max_dim(inputs)
 
     @unittest.skip("T171468483 - Fails to partition due to index output dtype.")
     def test_fp32_max_dim_no_indices(self):

@@ -36,8 +36,8 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
+from torch.export import ExportedProgram
 from torch.export.exported_program import (
     _get_updated_range_constraints,
     ConstantArgument,
@@ -78,7 +78,12 @@ def _get_updated_graph_signature(
             else type(old_input_spec.arg)(node.name)
         )
         new_input_specs.append(
-            InputSpec(old_input_spec.kind, arg, old_input_spec.target)
+            InputSpec(
+                old_input_spec.kind,
+                arg,
+                old_input_spec.target,
+                persistent=old_input_spec.persistent,
+            )
         )
         i += 1
 
@@ -196,6 +201,7 @@ def lift_constant_tensor_pass(ep):
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=const_placeholder_node.name),
                         target=constant_tensor_fqn,
+                        persistent=True,
                     )
                 )
                 buffers.append(constant_tensor_fqn)

@@ -22,7 +22,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.passes import PassManager
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
 

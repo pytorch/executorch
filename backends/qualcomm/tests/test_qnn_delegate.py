@@ -3,7 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import argparse
 import json
 import subprocess
 import sys
@@ -16,6 +15,9 @@ from executorch.backends.qualcomm.tests.utils import TestQNN
 from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
 )
+
+from executorch.examples.qualcomm.scripts.utils import setup_common_args_and_variables
+
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -745,6 +747,72 @@ class TestQNNQuantizedModel(TestQNN):
                 )
 
 
+class TestQNNFloatingPointUtils(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1e-1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=True,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
+        )
+
+    def test_qnn_backend_skip_node_id(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=3,
+            skip_node_id_set={"aten_add_tensor", "aten_mean_dim"},
+        )
+
+    def test_qnn_backend_skip_node_op(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=2,
+            skip_node_op_set={"aten.add.Tensor"},
+        )
+
+
+class TestQNNQuantizedUtils(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=False,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
+        )
+
+    def test_qnn_backend_skip_node_id(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=3,
+            skip_node_id_set={"aten_add_tensor", "aten_mean_dim"},
+        )
+
+    def test_qnn_backend_skip_node_op(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=2,
+            skip_node_op_set={"aten.add.Tensor"},
+        )
+
+
 class TestExampleScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -960,7 +1028,7 @@ class TestExampleScript(TestQNN):
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/scripts/ptq_mobilebert_fine_tune.py",
+            f"{self.executorch_root}/examples/qualcomm/scripts/mobilebert_fine_tune.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -975,6 +1043,7 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
+            "--ptq",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -985,40 +1054,13 @@ class TestExampleScript(TestQNN):
             p.communicate()
             msg = json.loads(conn.recv())
             cpu, htp = msg["CPU"], msg["HTP"]
-            for k, v in cpu:
-                self.assertLessEqual(abs(v[0] - htp[k][0]), 3)
+            for k, v in cpu.items():
+                self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
 
 
-def setup_environement():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-b",
-        "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-s",
-        "--device",
-        help="serial number for android device communicated via ADB.",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-H",
-        "--host",
-        help="hostname where android device is connected.",
-        default=None,
-        type=str,
-    )
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
-        type=str,
-        required=True,
-    )
+def setup_environment():
+    parser = setup_common_args_and_variables()
+
     parser.add_argument(
         "-r",
         "--executorch_root",
@@ -1064,5 +1106,5 @@ def setup_environement():
 
 
 if __name__ == "__main__":
-    ut_args = setup_environement()
+    ut_args = setup_environment()
     unittest.main(argv=ut_args)

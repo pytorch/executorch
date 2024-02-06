@@ -87,7 +87,7 @@ from executorch.exir.tensor import (
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
 
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
 from typing_extensions import TypeAlias

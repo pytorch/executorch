@@ -9,7 +9,6 @@ import unittest
 from typing import Any, Callable
 
 import torch
-import torch._export as export
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
 
@@ -34,7 +33,7 @@ class ExportTest(unittest.TestCase):
         match.
         """
         eager_model = eager_model.eval()
-        model = export.capture_pre_autograd_graph(eager_model, example_inputs)
+        model = torch._export.capture_pre_autograd_graph(eager_model, example_inputs)
         edge_model = export_to_edge(model, example_inputs)
 
         executorch_prog = edge_model.to_executorch()
