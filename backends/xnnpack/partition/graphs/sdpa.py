@@ -12,7 +12,7 @@ from torch import Tensor
 from torch.export import export
 
 
-def get_sdpa_graphs() -> List[torch.fx.GraphModule]:
+def get_graphs() -> List[torch.fx.GraphModule]:
     """
     Returns a list of SDPA graphs.
     """
@@ -79,8 +79,3 @@ def get_sdpa_graphs() -> List[torch.fx.GraphModule]:
             graphs.append(gm)
 
     return graphs
-
-
-Graphs: List[torch.fx.GraphModule] = get_sdpa_graphs()
-
-# TODO - Add a standard interface around these modules
