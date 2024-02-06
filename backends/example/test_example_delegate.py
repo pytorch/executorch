@@ -8,7 +8,6 @@ import copy
 import unittest
 
 import torch
-import torch._export as export
 from executorch import exir
 from executorch.backends.example.example_partitioner import ExamplePartitioner
 from executorch.backends.example.example_quantizer import ExampleQuantizer
@@ -47,7 +46,7 @@ class TestExampleDelegate(unittest.TestCase):
         )
 
         m = model.eval()
-        m = export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+        m = torch._export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
         # print("original model:", m)
         quantizer = ExampleQuantizer()
         # quantizer = XNNPACKQuantizer()
@@ -83,7 +82,7 @@ class TestExampleDelegate(unittest.TestCase):
         )
 
         m = model.eval()
-        m = export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+        m = torch._export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
         quantizer = ExampleQuantizer()
 
         m = prepare_pt2e(m, quantizer)

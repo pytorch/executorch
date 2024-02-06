@@ -83,12 +83,7 @@ class TestStaticConstantPad(unittest.TestCase):
             z = y + y
             return z
 
-    def test_fp32_static_constant_pad_functional(self):
-        inputs = (
-            torch.randn(size=(5, 4, 3, 2)),
-            torch.randn(size=(5, 3, 2)),
-            torch.randn(size=(4, 3)),
-        )
+    def _test_static_constant_pad_functional(self, inputs):
         (
             Tester(self.StaticConstantPadFunctional(), inputs)
             .export()
@@ -107,6 +102,22 @@ class TestStaticConstantPad(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_static_constant_pad_functional(self):
+        inputs = (
+            torch.randn(size=(5, 4, 3, 2)).to(torch.float16),
+            torch.randn(size=(5, 3, 2)).to(torch.float16),
+            torch.randn(size=(4, 3)).to(torch.float16),
+        )
+        self._test_static_constant_pad_functional(inputs)
+
+    def test_fp32_static_constant_pad_functional(self):
+        inputs = (
+            torch.randn(size=(5, 4, 3, 2)),
+            torch.randn(size=(5, 3, 2)),
+            torch.randn(size=(4, 3)),
+        )
+        self._test_static_constant_pad_functional(inputs)
 
     def test_qs8_static_constant_pad_functional(self):
         class Pad(torch.nn.Module):

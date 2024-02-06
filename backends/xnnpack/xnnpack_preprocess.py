@@ -38,7 +38,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
 XNN_VALUE_FLAG_EXTERNAL_INPUT = 1
@@ -210,6 +210,7 @@ class XnnpackBackend(BackendDetails):
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=False, enable=False, class_only=True
             ),
+            constants=ep.constants,
         )
 
         # XNNPACK Delegate Specific Passes
@@ -258,5 +259,6 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
-
-        return PreprocessResult(processed_bytes=serialize_xnnpack_binary(xnnpack_graph))
+        return PreprocessResult(
+            processed_bytes=serialize_xnnpack_binary(xnnpack_graph), debug_handle_map={}
+        )

@@ -14,7 +14,6 @@
 #import <executorch/runtime/executor/method.h>
 #import <executorch/runtime/executor/program.h>
 #import <executorch/runtime/platform/runtime.h>
-#import <executorch/util/util.h>
 
 static constexpr size_t kRuntimeMemorySize = 10 * 1024U * 1024U; // 10 MB
 
@@ -95,6 +94,33 @@ std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
     
     return result;
 }
+
+Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
+    MethodMeta method_meta = method.method_meta();
+    size_t num_inputs = method_meta.num_inputs();
+    std::vector<std::vector<uint8_t>> buffers;
+    for (size_t i = 0; i < num_inputs; i++) {
+        Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
+        if (!tensor_meta.ok()) {
+            ET_LOG(Info, "Skipping non-tensor input %zu", i);
+            continue;
+        }
+        Buffer buffer(tensor_meta->nbytes(), 1);
+        auto sizes = tensor_meta->sizes();
+        exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
+        exec_aten::Tensor tensor(&tensor_impl);
+        EValue input_value(std::move(tensor));
+        Error err = method.set_input(input_value, i);
+        if (err != Error::Ok) {
+            ET_LOG(Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
+            return err;
+        }
+        buffers.emplace_back(std::move(buffer));
+    }
+    
+    return buffers;
+}
+
 }
 
 @interface CoreMLBackendDelegateTests : XCTestCase
@@ -145,15 +171,12 @@ std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
         MemoryManager memoryManger(&methodAllocator, &plannedAllocator);
         auto method = program->load_method(methodName.get().c_str(), &memoryManger);
         XCTAssert(method.ok());
-        auto inputs = util::PrepareInputTensors(method.get());
-        
+        auto inputBuffers = prepare_input_tensors(method.get());
         auto status = method->execute();
         XCTAssertEqual(status, Error::Ok);
         auto outputs = methodAllocator.allocateList<EValue>(method->outputs_size());
         status = method->get_outputs(outputs, method->outputs_size());
         XCTAssertEqual(status, Error::Ok);
-        
-        util::FreeInputs(inputs);
     }
 }
 

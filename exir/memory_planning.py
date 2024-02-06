@@ -83,6 +83,8 @@ class Verifier:
     @classmethod
     def storage_overlap(cls, lhs_spec: TensorSpec, rhs_spec: TensorSpec) -> bool:
         intervals = []
+        if lhs_spec.mem_id != rhs_spec.mem_id:
+            return False
         for spec in [lhs_spec, rhs_spec]:
             internal_assert(
                 spec.allocated_memory >= 0,
@@ -95,7 +97,7 @@ class Verifier:
             intervals.append(
                 [spec.mem_offset, spec.mem_offset + spec.allocated_memory - 1]
             )
-        return lhs_spec.mem_id == rhs_spec.mem_id and cls.has_overlap(*intervals)
+        return cls.has_overlap(*intervals)
 
     def verify_storage_reuse(
         self, allow_lifetime_and_storage_overlap: bool = False

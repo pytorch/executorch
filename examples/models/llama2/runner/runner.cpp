@@ -10,8 +10,10 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
+#include <executorch/extension/runner_util/managed_tensor.h>
 
 #include <ctime>
+#include <memory>
 
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
@@ -19,6 +21,7 @@
 
 #include <executorch/examples/models/llama2/runner/util.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 
 namespace torch {
@@ -42,14 +45,15 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
       method_names.ok(),
       "Failed to read method names from model: %s",
       model_path);
-  auto metadata = readMetadata(method_names.get());
-  ET_CHECK_MSG(metadata.size() == 6, "Invalid metadata size");
-  vocab_size_ = metadata[0];
-  bos_id_ = metadata[1];
-  eos_id_ = metadata[2];
-  n_bos_ = metadata[3];
-  n_eos_ = metadata[4];
-  max_seq_len_ = metadata[5];
+  model_methods_ = method_names.get();
+  vocab_size_ = getMetadataHelper<int64_t>("get_vocab_size", 32000);
+  bos_id_ = getMetadataHelper<int64_t>("get_bos_id", 1);
+  eos_id_ = getMetadataHelper<int64_t>("get_eos_id", 2);
+  n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
+  n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
+  max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
+  use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
   tokenizer_ = std::make_unique<Tokenizer>(vocab_size_, bos_id_, eos_id_);
@@ -73,41 +77,65 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
       std::make_unique<Sampler>(vocab_size_, temperature, topp, rng_seed);
 }
 
-std::vector<int32_t> Runner::readMetadata(
-    std::unordered_set<std::string> model_methods) {
-  std::vector<std::string> methods = {
-      "get_vocab_size",
-      "get_bos_id",
-      "get_eos_id",
-      "get_n_bos",
-      "get_n_eos",
-      "get_max_seq_len"};
-  std::vector<int32_t> default_values = {32000, 1, 2, 1, 1, 128};
-  std::vector<int32_t> result;
-  for (int i = 0; i < methods.size(); ++i) {
-    int32_t res = default_values[i];
-    if (model_methods.count(methods[i])) {
-      Result<std::vector<EValue>> outputs = module_->execute(methods[i]);
-      if (outputs.ok()) {
-        std::vector<EValue> outs = outputs.get();
-        if (outs.size() > 0) {
-          res = outs[0].toInt();
-        }
+template <typename T>
+T Runner::getMetadataHelper(std::string method_name, T default_val) {
+  T res = default_val;
+  if (model_methods_.count(method_name)) {
+    Result<std::vector<EValue>> outputs = module_->execute(method_name);
+    if (outputs.ok()) {
+      std::vector<EValue> outs = outputs.get();
+      if (outs.size() > 0) {
+        res = outs[0].to<T>();
       }
-    } else {
-      ET_LOG(
-          Info,
-          "The model does not contain %s method, using default value %d",
-          methods[i].c_str(),
-          default_values[i]);
     }
-    ET_LOG(Info, "%s: %d", methods[i].c_str(), res);
-    result.push_back(res);
+  } else {
+    ET_LOG(
+        Info,
+        "The model does not contain %s method, using default value %ld",
+        method_name.c_str(),
+        (int64_t)default_val);
+  }
+  ET_LOG(Info, "%s: %ld", method_name.c_str(), (int64_t)res);
+  return res;
+}
+
+std::vector<exec_aten::SizesType> Runner::getKVCacheShape() {
+  // shape: (n_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads,
+  // self.head_dim)
+  std::vector<std::string> methods = {
+      "get_n_layers",
+      "get_max_batch_size",
+      "get_max_seq_len",
+      "get_n_kv_heads",
+      "get_head_dim"};
+  std::vector<int64_t> default_values = {12, 1, 128, 32, 128};
+  std::vector<exec_aten::SizesType> result;
+  for (int i = 0; i < methods.size(); ++i) {
+    // convert from int64_t to int32_t
+    result.push_back(getMetadataHelper<int64_t>(methods[i], default_values[i]));
   }
   return result;
 }
 
-Error Runner::generate(const char* prompt, bool eos) {
+template <typename T>
+int32_t Runner::logitsToToken(
+    const exec_aten::Tensor& logits_tensor,
+    int64_t pos,
+    T _) {
+  (void)_;
+  T* logits = logits_tensor.mutable_data_ptr<T>();
+
+  // Since the logits are for all tokens, get the last token probabilities
+  T* logits_last = logits;
+  if (!use_kv_cache_) {
+    logits_last += pos * tokenizer_->vocab_size();
+  }
+  return sampler_->sample(logits_last);
+}
+
+Error Runner::generate(
+    const char* prompt,
+    std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
@@ -118,8 +146,14 @@ Error Runner::generate(const char* prompt, bool eos) {
   int* prompt_tokens = new int[strlen(prompt) + 1 + n_bos_ + n_eos_];
 
   tokenizer_->encode(
-      prompt, n_bos_, eos ? n_eos_ : 0, prompt_tokens, &num_prompt_tokens);
-
+      prompt,
+      n_bos_,
+      append_eos_ ? n_eos_ : 0,
+      prompt_tokens,
+      &num_prompt_tokens);
+  for (int i = 0; i < num_prompt_tokens; i++) {
+    ET_LOG(Info, "prompt_tokens[%d]: %d", i, prompt_tokens[i]);
+  }
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
       num_prompt_tokens < max_seq_len_,
@@ -129,14 +163,47 @@ Error Runner::generate(const char* prompt, bool eos) {
   long start =
       0; // used to time our code, only initialized after first iteration
   int next; // will store the next token in the sequence
-  int pos = num_prompt_tokens - 1; // position in the sequence
+  int64_t pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
-  void* data =
-      malloc(max_seq_len_ * sizeof(int64_t)); // allocate space for the tokens
+  int logits_index = 0; // index of the logits tensor in the output
+  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
+  std::vector<exec_aten::SizesType> input_shape = {1, 1};
+  std::vector<exec_aten::SizesType> pos_shape = {};
+  std::vector<uint8_t> k_data;
+  std::vector<uint8_t> v_data;
+  std::vector<int64_t> token_data; // allocate space for the tokens
+  ScalarType dtype = static_cast<ScalarType>(
+      getMetadataHelper("get_dtype", (int64_t)ScalarType::Float));
+
+  if (use_kv_cache_) {
+    // set pos to 0, refill token by token
+    pos = 0;
+    logits_index = 2;
+    // initialize kv cache
+    size_t n_bytes = 1;
+    for (exec_aten::SizesType shape : kv_cache_shape) {
+      n_bytes *= shape;
+    }
+    n_bytes *= elementSize(dtype);
+
+    k_data.resize(n_bytes);
+    v_data.resize(n_bytes);
+    token_data.resize(1);
+  } else {
+    // reserve data for tokens, notice the size is still 0.
+    token_data.resize(max_seq_len_);
+  }
+
+  // initialize tensor wrappers
+  ManagedTensor k_managed(k_data.data(), k_data.size(), kv_cache_shape, dtype);
+  ManagedTensor v_managed(v_data.data(), v_data.size(), kv_cache_shape, dtype);
+  ManagedTensor pos_managed(&pos, 0, {}, ScalarType::Long);
+
   // copy prompt tokens into data
-  for (int i = 0; i < num_prompt_tokens; ++i) {
-    ((int64_t*)data)[i] = prompt_tokens[i];
+  for (int i = 0; i <= pos; ++i) {
+    // @lint-ignore CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
+    token_data[i] = prompt_tokens[i];
     if (i > 0) {
       printf(
           "%s",
@@ -145,24 +212,28 @@ Error Runner::generate(const char* prompt, bool eos) {
     }
   }
   // create a 1xN int tensor with next as value
-  exec_aten::SizesType sizes[2]{1, pos};
-  exec_aten::DimOrderType dim_order[2]{0, 1};
-
   while (pos < max_seq_len_) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
-    ((int64_t*)data)[pos] = token;
-    sizes[1] = pos + 1;
-#ifdef USE_ATEN_LIB
-    exec_aten::Tensor tensor =
-        torch::from_blob(data, /*dim*/ sizes, torch::kLong);
-#else
-    exec_aten::TensorImpl tensor_impl(
-        ScalarType::Long, /*dim*/ 2, sizes, data, dim_order);
-    exec_aten::Tensor tensor(&tensor_impl);
-#endif
-    Result<std::vector<EValue>> outputs_res =
-        module_->forward({EValue(tensor)});
+    std::vector<EValue> inputs;
+    if (use_kv_cache_) {
+      token_data[0] = token;
+      input_shape[1] = 1;
+      // inputs: [tokens, start_pos, k_cache, v_cache]
+      inputs.emplace_back(pos_managed.get_aliasing_tensor());
+      inputs.emplace_back(k_managed.get_aliasing_tensor());
+      inputs.emplace_back(v_managed.get_aliasing_tensor());
+    } else {
+      // @lint-ignore CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
+      token_data[pos] = token;
+      input_shape[1] = pos + 1;
+    }
+    ManagedTensor token_managed(
+        token_data.data(), token_data.size(), input_shape, ScalarType::Long);
+    inputs.insert(inputs.begin(), token_managed.get_aliasing_tensor());
+    // For kv cache, inputs: [tokens, start_pos, k_cache, v_cache]
+    // Otherwise inputs: [tokens]
+    Result<std::vector<EValue>> outputs_res = module_->forward(inputs);
     ET_CHECK_MSG(
         outputs_res.ok(),
         "Execution of method forward failed with status 0x%" PRIx32,
@@ -177,33 +248,23 @@ Error Runner::generate(const char* prompt, bool eos) {
         outputs.size());
 
     int32_t next_tok;
-    switch (outputs[0].toTensor().scalar_type()) {
-      case ScalarType::Float: {
-        float* logits = outputs[0].toTensor().mutable_data_ptr<float>();
+    exec_aten::Tensor logits_tensor = outputs.at(logits_index).toTensor();
 
-        // Since the logits are for all tokens, get the last token probabilities
-        float* logits_last = logits + pos * tokenizer_->vocab_size();
-        next_tok = sampler_->sample(logits_last);
+    switch (logits_tensor.scalar_type()) {
+      case ScalarType::Float: {
+        next_tok = logitsToToken<float>(logits_tensor, pos, 0);
         break;
       }
       case ScalarType::Half: {
-        exec_aten::Half* half_logits =
-            outputs[0].toTensor().mutable_data_ptr<exec_aten::Half>();
-        exec_aten::Half* logits_last =
-            half_logits + pos * tokenizer_->vocab_size();
-        next_tok = sampler_->sample(logits_last);
+        next_tok = logitsToToken<exec_aten::Half>(logits_tensor, pos, 0);
         break;
       }
       default:
         ET_CHECK_MSG(
             false,
             "Unsupported dtype output %hhd",
-            outputs[0].toTensor().scalar_type());
+            logits_tensor.scalar_type());
     }
-
-    // debug
-    // torch::Tensor t = torch::from_blob(
-    //     (void*)logits, {1, num_prompt_tokens, 32000}, torch::kFloat);
 
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
@@ -225,6 +286,10 @@ Error Runner::generate(const char* prompt, bool eos) {
     util::safe_printf(piece);
     fflush(stdout);
 
+    if (callback) {
+      callback(piece);
+    }
+
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && next == eos_id_) {
       eos_counter++;
@@ -242,6 +307,17 @@ Error Runner::generate(const char* prompt, bool eos) {
     if (start == 0) {
       start = util::time_in_ms();
     }
+    if (use_kv_cache_) {
+      // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
+      memcpy(
+          k_data.data(),
+          outputs.at(0).toTensor().const_data_ptr(),
+          k_data.size());
+      memcpy(
+          v_data.data(),
+          outputs.at(1).toTensor().const_data_ptr(),
+          v_data.size());
+    }
   }
   printf("\n");
 
@@ -257,9 +333,15 @@ Error Runner::generate(const char* prompt, bool eos) {
   }
 
   delete[] prompt_tokens;
-  free(data);
   return Error::Ok;
 }
 
+// explicit instantiation of template methods
+template int64_t Runner::getMetadataHelper<int64_t>(
+    std::string method_name,
+    int64_t default_val);
+template bool Runner::getMetadataHelper<bool>(
+    std::string method_name,
+    bool default_val);
 } // namespace executor
 } // namespace torch

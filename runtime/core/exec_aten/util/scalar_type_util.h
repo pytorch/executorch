@@ -564,8 +564,8 @@ inline exec_aten::ScalarType promoteTypes(
   exec_aten::ScalarType promoted_type =
       _promoteTypesLookup[static_cast<int>(a)][static_cast<int>(b)];
 
-  if (half_to_float && promoted_type == ScalarType::Half) {
-    promoted_type = ScalarType::Float;
+  if (half_to_float && promoted_type == exec_aten::ScalarType::Half) {
+    promoted_type = exec_aten::ScalarType::Float;
   }
 
   return promoted_type;

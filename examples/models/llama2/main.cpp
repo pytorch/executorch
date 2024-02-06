@@ -15,11 +15,6 @@ DEFINE_string(
     "llama2.pte",
     "Model serialized in flatbuffer format.");
 
-DEFINE_bool(
-    eos,
-    false,
-    "Whether to append an end-of-sentence token to the end of the prompt");
-
 DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
@@ -40,7 +35,7 @@ int32_t main(int32_t argc, char** argv) {
   ::torch::executor::Runner runner(model_path, tokenizer_path);
 
   // generate
-  runner.generate(prompt, FLAGS_eos);
+  runner.generate(prompt);
 
   return 0;
 }
