@@ -8,7 +8,7 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from executorch.exir.sym_util import eval_shape
+from executorch.exir.sym_util import eval_shape_upper_bound
 
 
 def get_shape(input_node: torch.fx.Node):
@@ -17,7 +17,7 @@ def get_shape(input_node: torch.fx.Node):
     shape, then return upperbound shape.
     """
     input_val = input_node.meta["val"]
-    return eval_shape(input_val.shape)
+    return eval_shape_upper_bound(input_val.shape)
 
 
 def get_dqlinear_input(node: torch.fx.Node):
