@@ -60,13 +60,16 @@ def _patch_executorch_references(targets, use_static_deps = False):
             fail("References to executorch build targets must use " +
                  "`//executorch`, not `//xplat/executorch`")
 
-        # change the name of target reference to satisfy the build environment.
-        if env.target_needs_patch(target):
-            target = env.patch_target_for_env(target)
-
         # TODO(larryliu0820): it's confusing that we only apply "static" patch to target_needs_patch. We need to clean this up.
         if use_static_deps and env.target_needs_patch(target) and not target.endswith("..."):
             target = target + "_static"
+
+        # Change the name of target reference to satisfy the build environment.
+        # This needs to happen after any other target_needs_patch calls, because
+        # it can modify the prefix of the target.
+        if env.target_needs_patch(target):
+            target = env.patch_target_for_env(target)
+
         out_targets.append(target)
     return out_targets
 
