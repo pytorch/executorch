@@ -38,7 +38,7 @@ class ManagedTensor {
       ScalarType dtype)
       : dtype_(dtype), sizes_(sizes), data_ptr_(data) {
 #ifdef USE_ATEN_LIB
-    tensor_ = torch::from_blob(data, sizes, dtype);
+    tensor_ = torch::from_blob(data, sizes, dtype_);
 #else
     ssize_t dim = sizes.size();
     dim_order_.resize(dim);
@@ -49,7 +49,7 @@ class ManagedTensor {
     dim_order_to_stride_nocheck(
         sizes.data(), dim_order_.data(), dim, strides_.data());
     tensor_impl_ = std::make_unique<TensorImpl>(
-        dtype,
+        dtype_,
         dim,
         sizes_.data(),
         data_ptr_,
