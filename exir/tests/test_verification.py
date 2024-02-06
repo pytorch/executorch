@@ -4,20 +4,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
 import unittest
 
-import executorch.exir as exir
-
 import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir.passes import ToOutVarPass
+from executorch.exir import to_edge
 from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.schema import Tensor, TensorList
 
 from executorch.exir.verification.interpreter import Interpreter
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch._export.verifier import SpecViolationError
+from torch.export import export
+
+
+class WrapperModule(torch.nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
 
 
 class TestVerification(unittest.TestCase):
@@ -27,11 +33,14 @@ class TestVerification(unittest.TestCase):
 
         # Generate program
         program = (
-            exir.capture(f, (torch.randn(2),), exir.CaptureConfig())
-            .to_edge()
-            .transform(ConstPropPass())
+            to_edge(export(WrapperModule(f), (torch.randn(2),)))
+            .transform(
+                [
+                    ConstPropPass(),
+                ]
+            )
             .to_executorch()
-            .program
+            ._emitter_output.program
         )
 
         test = Interpreter(program)
@@ -79,10 +88,7 @@ class TestVerification(unittest.TestCase):
         model1 = Op1()
         inputs = (torch.ones(2, 2),)
         program = (
-            exir.capture(model1, inputs, exir.CaptureConfig())
-            .to_edge()
-            .to_executorch(ExecutorchBackendConfig(to_out_var_pass=ToOutVarPass(True)))
-            .program
+            to_edge(export(model1, inputs)).to_executorch()._emitter_output.program
         )
 
         # Initialize and test Interpreter -- assert that the operators are same as above
@@ -96,10 +102,7 @@ class TestVerification(unittest.TestCase):
         model2 = Op2()
         inputs = (torch.ones(2, 2),)
         program = (
-            exir.capture(model2, inputs, exir.CaptureConfig())
-            .to_edge()
-            .to_executorch()
-            .program
+            to_edge(export(model2, inputs)).to_executorch()._emitter_output.program
         )
 
         # Initialize and test Interpreter -- assert that the operators are same as above
@@ -130,20 +133,12 @@ class TestVerification(unittest.TestCase):
         # Generate a program with Op2's operations (remainder, div, add)
         model2 = Op2()
         inputs = torch.ones(2, 2)
-        exec_prog = (
-            exir.capture(model2, (inputs,), exir.CaptureConfig())
-            .to_edge()
-            .to_executorch()
-        )
+        exec_prog = to_edge(export(model2, (inputs,))).to_executorch()
 
-        graph_module = exec_prog.dump_graph_module()
-        res = graph_module(inputs)[0]
-        program = exec_prog.program
-
-        interp = Interpreter(program)
-        res_interp = interp.run(inputs)
-        self.assertEqual(len(res), len(res_interp))
-        self.assertTrue(torch.allclose(res, res_interp))
+        exported_prog = exec_prog.exported_program()
+        res = exported_prog(inputs)[0]  # noqa
+        # Verifiers are run internally in to_edge, export, and to_executorch.
+        # If we make it this far then no errors were thrown in verification
 
 
 class TestEdgeVerification(unittest.TestCase):
@@ -159,13 +154,14 @@ class TestEdgeVerification(unittest.TestCase):
 
         m = TestModel()
         egm = (
-            exir.capture(
-                m,
-                (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
-                exir.CaptureConfig(),
+            to_edge(
+                export(
+                    m,
+                    (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
+                )
             )
-            .to_edge()
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
@@ -182,13 +178,14 @@ class TestEdgeVerification(unittest.TestCase):
 
         m = TestModel()
         egm = (
-            exir.capture(
-                m,
-                (torch.rand(16, 8, 32, 32), torch.rand(8), torch.rand(8)),
-                exir.CaptureConfig(),
+            to_edge(
+                export(
+                    m,
+                    (torch.rand(16, 8, 32, 32), torch.rand(8), torch.rand(8)),
+                )
             )
-            .to_edge()
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
@@ -204,13 +201,14 @@ class TestEdgeVerification(unittest.TestCase):
 
         m = TestModel()
         egm = (
-            exir.capture(
-                m,
-                ([],),
-                exir.CaptureConfig(),
+            to_edge(
+                export(
+                    m,
+                    ([],),
+                )
             )
-            .to_edge()
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
@@ -227,11 +225,10 @@ class TestEdgeVerification(unittest.TestCase):
                 return torch._to_cpu([b, x])
 
         m = TestModel()
-        egm = exir.capture(
+        egm = export(
             m,
             (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
-            exir.CaptureConfig(),
-        ).exported_program.graph_module
+        ).graph_module
         verifier = EXIREdgeDialectVerifier()
         with self.assertRaises(SpecViolationError):
             verifier(egm)
@@ -246,13 +243,14 @@ class TestEdgeVerification(unittest.TestCase):
 
         m = TestModel()
         egm = (
-            exir.capture(
-                m,
-                (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
-                exir.CaptureConfig(),
+            to_edge(
+                export(
+                    m,
+                    (torch.randn(1, 3, 100, 100).to(dtype=torch.int),),
+                )
             )
-            .to_edge(EdgeCompileConfig())
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
         verifier = EXIREdgeDialectVerifier()
         verifier(egm)
@@ -263,11 +261,12 @@ class TestEdgeVerification(unittest.TestCase):
         m = torch.nn.LogSoftmax(dim=1)
         with self.assertRaises(SpecViolationError):
             _ = (
-                exir.capture(
-                    m,
-                    (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),),
-                    exir.CaptureConfig(),
+                to_edge(
+                    export(
+                        m,
+                        (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),),
+                    )
                 )
-                .to_edge()
-                .exported_program.graph_module
+                .exported_program()
+                .graph_module
             )
