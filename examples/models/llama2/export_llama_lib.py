@@ -247,10 +247,7 @@ def export_llama(modelname, args) -> str:
         return _export_llama(modelname, args)
 
 
-def _export_llama(modelname, args) -> str:
-
-    quantization_options = _get_quantization_options(args)
-    print(quantization_options)
+def _export_llama(modelname, args) -> str:  # noqa: C901
 
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
@@ -324,6 +321,7 @@ def _export_llama(modelname, args) -> str:
         except JSONDecodeError:
             logging.error("Invalid metadata, should be a valid JSON string")
 
+    quantization_options = _get_quantization_options(args)
     with torch.backends.cuda.sdp_kernel(
         enable_flash=False, enable_mem_efficient=False, enable_math=True
     ), torch.no_grad():
