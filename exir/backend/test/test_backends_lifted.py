@@ -512,7 +512,7 @@ class TestBackends(unittest.TestCase):
         class NonLowerableSubModel(torch.nn.Module):
             def __init__(self, bias):
                 super().__init__()
-                self.bias = bias
+                self.register_buffer("bias", bias)
 
             def forward(self, a, b):
                 return torch.add(torch.add(a, b), self.bias)
@@ -882,7 +882,7 @@ class TestBackends(unittest.TestCase):
         class AddOne(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.one = torch.ones(1, 3)
+                self.register_buffer("one", torch.ones(1, 3))
 
             def forward(self, x):
                 return x + self.one

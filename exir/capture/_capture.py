@@ -7,7 +7,9 @@
 import copy
 import warnings
 from collections import namedtuple
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from contextlib import contextmanager
+from types import MethodType
+from typing import Any, Callable, cast, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir.capture._config import CaptureConfig
@@ -129,6 +131,32 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
     return ExirExportedProgram(ep, False)
 
 
+@contextmanager
+def patch_forward(obj: torch.nn.Module, new_method):
+    """Helper method to make it easier to cleanly torch.export() a method on a
+    module that is not `forward`.
+
+    TODO(suo): upstream this to torch.export.wrapper.
+    """
+    # Save the original method
+    original_method = obj.forward
+
+    # Patch the method
+    obj.forward = new_method.__get__(obj, obj.__class__)
+
+    try:
+        yield
+    finally:
+        # Restore the original method
+        obj.forward = original_method
+
+
+class WrapperModule(torch.nn.Module):
+    def __init__(self, f):
+        super().__init__()
+        self.forward = f
+
+
 @compatibility(is_backward_compatible=False)
 def capture(  # noqa: C901
     f: Callable[..., Any],
@@ -170,13 +198,19 @@ def capture(  # noqa: C901
                     "Functionalization is required for enable_aot.",
                 )
 
-            class WrapperModule(torch.nn.Module):
-                def __init__(self, f):
-                    super().__init__()
-                    self.forward = f
+            # If trying to capture a method and the bound class instance is a
+            # Module, then export the module while patching in that method.
+            if isinstance(f, MethodType) and isinstance(f.__self__, torch.nn.Module):
+                with patch_forward(f.__self__, f):
+                    ep = export(
+                        cast(torch.nn.Module, f.__self__),
+                        args,
+                        dynamic_shapes=dynamic_shapes,
+                    )
+            else:
+                mod = f if isinstance(f, torch.nn.Module) else WrapperModule(f)
+                ep = export(mod, args, dynamic_shapes=dynamic_shapes)
 
-            mod = f if isinstance(f, torch.nn.Module) else WrapperModule(f)
-            ep = export(mod, args, dynamic_shapes=dynamic_shapes)
             ep = ep.run_decompositions(_default_decomposition_table())
             ep = _transform(ep, ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:

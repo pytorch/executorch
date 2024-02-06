@@ -979,11 +979,11 @@ class XnnpackPartitioner(Partitioner):
         self, ep, quant: Optional[bool]
     ) -> List[List[torch.fx.Node]]:
         graph_module = ep.graph_module
-        graphs = bilinear_2d.Graphs
+        graphs = bilinear_2d.get_graphs()
 
         # Temporary for lowering SDPA
         if self._lower_recomposed_sdpa:
-            graphs += sdpa.Graphs
+            graphs += sdpa.get_graphs()
 
         graph_patterns = [gm_pattern.graph for gm_pattern in graphs]
         partitions = generate_pattern_op_partitions(
