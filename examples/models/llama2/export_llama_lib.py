@@ -17,15 +17,23 @@ from typing import Any, Dict
 import pkg_resources
 import torch
 
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
+    XnnpackDynamicallyQuantizedPartitioner,
+    XnnpackPartitioner,
+)
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.util.python_profiler import CProfilerFlameGraph
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from executorch.util.python_profiler import CProfilerFlameGraph
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
@@ -48,22 +56,24 @@ def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
 
 
-def apply_embedding_bag_quantization(
-    exported_model, example_inputs, so_library
+def apply_pt2e_quantization(
+    exported_model, example_inputs, quantization_options, args
 ) -> torch.nn.Module:
     """
     Applies embedding bag quantization on a model.
     Args:
-        model: A model to apply embedding bag quantization on.
+        exported_model: A model to apply quantization on.
+        example_inputs: Inputs to the model.
+        quantization_options: Options for quantization as list of strings. e.g. ["xnnpack_dynamic", "embedding"]
     Returns:
-        An embedding bag quantized model.
+        An quantized model.
     """
     try:
         _ = torch.ops.quantized_decomposed.embedding_byte.out
     except AttributeError:
-        if so_library:
-            print(f"Loading library {so_library}")
-            torch.ops.load_library(so_library)
+        if args.so_library:
+            print(f"Loading library {args.so_library}")
+            torch.ops.load_library(args.so_library)
         else:
             raise RuntimeError(
                 "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
@@ -76,8 +86,18 @@ def apply_embedding_bag_quantization(
                 "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
             )
 
-    embedding_quantizer = EmbeddingQuantizer()
-    m = prepare_pt2e(exported_model, embedding_quantizer)
+    quantizers = []
+    if "embedding" in quantization_options:
+        quantizers.append(EmbeddingQuantizer())
+    if "xnnpack_dynamic" in quantization_options:
+        dynamic_quantizer = XNNPACKQuantizer()
+        operator_config_dynamic = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=True
+        )
+        dynamic_quantizer.set_global(operator_config_dynamic)
+        quantizers.append(dynamic_quantizer)
+    composed_quantizer = ComposableQuantizer(quantizers)
+    m = prepare_pt2e(exported_model, composed_quantizer)
     # Calibrate
     m(*example_inputs)
     m = convert_pt2e(m)
@@ -128,7 +148,9 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-Q", "--quantize", default=None, action="store_true")
     parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
     parser.add_argument(
-        "-QE", "--quantize_embedding", default=None, action="store_true"
+        "--pt2_quantize",
+        default="",
+        help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic, embedding.",
     )
 
     parser.add_argument(
@@ -206,6 +228,15 @@ def get_metadata(params: ModelArgs) -> Dict[str, Any]:
     }
 
 
+def _get_quantization_options(args):
+    if args.quantize and args.pt2_quantize != "":
+        raise ValueError("Cannot specify both --quantize and --pt2_quantize")
+
+    quantization_options = args.pt2_quantize.split(",")
+    quantization_options = [option.strip() for option in quantization_options]
+    return quantization_options
+
+
 def export_llama(modelname, args) -> str:
     if args.profile_path is not None:
         with CProfilerFlameGraph(args.profile_path):
@@ -215,6 +246,9 @@ def export_llama(modelname, args) -> str:
 
 
 def _export_llama(modelname, args) -> str:
+
+    quantization_options = _get_quantization_options(args)
+    print(quantization_options)
 
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
@@ -294,8 +328,10 @@ def _export_llama(modelname, args) -> str:
         m = capture_pre_autograd_graph(
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
-        if args.quantize_embedding:
-            m = apply_embedding_bag_quantization(m, example_inputs, args.so_library)
+        if len(quantization_options) > 0:
+            m = apply_pt2e_quantization(
+                m, example_inputs, quantization_options, args.so_library
+            )
         edge_manager = export_to_edge(
             m,
             example_inputs,
@@ -303,6 +339,11 @@ def _export_llama(modelname, args) -> str:
             edge_constant_methods=metadata,
             edge_compile_config=edge_config,
         )
+
+    if "xnnpack_dynamic" in quantization_options:
+        edge_manager = edge_manager.to_backend(XnnpackDynamicallyQuantizedPartitioner())
+        modelname = f"xnnpack_dq_{modelname}"
+
     if args.xnnpack:
         edge_manager = edge_manager.to_backend(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
