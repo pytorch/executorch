@@ -30,6 +30,17 @@ CUSTOM_RUNNERS = {
     }
 }
 
+DEFAULT_TIMEOUT = 90
+CUSTOM_TIMEOUT = {
+    # Just some examples on how custom timeout can be set
+    "linux": {
+        "mobilebert": 90,
+    },
+    "macos": {
+        "mobilebert": 90,
+    },
+}
+
 
 def parse_args() -> Any:
     from argparse import ArgumentParser
@@ -96,12 +107,13 @@ def export_models_for_ci() -> dict[str, dict]:
                 "model": "mv3",
                 "backend": backend,
                 "runner": "linux.2xlarge",
+                "timeout": DEFAULT_TIMEOUT,
             }
             models["include"].append(record)
 
     # Add all models for CMake E2E validation
     # CMake supports both linux and macos
-    for (name, backend) in itertools.product(
+    for name, backend in itertools.product(
         MODEL_NAME_TO_MODEL.keys(), ["portable", "xnnpack"]
     ):
         if not model_should_run_on_event(name, event):
@@ -121,7 +133,12 @@ def export_models_for_ci() -> dict[str, dict]:
             "model": name,
             "backend": backend,
             "runner": DEFAULT_RUNNERS.get(target_os, "linux.2xlarge"),
+            "timeout": DEFAULT_TIMEOUT,
         }
+
+        # Set the custom timeout if needed
+        if target_os in CUSTOM_TIMEOUT and name in CUSTOM_TIMEOUT[target_os]:
+            record["timeout"] = CUSTOM_TIMEOUT[target_os].get(name, DEFAULT_TIMEOUT)
 
         # NB: Some model requires much bigger Linux runner to avoid
         # running OOM. The team is investigating the root cause

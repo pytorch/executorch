@@ -24,7 +24,7 @@ jobs:
       docker-image: ${{ inputs.docker-image }}
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 60
+      timeout: 90
       script: |
         set -eux
 

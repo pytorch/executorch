@@ -38,7 +38,7 @@ class SpecPropPass(ExportPass):
 
     def update_placeholder_tensor_specs(
         self,
-        exported_program: torch._export.ExportedProgram,
+        exported_program: torch.export.ExportedProgram,
         graph_module: torch.fx.GraphModule,
     ) -> None:
         """

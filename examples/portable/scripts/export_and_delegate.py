@@ -10,7 +10,6 @@ import argparse
 import logging
 
 import torch
-import torch._export as export
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
@@ -64,7 +63,7 @@ def export_composite_module_with_lower_graph():
     m_compile_spec = m.get_compile_spec()
 
     # pre-autograd export. eventually this will become torch.export
-    m = export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
@@ -87,7 +86,7 @@ def export_composite_module_with_lower_graph():
     m = CompositeModule()
     m = m.eval()
     # pre-autograd export. eventually this will become torch.export
-    m = export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
     composited_edge = export_to_edge(m, m_inputs)
 
     # The graph module is still runnerable
@@ -139,7 +138,7 @@ def export_and_lower_partitioned_graph():
     m = Model()
     m_inputs = m.get_example_inputs()
     # pre-autograd export. eventually this will become torch.export
-    m = export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
@@ -178,7 +177,7 @@ def export_and_lower_the_whole_graph():
 
     m_inputs = m.get_example_inputs()
     # pre-autograd export. eventually this will become torch.export
-    m = export.capture_pre_autograd_graph(m, m_inputs)
+    m = torch._export.capture_pre_autograd_graph(m, m_inputs)
     edge = export_to_edge(m, m_inputs)
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 

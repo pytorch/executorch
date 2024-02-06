@@ -11,7 +11,10 @@
 
 #pragma once
 
+#include <cstdint>
+#include <functional>
 #include <memory>
+#include <string>
 #include <unordered_map>
 
 #include <executorch/examples/models/llama2/sampler/sampler.h>
@@ -25,11 +28,18 @@ class Runner {
  public:
   explicit Runner(const char* model_path, const char* tokenizer_path);
 
-  Error generate(const char* prompt, bool eos = false);
+  Error generate(
+      const char* prompt,
+      std::function<void(const std::string&)> callback = {});
 
  private:
-  std::vector<int32_t> readMetadata(
-      std::unordered_set<std::string> method_names);
+  // metadata
+  template <typename T>
+  T getMetadataHelper(std::string method_name, T default_val);
+  template <typename T>
+  int32_t
+  logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
+  std::vector<exec_aten::SizesType> getKVCacheShape();
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -37,6 +47,9 @@ class Runner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
+  bool use_kv_cache_;
+  bool append_eos_;
+  std::unordered_set<std::string> model_methods_;
   // module
   std::unique_ptr<Module> module_;
   // tokenizer

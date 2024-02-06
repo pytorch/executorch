@@ -25,6 +25,6 @@ def define_common_targets():
             "//xplat/caffe2/c10:c10",
             # Dont really like this but without this I dont have aten::empty
             # And havent figured out a more minimal target
-            "//xplat/caffe2:torch_mobile_all_ops",
+            "//xplat/caffe2:torch_mobile_all_ops_et",
         ],
     )

@@ -20,11 +20,12 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+from executorch.util.python_profiler import CProfilerFlameGraph
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
 from .model import ModelArgs
-from .quantize import WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -84,6 +85,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     )
     parser.add_argument("-Q", "--quantize", default=None, action="store_true")
+    parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
 
     parser.add_argument(
         "-c",
@@ -96,7 +98,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--use_kv_cache",
         default=False,
         action="store_true",
-        help="Whether or not to epxort a model using kv cache",
+        help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
         "-p", "--params", default=f"{ckpt_dir}/llama2_params.json", help="config.json"
@@ -108,6 +110,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help='metadata string in json format. Example {"get_bos_id": 3, "get_eos_id": 3, "get_n_bos": 1, "get_n_eos": 2}',
     )
 
+    parser.add_argument(
+        "-prof",
+        "--profile_path",
+        default=None,
+        help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
+    )
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -143,6 +151,14 @@ def get_metadata(params: ModelArgs) -> Dict[str, Any]:
 
 
 def export_llama(modelname, args) -> str:
+    if args.profile_path is not None:
+        with CProfilerFlameGraph(args.profile_path):
+            return _export_llama(modelname, args)
+    else:
+        return _export_llama(modelname, args)
+
+
+def _export_llama(modelname, args) -> str:
 
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
@@ -163,6 +179,8 @@ def export_llama(modelname, args) -> str:
 
     # metadata that we want to serialize into .pte file
     metadata = get_metadata(model.params)
+    # For language llama, tell the runtime to always append EOS toekn(s) to prompt.
+    metadata["append_eos_to_prompt"] = args.fairseq2
 
     if args.use_kv_cache:
         # seq length is fixed to 1 with current kv cache impl
@@ -193,6 +211,19 @@ def export_llama(modelname, args) -> str:
         model.to(dtype=torch.float)
         metadata["get_dtype"] = 6
 
+    if args.embedding_quantize:
+        modelname = f"{modelname}_e"
+        model = EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
+
+    if args.verbose:
+        print(f"{modelname}:")
+        print(f"{model}")
+
+    # metadata that we want to serialize into .pte file
+    metadata = {
+        "get_vocab_size": model.params.vocab_size,
+        "get_max_seq_len": model.params.max_seq_len,
+    }
     if args.metadata:
         try:
             extra = json.loads(args.metadata)
