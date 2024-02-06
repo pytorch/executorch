@@ -4,15 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-strict
-
 import unittest
 
-import executorch.exir as exir
 import executorch.exir.tests.models as models
 
 import torch
-from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.lowered_backend_module import (
     create_submodule_from_nodes,
@@ -25,7 +22,17 @@ from executorch.exir.schema import (
     DelegateCall,
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
+from torch.export import export
 from torch.testing import FileCheck
+
+
+class WrapperModule(torch.nn.Module):
+    def __init__(self, fn):
+        super().__init__()
+        self.fn = fn
+
+    def forward(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
 
 
 class TestDelegate(unittest.TestCase):
@@ -38,25 +45,22 @@ class TestDelegate(unittest.TestCase):
             return x + y
 
         inputs = (torch.ones(1, 3), torch.ones(1, 3))
-        edge_ir_m = exir.capture(g, inputs, CaptureConfig()).to_edge()
+        edge_ir_m = to_edge(export(WrapperModule(g), inputs))
         lowered_module: LoweredBackendModule = LoweredBackendModule(
-            edge_ir_m, "BackendWithCompilerDemo", b"moo", []
+            edge_ir_m.exported_program(), "BackendWithCompilerDemo", b"moo", []
         )
 
         def f(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
             return torch.ops.higher_order.executorch_call_delegate(lowered_module, x, y)
 
         orig_res = f(*inputs)
-        gm = exir.capture(
-            f,
+        gm = export(
+            WrapperModule(f),
             inputs,
-            exir.CaptureConfig(
-                enable_functionalization=True, enable_dynamic_shape=True
-            ),
         )
         FileCheck().check("lowered_module_0").check(
             "torch.ops.higher_order.executorch_call_delegate"
-        ).run(gm.exported_program.graph_module.code)
+        ).run(gm.graph_module.code)
         self.assertTrue(torch.allclose(orig_res, gm(*inputs)))
 
     def test_to_backend(self) -> None:
@@ -64,15 +68,12 @@ class TestDelegate(unittest.TestCase):
 
         m = models.CompositeDelegateModule()
 
-        exec_prog = (
-            exir.capture(m, m.get_random_inputs(), exir.CaptureConfig())
-            .to_edge(
-                EdgeCompileConfig(_check_ir_validity=False)
-            )  # TODO(larryliu): fix split_copy.Tensor
-            .to_executorch()
-        )
-        graph_module = exec_prog.dump_graph_module()
-        program = exec_prog.program
+        exec_prog = to_edge(
+            export(m, m.get_random_inputs()),
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch()  # TODO(larryliu): fix split_copy.Tensor
+        graph_module = exec_prog.exported_program().graph_module
+        program = exec_prog._emitter_output.program
 
         # Check that there exists a call_delegate, representing the call to the
         # delegated function
@@ -164,8 +165,8 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = exir.capture(Model(), inputs, CaptureConfig()).to_edge()
-        gm = prog.exported_program.graph_module
+        prog = to_edge(export(Model(), inputs))
+        gm = prog.exported_program().graph_module
 
         node_list = []
         for node in gm.graph.nodes:
@@ -185,7 +186,7 @@ class TestDelegate(unittest.TestCase):
                 self.assertTrue(isinstance(node.args[0], list))
                 self.assertEqual(len(node.args[0]), 1)
 
-        new_res = prog(*inputs)
+        new_res = prog.exported_program()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
 
     def test_create_submodule_multiple_return(self) -> None:
@@ -224,8 +225,8 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = exir.capture(Model(), inputs, CaptureConfig()).to_edge()
-        gm = prog.exported_program.graph_module
+        prog = to_edge(export(Model(), inputs))
+        gm = prog.exported_program().graph_module
 
         node_list = []
         for node in gm.graph.nodes:
@@ -245,7 +246,7 @@ class TestDelegate(unittest.TestCase):
                 self.assertTrue(isinstance(node.args[0], list))
                 self.assertEqual(len(node.args[0]), 2)
 
-        new_res = prog(*inputs)
+        new_res = prog.exported_program()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
 
     def test_create_submodule_list_return(self) -> None:
@@ -283,8 +284,8 @@ class TestDelegate(unittest.TestCase):
                 return x
 
         orig_res = Model()(*inputs)
-        prog = exir.capture(Model(), inputs, CaptureConfig()).to_edge()
-        gm = prog.exported_program.graph_module
+        prog = to_edge(export(Model(), inputs))
+        gm = prog.exported_program().graph_module
 
         node_list = []
         for node in gm.graph.nodes:
@@ -306,5 +307,5 @@ class TestDelegate(unittest.TestCase):
                 self.assertTrue(isinstance(node.args[0], list))
                 self.assertEqual(len(node.args[0]), 2)
 
-        new_res = prog(*inputs)
+        new_res = prog.exported_program()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
