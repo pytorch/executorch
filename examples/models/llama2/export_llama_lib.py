@@ -27,6 +27,7 @@ from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEv
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from executorch.util.python_profiler import CProfilerFlameGraph
 from torch._export import capture_pre_autograd_graph
+from torch.ao.quantization.pt2e.util_passes import DuplicateDynamicQuantChainPass
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
@@ -101,6 +102,7 @@ def apply_pt2e_quantization(
     # Calibrate
     m(*example_inputs)
     m = convert_pt2e(m)
+    DuplicateDynamicQuantChainPass()(m)
     return m
 
 
