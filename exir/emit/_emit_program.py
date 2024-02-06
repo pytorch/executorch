@@ -32,7 +32,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tensor import layout_enum, scalar_type_enum
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 
 def _emit_prim_getters(prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:

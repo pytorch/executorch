@@ -739,6 +739,7 @@ class GraphModuleSerializer:
                 buffer=InputToBufferSpec(
                     arg=TensorArgument(name=spec.arg.name),
                     buffer_name=spec.target,  # pyre-ignore
+                    persistent=spec.persistent,  # pyre-ignore
                 )
             )
         elif spec.kind == ep.InputKind.CONSTANT_TENSOR:

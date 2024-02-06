@@ -793,7 +793,11 @@ bool check_view_copy_args(
   ET_LOG_AND_RETURN_IF_FALSE(size_int64_t.size() == out.sizes().size());
 
   // The input and out shall share same dtype and numel
-  ET_LOG_AND_RETURN_IF_FALSE(self.numel() == out.numel());
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      self.numel() == out.numel(),
+      "self.numel() %zd != out.numel() %zd",
+      self.numel(),
+      out.numel());
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, out));
 
   // The size of out should equal target size.

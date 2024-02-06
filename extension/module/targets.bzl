@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -18,8 +18,6 @@ def define_common_targets():
             exported_headers = [
                 "module.h",
             ],
-            platforms = ["Default"] if aten_mode else get_default_executorch_platforms(),
-            define_static_target = not aten_mode,
             visibility = [
                 "@EXECUTORCH_CLIENTS",
             ],

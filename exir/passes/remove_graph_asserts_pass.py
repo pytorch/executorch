@@ -23,9 +23,13 @@ class RemoveGraphAssertsPass(PassBase):
 
             for node in module.graph.nodes:
                 if node.op == "call_function" and (
-                    node.target == torch.ops.aten._assert_async.msg
-                    or node.target
-                    == torch.ops.aten.sym_constrain_range_for_size.default
+                    node.target
+                    in (
+                        torch.ops.aten._assert_async.msg,
+                        torch.ops.aten._assert_scalar.default,
+                        torch.ops.aten.sym_constrain_range_for_size.default,
+                        torch.ops.aten.sym_constrain_range.default,
+                    )
                 ):
                     module.graph.erase_node(node)
 

@@ -31,8 +31,7 @@ class TestMul(unittest.TestCase):
             z = x * y
             return torch.nn.functional.relu(z)
 
-    def test_fp32_mul(self):
-        inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
+    def _test_mul(self, inputs):
         (
             Tester(self.Mul(), inputs)
             .export()
@@ -47,6 +46,17 @@ class TestMul(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_mul(self):
+        inputs = (
+            torch.randn((1, 3)).to(torch.float16),
+            torch.randn((4, 3)).to(torch.float16),
+        )
+        self._test_mul(inputs)
+
+    def test_fp32_mul(self):
+        inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
+        self._test_mul(inputs)
 
     def test_qs8_mul(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))

@@ -26,3 +26,17 @@ def define_common_targets():
                 "//executorch/runtime/executor:program" + aten_suffix,
             ],
         )
+
+        runtime.cxx_library(
+            name = "managed_tensor" + aten_suffix,
+            exported_headers = [
+                "managed_tensor.h",
+            ],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+            ],
+        )

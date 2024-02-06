@@ -21,8 +21,7 @@ class TestMeanDim(unittest.TestCase):
             z = torch.mean(y, self.dims, keepdim=True)
             return z
 
-    def test_fp32_mean_dim(self):
-        inputs = (torch.randn(1, 5, 4, 4),)
+    def _test_mean_dim(self, inputs):
         (
             Tester(self.MeanDim((-1, -2)), inputs)
             .export()
@@ -37,6 +36,14 @@ class TestMeanDim(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_mean_dim(self):
+        inputs = (torch.randn(1, 5, 4, 4).to(torch.float16),)
+        self._test_mean_dim(inputs)
+
+    def test_fp32_mean_dim(self):
+        inputs = (torch.randn(1, 5, 4, 4),)
+        self._test_mean_dim(inputs)
 
     def test_fp32_mean_dim_unsupported(self):
         """

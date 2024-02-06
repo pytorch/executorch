@@ -19,12 +19,11 @@ class TestSquare(unittest.TestCase):
             z = torch.square(x)
             return z
 
-    def test_fp32_square(self):
+    def _test_square(self, inputs):
         """
         Note that torch.square maps to aten.pow.Tensor_Scalar. The pow visitor has logic
         to emit the appropriate XNNPACK square op when the exponent is 2.
         """
-        inputs = (torch.randn(20),)
         (
             Tester(self.Square(), inputs)
             .export()
@@ -41,3 +40,11 @@ class TestSquare(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_square(self):
+        inputs = (torch.randn(20).to(torch.float16),)
+        self._test_square(inputs)
+
+    def test_fp32_square(self):
+        inputs = (torch.randn(20),)
+        self._test_square(inputs)

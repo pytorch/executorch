@@ -37,26 +37,27 @@ class TestSDPA(unittest.TestCase):
             )
 
         @staticmethod
-        def get_input_tensors(mask_rank: int):
+        def get_input_tensors(mask_rank: int, dtype: torch.dtype = torch.float32):
             batch_size = 8
             heads = 16
             seq_len = 32
             dim = 64
 
-            q = torch.randn(batch_size, heads, seq_len, dim)
-            k = torch.randn(batch_size, heads, seq_len, dim)
-            v = torch.randn(batch_size, heads, seq_len, dim)
+            q = torch.randn(batch_size, heads, seq_len, dim).to(dtype)
+            k = torch.randn(batch_size, heads, seq_len, dim).to(dtype)
+            v = torch.randn(batch_size, heads, seq_len, dim).to(dtype)
 
             mask = None
             if mask_rank > 0:
                 assert mask_rank >= 2, "mask rank must be >= 2"
-                mask = torch.full((seq_len, seq_len), 0, dtype=torch.float)
+                mask = torch.full((seq_len, seq_len), 0, dtype=dtype)
                 while mask.ndim < mask_rank:
                     mask.unsqueeze_(0)
 
             return (q, k, v, mask)
 
-    def _test(self, module, inputs):
+    def _test(self, module, inputs, atol=1e-03, rtol=1e-03):
+        module = module.eval()
         (
             Tester(module, inputs)
             .export()
@@ -70,8 +71,16 @@ class TestSDPA(unittest.TestCase):
             .to_executorch()
             .serialize()
             .run_method()
-            .compare_outputs()
+            .compare_outputs(atol=atol, rtol=rtol)
         )
+
+    def test_fp16_sdpa_mask2d(self):
+        """
+        Tests that the SDPA operator is correctly lowered to XNNPACK
+        """
+        module = self.SDPA()
+        inputs = module.get_input_tensors(mask_rank=2, dtype=torch.float16)
+        self._test(module, inputs, atol=1e-02, rtol=1e-02)
 
     def test_fp32_sdpa_mask2d(self):
         """
@@ -80,6 +89,14 @@ class TestSDPA(unittest.TestCase):
         module = self.SDPA()
         inputs = module.get_input_tensors(mask_rank=2)
         self._test(module, inputs)
+
+    def test_fp16_sdpa_userscale(self):
+        """
+        Tests that the scale parameter is passed correctly to the SDPA operator
+        """
+        module = self.SDPA(scale=0.1234)
+        inputs = module.get_input_tensors(mask_rank=2, dtype=torch.float16)
+        self._test(module, inputs, atol=1e-02, rtol=1e-02)
 
     def test_fp32_sdpa_userscale(self):
         """
