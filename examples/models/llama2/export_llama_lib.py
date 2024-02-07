@@ -194,6 +194,8 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
+    parser.add_argument("-G", "--groupsize", default=None, help="specify the groupsize")
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-H", "--half", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
