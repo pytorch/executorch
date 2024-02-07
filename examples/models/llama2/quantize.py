@@ -9,6 +9,7 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .ops.quantized_ops import *  # noqa
 
 
 def dynamically_quantize_per_channel(x, quant_min, quant_max, target_dtype):
@@ -259,6 +260,7 @@ def embedding_quant(weight) -> Tuple[torch.Tensor, torch.Tensor]:
         )
         weights_int8[:, r : r + group_size] = weights_group
         scales_fp16[:, r // group_size] = scales
+        scales_fp16 = scales_fp16.squeeze()
 
     return weights_int8, scales_fp16
 
@@ -307,8 +309,6 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
-        result_weights = self.weight_int8.index_select(0, indices.view(-1))
-        result_scales = self.scales_fp16.index_select(0, indices.view(-1))
-
-        r = result_weights.to(dtype=result_scales.dtype) * result_scales
-        return r.view(indices.size() + (-1,))
+        return torch.ops.llama_quantized.embedding_byte.default(
+            self.weight_int8, self.scales_fp16, None, 0, 0, indices
+        )
