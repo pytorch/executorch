@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,6 +11,7 @@ import argparse
 import logging
 
 import torch
+from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
@@ -132,7 +133,9 @@ if __name__ == "__main__":
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
     if args.delegate is True:
-        edge = edge.to_backend(ArmPartitioner())
+        edge = edge.to_backend(
+            ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128"))
+        )
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(

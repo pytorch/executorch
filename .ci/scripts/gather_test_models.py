@@ -16,7 +16,7 @@ from examples.xnnpack import MODEL_NAME_TO_OPTIONS
 
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
-    "macos": "macos-m1-12",
+    "macos": "macos-m1-stable",
 }
 CUSTOM_RUNNERS = {
     "linux": {
