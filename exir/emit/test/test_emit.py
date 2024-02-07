@@ -20,7 +20,6 @@ from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.emit import emit_program  # noqa
-from executorch.exir.passes.const_prop_pass import ConstPropPass
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
@@ -1311,3 +1310,24 @@ class TestEmit(unittest.TestCase):
         # each emitted weight is not a view
         self.assertEqual(len(program.constant_buffer[1].storage), 4)
         self.assertEqual(len(program.constant_buffer[2].storage), 4)
+
+    def test_non_persistent_buffer(self) -> None:
+        class NonPersistentBuffer(nn.Module):
+            def __init__(self):
+                super(NonPersistentBuffer, self).__init__()
+                self.register_buffer("buf", torch.tensor([1]), persistent=False)
+
+            def forward(self, x):
+                return x + self.buf
+
+        model = NonPersistentBuffer()
+        program = to_edge(
+            export(
+                model,
+                (torch.ones(1),),
+            )
+        ).to_executorch()
+        program = program._emitter_output.program
+        # confirm that the buffer was emitted
+        self.assertEqual(len(program.constant_buffer), 2)
+        self.assertEqual(len(program.constant_buffer[1].storage), 8)
