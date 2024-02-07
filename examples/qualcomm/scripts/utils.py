@@ -159,7 +159,7 @@ def build_executorch_binary(
         # calibration
         for data in dataset:
             annotated_model(*data)
-        quantized_model = convert_pt2e(annotated_model)
+        quantized_model = convert_pt2e(annotated_model, fold_quantize=True)
 
         edge_prog = capture_program(quantized_model, inputs)
     else:
