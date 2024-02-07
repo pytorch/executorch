@@ -60,7 +60,7 @@ if __name__ == "__main__":
     prepared_model(*example_inputs)
 
     # Convert
-    converted_model = convert_pt2e(prepared_model)
+    converted_model = convert_pt2e(prepared_model, fold_quantize=True)
 
     # pyre-fixme[16]: Pyre doesn't get that XtensaQuantizer has a patterns attribute
     patterns = [q.pattern for q in quantizer.quantizers]

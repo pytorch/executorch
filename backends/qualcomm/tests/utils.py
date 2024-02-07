@@ -172,7 +172,7 @@ class TestQNN(unittest.TestCase):
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
-        quantized_module = convert_pt2e(prepared)
+        quantized_module = convert_pt2e(prepared, fold_quantize=True)
         nodes = {node.target for node in quantized_module.graph.nodes}
         q_and_dq = {
             torch.ops.quantized_decomposed.quantize_per_tensor.default,

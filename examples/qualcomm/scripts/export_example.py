@@ -51,7 +51,7 @@ if __name__ == "__main__":
     # Calibration
     m(*example_inputs)
     # Get the quantized model
-    m = convert_pt2e(m)
+    m = convert_pt2e(m, fold_quantize=True)
 
     # Capture program for edge IR
     edge_program = capture_program(m, example_inputs)
