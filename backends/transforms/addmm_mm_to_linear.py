@@ -8,16 +8,24 @@ import torch
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from executorch.exir.sym_util import eval_shape
+from executorch.exir.sym_util import eval_shape, eval_shape_upper_bound
+
+
+_int64_max_dim_val = torch.iinfo(torch.int64).max - 1
 
 
 def get_shape(input_node: torch.fx.Node):
     """
     If shape is symbolic then evaluate shape, otherwise if it has upperbound
     shape, then return upperbound shape.
+    Note that we must check for upperbound because by default upperbound is int64_max
     """
     input_val = input_node.meta["val"]
-    return eval_shape(input_val.shape)
+    upper_bound_shape = eval_shape_upper_bound(input_val.shape)
+    for i in range(len(input_val.shape)):
+        if upper_bound_shape[i] == _int64_max_dim_val:
+            return eval_shape(input_val.shape)
+    return upper_bound_shape
 
 
 def get_dqlinear_input(node: torch.fx.Node):
