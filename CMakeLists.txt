@@ -122,16 +122,18 @@ option(EXECUTORCH_BUILD_SDK
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
 
-# Build dataloader library
+# Build dataloader extension library
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
        "Build the extension/data_loader directory" OFF)
-if(NOT BUCK2)
-  set(BUCK2 buck2)
-endif()
 
-# Build dataloader library
+# Build module extension library
 option(EXECUTORCH_BUILD_EXTENSION_MODULE
        "Build the extension/module directory" OFF)
+
+# Build the runner_util extension library
+option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+       "Build the extension/runner_util directory" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -321,6 +323,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
