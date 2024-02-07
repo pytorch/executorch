@@ -286,8 +286,17 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
     """
     Creates the allocation_details object for creating tensors
     """
+    if mem_offset < 0:
+        raise ValueError(f"mem_offset {mem_offset} must not be negative")
+    memory_offset_low = mem_offset & ((1 << 32) - 1)
+    memory_offset_high = mem_offset >> 32
+    if memory_offset_high >= 1 << 32:
+        raise ValueError(f"mem_offset {mem_offset} does not fit in 64 bits")
+
     allocation_info = schema.AllocationDetails(
-        memory_id=mem_id, memory_offset=mem_offset
+        memory_id=mem_id,
+        memory_offset_low=memory_offset_low,
+        memory_offset_high=memory_offset_high,
     )
     return allocation_info
 
