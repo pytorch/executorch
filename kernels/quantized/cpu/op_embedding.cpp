@@ -33,6 +33,48 @@ void check_embedding_byte_args(
     const Tensor& indices,
     Tensor& out) {
   ET_CHECK_MSG(
+      weight.dim() == 2,
+      "weight must be 2D but got() %" PRId8 " dims",
+      static_cast<int8_t>(weight.dim()));
+
+  ET_CHECK_MSG(
+      indices.dim() == 1,
+      "indices must be 1D but got() %" PRId8 " dims",
+      static_cast<int8_t>(indices.dim()));
+
+  ET_CHECK_MSG(
+      weight_scales.dim() == 1,
+      "weight_scales must be 1D but got() %" PRId8 " dims",
+      static_cast<int8_t>(weight_scales.dim()));
+
+  auto weight_scales_size = weight_scales.size(0);
+
+  ET_CHECK_MSG(
+      weight_scales_size >= weight.size(0),
+      "Number of scales must be >= weight.size(0)=%" PRId64
+      ", but got %" PRId64,
+      weight_scales_size,
+      weight.size(0));
+
+  if (weight_scales_size >= weight.size(0)) {
+    auto remainder = weight_scales_size % weight.size(0);
+    ET_CHECK_MSG(
+        remainder == 0,
+        "Number of scales must divide weight.size(0)=%" PRId64
+        ", but got %" PRId64,
+        weight.size(0),
+        weight_scales_size);
+    auto num_groups = weight_scales.size(0) / weight.size(0);
+    remainder = weight.size(1) % num_groups;
+    ET_CHECK_MSG(
+        remainder == 0,
+        "Number of groups must divide weight.size(1)=%" PRId64
+        ", but got # of groups = %" PRId64,
+        weight.size(1),
+        num_groups);
+  }
+
+  ET_CHECK_MSG(
       weight.scalar_type() == ScalarType::Byte ||
           weight.scalar_type() == ScalarType::Char,
       "weight.scalar_type() %" PRId8 " is not supported:",
@@ -51,10 +93,22 @@ void check_embedding_byte_args(
 
   if (opt_weight_zero_points.has_value()) {
     ET_CHECK_MSG(
+        opt_weight_zero_points.value().dim() == 1,
+        "weight_zero_points must be 1D but got() %" PRId8 " dims",
+        static_cast<int8_t>(opt_weight_zero_points.value().dim()));
+
+    ET_CHECK_MSG(
         opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
         "weight zero points scalar type %" PRId8
         " does not match out.scalar_type()",
         static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
+
+    ET_CHECK_MSG(
+        opt_weight_zero_points.value().size(0) == weight_scales_size,
+        "Number of zero points %" PRId64
+        ", does not match number of scales %" PRId64,
+        opt_weight_zero_points.value().size(0),
+        weight_scales_size);
   }
 
   ET_CHECK_MSG(
@@ -85,6 +139,9 @@ void embedding_byte_per_channel(
   // of shape (num_embeddings, embedding_dim).
   auto embedding_dim = weight.size(1);
 
+  int32_t num_groups_per_channel = weight_scales.size(0) / weight.size(0);
+  int32_t group_size = weight.size(1) / num_groups_per_channel;
+
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   const int64_t* indices_ptr = indices.const_data_ptr<int64_t>();
 
@@ -96,16 +153,24 @@ void embedding_byte_per_channel(
 
   for (int i = 0; i < indices.numel(); i++) {
     int64_t index = indices_ptr[i];
+    // If using groupwise embedding
+    int32_t qparams_index = index * num_groups_per_channel;
     CTYPE_OUT zp = 0.0;
+    const CTYPE_OUT* scale_ptr = scales + qparams_index;
+    const CTYPE_OUT* zero_points_ptr = nullptr;
     if (opt_weight_zero_points.has_value()) {
-      zp = zero_points[index];
+      zero_points_ptr = zero_points + qparams_index;
     }
-    CTYPE_OUT scale = scales[index];
 
     const CTYPE_WEIGHT* w_data =
         weight.data_ptr<CTYPE_WEIGHT>() + embedding_dim * index;
 
     for (int j = 0; j < embedding_dim; ++j) {
+      int32_t group_id = j / group_size;
+      const CTYPE_OUT scale = scale_ptr[group_id];
+      if (opt_weight_zero_points.has_value()) {
+        zp = zero_points_ptr[group_id];
+      }
       out_data[j] = static_cast<CTYPE_OUT>(
           (static_cast<float>(w_data[j]) - static_cast<float>(zp)) *
           static_cast<float>(scale));
