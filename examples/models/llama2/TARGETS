@@ -57,6 +57,7 @@ runtime.python_library(
     visibility = ["//executorch/examples/..."],
     deps = [
         "//caffe2:torch",
+        "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
         "//executorch/examples/models:model_base",
