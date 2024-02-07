@@ -102,9 +102,19 @@ class XnnpackOperatorSupport(OperatorSupportBase):
 
     def _check_inputs_are_valid_dtypes(self, node, valid_dtypes):
         # Check inputs are valid dtypes
+
+        # Gather all args which are nodes
+        args_to_check = []
         for arg in node.args:
-            if not isinstance(arg, torch.fx.Node):
-                continue
+            if isinstance(arg, list) or isinstance(arg, tuple):
+                for item in arg:
+                    if isinstance(item, torch.fx.Node):
+                        args_to_check.append(item)
+
+            if isinstance(arg, torch.fx.Node):
+                args_to_check.append(arg)
+
+        for arg in args_to_check:
             arg_val = arg.meta.get("val", None)
 
             if arg_val is None or isinstance(arg_val, tuple):
@@ -113,6 +123,10 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             # Being conservative for now, UX >> Perf
             # TODO: We need a pass to scrub these out.
             if not isinstance(arg_val, torch.Tensor):
+                return False
+
+            # XNNPACK does not support empty tensors
+            if arg_val.numel() == 0:
                 return False
 
             if arg_val.dtype not in valid_dtypes:

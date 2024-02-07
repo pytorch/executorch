@@ -33,45 +33,38 @@ void check_embedding_byte_args(
     const Tensor& indices,
     Tensor& out) {
   ET_CHECK_MSG(
-      weight.dim() == 2,
-      "weight must be 2D but got() %" PRId8 " dims",
-      static_cast<int8_t>(weight.dim()));
+      weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
 
   ET_CHECK_MSG(
       indices.dim() == 1,
-      "indices must be 1D but got() %" PRId8 " dims",
-      static_cast<int8_t>(indices.dim()));
+      "indices must be 1D but got() %zd dims",
+      indices.dim());
 
   ET_CHECK_MSG(
-      weight_scales.dim() == 1,
-      "weight_scales must be 1D but got() %" PRId8 " dims",
-      static_cast<int8_t>(weight_scales.dim()));
+      weight_scales.dim() <= 2,
+      "weight_scales must be 1D or 2D but got() %zd dims",
+      weight_scales.dim());
 
   auto weight_scales_size = weight_scales.size(0);
 
   ET_CHECK_MSG(
-      weight_scales_size >= weight.size(0),
-      "Number of scales must be >= weight.size(0)=%" PRId64
-      ", but got %" PRId64,
+      weight_scales_size == weight.size(0),
+      "Number of scales must be == weight.size(0)=%zd"
+      ", but got %zd",
       weight_scales_size,
       weight.size(0));
 
   if (weight_scales_size >= weight.size(0)) {
-    auto remainder = weight_scales_size % weight.size(0);
-    ET_CHECK_MSG(
-        remainder == 0,
-        "Number of scales must divide weight.size(0)=%" PRId64
-        ", but got %" PRId64,
-        weight.size(0),
-        weight_scales_size);
-    auto num_groups = weight_scales.size(0) / weight.size(0);
-    remainder = weight.size(1) % num_groups;
-    ET_CHECK_MSG(
-        remainder == 0,
-        "Number of groups must divide weight.size(1)=%" PRId64
-        ", but got # of groups = %" PRId64,
-        weight.size(1),
-        num_groups);
+    if (weight_scales.dim() == 2) {
+      auto num_groups = weight_scales.size(1);
+      auto remainder = weight.size(1) % num_groups;
+      ET_CHECK_MSG(
+          remainder == 0,
+          "Number of groups must divide weight.size(1)=%zd"
+          ", but got # of groups = %zd",
+          weight.size(1),
+          num_groups);
+    }
   }
 
   ET_CHECK_MSG(
@@ -93,9 +86,11 @@ void check_embedding_byte_args(
 
   if (opt_weight_zero_points.has_value()) {
     ET_CHECK_MSG(
-        opt_weight_zero_points.value().dim() == 1,
-        "weight_zero_points must be 1D but got() %" PRId8 " dims",
-        static_cast<int8_t>(opt_weight_zero_points.value().dim()));
+        opt_weight_zero_points.value().dim() == weight_scales.dim(),
+        "weight_zero_points's rank match that of weight_scales. "
+        "weight_zero_points rank: %" PRId8 ", weight_scales rank: %" PRId8,
+        static_cast<int8_t>(opt_weight_zero_points.value().dim()),
+        static_cast<int8_t>(weight_scales.dim()));
 
     ET_CHECK_MSG(
         opt_weight_zero_points.value().scalar_type() == out.scalar_type(),
@@ -103,12 +98,16 @@ void check_embedding_byte_args(
         " does not match out.scalar_type()",
         static_cast<int8_t>(opt_weight_zero_points.value().scalar_type()));
 
-    ET_CHECK_MSG(
-        opt_weight_zero_points.value().size(0) == weight_scales_size,
-        "Number of zero points %" PRId64
-        ", does not match number of scales %" PRId64,
-        opt_weight_zero_points.value().size(0),
-        weight_scales_size);
+    for (int32_t i = 0; i < weight_scales.dim(); ++i) {
+      ET_CHECK_MSG(
+          opt_weight_zero_points.value().size(i) == weight_scales.size(i),
+          "Dimension size misatch at dim %" PRId8
+          "Weight_zero_point size = %zd"
+          ", weight_scales size = %zd.",
+          i,
+          opt_weight_zero_points.value().size(i),
+          weight_scales.size(i));
+    }
   }
 
   ET_CHECK_MSG(
@@ -135,11 +134,14 @@ void embedding_byte_per_channel(
     const optional<Tensor>& opt_weight_zero_points,
     const Tensor& indices,
     Tensor& out) {
-  // An embedding layer nn.Embedding(num_embeddings, embedding_dim) has a weight
-  // of shape (num_embeddings, embedding_dim).
+  // An embedding layer nn.Embedding(num_embeddings, embedding_dim) has a
+  // weight of shape (num_embeddings, embedding_dim).
   auto embedding_dim = weight.size(1);
 
-  int32_t num_groups_per_channel = weight_scales.size(0) / weight.size(0);
+  int32_t num_groups_per_channel = 1;
+  if (weight_scales.dim() == 2) {
+    num_groups_per_channel = weight_scales.size(1);
+  }
   int32_t group_size = weight.size(1) / num_groups_per_channel;
 
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();

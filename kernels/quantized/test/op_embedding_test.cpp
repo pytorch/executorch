@@ -201,8 +201,8 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbedding) {
   EXPECT_TENSOR_EQ(out, expected);
 
   // Groupwise quantization. groupsize = 2
-  weight_scales = tf.make({6}, {0.5, 1.0, 1.5, 2.0, 2.5, 3.0});
-  weight_zero_points = tf.make({6}, {1, 5, 7, 9, 11, 13});
+  weight_scales = tf.make({3, 2}, {0.5, 1.0, 1.5, 2.0, 2.5, 3.0});
+  weight_zero_points = tf.make({3, 2}, {1, 5, 7, 9, 11, 13});
   /*
   fp_weight = [3.5, 4.5, 7, 9,
                4.5, 7.5, 6, 10,
@@ -300,8 +300,72 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath3) {
   int64_t quant_min = 0;
   int64_t quant_max = 255;
 
-  Tensor weight_scales = tf.make({6}, {0.5, 1.0, 1.5, 2.5, 3.5, 3.5});
-  Tensor weight_zero_points = tf.make({6}, {1, 5, 7, 9, 11, 13});
+  Tensor weight_scales = tf.make({3, 2}, {0.5, 1.0, 1.5, 2.5, 3.5, 3.5});
+  Tensor weight_zero_points = tf.make({3, 2}, {1, 5, 7, 9, 11, 13});
+  TensorFactory<ScalarType::Byte> tfo;
+  Tensor qweight = tfo.make({3, 3}, {8, 10, 12, 14, 10, 12, 12, 14, 8});
+
+  Tensor indices = tf_l.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 3});
+  Tensor expected =
+      tf.make({3, 3}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0});
+
+  ET_EXPECT_DEATH(
+      quantized_embedding_byte_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "");
+}
+
+TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath4) {
+  et_pal_init();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tf_i;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  Tensor weight_scales = tf.make({3, 2}, {0.5, 1.0, 1.5, 2.5, 3.5, 3.5});
+  Tensor weight_zero_points = tf.make({3}, {1, 5, 7});
+  TensorFactory<ScalarType::Byte> tfo;
+  Tensor qweight = tfo.make({3, 3}, {8, 10, 12, 14, 10, 12, 12, 14, 8});
+
+  Tensor indices = tf_l.make({3}, {0, 2, 1});
+
+  Tensor out = tf.zeros({3, 3});
+  Tensor expected =
+      tf.make({3, 3}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0});
+
+  ET_EXPECT_DEATH(
+      quantized_embedding_byte_out(
+          qweight,
+          weight_scales,
+          weight_zero_points,
+          quant_min,
+          quant_max,
+          indices,
+          out),
+      "");
+}
+
+TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath5) {
+  et_pal_init();
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Int> tf_i;
+  TensorFactory<ScalarType::Long> tf_l;
+
+  int64_t quant_min = 0;
+  int64_t quant_max = 255;
+
+  Tensor weight_scales = tf.make({3, 2}, {0.5, 1.0, 1.5, 2.5, 3.5, 3.5});
+  Tensor weight_zero_points = tf.make({3, 3}, {1, 5, 7, 1, 5, 7, 1, 5, 7});
   TensorFactory<ScalarType::Byte> tfo;
   Tensor qweight = tfo.make({3, 3}, {8, 10, 12, 14, 10, 12, 12, 14, 8});
 

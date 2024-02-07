@@ -150,6 +150,19 @@ class TestProgramManagers(unittest.TestCase):
             3,
         )
 
+    def test_no_getattr(self):
+        class Mul(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * 3.14
+
+        mul = Mul()
+        ep = to_edge(torch.export.export(mul, (torch.ones(1),))).exported_program()
+        for node in ep.graph.nodes:
+            self.assertNotEqual(node.op, "get_attr")
+        self.assertEqual(
+            len([node for node in ep.graph.nodes if node.op == "placeholder"]), 2
+        )
+
     def test_constraint_present_after_dce(self):
         import executorch.exir as exir
 
