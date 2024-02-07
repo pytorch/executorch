@@ -177,6 +177,7 @@ class TensorSpec:
     def init_mem_planning_fields(self) -> None:
         self.lifetime = [None, None]
         self.mem_id = None
+        self.mem_obj_id = None
         self.mem_offset = None
 
     @property
