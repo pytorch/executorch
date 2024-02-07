@@ -131,7 +131,7 @@ def _transform(self, *passes: PassType) -> "ExportedProgram":
         module_call_graph=copy.deepcopy(self._module_call_graph),
         example_inputs=self.example_inputs,
         verifier=self.verifier,
-        tensor_constants=self.tensor_constants,
+        constants=self.constants,
     )
     transformed_ep.graph_module.meta.update(self.graph_module.meta)
     transformed_ep.graph_module.meta.update(res.graph_module.meta)
@@ -166,7 +166,7 @@ def lift_constant_tensor_pass(ep):
 
     fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
-    lifted_buffers = []
+    lifted_constants = []
     for node in ep.graph.nodes:
         if node.op == "placeholder" and node.name in graph_signature.user_inputs:
             first_user_input = node
@@ -196,7 +196,7 @@ def lift_constant_tensor_pass(ep):
                 ep.graph.erase_node(node)
 
                 # Add the constant as a buffer to the graph signature
-                lifted_buffers.append(
+                lifted_constants.append(
                     InputSpec(
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=const_placeholder_node.name),
@@ -209,9 +209,9 @@ def lift_constant_tensor_pass(ep):
 
     new_input_specs = []
     for s in graph_signature.input_specs:
-        if s.kind == InputKind.USER_INPUT and len(lifted_buffers) > 0:
-            new_input_specs.extend(lifted_buffers)
-            lifted_buffers.clear()
+        if s.kind == InputKind.USER_INPUT and len(lifted_constants) > 0:
+            new_input_specs.extend(lifted_constants)
+            lifted_constants.clear()
         new_input_specs.append(s)
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
@@ -482,7 +482,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
                 module_call_graph=ep.exported_program.module_call_graph,
                 example_inputs=ep.exported_program.example_inputs,
                 verifier=get_aten_verifier(enable=config._check_ir_validity),
-                tensor_constants=ep.exported_program.tensor_constants,
+                constants=ep.exported_program.constants,
             ),
             False,
         )
@@ -524,7 +524,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             enable=config._check_ir_validity,
             class_only=True,
         ),
-        tensor_constants=new_ep.exported_program.tensor_constants,
+        constants=new_ep.exported_program.constants,
     )
     new_ep.after_to_edge_passes = True
     return new_ep
@@ -828,7 +828,6 @@ def to_edge(
         # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
         # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
         # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
-        program = lift_constant_tensor_pass(program)
         passes = []
         passes.append(
             ReplaceViewOpsWithViewCopyOpsPass()
@@ -840,7 +839,6 @@ def to_edge(
             passes.append(OpReplacePass())
 
         gm = program.graph_module
-        edge_program = program
         for p in passes:
             gm_res = p(gm)
             assert gm_res is not None
@@ -849,20 +847,20 @@ def to_edge(
         edge_program = ExportedProgram(
             root=gm,
             graph=gm.graph,
-            graph_signature=_get_updated_graph_signature(
-                edge_program.graph_signature, gm
-            ),
-            state_dict=edge_program.state_dict,
-            range_constraints=edge_program.range_constraints,
-            module_call_graph=edge_program.module_call_graph,
-            example_inputs=edge_program.example_inputs,
+            graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
+            state_dict=program.state_dict,
+            range_constraints=program.range_constraints,
+            module_call_graph=program.module_call_graph,
+            example_inputs=program.example_inputs,
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=config._use_edge_ops,
                 enable=config._check_ir_validity,
                 class_only=True,
             ),
-            tensor_constants=edge_program.tensor_constants,
+            constants=program.constants,
         )
+        # Lift the tensor constants created in ScalarToTensorPass
+        edge_program = lift_constant_tensor_pass(edge_program)
         edge_program = _transform(edge_program, *post_op_replace_passes)
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
