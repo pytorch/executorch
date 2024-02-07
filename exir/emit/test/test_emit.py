@@ -21,6 +21,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -215,43 +216,35 @@ class TestEmit(unittest.TestCase):
 
         f = Foo()
 
-        program = (
-            to_edge(export(f, (torch.randn(100),)))
-            .transform(
-                [
-                    ConstPropPass(),
-                ]
-            )
-            .to_executorch()
-            .executorch_program
-        )
-        self.assertEqual(len(program.constant_buffer), 3)
+        program = to_edge(constant_prop_pass(export(f, (torch.randn(100),))))
+        program = program.to_executorch().executorch_program
+        self.assertEqual(len(program.constant_buffer), 2)
         instructions = program.execution_plan[0].chains[0].instructions
         values = program.execution_plan[0].values
 
-        # first arg to first torch_add is a constant tensor
+        # first arg to first torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[0].instr_args.args[0], values, 1, None, None  # pyre-ignore[16]
+            instructions[1].instr_args.args[0], values, 0, 1, 800  # pyre-ignore[16]
         )
         # second arg to first torch_add is an input tensor
         self.check_tensor_buffer_loc(
-            instructions[0].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
+            instructions[1].instr_args.args[1], values, 0, 1, 400  # pyre-ignore[16]
         )
         # output of first torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[0].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
+            instructions[1].instr_args.args[3], values, 0, 1, 1200  # pyre-ignore[16]
         )
         # first arg to second torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[0], values, 0, 1, 400  # pyre-ignore[16]
+            instructions[-1].instr_args.args[0], values, 0, 1, 1200  # pyre-ignore[16]
         )
-        # second arg to second torch_add is a constant tensor
+        # second arg to second torch_add is a input tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[1], values, 2, None, None  # pyre-ignore[16]
+            instructions[-1].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
         )
         # output of second torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[3], values, 0, 1, 0  # pyre-ignore[16]
+            instructions[-1].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
         )
 
     def test_inplace_ops(self) -> None:
@@ -569,14 +562,9 @@ class TestEmit(unittest.TestCase):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
         x = (torch.randn(1, 1, 2, 2),)
-        program = (
-            to_edge(export(M(), x))
-            .transform([ConstPropPass()])
-            .to_executorch()
-            .executorch_program
-        )
+        program = to_edge(export(M(), x)).to_executorch().executorch_program
         self.assertIsInstance(
-            program.execution_plan[0].values[4].val, schema.OptionalTensorList
+            program.execution_plan[0].values[-1].val, schema.OptionalTensorList
         )
 
     def test_emit_cond(self) -> None:
