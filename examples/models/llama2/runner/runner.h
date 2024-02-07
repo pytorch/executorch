@@ -29,7 +29,7 @@ class Runner {
   explicit Runner(const char* model_path, const char* tokenizer_path);
 
   Error generate(
-      const char* prompt,
+      const std::string& prompt,
       std::function<void(const std::string&)> callback = {});
 
  private:

@@ -13,6 +13,11 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class ReduceDynamicRange(ExportPass):
+    """
+    Due to limitation in Qnn, we need to change torch.finfo(torch.float32).min
+    to the smallest representable value in quantization.
+    """
+
     binary_op_sources = [
         operator.add,
         operator.sub,

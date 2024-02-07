@@ -21,6 +21,9 @@ from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQua
 from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
     ConvertAddmmmmWithLinear,
 )
+from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
+    ConvertBinaryOpsWithScalar,
+)
 from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
 from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
 from executorch.backends.qualcomm.passes.convert_hardswish import ConvertHardswish
@@ -54,11 +57,15 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
 ) -> exir.ExirExportedProgram:
-    ex_prog = exir.capture(
+    exir_exported_program = exir.capture(
         module,
         inputs,
         qnn_capture_config(),
-    ).to_edge(qnn_edge_config())
+    )
+    # We choose call_operator by target in ConvertBinaryOpsWithScalar
+    # because it is the same source_fn_stack for MultiheadAttention
+    exir_exported_program.transform(ConvertBinaryOpsWithScalar())
+    ex_prog = exir_exported_program.to_edge(qnn_edge_config())
 
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
