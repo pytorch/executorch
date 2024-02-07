@@ -149,7 +149,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
     parser.add_argument(
         "--pt2_quantize",
-        default="",
+        default=None,
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic, embedding.",
     )
 
@@ -229,7 +229,9 @@ def get_metadata(params: ModelArgs) -> Dict[str, Any]:
 
 
 def _get_quantization_options(args):
-    if args.quantize and args.pt2_quantize != "":
+    if args.pt2_quantize is None:
+        return []
+    if args.quantize:
         raise ValueError("Cannot specify both --quantize and --pt2_quantize")
 
     quantization_options = args.pt2_quantize.split(",")
@@ -327,9 +329,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
         if len(quantization_options) > 0:
-            m = apply_pt2e_quantization(
-                m, example_inputs, quantization_options, args.so_library
-            )
+            m = apply_pt2e_quantization(m, example_inputs, quantization_options, args)
         edge_manager = export_to_edge(
             m,
             example_inputs,
