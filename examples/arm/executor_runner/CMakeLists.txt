@@ -1,0 +1,92 @@
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+cmake_minimum_required(VERSION 3.20)
+project(arm_executor_runner)
+
+# Example ExecuTorch demo for bare metal Cortex-M based systems
+
+set(ET_DIR_PATH "<..>/executorch" CACHE PATH "Path to ExecuTorch dir")
+set(ET_BUILD_DIR_PATH "${ET_DIR_PATH}/cmake-out" CACHE PATH "Path to ExecuTorch build dir")
+set(ET_INCLUDE_PATH "${ET_DIR_PATH}/.." CACHE PATH "Path to ExecuTorch headers")
+set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" CACHE PATH "Path to ExecuTorch model pte")
+set(ETHOS_SDK_PATH "${ETHOS_SDK_PATH}" CACHE PATH "Path to Ethos-U bare metal driver/env")
+
+get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
+get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
+get_filename_component(ET_INCLUDE_PATH ${ET_INCLUDE_PATH} REALPATH)
+get_filename_component(ET_PTE_FILE_PATH ${ET_PTE_FILE_PATH} REALPATH)
+get_filename_component(ETHOS_SDK_PATH ${ETHOS_SDK_PATH} REALPATH)
+
+# Dependencies from the Ethos-U Core
+# This is the platform target of Corstone-300, and includes ethosu_core_driver, etc
+# we link against ethosu_target_init
+add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
+
+# Dependencies from the ExecuTorch build
+add_library(executorch STATIC IMPORTED)
+set_property(TARGET executorch PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/libexecutorch.a")
+
+add_library(executorch_delegate_ethos_u STATIC IMPORTED)
+set_property(TARGET executorch_delegate_ethos_u PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/backends/arm/libexecutorch_delegate_ethos_u.a")
+
+add_library(portable_ops_lib STATIC IMPORTED)
+set_property(TARGET portable_ops_lib PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/examples/arm/libportable_ops_lib.a")
+
+add_library(portable_kernels STATIC IMPORTED)
+set_property(TARGET portable_kernels PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a")
+
+add_library(extension_runner_util STATIC IMPORTED)
+set_property(TARGET extension_runner_util PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/extension/runner_util/libextension_runner_util.a")
+
+# Convert pte to header
+add_custom_target(
+    gen_model_header2 ALL
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fake_dep
+)
+
+add_custom_command(
+    OUTPUT
+        ${CMAKE_CURRENT_BINARY_DIR}/fake_dep
+        ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
+    COMMAND ${PYTHON_EXECUTABLE} ./pte_to_header.py --pte ${ET_PTE_FILE_PATH}
+    --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+# The arm_executor_runner executable
+add_executable( arm_executor_runner )
+
+target_sources( arm_executor_runner PRIVATE arm_executor_runner.cpp )
+
+# Include the target's bare-metal linker script 
+ethosu_eval_link_options( arm_executor_runner )
+
+# Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
+# bin size as we link in a number of other symbols
+target_link_libraries(
+  arm_executor_runner
+  "-Wl,--whole-archive"
+  ethosu_target_init
+  extension_runner_util
+  executorch
+  executorch_delegate_ethos_u
+  portable_kernels
+  portable_ops_lib
+  "-Wl,--no-whole-archive"  
+  )
+
+# ET headers and generated headers includes
+target_include_directories(arm_executor_runner PRIVATE
+  ${ET_INCLUDE_PATH}
+  ${CMAKE_CURRENT_BINARY_DIR})
+
+# TODO rename header2
+add_dependencies(arm_executor_runner gen_model_header2)
