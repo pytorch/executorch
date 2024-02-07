@@ -553,7 +553,7 @@
         <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_module_call_graph</span><span class="p">),</span>
         <span class="n">example_inputs</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
         <span class="n">verifier</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
-        <span class="n">tensor_constants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
+        <span class="n">constants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
     <span class="n">transformed_ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">meta</span><span class="p">)</span>
@@ -588,7 +588,7 @@
 
     <span class="n">fake_mode</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">fake_mode</span>
     <span class="n">first_user_input</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="n">lifted_buffers</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">lifted_constants</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">:</span>
             <span class="n">first_user_input</span> <span class="o">=</span> <span class="n">node</span>
@@ -618,7 +618,7 @@
                 <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
                 <span class="c1"># Add the constant as a buffer to the graph signature</span>
-                <span class="n">lifted_buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="n">lifted_constants</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">InputSpec</span><span class="p">(</span>
                         <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">,</span>
                         <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
@@ -631,9 +631,9 @@
 
     <span class="n">new_input_specs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">graph_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">lifted_buffers</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">new_input_specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">lifted_buffers</span><span class="p">)</span>
-            <span class="n">lifted_buffers</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">s</span><span class="o">.</span><span class="n">kind</span> <span class="o">==</span> <span class="n">InputKind</span><span class="o">.</span><span class="n">USER_INPUT</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">lifted_constants</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">new_input_specs</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">lifted_constants</span><span class="p">)</span>
+            <span class="n">lifted_constants</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
         <span class="n">new_input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">s</span><span class="p">)</span>
     <span class="n">ep</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">input_specs</span> <span class="o">=</span> <span class="n">new_input_specs</span>
     <span class="n">ep</span><span class="o">.</span><span class="n">graph_module</span><span class="o">.</span><span class="n">recompile</span><span class="p">()</span>
@@ -904,7 +904,7 @@
                 <span class="n">module_call_graph</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
                 <span class="n">example_inputs</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
                 <span class="n">verifier</span><span class="o">=</span><span class="n">get_aten_verifier</span><span class="p">(</span><span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">),</span>
-                <span class="n">tensor_constants</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
+                <span class="n">constants</span><span class="o">=</span><span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
             <span class="p">),</span>
             <span class="kc">False</span><span class="p">,</span>
         <span class="p">)</span>
@@ -946,7 +946,7 @@
             <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
             <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">),</span>
-        <span class="n">tensor_constants</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
+        <span class="n">constants</span><span class="o">=</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">new_ep</span><span class="o">.</span><span class="n">after_to_edge_passes</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">return</span> <span class="n">new_ep</span>
@@ -1250,7 +1250,6 @@
         <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
         <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
         <span class="c1"># It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.</span>
-        <span class="n">program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
         <span class="n">passes</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
             <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span><span class="p">()</span>
@@ -1262,7 +1261,6 @@
             <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">OpReplacePass</span><span class="p">())</span>
 
         <span class="n">gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
-        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">program</span>
         <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
             <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
             <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
@@ -1271,20 +1269,20 @@
         <span class="n">edge_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
             <span class="n">root</span><span class="o">=</span><span class="n">gm</span><span class="p">,</span>
             <span class="n">graph</span><span class="o">=</span><span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
-            <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span>
-                <span class="n">edge_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">gm</span>
-            <span class="p">),</span>
-            <span class="n">state_dict</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
-            <span class="n">range_constraints</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
-            <span class="n">module_call_graph</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
-            <span class="n">example_inputs</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
+            <span class="n">graph_signature</span><span class="o">=</span><span class="n">_get_updated_graph_signature</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">,</span> <span class="n">gm</span><span class="p">),</span>
+            <span class="n">state_dict</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+            <span class="n">range_constraints</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">,</span>
+            <span class="n">module_call_graph</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">,</span>
+            <span class="n">example_inputs</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">example_inputs</span><span class="p">,</span>
             <span class="n">verifier</span><span class="o">=</span><span class="n">EXIREdgeDialectVerifier</span><span class="p">(</span>
                 <span class="n">check_edge_ops</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">,</span>
                 <span class="n">enable</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">,</span>
                 <span class="n">class_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
             <span class="p">),</span>
-            <span class="n">tensor_constants</span><span class="o">=</span><span class="n">edge_program</span><span class="o">.</span><span class="n">tensor_constants</span><span class="p">,</span>
+            <span class="n">constants</span><span class="o">=</span><span class="n">program</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="c1"># Lift the tensor constants created in ScalarToTensorPass</span>
+        <span class="n">edge_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
         <span class="n">edge_program</span> <span class="o">=</span> <span class="n">_transform</span><span class="p">(</span><span class="n">edge_program</span><span class="p">,</span> <span class="o">*</span><span class="n">post_op_replace_passes</span><span class="p">)</span>
         <span class="n">edge_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">edge_program</span>
     <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
