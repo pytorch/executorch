@@ -14,20 +14,28 @@ echo "Building ${IMAGE_NAME} Docker image"
 
 OS=ubuntu
 OS_VERSION=22.04
-CLANG_VERSION=12
+CLANG_VERSION=""
+GCC_VERSION=""
 PYTHON_VERSION=3.10
 MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
+  executorch-ubuntu-22.04-gcc9)
+    LINTRUNNER=""
+    GCC_VERSION=9
+    ;;
   executorch-ubuntu-22.04-clang12)
     LINTRUNNER=""
+    CLANG_VERSION=12
     ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
+    CLANG_VERSION=12
     ;;
   executorch-ubuntu-22.04-arm-sdk)
     ARM_SDK=yes
+    CLANG_VERSION=12
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
@@ -50,6 +58,7 @@ docker build \
   --progress=plain \
   --build-arg "OS_VERSION=${OS_VERSION}" \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
+  --build-arg "GCC_VERSION=${GCC_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
   --build-arg "TORCH_VERSION=${TORCH_VERSION}" \

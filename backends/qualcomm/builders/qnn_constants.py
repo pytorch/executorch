@@ -232,3 +232,20 @@ class OpDepthToSpace:
 @dataclass(init=False, frozen=True)
 class OpTanh:
     op_name: str = "Tanh"
+
+
+@dataclass(init=False, frozen=True)
+class OpLayerNorm:
+    op_name: str = "LayerNorm"
+    param_epsilon = "epsilon"
+    param_axes = "axes"
+
+
+@dataclass(init=False, frozen=True)
+class OpGelu:
+    op_name: str = "Gelu"
+
+
+@dataclass(init=False, frozen=True)
+class OpSqueeze:
+    op_name: str = "Squeeze"

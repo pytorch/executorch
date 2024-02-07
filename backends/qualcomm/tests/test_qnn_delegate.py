@@ -27,6 +27,7 @@ from executorch.examples.models.inception_v4 import InceptionV4Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 from executorch.exir.backend.backend_api import disable_validation
 
@@ -143,6 +144,10 @@ class TestQNNFloatingPointOperator(TestQNN):
                 "module": [MulConstantFloat()],  # noqa: F405
                 "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
             },
+            {
+                "module": [MulScalar()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
         ]
 
         index = 0
@@ -196,6 +201,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 1]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_gelu(self):
+        module = Gelu()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -216,6 +226,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 3, 4, 5),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_layer_norm(self):
+        module = LayerNorm()  # noqa: F405
+        sample_input = (torch.randn(196, 768),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -232,6 +247,12 @@ class TestQNNFloatingPointOperator(TestQNN):
         for i, module in enumerate(modules):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.skip("it will hang in runtime")
+    def test_qnn_backend_mha(self):
+        module = MultiheadAttention()  # noqa: F405
+        sample_input = (torch.randn(1, 197, 96),)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
@@ -251,6 +272,15 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sdpa(self):
+        module = ScaledDotProductAttention()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
@@ -342,8 +372,10 @@ class TestQNNFloatingPointModel(TestQNN):
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
+            TorchVisionViTModel(),
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
@@ -489,6 +521,10 @@ class TestQNNQuantizedOperator(TestQNN):
                 "module": [MulConstantFloat(), MulConstantLong()],  # noqa: F405
                 "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
             },
+            {
+                "module": [MulScalar()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
         ]
 
         index = 0
@@ -547,6 +583,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_gelu(self):
+        module = Gelu()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -571,6 +613,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_layer_norm(self):
+        module = LayerNorm()  # noqa: F405
+        sample_input = (torch.randn(196, 768),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_linear(self):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
@@ -590,6 +638,12 @@ class TestQNNQuantizedOperator(TestQNN):
             with self.subTest(i=i):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_mha(self):
+        module = MultiheadAttention()  # noqa: F405
+        sample_input = (torch.randn(1, 197, 96),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
@@ -612,6 +666,16 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sdpa(self):
+        module = ScaledDotProductAttention()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -718,6 +782,7 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": MV3Model(), "annotation": ()},
             # only works on QNN 2.12 so far
             # { 'module': MobileBertModelExample(), 'annotation': () },
+            {"module": TorchVisionViTModel(), "annotation": ()},
         ]
         expected_partitions = [
             1,
@@ -726,6 +791,8 @@ class TestQNNQuantizedModel(TestQNN):
             1,
             1,
             1,
+            # For MobileBertModelExample
+            # 1,
             1,
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
@@ -922,6 +989,39 @@ class TestExampleScript(TestQNN):
             msg = json.loads(conn.recv())
             self.assertGreaterEqual(msg["top_1"], 60)
             self.assertGreaterEqual(msg["top_5"], 80)
+
+    def test_vit(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/torchvision_vit.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 70)
+            self.assertGreaterEqual(msg["top_5"], 90)
 
     def test_edsr(self):
         if not self.required_envs():
