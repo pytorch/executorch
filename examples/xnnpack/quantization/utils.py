@@ -23,7 +23,7 @@ def quantize(model, example_inputs):
     m = prepare_pt2e(model, quantizer)
     # calibration
     m(*example_inputs)
-    m = convert_pt2e(m, fold_quantize=True)
+    m = convert_pt2e(m)
     logging.info(f"Quantized model: {m}")
     # make sure we can export to flat buffer
     return m
