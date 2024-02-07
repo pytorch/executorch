@@ -185,7 +185,7 @@ Error Runner::generate(
     for (exec_aten::SizesType shape : kv_cache_shape) {
       n_bytes *= shape;
     }
-    n_bytes *= elementSize(dtype);
+    n_bytes *= torch::executor::elementSize(dtype);
 
     k_data.resize(n_bytes);
     v_data.resize(n_bytes);
