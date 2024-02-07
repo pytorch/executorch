@@ -91,11 +91,11 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
   } else {
     ET_LOG(
         Info,
-        "The model does not contain %s method, using default value %ld",
+        "The model does not contain %s method, using default value %lld",
         method_name.c_str(),
-        (int64_t)default_val);
+        (long long)default_val);
   }
-  ET_LOG(Info, "%s: %ld", method_name.c_str(), (int64_t)res);
+  ET_LOG(Info, "%s: %lld", method_name.c_str(), (long long)res);
   return res;
 }
 
@@ -134,19 +134,19 @@ int32_t Runner::logitsToToken(
 }
 
 Error Runner::generate(
-    const char* prompt,
+    const std::string& prompt,
     std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
-  ET_CHECK_MSG(prompt != nullptr, "Prompt cannot be null");
+  ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
 
   // encode the (string) prompt into tokens sequence
   int num_prompt_tokens = 0;
   // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
-  int* prompt_tokens = new int[strlen(prompt) + 1 + n_bos_ + n_eos_];
+  int* prompt_tokens = new int[prompt.size() + 1 + n_bos_ + n_eos_];
 
   tokenizer_->encode(
-      prompt,
+      prompt.c_str(),
       n_bos_,
       append_eos_ ? n_eos_ : 0,
       prompt_tokens,

@@ -147,7 +147,7 @@ def annotate_sub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.mul.Tensor])
+@register_annotator([torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar])
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
@@ -254,7 +254,7 @@ def annotate_upsample_bilinear2d(
     annotate_single_in_single_out(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.softmax.int])
+@register_annotator([torch.ops.aten.softmax.int, torch.ops.aten._softmax.default])
 def annotate_softmax(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
 
@@ -282,6 +282,25 @@ def annotate_mean_dim(node: Node, quantization_config: QuantizationConfig) -> No
 @register_annotator([torch.ops.aten.slice.Tensor])
 def annotate_slice(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.gelu.default])
+def annotate_gelu(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.scaled_dot_product_attention.default])
+def annotate_scaled_dot_product_attention(
+    node: Node, quantization_config: QuantizationConfig
+) -> None:
+    annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.squeeze.dim])
+def annotate_squeeze(node: Node, quantization_config: QuantizationConfig) -> None:
+    annotate_in_out_obs_sharing_op(node, quantization_config)
+    if not _is_annotated([node]):
+        annotate_single_in_single_out(node, quantization_config)
 
 
 @register_annotator([torch.ops.aten.unsqueeze.default])
@@ -356,6 +375,40 @@ def annotate_matmul(node: Node, quantization_config: QuantizationConfig) -> None
     )
 
 
+@register_annotator([torch.ops.aten.bmm.default])
+def annotate_bmm(node: Node, quantization_config: QuantizationConfig) -> None:
+    if _is_annotated([node]):
+        return
+
+    input_act_qspec = quantization_config.input_activation
+    output_act_qspec = quantization_config.output_activation
+
+    input_qspec_map = {}
+    input_act0 = node.args[0]
+    if isinstance(input_act0, Node):
+        input_qspec_map[input_act0] = input_act_qspec
+
+    input_act1 = node.args[1]
+    if isinstance(input_act1, Node):
+        # In bmm, QNN_DATATYPE_SFIXED_POINT_16 Input1 must have QNN_DATATYPE_UFIXED_POINT_16 Input0 and must be symmetric quantized.
+        if input_act_qspec.dtype == torch.int32:
+            input_qspec_map[input_act1] = quantization_config.weight
+            quantization_annotation = input_act1.meta.get(QUANT_ANNOTATION_KEY, None)
+            if quantization_annotation:
+                quantization_annotation.output_qspec = quantization_config.weight
+        else:
+            input_qspec_map[input_act1] = input_act_qspec
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=output_act_qspec,
+        _annotated=True,
+    )
+
+    # We use get_source_partition in pass, but it is the same source for MultiheadAttention, so we need to change its source_fn_stack.
+    node.meta["source_fn_stack"] = [(node, torch.bmm)]
+
+
 @register_annotator([torch.ops.aten.conv2d.default])
 def annotate_conv2d(node: Node, quantization_config: QuantizationConfig) -> None:
     if _is_annotated([node]):
@@ -406,6 +459,42 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
         node,
         weight_node,
         quantization_config.weight,
+    )
+    nodes_to_mark_annotated = [node, weight_node]
+    if bias_node:
+        _annotate_input_qspec_map(
+            node,
+            bias_node,
+            quantization_config.bias,
+        )
+        nodes_to_mark_annotated.append(bias_node)
+    _annotate_output_qspec(node, quantization_config.output_activation)
+    _mark_nodes_as_annotated(nodes_to_mark_annotated)
+
+    # We use get_source_partition in pass, but it is the same source for MultiheadAttention, so we need to change its source_fn_stack.
+    node.meta["source_fn_stack"] = [(node, torch.nn.Linear)]
+
+
+@register_annotator([torch.ops.aten.layer_norm.default])
+def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> None:
+    act_node = node.args[0]
+    weight_node = node.args[2]
+    bias_node = None
+    if len(node.args) > 2:
+        bias_node = node.args[3]
+
+    if _is_annotated([node]):
+        return
+
+    _annotate_input_qspec_map(
+        node,
+        act_node,
+        quantization_config.input_activation,
+    )
+    _annotate_input_qspec_map(
+        node,
+        weight_node,
+        quantization_config.input_activation,
     )
     nodes_to_mark_annotated = [node, weight_node]
     if bias_node:

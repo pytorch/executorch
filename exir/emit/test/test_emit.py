@@ -8,6 +8,7 @@
 
 import typing
 import unittest
+from contextlib import contextmanager
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
@@ -53,6 +54,26 @@ class WrapperModule(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         return self.fn(*args, **kwargs)
+
+
+@contextmanager
+def patch_forward(obj: torch.nn.Module, new_method):
+    """Helper method to make it easier to cleanly torch.export() a method on a
+    module that is not `forward`.
+
+    TODO(suo): upstream this to torch.export.wrapper.
+    """
+    # Save the original method
+    original_method = obj.forward
+
+    # Patch the method
+    obj.forward = new_method.__get__(obj, obj.__class__)
+
+    try:
+        yield
+    finally:
+        # Restore the original method
+        obj.forward = original_method
 
 
 class TestEmit(unittest.TestCase):
@@ -806,14 +827,16 @@ class TestEmit(unittest.TestCase):
 
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
-        program_relu = to_edge(
-            export(WrapperModule(model.forward_relu), inputs),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch()
-        program_sigmoid = to_edge(
-            export(WrapperModule(model.forward_sigmoid), inputs),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch()
+        with patch_forward(model, model.forward_relu):
+            program_relu = to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+        with patch_forward(model, model.forward_sigmoid):
+            program_sigmoid = to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
         exir_input = {
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
@@ -869,12 +892,10 @@ class TestEmit(unittest.TestCase):
 
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
-        program_relu = to_edge(
-            export(WrapperModule(model.forward_relu), inputs)
-        ).to_executorch()
-        program_sigmoid = to_edge(
-            export(WrapperModule(model.forward_sigmoid), inputs)
-        ).to_executorch()
+        with patch_forward(model, model.forward_relu):
+            program_relu = to_edge(export(model, inputs)).to_executorch()
+        with patch_forward(model, model.forward_sigmoid):
+            program_sigmoid = to_edge(export(model, inputs)).to_executorch()
         exir_input = {
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),

@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,11 +11,11 @@ import copy
 import unittest
 
 import executorch.exir as exir
+from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.exir import EdgeCompileConfig
 
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch._export import capture_pre_autograd_graph
 from torch.export import export
 
@@ -45,7 +45,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+                model, inputs, generate_tosa_compile_spec()
             )
 
     def test_minimal_BI(self):
@@ -56,7 +56,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+                model, inputs, generate_tosa_compile_spec()
             )
 
     def test_minimal_BI_INT(self):
@@ -69,7 +69,7 @@ class TestBasicNN(unittest.TestCase):
                 print("  Skipping, no inputs for this profile")
                 continue
             model_edge, exec_prog = export_model(
-                model, inputs, [CompileSpec("output_format", bytes("tosa", "utf8"))]
+                model, inputs, generate_tosa_compile_spec()
             )
 
 
@@ -103,8 +103,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
 def export_model(model, inputs, compile_spec):
     model_capture = export(model, inputs)
     model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
-    ArmPartitioner.compile_spec = compile_spec
 
-    model_edge = model_edge.to_backend(ArmPartitioner())
+    model_edge = model_edge.to_backend(ArmPartitioner(compile_spec))
     exec_prog = model_edge.to_executorch()
     return model_edge, exec_prog
