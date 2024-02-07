@@ -310,11 +310,6 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         print(f"{modelname}:")
         print(f"{model}")
 
-    # metadata that we want to serialize into .pte file
-    metadata = {
-        "get_vocab_size": model.params.vocab_size,
-        "get_max_seq_len": model.params.max_seq_len,
-    }
     if args.metadata:
         try:
             extra = json.loads(args.metadata)
