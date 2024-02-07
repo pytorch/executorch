@@ -34,6 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - docker-image-name: executorch-ubuntu-22.04-gcc9
           - docker-image-name: executorch-ubuntu-22.04-clang12
           - docker-image-name: executorch-ubuntu-22.04-linter
           - docker-image-name: executorch-ubuntu-22.04-arm-sdk

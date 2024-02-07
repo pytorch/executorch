@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 from typing import Dict
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -10,12 +11,12 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpGelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class Unsqueeze(NodeVisitor):
-    target = "aten.unsqueeze_copy.default"
+class GeluVisitor(NodeVisitor):
+    target = "aten.gelu.default"
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -27,7 +28,6 @@ class Unsqueeze(NodeVisitor):
     ) -> PyQnnWrapper.PyQnnOpWrapper:
         input_node = node.args[0]
         input_tensor = self.get_tensor(input_node, node)
-
         input_tensor_wrapper = self.define_tensor(
             input_node,
             input_tensor,
@@ -43,12 +43,12 @@ class Unsqueeze(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        unsqueeze_op = PyQnnWrapper.PyQnnOpWrapper(
+        gelu_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpReshape.op_name,
+            OpGelu.op_name,
         )
-        unsqueeze_op.AddInputTensors([input_tensor_wrapper])
-        unsqueeze_op.AddOutputTensors([output_tensor_wrapper])
+        gelu_op.AddInputTensors([input_tensor_wrapper])
+        gelu_op.AddOutputTensors([output_tensor_wrapper])
 
-        return unsqueeze_op
+        return gelu_op
