@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import json
+import typing
 from dataclasses import dataclass, field
 from typing import List
 
@@ -60,15 +61,20 @@ def create_tensor_allocation_info(graph: torch.fx.Graph) -> List[MemoryTimeline]
             if tensor_spec is None or tensor_spec.mem_id is None or tensor_spec.const:
                 continue
             start, end = tensor_spec.lifetime
-            size = num_bytes_from_shape_and_dtype(tensor_spec.shape, tensor_spec.dtype)
+            size = num_bytes_from_shape_and_dtype(
+                typing.cast(torch.Size, tensor_spec.shape), tensor_spec.dtype
+            )
             stack_trace = node.meta.get("stack_trace")
             fqn = _get_module_hierarchy(node)
             for j in range(start, end + 1):
                 if memory_timeline[j] is None:
+                    # pyre-ignore
                     memory_timeline[j] = MemoryTimeline()
+                # pyre-ignore
                 memory_timeline[j].allocations.append(
                     Allocation(node.name, node.target, i, size, fqn, stack_trace)
                 )
+    # pyre-ignore
     return memory_timeline
 
 

@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -46,6 +48,8 @@ function(executorch_print_configuration_summary)
     STATUS "  REGISTER_EXAMPLE_CUSTOM_OPS   : ${REGISTER_EXAMPLE_CUSTOM_OPS}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
+                 "${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}")
   message(STATUS "  EXECUTORCH_BUILD_XNNPACK : ${EXECUTORCH_BUILD_XNNPACK}")
   message(STATUS "  EXECUTORCH_BUILD_MPS     : ${EXECUTORCH_BUILD_MPS}")
 endfunction()

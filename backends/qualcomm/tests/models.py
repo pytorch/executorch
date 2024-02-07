@@ -174,6 +174,15 @@ class ExpandCopy(torch.nn.Module):
         return x.expand(3, 4)
 
 
+class Gelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.gelu = torch.nn.GELU()
+
+    def forward(self, x):
+        return self.gelu(x)
+
+
 class HardSigmoid(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -199,6 +208,16 @@ class HardTanh(torch.nn.Module):
 
     def forward(self, x):
         return self.hardtanh(x)
+
+
+class LayerNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6)
+        self.linear = torch.nn.Linear(768, 196)
+
+    def forward(self, x):
+        return self.linear(self.layer_norm(x))
 
 
 class Linear(torch.nn.Module):
@@ -265,6 +284,28 @@ class MulConstantLong(torch.nn.Module):
         return 10 * x
 
 
+class MulScalar(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._scalar = 3.14
+
+    def forward(self, x):
+        out1 = torch.ops.aten.mul.Scalar(x, self._scalar)
+        return out1
+
+
+class MultiheadAttention(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.multi_head_attention = torch.nn.MultiheadAttention(
+            96, 12, dropout=0.0, batch_first=True
+        )
+
+    def forward(self, x):
+        attn_output, _ = self.multi_head_attention(x, x, x, need_weights=False)
+        return attn_output
+
+
 class Pad(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -299,6 +340,17 @@ class Reshape(torch.nn.Module):
 
     def forward(self, x):
         return x.reshape(1, 12)
+
+
+class ScaledDotProductAttention(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, query_layer, key_layer, value_layer):
+        attn_output = torch.nn.functional.scaled_dot_product_attention(
+            query_layer, key_layer, value_layer
+        )
+        return attn_output
 
 
 class SelectCopy(torch.nn.Module):

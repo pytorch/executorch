@@ -2,6 +2,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -167,7 +169,7 @@ function setup_tosa_reference_model() {
     # errors for the early codebase
     cd "${root_dir}"
     if [[ ! -e reference_model ]]; then
-        git clone https://review.mlplatform.org/tosa/reference_model v0.80
+        git clone https://review.mlplatform.org/tosa/reference_model -b v0.80
         cd reference_model
         git submodule update --init --recursive
         cd ..
