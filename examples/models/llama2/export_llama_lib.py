@@ -16,6 +16,9 @@ from typing import Any, Dict
 
 import pkg_resources
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
@@ -101,6 +104,7 @@ def apply_pt2e_quantization(
     # Calibrate
     m(*example_inputs)
     m = convert_pt2e(m)
+    DuplicateDynamicQuantChainPass()(m)
     return m
 
 
