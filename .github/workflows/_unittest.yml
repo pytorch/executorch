@@ -46,7 +46,7 @@ jobs:
         include:
           - build-tool: buck2
     with:
-      runner: macos-m1-12
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}

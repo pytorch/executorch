@@ -2,6 +2,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -68,6 +70,7 @@ function build_executorch() {
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B${et_build_dir}                                 \
