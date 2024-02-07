@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "ExecuTorch Demo"
 
 include(":app")
+include(":ExecuTorch")
