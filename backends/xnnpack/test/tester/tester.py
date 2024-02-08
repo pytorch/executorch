@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+
+import logging
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
@@ -27,9 +29,16 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+try:
+    from executorch.extension.pybindings.portable_lib import (  # @manual
+        _load_for_executorch_from_buffer,
+    )
+except ImportError as e:
+    logger.warning(f"{e=}")
+    pass
+
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
