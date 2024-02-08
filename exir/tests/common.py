@@ -53,7 +53,9 @@ def get_test_program() -> Program:
                             layout=0,
                             constant_buffer_idx=0,
                             allocation_info=AllocationDetails(
-                                memory_id=1, memory_offset=16
+                                memory_id=1,
+                                memory_offset_high=0,
+                                memory_offset_low=16,
                             ),
                             shape_dynamism=TensorShapeDynamism.STATIC,
                         )
