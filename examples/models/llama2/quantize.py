@@ -236,8 +236,11 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
-        # return F.linear(input, self.weight.to(dtype=input.dtype)) * se...
+        return torch.ops.quantized_decomposed.mixed_mm.default(
+            input, self.weight, self.scales
+        )
+        # return F.linear(input, self.weight) * self.scales
+        # return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
 
 
 ##### embedding table quantization ######
