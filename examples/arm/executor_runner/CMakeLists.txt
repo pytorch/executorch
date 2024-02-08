@@ -8,11 +8,16 @@ project(arm_executor_runner)
 
 # Example ExecuTorch demo for bare metal Cortex-M based systems
 
-set(ET_DIR_PATH "<..>/executorch" CACHE PATH "Path to ExecuTorch dir")
-set(ET_BUILD_DIR_PATH "${ET_DIR_PATH}/cmake-out" CACHE PATH "Path to ExecuTorch build dir")
-set(ET_INCLUDE_PATH "${ET_DIR_PATH}/.." CACHE PATH "Path to ExecuTorch headers")
-set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" CACHE PATH "Path to ExecuTorch model pte")
-set(ETHOS_SDK_PATH "${ETHOS_SDK_PATH}" CACHE PATH "Path to Ethos-U bare metal driver/env")
+set(ET_DIR_PATH "../../.." CACHE PATH
+  "Path to ExecuTorch dir")
+set(ET_BUILD_DIR_PATH "${ET_DIR_PATH}/cmake-out" CACHE PATH
+  "Path to ExecuTorch build dir")
+set(ET_INCLUDE_PATH "${ET_DIR_PATH}/.." CACHE PATH
+  "Path to ExecuTorch headers")
+set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" CACHE PATH
+  "Path to ExecuTorch model pte")
+set(ETHOS_SDK_PATH "${ETHOS_SDK_PATH}" CACHE PATH
+  "Path to Ethos-U bare metal driver/env")
 
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
@@ -21,8 +26,9 @@ get_filename_component(ET_PTE_FILE_PATH ${ET_PTE_FILE_PATH} REALPATH)
 get_filename_component(ETHOS_SDK_PATH ${ETHOS_SDK_PATH} REALPATH)
 
 # Dependencies from the Ethos-U Core
-# This is the platform target of Corstone-300, and includes ethosu_core_driver, etc
-# we link against ethosu_target_init
+# This is the platform target of Corstone-300, that includes ethosu_core_driver
+# and bare-metal bringup libraries. We link against ethosu_target_init which
+# includes all of these dependencies.
 add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
 
 # Dependencies from the ExecuTorch build
@@ -66,7 +72,7 @@ add_executable( arm_executor_runner )
 
 target_sources( arm_executor_runner PRIVATE arm_executor_runner.cpp )
 
-# Include the target's bare-metal linker script 
+# Include the target's bare-metal linker script
 ethosu_eval_link_options( arm_executor_runner )
 
 # Need whole-archive to ensure C++ ctor's are called - this may be wasteful for
@@ -80,7 +86,7 @@ target_link_libraries(
   executorch_delegate_ethos_u
   portable_kernels
   portable_ops_lib
-  "-Wl,--no-whole-archive"  
+  "-Wl,--no-whole-archive"
   )
 
 # ET headers and generated headers includes
