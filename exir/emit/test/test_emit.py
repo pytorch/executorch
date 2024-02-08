@@ -35,6 +35,7 @@ from executorch.exir.schema import (
     KernelTypes,
     MoveCall,
     Null,
+    OptionalTensorList,
     Program,
     String,
     Tensor,
@@ -538,12 +539,12 @@ class TestEmit(unittest.TestCase):
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 a = torch.nonzero(x)
+                torch._constrain_as_size(a.shape[0], min=1)
                 b = torch.ops.aten.index.Tensor(x, [a])
                 return b
 
         f = Foo()
-
-        x = (torch.randn(3, 2),)
+        x = (torch.triu(torch.ones(2, 2)),)
         program = (
             to_edge(
                 export(f, x),
@@ -551,6 +552,9 @@ class TestEmit(unittest.TestCase):
             )
             .to_executorch()
             .executorch_program
+        )
+        self.assertTrue(
+            isinstance(program.execution_plan[0].values[3].val, OptionalTensorList)
         )
         self._assertCallLength(program, 0, 3)
         self._assertCallLength(program, 1, 4)
