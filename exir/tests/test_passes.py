@@ -1134,7 +1134,11 @@ class TestPasses(unittest.TestCase):
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:
             return sum(
-                (node.target == torch.ops.aten.add.Tensor) for node in gm.graph.nodes
+                (
+                    node.target == torch.ops.aten.add.Tensor
+                    or node.target == exir_ops.edge.aten.add.Tensor
+                )
+                for node in gm.graph.nodes
             )
 
         class M(torch.nn.Module):
@@ -1151,9 +1155,13 @@ class TestPasses(unittest.TestCase):
             M(),
             (torch.zeros(2, 2, 3),),
         )
+        edge = to_edge(aten)
         self.assertEqual(count_additions(aten.graph_module), 3)
         new_ep = constant_prop_pass(aten)
         self.assertEqual(count_additions(new_ep.graph_module), 1)
+
+        # check to_edge does this by default
+        self.assertEqual(count_additions(edge.exported_program().graph_module), 1)
 
     def test_constant_prop_pass_for_control_flow(self) -> None:
         class Module(torch.nn.Module):
@@ -1185,11 +1193,10 @@ class TestPasses(unittest.TestCase):
             export(mod, (pred, x)),
             compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
         )
-        error_msg = r"constant_prop_pass for control flow is not supported yet."
 
         # TODO(chenlai): enable constant prop pass for control flow
-        with self.assertRaisesRegex(
-            RuntimeError,
-            error_msg,
-        ):
-            _ = constant_prop_pass(edge.exported_program())
+        before = edge.exported_program().graph_module.graph
+        after = constant_prop_pass(edge.exported_program()).graph_module.graph
+        self.assertEqual(
+            before, after
+        )  # pass is disabled for modules with control flow so we expect a noop

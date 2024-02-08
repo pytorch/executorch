@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import warnings
+
 import torch
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch._guards import detect_fake_mode
@@ -54,7 +56,11 @@ def constant_prop_pass(exported_program: ExportedProgram) -> ExportedProgram:
         if node.target == torch.ops.higher_order.cond
     ]
     if len(has_cond) > 0:
-        raise RuntimeError("constant_prop_pass for control flow is not supported yet.")
+        warnings.warn(
+            "constant_prop_pass does not work with modules with control flow yet. Skipping the pass",
+            stacklevel=1,
+        )
+        return exported_program
 
     first_user_input = None
     for node in exported_program.graph.nodes:
@@ -104,6 +110,8 @@ def constant_prop_pass(exported_program: ExportedProgram) -> ExportedProgram:
 
                     node.replace_all_uses_with(const_placeholder_node)
                     exported_program.graph.erase_node(node)
+
+                    # If the original buffer was not persistent it will be after this pass. Not sure if that matters at this stage though so leaving for now.
                     prop_constant_node_input_spec = InputSpec(
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=const_placeholder_node.name),
@@ -115,8 +123,10 @@ def constant_prop_pass(exported_program: ExportedProgram) -> ExportedProgram:
                     exported_program.state_dict[
                         prop_constant_tensor_fqn
                     ] = prop_constant_tensor
-                    exported_program.graph_signature.input_specs.append(
-                        prop_constant_node_input_spec
+
+                    # Emitter expects the order in the graph signature to match the order of the inputs so we need to insert at the beginning
+                    exported_program.graph_signature.input_specs.insert(
+                        0, prop_constant_node_input_spec
                     )
 
     # Remove the propogated buffer from the state dict
@@ -126,8 +136,17 @@ def constant_prop_pass(exported_program: ExportedProgram) -> ExportedProgram:
             and node in const_data_to_be_removed
             and len(node.users) == 0
         ):
+            # should we also check named_buffers if the original buffer wasn't persistent?
             exported_program.state_dict.pop(node.name, None)
             exported_program.graph.erase_node(node)
 
+            # Remove the old buffers from the graph signature.
+            for i in range(0, len(exported_program.graph_signature.input_specs)):
+                if (
+                    exported_program.graph_signature.input_specs[i].arg.name
+                    == node.target
+                ):
+                    exported_program.graph_signature.input_specs.pop(i)
+                    break
     exported_program.graph_module.recompile()
     return exported_program

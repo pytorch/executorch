@@ -25,6 +25,7 @@ from executorch.exir.passes import (
     post_op_replace_passes,
     pre_op_replace_passes,
 )
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -861,6 +862,7 @@ def to_edge(
         )
         # Lift the tensor constants created in ScalarToTensorPass
         edge_program = lift_constant_tensor_pass(edge_program)
+        edge_program = constant_prop_pass(edge_program)
         edge_program = _transform(edge_program, *post_op_replace_passes)
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)

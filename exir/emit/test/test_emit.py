@@ -20,7 +20,6 @@ from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.emit import emit_program  # noqa
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -35,6 +34,7 @@ from executorch.exir.schema import (
     KernelTypes,
     MoveCall,
     Null,
+    OptionalTensorList,
     Program,
     String,
     Tensor,
@@ -215,35 +215,42 @@ class TestEmit(unittest.TestCase):
 
         f = Foo()
 
-        program = to_edge(constant_prop_pass(export(f, (torch.randn(100),))))
-        program = program.to_executorch().executorch_program
+        program = to_edge(export(f, (torch.randn(100),)))
+        executorch_manager = program.to_executorch()
+        program = executorch_manager.executorch_program
         self.assertEqual(len(program.constant_buffer), 2)
         instructions = program.execution_plan[0].chains[0].instructions
         values = program.execution_plan[0].values
 
-        # first arg to first torch_add is a dynamic tensor
+        executorch_manager.dump_executorch_program(True)
+
+        # first arg to first torch_add is an activation tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[0], values, 0, 1, 800  # pyre-ignore[16]
+            instructions[1].instr_args.args[0],  # pyre-ignore[16]
+            values,
+            exp_buffer_idx=0,
+            exp_mem_id=1,
+            exp_mem_offset=800,
         )
         # second arg to first torch_add is an input tensor
         self.check_tensor_buffer_loc(
             instructions[1].instr_args.args[1], values, 0, 1, 400  # pyre-ignore[16]
         )
-        # output of first torch_add is a dynamic tensor
+        # output of first torch_add is an activation tensor
         self.check_tensor_buffer_loc(
             instructions[1].instr_args.args[3], values, 0, 1, 1200  # pyre-ignore[16]
         )
-        # first arg to second torch_add is a dynamic tensor
+        # first arg to second torch_add is an activation tensor
         self.check_tensor_buffer_loc(
             instructions[-1].instr_args.args[0], values, 0, 1, 1200  # pyre-ignore[16]
         )
         # second arg to second torch_add is a input tensor
         self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
+            instructions[-1].instr_args.args[1], values, 0, 1, 800  # pyre-ignore[16]
         )
-        # output of second torch_add is a dynamic tensor
+        # output of second torch_add is an activation tensor
         self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
+            instructions[-1].instr_args.args[3], values, 0, 1, 0  # pyre-ignore[16]
         )
 
     def test_inplace_ops(self) -> None:
@@ -538,12 +545,12 @@ class TestEmit(unittest.TestCase):
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 a = torch.nonzero(x)
+                torch._constrain_as_size(a.shape[0], min=1)
                 b = torch.ops.aten.index.Tensor(x, [a])
                 return b
 
         f = Foo()
-
-        x = (torch.randn(3, 2),)
+        x = (torch.triu(torch.ones(2, 2)),)
         program = (
             to_edge(
                 export(f, x),
@@ -551,6 +558,9 @@ class TestEmit(unittest.TestCase):
             )
             .to_executorch()
             .executorch_program
+        )
+        self.assertTrue(
+            isinstance(program.execution_plan[0].values[3].val, OptionalTensorList)
         )
         self._assertCallLength(program, 0, 3)
         self._assertCallLength(program, 1, 4)
@@ -1321,13 +1331,19 @@ class TestEmit(unittest.TestCase):
                 return x + self.buf
 
         model = NonPersistentBuffer()
+        aten = export(
+            model,
+            (torch.ones(1),),
+        )
         program = to_edge(
-            export(
-                model,
-                (torch.ones(1),),
-            )
-        ).to_executorch()
+            aten,
+        )
+        self.assertEqual(program.exported_program()(torch.zeros(1)), torch.ones(1))
+        self.assertEqual(program.exported_program()(torch.ones(1)), torch.ones(1) + 1)
+        program = program.to_executorch()
         program = program._emitter_output.program
         # confirm that the buffer was emitted
         self.assertEqual(len(program.constant_buffer), 2)
-        self.assertEqual(len(program.constant_buffer[1].storage), 8)
+        self.assertEqual(
+            len(program.constant_buffer[1].storage), 4
+        )  # Expect one float32 constant. The buffer was registered as long but during export we use it in a float operation so it gets const propped to float.
