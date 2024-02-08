@@ -156,7 +156,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/llama2.pt",
+        default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
     parser.add_argument(
@@ -167,7 +167,10 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
-        "-p", "--params", default=f"{ckpt_dir}/llama2_params.json", help="config.json"
+        "-p",
+        "--params",
+        default=f"{ckpt_dir}/params/demo_config.json",
+        help="config.json",
     )
     parser.add_argument(
         "-m",
