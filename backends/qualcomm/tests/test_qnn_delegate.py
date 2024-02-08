@@ -827,10 +827,10 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": InceptionV4Model(), "annotation": ()},
             {"module": MV2Model(), "annotation": ()},
             {"module": MV3Model(), "annotation": ()},
-            {"module": Wav2LetterModel(), "annotation": ()},
             # only works on QNN 2.12 so far
             # { 'module': MobileBertModelExample(), 'annotation': () },
             {"module": TorchVisionViTModel(), "annotation": ()},
+            {"module": Wav2LetterModel(), "annotation": ()},
         ]
         expected_partitions = [
             1,
@@ -841,6 +841,7 @@ class TestQNNQuantizedModel(TestQNN):
             1,
             # For MobileBertModelExample
             # 1,
+            1,
             1,
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.

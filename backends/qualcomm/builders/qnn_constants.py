@@ -114,10 +114,6 @@ class OpExpandDims:
     param_axis: str = "axis"
 
 
-class OpSqueeze:
-    op_name: str = "Squeeze"
-
-
 @dataclass(init=False, frozen=True)
 class OpConcat:
     op_name: str = "Concat"
