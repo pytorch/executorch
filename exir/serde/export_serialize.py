@@ -739,6 +739,7 @@ class GraphModuleSerializer:
                 buffer=InputToBufferSpec(
                     arg=TensorArgument(name=spec.arg.name),
                     buffer_name=spec.target,  # pyre-ignore
+                    persistent=spec.persistent,  # pyre-ignore
                 )
             )
         elif spec.kind == ep.InputKind.CONSTANT_TENSOR:
@@ -1038,7 +1039,7 @@ class ExportedProgramSerializer:
         constants = {}
         for n, c in gm_serializer.custom_objs.items():
             constants[n] = c
-        for n, t in exported_program.tensor_constants.items():
+        for n, t in exported_program.constants.items():
             assert n not in constants
             constants[n] = t
 
@@ -1708,9 +1709,7 @@ class ExportedProgramDeserializer:
         constants = deserialize_torch_artifact(serialized_artifact.constants)
 
         # TODO: No need to do this once CustomClassHolders are lifted to the ExportedProgram
-        tensor_constants = {
-            k: v for k, v in constants.items() if isinstance(v, torch.Tensor)
-        }
+        constants = {k: v for k, v in constants.items() if isinstance(v, torch.Tensor)}
 
         res = GraphModuleDeserializer().deserialize(
             serialized_artifact.exported_program.graph_module,  # pyre-ignore
@@ -1743,7 +1742,7 @@ class ExportedProgramDeserializer:
             verifier=load_verifier(
                 serialized_artifact.exported_program.dialect  # pyre-ignore
             ),
-            tensor_constants=tensor_constants,
+            constants=constants,  # type: ignore[arg-type]
         )
         return upgrader.upgrade(exported_program)
 

@@ -208,12 +208,48 @@ T* Result<T>::operator->() {
  * Note: A function using ET_UNWRAP should itself return a Result or Error.
  *
  * @param[in] result__ Expression yielding the result to unwrap.
+ * @param[in] ... Optional format string for the log error message and its
+ * arguments.
  */
-#define ET_UNWRAP(result__)        \
-  ({                               \
-    auto et_result__ = (result__); \
-    if (!et_result__.ok()) {       \
-      return et_result__.error();  \
-    }                              \
-    std::move(*et_result__);       \
+#define ET_UNWRAP(result__, ...) ET_INTERNAL_UNWRAP(result__, ##__VA_ARGS__)
+
+// Internal only: Use ET_UNWRAP() instead.
+#define ET_INTERNAL_UNWRAP(...)                                         \
+  ET_INTERNAL_UNWRAP_SELECT(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1) \
+  (__VA_ARGS__)
+
+// Internal only: Use ET_UNWRAP() instead.
+#define ET_INTERNAL_UNWRAP_SELECT(                   \
+    _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) \
+  ET_INTERNAL_UNWRAP_##N
+
+// Internal only: Use ET_UNWRAP() instead.
+#define ET_INTERNAL_UNWRAP_1(result__) \
+  ({                                   \
+    auto et_result__ = (result__);     \
+    if (!et_result__.ok()) {           \
+      return et_result__.error();      \
+    }                                  \
+    std::move(*et_result__);           \
   })
+
+// Internal only: Use ET_UNWRAP() instead.
+#define ET_INTERNAL_UNWRAP_2(result__, message__, ...) \
+  ({                                                   \
+    auto et_result__ = (result__);                     \
+    if (!et_result__.ok()) {                           \
+      ET_LOG(Error, message__, ##__VA_ARGS__);         \
+      return et_result__.error();                      \
+    }                                                  \
+    std::move(*et_result__);                           \
+  })
+
+// Internal only: Use ET_UNWRAP() instead.
+#define ET_INTERNAL_UNWRAP_3 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_4 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_5 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_6 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_7 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_8 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_9 ET_INTERNAL_UNWRAP_2
+#define ET_INTERNAL_UNWRAP_10 ET_INTERNAL_UNWRAP_2

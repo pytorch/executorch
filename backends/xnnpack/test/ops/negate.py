@@ -19,15 +19,7 @@ class TestNegate(unittest.TestCase):
             z = torch.neg(x)
             return z
 
-    def test_fp32_negate(self):
-        inputs = (
-            torch.Tensor(
-                [
-                    [0.0, 0.1, 0.5, 0.499],
-                    [-0.6, -0.4, 100.1, -1000.1],
-                ],
-            ),
-        )
+    def _test_negate(self, inputs):
         (
             Tester(self.Negate(), inputs)
             .export()
@@ -42,3 +34,25 @@ class TestNegate(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_negate(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ],
+            ).to(torch.float16),
+        )
+        self._test_negate(inputs)
+
+    def test_fp32_negate(self):
+        inputs = (
+            torch.Tensor(
+                [
+                    [0.0, 0.1, 0.5, 0.499],
+                    [-0.6, -0.4, 100.1, -1000.1],
+                ],
+            ),
+        )
+        self._test_negate(inputs)

@@ -9,7 +9,6 @@
 import unittest
 
 import torch
-import torch._export as export
 import torchvision
 from executorch import exir
 from executorch.exir import EdgeCompileConfig
@@ -52,7 +51,9 @@ class TestQuantization(unittest.TestCase):
             m = torchvision.models.resnet18().eval()  # pyre-ignore[16]
             m_copy = copy.deepcopy(m)
             # program capture
-            m = export.capture_pre_autograd_graph(m, copy.deepcopy(example_inputs))
+            m = torch._export.capture_pre_autograd_graph(
+                m, copy.deepcopy(example_inputs)
+            )
 
             quantizer = XNNPACKQuantizer()
             operator_config = get_symmetric_quantization_config(is_per_channel=True)
@@ -62,7 +63,7 @@ class TestQuantization(unittest.TestCase):
                 id(m.activation_post_process_3), id(m.activation_post_process_2)
             )
             after_prepare_result = m(*example_inputs)[0]
-            m = convert_pt2e(m)
+            m = convert_pt2e(m, fold_quantize=True)
 
             # TODO: conv, conv_relu, linear delegation
             # quantized ops to implement: add_relu

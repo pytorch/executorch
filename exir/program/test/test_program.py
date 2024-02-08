@@ -150,6 +150,35 @@ class TestProgramManagers(unittest.TestCase):
             3,
         )
 
+    def test_no_getattr(self):
+        class Mul(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * 3.14
+
+        mul = Mul()
+        ep = to_edge(torch.export.export(mul, (torch.ones(1),))).exported_program()
+        for node in ep.graph.nodes:
+            self.assertNotEqual(node.op, "get_attr")
+        self.assertEqual(
+            len([node for node in ep.graph.nodes if node.op == "placeholder"]), 2
+        )
+
+    def test_constraint_present_after_dce(self):
+        import executorch.exir as exir
+
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                z = y.item()
+                torch._constrain_as_value(z, 0, 4)
+                return x[z : z + y.shape[0]]
+
+        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))
+
+        edge_manager = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        edge_manager.to_executorch()
+
     def test_edge_manager_transform(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
@@ -339,6 +368,9 @@ class TestProgramManagers(unittest.TestCase):
             one,
             two,
         )
+        if not isinstance(callable, torch.nn.Module):
+            callable = torch.export.WrapperModule(callable)
+
         exported_foo = export(callable, inputs)
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 

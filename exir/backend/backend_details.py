@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
 
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 
 def enforcedmethod(func):

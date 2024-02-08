@@ -14,6 +14,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
 )
 from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.fx.passes.infra.pass_base import PassResult
@@ -69,32 +70,17 @@ class ConvertToLinearPass(XNNPACKPass):
             map_ = {"input": 0, "weight": 1}
             return None if arg == "bias" else node.args[map_[arg]]
 
-    @staticmethod
-    def find_bias_for_mm(src_partition: SourcePartition, weight: torch.fx.Node):
+    def find_bias_for_mm(self, src_partition: SourcePartition, weight: torch.fx.Node):
         """
-        For linear decomposed with mm + add, find bias from src partition params
+        For linear decomposed with mm + add, find bias in src partition
         """
-        params = src_partition.params
-        nparams = len(params)
-        weight_in_params = weight in params
         out_channels = get_shape(weight)[0]
         bias = None
 
-        def find_param_with_shape(params, shape):
-            for param in params:
-                if get_shape(param) == shape:
-                    return param
-            return None
-
-        if nparams == 0:
-            # TODO also find bias in input args (not just in params)
-            bias = None
-        elif nparams == 1:
-            bias = params[0] if not weight_in_params else None
-        elif nparams == 2:
-            bias = params[params.index(weight) % 2] if weight_in_params else None
-        elif nparams > 2:
-            bias = find_param_with_shape(params, [out_channels])
+        # Try to find bias node in all nodes
+        for node in src_partition.nodes:
+            if is_param_node(self.exported_program, node) and node != weight:
+                bias = node
 
         if bias is not None:
             assert get_shape(bias) == [

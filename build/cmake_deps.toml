@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -62,6 +64,17 @@ filters = [
 deps = [
   "executorch",
   "extension_data_loader",
+]
+
+[targets.extension_runner_util]
+buck_targets = [
+  "//extension/runner_util:inputs",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
 ]
 
 [targets.portable_kernels]
@@ -202,7 +215,7 @@ filters = [
 
 [targets.xnnpack_schema]
 buck_targets = [
-  "//backends/xnnpack:xnnpack_schema",
+  "//backends/xnnpack/serialization:xnnpack_flatbuffer_header",
 ]
 filters = [
   ".fbs$",

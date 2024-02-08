@@ -31,14 +31,13 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/sdk/etdump/etdump_flatcc.h>
 
 #include <chrono>
 using namespace std::chrono;
 
 static constexpr size_t kRuntimeMemorySize = 4 * 1024U * 1024U; // 4 MB
 static uint8_t runtime_pool[kRuntimeMemorySize];
-static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;
-static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 
 DEFINE_string(model_path, "model.ff", "Model serialized in flatbuffer format.");
 DEFINE_string(
@@ -71,6 +70,33 @@ DEFINE_bool(
     skip_warmup,
     false,
     "If true, a warmup iteration won't be executed.");
+
+DEFINE_string(
+    etdump_path,
+    "etdump.etdp",
+    "If etdump generation is enabled an etdump will be written out to this path");
+
+DEFINE_bool(
+    print_output,
+    false,
+    "Print the output of the ET model to stdout, if needs.");
+
+DEFINE_bool(dump_outputs, false, "Dump outputs to etdump file");
+
+DEFINE_bool(
+    dump_intermediate_outputs,
+    false,
+    "Dump intermediate outputs to etdump file.");
+
+DEFINE_string(
+    debug_output_path,
+    "debug_output.bin",
+    "Path to dump debug outputs to.");
+
+DEFINE_int32(
+    debug_buffer_size,
+    262144, // 256 KB
+    "Size of the debug buffer in bytes to allocate for intermediate outputs and program outputs logging.");
 
 using namespace torch::executor;
 using torch::executor::util::FileDataLoader;
@@ -204,35 +230,6 @@ bool data_is_close_(
     }
   }
   return true;
-}
-
-static
-bool tensors_are_close_(
-    ScalarType scalar_type,
-    ssize_t numel,
-    size_t nbytes,
-    void* a_data_ptr,
-    void* b_data_ptr,
-    double rtol = 1e-05,
-    double atol = 1e-08) {
-  if (scalar_type == ScalarType::Float) {
-    return data_is_close_<float>(
-        (float*)a_data_ptr,
-        (float*)b_data_ptr,
-        numel,
-        rtol,
-        atol);
-  } else if (scalar_type == ScalarType::Double) {
-    return data_is_close_<double>(
-        (double*)a_data_ptr,
-        (double*)b_data_ptr,
-        numel,
-        rtol,
-        atol);
-  } else {
-    // Non-floating-point types can be compared bitwise.
-    return memcmp(a_data_ptr, b_data_ptr, nbytes) == 0;
-  }
 }
 
 int main(int argc, char** argv) {
@@ -400,16 +397,29 @@ int main(int argc, char** argv) {
   // allocators. Running the method can mutate allocated non_const buffers,
   // so should only be used by a single thread at at time, but it can be reused.
   //
-
+  torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
   ET_LOG(
       Info, "Loading method name from plan");
-  Result<Method> method = program->load_method(method_name, &memory_manager);
+  Result<Method> method = program->load_method(method_name, &memory_manager, &etdump_gen);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
       method.error());
   ET_LOG(Info, "Method loaded.");
+
+  void* debug_buffer = malloc(FLAGS_debug_buffer_size);
+  if (FLAGS_dump_intermediate_outputs) {
+    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
+    etdump_gen.set_debug_buffer(buffer);
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kIntermediateOutputs);
+  } else if (FLAGS_dump_outputs) {
+    Span<uint8_t> buffer((uint8_t*)debug_buffer, FLAGS_debug_buffer_size);
+    etdump_gen.set_debug_buffer(buffer);
+    etdump_gen.set_event_tracer_debug_level(
+        EventTracerDebugLogLevel::kProgramOutputs);
+  }
 
   // Prepare the inputs.
   exec_aten::ArrayRef<void*> inputs;
@@ -476,13 +486,14 @@ int main(int argc, char** argv) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
-  // Dump the profiling data to the specified file.
-  torch::executor::prof_result_t prof_result;
-  EXECUTORCH_DUMP_PROFILE_RESULTS(&prof_result);
-  if (prof_result.num_bytes != 0) {
-    FILE* ptr = fopen(FLAGS_prof_result_path.c_str(), "w+");
-    fwrite(prof_result.prof_data, 1, prof_result.num_bytes, ptr);
-    fclose(ptr);
+  // Dump the etdump data containing profiling/debugging data to the specified
+  // file.
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
   }
 
   // Handle the outputs.
@@ -525,5 +536,13 @@ int main(int argc, char** argv) {
   } else {
     util::FreeInputs(inputs);
   }
+
+  if (FLAGS_dump_outputs || FLAGS_dump_intermediate_outputs) {
+    FILE* f = fopen(FLAGS_debug_output_path.c_str(), "w+");
+    fwrite((uint8_t*)debug_buffer, 1, FLAGS_debug_buffer_size, f);
+    fclose(f);
+  }
+  free(debug_buffer);
+
   return 0;
 }

@@ -118,6 +118,9 @@ auto graphNode = nodePtr->mpsnode_union_as_MPS##aot_name();                     
     graphNode->input2_id(),                                                        \
     graphNode->output_id()                                                         \
   );                                                                               \
+  ET_CHECK_OR_RETURN_ERROR(                                                        \
+    isMacOS13OrNewer(), NotSupported,                                              \
+    "%s supported by MPS on MacOS13.0+/iOS16.1+", #aot_name);                       \
                                                                                    \
   _idToMPSGraphTensor[graphNode->output_id()] = binaryOpTensor(                    \
     getMPSGraphTensor(graphNode->input1_id()),                                     \
@@ -173,8 +176,19 @@ MPSGraphTensor* mpsTruncTensor(MPSGraphTensor* inputTensor, MPSGraph* mpsGraph) 
     return inputTensor;
   }
 
-  return [mpsGraph truncateWithTensor:inputTensor
-                                  name:nil];
+  if (!isMacOS13OrNewer(MacOSVersion::MACOS_VER_13_0_PLUS)) {
+    MPSGraphTensor* zeroTensor = [mpsGraph constantWithScalar:0.0 dataType:inputTensor.dataType];
+    MPSGraphTensor* predicateTensor = [mpsGraph lessThanWithPrimaryTensor:inputTensor
+                                                          secondaryTensor:zeroTensor
+                                                                     name:nil];
+    return [mpsGraph selectWithPredicateTensor:predicateTensor
+                           truePredicateTensor:[mpsGraph ceilWithTensor:inputTensor name:nil]
+                          falsePredicateTensor:[mpsGraph floorWithTensor:inputTensor name:nil]
+                                          name:nil];
+  } else {
+    return [mpsGraph truncateWithTensor:inputTensor
+                                    name:nil];
+  }
 };
 
 static
@@ -185,10 +199,7 @@ MPSGraphTensor* divModeTemplate(
   MPSGraph* mpsGraph,
   const std::string& op_name) {
   MPSDataType mpsInputDataType = [primaryTensor dataType];
-  MPSDataType mpsOtherDataType = [secondaryTensor dataType];
-
   ScalarType inputDataType = getScalarType(mpsInputDataType);
-  ScalarType otherDataType = getScalarType(mpsOtherDataType);
 
   if(rounding_mode.has_value() && *rounding_mode == "trunc"){
     ET_CHECK_MSG(inputDataType != ScalarType::Half,

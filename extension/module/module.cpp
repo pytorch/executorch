@@ -35,32 +35,32 @@
 namespace torch::executor {
 
 Module::Module(
-    const std::string& filePath,
-    const Module::MlockConfig mlockConfig)
-    : filePath_(filePath),
-      mlockConfig_(mlockConfig),
-      memoryAllocator_(std::make_unique<util::MallocMemoryAllocator>()) {
+    const std::string& file_path,
+    const Module::MlockConfig mlock_config)
+    : file_path_(file_path),
+      mlock_config_(mlock_config),
+      memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()) {
   runtime_init();
 }
 
 Module::Module(
-    std::unique_ptr<DataLoader> dataLoader,
-    std::unique_ptr<MemoryAllocator> memoryAllocator,
-    std::unique_ptr<EventTracer> eventTracer)
-    : dataLoader_(std::move(dataLoader)),
-      memoryAllocator_(
-          std::move(memoryAllocator)
+    std::unique_ptr<DataLoader> data_loader,
+    std::unique_ptr<MemoryAllocator> memory_allocator,
+    std::unique_ptr<EventTracer> event_tracer)
+    : data_loader_(std::move(data_loader)),
+      memory_allocator_(
+          std::move(memory_allocator)
               ?: std::make_unique<util::MallocMemoryAllocator>()),
-      eventTracer_(std::move(eventTracer)) {
+      event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
 
 Error Module::load(const Program::Verification verification) {
-  if (!isLoaded()) {
-    if (!dataLoader_) {
-      dataLoader_ = ET_UNWRAP_UNIQUE(
-          util::MmapDataLoader::from(filePath_.c_str(), [this] {
-            switch (mlockConfig_) {
+  if (!is_loaded()) {
+    if (!data_loader_) {
+      data_loader_ = ET_UNWRAP_UNIQUE(
+          util::MmapDataLoader::from(file_path_.c_str(), [this] {
+            switch (mlock_config_) {
               case MlockConfig::NoMlock:
                 return util::MmapDataLoader::MlockConfig::NoMlock;
               case MlockConfig::UseMlock:
@@ -71,82 +71,85 @@ Error Module::load(const Program::Verification verification) {
             ET_ASSERT_UNREACHABLE();
           }()));
     };
-    program_ = ET_UNWRAP_UNIQUE(Program::load(dataLoader_.get(), verification));
+    program_ =
+        ET_UNWRAP_UNIQUE(Program::load(data_loader_.get(), verification));
   }
   return Error::Ok;
 }
 
-bool Module::isLoaded() const {
+bool Module::is_loaded() const {
   return program_ != nullptr;
 }
 
-Result<std::vector<std::string>> Module::methodNames() {
+Result<std::unordered_set<std::string>> Module::method_names() {
   ET_CHECK_OK_OR_RETURN_ERROR(load());
-  const auto methodCount = program_->num_methods();
-  std::vector<std::string> result;
-  result.reserve(methodCount);
+  const auto method_count = program_->num_methods();
+  std::unordered_set<std::string> result;
+  result.reserve(method_count);
 
-  for (auto index = 0; index < methodCount; ++index) {
-    result.emplace_back(program_->get_method_name(index).get());
+  for (auto index = 0; index < method_count; ++index) {
+    result.emplace(program_->get_method_name(index).get());
   }
   return result;
 }
 
-Error Module::loadMethod(const std::string& methodName) {
-  if (!isMethodLoaded(methodName)) {
+Error Module::load_method(const std::string& method_name) {
+  if (!is_method_loaded(method_name)) {
     ET_CHECK_OK_OR_RETURN_ERROR(load());
 
-    MethodHolder methodHolder;
-    const auto methodMetadata =
-        ET_UNWRAP(program_->method_meta(methodName.c_str()));
-    const auto plannedBuffersCount =
-        methodMetadata.num_memory_planned_buffers();
-    methodHolder.plannedBuffers.reserve(plannedBuffersCount);
-    methodHolder.plannedSpans.reserve(plannedBuffersCount);
+    MethodHolder method_holder;
+    const auto method_metadata =
+        ET_UNWRAP(program_->method_meta(method_name.c_str()));
+    const auto planned_buffersCount =
+        method_metadata.num_memory_planned_buffers();
+    method_holder.planned_buffers.reserve(planned_buffersCount);
+    method_holder.planned_spans.reserve(planned_buffersCount);
 
-    for (auto index = 0; index < plannedBuffersCount; ++index) {
-      const auto bufferSize =
-          methodMetadata.memory_planned_buffer_size(index).get();
-      methodHolder.plannedBuffers.emplace_back(bufferSize);
-      methodHolder.plannedSpans.emplace_back(
-          methodHolder.plannedBuffers.back().data(), bufferSize);
+    for (auto index = 0; index < planned_buffersCount; ++index) {
+      const auto buffer_size =
+          method_metadata.memory_planned_buffer_size(index).get();
+      method_holder.planned_buffers.emplace_back(buffer_size);
+      method_holder.planned_spans.emplace_back(
+          method_holder.planned_buffers.back().data(), buffer_size);
     }
-    methodHolder.plannedMemory = std::make_unique<HierarchicalAllocator>(Span(
-        methodHolder.plannedSpans.data(), methodHolder.plannedSpans.size()));
-    methodHolder.memoryManager = std::make_unique<MemoryManager>(
-        memoryAllocator_.get(), methodHolder.plannedMemory.get());
-    methodHolder.method = ET_UNWRAP_UNIQUE(program_->load_method(
-        methodName.c_str(),
-        methodHolder.memoryManager.get(),
-        eventTracer_.get()));
-    methods_.emplace(methodName, std::move(methodHolder));
+    method_holder.planned_memory = std::make_unique<HierarchicalAllocator>(Span(
+        method_holder.planned_spans.data(),
+        method_holder.planned_spans.size()));
+    method_holder.memory_manager = std::make_unique<MemoryManager>(
+        memory_allocator_.get(), method_holder.planned_memory.get());
+    method_holder.method = ET_UNWRAP_UNIQUE(program_->load_method(
+        method_name.c_str(),
+        method_holder.memory_manager.get(),
+        event_tracer_.get()));
+    methods_.emplace(method_name, std::move(method_holder));
   }
   return Error::Ok;
 }
 
-bool Module::isMethodLoaded(const std::string& methodName) const {
-  return methods_.count(methodName);
+bool Module::is_method_loaded(const std::string& method_name) const {
+  return methods_.count(method_name);
 }
 
-Result<MethodMeta> Module::methodMeta(const std::string& methodName) {
-  ET_CHECK_OK_OR_RETURN_ERROR(loadMethod(methodName));
-  return methods_.at(methodName).method->method_meta();
+Result<MethodMeta> Module::method_meta(const std::string& method_name) {
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  return methods_.at(method_name).method->method_meta();
 }
 
 Result<std::vector<EValue>> Module::execute(
-    const std::string& methodName,
+    const std::string& method_name,
     const std::vector<EValue>& input) {
-  ET_CHECK_OK_OR_RETURN_ERROR(loadMethod(methodName));
-  auto& method = methods_.at(methodName).method;
+  ET_CHECK_OK_OR_RETURN_ERROR(load_method(method_name));
+  auto& method = methods_.at(method_name).method;
 
   for (auto index = 0; index < input.size(); ++index) {
     ET_CHECK_OK_OR_RETURN_ERROR(method->set_input(input[index], index));
   }
   ET_CHECK_OK_OR_RETURN_ERROR(method->execute());
 
-  const auto outputsSize = method->outputs_size();
-  std::vector<EValue> outputs(outputsSize);
-  ET_CHECK_OK_OR_RETURN_ERROR(method->get_outputs(outputs.data(), outputsSize));
+  const auto outputs_size = method->outputs_size();
+  std::vector<EValue> outputs(outputs_size);
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      method->get_outputs(outputs.data(), outputs_size));
 
   return outputs;
 }

@@ -12,8 +12,6 @@ runtime.python_library(
     deps = [
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:graph_module",
-        "//executorch/exir/_serialize:_bindings",
-        "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
     ],
 )

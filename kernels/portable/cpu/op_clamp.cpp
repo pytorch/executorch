@@ -94,7 +94,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
 
   ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, "clamp.out", CTYPE_VAL, [&]() {
     CTYPE_VAL val = 0;
-    ET_EXTRACT_SCALAR(val_scalar, val);
+    utils::extract_scalar(val_scalar, &val);
     if (isIntegralType(out_type, /*includeBool=*/false)) {
       ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
         if (is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, long>(val)) {
@@ -175,7 +175,7 @@ Tensor& clamp_out(
     if (has_min) {
       ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "clamp", CTYPE_MIN, [&]() {
         CTYPE_MIN min_val = 0;
-        ET_EXTRACT_SCALAR(min_opt.value(), min_val);
+        utils::extract_scalar(min_opt.value(), &min_val);
         min = static_cast<CTYPE_OUT>(min_val);
       });
     }
@@ -185,7 +185,7 @@ Tensor& clamp_out(
     if (has_max) {
       ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "clamp", CTYPE_MAX, [&]() {
         CTYPE_MAX max_val = 0;
-        ET_EXTRACT_SCALAR(max_opt.value(), max_val);
+        utils::extract_scalar(max_opt.value(), &max_val);
         max = static_cast<CTYPE_OUT>(max_val);
       });
     }

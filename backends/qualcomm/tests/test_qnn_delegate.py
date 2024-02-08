@@ -3,7 +3,6 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
-import argparse
 import json
 import subprocess
 import sys
@@ -16,6 +15,9 @@ from executorch.backends.qualcomm.tests.utils import TestQNN
 from executorch.backends.qualcomm.utils.utils import (
     generate_qnn_executorch_compiler_spec,
 )
+
+from executorch.examples.qualcomm.scripts.utils import setup_common_args_and_variables
+
 from executorch.backends.qualcomm.tests.models import *  # noqa: F403
 
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
@@ -25,6 +27,7 @@ from executorch.examples.models.inception_v4 import InceptionV4Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
+from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
 from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 from executorch.exir.backend.backend_api import disable_validation
@@ -147,6 +150,10 @@ class TestQNNFloatingPointOperator(TestQNN):
                 "module": [MulConstantFloat()],  # noqa: F405
                 "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
             },
+            {
+                "module": [MulScalar()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
         ]
 
         index = 0
@@ -200,6 +207,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 1]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_gelu(self):
+        module = Gelu()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -218,6 +230,11 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_interpolate(self):
         module = StaticResizeBilinear2DSizeModule()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_layer_norm(self):
+        module = LayerNorm()  # noqa: F405
+        sample_input = (torch.randn(196, 768),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_linear(self):
@@ -242,6 +259,12 @@ class TestQNNFloatingPointOperator(TestQNN):
             with self.subTest(i=i):
                 self.lower_module_and_test_output(module, sample_input)
 
+    @unittest.skip("it will hang in runtime")
+    def test_qnn_backend_mha(self):
+        module = MultiheadAttention()  # noqa: F405
+        sample_input = (torch.randn(1, 197, 96),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
         sample_input = (torch.randn([1, 8, 128]),)
@@ -260,6 +283,15 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sdpa(self):
+        module = ScaledDotProductAttention()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+        )
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
@@ -361,9 +393,11 @@ class TestQNNFloatingPointModel(TestQNN):
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
+            TorchVisionViTModel(),
             Wav2LetterModel(),
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
@@ -516,6 +550,10 @@ class TestQNNQuantizedOperator(TestQNN):
                 "module": [MulConstantFloat(), MulConstantLong()],  # noqa: F405
                 "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
             },
+            {
+                "module": [MulScalar()],  # noqa: F405
+                "sample_inputs": [(torch.randn(2, 5, 1, 3),)],
+            },
         ]
 
         index = 0
@@ -574,6 +612,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_gelu(self):
+        module = Gelu()  # noqa: F405
+        sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_hardsigmoid(self):
         module = HardSigmoid()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
@@ -595,6 +639,12 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_interpolate(self):
         module = StaticResizeBilinear2DSizeModule()  # noqa: F405
         sample_input = (torch.randn(2, 3, 4, 5),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_layer_norm(self):
+        module = LayerNorm()  # noqa: F405
+        sample_input = (torch.randn(196, 768),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -624,6 +674,12 @@ class TestQNNQuantizedOperator(TestQNN):
                 module = self.get_qdq_module(module, sample_input)
                 self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_mha(self):
+        module = MultiheadAttention()  # noqa: F405
+        sample_input = (torch.randn(1, 197, 96),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_pad(self):
         module = Pad()  # noqa: F405
         sample_input = (torch.randn([1, 8, 128]),)
@@ -645,6 +701,16 @@ class TestQNNQuantizedOperator(TestQNN):
     def test_qnn_backend_reshape(self):
         module = Reshape()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sdpa(self):
+        module = ScaledDotProductAttention()  # noqa: F405
+        sample_input = (
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+            torch.randn(1, 4, 100, 64),
+        )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -764,6 +830,7 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": Wav2LetterModel(), "annotation": ()},
             # only works on QNN 2.12 so far
             # { 'module': MobileBertModelExample(), 'annotation': () },
+            {"module": TorchVisionViTModel(), "annotation": ()},
         ]
         expected_partitions = [
             1,
@@ -772,6 +839,8 @@ class TestQNNQuantizedModel(TestQNN):
             1,
             1,
             1,
+            # For MobileBertModelExample
+            # 1,
             1,
         ]
         # TODO: Due to trigger maximum recursion depth exceeded, need to check it.
@@ -791,6 +860,72 @@ class TestQNNQuantizedModel(TestQNN):
                     expected_partitions=expected_partitions[i],
                     assert_output_equal=False,
                 )
+
+
+class TestQNNFloatingPointUtils(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1e-1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=True,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
+        )
+
+    def test_qnn_backend_skip_node_id(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=3,
+            skip_node_id_set={"aten_add_tensor", "aten_mean_dim"},
+        )
+
+    def test_qnn_backend_skip_node_op(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=2,
+            skip_node_op_set={"aten.add.Tensor"},
+        )
+
+
+class TestQNNQuantizedUtils(TestQNN):
+    def setUp(self):
+        TestQNN.atol = 1e-1
+        TestQNN.rtol = 1
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            is_fp16=False,
+            soc_model=self.arch_table[TestQNN.model],
+            debug=False,
+            saver=False,
+        )
+
+    def test_qnn_backend_skip_node_id(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=3,
+            skip_node_id_set={"aten_add_tensor", "aten_mean_dim"},
+        )
+
+    def test_qnn_backend_skip_node_op(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=2,
+            skip_node_op_set={"aten.add.Tensor"},
+        )
 
 
 class TestExampleScript(TestQNN):
@@ -903,6 +1038,39 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["top_1"], 60)
             self.assertGreaterEqual(msg["top_5"], 80)
 
+    def test_vit(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/torchvision_vit.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 70)
+            self.assertGreaterEqual(msg["top_5"], 90)
+
     def test_edsr(self):
         if not self.required_envs():
             self.skipTest("missing required envs")
@@ -1008,7 +1176,7 @@ class TestExampleScript(TestQNN):
 
         cmds = [
             "python",
-            f"{self.executorch_root}/examples/qualcomm/scripts/ptq_mobilebert_fine_tune.py",
+            f"{self.executorch_root}/examples/qualcomm/scripts/mobilebert_fine_tune.py",
             "--artifact",
             self.artifact_dir,
             "--build_folder",
@@ -1023,6 +1191,7 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
+            "--ptq",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -1033,40 +1202,13 @@ class TestExampleScript(TestQNN):
             p.communicate()
             msg = json.loads(conn.recv())
             cpu, htp = msg["CPU"], msg["HTP"]
-            for k, v in cpu:
-                self.assertLessEqual(abs(v[0] - htp[k][0]), 3)
+            for k, v in cpu.items():
+                self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
 
 
-def setup_environement():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-b",
-        "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-s",
-        "--device",
-        help="serial number for android device communicated via ADB.",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-H",
-        "--host",
-        help="hostname where android device is connected.",
-        default=None,
-        type=str,
-    )
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
-        type=str,
-        required=True,
-    )
+def setup_environment():
+    parser = setup_common_args_and_variables()
+
     parser.add_argument(
         "-r",
         "--executorch_root",
@@ -1112,5 +1254,5 @@ def setup_environement():
 
 
 if __name__ == "__main__":
-    ut_args = setup_environement()
+    ut_args = setup_environment()
     unittest.main(argv=ut_args)

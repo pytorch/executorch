@@ -8,38 +8,38 @@
 
 // A simple llama2 runner that includes preprocessing and post processing logic.
 // The module takes in a string as input and emits a string as output.
-#pragma once
-#include <memory>
-#include <unordered_map>
 
-#include <gflags/gflags.h>
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <string>
+#include <unordered_map>
 
 #include <executorch/examples/models/llama2/sampler/sampler.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
-#include <executorch/examples/models/llama2/util.h>
-#include <executorch/extension/data_loader/mmap_data_loader.h>
-#include <executorch/extension/evalue_util/print_evalue.h>
-#include <executorch/extension/memory_allocator/malloc_memory_allocator.h>
 #include <executorch/extension/module/module.h>
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
-#include <executorch/runtime/executor/method.h>
-#include <executorch/runtime/executor/program.h>
-#include <executorch/runtime/platform/log.h>
-#include <executorch/runtime/platform/runtime.h>
 
 namespace torch {
 namespace executor {
 
-class LlamaRunner {
+class Runner {
  public:
-  explicit LlamaRunner(const char* model_path, const char* tokenizer_path);
+  explicit Runner(const char* model_path, const char* tokenizer_path);
 
-  void generate(const char* prompt);
-
-  ~LlamaRunner();
+  Error generate(
+      const std::string& prompt,
+      std::function<void(const std::string&)> callback = {});
 
  private:
-  std::vector<int32_t> readMetadata(std::vector<std::string> method_names);
+  // metadata
+  template <typename T>
+  T getMetadataHelper(std::string method_name, T default_val);
+  template <typename T>
+  int32_t
+  logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
+  std::vector<exec_aten::SizesType> getKVCacheShape();
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
@@ -47,6 +47,9 @@ class LlamaRunner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
+  bool use_kv_cache_;
+  bool append_eos_;
+  std::unordered_set<std::string> model_methods_;
   // module
   std::unique_ptr<Module> module_;
   // tokenizer

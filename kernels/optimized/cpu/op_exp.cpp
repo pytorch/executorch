@@ -25,8 +25,11 @@ namespace {
 template <
     typename CTYPE_IN,
     typename CTYPE_OUT,
-    typename std::enable_if<std::is_same<CTYPE_IN, CTYPE_OUT>::value, int>::
-        type = 0>
+    typename std::enable_if<
+        std::is_same<CTYPE_IN, CTYPE_OUT>::value &&
+            !std::is_same<CTYPE_IN, torch::executor::Half>::value &&
+            !std::is_same<CTYPE_OUT, torch::executor::Half>::value,
+        int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
     const size_t numel,
@@ -42,8 +45,11 @@ void exp_data(
 template <
     typename CTYPE_IN,
     typename CTYPE_OUT,
-    typename std::enable_if<!std::is_same<CTYPE_IN, CTYPE_OUT>::value, int>::
-        type = 0>
+    typename std::enable_if<
+        !std::is_same<CTYPE_IN, CTYPE_OUT>::value ||
+            std::is_same<CTYPE_IN, torch::executor::Half>::value ||
+            std::is_same<CTYPE_OUT, torch::executor::Half>::value,
+        int>::type = 0>
 void exp_data(
     const CTYPE_IN* in_data,
     const size_t numel,
@@ -63,16 +69,14 @@ Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   auto error = resize_tensor(out, in.sizes());
   ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
-        ET_SWITCH_FLOAT_TYPES(
-            out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
-              exp_data<CTYPE_IN, CTYPE_OUT>(
-                  in.const_data_ptr<CTYPE_IN>(),
-                  in.numel(),
-                  out.mutable_data_ptr<CTYPE_OUT>());
-            });
-      });
+  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
+    ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
+      exp_data<CTYPE_IN, CTYPE_OUT>(
+          in.const_data_ptr<CTYPE_IN>(),
+          in.numel(),
+          out.mutable_data_ptr<CTYPE_OUT>());
+    });
+  });
 
   return out;
 }

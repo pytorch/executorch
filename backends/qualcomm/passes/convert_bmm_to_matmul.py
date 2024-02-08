@@ -14,6 +14,11 @@ from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
 
 
 class ConvertBmmToMatmul(ExportPass):
+    """
+    Replace bmm to matmul, because bmm is eqaul to matmul in QNN.
+    Handle missing quantization tag for bmm op.
+    """
+
     view_copy = exir_ops.edge.aten.view_copy.default
     expand_copy = exir_ops.edge.aten.expand_copy.default
     clone = exir_ops.edge.aten.clone.default
@@ -22,6 +27,7 @@ class ConvertBmmToMatmul(ExportPass):
     patterns = [
         {expand_copy: 2, view_copy: 3, bmm: 1},
         {expand_copy: 2, view_copy: 3, bmm: 1, clone: 1},
+        {bmm: 1},
     ]
 
     def __init__(self):
@@ -39,7 +45,9 @@ class ConvertBmmToMatmul(ExportPass):
 
     def call(self, graph_module: torch.fx.GraphModule):
         graph = graph_module.graph
-        partitions = get_source_partitions(graph, [operator.matmul, torch.matmul])
+        partitions = get_source_partitions(
+            graph, [operator.matmul, torch.matmul, torch.bmm]
+        )
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
                 op_cnt = Counter([n.target for n in src_partition.nodes])

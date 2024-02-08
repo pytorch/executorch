@@ -11,7 +11,7 @@
 
 import logging
 import os
-from typing import final, List
+from typing import final, List, Optional
 
 import serializer.tosa_serializer as ts
 from executorch.backends.arm.arm_vela import vela_compile
@@ -26,7 +26,7 @@ from executorch.backends.arm.tosa_utils import (
 )
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.compile_spec_schema import CompileSpec
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 # TOSA backend debug functionality
 logger = logging.getLogger(__name__)
@@ -35,6 +35,47 @@ TOSA_DBG_VERBOSE = os.environ.get("TOSA_DBG_VERBOSE") == "1"
 if TOSA_DBG_VERBOSE:
     logging.basicConfig(level=logging.INFO)
     logger.setLevel(logging.INFO)
+
+
+def generate_ethosu_compile_spec(
+    config: str,
+    system_config: Optional[str] = None,
+    memory_mode: Optional[str] = None,
+    extra_flags: Optional[str] = None,
+) -> List[CompileSpec]:
+    """
+    Generate compile spec for Ethos-U NPU
+    """
+    compiler_flags = [f"--accelerator-config={config}"]
+    if system_config is not None:
+        compiler_flags.append(f"--system-config={system_config}")
+    if memory_mode is not None:
+        compiler_flags.append(f"--memory-mode={memory_mode}")
+    if extra_flags is not None:
+        compiler_flags.append(extra_flags)
+
+    compile_spec = [
+        CompileSpec("output_format", "vela".encode()),
+        CompileSpec("compile_flags", "".join(compiler_flags).encode()),
+    ]
+
+    return compile_spec
+
+
+def generate_tosa_compile_spec(
+    output_path: Optional[str] = None,
+) -> List[CompileSpec]:
+    """
+    Generate compile spec for TOSA flatbuffer output
+    """
+    compile_spec = [
+        CompileSpec("output_format", "tosa".encode()),
+    ]
+
+    if output_path is not None:
+        compile_spec.append(CompileSpec("debug_tosa_path", output_path.encode()))
+
+    return compile_spec
 
 
 @final
@@ -49,13 +90,25 @@ class ArmBackend(BackendDetails):
         # if a debug/test build capture output files from TOSA stage
         path = None
         debug_output = False
-        output_format = "vela"
+        output_format = ""
+        compile_flags = []
         for spec in compile_spec:
             if spec.key == "debug_tosa_path":
                 path = spec.value.decode()
                 debug_output = True
             if spec.key == "output_format":
                 output_format = spec.value.decode()
+            if spec.key == "compile_flags":
+                compile_flags.append(spec.value.decode())
+
+        # Check that the output format is set in the compile spec
+        if not output_format:
+            raise RuntimeError("output format is required")
+
+        if output_format == "vela" and len(compile_flags) == 0:
+            # Not testing for compile_flags correctness here, just that they are
+            # present. The compiler will give errors if they are not valid.
+            raise RuntimeError("compile flags are required for vela output format")
 
         # Converted output for this subgraph, serializer needs path early as it emits
         # const data directly. Path created and data written only in debug builds.
@@ -108,7 +161,7 @@ class ArmBackend(BackendDetails):
         # preprocess and some consume TOSA fb directly.
         if output_format == "vela":
             # Emit vela_bin_stream format
-            binary = vela_compile(tosa_graph)
+            binary = vela_compile(tosa_graph, compile_flags)
         elif output_format == "tosa":
             # Emit TOSA flatbuffer
             binary = bytes(tosa_graph.serialize())

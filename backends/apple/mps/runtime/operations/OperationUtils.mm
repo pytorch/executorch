@@ -5,6 +5,11 @@
 //
 
 #include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
+#include <numeric>
+
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 4096
+#endif
 
 namespace torch {
 namespace executor {
@@ -222,7 +227,6 @@ MPSGraphBuilder::addNodeToMPSGraph(NodePtr nodePtr) {
 
 MPSGraphTensor*
 MPSGraphBuilder::getMPSGraphTensor(int32_t id) {
-  static int32_t cacheEntries = _idToMPSGraphTensor.size();
   return _idToMPSGraphTensor[id];
 }
 
@@ -276,6 +280,58 @@ std::vector<int64_t> getMPSShapeVec(const MPSShape* shape) {
   }];
   return shapeVec;
 }
+
+id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor) {
+  uint8_t *data = tensor.mutable_data_ptr<uint8_t>();
+  return [MPSDevice::getInstance()->device() newBufferWithBytesNoCopy:data
+                                                               length:tensor.nbytes()
+                                                              options:0
+                                                          deallocator:nil];
+}
+
+void* pageAlignedBlockPtr(const void* ptr, NSUInteger size, NSUInteger* alignedBlockSize) {
+  uintptr_t address = (uintptr_t)ptr;
+  uintptr_t alignedAddress = address & ~(PAGE_SIZE - 1);
+  uintptr_t alignedEnd = ((address + size) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+  uint64_t alignedLength = alignedEnd - alignedAddress;
+
+  assert(address >= alignedAddress);
+  assert(address + size <= alignedAddress + alignedLength);
+
+  *alignedBlockSize = alignedLength;
+  return (void*)alignedAddress;
+}
+
+
+MPSGraphTensor* permuteTensor(MPSGraph* graph, MPSGraphTensor* inputTensor, NSArray* permuteOrder) {
+  if (isMacOS13OrNewer()) {
+   return [graph transposeTensor:inputTensor
+                     permutation:permuteOrder
+                            name:nil];
+  } else {
+    NSUInteger srcRank = [[inputTensor shape] count];
+    if (srcRank != [permuteOrder count]) {
+      return nil;
+    }
+
+    MPSGraphTensor* outputTensor = inputTensor;
+    std::vector<NSUInteger> dimensionOrder(srcRank);
+    std::iota(std::begin(dimensionOrder), std::end(dimensionOrder), 0);
+
+    for (int32_t i = 0; i < srcRank; i++) {
+      NSUInteger axis = [permuteOrder[i] integerValue];
+      auto axisIter = std::find(dimensionOrder.begin(), dimensionOrder.end(), axis);
+      NSUInteger axis1 = i;
+      NSUInteger axis2 = axisIter - dimensionOrder.begin();
+      iter_swap(dimensionOrder.begin() + i, axisIter);
+
+      outputTensor = [graph transposeTensor:outputTensor dimension:axis1 withDimension:axis2 name:nil];
+    }
+
+    return outputTensor;
+  }
+}
+
 
 } // namespace delegate
 } // namespace mps

@@ -6,17 +6,19 @@
 # Example script for exporting simple models to flatbuffer
 
 import argparse
+import copy
 import logging
 
-import torch._export as export
+import torch
 from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.exir import EdgeCompileConfig
+from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
 
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
-from executorch.sdk import BundledProgram
+from executorch.sdk import BundledProgram, generate_etrecord
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
@@ -47,6 +49,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--use_partitioner",
+        default=False,
+        action=argparse.BooleanOptionalAction,
+        help="Use MPS partitioner to run the model instead of using whole graph lowering.",
+    )
+
+    parser.add_argument(
         "-b",
         "--bundled",
         action="store_true",
@@ -54,6 +63,15 @@ if __name__ == "__main__":
         default=False,
         help="Flag for bundling inputs and outputs in the final flatbuffer program",
     )
+
+    parser.add_argument(
+        "--generate_etrecord",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Generate ETRecord metadata to link with runtime results (used for profiling)",
+    )
+
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -66,27 +84,40 @@ if __name__ == "__main__":
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
-    model = export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
-    edge = export_to_edge(
+    edge: EdgeProgramManager = export_to_edge(
         model,
         example_inputs,
         edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
+    edge_program_manager_copy = copy.deepcopy(edge)
 
     compile_specs = [CompileSpec("use_fp16", bytes([args.use_fp16]))]
-    lowered_module = to_backend(
-        MPSBackend.__name__, edge.exported_program(), compile_specs
-    )
-    executorch_program = (
-        exir.capture(
-            lowered_module,
-            example_inputs,
-            exir.CaptureConfig(enable_aot=True, _unlift=False),
+
+    logging.info(f"Edge IR graph:\n{edge.exported_program().graph}")
+    if args.use_partitioner:
+        edge = edge.to_backend(MPSPartitioner(compile_specs=compile_specs))
+        logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+
+        executorch_program = edge.to_executorch(
+            config=ExecutorchBackendConfig(extract_constant_segment=False)
         )
-        .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-        .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
-    )
+    else:
+        lowered_module = to_backend(
+            MPSBackend.__name__, edge.exported_program(), compile_specs
+        )
+        executorch_program = (
+            exir.capture(
+                lowered_module,
+                example_inputs,
+                exir.CaptureConfig(enable_aot=True, _unlift=False),
+            )
+            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+            .to_executorch(
+                config=ExecutorchBackendConfig(extract_constant_segment=False)
+            )
+        )
 
     model_name = f"{args.model_name}_mps"
 
@@ -115,5 +146,10 @@ if __name__ == "__main__":
         program_buffer = bundled_program_buffer
     else:
         program_buffer = executorch_program.buffer
+
+    if args.generate_etrecord:
+        etrecord_path = "etrecord.bin"
+        logging.info("generating etrecord.bin")
+        generate_etrecord(etrecord_path, edge_program_manager_copy, executorch_program)
 
     save_pte_program(program_buffer, model_name)

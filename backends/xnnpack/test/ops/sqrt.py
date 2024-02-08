@@ -19,8 +19,7 @@ class TestSqrt(unittest.TestCase):
             z = torch.sqrt(x)
             return z
 
-    def test_fp32_sqrt(self):
-        inputs = (torch.randn(20).abs(),)
+    def _test_sqrt(self, inputs):
         (
             Tester(self.Sqrt(), inputs)
             .export()
@@ -35,3 +34,11 @@ class TestSqrt(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_sqrt(self):
+        inputs = (torch.randn(20).to(torch.float16).abs(),)
+        self._test_sqrt(inputs)
+
+    def test_fp32_sqrt(self):
+        inputs = (torch.randn(20).abs(),)
+        self._test_sqrt(inputs)

@@ -34,6 +34,11 @@ et_timestamp_t et_pal_current_ticks(void) {
   return 11223344;
 }
 
+et_tick_ratio_t et_pal_ticks_to_ns_multiplier(void) {
+  // Since we don't define a tick rate, return a conversion ratio of 1.
+  return {1, 1};
+}
+
 void et_pal_emit_log_message(
     __ET_UNUSED et_timestamp_t timestamp,
     __ET_UNUSED et_pal_log_level_t level,

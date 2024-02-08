@@ -60,6 +60,7 @@ def define_common_targets():
     # Class names of nn.Modules for :exported_programs to export.
     MODULES_TO_EXPORT = [
         "ModuleAdd",
+        "ModuleAddHalf",
         "ModuleBasic",
         "ModuleLinear",
         "ModuleMultipleEntry",

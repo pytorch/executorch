@@ -49,6 +49,11 @@
 		03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
 		03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
 		03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
+		03D494DE2B5B7AD400FCF524 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931F2AD1008A00D4EBE0 /* Metal.framework */; };
+		03D494DF2B5B7AD600FCF524 /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */; };
+		03D494E02B5B7AD900FCF524 /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */; };
+		03D494E12B5B7AE100FCF524 /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
+		03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -160,11 +165,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */,
+				03D494DF2B5B7AD600FCF524 /* MetalPerformanceShaders.framework in Frameworks */,
 				0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */,
+				03D494E02B5B7AD900FCF524 /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */,
 				03C8DC7D2AE253490064384A /* Accelerate.framework in Frameworks */,
+				03D494E12B5B7AE100FCF524 /* mps_backend.xcframework in Frameworks */,
 				03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */,
 				0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */,
+				03D494DE2B5B7AD400FCF524 /* Metal.framework in Frameworks */,
 				03C818282AC760650084CC29 /* libMobileNetClassifier.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -458,6 +467,7 @@
 				03C818192AC671980084CC29 /* Samoyed.jpg in Resources */,
 				03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */,
 				03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */,
+				03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

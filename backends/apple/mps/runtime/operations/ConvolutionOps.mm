@@ -108,10 +108,7 @@ MPSGraphBuilder::mpsConv2DOp(NodePtr nodePtr) {
                                                  dataLayout:MPSGraphTensorNamedDataLayoutNCHW
                                               weightsLayout:MPSGraphTensorNamedDataLayoutHWIO];
     // Convert weights from OIHW to HWIO.
-    MPSGraphTensor* weightTransposeTensor = [_mpsGraph transposeTensor:weightTensor
-                                                           permutation:@[@2, @3, @1, @0]
-                                                                 name:nil];
-
+    MPSGraphTensor* weightTransposeTensor = permuteTensor(_mpsGraph, weightTensor, @[@2, @3, @1, @0]);
     MPSGraphTensor* conv2DTensor = [_mpsGraph convolution2DWithSourceTensor:inputTensor
                                                              weightsTensor:weightTransposeTensor
                                                                 descriptor:desc

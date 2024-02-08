@@ -33,20 +33,10 @@ template <typename T = size_t> std::vector<T> flatbufferDimsToVector(const flatb
   return dimsData;
 }
 
-static inline id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor) {
-#if TARGET_OS_SIMULATOR
-  // Simulator crashes in newBufferWithBytesNoCopy, so we're making a copy of
-  // the data.
-  uint8_t *data = tensor.mutable_data_ptr<uint8_t>();
-  return [MPSDevice::getInstance()->device() newBufferWithBytes:data length:tensor.nbytes() options:0];
-#else
-  uint8_t *data = tensor.mutable_data_ptr<uint8_t>();
-  return [MPSDevice::getInstance()->device() newBufferWithBytesNoCopy:data
-                                                               length:tensor.nbytes()
-                                                              options:0
-                                                          deallocator:nil];
-#endif // TARGET_OS_SIMULATOR
-}
+id<MTLBuffer> getMTLBufferStorage(const Tensor &tensor);
+void *pageAlignedBlockPtr(const void *ptr, NSUInteger size, NSUInteger *alignedBlockSize);
+
+MPSGraphTensor *permuteTensor(MPSGraph *graph, MPSGraphTensor *inputTensor, NSArray *permuteOrder);
 
 } // namespace delegate
 } // namespace mps

@@ -22,14 +22,14 @@ MPSGraphTensor* indexSelect(
   if(castIndexTensor.dataType != MPSDataTypeInt32) {
     castIndexTensor = [mpsGraph castTensor:indexTensor
                                      toType:MPSDataTypeInt32
-                                       name:nil];
+                                       name:@"castTensor"];
   }
 
   return  [mpsGraph gatherWithUpdatesTensor:inputTensor
                               indicesTensor:castIndexTensor
                                        axis:dim
                             batchDimensions:0
-                                       name:nil];
+                                       name:@"indexSelect"];
 }
 
 Error
@@ -48,7 +48,7 @@ MPSGraphBuilder::mpsIndexSelectOp(NodePtr nodePtr) {
   if(castIndexTensor.dataType != MPSDataTypeInt32) {
     castIndexTensor = [_mpsGraph castTensor:indexTensor
                                      toType:MPSDataTypeInt32
-                                       name:nil];
+                                       name:@"castTensor"];
   }
 
   _idToMPSGraphTensor[graphNode->output_id()] =

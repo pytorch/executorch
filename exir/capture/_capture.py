@@ -7,10 +7,11 @@
 import copy
 import warnings
 from collections import namedtuple
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from contextlib import contextmanager
+from types import MethodType
+from typing import Any, Callable, cast, Dict, List, Optional, Set, Tuple, Union
 
 import torch
-import torch._export
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
 from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
@@ -25,11 +26,12 @@ from executorch.exir.tracer import (
 from executorch.exir.verification.verifier import EXIRATenDialectVerifierBase
 from torch import _guards
 from torch._dispatch.python import enable_python_dispatcher
-from torch._dynamo.eval_frame import Constraint
-from torch._export import CallSpec, export, ExportedProgram, ExportGraphSignature
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch._subclasses.fake_tensor import FakeTensor, FakeTensorMode
+from torch.export import export
 from torch.export.exported_program import (
+    ExportedProgram,
+    ExportGraphSignature,
     InputKind,
     InputSpec,
     ModuleCallEntry,
@@ -49,8 +51,11 @@ Val = Any
 
 
 CompileSpec = namedtuple(
-    "CompileSpec", ["method_name", "callable", "args", "constraints"]
+    "CompileSpec", ["method_name", "callable", "args", "dynamic_shapes"]
 )
+
+
+CallSpec = namedtuple("CallSpec", ["in_spec", "out_spec"])
 
 
 @compatibility(is_backward_compatible=False)
@@ -126,12 +131,38 @@ def _capture_legacy_do_not_use(f, args) -> ExirExportedProgram:
     return ExirExportedProgram(ep, False)
 
 
+@contextmanager
+def patch_forward(obj: torch.nn.Module, new_method):
+    """Helper method to make it easier to cleanly torch.export() a method on a
+    module that is not `forward`.
+
+    TODO(suo): upstream this to torch.export.wrapper.
+    """
+    # Save the original method
+    original_method = obj.forward
+
+    # Patch the method
+    obj.forward = new_method.__get__(obj, obj.__class__)
+
+    try:
+        yield
+    finally:
+        # Restore the original method
+        obj.forward = original_method
+
+
+class WrapperModule(torch.nn.Module):
+    def __init__(self, f):
+        super().__init__()
+        self.forward = f
+
+
 @compatibility(is_backward_compatible=False)
 def capture(  # noqa: C901
     f: Callable[..., Any],
     args: Tuple[Value, ...],
     config: Optional[CaptureConfig] = None,
-    constraints: Optional[List[Constraint]] = None,
+    dynamic_shapes: Optional[List[Any]] = None,
 ) -> ExirExportedProgram:
     warnings.warn(
         "This function is now deprecated, please use `torch.export and exir.to_edge` instead. ",
@@ -167,7 +198,19 @@ def capture(  # noqa: C901
                     "Functionalization is required for enable_aot.",
                 )
 
-            ep = export(f, args, constraints=constraints)
+            # If trying to capture a method and the bound class instance is a
+            # Module, then export the module while patching in that method.
+            if isinstance(f, MethodType) and isinstance(f.__self__, torch.nn.Module):
+                with patch_forward(f.__self__, f):
+                    ep = export(
+                        cast(torch.nn.Module, f.__self__),
+                        args,
+                        dynamic_shapes=dynamic_shapes,
+                    )
+            else:
+                mod = f if isinstance(f, torch.nn.Module) else WrapperModule(f)
+                ep = export(mod, args, dynamic_shapes=dynamic_shapes)
+
             ep = ep.run_decompositions(_default_decomposition_table())
             ep = _transform(ep, ReplaceViewOpsWithViewCopyOpsPass())
             if not config._unlift:
@@ -181,7 +224,7 @@ def capture(  # noqa: C901
                 aten_graph=True,
                 tracing_mode="symbolic",
                 dynamo_config=config._dynamo_config,
-                constraints=constraints,
+                dynamic_shapes=dynamic_shapes,
                 _use_old_decomp_table=config._use_old_decomp_table,
             )
 
@@ -192,7 +235,7 @@ def capture(  # noqa: C901
                 aten_graph=True,
                 tracing_mode="fake",
                 dynamo_config=config._dynamo_config,
-                constraints=None,  # constraints make sense only when dynamic shapes is enabled
+                dynamic_shapes=None,
                 _use_old_decomp_table=config._use_old_decomp_table,
             )
 
@@ -321,7 +364,7 @@ def capture_multiple(
     args: Union[Dict[str, Tuple[Value, ...]], Tuple[Value, ...]],
     config: Optional[CaptureConfig] = None,
     prim_getters: Optional[Set[str]] = None,
-    constraints: Optional[Union[Dict[str, List[Constraint]], List[Constraint]]] = None,
+    dynamic_shapes: Optional[Union[Dict[str, Any], List[Any]]] = None,
 ):
     """
     capture_multiple traces either an nn.Module or just a callable with PyTorch
@@ -349,12 +392,12 @@ def capture_multiple(
 
         prim_getters: A set of primitive getter functions to capture the return values of
 
-        constraints: Input shape constraints.
+        dynamic_shapes: Input dynamic shapes.
 
-        When `m` is an nn.Module, `constraints` is a dictionary that maps names of method
-        to their input shape constraints.
+        When `m` is an nn.Module, `dynamic_shapes` is a dictionary that maps names of method
+        to their input dynamic shapes.
 
-        When `m` is a non-Module callable, `constraints` is a list of input shape constraints.
+        When `m` is a non-Module callable, `dynamic_shapes` is a list of input dynamic shapes.
 
     Returns:
         A MultiMethodExirExportedProgram.
@@ -370,7 +413,7 @@ def capture_multiple(
         on the given nn.Module.
     """
     warnings.warn(
-        "This function is now deprecated, please use `torch.export and exir.to_edge` instead. ",
+        "This function is now deprecated, please use `torch.export and exir.to_edge` instead.",
         DeprecationWarning,
         stacklevel=1,
     )
@@ -378,10 +421,10 @@ def capture_multiple(
     compile_specs = []
     prim_getter_cache: Optional[Dict[str, Any]] = None
     if isinstance(m, torch.nn.Module):
-        if constraints is not None:
+        if dynamic_shapes is not None:
             assert isinstance(
-                constraints, dict
-            ), f"Expected a dict for constraints, got {type(constraints)}"
+                dynamic_shapes, dict
+            ), f"Expected a dict for dynamic_shapes, got {type(dynamic_shapes)}"
 
         if isinstance(args, tuple):
             compile_specs.append(
@@ -389,8 +432,8 @@ def capture_multiple(
                     "forward",
                     m.forward,
                     args,
-                    constraints["forward"]
-                    if constraints and "forward" in constraints
+                    dynamic_shapes["forward"]
+                    if dynamic_shapes and "forward" in dynamic_shapes
                     else None,
                 )
             )
@@ -404,8 +447,8 @@ def capture_multiple(
                         method_name,
                         getattr(m, method_name),
                         method_args,
-                        constraints[method_name]
-                        if constraints and method_name in constraints
+                        dynamic_shapes[method_name]
+                        if dynamic_shapes and method_name in dynamic_shapes
                         else None,
                     )
                 )
@@ -424,16 +467,19 @@ def capture_multiple(
         assert (
             prim_getters is None
         ), "Caller should not specify primitive getter functions when only providing a callable as input"
-        if constraints is not None:
+        if dynamic_shapes is not None:
             assert isinstance(
-                constraints, list
-            ), f"Expected a list for constraints, got {type(constraints)}"
-        compile_specs.append(CompileSpec("forward", m, args, constraints))
+                dynamic_shapes, list
+            ), f"Expected a list for constraints, got {type(dynamic_shapes)}"
+        compile_specs.append(CompileSpec("forward", m, args, dynamic_shapes))
 
     method_name_to_prog = {}
     for compile_spec in compile_specs:
         method_name_to_prog[compile_spec.method_name] = capture(
-            compile_spec.callable, compile_spec.args, config, compile_spec.constraints
+            compile_spec.callable,
+            compile_spec.args,
+            config,
+            compile_spec.dynamic_shapes,
         )
 
     return MultiMethodExirExportedProgram(method_name_to_prog, prim_getter_cache)

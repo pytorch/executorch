@@ -121,7 +121,7 @@ void serialize(const InMemoryFileSystem& file_system,
                const std::vector<std::string>& canonical_path,
                size_t alignment,
                std::ostream& ostream) noexcept {
-    InMemoryFileSystem::MetadataReader metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
+    InMemoryFileSystem::MetadataWriter metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
                                                             std::ostream& stream) {
         ::write_metadata_to_stream(fs_metadata, stream);
     };
@@ -132,7 +132,7 @@ void serialize(const InMemoryFileSystem& file_system,
 size_t get_serialization_size(const InMemoryFileSystem& file_system,
                               const std::vector<std::string>& canonical_path,
                               size_t alignment) noexcept {
-    InMemoryFileSystem::MetadataReader metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
+    InMemoryFileSystem::MetadataWriter metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
                                                             std::ostream& stream) {
         ::write_metadata_to_stream(fs_metadata, stream);
     };
@@ -141,7 +141,7 @@ size_t get_serialization_size(const InMemoryFileSystem& file_system,
 }
 
 std::unique_ptr<InMemoryFileSystem> make(const std::shared_ptr<MemoryBuffer>& buffer) noexcept {
-    InMemoryFileSystem::MetadataWriter metadata_reader = [](std::istream& stream) {
+    InMemoryFileSystem::MetadataReader metadata_reader = [](std::istream& stream) {
         return ::read_metadata_from_stream(stream);
     };
     

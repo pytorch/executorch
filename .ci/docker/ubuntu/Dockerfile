@@ -20,6 +20,11 @@ ARG CLANG_VERSION
 COPY ./common/install_clang.sh install_clang.sh
 RUN bash ./install_clang.sh && rm install_clang.sh
 
+# Install gcc
+ARG GCC_VERSION
+COPY ./common/install_gcc.sh install_gcc.sh
+RUN bash ./install_gcc.sh && rm install_gcc.sh
+
 # Setup buck
 ARG BUCK2_VERSION
 COPY ./common/install_buck.sh install_buck.sh

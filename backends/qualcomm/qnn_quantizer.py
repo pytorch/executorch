@@ -7,6 +7,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
+from executorch.backends.qualcomm.passes.convert_scaled_dot_product_attention import (
+    ConvertScaledDotProductAttention,
+)
 from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 
@@ -195,6 +198,7 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.adaptive_avg_pool2d.default,
         torch.ops.aten.add.Tensor,
         torch.ops.aten.avg_pool2d.default,
+        torch.ops.aten.bmm.default,
         torch.ops.aten.cat.default,
         torch.ops.aten.ceil.default,
         torch.ops.aten.clamp.default,
@@ -206,12 +210,14 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.embedding.default,
         torch.ops.aten.expand.default,
         torch.ops.aten.flatten.using_ints,
+        torch.ops.aten.gelu.default,
         torch.ops.aten.hardsigmoid.default,
         torch.ops.aten.hardsigmoid_.default,
         torch.ops.aten.hardswish.default,
         torch.ops.aten.hardswish_.default,
         torch.ops.aten.hardtanh.default,
         torch.ops.aten.hardtanh_.default,
+        torch.ops.aten.layer_norm.default,
         torch.ops.aten.linear.default,
         torch.ops.aten.log_softmax.int,
         torch.ops.aten.matmul.default,
@@ -219,6 +225,7 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.max_pool2d_with_indices.default,
         torch.ops.aten.mean.default,
         torch.ops.aten.mean.dim,
+        torch.ops.aten.mul.Scalar,
         torch.ops.aten.mul.Tensor,
         torch.ops.aten.pad.default,
         torch.ops.aten.permute.default,
@@ -227,6 +234,7 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.relu_.default,
         torch.ops.aten.reshape.default,
         torch.ops.aten.rsub.Scalar,
+        torch.ops.aten.scaled_dot_product_attention.default,
         torch.ops.aten.select.int,
         torch.ops.aten.slice.Tensor,
         torch.ops.aten.softmax.int,
@@ -239,6 +247,7 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.unsqueeze_copy.default,
         torch.ops.aten.upsample_bilinear2d.vec,
         torch.ops.aten.view.default,
+        torch.ops.aten._softmax.default,
     }
 
     def __init__(self):
@@ -318,6 +327,7 @@ class QnnQuantizer(Quantizer):
 
     def transform_for_annotation(self, gm: GraphModule) -> GraphModule:
         gm = RemoveClone()(gm).graph_module
+        gm = ConvertScaledDotProductAttention()(gm).graph_module
         gm = ConvertHardsigmoid(quantization_capture=True)(gm).graph_module
         gm = ReduceDynamicRange()(gm).graph_module
         return gm

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from executorch.backends.xnnpack.partition.graphs.bilinear_2d import bilinear2d_graphs
+from executorch.backends.xnnpack.partition.graphs import bilinear_2d
 from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
 from executorch.backends.xnnpack.utils.utils import check_or_raise
 from executorch.exir.dialects._ops import ops as exir_ops
@@ -46,7 +46,7 @@ class ConvertToUpsampleBilinear2d(XNNPACKPass):
         graph_module.recompile()
 
     def call(self, graph_module: torch.fx.GraphModule):
-        for pattern, align_corners in bilinear2d_graphs.items():
+        for pattern, align_corners in bilinear_2d.get_graphs_dict().items():
             sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
             matches = list(sm.match(graph_module.graph))
             for partition_to_replace in matches:

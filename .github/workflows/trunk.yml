@@ -44,7 +44,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
+      timeout: ${{ matrix.timeout }}
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
@@ -70,7 +70,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
-      runner: macos-m1-12
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -96,7 +96,7 @@ jobs:
           - build-tool: cmake
       fail-fast: false
     with:
-      runner: macos-m1-12
+      runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
@@ -173,6 +173,10 @@ jobs:
         source .ci/scripts/utils.sh
         install_flatc_from_source
         install_executorch
+
+        git config --global user.email "github_executorch@arm.com"
+        git config --global user.name "Github Executorch"
+        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
 
         source /opt/arm-sdk/setup_path.sh
         PYTHON_EXECUTABLE=python bash backends/arm/test/run_tosa_reference.sh

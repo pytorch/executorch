@@ -16,6 +16,10 @@ class TestCat(unittest.TestCase):
             x = torch.cat(xs)
             return x + x  # Quantize by propagation.
 
+    class Cat2(torch.nn.Module):
+        def forward(self, xs):
+            return torch.cat(xs)
+
     def _test_cat(self, module, inputs, quant=False, quant_ops=2):
         tester = Tester(module, inputs)
 
@@ -23,6 +27,7 @@ class TestCat(unittest.TestCase):
             tester.quantize()
 
         tester.export().check_count({"torch.ops.aten.cat": 1})
+        tester.dump_artifact()
 
         if quant:
             # Expect multiple quantize ops - one per input, cat, and add.
@@ -53,6 +58,45 @@ class TestCat(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_cat2(self):
+        """
+        Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
+        """
+        inputs = (
+            (
+                torch.ones(1, 2, 3).to(torch.float16),
+                torch.ones(3, 2, 3).to(torch.float16),
+            ),
+        )
+        self._test_cat(self.Cat2(), inputs)
+
+    def test_fp16_cat3(self):
+        """
+        Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
+        """
+        inputs = (
+            (
+                torch.ones(1, 2, 3).to(torch.float16),
+                torch.ones(3, 2, 3).to(torch.float16),
+                torch.ones(2, 2, 3).to(torch.float16),
+            ),
+        )
+        self._test_cat(self.Cat2(), inputs)
+
+    def test_fp16_cat4(self):
+        """
+        Using Clamp2 because fp16 add is done in fp32 ATM. Need to fix that first.
+        """
+        inputs = (
+            (
+                torch.ones(1, 2, 3).to(torch.float16),
+                torch.ones(3, 2, 3).to(torch.float16),
+                torch.ones(2, 2, 3).to(torch.float16),
+                torch.ones(5, 2, 3).to(torch.float16),
+            ),
+        )
+        self._test_cat(self.Cat2(), inputs)
 
     def test_fp32_cat2(self):
         inputs = ((torch.ones(1, 2, 3), torch.ones(3, 2, 3)),)

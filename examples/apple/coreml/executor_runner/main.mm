@@ -211,6 +211,32 @@ std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
     return result;
 }
 
+Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
+    MethodMeta method_meta = method.method_meta();
+    size_t num_inputs = method_meta.num_inputs();
+    std::vector<std::vector<uint8_t>> buffers;
+    for (size_t i = 0; i < num_inputs; i++) {
+        Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
+        if (!tensor_meta.ok()) {
+            ET_LOG(Info, "Skipping non-tensor input %zu", i);
+            continue;
+        }
+        Buffer buffer(tensor_meta->nbytes(), 1);
+        auto sizes = tensor_meta->sizes();
+        exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
+        exec_aten::Tensor tensor(&tensor_impl);
+        EValue input_value(std::move(tensor));
+        Error err = method.set_input(input_value, i);
+        if (err != Error::Ok) {
+            ET_LOG(Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
+            return err;
+        }
+        buffers.emplace_back(std::move(buffer));
+    }
+    
+    return buffers;
+}
+
 double calculate_mean(const std::vector<double>& durations) {
     if (durations.size() == 0) {
         return 0.0;
@@ -293,7 +319,7 @@ int main(int argc, char * argv[]) {
         ET_CHECK_MSG(method_name.ok(), "Failed to load method with name=%s from program=%p", method_name.get().c_str(), program.get());
         ET_LOG(Info, "Running method = %s", method_name.get().c_str());
 
-        auto inputs = util::PrepareInputTensors(*method);
+        auto inputs = prepare_input_tensors(*method);
         ET_LOG(Info, "Inputs prepared.");
 
         // Run the model.
@@ -322,7 +348,6 @@ int main(int argc, char * argv[]) {
             }
         }
 
-        util::FreeInputs(inputs);
-        return 0;
+        return EXIT_SUCCESS;
     }
 }

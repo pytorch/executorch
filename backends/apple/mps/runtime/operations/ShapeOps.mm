@@ -26,9 +26,10 @@ MPSGraphBuilder::mpsPermuteOp(NodePtr nodePtr) {
   for(int64_t i = 0; i < graphNode->num_dims(); i++) {
     [permutation addObject:[NSNumber numberWithInteger:graphNode->perm()->Get(i)]];
   }
-  _idToMPSGraphTensor[graphNode->output_id()] = [_mpsGraph transposeTensor:getMPSGraphTensor(graphNode->input1_id())
-                                                               permutation:permutation
-                                                                      name:@"permutation"];
+  MPSGraphTensor* outputTensor = permuteTensor(
+    _mpsGraph, getMPSGraphTensor(graphNode->input1_id()), permutation
+  );
+  _idToMPSGraphTensor[graphNode->output_id()] = outputTensor;
 
   return Error::Ok;
 }
@@ -204,7 +205,6 @@ MPSGraphBuilder::mpsSliceOp(NodePtr nodePtr) {
 
   MPSGraphTensor* inputTensor = getMPSGraphTensor(graphNode->input1_id());
   int64_t dim = graphNode->dim();
-  int64_t dimLen = inputTensor.shape[dim].intValue;
 
   // Define input arrays as required by MPSGraph API
   NSMutableArray<NSNumber*>* start_arr = [NSMutableArray arrayWithCapacity: inputTensor.shape.count];

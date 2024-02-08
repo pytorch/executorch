@@ -193,28 +193,64 @@ class NodeVisitor:
         return ext_id, id_out, flag
 
     def get_serialized_dtype(
-        self, quant_params: Optional[QuantParams]
+        self,
+        quant_params: Optional[QuantParams],
+        node: torch.fx.Node,
+        fp32_static_weight: bool = False,
     ) -> Tuple[XNNDatatype, XNNDatatype]:
+        # Default initialization
         dtype, dq_dtype = (
             XNNDatatype.xnn_datatype_fp32,
             XNNDatatype.xnn_datatype_invalid,
         )
+
+        def get_node_dtype(node: torch.fx.Node) -> Optional[torch.dtype]:
+            """
+            Extract the tensor.dtype from the node meta data if possible
+            """
+            node_val = node.meta.get("val", None)
+            if node_val is not None:
+                if isinstance(node_val, torch.Tensor):
+                    return node_val.dtype
+
+        # only for static quant
+        def get_per_channel_dtype(
+            quant_params: QuantParams,
+        ) -> XNNDatatype:
+            if quant_params.dtype == torch.int32:
+                return XNNDatatype.xnn_datatype_qcint32
+            elif quant_params.dtype == torch.int8:
+                # 4/8-bit per channel quantized weights
+                return (
+                    XNNDatatype.xnn_datatype_qcint4
+                    if quant_params.is_qc4w
+                    else XNNDatatype.xnn_datatype_qcint8
+                )
+            else:
+                raise RuntimeError(
+                    f"Unable to resolve static quantized tensor dtype using quant params dtype: {quant_params.dtype}, [qmin, qmax]: {quant_params.qmin}, {quant_params.qmax} for per channel quantization"
+                )
+
         if quant_params is not None:
             if quant_params.is_dynamic:
                 dq_dtype = XNNDatatype.xnn_datatype_qint8
             else:
                 if quant_params.per_channel:
-                    dtype = (
-                        XNNDatatype.xnn_datatype_qcint32
-                        if quant_params.dtype == torch.int32
-                        else XNNDatatype.xnn_datatype_qcint8
-                    )
+                    dtype = get_per_channel_dtype(quant_params)
                 else:
                     dtype = (
                         XNNDatatype.xnn_datatype_qint32
                         if quant_params.dtype == torch.int32
                         else XNNDatatype.xnn_datatype_qint8
                     )
+        else:
+            node_dtype = get_node_dtype(node)
+            if node_dtype is not None and node_dtype == torch.float16:
+                dtype = (
+                    XNNDatatype.xnn_datatype_fp32
+                    if fp32_static_weight
+                    else XNNDatatype.xnn_datatype_fp16
+                )
 
         return (dtype, dq_dtype)
 
@@ -239,6 +275,7 @@ class NodeVisitor:
         convert_to_nhwc: bool = False,
         swap_nc_for_depthwise_weights: bool = False,
         quant_params: Optional[QuantParams] = None,
+        fp32_static_weights: bool = False,
     ) -> None:
         """
         Defines an tensor value into the XNNGraph
@@ -257,6 +294,7 @@ class NodeVisitor:
                         constant data. If used along with convert_to_nhwc, this
                         swap will happen before converting to nhwc.
             quant_params: Quantization meta data for this tensor, None if it is not quantized
+            fp32_static_weights: XNN_FLAG_FP32_STATIC_WEIGHTS for fp16 conv
         """
 
         if tensor in vals_to_ids:
@@ -284,6 +322,7 @@ class NodeVisitor:
             convert_to_nhwc,
             swap_nc_for_depthwise_weights,
             quant_params,
+            fp32_static_weights,
         )
 
         # convert tensor shape must reflect memory format, default is contiguous, so
@@ -294,7 +333,9 @@ class NodeVisitor:
             check_or_raise(len(dims) == 4, "Converting to nhwc requires 4d tensor")
             dims = [dims[i] for i in PERM_NCHW_TO_NHWC]
 
-        dtype, dq_dtype = self.get_serialized_dtype(quant_params)
+        dtype, dq_dtype = self.get_serialized_dtype(
+            quant_params, tensor, fp32_static_weight=fp32_static_weights
+        )
 
         tvalue = XNNTensorValue(
             datatype=dtype,
@@ -335,6 +376,47 @@ class NodeVisitor:
         if quant_params is not None:
             vals_to_ids[quant_params.q_input] = id_out
 
+    @staticmethod
+    def convert_to_qc4w(inp: torch.Tensor) -> torch.Tensor:
+        """
+        Convert a tensor to a quantized channelwise tensor 4bit tensor
+        """
+
+        import torch.nn.functional as F
+
+        # Assert we got a properly quantized tensor.
+        min, max = inp.min().item(), inp.max().item()
+        assert (
+            max <= 7 and min >= -8
+        ), f"convert_to_qc4w: [min,max] out of [-8, 7] range, got [{min}, {max}]"
+
+        # Assuming we have a 2d tensor
+        if inp.ndim != 2:
+            inp = inp.squeeze()
+            assert (
+                inp.ndim == 2
+            ), f"convert_to_qc4w: expecting input tensor to be 2d, got {inp.ndim}"
+        oc, ic = inp.shape
+
+        # pad ic
+        if ic % 2 != 0:
+            inp = F.pad(input=inp, pad=(0, 1, 0, 0), mode="constant", value=0)
+
+        # Adjust inp tensor for zp
+        inp = inp.to(dtype=torch.uint8) + 8
+
+        # prepare result tensor
+        ric = int((ic + 1) / 2)
+        result = torch.zeros([oc, ric], dtype=torch.uint8)
+
+        for o in range(oc):
+            for i in range(ric):
+                j = 2 * i
+                result[o][i] = inp[o][j]
+                result[o][i] += inp[o][j + 1] << 4
+
+        return result
+
     def get_serialized_buffer(
         self,
         tensor: torch.fx.Node,
@@ -343,6 +425,7 @@ class NodeVisitor:
         convert_to_nhwc: bool,
         swap_nc_for_depthwise_weights: bool,
         quant_params: Optional[QuantParams],
+        fp32_static_weights: bool = False,
     ) -> int:
         """
         If tensor holds some constant data, serialize it and return the
@@ -362,6 +445,7 @@ class NodeVisitor:
                         constant data. If used along with convert_to_nhwc, this
                         swap will happen before converting to nhwc.
             quant_params: Quantization meta data for this tensor, None if it is not quantize
+            fp32_static_weights: bool to indicate whether tensor is fp32 static weights
 
         Returns:
             buffer_idx: idx of the serialized data. 0 If not associated constant
@@ -388,7 +472,7 @@ class NodeVisitor:
         # Quantize buffer if static data is indeed quantized
         if quant_params is not None and not quant_params.is_dynamic:
             const_val = quant_params.quantize_tensor(const_val).contiguous()
-        else:
+        elif const_val.dtype != torch.float16 or fp32_static_weights:
             # ensure that the const is fp32
             const_val = const_val.to(dtype=torch.float32).contiguous()
 
@@ -396,8 +480,12 @@ class NodeVisitor:
             const_val = const_val.permute(
                 dims=((1, 0) + tuple(range(2, const_val.dim())))
             ).contiguous()
+
         if convert_to_nhwc:
             const_val = const_val.to(memory_format=torch.channels_last)
+
+        if quant_params is not None and quant_params.is_qc4w:
+            const_val = self.convert_to_qc4w(const_val)
 
         array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
         array = ctypes.cast(

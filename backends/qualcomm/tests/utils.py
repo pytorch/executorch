@@ -94,8 +94,12 @@ class TestQNN(unittest.TestCase):
         sample_inputs: Tuple[torch.Tensor],
         expected_partitions: int = 1,
         assert_output_equal: bool = True,
+        skip_node_id_set: set = None,
+        skip_node_op_set: set = None,
     ):
-        qnn_partitioner = QnnPartitioner(self.compiler_specs)
+        qnn_partitioner = QnnPartitioner(
+            self.compiler_specs, skip_node_id_set, skip_node_op_set
+        )
         delegated_program = capture_program(module, sample_inputs)
         delegated_program.exported_program = to_backend(
             delegated_program.exported_program, qnn_partitioner
@@ -168,7 +172,7 @@ class TestQNN(unittest.TestCase):
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)
-        quantized_module = convert_pt2e(prepared)
+        quantized_module = convert_pt2e(prepared, fold_quantize=True)
         nodes = {node.target for node in quantized_module.graph.nodes}
         q_and_dq = {
             torch.ops.quantized_decomposed.quantize_per_tensor.default,

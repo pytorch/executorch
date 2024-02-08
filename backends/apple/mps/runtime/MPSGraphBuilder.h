@@ -16,9 +16,11 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 // MPS headers
+#include <executorch/backends/apple/mps/runtime/operations/MPSGraphVenturaOps.h>
 #include <executorch/backends/apple/mps/runtime/operations/OperationUtils.h>
 #include <executorch/backends/apple/mps/schema_generated.h>
 
+#include <unordered_map>
 #include <vector>
 
 namespace torch {
@@ -38,7 +40,7 @@ using NodePtr = const mpsgraph::MPSNode *;
  */
 class MPSGraphBuilder {
 public:
-  MPSGraphBuilder(const void *buffer_pointer);
+  MPSGraphBuilder(const void *buffer_pointer, std::unordered_map<MPSGraphTensor *, int32_t> &mpsGraphTensorToId);
   ~MPSGraphBuilder() = default;
 
   Error compileModel();
@@ -164,6 +166,7 @@ private:
   // produced, which will be stored in this structure. Other ops
   // can reference the saved tensor by the AOT id (1:1 mapping).
   std::vector<MPSGraphTensor *> _idToMPSGraphTensor;
+  std::unordered_map<MPSGraphTensor *, int32_t> &_mpsGraphTensorToId;
   // FlatBuffer serialized graph containing the nodes from the original model.
   const mpsgraph::MPSGraph *_flatBufferGraph;
   // FlatBuffer raw bytes of the serialized MPS model.

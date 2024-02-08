@@ -15,7 +15,7 @@ from executorch.exir import CaptureConfig
 from executorch.exir.passes import MemoryPlanningPass
 from executorch.test.end2end.exported_module import ExportedModule
 from torch import nn
-from torch._export import dynamic_dim
+from torch.export import Dim
 
 """Traces and exports nn.Modules to ExecuTorch .pte program files.
 
@@ -85,6 +85,21 @@ class ModuleAdd(nn.Module):
         return (torch.randn(2, 2), torch.randn(2, 2), 1.0)
 
 
+class ModuleAddHalf(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y, alpha):
+        return torch.add(x, y, alpha=alpha)
+
+    def get_random_inputs(self):
+        return (
+            torch.randn(2, 2).half(),
+            torch.randn(2, 2).half(),
+            1.0,
+        )
+
+
 class ModuleDynamicCatUnallocatedIO(nn.Module):
     def __init__(self):
         super(ModuleDynamicCatUnallocatedIO, self).__init__()
@@ -98,10 +113,8 @@ class ModuleDynamicCatUnallocatedIO(nn.Module):
     def get_random_inputs(self):
         return self._inputs
 
-    def get_constraints(self):
-        return [
-            dynamic_dim(self._inputs[0], 0) <= 3,
-        ]
+    def get_dynamic_shapes(self):
+        return ({0: Dim("dim0_k", max=3)},)
 
     def get_memory_planning_pass(self):
         return MemoryPlanningPass(
@@ -156,7 +169,9 @@ class ModuleMultipleEntry(torch.nn.Module):
 
 
 def export_module_to_program(
-    module_class: Type[nn.Module], extract_constant_segment: bool
+    module_class: Type[nn.Module],
+    extract_constant_segment: bool,
+    skip_type_promotion: bool,
 ):
     """Exports the module and returns the serialized program data."""
     # Look for an optional @staticmethod that defines custom trace params.
@@ -173,6 +188,7 @@ def export_module_to_program(
         module_class,
         methods,
         extract_constant_segment=extract_constant_segment,
+        skip_type_promotion=skip_type_promotion,
         **export_kwargs,
     )
     return module.executorch_program.buffer
@@ -212,13 +228,20 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
+        skip_type_promotion = False
+        if module_name == "ModuleAddHalf":
+            # Skip type promotion to keep the model in fp16.
+            # Type promotion will convert to fp32.
+            skip_type_promotion = True
         for extract_constant_segment in (True, False):
             suffix = "" if extract_constant_segment else "-no-constant-segment"
             outfile = os.path.join(args.outdir, f"{module_name}{suffix}.pte")
             with open(outfile, "wb") as fp:
                 fp.write(
                     export_module_to_program(
-                        module_class, extract_constant_segment=extract_constant_segment
+                        module_class,
+                        extract_constant_segment=extract_constant_segment,
+                        skip_type_promotion=skip_type_promotion,
                     )
                 )
             print(f"Exported {module_name} and wrote program data to {outfile}")

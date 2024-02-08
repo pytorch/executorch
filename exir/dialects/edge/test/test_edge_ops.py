@@ -107,12 +107,16 @@ class TestEdgeOps(unittest.TestCase):
         for arg in arguments:
             if isinstance(arg.type, torch.TensorType):
                 self.assertTrue(isinstance(arg.allowed_types, set))
-                self.assertEqual(arg.allowed_types, {torch.float32, torch.float64})
+                self.assertEqual(
+                    arg.allowed_types, {torch.float16, torch.float32, torch.float64}
+                )
 
         for ret in returns:
             if isinstance(ret.type, torch.TensorType):
                 self.assertTrue(isinstance(ret.allowed_types, set))
-                self.assertEqual(ret.allowed_types, {torch.float32, torch.float64})
+                self.assertEqual(
+                    ret.allowed_types, {torch.float16, torch.float32, torch.float64}
+                )
 
     def test_allowed_dtype_set(self) -> None:
         allowed_dtype_set = AllowedDtypeSet({torch.int8, torch.int32})
@@ -337,7 +341,7 @@ class TestEdgeOps(unittest.TestCase):
                 {"tensors": torch.float32, "__ret_0": torch.float32}
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             edge_cat_schema.dtype_constraint.validate(
                 {"tensors": torch.half, "__ret_0": torch.half}
             )

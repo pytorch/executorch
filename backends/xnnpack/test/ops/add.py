@@ -33,15 +33,14 @@ class TestAdd(unittest.TestCase):
     class AddConstant(torch.nn.Module):
         def __init__(self, constant):
             super().__init__()
-            self._constant = constant
+            self.register_buffer("_constant", constant, persistent=False)
 
         def forward(self, x):
             out1 = x + self._constant
             out2 = x + self._constant + self._constant
             return out1, out2
 
-    def test_fp32_add(self):
-        inputs = (torch.ones(1), torch.ones(1))
+    def _test_add(self, inputs):
         (
             Tester(self.Add(), inputs)
             .export()
@@ -56,6 +55,14 @@ class TestAdd(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_add(self):
+        inputs = (torch.ones(1).to(torch.float16), torch.ones(1).to(torch.float16))
+        self._test_add(inputs)
+
+    def test_fp32_add(self):
+        inputs = (torch.ones(1), torch.ones(1))
+        self._test_add(inputs)
 
     def test_fp32_add_constant(self):
         inputs = (torch.randn(4, 4, 4),)
