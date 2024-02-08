@@ -36,11 +36,6 @@ void check_embedding_byte_args(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
 
   ET_CHECK_MSG(
-      indices.dim() == 1,
-      "indices must be 1D but got() %zd dims",
-      indices.dim());
-
-  ET_CHECK_MSG(
       weight_scales.dim() <= 2,
       "weight_scales must be 1D or 2D but got() %zd dims",
       weight_scales.dim());
