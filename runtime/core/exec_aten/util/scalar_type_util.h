@@ -315,6 +315,7 @@ inline size_t elementSize(exec_aten::ScalarType t) {
   }
 #undef CASE_ELEMENTSIZE_CASE
 }
+#define elementSize(t) torch::executor::elementSize(t)
 
 inline bool isIntegralType(exec_aten::ScalarType t, bool includeBool) {
   bool isIntegral =
