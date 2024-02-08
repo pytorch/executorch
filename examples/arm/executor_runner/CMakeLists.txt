@@ -6,18 +6,25 @@
 cmake_minimum_required(VERSION 3.20)
 project(arm_executor_runner)
 
-# Example ExecuTorch demo for bare metal Cortex-M based systems
+if(NOT DEFINED ET_PTE_FILE_PATH)
+  message(FATAL_ERROR
+    "ET_PTE_FILE_PATH must specify a model .pte, for bare metal systems the "
+    "model is built into the binary.")
+endif()
 
+# Example ExecuTorch demo for bare metal Cortex-M based systems
 set(ET_DIR_PATH "../../.." CACHE PATH
   "Path to ExecuTorch dir")
 set(ET_BUILD_DIR_PATH "${ET_DIR_PATH}/cmake-out" CACHE PATH
   "Path to ExecuTorch build dir")
 set(ET_INCLUDE_PATH "${ET_DIR_PATH}/.." CACHE PATH
   "Path to ExecuTorch headers")
-set(ET_PTE_FILE_PATH "${ET_PTE_FILE_PATH}" CACHE PATH
+set(ET_PTE_FILE_PATH "" CACHE PATH
   "Path to ExecuTorch model pte")
-set(ETHOS_SDK_PATH "${ETHOS_SDK_PATH}" CACHE PATH
+set(ETHOS_SDK_PATH "../ethos-u-scratch/ethos-u" CACHE PATH
   "Path to Ethos-U bare metal driver/env")
+set(PYTHON_EXECUTABLE "python" CACHE PATH
+  "Define to override python executable used")
 
 get_filename_component(ET_BUILD_DIR_PATH ${ET_BUILD_DIR_PATH} REALPATH)
 get_filename_component(ET_DIR_PATH ${ET_DIR_PATH} REALPATH)
@@ -54,7 +61,7 @@ set_property(TARGET extension_runner_util PROPERTY IMPORTED_LOCATION
 
 # Convert pte to header
 add_custom_target(
-    gen_model_header2 ALL
+    gen_model_header ALL
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fake_dep
 )
 
@@ -94,5 +101,4 @@ target_include_directories(arm_executor_runner PRIVATE
   ${ET_INCLUDE_PATH}
   ${CMAKE_CURRENT_BINARY_DIR})
 
-# TODO rename header2
-add_dependencies(arm_executor_runner gen_model_header2)
+add_dependencies(arm_executor_runner gen_model_header)
