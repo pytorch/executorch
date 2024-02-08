@@ -33,6 +33,7 @@ from executorch.exir.operator.convert import (
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.pass_manager import PassManager, PassType
 from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
 
 from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_OPS
@@ -65,6 +66,7 @@ __all__ = [
     "MemoryFormatOpsPass",
     "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
+    "constant_prop_pass",
 ]
 
 Argument = Optional[

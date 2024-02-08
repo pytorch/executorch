@@ -9,6 +9,7 @@ python_library(
     ],
     deps = [
         ":const_prop_pass",
+        ":constant_prop_pass",
         ":debug_handle_generator_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
