@@ -1245,14 +1245,15 @@ class TestBackends(unittest.TestCase):
         gm(*inputs)
 
     def test_dict_input(self):
-        def f(x: Dict[str, torch.Tensor]):
-            y = x["a"] + x["b"]
-            return y
+        class M(torch.nn.Module):
+            def forward(self, x: Dict[str, torch.Tensor]):
+                y = x["a"] + x["b"]
+                return y
 
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = exir.capture(f, inputs, exir.CaptureConfig()).to_edge()
+        edge_prog = exir.to_edge(torch.export.export(M(), inputs))
         lowered_gm = to_backend(
-            BackendWithCompilerDemo.__name__, edge_prog.exported_program, []
+            BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
 
         class ComposedM(torch.nn.Module):
