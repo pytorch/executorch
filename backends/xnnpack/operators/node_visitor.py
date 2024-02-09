@@ -409,11 +409,18 @@ class NodeVisitor:
         ric = int((ic + 1) / 2)
         result = torch.zeros([oc, ric], dtype=torch.uint8)
 
-        for o in range(oc):
-            for i in range(ric):
-                j = 2 * i
-                result[o][i] = inp[o][j]
-                result[o][i] += inp[o][j + 1] << 4
+        try:
+            torch.ops.load_library(
+                "//executorch/backends/xnnpack/operators:convert_to_qc4w"
+            )
+            result = torch.ops.xnnpack.convert_to_qc4w(inp)
+        except Exception as e:
+            # Fallback to python implementation
+            for o in range(oc):
+                for i in range(ric):
+                    j = 2 * i
+                    result[o][i] = inp[o][j]
+                    result[o][i] += inp[o][j + 1] << 4
 
         return result
 
