@@ -87,12 +87,14 @@ class LoweredBackendModule(torch.nn.Module):
             constants=self._original_module.constants,
         )
 
-        return LoweredBackendModule(
+        res = LoweredBackendModule(
             edge_program=copied_program,
             backend_id=self._backend_id,
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
         )
+        res.meta = copy.copy(getattr(self, "meta", {}))
+        return res
 
     @property
     def backend_id(self) -> str:
