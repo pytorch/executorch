@@ -64,7 +64,10 @@ class QnnBackend(BackendDetails):
                         node, nodes_to_wrappers
                     )
                     if py_op_wrapper is not None:
-                        py_op_wrapper_list.append(py_op_wrapper)
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
                 else:
                     raise RuntimeError(
                         f"For {node}, {node.op}:{node.target.__name__} is not supported in Qnn Delegate"

@@ -4,14 +4,26 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# this contains a defineLib that we want
-import executorch.exir.passes._quant_patterns_and_replacements  # noqa
-
 import torch
-from torch.library import impl_abstract
+from torch.library import impl, impl_abstract
+
+# NOTE: this is a hacky way to get around the fact that we can't use quantized_decomposed::embedding_byte in exir directly in eager model. That op can be found under exir/passes/_quant_patterns_and_replacements.py. Ideally we should consolidate these 2 versions.
+# This op share the same signature and C++ kernel implementation with quantized_decomposed::embedding_byte.
+quantized_lib = torch.library.Library(
+    "llama_quantized", "DEF"
+)  # to not be confused with torch.ops.quantized.* ops.
+quantized_lib.define(
+    "embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor",
+)
+
+quantized_lib.define(
+    "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
+)
 
 
-@impl_abstract("quantized_decomposed::embedding_byte")
+@impl(quantized_lib, "embedding_byte", "CompositeExplicitAutograd")
 def embedding_byte_meta(
     weight,
     weight_scales,
@@ -49,5 +61,33 @@ def embedding_byte_meta(
         0
     ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and {weight_zero_points.size()}"
 
-    output_shape = list(indices.size()) + [weight.size(1)]
-    return torch.empty(output_shape, device="meta", dtype=weight_scales.dtype)
+    weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        0,
+        weight_quant_min,
+        weight_quant_max,
+        weight.dtype,
+    )
+    return torch.ops.aten.embedding.default(weight, indices)
+
+
+@impl_abstract("llama_quantized::embedding_byte.out")
+def embedding_byte_out_meta(
+    weight,
+    weight_scales,
+    weight_zero_points,
+    weight_quant_min,
+    weight_quant_max,
+    indices,
+    out,
+):
+    return embedding_byte_meta(
+        weight,
+        weight_scales,
+        weight_zero_points,
+        weight_quant_min,
+        weight_quant_max,
+        indices,
+    )

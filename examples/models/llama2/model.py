@@ -499,6 +499,20 @@ class Llama2Model(EagerModelBase):
         device = "cpu"
         # flake8: noqa: TOR102
         checkpoint = torch.load(checkpoint_path, map_location=device)
+        # get checkpoint dtype
+        self.dtype = None
+        if len(checkpoint) > 0:
+            first = checkpoint[next(iter(checkpoint))]
+            self.dtype = first.dtype
+            mismatched_dtypes = [
+                (key, value.dtype)
+                for key, value in checkpoint.items()
+                if value.dtype != self.dtype
+            ]
+            if len(mismatched_dtypes) > 0:
+                print(
+                    f"Mixed dtype model. Dtype of {first.key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
+                )
         if kwargs.get("fairseq2", False):
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
@@ -538,7 +552,14 @@ class Llama2Model(EagerModelBase):
         )  # self.model_ = Transformer(gptconf)
 
     def get_eager_model(self):
-        return self.model_
+        if self.dtype:
+            # convert to the type of the provided checkpoint
+            # input and output are torch.long, so signature unchanged
+            return self.model_.to(self.dtype)
+        else:
+            # int8 quantization code has some bf16,
+            # switch all to FP32
+            return self.model_.to(torch.float32)
 
     def get_example_inputs(self):
         if self.use_kv_cache:
