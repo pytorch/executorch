@@ -232,3 +232,20 @@ class TestBackends(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(arithmetic_module, model_inputs)
+
+    def test_vulkan_backend_pow(self):
+        class PowModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                z = torch.pow(x, y)
+                return z
+
+        pow_module = PowModule()
+        model_inputs = (
+            torch.rand(size=(2, 3), dtype=torch.float32),
+            torch.rand(size=(2, 3), dtype=torch.float32),
+        )
+
+        self.lower_module_and_test_output(pow_module, model_inputs)

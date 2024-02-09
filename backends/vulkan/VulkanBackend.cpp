@@ -52,6 +52,10 @@ class VulkanBackend final : public PyTorchBackendInterface {
                 vk_arithmetic_op_type_floor_div): {
         return at::native::vulkan::arithmetic::OpType::FLOOR_DIV;
       }
+      case (at::vulkan::delegate::VkArithmeticOpType::
+                vk_arithmetic_op_type_pow): {
+        return at::native::vulkan::arithmetic::OpType::POW;
+      }
     }
   }
 
@@ -189,8 +193,8 @@ class VulkanBackend final : public PyTorchBackendInterface {
       const std::vector<int64_t> input_dims_vector(
           input_dims_fb->cbegin(), input_dims_fb->cend());
 
-      const at::native::vulkan::ValueRef input_ref =
-          compute_graph->add_tensor(input_dims_vector, input_dtype);
+      const at::native::vulkan::ValueRef input_ref = compute_graph->add_tensor(
+          input_dims_vector, input_dtype, input_vk_tensor->mem_obj_id());
 
       ref_mapping[input_id] = input_ref;
       compute_graph->set_input_tensor(input_ref);
@@ -229,7 +233,8 @@ class VulkanBackend final : public PyTorchBackendInterface {
               input1_ref,
               input2_ref,
               1.0,
-              get_native_op_type(typed_node->op_type()));
+              get_native_op_type(typed_node->op_type()),
+              value_mapping->Get(output_id)->value()->mem_obj_id());
 
       ref_mapping[output_id] = output_ref;
     }

@@ -328,7 +328,7 @@ class ExirExportedProgram:
         return self
 
     def __call__(self, *args: Any) -> Any:
-        return self.exported_program(*args)
+        return self.exported_program.module()(*args)
 
     # TODO(ycao): Change this to a composable function.
     def to_edge(
