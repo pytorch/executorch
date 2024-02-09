@@ -41,6 +41,10 @@
 
 - op: any.all_out
 
+- op: any.dims_out
+
+- op: any.out
+
 - op: arange.out
 
 - op: arange.start_out
