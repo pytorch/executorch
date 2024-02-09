@@ -116,6 +116,8 @@
 
 - op: div.out
 
+- op: div.Scalar_mode_out
+
 - op: div.Scalar_out
 
 - op: div.out_mode
