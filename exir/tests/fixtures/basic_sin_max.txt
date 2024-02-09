@@ -25,7 +25,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 0
+              "memory_offset_low": 0,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"
@@ -46,7 +47,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 400
+              "memory_offset_low": 400,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"

@@ -34,6 +34,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.nn.attention import SDPBackend
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
@@ -149,14 +150,14 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
     parser.add_argument(
         "--pt2_quantize",
-        default="",
+        default=None,
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic, embedding.",
     )
 
     parser.add_argument(
         "-c",
         "--checkpoint",
-        default=f"{ckpt_dir}/llama2.pt",
+        default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
     parser.add_argument(
@@ -167,13 +168,16 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
-        "-p", "--params", default=f"{ckpt_dir}/llama2_params.json", help="config.json"
+        "-p",
+        "--params",
+        default=f"{ckpt_dir}/params/demo_config.json",
+        help="config.json",
     )
     parser.add_argument(
         "-m",
         "--metadata",
         default=None,
-        help='metadata string in json format. Example {"get_bos_id": 3, "get_eos_id": 3, "get_n_bos": 1, "get_n_eos": 2}',
+        help='metadata string in json format. Example {"key": 1, "key2": "value2"}',
     )
     parser.add_argument(
         "-s",
@@ -187,15 +191,21 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Generate chrome trace of activation memory for intermediate tensors.",
     )
-
     parser.add_argument(
         "-prof",
         "--profile_path",
         default=None,
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
+    parser.add_argument("-G", "--groupsize", default=None, help="specify the groupsize")
+
+    parser.add_argument(
+        "-d",
+        "--dtype-override",
+        default=None,
+        help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
+    )
     parser.add_argument("-2", "--fairseq2", action="store_true")
-    parser.add_argument("-H", "--half", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
 
@@ -217,19 +227,36 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return return_val
 
 
-def get_metadata(params: ModelArgs) -> Dict[str, Any]:
-    return {
-        "get_vocab_size": params.vocab_size,
-        "get_max_seq_len": params.max_seq_len,
-        "get_n_layers": params.n_layers,
-        "get_max_batch_size": params.max_batch_size,
-        "get_n_kv_heads": params.n_kv_heads,
+def get_metadata(params: ModelArgs, args: argparse.Namespace) -> Dict[str, Any]:
+    metadata = {
+        "append_eos_to_prompt": args.fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
+        "get_bos_id": 3 if args.fairseq2 else 1,
+        "get_dtype": None,
+        "get_eos_id": 3 if args.fairseq2 else 2,
         "get_head_dim": params.dim // params.n_heads,
+        "get_max_batch_size": params.max_batch_size,
+        "get_max_seq_len": params.max_seq_len,
+        "get_n_bos": 1,
+        "get_n_eos": 2 if args.fairseq2 else 1,
+        "get_n_kv_heads": params.n_kv_heads,
+        "get_n_layers": params.n_layers,
+        "get_vocab_size": params.vocab_size,
+        "use_kv_cache": args.use_kv_cache,
     }
+    if args.metadata:
+        try:
+            extra = json.loads(args.metadata)
+            for k, v in extra.items():
+                metadata[k] = v
+        except JSONDecodeError:
+            logging.error("Invalid metadata, should be a valid JSON string")
+    return metadata
 
 
 def _get_quantization_options(args):
-    if args.quantize and args.pt2_quantize != "":
+    if args.pt2_quantize is None:
+        return []
+    if args.quantize:
         raise ValueError("Cannot specify both --quantize and --pt2_quantize")
 
     quantization_options = args.pt2_quantize.split(",")
@@ -261,22 +288,22 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     )
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,
-        _skip_type_promotion=bool(args.half),
+        _skip_type_promotion=bool(args.dtype_override == "fp16"),
     )
 
     # metadata that we want to serialize into .pte file
-    metadata = get_metadata(model.params)
-    # For language llama, tell the runtime to always append EOS toekn(s) to prompt.
-    metadata["append_eos_to_prompt"] = args.fairseq2
+    metadata = get_metadata(model.params, args)
+
+    # check the model dtype
+    state_dict = model.state_dict()
+    metadata["get_dtype"] = state_dict[next(iter(state_dict))].dtype
 
     if args.use_kv_cache:
         # seq length is fixed to 1 with current kv cache impl
         dynamic_shapes = None
-        metadata["use_kv_cache"] = True
     else:
         dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
         dynamic_shapes = {"tokens": {1: dim}}
-        metadata["use_kv_cache"] = False
 
     if args.quantized_ckpt or args.quantize:
         modelname = f"{modelname}_q"
@@ -286,17 +313,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             print(f"{modelname}:")
             print(f"{model}")
 
-    if args.half:
-        # only converts floating point dtypes to half
-        # input and output are torch.long, so signature unchanged
-        model.to(dtype=torch.half)
-        modelname = f"{modelname}_h"
-        metadata["get_dtype"] = 5
-    else:
-        # int8 quantization code has some bf16,
-        # switch all to FP32
-        model.to(dtype=torch.float)
-        metadata["get_dtype"] = 6
+    if args.dtype_override is not None:
+        if args.dtype_override == "fp16" and metadata["get_dtype"] != 5:
+            model.to(dtype=torch.float16)
+            metadata["get_dtype"] = 5
+        elif args.dtype_override == "fp32" and metadata["get_dtype"] != 6:
+            model.to(dtype=torch.float32)
+            metadata["get_dtype"] = 6
+        else:
+            raise ValueError(f"Unsupported dtype override: {args.dtype_override}")
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
@@ -306,30 +331,13 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         print(f"{modelname}:")
         print(f"{model}")
 
-    # metadata that we want to serialize into .pte file
-    metadata = {
-        "get_vocab_size": model.params.vocab_size,
-        "get_max_seq_len": model.params.max_seq_len,
-    }
-    if args.metadata:
-        try:
-            extra = json.loads(args.metadata)
-            for k, v in extra.items():
-                metadata[k] = v
-        except JSONDecodeError:
-            logging.error("Invalid metadata, should be a valid JSON string")
-
     quantization_options = _get_quantization_options(args)
-    with torch.backends.cuda.sdp_kernel(
-        enable_flash=False, enable_mem_efficient=False, enable_math=True
-    ), torch.no_grad():
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         m = capture_pre_autograd_graph(
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
         if len(quantization_options) > 0:
-            m = apply_pt2e_quantization(
-                m, example_inputs, quantization_options, args.so_library
-            )
+            m = apply_pt2e_quantization(m, example_inputs, quantization_options, args)
         edge_manager = export_to_edge(
             m,
             example_inputs,
@@ -362,6 +370,10 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         "Required memory for activation in bytes: ",
         export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
     )
+
+    if metadata["get_dtype"] == 5:
+        modelname = f"{modelname}_h"
+
     save_pte_program(export_program.buffer, modelname, output_dir_path)
     output_file = f"{output_dir_path}/{modelname}.pte"
 

@@ -21,7 +21,7 @@ class LlamaTest(unittest.TestCase):
     def test_half_llama(self):
         _ = build_model(
             modelname="model",
-            extra_opts="--fairseq2 -H",
+            extra_opts="--fairseq2 -d fp16",
             par_local_output=True,
             resource_pkg_name=__name__,
         )
@@ -30,7 +30,7 @@ class LlamaTest(unittest.TestCase):
 #    def test_half_xnnpack_llama(self):
 #        output_path = build_model(
 #            modelname="model",
-#            extra_opts="--fairseq2 -H -X",
+#            extra_opts="--fairseq2 -d fp16 -X",
 #            par_local_output=True,
 #            resource_pkg_name=__name__,
 #        )

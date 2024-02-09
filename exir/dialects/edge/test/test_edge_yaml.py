@@ -160,7 +160,7 @@ class TestEdgeYaml(unittest.TestCase):
         self.assertEqual(ret.func_name, "aten::native_layer_norm")
         self.assertEqual(ret.inherits, "aten::native_layer_norm")
         self.assertEqual(ret.custom, "")
-        self.assertEqual(ret.type_alias, [("Double", "Float")])
+        self.assertEqual(ret.type_alias, [("Double", "Float", "Half")])
         self.assertEqual(ret.type_constraint, [(0, 0, 0, 0, 0, 0)])
         self.assertEqual(
             ret.tensor_variable_names,
@@ -183,6 +183,7 @@ class TestEdgeYaml(unittest.TestCase):
                     "Char",
                     "Double",
                     "Float",
+                    "Half",
                     "Int",
                     "Long",
                     "Short",
