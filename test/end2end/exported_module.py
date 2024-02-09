@@ -11,9 +11,9 @@ import inspect
 from typing import Callable, Sequence, Type
 
 import executorch.exir as exir
+import torch
 from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
     DebugPass,
     MemoryPlanningPass,
@@ -22,7 +22,6 @@ from executorch.exir.passes import (
 )
 from torch import nn
 from torch.export import export
-from torch.fx import GraphModule
 
 
 class ExportedModule:
@@ -32,7 +31,7 @@ class ExportedModule:
         eager_module: The original nn.Module that was exported.
         methods: The names of the eager_module methods that were traced.
         executorch_program: The resulting ExecutorchProgram.
-        graph_module: The resulting GraphModule.
+        exported_program: The resulting ExportedProgram.
         trace_inputs: The inputs that were used when tracing eager_module.
     """
 
@@ -41,7 +40,7 @@ class ExportedModule:
         eager_module: nn.Module,
         methods: Sequence[str],
         executorch_program: ExecutorchProgramManager,
-        graph_module: GraphModule,
+        exported_program: torch.export.ExportedProgram,
         trace_inputs: Sequence,
         get_random_inputs_fn: Callable[[], Sequence],
     ):
@@ -49,7 +48,7 @@ class ExportedModule:
         self.eager_module: nn.Module = eager_module
         self.methods: Sequence[str] = methods
         self.executorch_program: ExecutorchProgramManager = executorch_program
-        self.graph_module: GraphModule = graph_module
+        self.exported_program: torch.export.ExportedProgram = exported_program
         self.trace_inputs: Sequence = trace_inputs
         self.__get_random_inputs_fn = get_random_inputs_fn
 
@@ -188,10 +187,7 @@ class ExportedModule:
         )
 
         # Generate the graph module created during capture.
-        graph_module = exec_prog.exported_program().graph_module
-        graph_module = PassManager(
-            passes=[DebugPass(show_spec=True)], run_checks_after_each_pass=True
-        )(graph_module).graph_module
+        exported_program = exec_prog.exported_program()
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
@@ -205,7 +201,7 @@ class ExportedModule:
             eager_module=eager_module,
             methods=methods,
             executorch_program=exec_prog,
-            graph_module=graph_module,
+            exported_program=exported_program,
             trace_inputs=trace_inputs,
             get_random_inputs_fn=get_random_inputs_fn,
         )

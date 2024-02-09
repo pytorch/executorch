@@ -203,10 +203,10 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.ceil.default,
         torch.ops.aten.clamp.default,
         torch.ops.aten.concat.default,
+        torch.ops.aten.conv1d.default,
         torch.ops.aten.conv2d.default,
         torch.ops.aten.div.Tensor,
         torch.ops.aten.divide.Tensor,
-        torch.ops.aten.embedding.default,
         torch.ops.aten.expand.default,
         torch.ops.aten.flatten.using_ints,
         torch.ops.aten.gelu.default,
@@ -218,6 +218,7 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.hardtanh_.default,
         torch.ops.aten.layer_norm.default,
         torch.ops.aten.linear.default,
+        torch.ops.aten.log_softmax.int,
         torch.ops.aten.matmul.default,
         torch.ops.aten.max_pool2d.default,
         torch.ops.aten.max_pool2d_with_indices.default,
@@ -236,6 +237,7 @@ class QnnQuantizer(Quantizer):
         torch.ops.aten.select.int,
         torch.ops.aten.slice.Tensor,
         torch.ops.aten.softmax.int,
+        torch.ops.aten.squeeze.default,
         torch.ops.aten.squeeze.dim,
         torch.ops.aten.sub.Tensor,
         torch.ops.aten.tanh.default,
@@ -306,7 +308,10 @@ class QnnQuantizer(Quantizer):
         if type(op) == str:
             return
 
-        if self.enable_per_channel_conv_quant and op == torch.ops.aten.conv2d.default:
+        if self.enable_per_channel_conv_quant and op in [
+            torch.ops.aten.conv1d.default,
+            torch.ops.aten.conv2d.default,
+        ]:
             if op in self.bit16_quant_ops:
                 return get_ptq_per_channel_weight_config(torch.int16, torch.int16)
             return get_ptq_per_channel_weight_config()
