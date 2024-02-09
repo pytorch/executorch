@@ -79,9 +79,15 @@ class QnnOperatorSupport(OperatorSupportBase):
             node, self.nodes_to_wrappers
         )
 
+        op_wrapper_list = []
+        if isinstance(op_wrapper, List):
+            op_wrapper_list.extend(op_wrapper)
+        else:
+            op_wrapper_list.append(op_wrapper)
+
         if op_wrapper is not None:
             supported = self.qnn_manager.IsNodeSupportedByBackend(
-                [op_wrapper.GetOpWrapper()]
+                [op_wrapper.GetOpWrapper() for op_wrapper in op_wrapper_list]
             )
 
         self.nodes_to_wrappers.clear()
