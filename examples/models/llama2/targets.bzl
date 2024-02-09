@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_oss_build_kwargs", "runtime")
 
 def define_common_targets():
     for aten in (True, False):
@@ -18,4 +18,5 @@ def define_common_targets():
             external_deps = [
                 "gflags",
             ],
+            **get_oss_build_kwargs()
         )
