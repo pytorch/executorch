@@ -49,7 +49,6 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.full.default,
-        exir_ops.edge.aten.embedding.default,
         exir_ops.edge.aten.gelu.default,
         _operator.getitem,
     }

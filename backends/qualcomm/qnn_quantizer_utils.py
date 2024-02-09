@@ -513,20 +513,6 @@ def annotate_layer_norm(node: Node, quantization_config: QuantizationConfig) -> 
     _mark_nodes_as_annotated(nodes_to_mark_annotated)
 
 
-@register_annotator([torch.ops.aten.embedding.default])
-def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
-    weight = node.args[0]
-
-    input_qspec_map = {}
-    input_qspec_map[weight] = quantization_config.input_activation
-
-    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
-        input_qspec_map=input_qspec_map,
-        output_qspec=SharedQuantizationSpec((weight, node)),
-        _annotated=True,
-    )
-
-
 @register_annotator([torch.ops.aten.cat.default, torch.ops.aten.concat.default])
 def annotate_cat(node: Node, quantization_config: QuantizationConfig) -> None:
     input_nodes = node.args[0]
