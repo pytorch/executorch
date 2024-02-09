@@ -59,5 +59,5 @@ then
 fi
 
 
-#cmake_install_executorch_sdk_lib
+cmake_install_executorch_sdk_lib
 cmake_llama_runner
