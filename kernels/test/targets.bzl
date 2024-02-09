@@ -252,6 +252,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_relu_test", ["aten", "portable"])
     _common_op_test("op_remainder_test", ["aten", "portable"])
     _common_op_test("op_repeat_test", ["aten", "portable"])
+    _common_op_test("op_replication_pad1d_test", ["aten", "portable"])
     _common_op_test("op_round_test", ["aten", "portable"])
     _common_op_test("op_rsqrt_test", ["aten", "portable"])
     _common_op_test("op_rsub_test", ["aten", "portable"])
