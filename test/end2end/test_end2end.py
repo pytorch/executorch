@@ -514,7 +514,7 @@ def maketest(
             capture_config=capture_config,
         )
         if verify_graph:
-            verify_graph(self, module.graph_module)
+            verify_graph(self, module.exported_program.graph_module)
         print(f"inputs for tracing: {module.trace_inputs}")
 
         # compare the result between the eager module and graph module
@@ -526,8 +526,8 @@ def maketest(
                     # only one method is supported so just grab that single method
                     expected = getattr(module.eager_module, module.methods[0])(*inputs)
                 with torch.no_grad():
-                    result = module.graph_module(*inputs)
-                self.assertTrue(allclose(expected, result[0], rtol, atol))
+                    result = module.exported_program.module()(*inputs)
+                self.assertTrue(allclose(expected, result, rtol, atol))
 
         program = module.executorch_program.executorch_program
         pretty_print(program)

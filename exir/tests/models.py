@@ -154,7 +154,7 @@ class CompositeDelegateModule(torch.nn.Module):
             exir.CaptureConfig(),
         ).to_edge()
         lowered_module = LoweredBackendModule(
-            edge_program=edge_ir_m,
+            edge_program=edge_ir_m.exported_program,
             backend_id="backend_demo",
             processed_bytes=bytes("basic_module_add", encoding="utf8"),
             compile_specs=[],
