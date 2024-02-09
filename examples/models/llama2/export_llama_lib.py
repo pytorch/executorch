@@ -34,6 +34,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.nn.attention import SDPBackend
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
@@ -190,7 +191,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Generate chrome trace of activation memory for intermediate tensors.",
     )
-
     parser.add_argument(
         "-prof",
         "--profile_path",
@@ -199,8 +199,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-G", "--groupsize", default=None, help="specify the groupsize")
 
+    parser.add_argument(
+        "-d",
+        "--dtype-override",
+        default=None,
+        help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
+    )
     parser.add_argument("-2", "--fairseq2", action="store_true")
-    parser.add_argument("-H", "--half", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
 
@@ -224,9 +229,9 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
 
 def get_metadata(params: ModelArgs, args: argparse.Namespace) -> Dict[str, Any]:
     metadata = {
-        "append_eos_to_prompt": args.fairseq2,  # For language llama, tell the runtime to always append EOS toekn(s) to prompt.
+        "append_eos_to_prompt": args.fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
         "get_bos_id": 3 if args.fairseq2 else 1,
-        "get_dtype": 5 if args.half else 6,
+        "get_dtype": None,
         "get_eos_id": 3 if args.fairseq2 else 2,
         "get_head_dim": params.dim // params.n_heads,
         "get_max_batch_size": params.max_batch_size,
@@ -283,11 +288,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     )
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,
-        _skip_type_promotion=bool(args.half),
+        _skip_type_promotion=bool(args.dtype_override == "fp16"),
     )
 
     # metadata that we want to serialize into .pte file
     metadata = get_metadata(model.params, args)
+
+    # check the model dtype
+    state_dict = model.state_dict()
+    metadata["get_dtype"] = state_dict[next(iter(state_dict))].dtype
 
     if args.use_kv_cache:
         # seq length is fixed to 1 with current kv cache impl
@@ -304,15 +313,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             print(f"{modelname}:")
             print(f"{model}")
 
-    if args.half:
-        # only converts floating point dtypes to half
-        # input and output are torch.long, so signature unchanged
-        model.to(dtype=torch.half)
-        modelname = f"{modelname}_h"
-    else:
-        # int8 quantization code has some bf16,
-        # switch all to FP32
-        model.to(dtype=torch.float)
+    if args.dtype_override is not None:
+        if args.dtype_override == "fp16" and metadata["get_dtype"] != 5:
+            model.to(dtype=torch.float16)
+            metadata["get_dtype"] = 5
+        elif args.dtype_override == "fp32" and metadata["get_dtype"] != 6:
+            model.to(dtype=torch.float32)
+            metadata["get_dtype"] = 6
+        else:
+            raise ValueError(f"Unsupported dtype override: {args.dtype_override}")
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
@@ -323,9 +332,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         print(f"{model}")
 
     quantization_options = _get_quantization_options(args)
-    with torch.backends.cuda.sdp_kernel(
-        enable_flash=False, enable_mem_efficient=False, enable_math=True
-    ), torch.no_grad():
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         m = capture_pre_autograd_graph(
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
@@ -363,6 +370,10 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         "Required memory for activation in bytes: ",
         export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
     )
+
+    if metadata["get_dtype"] == 5:
+        modelname = f"{modelname}_h"
+
     save_pte_program(export_program.buffer, modelname, output_dir_path)
     output_file = f"{output_dir_path}/{modelname}.pte"
 
