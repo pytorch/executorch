@@ -75,6 +75,22 @@ set(
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 
+
+add_library(extension_module "${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/module/module.cpp")
+target_include_directories(extension_module PUBLIC ${EXECUTORCH_ROOT}/..)
+
+#add_library(extension_data_loader "${CMAKE_CURRENT_SOURCE_DIR}/../../../extension/data_loader/mmap_data_loader.cpp")
+#target_link_libraries(extension_data_loader executorch)
+
+
+# Install libraries
+install(
+  TARGETS extension_module
+  DESTINATION ${CMAKE_BINARY_DIR}/lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})
+
+
 set(llama_schema_headers ${CMAKE_BINARY_DIR}/../../../schema/include/)
 include(${EXECUTORCH_SRCS_FILE})
 target_include_directories(
@@ -162,7 +178,6 @@ function(define_common_targets)
             ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
         )
 
-
         target_sources(tokenizer${aten_suffix} PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
         )
@@ -232,5 +247,7 @@ target_link_libraries(llama_executor_runner bundled_program
                                           etdump
                                           ${FLATCC_LIB}
                                           portable_ops_lib
+                                          extension_module
+                                          extension_data_loader
                                           ${llama_runner_libs})
 target_compile_options(llama_executor_runner PUBLIC ${_common_compile_options})

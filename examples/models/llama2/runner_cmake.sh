@@ -45,7 +45,7 @@ cmake_llama_runner() {
   cmake --build ${build_dir} --config Release
 
   echo 'Running llama 2 runner'
-  ${build_dir}/main
+  ${build_dir}/llama_executor_runner
 }
 
 if [[ -z $PYTHON_EXECUTABLE ]];
