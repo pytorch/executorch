@@ -35,6 +35,23 @@ def get_parameter(
     return param
 
 
+def set_parameter(
+    param: torch.Tensor, node: torch.fx.Node, edge_program: torch.export.ExportedProgram
+):
+    status = False
+    if node.name in edge_program.graph_signature.inputs_to_parameters:
+        edge_program.state_dict[
+            edge_program.graph_signature.inputs_to_parameters[node.name]
+        ] = param
+        status = True
+    if node.name in edge_program.graph_signature.inputs_to_buffers:
+        edge_program.state_dict[
+            edge_program.graph_signature.inputs_to_buffers[node.name]
+        ].data = param
+        status = True
+    assert status, "Failed to set parameter"
+
+
 def is_graph_input(
     tensor: torch.fx.Node, edge_program: torch.export.ExportedProgram
 ) -> bool:

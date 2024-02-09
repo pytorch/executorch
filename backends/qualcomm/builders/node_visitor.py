@@ -40,6 +40,7 @@ QNN_TENSOR_TYPE_MAP = {
 
 PER_CHANNEL_ENCODING_MAPPING = {
     exir_ops.edge.quantized_decomposed.quantize_per_channel.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
 }
 
 PER_TENSOR_ENCODING_MAPPING = {
@@ -137,6 +138,7 @@ class NodeVisitor:
     ) -> torch.Tensor:
         quant_attrs = node.meta["quant_attrs"]
         encoding = quant_attrs["encoding"]
+
         if encoding in PER_CHANNEL_ENCODING_MAPPING:
             scales = quant_attrs["scales"]
             offsets = quant_attrs["zero_points"]
