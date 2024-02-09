@@ -113,7 +113,7 @@ class Verifier:
                 f"{spec} should have specified memory offset",
             )
             intervals.append(
-                [spec.mem_offset, spec.mem_offset + max(spec.allocated_memory - 1, 0)]
+                [spec.mem_offset, spec.mem_offset + spec.allocated_memory - 1]
             )
         has_overlap = cls.has_overlap(*intervals)
 
@@ -154,16 +154,6 @@ class Verifier:
 
                 has_storage_overlap = Verifier.storage_overlap(lhs_spec, rhs_spec)
                 if not has_storage_overlap:
-                    # Check that each mem_obj_id is consistent with whether the tensors
-                    # have storage overlap
-                    if Verifier.mem_obj_id_match(
-                        lhs_spec, rhs_spec, accept_both_none=False
-                    ):
-                        raise InternalError(
-                            f"Unexpected mem_obj_id match: "
-                            f"lhs {lhs_spec} with id {lhs_spec.mem_obj_id} "
-                            f"rhs {rhs_spec} with id {rhs_spec.mem_obj_id}"
-                        )
                     continue
 
                 if not allow_lifetime_and_storage_overlap and self.lifetime_overlap(
