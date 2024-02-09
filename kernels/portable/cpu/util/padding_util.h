@@ -55,5 +55,38 @@ void pad1d(
   }
 }
 
+template <typename CTYPE, typename PaddingIx>
+void pad2d(
+    const PaddingIx& padding_ix,
+    const Tensor& in,
+    Tensor& out,
+    exec_aten::ArrayRef<int64_t> padding) {
+  const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
+  CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
+
+  const auto dim = in.dim() - 2;
+  const auto outer = getLeadingDims(out, dim);
+  const auto in_height = in.size(dim);
+  const auto in_width = in.size(dim + 1);
+  const auto out_height = out.size(dim);
+  const auto out_width = out.size(dim + 1);
+  const auto pad_left = padding[0];
+  const auto pad_top = padding[2];
+
+  for (size_t i = 0; i < outer; i++) {
+    size_t out_i_base = i * out_height * out_width;
+    size_t in_i_base = i * in_height * in_width;
+    for (size_t h = 0; h < out_height; h++) {
+      size_t out_h_base = out_i_base + h * out_width;
+      size_t in_h_base =
+          in_i_base + padding_ix(h, in_height, pad_top) * in_width;
+      for (size_t w = 0; w < out_width; w++) {
+        out_data[out_h_base + w] =
+            in_data[in_h_base + padding_ix(w, in_width, pad_left)];
+      }
+    }
+  }
+}
+
 } // namespace executor
 } // namespace torch
