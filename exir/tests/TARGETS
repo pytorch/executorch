@@ -280,7 +280,6 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:schema",
         "//executorch/exir/passes:const_prop_pass",
-        "//executorch/exir/passes:lib",
         "//executorch/exir/verification:interpreter",
         "//executorch/exir/verification:verifier",
     ],
