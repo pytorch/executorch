@@ -243,9 +243,6 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath1) {
   Tensor indices = tf_l.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 4});
-  Tensor expected = tf.make(
-      {3, 4}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0, 7.0, 7.0, 9.0});
-
   ET_EXPECT_DEATH(
       quantized_embedding_byte_out(
           qweight,
@@ -276,9 +273,6 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath2) {
   Tensor indices = tf_l.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 4});
-  Tensor expected = tf.make(
-      {3, 4}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0, 7.0, 7.0, 9.0});
-
   ET_EXPECT_DEATH(
       quantized_embedding_byte_out(
           qweight,
@@ -308,9 +302,6 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath3) {
   Tensor indices = tf_l.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 3});
-  Tensor expected =
-      tf.make({3, 3}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0});
-
   ET_EXPECT_DEATH(
       quantized_embedding_byte_out(
           qweight,
@@ -340,9 +331,6 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath4) {
   Tensor indices = tf_l.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 3});
-  Tensor expected =
-      tf.make({3, 3}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0});
-
   ET_EXPECT_DEATH(
       quantized_embedding_byte_out(
           qweight,
@@ -372,9 +360,6 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath5) {
   Tensor indices = tf_l.make({3}, {0, 2, 1});
 
   Tensor out = tf.zeros({3, 3});
-  Tensor expected =
-      tf.make({3, 3}, {3.5, 4.5, 5.5, 6.5, 1.5, 3.0, 4.5, 7.5, 5.0});
-
   ET_EXPECT_DEATH(
       quantized_embedding_byte_out(
           qweight,

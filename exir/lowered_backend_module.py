@@ -8,7 +8,7 @@
 
 import copy
 import operator
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
@@ -31,6 +31,8 @@ from torch.export.exported_program import (
     ExportGraphSignature,
     InputKind,
     InputSpec,
+    ModuleCallEntry,
+    ModuleCallSignature,
     OutputKind,
     OutputSpec,
     TensorArgument,
@@ -70,6 +72,27 @@ class LoweredBackendModule(torch.nn.Module):
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
+
+    # pyre-ignore
+    def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
+        # Copy exported program
+        copied_program = ExportedProgram(
+            root=copy.deepcopy(self._original_module.graph_module),
+            graph=copy.deepcopy(self._original_module.graph),
+            graph_signature=copy.deepcopy(self._original_module.graph_signature),
+            state_dict=self._original_module.state_dict,
+            range_constraints=copy.deepcopy(self._original_module.range_constraints),
+            module_call_graph=copy.deepcopy(self._original_module.module_call_graph),
+            verifier=copy.deepcopy(self._original_module.verifier),
+            constants=self._original_module.constants,
+        )
+
+        return LoweredBackendModule(
+            edge_program=copied_program,
+            backend_id=self._backend_id,
+            processed_bytes=self._processed_bytes,
+            compile_specs=copy.deepcopy(self._compile_specs, memo),
+        )
 
     @property
     def backend_id(self) -> str:
@@ -490,13 +513,23 @@ def create_exported_program_from_submodule(
         owning_program, submodule
     )
 
+    in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
+    out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
+
     return ExportedProgram(
         root=submodule,
         graph=submodule.graph,
         graph_signature=subgraph_signature,
         state_dict=subgraph_state_dict,
         range_constraints=copy.deepcopy(owning_program.range_constraints),
-        module_call_graph=[],
+        module_call_graph=[
+            ModuleCallEntry(
+                "",
+                ModuleCallSignature(
+                    inputs=[], outputs=[], in_spec=in_spec, out_spec=out_spec
+                ),
+            )
+        ],
         verifier=owning_program.verifier,
         constants=subgraph_constants,
     )
