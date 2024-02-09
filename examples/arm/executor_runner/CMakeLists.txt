@@ -60,17 +60,14 @@ set_property(TARGET extension_runner_util PROPERTY IMPORTED_LOCATION
   "${ET_BUILD_DIR_PATH}/extension/runner_util/libextension_runner_util.a")
 
 # Convert pte to header
-add_custom_target(
-    gen_model_header ALL
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/fake_dep
-)
+add_custom_target(gen_model_header
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h)
 
 add_custom_command(
-    OUTPUT
-        ${CMAKE_CURRENT_BINARY_DIR}/fake_dep
-        ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-    COMMAND ${PYTHON_EXECUTABLE} ./pte_to_header.py --pte ${ET_PTE_FILE_PATH}
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte ${ET_PTE_FILE_PATH}
     --outdir ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS ${ET_PTE_FILE_PATH}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
