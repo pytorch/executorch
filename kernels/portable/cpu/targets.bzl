@@ -661,6 +661,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_reflection_pad1d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
+        ],
+    ),
+    op_target(
         name = "op_relu",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",

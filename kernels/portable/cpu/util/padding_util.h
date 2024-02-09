@@ -17,7 +17,8 @@ bool check_padding_args(
     int64_t n,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> padding,
-    Tensor& out);
+    Tensor& out,
+    bool reflection = false);
 
 void get_padding_out_target_size(
     int64_t n,
@@ -28,6 +29,12 @@ void get_padding_out_target_size(
 
 inline int64_t replication_ix(int64_t j, int64_t size, int64_t pad) {
   return j < pad ? 0 : j >= pad && j < size + pad ? j - pad : size - 1;
+}
+
+inline int64_t reflection_ix(int64_t j, int64_t size, int64_t pad) {
+  return j < pad                   ? pad - j
+      : j >= pad && j < size + pad ? j - pad
+                                   : 2 * size + pad - j - 2;
 }
 
 template <typename CTYPE, typename PaddingIx>

@@ -19,13 +19,19 @@ bool check_padding_args(
     int64_t n,
     const Tensor& in,
     exec_aten::ArrayRef<int64_t> padding,
-    Tensor& out) {
+    Tensor& out,
+    bool reflection) {
   ET_LOG_AND_RETURN_IF_FALSE(padding.size() == 2 * n);
   ET_LOG_AND_RETURN_IF_FALSE(in.dim() == n + 1 || in.dim() == n + 2);
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
   for (size_t i = 1; i <= n; ++i) {
     ET_LOG_AND_RETURN_IF_FALSE(
         in.size(in.dim() - i) + padding[2 * i - 2] + padding[2 * i - 1] >= 0);
+    if (reflection) {
+      ET_LOG_AND_RETURN_IF_FALSE(
+          padding[2 * i - 2] < in.size(in.dim() - i) &&
+          padding[2 * i - 1] < in.size(in.dim() - i));
+    }
   }
   return true;
 }
