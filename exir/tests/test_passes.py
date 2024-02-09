@@ -429,7 +429,7 @@ class TestPasses(unittest.TestCase):
                 (inputs,),
             )
         )
-        edge_res = edge_dialect.exported_program()(inputs)
+        edge_res = edge_dialect.exported_program().module()(inputs)
         self.assertTrue(torch.allclose(model_res, edge_res))
 
     def test_export_pass(self) -> None:
@@ -511,7 +511,8 @@ class TestPasses(unittest.TestCase):
         inp = torch.zeros(1)
         self.assertTrue(
             torch.allclose(
-                expo_prog.exported_program()(inp), new_prog.exported_program()(inp)
+                expo_prog.exported_program().module()(inp),
+                new_prog.exported_program().module()(inp),
             )
         )
         for node in new_graph_module.graph.nodes:
@@ -547,8 +548,8 @@ class TestPasses(unittest.TestCase):
 
         self.assertTrue(
             torch.allclose(
-                gm.exported_program()(*example_inputs),
-                new_gm.exported_program()(*example_inputs),
+                gm.exported_program().module()(*example_inputs),
+                new_gm.exported_program().module()(*example_inputs),
             )
         )
 
@@ -640,7 +641,7 @@ class TestPasses(unittest.TestCase):
             if node.target == torch.ops.aten._unsafe_view.default:
                 count_after += 1
         self.assertEqual(count_after, 0)
-        self.assertTrue(torch.allclose(prog.exported_program()(x), f(x)))
+        self.assertTrue(torch.allclose(prog.exported_program().module()(x), f(x)))
 
     def test_convert_symb_ops(self) -> None:
         class Foo(torch.nn.Module):
@@ -1034,12 +1035,13 @@ class TestPasses(unittest.TestCase):
         ).run(prog.exported_program().graph_module.code)
         self.assertTrue(
             torch.allclose(
-                f(torch.ones(3, 2)), prog.exported_program()(torch.ones(3, 2))
+                f(torch.ones(3, 2)), prog.exported_program().module()(torch.ones(3, 2))
             )
         )
         self.assertTrue(
             torch.allclose(
-                f(torch.zeros(3, 2)), prog.exported_program()(torch.zeros(3, 2))
+                f(torch.zeros(3, 2)),
+                prog.exported_program().module()(torch.zeros(3, 2)),
             )
         )
 

@@ -49,6 +49,8 @@ class VulkanBackend(BackendDetails):
                 f"Invalid node kwargs for vulkan_preprocess (target_name: {target_name}, "
                 f"kwargs: {kwargs})"
             )
+        elif target_name == "aten.pow.Tensor_Tensor":
+            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_pow
 
         else:
             raise AssertionError(
