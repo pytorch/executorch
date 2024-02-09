@@ -430,7 +430,7 @@
 
 <span class="kn">import</span> <span class="nn">copy</span>
 <span class="kn">import</span> <span class="nn">operator</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.utils._pytree</span> <span class="k">as</span> <span class="nn">pytree</span>
@@ -453,6 +453,8 @@
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">InputKind</span><span class="p">,</span>
     <span class="n">InputSpec</span><span class="p">,</span>
+    <span class="n">ModuleCallEntry</span><span class="p">,</span>
+    <span class="n">ModuleCallSignature</span><span class="p">,</span>
     <span class="n">OutputKind</span><span class="p">,</span>
     <span class="n">OutputSpec</span><span class="p">,</span>
     <span class="n">TensorArgument</span><span class="p">,</span>
@@ -492,6 +494,29 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_backend_id</span> <span class="o">=</span> <span class="n">backend_id</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_processed_bytes</span> <span class="o">=</span> <span class="n">processed_bytes</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span> <span class="o">=</span> <span class="n">compile_specs</span>
+
+    <span class="c1"># pyre-ignore</span>
+    <span class="k">def</span> <span class="nf">__deepcopy__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">memo</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Any</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="s2">&quot;LoweredBackendModule&quot;</span><span class="p">:</span>
+        <span class="c1"># Copy exported program</span>
+        <span class="n">copied_program</span> <span class="o">=</span> <span class="n">ExportedProgram</span><span class="p">(</span>
+            <span class="n">root</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">graph_module</span><span class="p">),</span>
+            <span class="n">graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">graph</span><span class="p">),</span>
+            <span class="n">graph_signature</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">graph_signature</span><span class="p">),</span>
+            <span class="n">state_dict</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">state_dict</span><span class="p">,</span>
+            <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
+            <span class="n">module_call_graph</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">module_call_graph</span><span class="p">),</span>
+            <span class="n">verifier</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">verifier</span><span class="p">),</span>
+            <span class="n">constants</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_original_module</span><span class="o">.</span><span class="n">constants</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="n">LoweredBackendModule</span><span class="p">(</span>
+            <span class="n">edge_program</span><span class="o">=</span><span class="n">copied_program</span><span class="p">,</span>
+            <span class="n">backend_id</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_backend_id</span><span class="p">,</span>
+            <span class="n">processed_bytes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_processed_bytes</span><span class="p">,</span>
+            <span class="n">compile_specs</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_compile_specs</span><span class="p">,</span> <span class="n">memo</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="n">res</span><span class="o">.</span><span class="n">meta</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;meta&quot;</span><span class="p">,</span> <span class="p">{}))</span>
+        <span class="k">return</span> <span class="n">res</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">backend_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
@@ -864,6 +889,21 @@
                     <span class="p">]</span>
                 <span class="k">else</span><span class="p">:</span>
                     <span class="n">new_constants</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span><span class="n">buffer_name</span><span class="p">]</span>
+            <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_lifted_tensor_constants</span><span class="p">:</span>
+                <span class="n">constant_name</span> <span class="o">=</span> <span class="n">old_signature</span><span class="o">.</span><span class="n">inputs_to_lifted_tensor_constants</span><span class="p">[</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">name</span>
+                <span class="p">]</span>
+                <span class="c1"># add constant to graph signature</span>
+                <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                    <span class="n">InputSpec</span><span class="p">(</span>
+                        <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">CONSTANT_TENSOR</span><span class="p">,</span>
+                        <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
+                        <span class="n">target</span><span class="o">=</span><span class="n">constant_name</span><span class="p">,</span>
+                    <span class="p">)</span>
+                <span class="p">)</span>
+
+                <span class="c1"># add constant to new_constants</span>
+                <span class="n">new_constants</span><span class="p">[</span><span class="n">constant_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">original_program</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span><span class="n">constant_name</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
                 <span class="c1"># not param or buffer then user input</span>
                 <span class="n">input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -912,13 +952,23 @@
         <span class="n">owning_program</span><span class="p">,</span> <span class="n">submodule</span>
     <span class="p">)</span>
 
+    <span class="n">in_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">((</span><span class="nb">tuple</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">),</span> <span class="p">{}))[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="n">out_spec</span> <span class="o">=</span> <span class="n">pytree</span><span class="o">.</span><span class="n">tree_flatten</span><span class="p">(</span><span class="n">subgraph_signature</span><span class="o">.</span><span class="n">user_outputs</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+
     <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
         <span class="n">root</span><span class="o">=</span><span class="n">submodule</span><span class="p">,</span>
         <span class="n">graph</span><span class="o">=</span><span class="n">submodule</span><span class="o">.</span><span class="n">graph</span><span class="p">,</span>
         <span class="n">graph_signature</span><span class="o">=</span><span class="n">subgraph_signature</span><span class="p">,</span>
         <span class="n">state_dict</span><span class="o">=</span><span class="n">subgraph_state_dict</span><span class="p">,</span>
         <span class="n">range_constraints</span><span class="o">=</span><span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">owning_program</span><span class="o">.</span><span class="n">range_constraints</span><span class="p">),</span>
-        <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[],</span>
+        <span class="n">module_call_graph</span><span class="o">=</span><span class="p">[</span>
+            <span class="n">ModuleCallEntry</span><span class="p">(</span>
+                <span class="s2">&quot;&quot;</span><span class="p">,</span>
+                <span class="n">ModuleCallSignature</span><span class="p">(</span>
+                    <span class="n">inputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">outputs</span><span class="o">=</span><span class="p">[],</span> <span class="n">in_spec</span><span class="o">=</span><span class="n">in_spec</span><span class="p">,</span> <span class="n">out_spec</span><span class="o">=</span><span class="n">out_spec</span>
+                <span class="p">),</span>
+            <span class="p">)</span>
+        <span class="p">],</span>
         <span class="n">verifier</span><span class="o">=</span><span class="n">owning_program</span><span class="o">.</span><span class="n">verifier</span><span class="p">,</span>
         <span class="n">constants</span><span class="o">=</span><span class="n">subgraph_constants</span><span class="p">,</span>
     <span class="p">)</span>

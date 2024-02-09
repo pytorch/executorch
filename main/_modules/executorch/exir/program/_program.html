@@ -750,7 +750,7 @@
         <span class="k">return</span> <span class="bp">self</span>
 
     <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">module</span><span class="p">()(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
 
     <span class="c1"># TODO(ycao): Change this to a composable function.</span>
     <span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
