@@ -53,6 +53,24 @@ class Verifier:
         self.alloc_graph_output = alloc_graph_output
 
     @classmethod
+    def mem_obj_id_match(
+        cls, lhs_spec: TensorSpec, rhs_spec: TensorSpec, accept_both_none: bool = True
+    ) -> bool:
+        """
+        Given two `TensorSpec`, return if their `mem_obj_id` are the same. Note that if
+        both are None, this function will return True if `accept_both_none` is True and
+        False otherwise.
+        """
+        if lhs_spec.mem_id != rhs_spec.mem_id:
+            return False
+
+        # both are None
+        if lhs_spec.mem_obj_id is None and rhs_spec.mem_obj_id is None:
+            return accept_both_none
+
+        return lhs_spec.mem_obj_id == rhs_spec.mem_obj_id
+
+    @classmethod
     def has_overlap(cls, lhs_ivl: List[int], rhs_ivl: List[int]) -> bool:
         r"""
         The passed in intervals are inclusive in both sides. Return if they have
@@ -95,9 +113,11 @@ class Verifier:
                 f"{spec} should have specified memory offset",
             )
             intervals.append(
-                [spec.mem_offset, spec.mem_offset + spec.allocated_memory - 1]
+                [spec.mem_offset, spec.mem_offset + max(spec.allocated_memory - 1, 0)]
             )
-        return cls.has_overlap(*intervals)
+        has_overlap = cls.has_overlap(*intervals)
+
+        return has_overlap
 
     def verify_storage_reuse(
         self, allow_lifetime_and_storage_overlap: bool = False
@@ -126,15 +146,41 @@ class Verifier:
 
         for lhs_spec_idx, lhs_spec in enumerate(all_specs):
             for rhs_spec in all_specs[lhs_spec_idx + 1 :]:
-                if not self.storage_overlap(lhs_spec, rhs_spec):
+                # Check that both specs are consistent about whether mem_obj_id is defined
+                if (lhs_spec.mem_obj_id is None) != (rhs_spec.mem_obj_id is None):
+                    raise InternalError(
+                        "Specs do not agree on whether mem_obj_id is defined."
+                    )
+
+                has_storage_overlap = Verifier.storage_overlap(lhs_spec, rhs_spec)
+                if not has_storage_overlap:
+                    # Check that each mem_obj_id is consistent with whether the tensors
+                    # have storage overlap
+                    if Verifier.mem_obj_id_match(
+                        lhs_spec, rhs_spec, accept_both_none=False
+                    ):
+                        raise InternalError(
+                            f"Unexpected mem_obj_id match: "
+                            f"lhs {lhs_spec} with id {lhs_spec.mem_obj_id} "
+                            f"rhs {rhs_spec} with id {rhs_spec.mem_obj_id}"
+                        )
                     continue
+
                 if not allow_lifetime_and_storage_overlap and self.lifetime_overlap(
                     lhs_spec, rhs_spec
                 ):
                     raise InternalError(
                         f"Unexpected storage overlap: lhs {lhs_spec}, rhs {rhs_spec}"
                     )
-                num_reuse_pairs += Verifier.storage_overlap(lhs_spec, rhs_spec)
+
+                # Check that each mem_obj_id is consistent with whether the tensors have
+                # storage overlap
+                if not Verifier.mem_obj_id_match(lhs_spec, rhs_spec):
+                    raise InternalError(
+                        f"Unexpected mem_obj_id mismatch: lhs {lhs_spec}, rhs {rhs_spec}"
+                    )
+
+                num_reuse_pairs += 1
 
         return num_reuse_pairs
 
@@ -386,6 +432,8 @@ class SharedObject:
     last_used_index attribute. The shared object will be available for nodes
     with index greater than last_used_index.
     """
+    # index of the shared object in the list of shared objects, used as a unique id
+    idx: int
     # offset in the memory buffer
     offset: int
     # size of this shared object in bytes
@@ -435,7 +483,9 @@ def pick_shared_obj(
                 sobj.last_used_index = spec.lifetime[1]
                 sobj.size = max(sobj.size, spec.allocated_memory)
     if picked is None:
-        picked = SharedObject(-1, spec.allocated_memory, spec.lifetime[1])
+        picked = SharedObject(
+            len(shared_objects), -1, spec.allocated_memory, spec.lifetime[1]
+        )
         shared_objects.append(picked)
 
     return picked
@@ -503,6 +553,7 @@ def greedy(
         # each shared object, we can assign offset in the memory buffer for each
         # shared object.
         for spec, sobj in spec2obj.items():
+            spec.mem_obj_id = sobj.idx
             spec.mem_offset = sobj.offset
 
     logging.debug(f"greedy algorithm returns bufsizes: {total_sizes}")
