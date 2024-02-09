@@ -11,7 +11,7 @@ QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
 QNN_uint16 = "uint16"
 
 # Below constants should be same as those in QNN headers.
-# Maybe someday we should expose these constants by pynind
+# Maybe someday we should expose these constants by pybind
 # instead of replicating them here.
 
 
@@ -174,6 +174,13 @@ class OpResizeBilinear:
 @dataclass(init=False, frozen=True)
 class OpSoftmax:
     op_name: str = "Softmax"
+    param_axis: str = "axis"
+    param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpLogSoftmax:
+    op_name: str = "LogSoftmax"
     param_axis: str = "axis"
     param_beta: str = "beta"
 
