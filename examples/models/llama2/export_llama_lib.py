@@ -25,7 +25,6 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from executorch.util.python_profiler import CProfilerFlameGraph
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
@@ -266,8 +265,16 @@ def _get_quantization_options(args):
 
 def export_llama(modelname, args) -> str:
     if args.profile_path is not None:
-        with CProfilerFlameGraph(args.profile_path):
-            return _export_llama(modelname, args)
+        try:
+            from executorch.util.python_profiler import CProfilerFlameGraph
+
+            with CProfilerFlameGraph(args.profile_path):
+                return _export_llama(modelname, args)
+        except ImportError:
+            print(
+                "Please run `pip install snakeviz` to install required dependencies for cProfiler flamegraph."
+            )
+            return ""
     else:
         return _export_llama(modelname, args)
 
