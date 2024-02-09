@@ -276,6 +276,8 @@
 
 - op: reflection_pad1d.out
 
+- op: reflection_pad2d.out
+
 - op: replication_pad1d.out
 
 - op: replication_pad2d.out
