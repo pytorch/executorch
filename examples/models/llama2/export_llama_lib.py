@@ -34,6 +34,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.nn.attention import SDPBackend
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
@@ -331,9 +332,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         print(f"{model}")
 
     quantization_options = _get_quantization_options(args)
-    with torch.backends.cuda.sdp_kernel(
-        enable_flash=False, enable_mem_efficient=False, enable_math=True
-    ), torch.no_grad():
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         m = capture_pre_autograd_graph(
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
