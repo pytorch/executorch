@@ -198,17 +198,20 @@ class TestProgramManagers(unittest.TestCase):
         # still have all our methods
         self.assertEqual(len(transformed_edge.methods), 2)
         self.assertEqual(len(transformed_edge.config_methods), 2)
-        print(transformed_edge.exported_program("forward").graph_module.graph)
 
         # transformation was applied
         self.assertEqual(
-            transformed_edge.exported_program("forward")(torch.ones(1), torch.ones(1)),
+            transformed_edge.exported_program("forward").module()(
+                torch.ones(1), torch.ones(1)
+            ),
             torch.ones(1),  # x * y * x
         )
 
         # original unchanged
         self.assertEqual(
-            edge_manager.exported_program("forward")(torch.ones(1), torch.ones(1)),
+            edge_manager.exported_program("forward").module()(
+                torch.ones(1), torch.ones(1)
+            ),
             original_res,  # x * y + x
         )
 
@@ -224,7 +227,9 @@ class TestProgramManagers(unittest.TestCase):
         )
 
         self.assertEqual(
-            transformed_edge.exported_program("forward")(torch.ones(1), torch.ones(1)),
+            transformed_edge.exported_program("forward").module()(
+                torch.ones(1), torch.ones(1)
+            ),
             torch.ones(1),  # x * y * x
         )
 
@@ -245,7 +250,7 @@ class TestProgramManagers(unittest.TestCase):
 
         forward_program = delegate_manager.exported_program("forward")
         self.assertEqual(
-            forward_program(torch.ones(1), torch.ones(1)),
+            forward_program.module()(torch.ones(1), torch.ones(1)),
             torch.ones(1) + 1,  # x * y + x
         )
 
@@ -307,7 +312,7 @@ class TestProgramManagers(unittest.TestCase):
 
         forward_program = delegate_manager.exported_program("forward")
         self.assertEqual(
-            forward_program(torch.ones(1), torch.ones(1)),
+            forward_program.module()(torch.ones(1), torch.ones(1)),
             torch.ones(1) + 1,  # x * y + x
         )
 

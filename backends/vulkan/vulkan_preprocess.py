@@ -18,7 +18,12 @@ from executorch.exir.backend.backend_details import (
     ExportedProgram,
     PreprocessResult,
 )
-from torch import dtype, float32, Tensor
+
+from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
+
+from executorch.exir.program._program import _copy_module
+from executorch.exir.tensor import TensorSpec
+from torch import dtype, float32
 from torch.fx import Node
 from torch.fx.node import Argument
 
@@ -49,6 +54,8 @@ class VulkanBackend(BackendDetails):
                 f"Invalid node kwargs for vulkan_preprocess (target_name: {target_name}, "
                 f"kwargs: {kwargs})"
             )
+        elif target_name == "aten.pow.Tensor_Tensor":
+            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_pow
 
         else:
             raise AssertionError(
@@ -64,9 +71,9 @@ class VulkanBackend(BackendDetails):
 
     @classmethod
     # pyre-ignore
-    def preprocess(
+    def preprocess(  # noqa: C901
         cls,
-        edge_program: ExportedProgram,
+        program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
         vk_nodes = []
@@ -78,28 +85,73 @@ class VulkanBackend(BackendDetails):
         # Mapping from node in the executorch graph to corresponding VkValue id
         node_vk_value_ids = {}
 
-        def assign_vk_value_id(node: Node, tensor: Tensor, buffer_idx: int) -> int:
-            assert node not in node_vk_value_ids
+        def create_single_vk_value(node: Node, buffer_idx: int = 0) -> int:
+            spec = node.meta.get("spec")
+            assert isinstance(spec, TensorSpec)
             new_id = len(vk_values)
-            node_vk_value_ids[node] = new_id
+            if node not in node_vk_value_ids:
+                node_vk_value_ids[node] = new_id
+            else:
+                current_ids = node_vk_value_ids[node]
+                if isinstance(current_ids, int):
+                    current_ids = [current_ids, new_id]
+                else:
+                    current_ids.append(new_id)
+
+            # Negative id indicates that this tensor will have its own dedicated memory.
+            mem_obj_id = -1
+            if spec.mem_obj_id is not None:
+                mem_obj_id = spec.mem_obj_id
+
             vk_values.append(
                 vk_graph_schema.VkValue(
                     value=vk_graph_schema.VkTensor(
-                        datatype=VulkanBackend.get_vk_datatype(tensor.dtype),
-                        dims=list(tensor.shape),
+                        datatype=VulkanBackend.get_vk_datatype(spec.dtype),
+                        dims=spec.shape,
                         constant_buffer_idx=buffer_idx,
+                        mem_obj_id=mem_obj_id,
                     )
                 )
             )
             return new_id
 
-        def assign_non_const_vk_value_id(node: Node) -> int:
-            return assign_vk_value_id(node, node.meta["val"], 0)
+        def create_vk_values_for(node: Node, buffer_idx: int = 0):
+            spec = node.meta.get("spec")
 
-        for node in edge_program.graph.nodes:
+            if isinstance(spec, TensorSpec):
+                return create_single_vk_value(node, buffer_idx)
+            else:
+                ids = []
+                for _ in spec:
+                    ids.append(create_single_vk_value(node, buffer_idx))
+                return ids
+
+        passes = [
+            SpecPropPass(),
+            MemoryPlanningPass("greedy"),
+        ]
+
+        new_gm = program.graph_module
+        for p in passes:
+            # This is a workaround to allow the memory planning pass to work without
+            # having to first apply ToOutVarPass(). See the `greedy()` function in
+            # `exir.memory_planning`; if this attribute isn't set, assertions in
+            # `collect_spec_from_nodes()` will fail.
+            if isinstance(p, MemoryPlanningPass):
+                new_gm.encounter_to_out_var_failure = True
+            new_gm_res = p(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
+        _copy_module(program.graph_module, new_gm)
+
+        for node in program.graph_module.graph.nodes:
             if node.op == "placeholder":
                 # Input
-                vk_input_ids.append(assign_non_const_vk_value_id(node))
+                ids = create_vk_values_for(node)
+                if isinstance(ids, int):
+                    vk_input_ids.append(ids)
+                else:
+                    vk_input_ids += ids
             elif node.op == "call_function":
                 # Op
                 if (
@@ -114,7 +166,7 @@ class VulkanBackend(BackendDetails):
                         node=vk_graph_schema.VkArithmeticNode(
                             input1_id=node_vk_value_ids[node.all_input_nodes[0]],
                             input2_id=node_vk_value_ids[node.all_input_nodes[1]],
-                            output_id=assign_non_const_vk_value_id(node),
+                            output_id=create_vk_values_for(node),
                             op_type=VulkanBackend.get_vk_op_type(
                                 target_name=node.target.__name__, kwargs=node.kwargs
                             ),
@@ -140,7 +192,7 @@ class VulkanBackend(BackendDetails):
                 buffer = vk_graph_schema.Buffer(storage=bytes(array))
                 vk_const_buffers.append(buffer)
 
-                assign_vk_value_id(node, const_val, buffer_idx)
+                create_vk_values_for(node, buffer_idx)
 
             elif node.op == "output":
                 if node.all_input_nodes[0] not in node_vk_value_ids:

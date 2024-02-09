@@ -197,7 +197,7 @@ function setup_vela() {
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"
-    pip install .
+    pip3 install . --user
 }
 
 ########
