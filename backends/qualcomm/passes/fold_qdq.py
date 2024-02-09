@@ -52,7 +52,7 @@ class FoldQDQ(ExportPass):
                     "source_fn_stack"
                 )
 
-            # add quantization attributes to the meta of source node
+            # collecting quant nodes to be removed
             for i in range(1, len(n.args)):
                 if type(n.args[i]) == torch.fx.node.Node:
                     to_be_removed.append(n.args[i])
