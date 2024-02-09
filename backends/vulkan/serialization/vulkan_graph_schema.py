@@ -29,6 +29,7 @@ class VkTensor:
     datatype: VkDatatype
     dims: List[int]
     constant_buffer_idx: int
+    mem_obj_id: int
 
 
 @dataclass
@@ -47,6 +48,7 @@ class VkArithmeticOpType(IntEnum):
     vk_arithmetic_op_type_mul = 2
     vk_arithmetic_op_type_div = 3
     vk_arithmetic_op_type_floor_div = 4
+    vk_arithmetic_op_type_pow = 5
 
 
 @dataclass
