@@ -75,23 +75,23 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
                 edge_op_str
             ).run(before.graph_module.code)
 
-            ep = to_edge(
-                before, compile_config=EdgeCompileConfig(_check_ir_validity=False)
-            )  # Only replacing edge_ops
-
-            # Run the pass
-            # TODO move this in to_edge passes, make to_dim_copy pass verifier
-            after = ep.transform([MemoryFormatOpsPass()], check_ir_validity=False)
+            # TODO(gasoonjia): make to_dim_copy pass verifier
+            epm = to_edge(
+                before,
+                compile_config=EdgeCompileConfig(
+                    _check_ir_validity=False, _skip_dim_order=False
+                ),
+            )
 
             # check op strings
             FileCheck().check_not(aten_op_str).check_count(
                 edge_op_str, 1, exactly=True
-            ).run(after.exported_program().graph_module.code)
+            ).run(epm.exported_program().graph_module.code)
 
             # check EdgeOp and the new BackendOp should behave the same
             expected = before(*test_set.sample_input)
-            actual = after.exported_program()(*test_set.sample_input)
+            actual = epm.exported_program()(*test_set.sample_input)
             self.assertTrue(torch.allclose(actual, expected))
 
             # TODO - more
-            after.to_executorch()
+            epm.to_executorch()
