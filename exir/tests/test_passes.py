@@ -1110,26 +1110,26 @@ class TestPasses(unittest.TestCase):
 
     def test_constant_prop_pass_for_add(self) -> None:
         class Add(torch.nn.Module):
-            def add(self, x: torch.Tensor) -> torch.Tensor:
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
                 return x + 3
 
         add = Add()
 
         edge = to_edge(export(add, (torch.ones(1),)))
         edge = edge.transform([ScalarToTensorPass(), RemoveMixedTypeOperators()])
-        edge.exported_program = lift_constant_tensor_pass(edge.exported_program())
+        exported_program = lift_constant_tensor_pass(edge.exported_program())
 
         # Check there is a lifted tensor followed by a to_copy node
         FileCheck().check("_lifted_tensor_constant0").check(
-            "torch.ops.aten._to_copy.default"
-        ).run(edge.exported_program().graph_module.code)
+            "executorch_exir_dialects_edge__ops_aten__to_copy_default"
+        ).run(exported_program.graph_module.code)
 
-        new_ep = constant_prop_pass(edge.exported_program())
+        new_ep = constant_prop_pass(exported_program)
 
         # Check (_lifted_tensor_constant + to_copy) node is replaced by prop tensor
         FileCheck().check_not("_lifted_tensor_constant").check(
             "_prop_tensor_constant1"
-        ).check_not("torch.ops.aten._to_copy.default").run(new_ep.graph_module.code)
+        ).check_not("executorch_exir_dialects_edge__ops_aten__to_copy_default").run(new_ep.graph_module.code)
 
     def test_constant_prop_pass_for_parameter(self) -> None:
         def count_additions(gm: torch.fx.GraphModule) -> int:
