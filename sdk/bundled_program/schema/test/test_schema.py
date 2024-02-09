@@ -17,5 +17,5 @@ class TestSchema(unittest.TestCase):
                 "executorch/sdk/bundled_program/schema/scalar_type.fbs",
                 "executorch/schema/scalar_type.fbs",
             ),
-            'Please run "hg cp fbcode//executorch/schema/scalar_type.fbs fbcode//executorch/sdk/bundled_program/schema_type.fbs" to sync schema changes.',
+            'Please run "hg cp fbcode//executorch/schema/scalar_type.fbs fbcode//executorch/sdk/bundled_program/schema/scalar_type.fbs" to sync schema changes.',
         )
