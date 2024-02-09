@@ -21,6 +21,7 @@ from executorch.exir.error import ExportError
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     EdgeToBackendOpsPass,
+    MemoryFormatOpsPass,
     OpReplacePass,
     post_op_replace_passes,
     pre_op_replace_passes,
@@ -494,6 +495,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     passes = pre_op_replace_passes + (
         [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
     )
+
     new_ep = copy.deepcopy(ep).transform(*passes)
     if dialect == "ATEN":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
@@ -504,7 +506,11 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
 
-    for p in post_op_replace_passes:
+    passes = post_op_replace_passes + (
+        [] if config._skip_dim_order else [MemoryFormatOpsPass]
+    )
+
+    for p in passes:
         new_gm_res = p(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
@@ -837,6 +843,8 @@ def to_edge(
             passes.append(RemoveMixedTypeOperators())
         if config._use_edge_ops:
             passes.append(OpReplacePass())
+        if not config._skip_dim_order:
+            passes.append(MemoryFormatOpsPass())
 
         gm = program.graph_module
         for p in passes:
