@@ -442,10 +442,11 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.error</span> <span class="kn">import</span> <span class="n">ExportError</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.pass_manager</span> <span class="kn">import</span> <span class="n">PassType</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">base_post_op_replace_passes</span><span class="p">,</span>
+    <span class="n">base_pre_op_replace_passes</span><span class="p">,</span>
     <span class="n">EdgeToBackendOpsPass</span><span class="p">,</span>
+    <span class="n">MemoryFormatOpsPass</span><span class="p">,</span>
     <span class="n">OpReplacePass</span><span class="p">,</span>
-    <span class="n">post_op_replace_passes</span><span class="p">,</span>
-    <span class="n">pre_op_replace_passes</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="n">RemoveGraphAssertsPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
@@ -881,6 +882,23 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span>
 
 
+<span class="k">def</span> <span class="nf">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">):</span>
+    <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
+    <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
+    <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
+    <span class="c1"># It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.</span>
+
+    <span class="n">pre_op_replace_passes</span> <span class="o">=</span> <span class="n">base_pre_op_replace_passes</span> <span class="o">+</span> <span class="p">(</span>
+        <span class="p">[]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_type_promotion</span> <span class="k">else</span> <span class="p">[</span><span class="n">RemoveMixedTypeOperators</span><span class="p">()]</span>
+    <span class="p">)</span>
+
+    <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">[]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_dim_order</span> <span class="k">else</span> <span class="p">[</span><span class="n">MemoryFormatOpsPass</span><span class="p">()]</span>
+    <span class="p">)</span> <span class="o">+</span> <span class="n">base_post_op_replace_passes</span>
+
+    <span class="k">return</span> <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span>
+
+
 <span class="k">def</span> <span class="nf">_to_edge</span><span class="p">(</span><span class="n">ep</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExirExportedProgram&quot;</span><span class="p">:</span>
     <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_check_ir_validity</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
@@ -908,15 +926,9 @@
             <span class="p">),</span>
             <span class="kc">False</span><span class="p">,</span>
         <span class="p">)</span>
-    <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
-    <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
-    <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
-    <span class="c1"># It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.</span>
+    <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
 
-    <span class="n">passes</span> <span class="o">=</span> <span class="n">pre_op_replace_passes</span> <span class="o">+</span> <span class="p">(</span>
-        <span class="p">[]</span> <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_type_promotion</span> <span class="k">else</span> <span class="p">[</span><span class="n">RemoveMixedTypeOperators</span><span class="p">()]</span>
-    <span class="p">)</span>
-    <span class="n">new_ep</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
+    <span class="n">new_ep</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">ep</span><span class="p">)</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
     <span class="k">if</span> <span class="n">dialect</span> <span class="o">==</span> <span class="s2">&quot;ATEN&quot;</span><span class="p">:</span>
         <span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">lift_constant_tensor_pass</span><span class="p">(</span><span class="n">new_ep</span><span class="o">.</span><span class="n">exported_program</span><span class="p">)</span>
 
@@ -1246,17 +1258,13 @@
                 <span class="n">logging</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Input program </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is not in ATen dialect.&quot;</span><span class="p">)</span>
                 <span class="k">raise</span> <span class="n">e</span>
 
-        <span class="c1"># TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -&gt; debug_handle_generator. After enable</span>
-        <span class="c1"># use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn&#39;t play</span>
-        <span class="c1"># well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.</span>
-        <span class="c1"># It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.</span>
+        <span class="n">pre_op_replace_passes</span><span class="p">,</span> <span class="n">post_op_replace_passes</span> <span class="o">=</span> <span class="n">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
         <span class="n">passes</span> <span class="o">=</span> <span class="p">[]</span>
         <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
             <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span><span class="p">()</span>
         <span class="p">)</span>  <span class="c1"># TODO move inside aten_to_edge passes after all users are migrated off v1 capture</span>
         <span class="n">passes</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">pre_op_replace_passes</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">_skip_type_promotion</span><span class="p">:</span>
-            <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">RemoveMixedTypeOperators</span><span class="p">())</span>
         <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">_use_edge_ops</span><span class="p">:</span>
             <span class="n">passes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">OpReplacePass</span><span class="p">())</span>
 
