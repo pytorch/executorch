@@ -170,6 +170,13 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
+    runtime.cxx_library(
+        name = "math_util",
+        srcs = [],
+        exported_headers = ["math_util.h"],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in [True, False]:
         suffix = "_aten" if aten_mode else ""
