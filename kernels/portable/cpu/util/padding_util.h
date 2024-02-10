@@ -121,8 +121,8 @@ void pad3d(
     size_t in_i_base = i * in_depth * in_height * in_width;
     for (size_t d = 0; d < out_depth; d++) {
       size_t out_d_base = out_i_base + d * out_height * out_width;
-      size_t in_d_base = in_i_base +
-          padding_ix(d, in_depth, pad_front) * in_height * in_width;
+      size_t in_d_base =
+          in_i_base + padding_ix(d, in_depth, pad_front) * in_height * in_width;
       for (size_t h = 0; h < out_height; h++) {
         size_t out_h_base = out_d_base + h * out_width;
         size_t in_h_base =
