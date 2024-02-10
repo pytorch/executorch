@@ -9,6 +9,7 @@
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
@@ -177,6 +178,61 @@ Tensor& div_scalar_out(
                       out.numel());
                 });
           });
+    });
+  });
+
+  return out;
+}
+
+Tensor& div_scalar_mode_out(
+    RuntimeContext& ctx,
+    const Tensor& a,
+    const Scalar& b,
+    exec_aten::optional<exec_aten::string_view> mode,
+    Tensor& out) {
+  (void)ctx;
+
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = utils::get_scalar_dtype(b);
+  ScalarType common_type = isFloatingType(a_type) ? a_type : ScalarType::Float;
+  ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
+
+  constexpr auto name = "div.Scalar_mode_out";
+
+  ET_SWITCH_REALB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
+      ET_SWITCH_FLOAT_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
+        ET_SWITCH_FLOAT_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+          CTYPE_B b_val;
+          utils::extract_scalar(b, &b_val);
+          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+
+          apply_unary_map_fn(
+              [b_casted, mode](const CTYPE_A val_a) {
+                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
+                CTYPE_IN value = a_casted / b_casted;
+                if (mode.has_value() && mode.value() == "trunc") {
+                  value = std::trunc(value);
+                } else if (mode.has_value() && mode.value() == "floor") {
+                  value = utils::floor_divide(a_casted, b_casted);
+                }
+                return static_cast<CTYPE_OUT>(value);
+              },
+              a.const_data_ptr<CTYPE_A>(),
+              out.mutable_data_ptr<CTYPE_OUT>(),
+              out.numel());
+        });
+      });
     });
   });
 
