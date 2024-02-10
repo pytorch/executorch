@@ -174,7 +174,12 @@ class Attention(nn.Module):
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
-        mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
+        mask = torch.full(
+            (1, 1, args.max_seq_len, args.max_seq_len),
+            float("-inf"),
+            dtype=torch.float16,
+        )
+
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask)
 
@@ -545,6 +550,12 @@ class Llama2Model(EagerModelBase):
             from .quantize import WeightOnlyInt8QuantHandler
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
+            self.model_ = simple_quantizer.convert_for_runtime()
+        elif "int4" in str(checkpoint_path):
+            print("Using int4 weight-only quantization!")
+            from .quantize import Int8DynActInt4WeightQuantHandler
+
+            simple_quantizer = INt8dynactint4weightquanthandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
 
         self.model_.load_state_dict(
