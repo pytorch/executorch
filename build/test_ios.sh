@@ -61,7 +61,7 @@ source .venv/bin/activate
 
 say "Installing Requirements"
 
-pip install --upgrade pip cmake zstd
+pip install --upgrade cmake pip setuptools wheel zstd
 
 curl -LO "https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst"
 zstd -cdq buck2-aarch64-apple-darwin.zst > .venv/bin/buck2 && chmod +x .venv/bin/buck2
