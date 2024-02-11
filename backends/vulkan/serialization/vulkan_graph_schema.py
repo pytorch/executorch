@@ -29,6 +29,7 @@ class VkTensor:
     datatype: VkDatatype
     dims: List[int]
     constant_buffer_idx: int
+    mem_obj_id: int
 
 
 @dataclass
