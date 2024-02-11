@@ -29,5 +29,5 @@ This example tries to reuse the Python code, with modifications to make it compa
 1. Follow the [tutorial](https://pytorch.org/executorch/stable/getting-started-setup) to set up ExecuTorch
 2. `cd examples/third-party/llama`
 3. `pip install -e .`
-4. Go back to `executorch` root, run `python3 -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_ckpt.pth -p examples/models/llama2/params/demo_params.json`. The exported program, llama2.pte would be saved in current directory using the dummy checkpoint.
+4. Go back to `executorch` root, run `python3 -m examples.models.llama2.export_llama`. The exported program, llama2.pte would be saved in current directory using the dummy checkpoint.
 5. Llama2 pretrained parameters can be downloaded [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) and run with `python3 -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json>`.
