@@ -4,12 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import lru_cache
 from typing import Dict, List
 
 import executorch.exir as exir
 import torch
 
 
+@lru_cache(maxsize=None)
 def _get_bilinear_2d_graphs():
     class bilinear2d(torch.nn.Module):
         def __init__(self, align_corners):
