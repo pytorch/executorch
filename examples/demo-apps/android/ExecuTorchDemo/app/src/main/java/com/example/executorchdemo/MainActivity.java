@@ -21,16 +21,16 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
-import com.example.executorchdemo.executor.EValue;
-import com.example.executorchdemo.executor.Module;
-import com.example.executorchdemo.executor.Tensor;
-import com.example.executorchdemo.executor.TensorImageUtils;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Objects;
+import org.pytorch.executorch.EValue;
+import org.pytorch.executorch.Module;
+import org.pytorch.executorch.Tensor;
+import org.pytorch.executorch.TensorImageUtils;
 
 public class MainActivity extends Activity implements Runnable {
   private ImageView mImageView;
