@@ -35,6 +35,8 @@ class EdgeCompileConfig:
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
     _skip_type_promotion: bool = False
+    # TODO(gasoonjia): set it as False by default, and remove it in the long term
+    _skip_dim_order: bool = True
 
 
 @compatibility(is_backward_compatible=False)
