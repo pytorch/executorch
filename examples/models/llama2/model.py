@@ -174,7 +174,12 @@ class Attention(nn.Module):
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
-        mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
+        mask = torch.full(
+            (1, 1, args.max_seq_len, args.max_seq_len),
+            float("-inf"),
+            dtype=torch.float16,
+        )
+
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask)
 
@@ -499,6 +504,12 @@ class Llama2Model(EagerModelBase):
         device = "cpu"
         # flake8: noqa: TOR102
         checkpoint = torch.load(checkpoint_path, map_location=device)
+        if kwargs.get("fairseq2", False):
+            print("Using fairseq2 checkpoint")
+            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if "model" in checkpoint:
+            # NB: some checkpoint contains a "model" field, which is the actual weights dict
+            checkpoint = checkpoint["model"]
         # get checkpoint dtype
         self.dtype = None
         if len(checkpoint) > 0:
@@ -513,12 +524,6 @@ class Llama2Model(EagerModelBase):
                 print(
                     f"Mixed dtype model. Dtype of {first.key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
                 )
-        if kwargs.get("fairseq2", False):
-            print("Using fairseq2 checkpoint")
-            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
-        if "model" in checkpoint:
-            # NB: some checkpoint contains a "model" field, which is the actual weights dict
-            checkpoint = checkpoint["model"]
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128
@@ -545,6 +550,12 @@ class Llama2Model(EagerModelBase):
             from .quantize import WeightOnlyInt8QuantHandler
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
+            self.model_ = simple_quantizer.convert_for_runtime()
+        elif "int4" in str(checkpoint_path):
+            print("Using int4 weight-only quantization!")
+            from .quantize import Int8DynActInt4WeightQuantHandler
+
+            simple_quantizer = INt8dynactint4weightquanthandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
 
         self.model_.load_state_dict(

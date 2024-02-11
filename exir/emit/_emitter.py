@@ -1308,16 +1308,28 @@ class _TopLevelEmitter(_Emitter):
         if isinstance(target, str) and (
             target in self.exported_program.graph_signature.inputs_to_parameters
             or target in self.exported_program.graph_signature.inputs_to_buffers
+            or target
+            in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
         ):
-
-            fqn = (
-                self.exported_program.graph_signature.inputs_to_parameters[target]
-                if target in self.exported_program.graph_signature.inputs_to_parameters
-                else self.exported_program.graph_signature.inputs_to_buffers[target]
-            )
+            if (
+                target
+                in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
+            ):
+                fqn = self.exported_program.graph_signature.inputs_to_lifted_tensor_constants[
+                    target
+                ]
+            elif target in self.exported_program.graph_signature.inputs_to_buffers:
+                fqn = self.exported_program.graph_signature.inputs_to_buffers[target]
+            else:
+                fqn = self.exported_program.graph_signature.inputs_to_parameters[target]
             if fqn in self.exported_program.state_dict:
                 spec = TensorSpec.from_tensor(
                     self.exported_program.state_dict[fqn], const=True
+                )
+                const_tensor = True
+            elif fqn in self.exported_program.constants:
+                spec = TensorSpec.from_tensor(
+                    self.exported_program.constants[fqn], const=True
                 )
                 const_tensor = True
             else:

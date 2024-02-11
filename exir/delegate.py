@@ -49,7 +49,7 @@ def trace_call_delegate(proxy_mode, func_overload, lowered_module, *args):
         )
 
     with disable_proxy_modes_tracing():
-        out = executorch_call_delegate(lowered_module, *args)
+        out = call_delegate_cpu(lowered_module, *args)
 
     get_lowered_module_name(proxy_mode.tracer.root, lowered_module)
 

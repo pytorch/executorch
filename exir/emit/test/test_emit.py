@@ -1335,3 +1335,28 @@ class TestEmit(unittest.TestCase):
         # confirm that the buffer was emitted
         self.assertEqual(len(program.constant_buffer), 2)
         self.assertEqual(len(program.constant_buffer[1].storage), 8)
+
+    def test_emit_lifted_tensor_constant(self) -> None:
+        class LiftedConstants(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x * torch.tensor([[4, 3], [1, 2], [5, 6]], dtype=torch.float)
+                return x
+
+        model = LiftedConstants()
+
+        program = to_edge(
+            export(
+                model,
+                (torch.ones(3, 2),),
+            )
+        ).to_executorch()
+
+        program = program._emitter_output.program
+        exec_plan = program.execution_plan[0]
+        # There should only be 1 input to this model.
+        self.assertEqual(len(exec_plan.inputs), 1)
+        self.assertEqual(len(program.constant_buffer), 2)
+        self.assertEqual(len(program.constant_buffer[1].storage), 24)
