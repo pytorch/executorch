@@ -11,7 +11,6 @@ import logging
 import unittest
 
 from typing import Callable, Dict, final, List, Tuple
-from unittest import skip
 
 import executorch.exir as exir
 
@@ -123,6 +122,8 @@ def _trace_and_lower_to_edge_ops(f: Callable) -> fx.GraphModule:
 #              |
 #              |
 class TestModel(nn.Module):
+    __test__: bool = False
+
     def __init__(self, constant_tensor: torch.Tensor) -> None:
         super().__init__()
         self.constant_tensor = constant_tensor
@@ -147,6 +148,8 @@ class TestModel(nn.Module):
 
 
 class TestFunctionalLinearModel(nn.Module):
+    __test__: bool = False
+
     def __init__(self) -> None:
         super().__init__()
         self.weight: torch.Tensor = torch.randn(5, 5)
@@ -160,6 +163,8 @@ class TestFunctionalLinearModel(nn.Module):
 
 
 class TestConvBatchNormModel(nn.Module):
+    __test__: bool = False
+
     def __init__(self) -> None:
         super().__init__()
         self.conv = torch.nn.Conv2d(
@@ -492,7 +497,7 @@ class QuantizedConvAddOpPartitioner(Partitioner):
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
         return PartitionResult(
-            tagged_exported_program=edge_exported_program.graph_module,
+            tagged_exported_program=edge_exported_program,
             partition_tags=partition_tags,
         )
 
@@ -501,7 +506,6 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-    @skip("This doesn't work in OSS")
     @torch.inference_mode()  # TODO Use  for capturing.
     def test(self) -> None:
         mod = TestModel(
@@ -569,7 +573,7 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
         # Step 3.1: Partitioning and delegation using to_backend()
         delegated_mod = to_backend(
             captured_program.transform(DuplicateDequantNodePass()).exported_program,
-            QuantizedConvAddOpPartitioner,
+            QuantizedConvAddOpPartitioner(),
         )
         lowered_module_0 = delegated_mod.graph_module.lowered_module_0
 

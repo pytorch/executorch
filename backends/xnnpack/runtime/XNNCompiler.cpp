@@ -256,23 +256,25 @@ Error defineTensor(
               /*flags=*/0, // this is netiher external input or output
               /*id_out=*/&id);
 
-          // this is the FP32 external value that is dynamically quantized
-          uint32_t fp32_id;
+          // this is the FP16 or FP32 external value that is being dynamically
+          // quantized
+          uint32_t float_id;
+          enum xnn_datatype fp_datatype = getDataType(tensor_value->datatype());
           status = xnn_define_tensor_value(
               /*subgraph=*/subgraph_ptr,
-              /*datatype=*/xnn_datatype_fp32, // always fp32
+              /*datatype=*/fp_datatype,
               /*num_dims=*/tensor_value->num_dims(),
               /*dims=*/dims_data.data(),
               /*data=*/buffer_ptr,
               /*external_id=*/tensor_value->external_id(),
               /*flags=*/tensor_value->flags(),
-              /*id_out=*/&fp32_id);
-          executor->addDynamicQinput(fp32_id);
+              /*id_out=*/&float_id);
+          executor->addDynamicQinput(float_id);
 
-          // Define dynamic conversion from fp32 to qdint8
+          // Define dynamic conversion from float to qdint8
           status = xnn_define_convert(
               /*subgraph=*/subgraph_ptr,
-              /*input_id=*/fp32_id,
+              /*input_id=*/float_id,
               /*output_id=*/id,
               /*flags=*/0);
           break;
