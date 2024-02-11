@@ -20,10 +20,11 @@ from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
+    base_post_op_replace_passes,
+    base_pre_op_replace_passes,
     EdgeToBackendOpsPass,
+    MemoryFormatOpsPass,
     OpReplacePass,
-    post_op_replace_passes,
-    pre_op_replace_passes,
 )
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
@@ -459,6 +460,23 @@ class ExecutorchProgram:
         return self.exported_program
 
 
+def _get_aten_to_edge_passes(config: EdgeCompileConfig):
+    # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
+    # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
+    # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
+    # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
+
+    pre_op_replace_passes = base_pre_op_replace_passes + (
+        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
+    )
+
+    post_op_replace_passes = (
+        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
+    ) + base_post_op_replace_passes
+
+    return pre_op_replace_passes, post_op_replace_passes
+
+
 def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if config._check_ir_validity:
         try:
@@ -486,15 +504,9 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             ),
             False,
         )
-    # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
-    # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
-    # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
-    # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
+    pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
-    passes = pre_op_replace_passes + (
-        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
-    )
-    new_ep = copy.deepcopy(ep).transform(*passes)
+    new_ep = copy.deepcopy(ep).transform(*pre_op_replace_passes)
     if dialect == "ATEN":
         new_ep.exported_program = lift_constant_tensor_pass(new_ep.exported_program)
 
@@ -824,17 +836,13 @@ def to_edge(
                 logging.info(f"Input program {name} is not in ATen dialect.")
                 raise e
 
-        # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
-        # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
-        # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
-        # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
+        pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
+
         passes = []
         passes.append(
             ReplaceViewOpsWithViewCopyOpsPass()
         )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
         passes.extend(pre_op_replace_passes)
-        if not config._skip_type_promotion:
-            passes.append(RemoveMixedTypeOperators())
         if config._use_edge_ops:
             passes.append(OpReplacePass())
 

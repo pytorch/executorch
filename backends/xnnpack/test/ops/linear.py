@@ -23,6 +23,17 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import Quantization
 
 
 class TestLinear(unittest.TestCase):
+    def test_fp16_linear(self):
+        for use_bias in (True, False):
+            self._test_linear(
+                lambda in_size, out_size: torch.nn.Linear(
+                    in_size, out_size, bias=use_bias  # noqa
+                ),
+                uses_bias=use_bias,
+                dtype=torch.float16,
+                atol=5e-2,
+            )
+
     def test_fp32_linear(self):
         for use_bias in (True, False):
             self._test_linear(
@@ -284,7 +295,14 @@ class TestLinear(unittest.TestCase):
                 quant=True,
             )
 
-    def _test_linear(self, make_module, uses_bias, quant=False):
+    def _test_linear(
+        self,
+        make_module,
+        uses_bias,
+        quant=False,
+        dtype: torch.dtype = torch.float,
+        atol=1e-03,
+    ):
         aten_op, edge_op = (
             (
                 "aten.addmm.default",
@@ -309,9 +327,10 @@ class TestLinear(unittest.TestCase):
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])
+            print(f"Testing {in_size} {input_size} {output_size}")
 
-            module = make_module(input_size, output_size).eval()
-            inputs = (torch.randn(in_size, input_size),)
+            module = make_module(input_size, output_size).eval().to(dtype)
+            inputs = (torch.randn(in_size, input_size).to(dtype),)
 
             tester = Tester(module, inputs)
 
@@ -336,7 +355,8 @@ class TestLinear(unittest.TestCase):
             tester.to_executorch()
             tester.serialize()
             tester.run_method()
-            tester.compare_outputs(qtol=quant)
+            tester.compare_outputs(qtol=quant, atol=atol)
+            print("success")
 
     def _test_dqlinear(
         self,
@@ -370,7 +390,7 @@ class TestLinear(unittest.TestCase):
         tester.export()
         tester.check_count({aten_op: linear_count})
         tester.check(["torch.ops.quantized_decomposed"])
-
+        tester.dump_artifact()
         tester.to_edge()
         tester.check_count({edge_op: linear_count})
 
