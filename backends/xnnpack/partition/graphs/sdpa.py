@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import lru_cache
 from typing import List, Optional
 
 import torch
@@ -12,6 +13,7 @@ from torch import Tensor
 from torch.export import export
 
 
+@lru_cache(maxsize=None)
 def get_graphs() -> List[torch.fx.GraphModule]:
     """
     Returns a list of SDPA graphs.
@@ -66,7 +68,7 @@ def get_graphs() -> List[torch.fx.GraphModule]:
 
             edge = to_edge(
                 export(
-                    SDPA(),
+                    SDPA(),  # pyre-ignore[16]
                     (
                         q,
                         k,
