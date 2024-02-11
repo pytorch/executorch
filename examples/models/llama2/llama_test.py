@@ -13,7 +13,7 @@ class LlamaTest(unittest.TestCase):
     def test_quantized_llama(self):
         _ = build_model(
             modelname="model",
-            extra_opts="--fairseq2 -Q",
+            extra_opts="--fairseq2 -qmode int8",
             par_local_output=True,
             resource_pkg_name=__name__,
         )

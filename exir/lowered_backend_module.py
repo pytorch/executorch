@@ -87,12 +87,14 @@ class LoweredBackendModule(torch.nn.Module):
             constants=self._original_module.constants,
         )
 
-        return LoweredBackendModule(
+        res = LoweredBackendModule(
             edge_program=copied_program,
             backend_id=self._backend_id,
             processed_bytes=self._processed_bytes,
             compile_specs=copy.deepcopy(self._compile_specs, memo),
         )
+        res.meta = copy.copy(getattr(self, "meta", {}))
+        return res
 
     @property
     def backend_id(self) -> str:
@@ -465,6 +467,21 @@ def _get_new_signature(
                     ]
                 else:
                     new_constants[buffer_name] = original_program.constants[buffer_name]
+            elif node.name in old_signature.inputs_to_lifted_tensor_constants:
+                constant_name = old_signature.inputs_to_lifted_tensor_constants[
+                    node.name
+                ]
+                # add constant to graph signature
+                input_specs.append(
+                    InputSpec(
+                        kind=InputKind.CONSTANT_TENSOR,
+                        arg=TensorArgument(name=node.name),
+                        target=constant_name,
+                    )
+                )
+
+                # add constant to new_constants
+                new_constants[constant_name] = original_program.constants[constant_name]
             else:
                 # not param or buffer then user input
                 input_specs.append(
