@@ -69,6 +69,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_any",
         deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
