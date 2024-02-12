@@ -627,6 +627,11 @@
     - arg_meta: null
       kernel_name: torch::executor::replication_pad1d_out
 
+- op: replication_pad2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad2d_out
+
 - op: round.out
   kernels:
     - arg_meta: null
