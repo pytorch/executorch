@@ -41,7 +41,9 @@ def define_common_targets():
         main_module = "executorch.examples.models.llama2.tokenizer.tokenizer",
         visibility = [
             "//executorch/examples/...",
+            "fbsource//xplat/executorch/examples/...",
         ],
+        _is_external_target = True,
         deps = [
             ":tokenizer_py_lib",
         ],
