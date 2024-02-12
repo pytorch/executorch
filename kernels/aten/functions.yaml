@@ -256,6 +256,10 @@
 
 - op: pow.Tensor_Scalar_out
 
+- op: prod.int_out
+
+- op: prod.out
+
 - op: reciprocal.out
 
 - op: relu.out
