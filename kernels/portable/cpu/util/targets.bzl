@@ -106,6 +106,19 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "padding_util",
+        srcs = ["padding_util.cpp"],
+        exported_headers = [
+            "padding_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "normalization_ops_util",
         srcs = ["normalization_ops_util.cpp"],
         exported_headers = [

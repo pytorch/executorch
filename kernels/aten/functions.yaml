@@ -274,6 +274,8 @@
 
 - op: repeat.out
 
+- op: replication_pad1d.out
+
 - op: round.out
 
 - op: rsqrt.out
