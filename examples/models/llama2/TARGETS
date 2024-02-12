@@ -34,7 +34,7 @@ runtime.python_library(
 
 runtime.python_binary(
     name = "export_llama",
-    main_module = "executorch.examples.models.llama2.export_llama.main",
+    main_module = "executorch.examples.models.llama2.export_llama",
     # visibility = ["//executorch/examples/..."],
     preload_deps = [
         "//executorch/kernels/quantized:aot_lib",
