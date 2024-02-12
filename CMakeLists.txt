@@ -369,19 +369,19 @@ if(EXECUTORCH_BUILD_PYBIND)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
-  if(EXECUTORCH_BUILD_COREML)
+  if(PYBIND_LINK_COREML)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
-    set(LINK_COREML "coremldelegate")
+    set(PYBIND_LINK_COREML "coremldelegate")
   endif()
 
-  if(EXECUTORCH_BUILD_MPS)
+  if(PYBIND_LINK_MPS)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
-    set(LINK_MPS "mpsdelegate")
+    set(PYBIND_LINK_MPS "mpsdelegate")
   endif()
 
-  if(EXECUTORCH_BUILD_XNNPACK)
+  if(PYBIND_LINK_XNNPACK)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
-    set(LINK_XNNPACK "xnnpack_backend")
+    set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
@@ -421,9 +421,9 @@ if(EXECUTORCH_BUILD_PYBIND)
       flatcc
       portable_ops_lib
       util
-      ${LINK_COREML}
-      ${LINK_MPS}
-      ${LINK_XNNPACK}
+      ${PYBIND_LINK_COREML}
+      ${PYBIND_LINK_MPS}
+      ${PYBIND_LINK_XNNPACK}
   )
 
   install(TARGETS portable_lib
