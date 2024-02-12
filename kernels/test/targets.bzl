@@ -254,6 +254,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_repeat_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad1d_test", ["aten", "portable"])
     _common_op_test("op_reflection_pad2d_test", ["aten", "portable"])
+    _common_op_test("op_reflection_pad3d_test", ["aten", "portable"])
     _common_op_test("op_replication_pad1d_test", ["aten", "portable"])
     _common_op_test("op_replication_pad2d_test", ["aten", "portable"])
     _common_op_test("op_replication_pad3d_test", ["aten", "portable"])
