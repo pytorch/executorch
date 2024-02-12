@@ -78,6 +78,10 @@ say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
 
+say "Installing Python Bindings"
+
+EXECUTORCH_BUILD_PYBIND=ON CMAKE_ARGS="-DPYBIND_LINK_COREML=ON -DPYBIND_LINK_MPS=ON -DPYBIND_LINK_XNNPACK=ON -DBUCK2=$(pwd)/.venv/bin/buck2" pip install . --no-build-isolation
+
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="$$MODEL_NAME"
