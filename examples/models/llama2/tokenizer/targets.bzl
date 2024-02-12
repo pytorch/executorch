@@ -30,10 +30,7 @@ def define_common_targets():
             "//bento/...",
         ],
         _is_external_target = True,
-        deps = [
-            "fbsource//third-party/pypi/sentencepiece:sentencepiece",
-            "//caffe2:torch",
-        ],
+        deps = [] if runtime.is_oss else ["fbsource//third-party/pypi/sentencepiece:sentencepiece"],
     )
 
     runtime.python_binary(
