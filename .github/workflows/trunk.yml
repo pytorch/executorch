@@ -153,6 +153,11 @@ jobs:
         source .ci/scripts/utils.sh
         install_flatc_from_source
         install_executorch
+
+        git config --global user.email "github_executorch@arm.com"
+        git config --global user.name "Github Executorch"
+        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
+
         # Test selective build
         source /opt/arm-sdk/setup_path.sh
         PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2
