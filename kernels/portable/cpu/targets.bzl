@@ -175,14 +175,6 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_pow",
-        deps = [
-            ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-        ],
-    ),
-    op_target(
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
@@ -643,6 +635,22 @@ _ATEN_OPS = (
         name = "op_pixel_shuffle",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
+        name = "op_pow",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:functional_util",
+        ],
+    ),
+    op_target(
+        name = "op_prod",
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
