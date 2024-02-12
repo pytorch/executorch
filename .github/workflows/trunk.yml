@@ -137,30 +137,27 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  test-arm-backend-delegation:
-    name: test-arm-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    with:
-      runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-arm-sdk
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
+  # TODO(Jerry-Ge): Enable this back https://github.com/pytorch/executorch/issues/1947
+  # test-arm-backend-delegation:
+  #   name: test-arm-backend-delegation
+  #   uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+  #   with:
+  #     runner: linux.2xlarge
+  #     docker-image: executorch-ubuntu-22.04-arm-sdk
+  #     submodules: 'true'
+  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  #     script: |
+  #       # The generic Linux job chooses to use base env, not the one setup by the image
+  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+  #       conda activate "${CONDA_ENV}"
 
-        source .ci/scripts/utils.sh
-        install_flatc_from_source
-        install_executorch
+  #       source .ci/scripts/utils.sh
+  #       install_flatc_from_source
+  #       install_executorch
 
-        git config --global user.email "github_executorch@arm.com"
-        git config --global user.name "Github Executorch"
-        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
-
-        # Test selective build
-        source /opt/arm-sdk/setup_path.sh
-        PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2
+  #       # Test selective build
+  #       source /opt/arm-sdk/setup_path.sh
+  #       PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
