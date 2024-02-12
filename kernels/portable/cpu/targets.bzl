@@ -259,6 +259,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
     ),
