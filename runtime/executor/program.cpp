@@ -18,6 +18,7 @@
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/program_generated.h>
 
+// #include <iostream>
 /*
  * Program verification can increase code size by ~30k. Targets that need to
  * save this space can avoid building it by passing
@@ -72,6 +73,7 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   size_t segment_base_offset = 0;
   {
     EXECUTORCH_SCOPE_PROF("Program::check_header");
+    // std::cout << "program.cpp: Program::load: load header offset 0, extended header: " << ExtendedHeader::kNumHeadBytes << std::endl;
     Result<FreeableBuffer> header =
         loader->Load(/*offset=*/0, ExtendedHeader::kNumHeadBytes);
     if (!header.ok()) {
@@ -95,8 +97,9 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
   // Load the flatbuffer data as a segment.
   uint32_t prof_tok = EXECUTORCH_BEGIN_PROF("Program::load_data");
+  // IT'S HERE!! WE LOAD PROGRAM_SIZE. WHICH SHOULD BE SEGMENT_BASE_OFFSET.
   Result<FreeableBuffer> program_data =
-      loader->Load(/*offset=*/0, program_size);
+      loader->Load(/*offset=*/0, segment_base_offset);
   if (!program_data.ok()) {
     return program_data.error();
   }
@@ -173,6 +176,8 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
 
     const executorch_flatbuffer::DataSegment* data_segment =
         segments->Get(constant_segment->segment_index());
+
+    // std::cout << "Loading segment #" << constant_segment->segment_index() << ", segment_base_offset_ " << segment_base_offset << ", offset=" << data_segment->offset() << ", size=" << data_segment->size() << std::endl;
     Result<FreeableBuffer> constant_segment_data = loader->Load(
         segment_base_offset + data_segment->offset(), data_segment->size());
     if (!constant_segment_data.ok()) {
@@ -423,6 +428,7 @@ Result<FreeableBuffer> Program::LoadSegment(size_t index) const {
   // Could fail if offset and size are out of bound for the data, or if this
   // is reading from a file and fails, or for many other reasons depending on
   // the implementation of the loader.
+  // std::cout << "program.cpp: LoadSegment: index " << index << "segment_base_offset " << segment_base_offset_ << ", offset " << segment->offset() << ", size " << segment->size() << "\n";
   return loader_->Load(
       segment_base_offset_ + segment->offset(), segment->size());
 }

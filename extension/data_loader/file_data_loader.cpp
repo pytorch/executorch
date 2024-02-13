@@ -21,6 +21,8 @@
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/log.h>
 
+// #include <iostream>
+
 namespace torch {
 namespace executor {
 namespace util {
@@ -119,6 +121,7 @@ void FreeSegment(void* context, void* data, __ET_UNUSED size_t size) {
 } // namespace
 
 Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
+  // std::cout << "file_data_loader.cpp: Load offset " << offset << ", size " << size << std::endl;
   ET_CHECK_OR_RETURN_ERROR(
       // Probably had its value moved to another instance.
       fd_ >= 0,

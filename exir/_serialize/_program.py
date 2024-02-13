@@ -166,7 +166,10 @@ class _ExtendedHeader:
                 f"Not enough data for extended header: {len(data)} "
                 + f"< {_ExtendedHeader.EXPECTED_LENGTH}"
             )
-
+        tmp=int.from_bytes(
+                data[16:24], byteorder=_HEADER_BYTEORDER
+            )
+        print(f"_program.py: 1 from_bytes: segment_base_offset {tmp}")
         return _ExtendedHeader(
             magic=data[0:4],
             length=int.from_bytes(data[4:8], byteorder=_HEADER_BYTEORDER),
@@ -189,6 +192,7 @@ class _ExtendedHeader:
         Note that this will ignore self.magic and self.length and will always
         write the proper magic/length.
         """
+        print(f"_program.py: 2 to_bytes: segment_base_offset {self.segment_base_offset}, bytes: {self.segment_base_offset.to_bytes(8, byteorder=_HEADER_BYTEORDER)}")
         data: bytes = (
             # Extended header magic. This lets consumers detect whether the
             # header was inserted or not. Always use the proper magic value
@@ -290,6 +294,8 @@ def _extract_delegate_segments(
                     if program.segments
                     else 0
                 )
+                offset_ = _aligned_size(prev_end, segment_alignment)
+                print(f"_program.py: prev_end {prev_end}, offset_ {offset_} len: {len(inline_data)}")
                 program.segments.append(
                     DataSegment(
                         offset=_aligned_size(prev_end, segment_alignment),
@@ -408,6 +414,8 @@ def _extract_segments(
             program.constant_segment = SubsegmentOffsets(
                 segment_index=0, offsets=constant_segment_offsets
             )
+            print(f"_program.py: _extract_segments constant_segment len {len(constant_segment_data)}")
+            print(f"_program.py: _extract_segments constant_segment offsets {constant_segment_offsets}")
             program.constant_buffer = []
 
     if extract_delegate_segments:
@@ -575,6 +583,7 @@ def serialize_pte_binary(
         if segments
         else 0
     )
+    print(f"_program.py 1 serialize_pte_binary: program_size={program_size}, segment_base_offset={segment_base_offset}")
 
     # Construct and pad the extended header.
     header_data: bytes = _ExtendedHeader(
@@ -599,6 +608,8 @@ def serialize_pte_binary(
     assert eh is not None
     assert eh.program_size == program_size
     assert eh.segment_base_offset == segment_base_offset
+
+    print(f"_program.py 2 serialize_pte_binary: segment_base_offset={segment_base_offset}, program_size={program_size}")
 
     if segments:
         # Add segments to the end of the data, in order, with the appropriate

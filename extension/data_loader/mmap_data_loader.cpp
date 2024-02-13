@@ -112,7 +112,7 @@ Result<FreeableBuffer> MmapDataLoader::Load(size_t offset, size_t size) {
   ET_CHECK_OR_RETURN_ERROR(
       (offset & ~(page_size_ - 1)) == offset,
       InvalidArgument,
-      "File %s: offset 0x%zx not aligned to 0x%zx",
+      "File Lucy %s: offset 0x%zx not aligned to 0x%zx",
       file_name_,
       offset,
       page_size_);
