@@ -61,7 +61,7 @@ source .venv/bin/activate
 
 say "Installing Requirements"
 
-pip install --upgrade pip cmake zstd
+pip install --upgrade cmake pip setuptools wheel zstd
 
 curl -LO "https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst"
 zstd -cdq buck2-aarch64-apple-darwin.zst > .venv/bin/buck2 && chmod +x .venv/bin/buck2
@@ -77,6 +77,10 @@ say "Installing CoreML Backend Requirements"
 say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
+
+say "Installing Python Bindings"
+
+EXECUTORCH_BUILD_PYBIND=ON CMAKE_ARGS="-DPYBIND_LINK_COREML=ON -DPYBIND_LINK_MPS=ON -DPYBIND_LINK_XNNPACK=ON -DBUCK2=$(pwd)/.venv/bin/buck2" pip install . --no-build-isolation
 
 say "Exporting Models"
 
