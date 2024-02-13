@@ -58,8 +58,22 @@ mps_schema INTERFACE ${_mps_schema__include_dir}
 
 list(TRANSFORM _mps_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(mpsdelegate ${_mps_backend__srcs})
-target_link_libraries(mpsdelegate PRIVATE baundled_program mps_schema
-                                          ${_executor_runner_libs})
+
+find_library(FOUNDATION_FRAMEWORK Foundation)
+find_library(METAL_FRAMEWORK Metal)
+find_library(MPS_FRAMEWORK MetalPerformanceShaders)
+find_library(MPS_GRAPG_FRAMEWORK MetalPerformanceShadersGraph)
+
+target_link_libraries(mpsdelegate
+  PRIVATE
+  bundled_program
+  mps_schema
+  ${_executor_runner_libs}
+  ${FOUNDATION_FRAMEWORK}
+  ${METAL_FRAMEWORK}
+  ${MPS_FRAMEWORK}
+  ${MPS_GRAPG_FRAMEWORK}
+)
 
 install(
   TARGETS mpsdelegate
