@@ -608,6 +608,7 @@ bool check_reduction_args_single_dim(
     const Tensor& in,
     optional<int64_t> dim,
     bool keepdim,
+    optional<ScalarType> dtype,
     Tensor& out);
 
 bool check_mean_dim_args(
@@ -635,6 +636,11 @@ bool check_min_max_args(
     bool keepdim,
     Tensor& max,
     Tensor& max_indices);
+
+bool check_prod_out_args(
+    const Tensor& in,
+    optional<ScalarType> dtype,
+    Tensor& out);
 
 #endif
 
