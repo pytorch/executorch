@@ -209,7 +209,7 @@ def make_test(  # noqa: C901
                     executorch_output = executorch_module(inputs)[0]  # noqa
                     tester.assertFalse(True)  # should be unreachable
                 except Exception:
-                    tester.assertTrue("The length of given input array" in str(out))
+                    tester.assertTrue(str(out).find("The length of given input array"))
 
         test_e2e(tester)
         test_multiple_entry(tester)

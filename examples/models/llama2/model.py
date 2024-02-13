@@ -223,15 +223,22 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
+            assert start_pos is not None
             assert cache_k is not None and cache_v is not None
-            torch._constrain_as_value(x.shape[1], min=0, max=self.max_seq_len)
 
             # Replace the entry in the cache for this token
-            cache_k[:bsz, start_pos : start_pos + seqlen] = xk  # pyre-ignore[58]
-            cache_v[:bsz, start_pos : start_pos + seqlen] = xv  # pyre-ignore[58]
+            # The following lines are equivalent to:
+            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+            # We use .narrow() here to make the compiler happy
+            narrowed_k = cache_k[:bsz].narrow(1, start_pos, seqlen)
+            narrowed_v = cache_v[:bsz].narrow(1, start_pos, seqlen)
 
-            keys = cache_k[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
-            values = cache_v[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
+            narrowed_k.copy_(xk)
+            narrowed_v.copy_(xv)
+
+            keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
+            values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
         else:
             keys = xk
             values = xv
