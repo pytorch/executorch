@@ -106,6 +106,19 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "padding_util",
+        srcs = ["padding_util.cpp"],
+        exported_headers = [
+            "padding_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "normalization_ops_util",
         srcs = ["normalization_ops_util.cpp"],
         exported_headers = [
@@ -154,6 +167,13 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             ":broadcast_util",
         ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+    )
+
+    runtime.cxx_library(
+        name = "math_util",
+        srcs = [],
+        exported_headers = ["math_util.h"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
