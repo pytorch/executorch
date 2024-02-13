@@ -36,6 +36,7 @@ bool MPSStream::hasLiveCommandBuffer() {
   return _commandBuffer;
 }
 
+API_AVAILABLE(ios(13.0))
 MPSCommandBuffer* MPSStream::commandBuffer() {
   if (!_commandBuffer) {
     _commandBuffer = [MPSCommandBuffer commandBufferFromCommandQueue:_commandQueue].retain;
@@ -46,7 +47,9 @@ MPSCommandBuffer* MPSStream::commandBuffer() {
 
 id<MTLComputeCommandEncoder> MPSStream::commandEncoder() {
   if (!_commandEncoder) {
-    _commandEncoder = [commandBuffer() computeCommandEncoder].retain;
+    if (@available(iOS 13.0, *)) {
+      _commandEncoder = [commandBuffer() computeCommandEncoder].retain;
+    }
   }
 
   return _commandEncoder;
@@ -119,7 +122,9 @@ void MPSStream::commitAndWait() {
 
 void MPSStream::commit() {
   if (_enableCommitAndContinue) {
-    [commandBuffer() commitAndContinue];
+    if (@available(iOS 13.0, *)) {
+      [commandBuffer() commitAndContinue];
+    }
   } else {
     flush();
   }
@@ -150,14 +155,16 @@ void MPSStream::copy(id<MTLBuffer> srcBuffer,
   dispatch_sync(_serialQueue, ^() {
     @autoreleasepool {
       endKernelCoalescing();
-      id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer() blitCommandEncoder];
-
-      [blitEncoder copyFromBuffer:srcBuffer
-                     sourceOffset:(NSUInteger)srcOffset
-                         toBuffer:dstBuffer
-                destinationOffset:(NSUInteger)dstOffset
-                             size:(NSUInteger)length];
-      [blitEncoder endEncoding];
+      if (@available(iOS 13.0, *)) {
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer() blitCommandEncoder];
+        
+        [blitEncoder copyFromBuffer:srcBuffer
+                       sourceOffset:(NSUInteger)srcOffset
+                           toBuffer:dstBuffer
+                  destinationOffset:(NSUInteger)dstOffset
+                               size:(NSUInteger)length];
+        [blitEncoder endEncoding];
+      }
       ET_CHECK(synchronize(syncType) == Error::Ok);
     }
   });
@@ -186,7 +193,7 @@ void MPSStream::copy(std::vector<CPUBufferWrapper>& dataBuffers,
         // If the destination is a CPU buffer,
         // wait for the GPU to finish executing
         // before copying into the CPU buffers.
-        synchronize(SyncType::COMMIT_AND_WAIT);
+        ET_CHECK(synchronize(SyncType::COMMIT_AND_WAIT) == Error::Ok);
       }
       for (int i = 0; i < dataBuffers.size(); i++) {
         uint8_t* src = nil;

@@ -352,7 +352,11 @@ bool check_reduction_args_single_dim(
     const Tensor& in,
     optional<int64_t> dim,
     bool keepdim,
+    optional<ScalarType> dtype,
     Tensor& out) {
+  if (dtype.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+  }
   if (in.dim() == 0) {
     if (dim.has_value()) {
       ET_LOG_AND_RETURN_IF_FALSE(dim.value() == 0 || dim.value() == -1);
@@ -411,7 +415,7 @@ bool check_argmin_argmax_args(
     bool keepdim,
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(
-      check_reduction_args_single_dim(in, dim, keepdim, out));
+      check_reduction_args_single_dim(in, dim, keepdim, {}, out));
 
   ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == ScalarType::Long);
 
@@ -425,12 +429,27 @@ bool check_min_max_args(
     Tensor& max,
     Tensor& max_indices) {
   ET_LOG_AND_RETURN_IF_FALSE(
-      check_reduction_args_single_dim(in, dim, keepdim, max));
+      check_reduction_args_single_dim(in, dim, keepdim, {}, max));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, max));
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_shape(max, max_indices));
   ET_LOG_AND_RETURN_IF_FALSE(
       tensor_is_default_or_channels_last_dim_order(max_indices));
   ET_LOG_AND_RETURN_IF_FALSE(max_indices.scalar_type() == ScalarType::Long);
+
+  return true;
+}
+
+bool check_prod_out_args(
+    const Tensor& in,
+    optional<ScalarType> dtype,
+    Tensor& out) {
+  if (dtype.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
+  } else if (isIntegralType(in.scalar_type(), /*includeBool*/ true)) {
+    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == ScalarType::Long);
+  } else {
+    ET_LOG_AND_RETURN_IF_FALSE(out.scalar_type() == in.scalar_type());
+  }
 
   return true;
 }

@@ -6,4 +6,5 @@
 # LICENSE file in the root directory of this source tree.
 
 # Install snakeviz for cProfile flamegraph
-pip install snakeviz
+# Install sentencepiece for llama tokenizer
+pip install snakeviz sentencepiece
