@@ -344,21 +344,23 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             print(f"{modelname}:")
             print(f"{model}")
 
+    if args.embedding_quantize:
+        modelname = f"{modelname}_e"
+        model = EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
+
     if args.dtype_override is not None:
         if (
             args.dtype_override == "fp16" and metadata["get_dtype"] != 5
         ) or args.quantization_mode == "int4":
-            model.to(dtype=torch.float16)
+            print(f"model.to torch.float16")
+            model = model.to(dtype=torch.float16)
             metadata["get_dtype"] = 5
         elif args.dtype_override == "fp32" and metadata["get_dtype"] != 6:
-            model.to(dtype=torch.float32)
+            print(f"model.to torch.float32")
+            model = model.to(dtype=torch.float32)
             metadata["get_dtype"] = 6
         else:
             raise ValueError(f"Unsupported dtype override: {args.dtype_override}")
-
-    if args.embedding_quantize:
-        modelname = f"{modelname}_e"
-        model = EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
 
     if args.verbose:
         print(f"{modelname}:")
