@@ -69,6 +69,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_any",
         deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
     ),
@@ -175,14 +176,6 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
-        name = "op_pow",
-        deps = [
-            ":scalar_utils",
-            "//executorch/kernels/portable/cpu/util:broadcast_util",
-            "//executorch/kernels/portable/cpu/util:functional_util",
-        ],
-    ),
-    op_target(
         name = "op_bmm",
         deps = [
             "//executorch/kernels/portable/cpu/util:matmul_ops_util",
@@ -206,6 +199,7 @@ _ATEN_OPS = (
         deps = [
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -265,6 +259,7 @@ _ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
     ),
@@ -332,6 +327,7 @@ _ATEN_OPS = (
         name = "op_floor_divide",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
@@ -394,6 +390,7 @@ _ATEN_OPS = (
         name = "op_hardtanh",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
             ":scalar_utils",
         ],
     ),
@@ -646,9 +643,43 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_pow",
+        deps = [
+            ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:functional_util",
+        ],
+    ),
+    op_target(
+        name = "op_prod",
+        deps = [
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
         name = "op_reciprocal",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
+        ],
+    ),
+    op_target(
+        name = "op_reflection_pad1d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
+        ],
+    ),
+    op_target(
+        name = "op_reflection_pad2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
+        ],
+    ),
+    op_target(
+        name = "op_reflection_pad3d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
         ],
     ),
     op_target(
@@ -663,12 +694,31 @@ _ATEN_OPS = (
             ":scalar_utils",
             "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
+            "//executorch/kernels/portable/cpu/util:math_util",
         ],
     ),
     op_target(
         name = "op_repeat",
         deps = [
             "//executorch/kernels/portable/cpu/util:repeat_util",
+        ],
+    ),
+    op_target(
+        name = "op_replication_pad1d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
+        ],
+    ),
+    op_target(
+        name = "op_replication_pad2d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
+        ],
+    ),
+    op_target(
+        name = "op_replication_pad3d",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:padding_util",
         ],
     ),
     op_target(

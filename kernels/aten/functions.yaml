@@ -41,6 +41,10 @@
 
 - op: any.all_out
 
+- op: any.dims_out
+
+- op: any.out
+
 - op: arange.out
 
 - op: arange.start_out
@@ -111,6 +115,8 @@
 - op: detach_copy.out
 
 - op: div.out
+
+- op: div.Scalar_mode_out
 
 - op: div.Scalar_out
 
@@ -256,6 +262,10 @@
 
 - op: pow.Tensor_Scalar_out
 
+- op: prod.int_out
+
+- op: prod.out
+
 - op: reciprocal.out
 
 - op: relu.out
@@ -265,6 +275,18 @@
 - op: remainder.Scalar_out
 
 - op: repeat.out
+
+- op: reflection_pad1d.out
+
+- op: reflection_pad2d.out
+
+- op: reflection_pad3d.out
+
+- op: replication_pad1d.out
+
+- op: replication_pad2d.out
+
+- op: replication_pad3d.out
 
 - op: round.out
 
