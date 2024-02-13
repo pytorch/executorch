@@ -7,6 +7,7 @@
 
 import copy
 import logging
+import os
 
 import torch
 from executorch import exir
@@ -100,5 +101,11 @@ def export_to_mps(model, example_inputs, use_partitioner=False, bundled=False,us
         logging.info("generating etrecord.bin")
         generate_etrecord(etrecord_path, edge_program_manager_copy, executorch_program)
 
-    # save_pte_program(program_buffer, model_name)
+    filename = os.path.join("", f"{model_name}.pte")
+    try:
+        with open(filename, "wb") as file:
+            file.write(program_buffer)
+            logging.info(f"Saved exported program to {filename}")
+    except Exception as e:
+        logging.error(f"Error while saving to {filename}: {e}")
 
