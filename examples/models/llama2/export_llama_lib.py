@@ -44,7 +44,6 @@ from .quantize import (
     WeightOnlyInt8QuantHandler,
 )
 
-
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -419,3 +418,83 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     output_file = f"{output_dir_path}/{modelname}.pte"
 
     return output_file
+
+
+def _build_from(modelname, checkpoint_path, params_path, parameters) -> torch.nn.Module:  # noqa: C901
+
+    checkpoint_path = canonical_path(checkpoint_path)
+    params_path = canonical_path(params_path)
+    # output_dir_path = canonical_path('.'', dir=True)
+
+    model, example_inputs, _ = EagerModelFactory.create_model(
+        "llama2",
+        "Llama2Model",
+        checkpoint=checkpoint_path,
+        params=params_path,
+        use_kv_cache=False,
+        fairseq2=True,
+    )
+
+    if parameters["embedding_type"] == 1:
+        group_size = 2 ** parameters["embedding_groupsize"]
+        model = EmbeddingOnlyInt8QuantHandler(model, bitwidth=8, group_size=group_size)
+        model = model.convert_for_runtime()
+    elif parameters["embedding_type"] == 2:
+        group_size = 2 ** parameters["embedding_groupsize"]
+        model = EmbeddingOnlyInt8QuantHandler(model, bitwidth=4, group_size=group_size)
+        model = model.convert_for_runtime()
+    else:
+        # no integer quantization for embedding
+        pass
+        model_int8 = WeightOnlyInt8QuantHandler(model)
+
+    if parameters["linear_type"] == 1:
+        group_size = 2 ** parameters["linear_groupsize"]
+        model = WeightOnlyInt8QuantHandler(
+            model, node_type="!output", bitwidth=8, group_size=group_size
+        )
+        model_state_dict = model.create_quantized_state_dict()
+        model = model_int8.convert_for_runtime()
+        model.load_state_dict(model_state_dict)
+
+    elif parameters["linear_type"] == 2:
+        group_size = 2 ** parameters["linear_groupsize"]
+        model = WeightOnlyInt8QuantHandler(
+            model, node_type="!output", bitwidth=4, group_size=group_size
+        )
+        model_state_dict = model.create_quantized_state_dict()
+        model = model_int8.convert_for_runtime()
+        model.load_state_dict(model_state_dict)
+    else:
+        # no integer quantization for embedding
+        pass
+
+    if parameters["output_linear_type"] == 1:
+        group_size = 2 ** parameters["output_linear_groupsize"]
+        model = WeightOnlyInt8QuantHandler(
+            model, node_type="output", bitwidth=8, group_size=group_size
+        )
+        model_state_dict = model.create_quantized_state_dict()
+        model = model_int8.convert_for_runtime()
+        model.load_state_dict(model_state_dict)
+
+    elif parameters["output_linear_type"] == 2:
+        group_size = 2 ** parameters["output_linear_groupsize"]
+        model = WeightOnlyInt8QuantHandler(
+            model, node_type="output", bitwidth=4, group_size=group_size
+        )
+        model_state_dict = model.create_quantized_state_dict()
+        model = model_int8.convert_for_runtime()
+        model.load_state_dict(model_state_dict)
+    else:
+        # no integer quantization for embedding
+        pass
+
+    if parameters["model"] == 0:
+        model = model.to(dtype=torch.float32)
+    elif parameters["model"] == 1:
+        model = model.to(dtype=torch.float16)
+    elif parameters["model"] == 2:
+        model = model.to(dtype=torch.bfloat16)
+
+    return model

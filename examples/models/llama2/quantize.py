@@ -33,7 +33,9 @@ def dynamically_quantize_per_channel(
         items = x.shape[1]
     else:
         assert group_size > 0, "group size must be positive"
-        assert (x.shape[1] % group_size) == 0, "group size must be positive"
+        assert (
+            x.shape[1] % group_size
+        ) == 0, f"weights dimension 1 = {x.shape[1]} must be a multiple of group size {group_size}"
         items = group_size
 
     # default setup for affine quantization of activations
@@ -502,6 +504,9 @@ def unpack_int4_to_int8(int8_data: torch.Tensor) -> torch.Tensor:
     return torch.stack([first_elements, second_elements], dim=-1).view(up_size(shape))
 
 
+#### Quantize from config
+
+
 class QuantHandler:
     def __init__(self, mod):
         self.mod = mod
@@ -619,7 +624,17 @@ class WeightOnlyInt8Linear(torch.nn.Module):
         self.register_buffer("scales", torch.ones(out_features, dtype=torch.bfloat16))
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return F.linear(input, self.weight.to(dtype=input.dtype)) * self.scales
+        print(f"scales is {self.scales}")
+        print(f"weight is {self.weight}")
+        assert self.weight.shape[0] == self.scales.shape[0], "scales must match weights"
+        scales = self.scales.view(self.scales.shape[0], -1)
+        scaled_weights = self.weight.view(
+            self.weight.shape[0], -1, self.scales.shape[1]
+        ).to(dtype=self.scales.dtype) * scales.view(
+            self.weight.shape[0], 1, self.scales.shape[1]
+        )
+        print(f"scaled_weights is {scaled_weights}")
+        return F.linear(input, scaled_weights.view(self.weight.shape[0], -1))
         # return F.linear(input, self.weight.to(dtype=input.dtype)) * se...
 
 
