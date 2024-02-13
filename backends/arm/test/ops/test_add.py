@@ -32,6 +32,7 @@ class TestSimpleAdd(unittest.TestCase):
     class Add(torch.nn.Module):
         def __init__(self):
             super().__init__()
+            self.permute_memory_to_nhwc = False
 
         def forward(self, x):
             return x + x
@@ -39,6 +40,7 @@ class TestSimpleAdd(unittest.TestCase):
     class Add2(torch.nn.Module):
         def __init__(self):
             super().__init__()
+            self.permute_memory_to_nhwc = False
 
         def forward(self, x, y):
             return x + y
@@ -52,6 +54,7 @@ class TestSimpleAdd(unittest.TestCase):
                 inputs=test_data,
                 profile=TosaProfile.MI,
                 backend=ArmBackendSelector.TOSA,
+                permute_memory_to_nhwc=False,
             )
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
@@ -77,6 +80,7 @@ class TestSimpleAdd(unittest.TestCase):
                 inputs=test_data,
                 profile=TosaProfile.BI,
                 backend=ArmBackendSelector.TOSA,
+                permute_memory_to_nhwc=False,
             )
             .quantize()
             .export()

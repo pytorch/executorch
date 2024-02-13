@@ -34,6 +34,7 @@ class AddVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
+        permute_memory_to_nhwc: bool,
     ) -> None:
         if is_quant_node:
             # Single input or not
@@ -51,6 +52,13 @@ class AddVisitor(NodeVisitor):
             inputA_rescale_scale = input_A_scale.number / max_scale_2x
             inputB_rescale_scale = input_B_scale.number / max_scale_2x
 
+            broadcasted_shape = broadcast_shapes(input_A.shape, input_B.shape)
+            if permute_memory_to_nhwc:
+                NHWC_Order = [0, 2, 3, 1]
+                broadcasted_shape = [broadcasted_shape[i] for i in NHWC_Order]
+                input_A.shape = [input_A.shape[i] for i in NHWC_Order]
+                input_B.shape = [input_B.shape[i] for i in NHWC_Order]
+
             input_A_rescaled_to_int32 = build_rescale_to_int32(
                 tosa_graph,
                 input_A,
@@ -66,7 +74,6 @@ class AddVisitor(NodeVisitor):
             )
 
             ## Do the INT32 Add
-            broadcasted_shape = broadcast_shapes(input_A.shape, input_B.shape)
             add_res = tosa_graph.addIntermediate(broadcasted_shape, ts.DType.INT32)
             tosa_graph.addOperator(
                 TosaOp.Op().ADD,
