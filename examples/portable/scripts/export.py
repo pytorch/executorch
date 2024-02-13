@@ -63,11 +63,14 @@ def main() -> None:
                 _check_ir_validity=False,
             ),
         )
-        prog = edge_manager.to_executorch(
-            config=backend_config
-        )
+        prog = edge_manager.to_executorch(config=backend_config)
     else:
-        prog = export_to_exec_prog(model, example_inputs, dynamic_shapes=dynamic_shapes, backend_config=backend_config)
+        prog = export_to_exec_prog(
+            model,
+            example_inputs,
+            dynamic_shapes=dynamic_shapes,
+            backend_config=backend_config,
+        )
     save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
 
