@@ -86,7 +86,7 @@ bool tensors_are_close(
         atol);
   } else {
     // Non-floating-point types can be compared bitwise.
-    return memcmp(a.data_ptr(), b.data_ptr(), a.nbytes()) == 0;
+    return memcmp(a.mutable_data_ptr(), b.mutable_data_ptr(), a.nbytes()) == 0;
   }
 }
 } // namespace

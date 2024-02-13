@@ -459,7 +459,10 @@ class GraphModuleSerializer:
                 path, ty = val
 
                 assert isinstance(path, str)
-                normalized_ty = ty.__module__ + "." + ty.__qualname__
+                if isinstance(ty, str):
+                    normalized_ty = ty
+                else:
+                    normalized_ty = ty.__module__ + "." + ty.__qualname__
                 return path + "," + normalized_ty
 
             # Serialize to "key,orig_path,type_str"
