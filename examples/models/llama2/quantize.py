@@ -13,6 +13,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .ops.quantized_ops import *  # noqa
+
 from torch.ao.quantization.fx._decomposed import (
     _quant_min_max_bounds_check,
     quantized_decomposed_lib,
@@ -20,17 +21,29 @@ from torch.ao.quantization.fx._decomposed import (
 from torch.library import impl
 
 
-def dynamically_quantize_per_channel(x, quant_min, quant_max, target_dtype):
+def dynamically_quantize_per_channel(
+    x, quant_min, quant_max, target_dtype, group_size: Optional[int] = None
+):
     # assumes symmetric quantization
     # assumes axis == 0
     # assumes dense memory format
     # TODO(future): relax ^ as needed
 
+    if group_size is None:
+        items = x.shape[1]
+    else:
+        assert group_size > 0, "group size must be positive"
+        assert (x.shape[1] % group_size) == 0, "group size must be positive"
+        items = group_size
+
     # default setup for affine quantization of activations
     eps = torch.finfo(torch.float32).eps
 
+    x = x.view(x.shape[0], x.shape[1] // items, items)
     # get min and max
-    min_val, max_val = torch.aminmax(x, dim=1)
+    min_val, max_val = torch.aminmax(x, dim=2)
+    print(f"min_val {min_val}")
+    print(f"max_val {max_val}")
 
     # calculate scales and zero_points based on min and max
     # reference: https://fburl.com/code/srbiybme
@@ -50,7 +63,9 @@ def dynamically_quantize_per_channel(x, quant_min, quant_max, target_dtype):
     x_div = x / scales.unsqueeze(-1)
     x_round = torch.round(x_div)
     x_zp = x_round + zero_points.unsqueeze(-1)
-    quant = torch.clamp(x_zp, quant_min, quant_max).to(target_dtype)
+    quant = (
+        torch.clamp(x_zp, quant_min, quant_max).to(target_dtype).view(x.shape[0], -1)
+    )
 
     return quant, scales, zero_points
 
@@ -501,48 +516,83 @@ class QuantHandler:
 ##### Weight-only int8 per-channel quantized code ######
 
 
-def replace_linear_weight_only_int8_per_channel(
-    module, group_size: Optional[int] = None
-):
-    assert group_size is None, "Linear does not support group-wise quantization"
+def replace_linear_weight_only_int8_per_channel(module, node_type):
     for name, child in module.named_children():
         print(f"name: {name}")
-        if name == "XXXXoutputXXXXXXX":
-            print("skipping quantizing output")
-        elif isinstance(child, nn.Linear):
-            print(f"{name, child}")
-            print(f"in_features: {child.in_features}")
-            print(f"out_features: {child.out_features}")
-            setattr(
-                module,
-                name,
-                WeightOnlyInt8Linear(child.in_features, child.out_features),
-            )
+        if isinstance(child, nn.Linear):
+            if (
+                (node_type == "*")
+                or (node_type == "output" and name == "output")
+                or (node_type == "!output" and name != "output")
+            ):
+                print(f"{name, child}")
+                print(f"in_features: {child.in_features}")
+                print(f"out_features: {child.out_features}")
+                setattr(
+                    module,
+                    name,
+                    WeightOnlyInt8Linear(child.in_features, child.out_features),
+                )
         else:
-            replace_linear_weight_only_int8_per_channel(child)
+            replace_linear_weight_only_int8_per_channel(child, node_type)
 
 
 class WeightOnlyInt8QuantHandler:
-    def __init__(self, mod):
+    def __init__(
+        self,
+        mod,
+        *,
+        node_type: str = "*",
+        bitwidth: Optional[int] = None,
+        group_size: Optional[int] = None,
+    ):
         self.mod = mod
+        self.group_size = group_size
+        self.node_type = node_type
+        if bitwidth is None:
+            self.bitwidth = 8
+        else:
+            self.bitwidth = bitwidth
 
     @torch.no_grad()
     def create_quantized_state_dict(self) -> Dict:
         cur_state_dict = self.mod.state_dict()
 
+        if self.bitwidth == 4:
+            range_min = -8
+            range_max = 7
+        elif self.bitwidth == 8:
+            range_min = -128
+            range_max = 127
+        else:
+            raise ValueError(f"Unsupported bitwidth {self.bitwidth}")
+        # assert self.group_size is None, "Linear does not support group-wise quantization"
+
         for fqn, mod in self.mod.named_modules():
-            print(f"quantized {fqn}")
+            print(f"quantize {fqn}...")
             if isinstance(mod, torch.nn.Linear):
-                int8_weight, scales, _ = dynamically_quantize_per_channel(
-                    mod.weight.float(), -128, 127, torch.int8
-                )
-                cur_state_dict[f"{fqn}.weight"] = int8_weight
-                cur_state_dict[f"{fqn}.scales"] = scales.to(mod.weight.dtype)
+                if (
+                    (self.node_type == "*")
+                    or (self.node_type == "output" and fqn == "output")
+                    or (self.node_type == "!output" and fqn != "output")
+                ):
+                    print(f"{fqn, mod}")
+                    int8_weight, scales, _ = dynamically_quantize_per_channel(
+                        mod.weight.float(),
+                        range_min,
+                        range_max,
+                        torch.int8,
+                        self.group_size,
+                    )
+                    cur_state_dict[f"{fqn}.weight"] = int8_weight
+                    cur_state_dict[f"{fqn}.scales"] = scales.to(
+                        mod.weight.dtype
+                    ).squeeze(dim=-1)
 
         return cur_state_dict
 
     def convert_for_runtime(self) -> nn.Module:
-        replace_linear_weight_only_int8_per_channel(self.mod)
+        replace_linear_weight_only_int8_per_channel(self.mod, self.node_type)
         return self.mod
 
 
@@ -577,13 +627,23 @@ class WeightOnlyInt8Linear(torch.nn.Module):
 
 
 def embedding_quant(
-    weight, group_size: Optional[int] = None
+    weight, *, bitwidth: int = 8, group_size: Optional[int] = None
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Embedding quantization with per-row group scaling
     """
     if group_size is None:
         group_size = weight.size(1)
+
+    if bitwidth == 4:
+        range_min = -8
+        range_max = 7
+    elif bitwidth == 8:
+        range_min = -128
+        range_max = 127
+    else:
+        raise ValueError(f"Unsupported bitwidth {bitwidth}")
+
     weight_fp16 = weight.to(torch.half)
     weight_rows = weight_fp16.shape[0]
     weight_cols = weight_fp16.shape[1]
@@ -593,26 +653,32 @@ def embedding_quant(
     scales_fp16 = torch.empty((weight_rows, groups_per_row), dtype=torch.float16)
     for r in range(0, weight_cols, group_size):
         weights_group, scales, _ = dynamically_quantize_per_channel(
-            weight_fp16[:, r : r + group_size], -128, 127, torch.int8
+            weight_fp16[:, r : r + group_size],
+            range_min,
+            range_max,
+            torch.int8,
+            group_size,
         )
+        print(f"scales dims {scales.shape}")
+        print(f"scales_fp16 dims are {scales_fp16.shape}")
         weights_int8[:, r : r + group_size] = weights_group
-        scales_fp16[:, r // group_size] = scales
+        scales_fp16[:, r // group_size] = scales.squeeze()
         scales_fp16 = scales_fp16.squeeze()
 
     return weights_int8, scales_fp16
 
 
 def replace_embedding_weight_only_grouped_int8_per_channel(
-    module, group_size: Optional[int] = None
+    module, bitwidth: int = 8, group_size: Optional[int] = None
 ):
     for name, child in module.named_children():
         print(f"name: {name}")
-        if name == "XXXXoutputXXXXXXX":
-            print("skipping quantizing output")
-        elif isinstance(child, nn.Embedding):
+        if isinstance(child, nn.Embedding):
             print(f"{name, child}")
             print(f"weights size: {child.weight.size()}")
-            weight_int8, scales_fp16 = embedding_quant(child.weight, group_size)
+            weight_int8, scales_fp16 = embedding_quant(
+                child.weight, bitwidth=bitwidth, group_size=group_size
+            )
             setattr(
                 module,
                 name,
@@ -625,13 +691,14 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
 
 
 class EmbeddingOnlyInt8QuantHandler:
-    def __init__(self, mod, group_size: Optional[int] = None):
+    def __init__(self, mod, *, bitwidth: int = 8, group_size: Optional[int] = None):
         self.mod = mod
         self.group_size = group_size
+        self.bitwidth = bitwidth
 
     def convert_for_runtime(self) -> nn.Module:
         replace_embedding_weight_only_grouped_int8_per_channel(
-            self.mod, self.group_size
+            self.mod, self.bitwidth, self.group_size
         )
         return self.mod
 

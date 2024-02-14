@@ -176,6 +176,8 @@ void XNNProfiler::log_operator_timings() {
         Info, ">>, %s, %" PRId64 " (%f)", op_name, op_timings_[i], avg_op_time);
   }
   ET_LOG(Info, ">>, Total Time, %f", total_time);
+#else
+  run_count_++;
 #endif
 }
 
