@@ -738,6 +738,7 @@ class GraphModuleSerializer:
         elif spec.kind == ep.InputKind.BUFFER:
             assert spec.target is not None
             assert isinstance(spec.arg, ep.TensorArgument)
+            assert spec.persistent is not None
             return InputSpec.create(
                 buffer=InputToBufferSpec(
                     arg=TensorArgument(name=spec.arg.name),
@@ -1319,6 +1320,7 @@ class GraphModuleDeserializer:
                 kind=ep.InputKind.BUFFER,
                 arg=PyTensorArgument(name=i.buffer.arg.name),
                 target=i.buffer.buffer_name,
+                persistent=i.buffer.persistent,
             )
         elif i.type == "tensor_constant":
             return ep.InputSpec(
