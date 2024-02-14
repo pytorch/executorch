@@ -19,6 +19,11 @@ DEFINE_string(tokenizer_path, "tokenizer.bin", "Tokenizer stuff.");
 
 DEFINE_string(prompt, "The answer to the ultimate question is", "Prompt.");
 
+DEFINE_double(
+    temperature,
+    0.8f,
+    "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -31,8 +36,10 @@ int32_t main(int32_t argc, char** argv) {
 
   const char* prompt = FLAGS_prompt.c_str();
 
+  double temperature = FLAGS_temperature;
+
   // create llama runner
-  ::torch::executor::Runner runner(model_path, tokenizer_path);
+  ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
 
   // generate
   runner.generate(prompt);
