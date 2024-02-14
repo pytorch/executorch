@@ -177,7 +177,6 @@ class Attention(nn.Module):
         mask = torch.full(
             (1, 1, args.max_seq_len, args.max_seq_len),
             float("-inf"),
-            dtype=torch.float16,
         )
 
         mask = torch.triu(mask, diagonal=1)
@@ -239,6 +238,7 @@ class Attention(nn.Module):
 
             keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
             values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
+
         else:
             keys = xk
             values = xv
@@ -260,7 +260,9 @@ class Attention(nn.Module):
         # Shape before: [1, 1, L, S], after: [L, S]
         # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
         # tensor will be 2-dimensional, regarldess of the values of L & S
-        mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1])
+        mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1]).to(
+            dtype=xq.dtype
+        )
 
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
