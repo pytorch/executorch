@@ -12,6 +12,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
+#include <executorch/runtime/kernel/test/test_util.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 
@@ -43,27 +44,7 @@ TEST_F(OperatorRegistryTest, RegisterOpsMoreThanOnceDie) {
   ET_EXPECT_DEATH({ auto res = register_kernels(kernels_array); }, "");
 }
 
-void make_kernel_key(
-    std::vector<std::pair<ScalarType, std::vector<exec_aten::DimOrderType>>>
-        tensors,
-    char* buf) {
-  char* start = buf;
-  strncpy(buf, "v0/", 3);
-  buf += 3;
-  for (size_t i = 0; i < tensors.size(); i++) {
-    auto& tensor = tensors[i];
-    *buf = (char)tensor.first;
-    buf += 1;
-    *buf = ';';
-    buf += 1;
-    memcpy(buf, (char*)tensor.second.data(), tensor.second.size());
-    buf += tensor.second.size();
-    *buf = (i < (tensors.size() - 1)) ? '|' : 0xff;
-    buf += 1;
-  }
-}
-
-constexpr int BUF_SIZE = 307;
+constexpr int BUF_SIZE = KernelKey::MAX_SIZE;
 
 TEST_F(OperatorRegistryTest, KernelKeyEquals) {
   char buf_long_contiguous[BUF_SIZE];
