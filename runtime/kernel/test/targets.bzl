@@ -13,6 +13,7 @@ def define_common_targets():
         srcs = [
             "operator_registry_test.cpp",
         ],
+        headers = ["test_util.h"],
         deps = [
             "//executorch/runtime/kernel:operator_registry",
             "//executorch/runtime/kernel:kernel_runtime_context",
