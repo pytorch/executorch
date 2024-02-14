@@ -23,7 +23,11 @@ def get_shape(input_node: torch.fx.Node):
     input_val = input_node.meta["val"]
     upper_bound_shape = eval_shape_upper_bound(input_val.shape)
     for i in range(len(input_val.shape)):
-        if upper_bound_shape[i] == _int64_max_dim_val:
+        # Unbounded shape get int64 max values assigned to it.
+        # This is just hacking around it when export with dynamic shape
+        # does not use constraint api but instead just traces the
+        # modelw with tensors of the max size
+        if upper_bound_shape[i] >= _int64_max_dim_val:
             return eval_shape(input_val.shape)
     return upper_bound_shape
 
