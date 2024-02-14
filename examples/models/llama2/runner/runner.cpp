@@ -27,9 +27,11 @@
 namespace torch {
 namespace executor {
 
-Runner::Runner(const char* model_path, const char* tokenizer_path) {
+Runner::Runner(
+    const char* model_path,
+    const char* tokenizer_path,
+    float temperature) {
   // Constants definition
-  float temperature = 0.8f;
   float topp = 0.9f;
   unsigned long long rng_seed =
       (unsigned int)time(nullptr); // seed rng with time by default
