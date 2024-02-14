@@ -65,7 +65,8 @@ add_custom_target(gen_model_header
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/model_pte.h
-    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py --pte ${ET_PTE_FILE_PATH}
+    COMMAND ${PYTHON_EXECUTABLE} ${CMAKE_SOURCE_DIR}/pte_to_header.py
+    --pte ${ET_PTE_FILE_PATH}
     --outdir ${CMAKE_CURRENT_BINARY_DIR}
     DEPENDS ${ET_PTE_FILE_PATH}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

@@ -127,6 +127,13 @@ int main() {
 
   ET_LOG(Info, "Preparing inputs...");
   auto inputs = torch::executor::util::prepare_input_tensors(*method);
+  if (!inputs.ok()) {
+    ET_LOG(
+        Info,
+        "Preparing inputs tensors for method %s failed with status 0x%" PRIx32,
+        method_name,
+        inputs.error());
+  }
   ET_LOG(Info, "Input prepared.");
 
   ET_LOG(Info, "Starting the model execution...");
