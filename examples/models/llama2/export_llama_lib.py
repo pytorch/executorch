@@ -398,6 +398,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     export_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
             extract_constant_segment=True,
+            extract_delegate_segments=True,
             passes=[
                 QuantFusionPass(),
             ],
