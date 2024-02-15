@@ -12,7 +12,8 @@ import logging
 import shlex
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
+from dataclasses import dataclass
 
 import pkg_resources
 import torch
@@ -47,6 +48,8 @@ from .quantize import (
     WeightOnlyInt8QuantHandler,
 )
 
+from enum import Enum
+
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -64,8 +67,27 @@ def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
 
 
+@dataclass
+class EmbeddingQuantOptions:
+    is_per_channel: bool = True
+    group_size: int = -1
+
+    def __post_init__(self):
+        if group_size != -1:
+            raise RuntimeError("PT2E embedding quantizer does not support groupwise at the moment.")
+
+@dataclass
+class DynamicQuantLinearOptions:
+    is_per_channel: bool = True
+    is_qc4: bool = False
+
+@dataclass
+class PT2EQuantOptions:
+    quantize_embedding: Optional[EmbeddingQuantOptions] = None
+    quantize_linear: Optional[DynamicQuantLinearOptions] = None
+
 def apply_pt2e_quantization(
-    exported_model, example_inputs, quantization_options, args
+    exported_model, example_inputs, quant_params, args
 ) -> torch.nn.Module:
     """
     Applies embedding bag quantization on a model.
@@ -95,13 +117,22 @@ def apply_pt2e_quantization(
             )
 
     quantizers = []
-    if "embedding" in quantization_options:
+    if quant_params.quantize_embedding is not None:
+        logging.info("Apply PT2E embedding quantization.")
         quantizers.append(EmbeddingQuantizer())
-    if "xnnpack_dynamic" in quantization_options:
+    if quant_params.quantize_linear is not None:
         dynamic_quantizer = XNNPACKQuantizer()
-        operator_config_dynamic = get_symmetric_quantization_config(
-            is_per_channel=True, is_dynamic=True
-        )
+        logging.info("Apply PT2E dynamic linear quantization.")
+        if not quant_params.quantize_linear.is_per_channel:
+            raise ValueError("At the moment only per channel weight quantization is supported.")
+        if quant_params.quantize_linear.is_qc4:
+            operator_config_dynamic = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=True, weight_qmin = -8, weight_qmax = 7
+            )
+        else:
+            operator_config_dynamic = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=True
+            )
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
     composed_quantizer = ComposableQuantizer(quantizers)
@@ -169,7 +200,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pt2e_quantize",
         default=None,
-        help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic, embedding.",
+        help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
     parser.add_argument(
         "-qmode",
@@ -280,15 +311,30 @@ def get_metadata(params: ModelArgs, args: argparse.Namespace) -> Dict[str, Any]:
     return metadata
 
 
-def _get_quantization_options(args):
+def _get_pt2e_quantization_params(args):
     if args.pt2e_quantize is None:
-        return []
+        return None
     if args.quantization_mode:
         raise ValueError("Cannot specify both --quantization_mode and --pt2e_quantize")
 
     quantization_options = args.pt2e_quantize.split(",")
     quantization_options = [option.strip() for option in quantization_options]
-    return quantization_options
+    # This can really be improved significantly.
+    # Hopefully we dont release this in its current form.
+    # Just using this for quick experiments.
+    quant_options = None
+    if "embedding" in quantization_options:
+        quant_options = quant_options or PT2EQuantOptions()
+        quant_options.quantize_embedding = EmbeddingQuantOptions()
+    if "xnnpack_dynamic" in quantization_options and "xnnpack_dynamic_qc4" in quantization_options:
+        raise RuntimeError("For dynamic linear quantization via xnnpack quantizer you can chose only qc8 or qc4 option, not both.")
+    if "xnnpack_dynamic" in quantization_options or "xnnpack_dynamic_qc4" in quantization_options:
+        quant_options = quant_options or PT2EQuantOptions()
+        quant_options.quantize_linear = DynamicQuantLinearOptions()
+        if "xnnpack_dynamic_qc4" in quantization_options:
+            quant_options.quantize_linear.is_qc4 = True
+
+    return quant_options
 
 
 def export_llama(modelname, args) -> str:
@@ -321,6 +367,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         use_kv_cache=args.use_kv_cache,
         fairseq2=args.fairseq2,
     )
+    print("---------------------")
+    print(model(example_inputs))
+    print("---------------------")
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,
         _skip_type_promotion=bool(args.dtype_override == "fp16"),
@@ -370,13 +419,13 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         print(f"{modelname}:")
         print(f"{model}")
 
-    quantization_options = _get_quantization_options(args)
+    pt2e_quant_params = _get_pt2e_quantization_params(args)
     with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
         m = capture_pre_autograd_graph(
             model, example_inputs, dynamic_shapes=dynamic_shapes
         )
-        if len(quantization_options) > 0:
-            m = apply_pt2e_quantization(m, example_inputs, quantization_options, args)
+        if pt2e_quant_params is not None:
+            m = apply_pt2e_quantization(m, example_inputs, pt2e_quant_params, args)
         edge_manager = export_to_edge(
             m,
             example_inputs,
@@ -390,7 +439,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        edge_manager = edge_manager.to_backend(XnnpackPartitioner())
+        edge_manager = edge_manager.to_backend(XnnpackPartitioner(_only_ops_with_dynamic_shape_support=True))
         modelname = f"xnnpack_{modelname}"
 
     # TODO: remove this after xnnpack delegation is ready
