@@ -59,6 +59,7 @@ class LinearVisitor(NodeVisitor):
             xnn_graph,
             vals_to_ids,
             quant_params=weight_quant_params,
+            fp32_static_weights=True,
         )
         filter_id = vals_to_ids[weight_node]
 
@@ -73,6 +74,7 @@ class LinearVisitor(NodeVisitor):
                 xnn_graph,
                 vals_to_ids,
                 quant_params=bias_quant_params,
+                fp32_static_weights=True,
             )
             bias_id = vals_to_ids[bias_node]
         else:

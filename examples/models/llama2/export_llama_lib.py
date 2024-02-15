@@ -16,6 +16,9 @@ from typing import Any, Dict
 
 import pkg_resources
 import torch
+from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
+    DuplicateDynamicQuantChainPass,
+)
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
@@ -25,7 +28,6 @@ from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackend
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from executorch.util.python_profiler import CProfilerFlameGraph
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
@@ -39,7 +41,12 @@ from torch.nn.attention import SDPBackend
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
 from .model import ModelArgs
-from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
+from .quantize import (
+    EmbeddingOnlyInt8QuantHandler,
+    Int8DynActInt4WeightQuantHandler,
+    WeightOnlyInt8QuantHandler,
+)
+
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -102,22 +109,34 @@ def apply_pt2e_quantization(
     # Calibrate
     m(*example_inputs)
     m = convert_pt2e(m)
+    DuplicateDynamicQuantChainPass()(m)
     return m
 
 
-def quantize(model) -> torch.nn.Module:
+def quantize(model: torch.nn.Module, qmode: str) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
     Args:
         model: A model to quantize.
+        qmode: quantization mode, e.g. int8, int4
     Returns:
         A quantized model.
     """
-    model_int8 = WeightOnlyInt8QuantHandler(model)
-    model_int8_state_dict = model_int8.create_quantized_state_dict()
-    model_int8 = model_int8.convert_for_runtime()
-    model_int8.load_state_dict(model_int8_state_dict)
-    return model_int8
+    if qmode == "int8":
+        model_int8 = WeightOnlyInt8QuantHandler(model)
+        model_int8_state_dict = model_int8.create_quantized_state_dict()
+        model_int8 = model_int8.convert_for_runtime()
+        model_int8.load_state_dict(model_int8_state_dict)
+        return model_int8
+    elif qmode == "int4":
+        model_int4 = Int8DynActInt4WeightQuantHandler(model)
+        model_int4_state_dict = model_int4.create_quantized_state_dict()
+        model_int4 = model_int4.convert_for_runtime()
+        print("quantized model:", model_int4)
+        model_int4.load_state_dict(model_int4_state_dict)
+        return model_int4
+    else:
+        raise Exception(f"Unrecognized quantize mode: {qmode}")
 
 
 def build_model(
@@ -146,12 +165,19 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     )
-    parser.add_argument("-Q", "--quantize", default=None, action="store_true")
     parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
     parser.add_argument(
-        "--pt2_quantize",
+        "--pt2e_quantize",
         default=None,
         help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic, embedding.",
+    )
+    parser.add_argument(
+        "-qmode",
+        "--quantization_mode",
+        type=str,
+        default=None,
+        choices=["int8", "int4"],
+        help="type of quantization",
     )
 
     parser.add_argument(
@@ -182,6 +208,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-s",
         "--so_library",
+        default=None,
         required=False,
         help="shared library for quantized operators",
     )
@@ -254,20 +281,28 @@ def get_metadata(params: ModelArgs, args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def _get_quantization_options(args):
-    if args.pt2_quantize is None:
+    if args.pt2e_quantize is None:
         return []
-    if args.quantize:
-        raise ValueError("Cannot specify both --quantize and --pt2_quantize")
+    if args.quantization_mode:
+        raise ValueError("Cannot specify both --quantization_mode and --pt2e_quantize")
 
-    quantization_options = args.pt2_quantize.split(",")
+    quantization_options = args.pt2e_quantize.split(",")
     quantization_options = [option.strip() for option in quantization_options]
     return quantization_options
 
 
 def export_llama(modelname, args) -> str:
     if args.profile_path is not None:
-        with CProfilerFlameGraph(args.profile_path):
-            return _export_llama(modelname, args)
+        try:
+            from executorch.util.python_profiler import CProfilerFlameGraph
+
+            with CProfilerFlameGraph(args.profile_path):
+                return _export_llama(modelname, args)
+        except ImportError:
+            print(
+                "Please run `pip install snakeviz` to install required dependencies for cProfiler flamegraph."
+            )
+            return ""
     else:
         return _export_llama(modelname, args)
 
@@ -305,27 +340,31 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
         dynamic_shapes = {"tokens": {1: dim}}
 
-    if args.quantized_ckpt or args.quantize:
+    if args.quantized_ckpt or args.quantization_mode:
         modelname = f"{modelname}_q"
-        model = quantize(model)
+        model = quantize(model, args.quantization_mode)
 
         if args.verbose:
             print(f"{modelname}:")
             print(f"{model}")
 
-    if args.dtype_override is not None:
-        if args.dtype_override == "fp16" and metadata["get_dtype"] != 5:
-            model.to(dtype=torch.float16)
-            metadata["get_dtype"] = 5
-        elif args.dtype_override == "fp32" and metadata["get_dtype"] != 6:
-            model.to(dtype=torch.float32)
-            metadata["get_dtype"] = 6
-        else:
-            raise ValueError(f"Unsupported dtype override: {args.dtype_override}")
-
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
         model = EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
+
+    if args.dtype_override is not None:
+        if (
+            args.dtype_override == "fp16" and metadata["get_dtype"] != 5
+        ) or args.quantization_mode == "int4":
+            print("model.to torch.float16")
+            model = model.to(dtype=torch.float16)
+            metadata["get_dtype"] = 5
+        elif args.dtype_override == "fp32" and metadata["get_dtype"] != 6:
+            print("model.to torch.float32")
+            model = model.to(dtype=torch.float32)
+            metadata["get_dtype"] = 6
+        else:
+            raise ValueError(f"Unsupported dtype override: {args.dtype_override}")
 
     if args.verbose:
         print(f"{modelname}:")
@@ -354,9 +393,16 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         edge_manager = edge_manager.to_backend(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
 
+    # TODO: remove this after xnnpack delegation is ready
+    if args.quantization_mode == "int4":
+        raise Exception(
+            "some quantized ops should be lowered to xnnpack, but xnnpack delegate is not ready yet"
+        )
+
     export_program = edge_manager.to_executorch(
         ExecutorchBackendConfig(
             extract_constant_segment=True,
+            extract_delegate_segments=True,
             passes=[
                 QuantFusionPass(),
             ],

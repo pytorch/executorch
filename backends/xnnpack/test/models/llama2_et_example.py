@@ -6,25 +6,45 @@
 
 import unittest
 
+import torch
+
 from executorch.backends.xnnpack.test.tester import Tester
 from executorch.examples.models.llama2.model import Llama2Model
 
 
 class TestLlama2ETExample(unittest.TestCase):
-    llama2 = Llama2Model()
-    model = llama2.get_eager_model()
-    example_inputs = llama2.get_example_inputs()
+    def test_f32(self):
+        self._test()
+
+    def test_f16(self):
+        self._test(torch.float16)
 
     # TODO - dynamic shape
 
-    def test_fp32(self):
+    def _test(self, dtype: torch.dtype = torch.float):
+        assert dtype in [
+            torch.float,
+            torch.float16,
+        ], f"Only fp32 and fp16 are supported, but got dtype: {dtype}"
+
+        llama2 = Llama2Model()
+        model = llama2.get_eager_model().to(dtype)
+
+        # Only convert fp32 inputs to dtype
+        example_inputs = tuple(
+            tensor.to(dtype) if tensor.dtype == torch.float32 else tensor
+            for tensor in llama2.get_example_inputs()
+        )
+
         (
-            Tester(self.model, self.example_inputs)
+            Tester(model, example_inputs)
             .export()
             .to_edge()
+            .dump_artifact()
             .partition()
+            .dump_artifact()
             .to_executorch()
             .serialize()
             .run_method()
-            .compare_outputs()
+            .compare_outputs(atol=5e-2)
         )

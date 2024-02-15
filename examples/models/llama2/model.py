@@ -174,7 +174,11 @@ class Attention(nn.Module):
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
-        mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
+        mask = torch.full(
+            (1, 1, args.max_seq_len, args.max_seq_len),
+            float("-inf"),
+        )
+
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask)
 
@@ -218,15 +222,23 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
+            assert start_pos is not None
             assert cache_k is not None and cache_v is not None
-            torch._constrain_as_value(x.shape[1], min=0, max=self.max_seq_len)
 
             # Replace the entry in the cache for this token
-            cache_k[:bsz, start_pos : start_pos + seqlen] = xk  # pyre-ignore[58]
-            cache_v[:bsz, start_pos : start_pos + seqlen] = xv  # pyre-ignore[58]
+            # The following lines are equivalent to:
+            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+            # We use .narrow() here to make the compiler happy
+            narrowed_k = cache_k[:bsz].narrow(1, start_pos, seqlen)
+            narrowed_v = cache_v[:bsz].narrow(1, start_pos, seqlen)
 
-            keys = cache_k[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
-            values = cache_v[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
+            narrowed_k.copy_(xk)
+            narrowed_v.copy_(xv)
+
+            keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
+            values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
+
         else:
             keys = xk
             values = xv
@@ -248,7 +260,9 @@ class Attention(nn.Module):
         # Shape before: [1, 1, L, S], after: [L, S]
         # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
         # tensor will be 2-dimensional, regarldess of the values of L & S
-        mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1])
+        mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1]).to(
+            dtype=xq.dtype
+        )
 
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
@@ -499,6 +513,12 @@ class Llama2Model(EagerModelBase):
         device = "cpu"
         # flake8: noqa: TOR102
         checkpoint = torch.load(checkpoint_path, map_location=device)
+        if kwargs.get("fairseq2", False):
+            print("Using fairseq2 checkpoint")
+            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if "model" in checkpoint:
+            # NB: some checkpoint contains a "model" field, which is the actual weights dict
+            checkpoint = checkpoint["model"]
         # get checkpoint dtype
         self.dtype = None
         if len(checkpoint) > 0:
@@ -513,12 +533,6 @@ class Llama2Model(EagerModelBase):
                 print(
                     f"Mixed dtype model. Dtype of {first.key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
                 )
-        if kwargs.get("fairseq2", False):
-            print("Using fairseq2 checkpoint")
-            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
-        if "model" in checkpoint:
-            # NB: some checkpoint contains a "model" field, which is the actual weights dict
-            checkpoint = checkpoint["model"]
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128
@@ -545,6 +559,12 @@ class Llama2Model(EagerModelBase):
             from .quantize import WeightOnlyInt8QuantHandler
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
+            self.model_ = simple_quantizer.convert_for_runtime()
+        elif "int4" in str(checkpoint_path):
+            print("Using int4 weight-only quantization!")
+            from .quantize import Int8DynActInt4WeightQuantHandler
+
+            simple_quantizer = INt8dynactint4weightquanthandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
 
         self.model_.load_state_dict(
