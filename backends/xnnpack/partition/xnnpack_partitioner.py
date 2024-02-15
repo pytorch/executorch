@@ -1093,7 +1093,7 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
         ]
         partition_tags: Dict[str, DelegationSpec] = {}
         self.delegation_spec = DelegationSpec(
-            XnnpackBackend.__name__, [CompileSpec("dqlinear", bytes())]
+            XnnpackBackend.__name__, [CompileSpec("dqlinear_partitioner", bytes())]
         )
 
         if self.check_partitions(partitions):

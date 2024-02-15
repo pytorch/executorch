@@ -410,6 +410,7 @@ class NodeVisitor:
         result = torch.zeros([oc, ric], dtype=torch.uint8)
 
         try:
+            # TODO(): Enable this in OSS
             torch.ops.load_library(
                 "//executorch/backends/xnnpack/operators:convert_to_qc4w"
             )
