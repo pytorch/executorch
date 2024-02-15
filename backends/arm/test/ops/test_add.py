@@ -5,9 +5,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import unittest
-import shutil
 import logging
+import shutil
+import unittest
 
 from typing import Optional, Tuple
 
@@ -21,11 +21,12 @@ from parameterized import parameterized
 # have the vela tool, nor the tosa_reference_model tool. Hence, we need a way to
 # run what we can in that env temporarily. Long term, vela and tosa_reference_model
 # should be installed in the CI env.
-TOSA_REF_MODEL_INSTALLED =  shutil.which("tosa_reference_model")
+TOSA_REF_MODEL_INSTALLED = shutil.which("tosa_reference_model")
 VELA_INSTALLED = shutil.which("vela")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 
 class TestSimpleAdd(unittest.TestCase):
     class Add(torch.nn.Module):
@@ -63,7 +64,9 @@ class TestSimpleAdd(unittest.TestCase):
         if TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
-            logger.warning("TOSA ref model tool not installed, skip numerical correctness tests")
+            logger.warning(
+                "TOSA ref model tool not installed, skip numerical correctness tests"
+            )
 
     def _test_add_tosa_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -87,7 +90,9 @@ class TestSimpleAdd(unittest.TestCase):
         if TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
-            logger.warning("TOSA ref model tool not installed, skip numerical correctness tests")
+            logger.warning(
+                "TOSA ref model tool not installed, skip numerical correctness tests"
+            )
 
     def _test_add_u55_BI_pipeline(
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
@@ -125,7 +130,10 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (test_data,)
         self._test_add_tosa_BI_pipeline(self.Add(), test_data)
 
-    @unittest.skipIf(not VELA_INSTALLED, "There is no point in running U55 tests if the Vela tool is not installed")
+    @unittest.skipIf(
+        not VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
     def test_add_u55_BI(self):
         test_data = (3 * torch.ones(5),)
         self._test_add_u55_BI_pipeline(self.Add(), test_data)
@@ -138,7 +146,10 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 1))
         self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
 
-    @unittest.skipIf(not VELA_INSTALLED, "There is no point in running U55 tests if the Vela tool is not installed")
+    @unittest.skipIf(
+        not VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
     def test_add2_u55_BI(self):
         test_data = (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 1))
         self._test_add_u55_BI_pipeline(self.Add2(), test_data)
