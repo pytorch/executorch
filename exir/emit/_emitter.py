@@ -1369,9 +1369,19 @@ class _TopLevelEmitter(_Emitter):
             self.outputs.append(args_tuple.id)
         else:
             for arg in args_tuple:
-                # Every output should already have its value emitted outputs should only be abstract
-                # IDs at this point.
-                assert isinstance(arg, _AbstractValue)
+                if isinstance(arg, (int, float, bool)):
+                    arg = self._emit_evalue(self._constant_to_evalue(arg, None))
+                elif isinstance(arg, (type(None), str)):
+                    raise InternalError(
+                        self._emit_node_specific_error(
+                            self.node,
+                            f"Returning {arg} is not yet supported in the emitter.",
+                        )
+                    )
+                else:
+                    # Every other output should already have its value emitted.
+                    # They should only be abstract IDs at this point.
+                    assert isinstance(arg, _AbstractValue)
                 self.outputs.append(arg.id)
 
     def plan(self) -> ExecutionPlan:

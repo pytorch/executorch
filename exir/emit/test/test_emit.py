@@ -209,6 +209,39 @@ class TestEmit(unittest.TestCase):
             "T2#1#0(T1#1($),D0())",
         )
 
+    def test_constant_output(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return [((1, 3, 1.2), True, [x + x, x * x])]
+
+        ep = torch.export.export(M(), (torch.ones(2, 3),))
+        res = ep(torch.ones(2, 3))
+        self.assertEqual(res[0][0], (1, 3, 1.2))
+        program = to_edge(ep).to_executorch().executorch_program
+        outputs = program.execution_plan[0].outputs
+        self.assertEqual(len(outputs), 6)
+        self.assertEqual(program.execution_plan[0].values[outputs[0]].val.int_val, 1)
+        self.assertEqual(program.execution_plan[0].values[outputs[1]].val.int_val, 3)
+        self.assertEqual(
+            program.execution_plan[0].values[outputs[2]].val.double_val, 1.2
+        )
+        self.assertEqual(
+            program.execution_plan[0].values[outputs[3]].val.bool_val, True
+        )
+
+    def test_int_list_input(self):
+        class M(torch.nn.Module):
+            def forward(self, x, y, z):
+                return x + y, x + x, x + y + z
+
+        ep = torch.export.export(M(), (torch.ones(2, 3), 2, True))
+        ep(torch.ones(2, 3), 2, True)
+        program = to_edge(ep).to_executorch().executorch_program
+        inputs = program.execution_plan[0].inputs
+        self.assertEqual(len(inputs), 3)
+        self.assertEqual(program.execution_plan[0].values[inputs[1]].val.int_val, 2)
+        self.assertEqual(program.execution_plan[0].values[inputs[2]].val.bool_val, True)
+
     def test_buffers_with_perfect_alignment(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
