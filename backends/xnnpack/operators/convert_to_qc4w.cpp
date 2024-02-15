@@ -1,5 +1,14 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <ATen/ATen.h>
 #include <torch/library.h>
+
 at::Tensor convert_to_qc4w(at::Tensor x) {
   std::vector<int64_t> sizes = x.sizes().vec();
   TORCH_CHECK(sizes.size() == 2, "Expecting 2D tensor");
