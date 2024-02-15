@@ -51,7 +51,7 @@ Runner::Runner(const char* model_path, const char* tokenizer_path) {
   eos_id_ = getMetadataHelper<int64_t>("get_eos_id", 2);
   n_bos_ = getMetadataHelper<int64_t>("get_n_bos", 1);
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
-  max_seq_len_ = 100; getMetadataHelper<int64_t>("get_max_seq_len", 128);
+  max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
   use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
