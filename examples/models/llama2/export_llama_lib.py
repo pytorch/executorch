@@ -94,7 +94,7 @@ def apply_pt2e_quantization(
     Args:
         exported_model: A model to apply quantization on.
         example_inputs: Inputs to the model.
-        quantization_options: Options for quantization as list of strings. e.g. ["xnnpack_dynamic", "embedding"]
+        quant_params: Instance of PT2EQuantOptions specifying what should be quantized.
     Returns:
         An quantized model.
     """
@@ -367,9 +367,6 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         use_kv_cache=args.use_kv_cache,
         fairseq2=args.fairseq2,
     )
-    print("---------------------")
-    print(model(example_inputs))
-    print("---------------------")
     edge_config = EdgeCompileConfig(
         _check_ir_validity=False,
         _skip_type_promotion=bool(args.dtype_override == "fp16"),
@@ -434,7 +431,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             edge_compile_config=edge_config,
         )
 
-    if "xnnpack_dynamic" in quantization_options:
+    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
         edge_manager = edge_manager.to_backend(XnnpackDynamicallyQuantizedPartitioner())
         modelname = f"xnnpack_dq_{modelname}"
 
