@@ -415,7 +415,7 @@ class NodeVisitor:
                 "//executorch/backends/xnnpack/operators:convert_to_qc4w"
             )
             result = torch.ops.xnnpack.convert_to_qc4w(inp)
-        except Exception as e:
+        except:
             # Fallback to python implementation
             for o in range(oc):
                 for i in range(ric):
