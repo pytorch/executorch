@@ -181,6 +181,10 @@ jobs:
         source /opt/arm-sdk/setup_path.sh
         PYTHON_EXECUTABLE=python bash backends/arm/test/run_tosa_reference.sh
 
+        # Run pytest only on specified folders. These test should migrate into
+        # the _unittest.yml once that test env is fixed
+        pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test/ops/ backends/arm/test/models
+
   test-coreml-delegate:
     name: test-coreml-delegate
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main

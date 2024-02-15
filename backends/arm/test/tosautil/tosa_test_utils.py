@@ -58,8 +58,7 @@ class TosaTestUtils:
         input_quant = QuantizationParams(zps={}, scales={})
         output_quant = QuantizationParams(zps={}, scales={})
         self.quantization = Quantization(input=input_quant, output=output_quant)
-        assert shutil.which(self.tosa_ref_model_path) is not None
-        assert os.path.exists(self.intermediate_path)
+        assert os.path.exists(self.intermediate_path), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
 
     def dbg_dump_readble_tosa_file(self) -> None:
         """
@@ -84,8 +83,8 @@ class TosaTestUtils:
             "./backends/arm/third-party/serialization_lib/schema/tosa.fbs"
         )
 
-        assert os.path.exists(tosa_schema_file)
-        assert os.path.exists(tosa_input_file)
+        assert os.path.exists(tosa_schema_file), f"tosa_schema_file: {tosa_schema_file} does not exist"
+        assert os.path.exists(tosa_input_file), f"tosa_input_file: {tosa_input_file} does not exist"
         assert shutil.which("flatc") is not None
 
         cmd_flatc = [
@@ -231,6 +230,7 @@ class TosaTestUtils:
 
         # Run the TOSA reference model via command line, this will produce a
         # .npy file with the result (aka OFM).
+        assert shutil.which(self.tosa_ref_model_path) is not None, f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
         cmd_ref_model = [self.tosa_ref_model_path, "--test_desc", desc_file_path]
         self._run_cmd(cmd_ref_model)
 
