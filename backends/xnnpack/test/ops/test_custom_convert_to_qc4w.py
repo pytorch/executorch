@@ -10,7 +10,6 @@ import torch
 
 
 class TestCustomQC4WConvert(unittest.TestCase):
-
     def setUp(self):
         torch.ops.load_library(
             "//executorch/backends/xnnpack/operators:convert_to_qc4w"
@@ -29,6 +28,7 @@ class TestCustomQC4WConvert(unittest.TestCase):
                     result[o][i] = inp[o][j]
                     result[o][i] += inp[o][j + 1] << 4
             return result
+
         inp = torch.randint(low=0, high=15, size=(20, 42), dtype=torch.uint8)
         result = torch.ops.xnnpack.convert_to_qc4w(inp)
         ref_result = _ref_output(inp)
@@ -41,7 +41,7 @@ class TestCustomQC4WConvert(unittest.TestCase):
         # and didnt try to debug
         try:
             torch.ops.xnnpack.convert_to_qc4w(inp)
-        except Exception as e:
+        except:
             exception_thrown = True
         self.assertTrue(exception_thrown)
 
@@ -51,6 +51,6 @@ class TestCustomQC4WConvert(unittest.TestCase):
         # and didnt try to debug
         try:
             torch.ops.xnnpack.convert_to_qc4w(inp)
-        except Exception as e:
+        except:
             exception_thrown = True
         self.assertTrue(exception_thrown)
