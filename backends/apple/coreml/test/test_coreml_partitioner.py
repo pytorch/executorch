@@ -4,12 +4,14 @@
 
 import unittest
 
-import torch
-import torchvision
 import executorch.exir
 
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
-from executorch.backends.apple.coreml.partition.coreml_partitioner import CoreMLPartitioner
+import torch
+import torchvision
+
+from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+    CoreMLPartitioner,
+)
 
 
 class TestCoreMLPartitioner(unittest.TestCase):
@@ -54,7 +56,9 @@ class TestCoreMLPartitioner(unittest.TestCase):
         exir_program_aten = torch.export.export(model, example_inputs)
         edge_program_manager = executorch.exir.to_edge(exir_program_aten)
         delegated_program_manager = edge_program_manager.to_backend(
-            CoreMLPartitioner(skip_ops_for_coreml_delegation=["aten.convolution.default"])
+            CoreMLPartitioner(
+                skip_ops_for_coreml_delegation=["aten.convolution.default"]
+            )
         )
 
         assert [

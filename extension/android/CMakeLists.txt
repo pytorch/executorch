@@ -20,7 +20,13 @@ add_subdirectory(
 
 if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
     add_library(executorch_jni SHARED jni/jni_layer.cpp)
-    target_link_libraries(executorch_jni extension_data_loader extension_module xnn_executor_runner_lib fbjni)
+    target_link_libraries(
+      executorch_jni
+      extension_data_loader
+      extension_module
+      xnn_executor_runner_lib
+      fbjni
+    )
     if(EXECUTORCH_BUILD_QNN)
         target_link_libraries(executorch_jni qnn_executorch_backend)
     endif()
