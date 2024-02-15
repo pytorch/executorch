@@ -85,10 +85,18 @@ target_include_directories(
 )
 target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
 
+find_library(ACCELERATE_FRAMEWORK Accelerate)
+find_library(COREML_FRAMEWORK CoreML)
+find_library(FOUNDATION_FRAMEWORK Foundation)
+find_library(SQLITE_LIBRARY sqlite3)
 
-target_link_libraries(
-  coremldelegate PRIVATE
+target_link_libraries(coremldelegate
+  PRIVATE
   executorch
+  ${ACCELERATE_FRAMEWORK}
+  ${COREML_FRAMEWORK}
+  ${FOUNDATION_FRAMEWORK}
+  ${SQLITE_LIBRARY}
 )
 
 target_compile_options(coremldelegate PRIVATE "-fobjc-arc")

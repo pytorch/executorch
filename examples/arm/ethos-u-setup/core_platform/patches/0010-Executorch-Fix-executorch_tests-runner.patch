@@ -1,0 +1,62 @@
+From d21fd60b66778cbca6fd8ffcb03af2706ed4a6e3 Mon Sep 17 00:00:00 2001
+From: Mengwei Liu <larryliu@meta.com>
+Date: Mon, 12 Feb 2024 11:28:21 -0800
+Subject: [PATCH] Fix executorch_tests runner: update deprecated function call
+
+---
+ applications/executorch_tests/CMakeLists.txt | 2 ++
+ applications/executorch_tests/runner.cpp     | 7 +++++--
+ 2 files changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/applications/executorch_tests/CMakeLists.txt b/applications/executorch_tests/CMakeLists.txt
+index 174b911..16c97a5 100644
+--- a/applications/executorch_tests/CMakeLists.txt
++++ b/applications/executorch_tests/CMakeLists.txt
+@@ -42,6 +42,7 @@ message("ExecuTorch pte file (ET_PTE_FILE_PATH)  : ${ET_PTE_FILE_PATH}")
+ message("**********************")
+ 
+ set(LIB_ET_RUNTIME "${ET_BUILD_DIR_PATH}/libexecutorch.a")
++set(LIB_ET_RUNNER_UTIL "${ET_BUILD_DIR_PATH}/extension/runner_util/libextension_runner_util.a")
+ set(LIB_ET_ETHOS "${ET_BUILD_DIR_PATH}/backends/arm/libexecutorch_delegate_ethos_u.a")
+ set(LIB_ET_OP_REGISTRATION "${ET_BUILD_DIR_PATH}/examples/arm/libportable_ops_lib.a")
+ set(LIB_ET_OP_KERNELS "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a")
+@@ -65,6 +66,7 @@ ethosu_add_executable_test(executor_runner PRIVATE
+     SOURCES runner.cpp
+     LIBRARIES
+     ${LIB_ET_RUNTIME}
++    ${LIB_ET_RUNNER_UTIL}
+     ${LIB_ET_OP_REGISTRATION}
+     ${LIB_ET_OP_KERNELS}
+     ${LIB_ET_ETHOS}
+diff --git a/applications/executorch_tests/runner.cpp b/applications/executorch_tests/runner.cpp
+index 9dc3519..7649f50 100644
+--- a/applications/executorch_tests/runner.cpp
++++ b/applications/executorch_tests/runner.cpp
+@@ -10,11 +10,11 @@
+ #include <memory>
+ 
+ #include <executorch/extension/data_loader/buffer_data_loader.h>
++#include <executorch/extension/runner_util/inputs.h>
+ #include <executorch/runtime/executor/program.h>
+ #include <executorch/runtime/platform/log.h>
+ #include <executorch/runtime/platform/platform.h>
+ #include <executorch/runtime/platform/runtime.h>
+-#include <executorch/util/util.h>
+ 
+ // Model file, built from pte file passed to CMAKE as ET_PTE_FILE_PATH
+ #include "model_pte.h"
+@@ -110,7 +110,10 @@ int main() {
+     ET_LOG(Info,"Method loaded.");
+ 
+     ET_LOG(Info,"Preparing inputs...");
+-    auto inputs = torch::executor::util::PrepareInputTensors(*method);
++    auto inputs = torch::executor::util::prepare_input_tensors(*method);
++    if (!inputs.ok()) {
++        ET_LOG(Info, "Preparing inputs tensors for method %s failed with status 0x%" PRIx32, method_name, inputs.error());
++    }
+     ET_LOG(Info,"Input prepared.");
+ 
+     ET_LOG(Info,"Starting the model execution...");
+-- 
+2.39.3
+

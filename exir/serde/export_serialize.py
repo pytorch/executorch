@@ -459,7 +459,10 @@ class GraphModuleSerializer:
                 path, ty = val
 
                 assert isinstance(path, str)
-                normalized_ty = ty.__module__ + "." + ty.__qualname__
+                if isinstance(ty, str):
+                    normalized_ty = ty
+                else:
+                    normalized_ty = ty.__module__ + "." + ty.__qualname__
                 return path + "," + normalized_ty
 
             # Serialize to "key,orig_path,type_str"
@@ -735,6 +738,7 @@ class GraphModuleSerializer:
         elif spec.kind == ep.InputKind.BUFFER:
             assert spec.target is not None
             assert isinstance(spec.arg, ep.TensorArgument)
+            assert spec.persistent is not None
             return InputSpec.create(
                 buffer=InputToBufferSpec(
                     arg=TensorArgument(name=spec.arg.name),
@@ -1316,6 +1320,7 @@ class GraphModuleDeserializer:
                 kind=ep.InputKind.BUFFER,
                 arg=PyTensorArgument(name=i.buffer.arg.name),
                 target=i.buffer.buffer_name,
+                persistent=i.buffer.persistent,
             )
         elif i.type == "tensor_constant":
             return ep.InputSpec(

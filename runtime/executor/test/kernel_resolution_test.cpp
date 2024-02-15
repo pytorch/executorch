@@ -103,8 +103,7 @@ TEST_F(KernelResolutionTest, ResolveKernelKeySuccess) {
   //     TensorMeta(ScalarType::Float, contiguous),
   //     TensorMeta(ScalarType::Float, contiguous),
   //     TensorMeta(ScalarType::Float, contiguous)};
-  KernelKey key = KernelKey(
-      "v0/\x06;\x00\x01|\x06;\x00\x01|\x06;\x00\x01|\x06;\x00\x01\xff");
+  KernelKey key = KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
   Kernel kernel_1 = Kernel(
       "aten::add.out", key, [](KernelRuntimeContext& context, EValue** stack) {
         (void)context;
