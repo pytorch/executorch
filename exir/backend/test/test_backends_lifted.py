@@ -626,7 +626,7 @@ class TestBackends(unittest.TestCase):
             ),
         )
 
-        new_res = program_with_delegates.exported_program().module()(*inputs)
+        new_res = program_with_delegates.exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
@@ -745,7 +745,7 @@ class TestBackends(unittest.TestCase):
             HTAPartitionerOnePatternDemo()
         )
 
-        new_res = traced_with_delegate.exported_program().module()(*inputs)
+        new_res = traced_with_delegate.exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
@@ -768,7 +768,7 @@ class TestBackends(unittest.TestCase):
         #     config=exir.ExecutorchBackendConfig(extract_delegate_segments=extract_delegate_segments),
         # )
 
-        new_res = program_with_delegates.exported_program().module()(*inputs)
+        new_res = program_with_delegates.exported_program()(*inputs)
         for t1, t2 in zip(new_res, orig_res, strict=True):
             self.assertTrue(torch.allclose(t1, t2, atol=1e-03, rtol=1e-03))
 
@@ -1029,7 +1029,7 @@ class TestBackends(unittest.TestCase):
         partitioned = orig
         partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
-        new_res = partitioned.exported_program().module()(*inputs)
+        new_res = partitioned.exported_program()(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
         toplevel_lowered = get_lowered_submodules(
@@ -1102,7 +1102,7 @@ class TestBackends(unittest.TestCase):
             map_fn_lowered[0][1].original_module.graph_module.code
         )
 
-        new_res = partitioned.exported_program().module()(*inputs)
+        new_res = partitioned.exported_program()(*inputs)
 
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
@@ -1153,7 +1153,7 @@ class TestBackends(unittest.TestCase):
         partitioned = orig
         partitioned = partitioned.to_backend(AddMulPartitionerDemo())
 
-        new_res = partitioned.exported_program().module()(*inputs)
+        new_res = partitioned.exported_program()(*inputs)
         self.assertTrue(torch.allclose(orig_res, new_res[0]))
 
         toplevel_lowered = get_lowered_submodules(
@@ -1224,7 +1224,7 @@ class TestBackends(unittest.TestCase):
                 return self.lowered(x)
 
         gm = to_edge(export(ComposedM(), inputs))
-        gm.exported_program().module()(*inputs)
+        gm.exported_program()(*inputs)
 
     def test_dict_input(self):
         def f(x: Dict[str, torch.Tensor]):
@@ -1246,4 +1246,4 @@ class TestBackends(unittest.TestCase):
                 return self.lowered(x)
 
         gm = to_edge(export(ComposedM(), inputs))
-        gm.exported_program().module()(*inputs)
+        gm.exported_program()(*inputs)
