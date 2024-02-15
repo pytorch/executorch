@@ -17,6 +17,7 @@ from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     Buffer,
@@ -216,8 +217,9 @@ class XnnpackBackend(BackendDetails):
 
         passes = []
         for spec in compile_specs:
-            if spec.key == "dqlinear":
+            if spec.key == "dqlinear_partitioner":
                 passes.append(ConvertToLinearPass)
+                passes.append(TagImplicitQDqPass)
 
         passes = passes if len(passes) > 0 else None
         # XNNPACK Delegate Specific Passes
