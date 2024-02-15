@@ -56,8 +56,8 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         ).run(epm.exported_program().graph_module.code)
 
         # check EdgeOp and the new BackendOp should behave the same
-        expected = before(*test_set.sample_input)
-        actual = epm.exported_program()(*test_set.sample_input)
+        expected = before.module()(*test_set.sample_input)
+        actual = epm.exported_program().module()(*test_set.sample_input)
         self.assertTrue(torch.allclose(actual, expected))
         self.assertEqual(
             self.is_channel_last(actual),
