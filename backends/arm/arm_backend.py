@@ -153,6 +153,9 @@ class ArmBackend(BackendDetails):
                 # any checking of compatibility.
                 dbg_fail(node, tosa_graph, path)
 
+        # TODO: It would be awesome if this dump could somehow be done on top level and not here.
+        # Problem is that the desc.json has to be created on the tosa_graph object, which we can't
+        # access from top level.
         if debug_output is True:
             dbg_tosa_dump(tosa_graph, path)
 
@@ -168,4 +171,6 @@ class ArmBackend(BackendDetails):
         else:
             raise RuntimeError(f"Unknown format {output_format}")
 
+        # Continueing from above. Can I put tosa_graph into this function?
+        # debug_handle_map = ...
         return PreprocessResult(processed_bytes=binary)

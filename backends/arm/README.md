@@ -1,6 +1,6 @@
 # ExecuTorch Arm/TOSA Delegate
 
-This subtree contains the Arm Delegate implementation for ExecuTorch.
+This subtree contains the Arm(R) Delegate implementation for ExecuTorch.
 
 This delegate is structured to, over time, support a number of different Arm devices
 through an AoT flow which targets multiple Arm IP using the TOSA standard.
@@ -9,7 +9,7 @@ The expected flow is:
  * torch.nn.module -> TOSA -> command_stream for fully AoT flows e.g. embedded.
  * torch.nn.module -> TOSA for flows supporting a JiT compilation step.
 
-Current backend support is being developed for TOSA to Ethos-U55/65 via the
+Current backend support is being developed for TOSA to Ethos(TM)-U55/65 via the
 ethos-u-vela compilation stack. which follows the fully AoT flow.
 
 ## Layout
@@ -26,6 +26,50 @@ Runtime:
 Other:
 - `third-party/` - Dependencies on other code - in particular the TOSA serialization_lib for compiling to TOSA and the ethos-u-core-driver for the bare-metal backend supporting Ethos-U
 - `test/` - Unit test and test support functions
+
+## Unit tests
+We're currently transitioning to use the generic Tester class.
+
+```
+test                            #  Root test folder
+├── models                      #  Full model tests
+├── ops                         #  Single op tests
+├── tester                      #  Arm Tester class
+├── tosautil                    #  Utility functions for TOSA artifacts
+├ arm_tosa_reference.py         #  Legacy test runner. Keep until all tests are ported to new test structure.
+├ test_models.py                #  Legacy test definitions. Port these tests to new test structure.
+├ test_tosa.py                  #  Legacy unit test. Keep until tests are ported to new test structure.
+```
+
+Some example commands to run these tests follow. Run a single test:
+
+```
+python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd -k test_add2_tosa_BI
+```
+
+Or all tests in "TestSimpleAdd":
+
+```
+python -m unittest backends.arm.test.ops.test_add.TestSimpleAdd
+```
+
+Or discover and run many tests:
+
+```
+python -m unittest discover -s backends/arm/test/ops/
+```
+
+### A note on unit tests
+
+There are currently 3 ways we unit test our code.
+1. TOSA main inference. These tests are using non-quantized data and ops. Edge IR representation of the module is lowered to a TOSA flatbuffer, which is tested for numerical correcteness using the ```tosa_reference_model``` tool.
+2. TOSA base inference. Same as above, but data and ops are quantized.
+3. Ethos-U55. These tests use quantized data and ops (aka TOSA base inference). Edge IR is lowered to a TOSA flatbuffer, which is fed into the Vela compiler. Theses tests are functional tests and do not test numerical correctness, since that should be guaranteed by TOSA.
+
+In order to distinguise between the different tests, the following suffixes have been added to the respective test case.
+* ```_MI``` for main inference
+* ```_BI``` for base inference
+* ```_U55_BI``` for base inference on U55
 
 ## Help & Improvements
 If you have problems or questions, or have suggestions for ways to make
