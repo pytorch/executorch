@@ -21,19 +21,21 @@
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 
-namespace torch {
-namespace executor {
+namespace torch::executor {
 
 class Runner {
  public:
   explicit Runner(
-      const char* model_path,
-      const char* tokenizer_path,
-      float temperature = 0.8f);
+      const std::string& model_path,
+      const std::string& tokenizer_path,
+      const float temperature = 0.8f);
 
+  bool is_loaded() const;
+  Error load();
   Error generate(
       const std::string& prompt,
       std::function<void(const std::string&)> callback = {});
+  void stop();
 
  private:
   // metadata
@@ -53,13 +55,12 @@ class Runner {
   bool use_kv_cache_;
   bool append_eos_;
   std::unordered_set<std::string> model_methods_;
-  // module
   std::unique_ptr<Module> module_;
-  // tokenizer
+  std::string tokenizer_path_;
+  float temperature_;
   std::unique_ptr<Tokenizer> tokenizer_;
-  // sampler
   std::unique_ptr<Sampler> sampler_;
+  bool shouldStop_{false};
 };
 
-} // namespace executor
-} // namespace torch
+} // namespace torch::executor
