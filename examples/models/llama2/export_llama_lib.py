@@ -10,10 +10,12 @@ import argparse
 import json
 import logging
 import shlex
+from dataclasses import dataclass
+
+from enum import Enum
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, Optional
-from dataclasses import dataclass
 
 import pkg_resources
 import torch
@@ -48,8 +50,6 @@ from .quantize import (
     WeightOnlyInt8QuantHandler,
 )
 
-from enum import Enum
-
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -74,17 +74,22 @@ class EmbeddingQuantOptions:
 
     def __post_init__(self):
         if group_size != -1:
-            raise RuntimeError("PT2E embedding quantizer does not support groupwise at the moment.")
+            raise RuntimeError(
+                "PT2E embedding quantizer does not support groupwise at the moment."
+            )
+
 
 @dataclass
 class DynamicQuantLinearOptions:
     is_per_channel: bool = True
     is_qc4: bool = False
 
+
 @dataclass
 class PT2EQuantOptions:
     quantize_embedding: Optional[EmbeddingQuantOptions] = None
     quantize_linear: Optional[DynamicQuantLinearOptions] = None
+
 
 def apply_pt2e_quantization(
     exported_model, example_inputs, quant_params, args
@@ -124,10 +129,12 @@ def apply_pt2e_quantization(
         dynamic_quantizer = XNNPACKQuantizer()
         logging.info("Apply PT2E dynamic linear quantization.")
         if not quant_params.quantize_linear.is_per_channel:
-            raise ValueError("At the moment only per channel weight quantization is supported.")
+            raise ValueError(
+                "At the moment only per channel weight quantization is supported."
+            )
         if quant_params.quantize_linear.is_qc4:
             operator_config_dynamic = get_symmetric_quantization_config(
-                is_per_channel=True, is_dynamic=True, weight_qmin = -8, weight_qmax = 7
+                is_per_channel=True, is_dynamic=True, weight_qmin=-8, weight_qmax=7
             )
         else:
             operator_config_dynamic = get_symmetric_quantization_config(
@@ -326,9 +333,17 @@ def _get_pt2e_quantization_params(args):
     if "embedding" in quantization_options:
         quant_options = quant_options or PT2EQuantOptions()
         quant_options.quantize_embedding = EmbeddingQuantOptions()
-    if "xnnpack_dynamic" in quantization_options and "xnnpack_dynamic_qc4" in quantization_options:
-        raise RuntimeError("For dynamic linear quantization via xnnpack quantizer you can chose only qc8 or qc4 option, not both.")
-    if "xnnpack_dynamic" in quantization_options or "xnnpack_dynamic_qc4" in quantization_options:
+    if (
+        "xnnpack_dynamic" in quantization_options
+        and "xnnpack_dynamic_qc4" in quantization_options
+    ):
+        raise RuntimeError(
+            "For dynamic linear quantization via xnnpack quantizer you can chose only qc8 or qc4 option, not both."
+        )
+    if (
+        "xnnpack_dynamic" in quantization_options
+        or "xnnpack_dynamic_qc4" in quantization_options
+    ):
         quant_options = quant_options or PT2EQuantOptions()
         quant_options.quantize_linear = DynamicQuantLinearOptions()
         if "xnnpack_dynamic_qc4" in quantization_options:
@@ -436,7 +451,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        edge_manager = edge_manager.to_backend(XnnpackPartitioner(_only_ops_with_dynamic_shape_support=True))
+        edge_manager = edge_manager.to_backend(
+            XnnpackPartitioner(_only_ops_with_dynamic_shape_support=True)
+        )
         modelname = f"xnnpack_{modelname}"
 
     # TODO: remove this after xnnpack delegation is ready

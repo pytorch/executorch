@@ -61,7 +61,7 @@ class TestDelegate(unittest.TestCase):
         FileCheck().check("lowered_module_0").check(
             "torch.ops.higher_order.executorch_call_delegate"
         ).run(gm.graph_module.code)
-        self.assertTrue(torch.allclose(orig_res, gm(*inputs)))
+        self.assertTrue(torch.allclose(orig_res, gm.module()(*inputs)))
 
     def test_to_backend(self) -> None:
         """Check if we have patched a lowered module correctly (for delegation)"""
@@ -186,7 +186,7 @@ class TestDelegate(unittest.TestCase):
                 self.assertTrue(isinstance(node.args[0], list))
                 self.assertEqual(len(node.args[0]), 1)
 
-        new_res = prog.exported_program()(*inputs)
+        new_res = prog.exported_program().module()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
 
     def test_create_submodule_multiple_return(self) -> None:
@@ -246,7 +246,7 @@ class TestDelegate(unittest.TestCase):
                 self.assertTrue(isinstance(node.args[0], list))
                 self.assertEqual(len(node.args[0]), 2)
 
-        new_res = prog.exported_program()(*inputs)
+        new_res = prog.exported_program().module()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))
 
     def test_create_submodule_list_return(self) -> None:
@@ -307,5 +307,5 @@ class TestDelegate(unittest.TestCase):
                 self.assertTrue(isinstance(node.args[0], list))
                 self.assertEqual(len(node.args[0]), 2)
 
-        new_res = prog.exported_program()(*inputs)
+        new_res = prog.exported_program().module()(*inputs)
         self.assertTrue(torch.allclose(new_res, orig_res))

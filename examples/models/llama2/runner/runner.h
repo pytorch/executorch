@@ -26,7 +26,10 @@ namespace executor {
 
 class Runner {
  public:
-  explicit Runner(const char* model_path, const char* tokenizer_path);
+  explicit Runner(
+      const char* model_path,
+      const char* tokenizer_path,
+      float temperature = 0.8f);
 
   Error generate(
       const std::string& prompt,

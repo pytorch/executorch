@@ -184,7 +184,7 @@ class TestProgramManagers(unittest.TestCase):
             get_exported_programs(), get_config_methods()
         )
 
-        original_res = edge_manager.exported_program("forward")(
+        original_res = edge_manager.exported_program("forward").module()(
             torch.ones(1), torch.ones(1)
         )
 
@@ -234,7 +234,7 @@ class TestProgramManagers(unittest.TestCase):
         )
 
         self.assertEqual(
-            transformed_edge.exported_program("foo")(
+            transformed_edge.exported_program("foo").module()(
                 torch.ones(1),
             ),
             torch.ones(1) + 1,  # x + 1
