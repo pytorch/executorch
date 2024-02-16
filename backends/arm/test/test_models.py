@@ -188,7 +188,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_3x3_1x3x256x256_st1(torch.nn.Module):
+    class simple_conv2d_3x3_1x3x256x256_stride1(torch.nn.Module):
         data = torch.ones(1, 3, 256, 256)
         inputs = {
             TosaProfile.BI: (data,),
@@ -215,7 +215,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_1x1_1x2x128x128_st1(torch.nn.Module):
+    class simple_conv2d_1x1_1x2x128x128_stride1(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(1, 2, 128, 128)))
         )
@@ -244,7 +244,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_2x2_1x1x14x14_st2(torch.nn.Module):
+    class simple_conv2d_2x2_1x1x14x14_stride2(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(1, 1, 14, 14)))
         )
@@ -273,7 +273,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_5x5_3x2x128x128_st1(torch.nn.Module):
+    class simple_conv2d_5x5_3x2x128x128_stride1(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(3, 2, 128, 128)))
         )
