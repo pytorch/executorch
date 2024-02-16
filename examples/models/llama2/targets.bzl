@@ -15,8 +15,6 @@ def define_common_targets():
                 ] if aten else [],
                 deps = [
                     "//executorch/examples/models/llama2/runner:runner" + aten_suffix,
-                    "//executorch/backends/xnnpack:xnnpack_backend",
-                    "//executorch/kernels/quantized:generated_lib",
                     "//executorch/extension/evalue_util:print_evalue",
                 ],
                 external_deps = [
