@@ -1,7 +1,7 @@
-From 02eb3615cdb2cc963f20e103893f76499c98ad50 Mon Sep 17 00:00:00 2001
+From efe17bf0ed88cc1f163dedb29e7e9feabd47c7d7 Mon Sep 17 00:00:00 2001
 From: Digant Desai <digantdesai@meta.com>
 Date: Mon, 2 Oct 2023 20:39:39 -0700
-Subject: [Executorch 4/7] New phdr for .data section
+Subject: [PATCH] New phdr for .data section
 
 ---
  targets/corstone-300/platform.ld | 3 ++-
@@ -29,5 +29,5 @@ index 8d77329..8de77c4 100644
    .sram.bss :
    {
 -- 
-2.42.0
+2.34.1
 
