@@ -104,122 +104,95 @@ target_include_directories(
 )
 
 function(define_common_targets)
-    foreach(aten IN ITEMS OFF) # ON OFF
-        if(aten)
-            set(aten_suffix "_aten")
-        else()
-            set(aten_suffix "")
-        endif()
+    set(EXPORTED_HEADERS_RUNNER
+        "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/runner/util.h"
+    )
 
-        message(">>>>>> CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
+    # Define a CMake target using runtime.cxx_library
+    add_library(runner
+        "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
+    )
 
-        set(EXPORTED_HEADERS_RUNNER
-            "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.h"
-            "${CMAKE_CURRENT_SOURCE_DIR}/runner/util.h"
-        )
+    # Specify exported headers
+    target_include_directories(runner PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
+        ${CMAKE_CURRENT_SOURCE_DIR}/runner
+        ${CMAKE_CURRENT_SOURCE_DIR}/sampler
+        ${CMAKE_CURRENT_SOURCE_DIR}/tokenizer
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch/torch/csrc/api/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
+    )
 
-        # Define a CMake target using runtime.cxx_library
-        add_library(runner${aten_suffix}
-            "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.cpp"
-            "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
-        )
-
-        # Specify exported headers
-        target_include_directories(runner${aten_suffix} PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
-            ${CMAKE_CURRENT_SOURCE_DIR}/runner
-            ${CMAKE_CURRENT_SOURCE_DIR}/sampler
-            ${CMAKE_CURRENT_SOURCE_DIR}/tokenizer
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch/torch/csrc/api/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
-        )
-
-        get_target_property(runner_include_dirs runner${aten_suffix} INCLUDE_DIRECTORIES)
-        message(">>>>Include Directories for runner_lib: ${runner_include_dirs}")
+    get_target_property(runner_include_dirs runner INCLUDE_DIRECTORIES)
+    message(">>>>Include Directories for runner_lib: ${runner_include_dirs}")
 
 
-        target_sources(runner${aten_suffix} PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.cpp"
-            ${EXPORTED_HEADERS_RUNNER}
-        )
+    target_sources(runner PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.cpp"
+        ${EXPORTED_HEADERS_RUNNER}
+    )
 
-        add_library(sampler${aten_suffix}
-            "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
-        )
+    add_library(sampler
+        "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
+    )
 
-        target_include_directories(sampler${aten_suffix} PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
-            ${CMAKE_CURRENT_SOURCE_DIR}/sampler
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch/torch/csrc/api/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
-        )
-
-
-        target_sources(sampler${aten_suffix} PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
-        )
+    target_include_directories(sampler PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
+        ${CMAKE_CURRENT_SOURCE_DIR}/sampler
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch/torch/csrc/api/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
+    )
 
 
-        add_library(tokenizer${aten_suffix}
-            "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
-        )
-
-        target_include_directories(tokenizer${aten_suffix} PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
-            ${CMAKE_CURRENT_SOURCE_DIR}/tokenizer
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch/torch/csrc/api/include
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
-        )
-
-        target_sources(tokenizer${aten_suffix} PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
-        )
+    target_sources(sampler PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
+    )
 
 
-        # Add preprocessor flags if aten is true
-        if(aten)
-            target_compile_definitions(runner${aten_suffix} PRIVATE
-                -DUSE_ATEN_LIB
-            )
-        endif()
+    add_library(tokenizer
+        "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
+    )
 
-        # Specify visibility
-        target_compile_options(runner${aten_suffix} PRIVATE
-            -fvisibility=hidden
-        )
+    target_include_directories(tokenizer PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../..
+        ${CMAKE_CURRENT_SOURCE_DIR}/tokenizer
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch/torch/csrc/api/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../../libtorch/include/torch/csrc/api/include/
+    )
 
-        # Specify exported dependencies
-        target_link_libraries(runner${aten_suffix} PRIVATE
-            //executorch/backends/xnnpack:xnnpack_backend
-            //executorch/examples/models/llama2/sampler:sampler${aten_suffix}
-            //executorch/examples/models/llama2/tokenizer:tokenizer${aten_suffix}
-            //executorch/examples/models/llama2/runner:runner${aten_suffix}
-            //executorch/extension/evalue_util:print_evalue${aten_suffix}
-            //executorch/extension/runner_util:managed_tensor${aten_suffix}
-            //executorch/extension/module:module${aten_suffix}
-            //executorch/kernels/quantized:generated_lib${aten_suffix}
-            //executorch/kernels/portable:${aten_suffix}generated_lib_all_ops
-            //executorch/runtime/core/exec_aten:lib${aten_suffix}
-            //executorch/runtime/kernel:kernel_includes
-        )
+    target_sources(tokenizer PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
+    )
 
-        # Specify external dependencies if aten is true
-        #if(aten)
-            target_link_libraries(runner${aten_suffix} PRIVATE
-                libtorch
-            )
-        #endif()
+    # Specify visibility
+    target_compile_options(runner PRIVATE
+        -fvisibility=hidden
+    )
 
-        # Set target properties, visibility, etc. as needed
+    # Specify exported dependencies
+    target_link_libraries(runner PRIVATE
+        //executorch/backends/xnnpack:xnnpack_backend
+        //executorch/examples/models/llama2/sampler:sampler
+        //executorch/examples/models/llama2/tokenizer:tokenizer
+        //executorch/examples/models/llama2/runner:runner
+        //executorch/extension/evalue_util:print_evalue
+        //executorch/extension/runner_util:managed_tensor
+        //executorch/extension/module:module
+        //executorch/kernels/quantized:generated_lib
+        //executorch/kernels/portable:generated_lib_all_ops
+        //executorch/runtime/core/exec_aten:lib
+        //executorch/runtime/kernel:kernel_includes
+    )
 
-    endforeach()
 endfunction()
 
 define_common_targets()
