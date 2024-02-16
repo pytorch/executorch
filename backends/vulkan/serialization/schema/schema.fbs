@@ -2,33 +2,12 @@
 
 namespace at.vulkan.delegate;
 
-// Update after any BC breaking changes
+// Update after any BC breaking changes.
 file_identifier "VK00";
 
-enum VkDatatype : short {
-  /// IEEE754 single-precision floating-point.
-  vk_datatype_fp32 = 0,
-}
-
-// Taken from executorch
-// Data buffer abstraction.
-table Buffer {
-  storage:[ubyte] (force_align: 16);
-}
-
-table VkTensor {
-  // type of the tensor elements.
-  datatype:VkDatatype;
-  // Array of shape dimensions
-  dims:[uint];
-  // Index to the program's constant buffer table, value 0 is reserved to indicate non constant
-  constant_buffer_idx:uint;
-  // Indicates which shared memory object this tensor uses; negative means the tensor does not share memory
-  mem_obj_id: int;
-}
-
-table VkValue {
-  value:VkTensor;
+enum VkDataType : short {
+  // IEEE754 single-precision floating-point.
+  fp32 = 0,
 }
 
 enum VkArithmeticOpType : short {
@@ -53,23 +32,46 @@ table VkNode {
   debug_handle:uint;
 }
 
+table VkTensor {
+  // Type of the tensor's elements.
+  datatype:VkDataType;
+  // Shape dimensions.
+  dims:[uint];
+  // Index to constant_buffer; index 0 is reserved for non-constant tensors.
+  constant_buffer_id:uint;
+  // Index to the shared memory object; negative means the tensor doesn't share memory.
+  mem_obj_id:int;
+}
+
+table VkValue {
+  value:VkTensor;
+}
+
+// Taken from ExecuTorch.
+// Data buffer abstraction.
+table Buffer {
+  storage:[ubyte] (force_align: 16);
+}
+
 table VkGraph {
   // Schema version.
   version:string;
-  vknodes:[VkNode];
-  vkvalues:[VkValue];
 
-  // Ids of external inputs
+  // All nodes used in this program.
+  nodes:[VkNode];
+
+  // All values used in this program.
+  values:[VkValue];
+
+  // All constant data used in this program (e.g. weight tensors). Constant data use VkTensor
+  // constant buffer indices. Index 0 is reserved for non-constant VkTensor.
+  constant_buffers:[Buffer];
+
+  // Index to values for external inputs.
   input_ids:[uint];
 
-  // Ids of external outputs
+  // Index to values for external outputs.
   output_ids:[uint];
-
-  // Tables of constant data, used for constant Values (e.g.
-  // data field of weight tensors). Each constant is assigned an index into the table
-  // which are each individually aligned. 0 index is reserved to be pointed to by non-constant
-  // Tensors
-  constant_buffer:[Buffer];
 }
 
 root_type VkGraph;

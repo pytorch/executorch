@@ -60,9 +60,9 @@ class VulkanBackend final : public PyTorchBackendInterface {
   }
 
   at::native::vulkan::api::ScalarType get_scalar_type(
-      const at::vulkan::delegate::VkDatatype& vk_datatype) const {
+      const at::vulkan::delegate::VkDataType& vk_datatype) const {
     switch (vk_datatype) {
-      case (at::vulkan::delegate::VkDatatype::vk_datatype_fp32): {
+      case (at::vulkan::delegate::VkDataType::fp32): {
         return at::native::vulkan::api::kFloat;
       }
     }
@@ -91,9 +91,9 @@ class VulkanBackend final : public PyTorchBackendInterface {
     const at::vulkan::delegate::VkTensor* vk_tensor = vk_value->value();
 
     ET_CHECK_MSG(
-        vk_tensor->constant_buffer_idx() != 0,
-        "Only constant buffers are supported when adding tensors to compute graph (indicated by constant_buffer_idx == 0), but got constant_buffer_idx of %d",
-        vk_tensor->constant_buffer_idx());
+        vk_tensor->constant_buffer_id() != 0,
+        "Only constant buffers are supported when adding tensors to compute graph (indicated by constant_buffer_id == 0), but got constant_buffer_id of %d",
+        vk_tensor->constant_buffer_id());
 
     const at::native::vulkan::api::ScalarType& tensor_dtype =
         get_scalar_type(vk_tensor->datatype());
@@ -104,7 +104,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
         tensor_dims_fb->cbegin(), tensor_dims_fb->cend());
 
     const uint8_t* tensor_data =
-        constant_buffer->Get(vk_tensor->constant_buffer_idx())
+        constant_buffer->Get(vk_tensor->constant_buffer_id())
             ->storage()
             ->data();
 
@@ -163,7 +163,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
     // VkValues
     const flatbuffers_fbsource::Vector<
         flatbuffers_fbsource::Offset<at::vulkan::delegate::VkValue>>*
-        value_mapping = flatbuffer_graph->vkvalues();
+        value_mapping = flatbuffer_graph->values();
 
     // 1. Add all inputs (and corresponding tensors) to the compute graph
     const flatbuffers_fbsource::Vector<uint32_t>* input_ids =
@@ -179,11 +179,11 @@ class VulkanBackend final : public PyTorchBackendInterface {
           input_vk_value->value();
 
       ET_CHECK_MSG(
-          input_vk_tensor->constant_buffer_idx() == 0,
+          input_vk_tensor->constant_buffer_id() == 0,
           "Expected constant buffer index for input at index %zu with id %d to be 0 (since it is non-constant), but got: %d",
           input_index,
           input_id,
-          input_vk_tensor->constant_buffer_idx());
+          input_vk_tensor->constant_buffer_id());
 
       const at::native::vulkan::api::ScalarType& input_dtype =
           get_scalar_type(input_vk_tensor->datatype());
@@ -203,10 +203,10 @@ class VulkanBackend final : public PyTorchBackendInterface {
     // 2. Add all ops to the graph
     const flatbuffers_fbsource::Vector<
         flatbuffers_fbsource::Offset<at::vulkan::delegate::Buffer>>*
-        constant_buffer = flatbuffer_graph->constant_buffer();
+        constant_buffer = flatbuffer_graph->constant_buffers();
 
     for (const at::vulkan::delegate::VkNode* node :
-         *flatbuffer_graph->vknodes()) {
+         *flatbuffer_graph->nodes()) {
       const at::vulkan::delegate::VkArithmeticNode* typed_node = node->node();
 
       const uint32_t input1_id = typed_node->input1_id();
