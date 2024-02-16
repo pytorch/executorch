@@ -32,6 +32,7 @@ from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner impor
     generate_partitions_from_list_of_nodes,
     generate_pattern_op_partitions,
 )
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -1091,6 +1092,9 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
             for match in self.get_module_partitions(exported_program)
         ]
         partition_tags: Dict[str, DelegationSpec] = {}
+        self.delegation_spec = DelegationSpec(
+            XnnpackBackend.__name__, [CompileSpec("dqlinear_partitioner", bytes())]
+        )
 
         if self.check_partitions(partitions):
             partition_tags = self.tag_nodes(partitions)
