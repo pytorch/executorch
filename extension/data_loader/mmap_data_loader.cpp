@@ -199,17 +199,27 @@ Result<FreeableBuffer> MmapDataLoader::Load(size_t offset, size_t size) {
       mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
     int err = ::mlock(pages, size);
     if (err < 0) {
-      ET_LOG(
-          Error,
-          "File %s: mlock(%p, %zu) failed: %s (%d)",
-          file_name_,
-          pages,
-          size,
-          ::strerror(errno),
-          errno);
       if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-        ET_LOG(Info, "Ignoring mlock() error");
+        ET_LOG(
+            Info,
+            "Ignoring mlock error for file %s (off=0x%zd): "
+            "mlock(%p, %zu) failed: %s (%d)",
+            file_name_,
+            offset,
+            pages,
+            size,
+            ::strerror(errno),
+            errno);
       } else {
+        ET_LOG(
+            Error,
+            "File %s (off=0x%zd): mlock(%p, %zu) failed: %s (%d)",
+            file_name_,
+            offset,
+            pages,
+            size,
+            ::strerror(errno),
+            errno);
         ::munmap(pages, size);
         return Error::NotSupported;
       }
