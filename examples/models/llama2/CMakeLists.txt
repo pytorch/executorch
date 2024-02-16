@@ -103,8 +103,6 @@ target_include_directories(
   ${llama_schema_headers}
 )
 
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-
 # Define a CMake target using runtime.cxx_library
 add_library(runner
     "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.cpp"
@@ -125,12 +123,11 @@ target_include_directories(runner PUBLIC
 )
 
 get_target_property(runner_include_dirs runner INCLUDE_DIRECTORIES)
-message(">>>>Include Directories for runner_lib: ${runner_include_dirs}")
-
 
 target_sources(runner PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.cpp"
-    ${EXPORTED_HEADERS_RUNNER}
+    "${CMAKE_CURRENT_SOURCE_DIR}/runner/runner.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runner/util.h"
 )
 
 add_library(sampler
@@ -195,7 +192,6 @@ set(_llama_executor_runner__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/sampler/sampler.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/tokenizer/tokenizer.cpp"
 )
-message(">>>>>_llama_executor_runner__srcs: ${_llama_executor_runner__srcs}")
 
 #list(TRANSFORM _llama_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(llama_executor_runner ${_llama_executor_runner__srcs})
