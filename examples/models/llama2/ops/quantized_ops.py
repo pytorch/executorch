@@ -60,7 +60,8 @@ def embedding_byte_meta(
     assert weight_zero_points is None or weight_zero_points.size(0) == weight.size(
         0
     ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and {weight_zero_points.size()}"
-
+    if not weight_zero_points:
+        weight_zero_points = torch.zeros(weight.size(0))
     weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
         weight,
         weight_scales,
