@@ -15,18 +15,12 @@ if [[ "${1:-'.'}" == "-h" || "${#}" -eq 0 || "${#}" -gt 2 ]]; then
     exit 1
 fi
 
+
 ########
 ### Helper functions
 ########
-function get_os_name() {
-    # Returns the name of the system i.e. Linux or Darwin
-    uname -s
-}
-
-function get_cpu_arch() {
-    # Returns the cpu architecture like arm64 or x86-64
-    uname -m
-}
+ARCH="$(uname -m)"
+OS="$(uname -s)"
 
 function verify_md5() {
     [[ $# -ne 2 ]]  \
@@ -34,7 +28,11 @@ function verify_md5() {
     local ref_checksum="${1}"
     local file="${2}"
 
-    local file_checksum="$(md5sum $file | awk '{print $1}')"
+    if [[ "${OS}" == "Darwin" ]]; then
+        local file_checksum="$(md5 -q $file)"
+    else
+        local file_checksum="$(md5sum $file | awk '{print $1}')"
+    fi
     if [[ ${ref_checksum} != ${file_checksum} ]]; then
         echo "Mismatched MD5 checksum for file: ${file}. Expecting ${ref_checksum} but got ${file_checksum}. Exiting."
         exit 1
@@ -46,7 +44,7 @@ function verify_md5() {
 ########
 script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 
-if [[ $(get_cpu_arch) == "x86_64" ]]; then
+if [[ "${ARCH}" == "x86_64" ]]; then
     # FVP
     fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64.tgz?rev=018659bd574f4e7b95fa647e7836ccf4&hash=22A79103C6FA5FFA7AFF3BE0447F3FF9"
     fvp_model_dir="Linux64_GCC-9.3"
@@ -56,18 +54,24 @@ if [[ $(get_cpu_arch) == "x86_64" ]]; then
     toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi.tar.xz"
     toolchain_dir="arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi"
     toolchain_md5_checksum="00ebb1b70b1f88906c61206457eacb61"
-elif [[ $(get_cpu_arch) == "aarch64" ]]; then
+elif [[ "${ARCH}" == "aarch64" ]] || [[ "${ARCH}" == "arm64" ]]; then
     # FVP
     fvp_url="https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_11.22_20_Linux64_armv8l.tgz?rev=9cc6e9a32bb947ca9b21fa162144cb01&hash=7657A4CF27D42E892E3F08D452AAB073"
     fvp_model_dir="Linux64_armv8l_GCC-9.3"
     fvp_md5_checksum="cbbabbe39b07939cff7a3738e1492ef1"
 
     # toochain
-    toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
-    toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
-    toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
+    if [[ "${OS}" == "Darwin" ]]; then
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-12.3.rel1-darwin-arm64-arm-none-eabi"
+        toolchain_md5_checksum="53d034e9423e7f470acc5ed2a066758e"
+    elif [[ "${OS}" == "Linux" ]]; then
+        toolchain_url="https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu/12.3.rel1/binrel/arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi.tar.xz"
+        toolchain_dir="arm-gnu-toolchain-12.3.rel1-aarch64-arm-none-eabi"
+        toolchain_md5_checksum="02c9b0d3bb1110575877d8eee1f223f2"
+    fi
 else
-    echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1;
+    echo "[main] Error: only x86-64 & aarch64/arm64 architecture is supported for now!"; exit 1;
 fi
 
 # ethos-u
@@ -94,6 +98,11 @@ root_dir=$(realpath ${root_dir})
 ########
 
 function setup_fvp() {
+    if [[ "${OS}" != "Linux" ]]; then
+        echo "[${FUNCNAME[0]}] Warning: FVP only supported with Linux OS, skipping FVP setup..."
+        return 1
+    fi
+
     # Download and install the Corstone 300 FVP simulator platform
     cd "${root_dir}"
     if [[ ! -e FVP_cs300.tgz ]]; then
@@ -178,8 +187,21 @@ function setup_tosa_reference_model() {
     mkdir -p build
     cd build
     cmake ..
-    n=$(nproc)
-    make -j"$((n - 5))"
+
+    # make use of half the cores for building
+    if [[ "${OS}" == "Linux" ]]; then
+        n=$(( $(nproc) / 2 ))
+    elif [[ "${OS}" == "Darwin" ]]; then
+        n=$(( $(sysctl -n hw.logicalcpu) / 2 ))
+    else
+        n=1
+    fi
+
+    if [[ "$n" -lt 1 ]]; then
+        n=1
+    fi
+
+    make -j"$(n)"
     cd reference_model
     tosa_bin_path=`pwd`
     echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
@@ -205,12 +227,11 @@ function setup_vela() {
 ########
 # do basic checks
 # Make sure we are on a supported platform
-[[ $(get_cpu_arch) != "x86_64" ]] && [[ $(get_cpu_arch) != "aarch64" ]] \
-    && { echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"; exit 1; }
-
-# No OSx support for FVP
-[[ "$(get_os_name)" != "Linux" ]] \
-    && { echo "[main] Error: only Linux os is supported for now!"; exit 1; }
+if [[ "${ARCH}" != "x86_64" ]] && [[ "${ARCH}" != "aarch64" ]] \
+    && [[ "${ARCH}" != "arm64" ]]; then
+    echo "[main] Error: only x86-64 & aarch64 architecture is supported for now!"
+    exit 1
+fi
 
 cd "${script_dir}"
 
@@ -221,9 +242,6 @@ echo "[main] Using root dir ${root_dir}"
 
 setup_path_script="${root_dir}/setup_path.sh"
 echo "" > "${setup_path_script}"
-
-# Setup FVP
-setup_fvp
 
 # Setup toolchain
 setup_toolchain
@@ -241,6 +259,9 @@ setup_tosa_reference_model
 
 # Setup vela and patch in codegen fixes
 setup_vela
+
+# Setup FVP
+setup_fvp
 
 echo "[main] update path by doing 'source ${setup_path_script}'"
 
