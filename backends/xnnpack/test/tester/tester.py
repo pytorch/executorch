@@ -78,7 +78,7 @@ class Stage(ABC):
         if isinstance(self.artifact, ExportedProgram):
             return self.artifact(*inputs)
         else:
-            return self.artifact.exported_program()(*inputs)
+            return self.artifact.exported_program().module()(*inputs)
 
     # Debug Tools for stages
     def artifact_str(self):
@@ -569,5 +569,5 @@ class Tester:
 
             dequant_node.target = dequant_shim
 
-        output = program(*inputs)
+        output = program.module()(*inputs)
         return output, scale
