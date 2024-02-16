@@ -8,11 +8,11 @@ import unittest
 
 import torch
 from executorch.backends.xnnpack.test.tester import Tester
-from transformers import MobileBertConfig, MobileBertModel  # @manual
+from executorch.examples.models.mobilebert.modeling_mobilebert import MobileBertModel
+from transformers import MobileBertConfig  # @manual
 
 
 class TestMobilebert(unittest.TestCase):
-    # pyre-ignore
     mobilebert = MobileBertModel(MobileBertConfig()).eval()
     example_inputs = (torch.tensor([[101, 7592, 1010, 2026, 3899, 2003, 10140, 102]]),)
     supported_ops = {

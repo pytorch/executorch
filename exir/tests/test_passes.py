@@ -1073,7 +1073,7 @@ class TestPasses(unittest.TestCase):
         class M(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.a = torch.ones(2)
+                self.register_buffer("a", torch.ones(2))
 
             def forward(self, x):
                 return torch.arange(start=0, end=2) + x
@@ -1089,7 +1089,7 @@ class TestPasses(unittest.TestCase):
         class M(torch.nn.Module):
             def __init__(self):
                 super().__init__()
-                self.a = torch.ones(10)
+                self.register_buffer("a", torch.ones(10))
 
             def forward(self, x):
                 return self.a[:2] + x

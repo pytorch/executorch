@@ -330,8 +330,8 @@ from torch.export import export
 class Module(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.a = 3 * torch.ones(2, 2, dtype=torch.float)
-        self.b = 2 * torch.ones(2, 2, dtype=torch.float)
+        self.register("a", 3 * torch.ones(2, 2, dtype=torch.float))
+        self.register("b", 2 * torch.ones(2, 2, dtype=torch.float))
 
     def forward(self, x):
         out_1 = torch.ones(2, 2, dtype=torch.float)
@@ -465,8 +465,8 @@ from torch.export import export
 class Module(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.a = 3 * torch.ones(2, 2, dtype=torch.float)
-        self.b = 2 * torch.ones(2, 2, dtype=torch.float)
+        self.register_buffer("a", 3 * torch.ones(2, 2, dtype=torch.float))
+        self.register_buffer("b", 2 * torch.ones(2, 2, dtype=torch.float))
 
     def forward(self, x):
         out_1 = torch.ones(2, 2, dtype=torch.float)
