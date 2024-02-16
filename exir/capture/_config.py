@@ -62,8 +62,7 @@ class ExecutorchBackendConfig:
     extract_constant_segment: bool = True
 
     # When extracting segments, the starting offset of each segment will be
-    # aligned to this value (in bytes). When using mmap() to load segments, this
-    # should be a multiple of the OS page size.
+    # aligned to this value (in bytes). Must be a power of two.
     segment_alignment: int = 4096
 
     # If provided, the minimum alignment of tensor buffers in the program. Must
