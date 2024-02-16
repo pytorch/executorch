@@ -239,7 +239,7 @@ Error Runner::generate(
     ET_CHECK_MSG(
         outputs_res.ok(),
         "Execution of method forward failed with status 0x%" PRIx32,
-        outputs_res.error());
+        static_cast<int32_t>(outputs_res.error()));
     // ET_LOG(Info, "Model executed successfully.");
 
     std::vector<EValue> outputs = outputs_res.get();
@@ -265,7 +265,7 @@ Error Runner::generate(
         ET_CHECK_MSG(
             false,
             "Unsupported dtype output %hhd",
-            logits_tensor.scalar_type());
+            static_cast<int8_t>(logits_tensor.scalar_type()));
     }
 
     // advance the state machine
