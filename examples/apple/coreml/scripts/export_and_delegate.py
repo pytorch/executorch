@@ -44,7 +44,7 @@ def lower_module_to_coreml(module, compute_units):
 
     lowered_module = to_backend(
         CoreMLBackend.__name__,
-        edge.exported_program,
+        edge.exported_program(),
         [CompileSpec("compute_units", bytes(compute_units, "utf-8"))],
     )
 

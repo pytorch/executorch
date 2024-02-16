@@ -37,8 +37,8 @@ class TestSerde(unittest.TestCase):
         """
         Checks if two graphs are equivalent
         """
-        orig_outputs = ep1(*inputs)
-        loaded_outputs = ep2(*inputs)
+        orig_outputs = ep1.module()(*inputs)
+        loaded_outputs = ep2.module()(*inputs)
 
         flat_orig_outputs, _ = pytree.tree_flatten(orig_outputs)
         flat_loaded_outputs, _ = pytree.tree_flatten(loaded_outputs)
