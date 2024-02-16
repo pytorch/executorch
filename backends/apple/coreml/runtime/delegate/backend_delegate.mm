@@ -136,13 +136,13 @@ std::string BackendDelegate::ErrorCategory::message(int code) const {
         case ErrorCode::CorruptedMetadata:
             return "AOT blob has incorrect or missing metadata.";
         case ErrorCode::CorruptedModel:
-            return "AOT blob has incorrect or missing CoreML model.";
+            return "AOT blob has incorrect or missing Core ML model.";
         case ErrorCode::BrokenModel:
-            return "CoreML model doesn't match the input and output specifications";
+            return "Core ML model doesn't match the input and output specifications";
         case ErrorCode::CompilationFailed:
-            return "CoreML model failed to compile";
+            return "Core ML model failed to compile";
         case ErrorCode::ModelSaveFailed:
-            return "Failed to save CoreML model to disk";
+            return "Failed to save Core ML model to disk";
         case ErrorCode::ModelCacheCreationFailed:
             return "Failed to create model cache";
         default:
