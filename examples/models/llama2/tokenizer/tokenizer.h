@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <string>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -34,7 +35,7 @@ class Tokenizer {
   explicit Tokenizer(int32_t vocab_size, int32_t bos_tok, int32_t eos_tok);
   ~Tokenizer();
 
-  Error load(const char* tokenizer_path);
+  Error load(const std::string& tokenizer_path);
 
   Error encode(
       const char* text,

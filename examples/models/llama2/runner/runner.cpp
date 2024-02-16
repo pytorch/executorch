@@ -24,29 +24,42 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/platform/log.h>
 
-namespace torch {
-namespace executor {
+namespace torch::executor {
+namespace {
+static constexpr auto kTopp = 0.9f;
+} // namespace
 
 Runner::Runner(
-    const char* model_path,
-    const char* tokenizer_path,
-    float temperature) {
-  // Constants definition
-  float topp = 0.9f;
-  unsigned long long rng_seed =
-      (unsigned int)time(nullptr); // seed rng with time by default
-  // Create module
-  module_ = std::make_unique<Module>(
-      model_path, Module::MlockConfig::UseMlockIgnoreErrors);
+    const std::string& model_path,
+    const std::string& tokenizer_path,
+    const float temperature)
+    : module_(std::make_unique<Module>(
+          model_path,
+          Module::MlockConfig::UseMlockIgnoreErrors)),
+      tokenizer_path_(tokenizer_path),
+      temperature_(temperature) {
+  ET_LOG(
+      Info,
+      "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
+      model_path.c_str(),
+      tokenizer_path.c_str());
+}
+
+bool Runner::is_loaded() const {
+  return module_->is_loaded() && tokenizer_ && sampler_;
+}
+
+Error Runner::load() {
+  if (is_loaded()) {
+    return Error::Ok;
+  }
+  ET_CHECK_OK_OR_RETURN_ERROR(module_->load_method("forward"));
 
   // Read out metadata: vocab_size (expected by the model), BOS, EOS, n_BOS,
   // n_EOS max_seq_len from the model
   ET_LOG(Info, "Reading metadata from model");
   const auto method_names = module_->method_names();
-  ET_CHECK_MSG(
-      method_names.ok(),
-      "Failed to read method names from model: %s",
-      model_path);
+  ET_CHECK_MSG(method_names.ok(), "Failed to read method names from model");
   model_methods_ = method_names.get();
   vocab_size_ = getMetadataHelper<int64_t>("get_vocab_size", 32000);
   bos_id_ = getMetadataHelper<int64_t>("get_bos_id", 1);
@@ -59,7 +72,7 @@ Runner::Runner(
 
   // Load tokenizer
   tokenizer_ = std::make_unique<Tokenizer>(vocab_size_, bos_id_, eos_id_);
-  tokenizer_->load(tokenizer_path);
+  tokenizer_->load(tokenizer_path_);
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(
         Error,
@@ -75,8 +88,13 @@ Runner::Runner(
         eos_id_);
   }
   // Create sampler
-  sampler_ =
-      std::make_unique<Sampler>(vocab_size_, temperature, topp, rng_seed);
+  sampler_ = std::make_unique<Sampler>(
+      vocab_size_,
+      temperature_,
+      kTopp,
+      static_cast<unsigned long long>(std::time(nullptr)));
+
+  return Error::Ok;
 }
 
 template <typename T>
@@ -141,6 +159,9 @@ Error Runner::generate(
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
+  ET_CHECK_OK_OR_RETURN_ERROR(load());
+
+  shouldStop_ = false;
 
   // encode the (string) prompt into tokens sequence
   int num_prompt_tokens = 0;
@@ -292,6 +313,10 @@ Error Runner::generate(
       callback(piece);
     }
 
+    if (shouldStop_) {
+      break;
+    }
+
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && next == eos_id_) {
       eos_counter++;
@@ -338,6 +363,10 @@ Error Runner::generate(
   return Error::Ok;
 }
 
+void Runner::stop() {
+  shouldStop_ = true;
+}
+
 // explicit instantiation of template methods
 template int64_t Runner::getMetadataHelper<int64_t>(
     std::string method_name,
@@ -345,5 +374,4 @@ template int64_t Runner::getMetadataHelper<int64_t>(
 template bool Runner::getMetadataHelper<bool>(
     std::string method_name,
     bool default_val);
-} // namespace executor
-} // namespace torch
+} // namespace torch::executor
