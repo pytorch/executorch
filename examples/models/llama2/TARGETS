@@ -52,8 +52,12 @@ runtime.python_library(
         "export_llama.py",
         "export_llama_lib.py",
     ],
+    _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
-    visibility = ["//executorch/examples/..."],
+    visibility = [
+        "//bento/...",
+        "//executorch/examples/...",
+    ],
     deps = [
         "//caffe2:torch",
         "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
