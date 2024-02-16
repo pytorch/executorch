@@ -1,0 +1,36 @@
+From d320a6d1a4c8a73ec3aacce5257edb8eea2c7cd5 Mon Sep 17 00:00:00 2001
+From: Mergen Nachin <mnachin@meta.com>
+Date: Sun, 11 Feb 2024 15:39:40 -0500
+Subject: [PATCH] Fix applications/executorch_tests/runner: replace deprecated
+ function
+
+---
+ applications/executorch_tests/runner.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/applications/executorch_tests/runner.cpp b/applications/executorch_tests/runner.cpp
+index 9dc3519..8692a0e 100644
+--- a/applications/executorch_tests/runner.cpp
++++ b/applications/executorch_tests/runner.cpp
+@@ -10,6 +10,7 @@
+ #include <memory>
+
+ #include <executorch/extension/data_loader/buffer_data_loader.h>
++#include <executorch/extension/runner_util/inputs.h>
+ #include <executorch/runtime/executor/program.h>
+ #include <executorch/runtime/platform/log.h>
+ #include <executorch/runtime/platform/platform.h>
+@@ -110,7 +111,10 @@ int main() {
+     ET_LOG(Info,"Method loaded.");
+
+     ET_LOG(Info,"Preparing inputs...");
+-    auto inputs = torch::executor::util::PrepareInputTensors(*method);
++    auto inputs = torch::executor::util::prepare_input_tensors(*method);
++    if (!inputs.ok()) {
++        ET_LOG(Info, "Preparing inputs tensors for method %s failed with status 0x%" PRIx32, method_name, inputs.error());
++    }
+     ET_LOG(Info,"Input prepared.");
+
+     ET_LOG(Info,"Starting the model execution...");
+--
+2.31.1
