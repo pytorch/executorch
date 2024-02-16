@@ -6,10 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#include <atomic>
+
 #include <executorch/runtime/platform/platform.h>
+#include <executorch/runtime/platform/profiler.h>
 
 namespace torch {
 namespace executor {
@@ -18,8 +20,11 @@ namespace executor {
  * Initialize the ExecuTorch global runtime.
  */
 void runtime_init() {
-  et_pal_init();
-  EXECUTORCH_PROFILE_CREATE_BLOCK("default");
+  static std::atomic_bool initialized{false};
+  if (!initialized.exchange(true)) {
+    et_pal_init();
+    EXECUTORCH_PROFILE_CREATE_BLOCK("default");
+  }
 }
 
 } // namespace executor
