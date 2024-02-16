@@ -260,9 +260,7 @@ class Attention(nn.Module):
         # Shape before: [1, 1, L, S], after: [L, S]
         # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
         # tensor will be 2-dimensional, regarldess of the values of L & S
-        mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen], [0, 1]).to(
-            dtype=xq.dtype
-        )
+        mask = torch.squeeze(mask, [0, 1])
 
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
