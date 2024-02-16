@@ -47,15 +47,15 @@ Tokenizer::Tokenizer(int32_t vocab_size, int32_t bos_tok, int32_t eos_tok)
  * @param tokenizer_path The path to the tokenizer file.
  * @return Error
  */
-Error Tokenizer::load(const char* tokenizer_path) {
+Error Tokenizer::load(const std::string& tokenizer_path) {
   if (initialized_) {
     ET_LOG(Info, "Tokenizer already initialized");
     return Error::Ok;
   }
   // read in the file
-  FILE* file = fopen(tokenizer_path, "rb");
+  FILE* file = fopen(tokenizer_path.c_str(), "rb");
   if (!file) {
-    ET_LOG(Error, "couldn't load %s", tokenizer_path);
+    ET_LOG(Error, "couldn't load %s", tokenizer_path.c_str());
     return Error::InvalidArgument;
   }
   int32_t metadata[2];
