@@ -11,13 +11,13 @@ import torch
 
 from executorch.backends.xnnpack.utils.configs import (
     get_transform_passes,
-    get_xnnpack_capture_config,
     get_xnnpack_edge_compile_config,
 )
-from executorch.exir import ExportedProgram
+from executorch.exir import ExportedProgram, to_edge
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
+from torch.export import export
 
 ### XNNPACK Capture ###
 def capture_graph_for_xnnpack(
@@ -25,16 +25,10 @@ def capture_graph_for_xnnpack(
     inputs: Tuple[torch.Tensor],
     enable_aot: Optional[bool] = None,
     unlift: Optional[bool] = None,
-) -> exir.ExirExportedProgram:
-    return (
-        exir.capture(
-            module,
-            inputs,
-            get_xnnpack_capture_config(enable_aot=enable_aot, unlift=unlift),
-        )
-        .to_edge(get_xnnpack_edge_compile_config())
-        .transform(*get_transform_passes())
-    )
+) -> exir.EdgeProgramManager:
+    return to_edge(
+        export(module, inputs), compile_config=get_xnnpack_edge_compile_config()
+    ).transform(get_transform_passes(), check_ir_validity=False)
 
 
 ### XNNPACK Utils ###
