@@ -9,12 +9,12 @@ import unittest
 from typing import List, Optional, Tuple
 
 import torch
-from executorch import exir
-from executorch.exir import CaptureConfig, EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
+from torch.export import export
 from torch.fx.node import Node
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -23,15 +23,15 @@ class TestGraphPartition(unittest.TestCase):
     def get_graph_module(
         self, module: torch.nn.Module, inputs: Tuple[torch.Tensor]
     ) -> torch.fx.GraphModule:
-        capture_config = CaptureConfig()
         graph_module = (
-            exir.capture(module, inputs, capture_config)
-            .to_edge(
-                EdgeCompileConfig(
+            to_edge(
+                export(module, inputs),
+                compile_config=EdgeCompileConfig(
                     _check_ir_validity=False,
-                )
+                ),
             )
-            .exported_program.graph_module
+            .exported_program()
+            .graph_module
         )
 
         return graph_module
@@ -134,19 +134,17 @@ class TestGraphPartition(unittest.TestCase):
         assert len(partition_list) == 2, "the subgraph should be divided into 2 parts"
 
         partition_1 = [
-            "_param_constant4",
-            "_param_constant4_1",
-            "_param_constant5",
-            "_param_constant5_1",
+            "arg4_1",
+            "arg5_1",
             "aten_convolution_default_2",
             "aten_convolution_default_3",
             "aten_relu_default",
         ]
         partition_2 = [
-            "_param_constant0",
-            "_param_constant1",
-            "_param_constant2",
-            "_param_constant3",
+            "arg0_1",
+            "arg1_1",
+            "arg2_1",
+            "arg3_1",
             "aten_convolution_default",
             "aten_convolution_default_1",
         ]
@@ -212,14 +210,12 @@ class TestGraphPartition(unittest.TestCase):
 
         partition_1 = ["aten_relu_default"]
         partition_2 = [
-            "_param_constant0",
-            "_param_constant1",
-            "_param_constant2",
-            "_param_constant3",
-            "_param_constant4",
-            "_param_constant4_1",
-            "_param_constant5",
-            "_param_constant5_1",
+            "arg0_1",
+            "arg1_1",
+            "arg2_1",
+            "arg3_1",
+            "arg4_1",
+            "arg5_1",
             "aten_add_tensor",
             "aten_convolution_default",
             "aten_convolution_default_1",
