@@ -557,6 +557,10 @@ conda<span class="w"> </span>activate<span class="w"> </span>executorch
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
 </pre></div>
 </div>
+<p><strong>Optional:</strong> Install ExecuTorch as an editable installation:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>--editable<span class="w"> </span>.<span class="w"> </span>--config-settings<span class="w"> </span><span class="nv">editable_mode</span><span class="o">=</span>strict<span class="w"> </span>--no-build-isolation
+</pre></div>
+</div>
 </li>
 <li><p>Expose FlatBuffers compiler:</p>
 <p>ExecuTorch uses <code class="docutils literal notranslate"><span class="pre">flatc</span></code> to export models and builds it from sources at
