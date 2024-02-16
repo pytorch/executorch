@@ -183,18 +183,30 @@ Result<FreeableBuffer> FileDataLoader::Load(size_t offset, size_t size) {
       alloc_size);
 
   // Read the data into the aligned address.
-  ssize_t nread = ::read(fd_, aligned_buffer, size);
-  if (nread < size) {
-    ET_LOG(
-        Error,
-        "Reading from %s at offset %zu: short read %zd < %zu",
-        file_name_,
-        offset,
-        nread,
-        size);
-    // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
-    std::free(buffer);
-    return Error::AccessFailed;
+  size_t needed = size;
+  uint8_t* buf = reinterpret_cast<uint8_t*>(aligned_buffer);
+  while (needed > 0) {
+    ssize_t nread = ::read(fd_, buf, needed);
+    if (nread < 0 && errno == EINTR) {
+      // Interrupted by a signal; zero bytes read.
+      continue;
+    }
+    if (nread <= 0) {
+      // nread == 0 means EOF, which we shouldn't see if we were able to read
+      // the full amount. nread < 0 means an error occurred.
+      ET_LOG(
+          Error,
+          "Reading from %s: failed to read %zu bytes at offset %zu: %s",
+          file_name_,
+          size,
+          offset,
+          nread == 0 ? "EOF" : strerror(errno));
+      // Free `buffer`, which is what malloc() gave us, not `aligned_buffer`.
+      std::free(buffer);
+      return Error::AccessFailed;
+    }
+    needed -= nread;
+    buf += nread;
   }
 
   // We can't naively free this pointer, since it may not be what malloc() gave
