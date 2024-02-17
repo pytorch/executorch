@@ -20,7 +20,7 @@ from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
-    Buffer,
+    ConstantDataOffset,
     PerChannelQuant,
     PerTensorQuant,
     XNNDatatype,
@@ -236,12 +236,11 @@ class XnnpackBackend(BackendDetails):
             num_externs=len(node_to_external_map),
             input_ids=[],
             output_ids=[],
-            constant_buffer=[Buffer(storage=b"")],
-            mem_buffer_sizes=[0],
-            constant_data=[],
+            constant_data=[ConstantDataOffset(0, 0)],
         )
 
-        node_visitors = get_node_visitors(ep, node_to_external_map)
+        constant_data_bytes = bytearray()
+        node_visitors = get_node_visitors(ep, node_to_external_map, constant_data_bytes)
 
         for node in graph_module.graph.nodes:
             if node.op == "call_function":
@@ -266,5 +265,8 @@ class XnnpackBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
         return PreprocessResult(
-            processed_bytes=serialize_xnnpack_binary(xnnpack_graph), debug_handle_map={}
+            processed_bytes=serialize_xnnpack_binary(
+                xnnpack_graph, constant_data_bytes
+            ),
+            debug_handle_map={},
         )
