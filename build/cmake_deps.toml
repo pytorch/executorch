@@ -205,14 +205,6 @@ deps = [
   "executorch",
 ]
 
-[targets.xnnpack_dynamic_quant_utils]
-buck_targets = [
-  "//backends/xnnpack:dynamic_quant_utils",
-]
-filters = [
-  ".cpp$",
-]
-
 [targets.xnnpack_schema]
 buck_targets = [
   "//backends/xnnpack/serialization:xnnpack_flatbuffer_header",
