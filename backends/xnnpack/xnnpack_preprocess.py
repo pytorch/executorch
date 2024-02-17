@@ -83,7 +83,6 @@ def node_to_xvalue(
             external_id=external_id,
             flags=flags,
             id_out=id_out,
-            dq_datatype=dq_datatype,
         )
     )
     return node_value
@@ -108,7 +107,6 @@ def node_to_per_tensor_quantized_xvalue(
         external_id=external_id,
         flags=flags,
         id_out=id_out,
-        dq_datatype=XNNDatatype.xnn_datatype_invalid,  # always invalid
     )
 
     per_tensor_quantized_params = PerTensorQuant(scale=scale, zero_point=zero_point)
@@ -141,7 +139,6 @@ def node_to_per_channel_quantized_xvalue(
         external_id=external_id,
         flags=flags,
         id_out=id_out,
-        dq_datatype=XNNDatatype.xnn_datatype_invalid,  # always invalid
     )
 
     per_channel_quantized_params = PerChannelQuant(
