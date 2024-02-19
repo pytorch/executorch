@@ -228,8 +228,6 @@ int main(int argc, char** argv) {
     etdump_gen.set_event_tracer_debug_level(
         EventTracerDebugLogLevel::kProgramOutputs);
   }
-  // Prepare the inputs.
-  exec_aten::ArrayRef<void*> inputs;
   // Use the inputs embedded in the bundled program.
   status = torch::executor::bundled_program::LoadBundledInput(
       *method, file_data->data(), FLAGS_testset_idx);
