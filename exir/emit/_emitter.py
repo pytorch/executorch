@@ -113,6 +113,8 @@ class _ProgramState:
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
+    constant_segment_data: bytearray = field(default_factory=bytearray)
+    constant_segment_offsets: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -323,6 +325,13 @@ class _Emitter(torch.fx.Interpreter):
             ExportErrorType.NOT_SUPPORTED, f"Unknown list type: {val_type}"
         )
 
+    def _padding_required(self, offset: int, alignment: int) -> int:
+        """Returns the padding required to align `offset` to `alignment`."""
+        remainder: int = offset % alignment
+        if remainder != 0:
+            return alignment - remainder
+        return 0
+
     def _tensor_spec_to_evalue(self, spec: TensorSpec) -> EValue:
         """Constructs an EValue from the given TensorSpec."""
         if not spec.const:
@@ -370,12 +379,23 @@ class _Emitter(torch.fx.Interpreter):
         # Haven't seen this constant before
         if buffer_idx == -1:
             # Update buffer_idx to point to the end of the list where we are adding the new buffer.
-            buffer = Buffer(storage=buffer_data)
-            buffer_idx = len(self.program_state.constant_buffer)
+            # buffer = Buffer(storage=buffer_data)
+            # buffer_idx = len(self.program_state.constant_buffer)
+            buffer_idx = len(self.program_state.constant_segment_offsets)
             self.program_state.allocated_specs.append(spec)
             # +1 because the first buffer location is reserved
             self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-            self.program_state.constant_buffer.append(buffer)
+            # self.program_state.constant_buffer.append(buffer)
+
+            # Update constant segment
+            pad_length = self._padding_required(len(buffer_data), 16)
+            self.program_state.constant_segment_data += buffer_data
+            self.program_state.constant_segment_data += b"\x00" * pad_length
+            self.program_state.constant_segment_offsets.append(
+                len(buffer_data)
+                + pad_length
+                + self.program_state.constant_segment_offsets[-1]
+            )
 
         if spec.const and spec.nbytes() != len(buffer_data):
             raise InternalError(

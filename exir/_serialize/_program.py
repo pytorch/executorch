@@ -6,6 +6,8 @@
 
 # pyre-strict
 
+from memory_profiler import profile
+
 import copy
 import json
 import re
@@ -354,11 +356,12 @@ def _extract_constant_segment(
 
 def _extract_segments(
     program: Program,
+    segment_data: List[bytes],  # modify in-place
     extract_delegate_segments: bool,
     extract_constant_segment: bool,
     segment_alignment: int,
     constant_tensor_alignment: int,
-) -> Tuple[Program, List[bytes]]:
+) -> Program:
     """Extracts constant and/or delegate data from a given Program into separate segments.
 
     Args:
@@ -374,48 +377,17 @@ def _extract_segments(
     Raises:
         ValueError, if the program already contains segments.
     """
-    if program.segments:
-        raise ValueError(
-            f"Program already has {len(program.segments)} segments: "
-            + f"{repr(program.segments)}"
-        )
 
     # Don't modify the original program.
     # TODO(T144120904): Could avoid yet more huge copies with a more shallow
     # copy, reusing the actual data blobs.
     program = copy.deepcopy(program)
 
-    # Segment data to be written to the file following the flatbuffer data.
-    segments: List[bytes] = []
-
-    if extract_constant_segment:
-        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-            program.constant_buffer, tensor_alignment=constant_tensor_alignment
-        )
-
-        if constant_segment_data:
-            # Append constant_segment_data to the list of segments if non-empty.
-            segments.append(constant_segment_data)
-            # Append constant_segment offset to the list of DataSegments. Added as the
-            # first segment here, but it's not mandatory that the constant segment be
-            # the first one in the file.
-            program.segments.append(
-                DataSegment(offset=0, size=len(constant_segment_data))
-            )
-
-            # Fill in constant_segment offsets and clear the constant buffer; only one of
-            # constant_segment and constant_buffer should be non-empty.
-            program.constant_segment = SubsegmentOffsets(
-                segment_index=0, offsets=constant_segment_offsets
-            )
-            program.constant_buffer = []
-
     if extract_delegate_segments:
         _extract_delegate_segments(
-            program, segments=segments, segment_alignment=segment_alignment
+            program, segments=segment_data, segment_alignment=segment_alignment
         )
-    return program, segments
-
+    return program
 
 def _append_segments(
     program_data: bytes,
@@ -500,8 +472,10 @@ def _append_segments(
     return b"".join(padded_segments)
 
 
+@profile
 def serialize_pte_binary(
     program: Program,
+    segment_data: List[bytes],
     *,
     extract_delegate_segments: bool = False,
     extract_constant_segment: bool = False,
@@ -533,17 +507,16 @@ def serialize_pte_binary(
     Returns:
         The serialized form of the Program, ready for execution by the runtime.
     """
+    print(f"serialize_pte_binary: program.offsets = {program.constant_segment.offsets}")
     # Default tensor alignment.
     if constant_tensor_alignment is None:
         constant_tensor_alignment = 16
 
-    # Segment data to be written to the file following the flatbuffer data.
-    segments: List[bytes] = []
-
     # Extract constant segment and delegate segments, if requested.
-    if extract_constant_segment or extract_delegate_segments:
-        program, segments = _extract_segments(
+    if extract_delegate_segments:
+        program = _extract_segments(
             program=program,
+            segment_data=segment_data,
             extract_delegate_segments=extract_delegate_segments,
             extract_constant_segment=extract_constant_segment,
             segment_alignment=segment_alignment,
@@ -558,7 +531,7 @@ def serialize_pte_binary(
     )
 
     # If there are no segments present, do not insert the extended header.
-    if not segments:
+    if not segment_data:
         return result.data
 
     # Size of the header to insert. Its size is padded to the largest
@@ -572,7 +545,7 @@ def serialize_pte_binary(
     # Offset to the first segment, or zero if there are no segments.
     segment_base_offset: int = (
         _aligned_size(input_size=program_size, alignment=segment_alignment)
-        if segments
+        if segment_data
         else 0
     )
 
@@ -600,12 +573,12 @@ def serialize_pte_binary(
     assert eh.program_size == program_size
     assert eh.segment_base_offset == segment_base_offset
 
-    if segments:
+    if segment_data:
         # Add segments to the end of the data, in order, with the appropriate
         # padding.
         program_data = _append_segments(
             program_data=program_data,
-            segments=segments,
+            segments=segment_data,
             alignment=segment_alignment,
             segment_table=program.segments,
             base_offset=segment_base_offset,

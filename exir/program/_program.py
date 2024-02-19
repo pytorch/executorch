@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from memory_profiler import profile
+
 import copy
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
@@ -418,6 +420,7 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
+                segment_data=self.segment_data,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
@@ -425,6 +428,14 @@ class ExecutorchProgram:
                 delegate_alignment=self._delegate_alignment,
             )
         return self._buffer
+
+    @property
+    def segment_data(self) -> List[bytes]:
+        if self._emitter_output is None:
+            self._emitter_output = emit_program(
+                self.exported_program, self._emit_stacktrace
+            )
+        return self._emitter_output.segment_data
 
     @property
     def program(self) -> Program:
@@ -737,6 +748,7 @@ class MultiMethodExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
+                segment_data=self._emitter_output.segment_data,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
@@ -744,6 +756,10 @@ class MultiMethodExecutorchProgram:
                 delegate_alignment=self._delegate_alignment,
             )
         return self._buffer
+
+    @property
+    def segment_data(self) -> List[bytes]:
+        return self._emitter_output.segment_data
 
     @property
     def program(self) -> Program:
@@ -1016,6 +1032,7 @@ class EdgeProgramManager:
             new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
+    @profile
     def to_executorch(
         self, config: Optional[ExecutorchBackendConfig] = None
     ) -> "ExecutorchProgramManager":
@@ -1113,6 +1130,7 @@ class ExecutorchProgramManager:
         # Serialize emitter output to a buffer
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
+            segment_data=self._emitter_output.segment_data,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,
@@ -1170,6 +1188,13 @@ class ExecutorchProgramManager:
         Returns the object that represents the ExecuTorch binary before serialization.
         """
         return self._emitter_output.program
+
+    @property
+    def segment_data(self) -> List[bytes]:
+        """
+        Returns the constant segment data.
+        """
+        return self._emitter_output.segment_data
 
     @property
     def buffer(self) -> bytes:

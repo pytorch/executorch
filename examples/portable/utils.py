@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from memory_profiler import profile
+
 import logging
 import os
 
@@ -90,7 +92,7 @@ def export_to_exec_prog(
     exec_prog = edge_m.to_executorch(backend_config)
     return exec_prog
 
-
+@profile
 def save_pte_program(buffer: bytes, model_name: str, output_dir: str = "") -> None:
     filename = os.path.join(output_dir, f"{model_name}.pte")
     try:

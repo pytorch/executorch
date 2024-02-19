@@ -6,6 +6,8 @@
 
 # Example script for exporting Llama2 to flatbuffer
 
+from memory_profiler import profile
+
 import argparse
 import json
 import logging
@@ -307,6 +309,7 @@ def export_llama(modelname, args) -> str:
         return _export_llama(modelname, args)
 
 
+@profile
 def _export_llama(modelname, args) -> str:  # noqa: C901
 
     checkpoint_path = canonical_path(args.checkpoint)
