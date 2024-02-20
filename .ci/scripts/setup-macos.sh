@@ -27,34 +27,18 @@ install_buck() {
     brew install wget
   fi
 
-  BUCK2_NOT_AVAILABLE=false
-  if ! command -v buck2 &> /dev/null; then
-    BUCK2_NOT_AVAILABLE=true
-  else
-    BUCK2_BINARY=$(which buck2)
-    BUCK2_ARCH=$(file -b "${BUCK2_BINARY}")
+  pushd .ci/docker
 
-    if [[ "${BUCK2_ARCH}" != "Mach-O 64-bit executable arm64" ]]; then
-      echo "Reinstall buck2 because ${BUCK2_BINARY} is ${BUCK2_ARCH}, not 64-bit arm64"
-      BUCK2_NOT_AVAILABLE=true
-    fi
-  fi
+  BUCK2=buck2-aarch64-apple-darwin.zst
 
-  if [[ "${BUCK2_NOT_AVAILABLE}" == true ]]; then
-    pushd .ci/docker
+  wget -q "https://ossci-macos.s3.amazonaws.com/${BUCK2}"
+  zstd -d "${BUCK2}" -o buck2
 
-    BUCK2=buck2-aarch64-apple-darwin.zst
-    BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
+  chmod +x buck2
+  mv buck2 /opt/homebrew/bin
 
-    wget -q "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/${BUCK2}"
-    zstd -d "${BUCK2}" -o buck2
-
-    chmod +x buck2
-    mv buck2 /opt/homebrew/bin
-
-    rm "${BUCK2}"
-    popd
-  fi
+  rm "${BUCK2}"
+  popd
 }
 
 function write_sccache_stub() {
