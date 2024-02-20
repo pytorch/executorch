@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraphCustomConfig.h>
 namespace torch {
 namespace executor {
@@ -44,14 +45,18 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
       break;
   }
 
+  float opt_level =
+      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE ? 1 : 3;
   QNN_EXECUTORCH_LOG(
-      kLogLevelInfo, "[Qnn ExecuTorch] Running level=3 optimization.");
+      kLogLevelInfo,
+      "[Qnn ExecuTorch] Running level=%d optimization.",
+      static_cast<int>(opt_level));
 
   p_custom_config = AllocGraphCustomConfig();
   p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
   p_custom_config->optimizationOption.type =
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
-  p_custom_config->optimizationOption.floatValue = 3;
+  p_custom_config->optimizationOption.floatValue = opt_level;
   ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
 
   p_custom_config = AllocGraphCustomConfig();

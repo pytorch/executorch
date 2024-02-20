@@ -92,6 +92,7 @@ class SimpleADB:
                 f"{self.qnn_sdk}/lib/aarch64-android/"
                 f"libQnnHtpV{self.soc_model}Stub.so"
             ),
+            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
             f"{self.artifact_path}/examples/qualcomm/qnn_executor_runner",
             f"{self.artifact_path}/backends/qualcomm/libqnn_executorch_backend.so",
