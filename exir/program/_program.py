@@ -26,6 +26,9 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
+from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    insert_write_back_for_buffers_pass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -45,6 +48,7 @@ from torch.export.exported_program import (
     ExportGraphSignature,
     InputKind,
     InputSpec,
+    OutputKind,
     OutputSpec,
     TensorArgument,
 )
@@ -1034,6 +1038,7 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            gm, _ = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config):
                 new_gm_res = p(new_gm)
