@@ -70,7 +70,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
     # --gc-sections is added by torch.
-    add_compile_definitions("-O3" "-ffunction-sections" "-fdata-sections")
+    add_compile_options("-O3" "-ffunction-sections" "-fdata-sections" "-frtti" "-Wno-unused-command-line-argument")
 endif()
 
 include_directories(
