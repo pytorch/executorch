@@ -37,6 +37,22 @@ if(${ANDROID})
     find_library(android_log log)
 endif()
 
+if(NOT FLATC_EXECUTABLE)
+  set(FLATC_EXECUTABLE flatc)
+endif()
+
+set(qcir_schema_include_dir ${CMAKE_CURRENT_LIST_DIR}/aot/ir)
+set(qcir_schema_output ${qcir_schema_include_dir}/qcir_generated.h)
+add_custom_command(
+  OUTPUT qcir_schema_output
+  COMMAND
+    ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
+    ${qcir_schema_include_dir}
+    ${qcir_schema_include_dir}/qcir.fbs
+  COMMENT "Generating qualcomm ir schema headers"
+  VERBATIM
+)
+
 add_compile_options("-Wall" "-Werror" "-Wno-sign-compare")
 
 # GNU emit wanring for ignored attributes
@@ -57,19 +73,18 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_definitions("-O3" "-ffunction-sections" "-fdata-sections")
 endif()
 
-
 include_directories(
     BEFORE
     ${_common_include_directories}
-)
-include_directories(
-    BEFORE
     ${QNN_SDK_ROOT}/include/QNN
+    ${EXECUTORCH_SOURCE_DIR}/third-party/flatbuffers/include
 )
 
 #
 # declare targets
 #
+add_library(qcir INTERFACE qcir_schema_output)
+add_library(qcir_utils STATIC)
 add_library(executorch_backend INTERFACE)
 add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
@@ -93,6 +108,10 @@ add_library(utils STATIC)
 #
 # declare dependency
 #
+target_link_libraries(qcir_utils
+    PRIVATE
+    qcir
+)
 target_link_libraries(wrappers
     PRIVATE
     qnn_header
@@ -139,6 +158,7 @@ target_link_libraries(qnn_device
 target_link_libraries(qnn_backend_cache
     PRIVATE
     qnn_sys_implementation
+    qcir_utils
 )
 target_link_libraries(qnn_context
     PRIVATE
@@ -174,6 +194,7 @@ target_link_libraries(qnn_executorch_backend
     qnn_executorch_header
     qnn_manager
     executorch
+    qcir_utils
 )
 target_link_libraries(utils
     PRIVATE
@@ -200,6 +221,10 @@ add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
+add_subdirectory(
+    ${QNN_EXECUTORCH_ROOT_DIR}/aot/ir
+    ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/ir
+)
 install(TARGETS qnn_executorch_backend DESTINATION lib)
 
 # QNN pybind
@@ -216,6 +241,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
         qnn_manager
         qnn_executorch_header
         executorch
+        qcir_utils
     )
     target_link_libraries(PyQnnWrapperAdaptor
         PRIVATE
