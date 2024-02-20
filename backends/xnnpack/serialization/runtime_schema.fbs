@@ -1,11 +1,5 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-// This is a temporary schema to handle BC Change.
-// Modifying the schema modifies both the runtime deserialization and
-// AoT serialization. Since this manual BC change requires us to seperate out
-// Runtime and AoT changes, we temporarily introduce this runtime schema
-// so that runtime only and AoT only schema changes can be made in stages
-
 namespace fb_xnnpack;
 
 // Update after any BC breaking changes
@@ -31,12 +25,15 @@ enum XNNDatatype : short {
   xnn_datatype_qcint32 = 7,
   /// Quantized 4-bit signed integer with shared per-channel quantization parameters.
   xnn_datatype_qcint4 = 8,
+  /// Dynamically quantized 8-bit signed integer with per-batch quantization parameters.
+  xnn_datatype_qdint8 = 9,
 }
 
 // type of quantization
 union XNNQuantParams {
   PerChannelQuant,
   PerTensorQuant,
+  PerTokenDynamicQuant,
 }
 
 // taken from executorch
@@ -48,6 +45,10 @@ table Buffer {
 table PerChannelQuant {
   scale:[float];
   channel_dim:int;
+}
+
+table PerTokenDynamicQuant {
+  num_nonbatch_dims:int;
 }
 
 table PerTensorQuant {
