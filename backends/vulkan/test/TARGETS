@@ -1,5 +1,7 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
+oncall("executorch")
+
 python_unittest(
     name = "test_vulkan_delegate",
     srcs = [
@@ -27,6 +29,17 @@ python_unittest(
         "test_vulkan_delegate_header.py",
     ],
     deps = [
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
+python_unittest(
+    name = "test_serialization",
+    srcs = [
+        "test_serialization.py",
+    ],
+    deps = [
+        "//caffe2:torch",
         "//executorch/backends/vulkan:vulkan_preprocess",
     ],
 )
