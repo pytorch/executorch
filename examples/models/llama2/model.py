@@ -405,6 +405,9 @@ class Transformer(nn.Module):
     ) -> Union[
         torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
     ]:
+        _bsz, seqlen = tokens.shape
+        h = self.tok_embeddings(tokens)
+
         if self.use_kv_cache:
             assert (
                 cache_k is not None and cache_v is not None and start_pos is not None
@@ -415,29 +418,27 @@ class Transformer(nn.Module):
             assert (
                 cache_v.size(0) == self.n_layers
             ), f"{cache_v.size(0)} != {self.n_layers}"
-        else:
-            assert (
-                start_pos is None and cache_k is None and cache_v is None,
-                "Caches and start_pos are unused when use_kv_cache is False",
-            )
 
-        _bsz, seqlen = tokens.shape
-        h = self.tok_embeddings(tokens)
-        freqs_cos = self.freqs_cos[:seqlen]
-        freqs_sin = self.freqs_sin[:seqlen]
-
-        if self.use_kv_cache:
-            sp = start_pos.item()  # pyre-ignore[16]
+            sp = start_pos.item()
             # self.params.max_seq_len - 1 because of 0 based indexing, and - 1 again because our input seq len is 1 and its added to the cache before accessing the cache
             torch._constrain_as_size(sp, min=0, max=self.params.max_seq_len - 2)
             torch._constrain_as_value(
-                cache_k.shape[0],  # pyre-ignore[16]
-                min=self.n_layers,
+                cache_k.shape[0],
                 max=self.n_layers,
+                min=self.n_layers,
             )
             torch._constrain_as_value(
                 cache_v.shape[0], min=self.n_layers, max=self.n_layers
             )
+            # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+            freqs_cos = self.freqs_cos[sp : sp + seqlen]
+            freqs_sin = self.freqs_sin[sp : sp + seqlen]
+        else:
+            assert (
+                start_pos is None and cache_k is None and cache_v is None,
+            ), "Caches and start_pos are unused when use_kv_cache is False"
+            freqs_cos = self.freqs_cos[:seqlen]
+            freqs_sin = self.freqs_sin[:seqlen]
 
         for index, layer in enumerate(self.layers):
             if self.use_kv_cache:
