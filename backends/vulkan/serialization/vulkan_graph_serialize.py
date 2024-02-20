@@ -4,19 +4,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ctypes
 import json
 import os
 import tempfile
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import ClassVar, List
 
 # pyre-ignore[21]: Could not find module `executorch.exir._serialize._bindings`.
 import executorch.exir._serialize._bindings as bindings  # @manual=//executorch/exir/_serialize:_bindings
-
 import pkg_resources
+import torch
 
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkGraph
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import Bytes, VkGraph
 from executorch.exir._serialize._dataclass import _DataclassEncoder
 
 
@@ -112,14 +113,17 @@ class VulkanDelegateHeader:
         if self.constants_offset < expected_offset:
             return False
 
-        if self.constants_size <= 0:
+        # constants_size can be 0 if there are no constants in the graph
+        if self.constants_size < 0:
             return False
 
         expected_offset = self.constants_offset + self.constants_size
         if self.shaders_offset < expected_offset:
             return False
 
-        # shaders_size can be 0
+        # shaders_size can be 0 if there are no custom shaders in the graph
+        if self.shaders_size < 0:
+            return False
 
         return True
 
@@ -144,3 +148,94 @@ class VulkanDelegateHeader:
         assert len(data) == VulkanDelegateHeader.EXPECTED_LENGTH
 
         return data
+
+
+def padding_required(data_len: int, alignment: int = 16) -> int:
+    remainder: int = data_len % alignment
+    if remainder != 0:
+        return alignment - remainder
+    return 0
+
+
+def aligned_size(data_len: int, alignment: int = 16) -> int:
+    return data_len + padding_required(data_len, alignment)
+
+
+def pad_to(data: bytes, size: int) -> bytes:
+    if size > len(data):
+        data += b"\x00" * (size - len(data))
+    return data
+
+
+def serialize_constant_tensors(
+    vk_graph: VkGraph,
+    const_tensors: List[torch.Tensor],
+) -> bytes:
+    # Make sure that the graph does not have any registered constants prior to calling
+    # this function.
+    assert len(vk_graph.constants) == 0
+
+    constants_bytes: bytearray = bytearray()
+    current_offset = 0
+    for tensor in const_tensors:
+        array_type = ctypes.c_char * tensor.untyped_storage().nbytes()
+        array = ctypes.cast(
+            tensor.untyped_storage().data_ptr(),
+            ctypes.POINTER(array_type),
+        ).contents
+
+        tensor_bytes = bytes(array)
+        # Pad the tensor bytes to the next 16 byte boundary
+        constants_bytes += tensor_bytes
+        constants_bytes += b"\x00" * padding_required(len(tensor_bytes))
+
+        vk_graph.constants.append(Bytes(current_offset, len(tensor_bytes)))
+        current_offset += aligned_size(len(tensor_bytes))
+
+    return bytes(constants_bytes)
+
+
+def serialize_custom_shaders(
+    vk_graph: VkGraph,
+    custom_shaders: List[str],
+) -> bytes:
+    # Make sure that the graph deos not have any registered shaders prior to calling
+    # this function.
+    assert len(vk_graph.shaders) == 0
+
+    if len(custom_shaders) == 0:
+        return b""
+
+    else:
+        raise NotImplementedError("Serializing Custom shaders are not yet supported")
+
+
+def serialize_vulkan_graph(
+    vk_graph: VkGraph, const_tensors: List[torch.Tensor], custom_shaders: List[str]
+) -> bytes:
+    constants_bytes = serialize_constant_tensors(vk_graph, const_tensors)
+    shaders_bytes = serialize_custom_shaders(vk_graph, custom_shaders)
+    flatbuffer_payload = convert_to_flatbuffer(vk_graph)
+
+    header_len = aligned_size(VulkanDelegateHeader.EXPECTED_LENGTH)
+    flatbuffer_payload_len = aligned_size(len(flatbuffer_payload))
+    constants_len = aligned_size(len(constants_bytes))
+    shaders_len = aligned_size(len(shaders_bytes))
+
+    header: bytes = VulkanDelegateHeader(
+        flatbuffer_offset=header_len,
+        flatbuffer_size=len(flatbuffer_payload),
+        constants_offset=header_len + flatbuffer_payload_len,
+        constants_size=len(constants_bytes),
+        shaders_offset=header_len + flatbuffer_payload_len + constants_len,
+        shaders_size=len(shaders_bytes),
+    ).to_bytes()
+
+    return b"".join(
+        [
+            pad_to(header, header_len),
+            pad_to(flatbuffer_payload, flatbuffer_payload_len),
+            pad_to(constants_bytes, constants_len),
+            pad_to(shaders_bytes, shaders_len),
+        ]
+    )

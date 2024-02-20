@@ -1,6 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 
-namespace at.vulkan.delegate;
+namespace vkgraph;
 
 // Update after any BC breaking changes
 file_identifier "VK00";
@@ -10,10 +10,10 @@ enum VkDatatype : short {
   vk_datatype_fp32 = 0,
 }
 
-// Taken from executorch
-// Data buffer abstraction.
-table Buffer {
-  storage:[ubyte] (force_align: 16);
+// Abstraction to represent a region of bytes in a raw data buffer. Useful for referencing raw data serialized outside of the flatbuffer.
+table Bytes {
+  offset: uint;
+  length: uint;
 }
 
 table VkTensor {
@@ -21,9 +21,9 @@ table VkTensor {
   datatype:VkDatatype;
   // Array of shape dimensions
   dims:[uint];
-  // Index to the program's constant buffer table, value 0 is reserved to indicate non constant
-  constant_buffer_idx:uint;
-  // Indicates which shared memory object this tensor uses; negative means the tensor does not share memory
+  // Index to the program's constant buffer table, negative value indicates non constant
+  constant_buffer_idx:int;
+  // Indicates which shared memory object this tensor uses; negative value indicates the tensor does not share memory
   mem_obj_id: int;
 }
 
@@ -56,8 +56,8 @@ table VkNode {
 table VkGraph {
   // Schema version.
   version:string;
-  vknodes:[VkNode];
-  vkvalues:[VkValue];
+  chain:[VkNode];
+  values:[VkValue];
 
   // Ids of external inputs
   input_ids:[uint];
@@ -69,7 +69,8 @@ table VkGraph {
   // data field of weight tensors). Each constant is assigned an index into the table
   // which are each individually aligned. 0 index is reserved to be pointed to by non-constant
   // Tensors
-  constant_buffer:[Buffer];
+  constants:[Bytes];
+  shaders:[Bytes];
 }
 
 root_type VkGraph;

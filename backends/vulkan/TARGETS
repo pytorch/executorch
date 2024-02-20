@@ -1,27 +1,9 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-runtime.cxx_library(
-    name = "vulkan_backend_lib",
-    srcs = [
-        "VulkanBackend.cpp",
-    ],
-    # VulkanBackend.cpp needs to compile with executor as whole
-    # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
-    link_whole = True,
-    visibility = [
-        "//executorch/backends/...",
-        "//executorch/extension/pybindings/...",
-        "//executorch/test/...",
-        "@EXECUTORCH_CLIENTS",
-    ],
-    deps = [
-        "//caffe2:torch_vulkan_graph",
-        "//executorch/backends/vulkan/serialization/schema:vk_delegate_schema",
-        "//executorch/runtime/backend:interface",
-    ],
-)
+define_common_targets()
 
 runtime.python_library(
     name = "vulkan_preprocess",
@@ -30,9 +12,9 @@ runtime.python_library(
         "serialization/vulkan_graph_serialize.py",
         "vulkan_preprocess.py",
     ],
-    resources = {
-        "//executorch/backends/vulkan/serialization/schema:vk_schema_file": "serialization/schema.fbs",
-    },
+    resources = [
+        "serialization/schema.fbs",
+    ],
     visibility = [
         "//executorch/...",
         "//executorch/vulkan/...",

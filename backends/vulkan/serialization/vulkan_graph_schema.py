@@ -20,8 +20,9 @@ class VkDatatype(IntEnum):
 
 
 @dataclass
-class Buffer:
-    storage: bytes
+class Bytes:
+    offset: int
+    length: int
 
 
 @dataclass
@@ -69,10 +70,11 @@ class VkNode:
 @dataclass
 class VkGraph:
     version: str
-    vknodes: List[VkNode]
-    vkvalues: List[VkValue]
+    chain: List[VkNode]
+    values: List[VkValue]
 
     input_ids: List[int]
     output_ids: List[int]
 
-    constant_buffer: List[Buffer]
+    constants: List[Bytes]
+    shaders: List[Bytes]
