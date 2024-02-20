@@ -29,26 +29,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-if __name__ == "__main__":
-    in_features = 32
-    out_features = 16
-    bias = True
-    shape = [64, in_features]
-
-    class QuantizedLinear(torch.nn.Module):
-        def __init__(self, in_features: int, out_features: int, bias: bool):
-            super().__init__()
-            self.output_linear = torch.nn.Linear(in_features, out_features, bias=bias)
-
-        def forward(self, x: torch.Tensor):
-            output_linear_out = self.output_linear(x)
-            return output_linear_out
-
-    model = QuantizedLinear(in_features, out_features, bias)
-    model.eval()
-
-    example_inputs = (torch.ones(shape),)
-
+def export_xtensa_model(model, example_inputs):
     # Quantizer
     quantizer = XtensaQuantizer()
 
@@ -77,7 +58,7 @@ if __name__ == "__main__":
         export_to_edge(
             converted_model_exp,
             example_inputs,
-            EdgeCompileConfig(
+            edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
         )

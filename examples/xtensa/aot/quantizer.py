@@ -7,10 +7,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from math import frexp, isclose, trunc
-from typing import Any, Callable, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import torch
-from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 
 from torch import fx
@@ -28,8 +27,6 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
 from torch.fx import GraphModule
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.fx.passes.utils.fuser_utils import legalize_graph
-
-# torch.ops.load_library("//executorch/kernels/quantized:custom_ops_generated_lib")
 
 
 def quantize_tensor_multiplier(
@@ -114,6 +111,199 @@ def _no_outside_users(fused_partition) -> bool:
     return True
 
 
+# Helper function to get the weight node for both quantized and unquantized weights
+# TODO(matthiascremon): get a better test!
+def get_weight_node(weights_inputs: fx.Node, dequants_weights: fx.Node) -> fx.Node:
+    """
+    Returns the weight node.
+    """
+    weight_node = (
+        weights_inputs
+        if weights_inputs.name.endswith("_frozen_param")
+        else dequants_weights
+    )
+    return weight_node
+
+
+# Helper function to get the args and kwargs for the linear replacement op
+def get_args_and_kwargs_linear(
+    graph_module: GraphModule,
+    inputs_inputs: List[fx.Node],
+    dequants_inputs: List[fx.Node],
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    quant_node: fx.Node,
+) -> Tuple[Tuple[Any], Dict[str, Any]]:
+    """
+    Returns the args and kwargs for the linear replacement op.
+    """
+    weight_scale = get_weight_node(weights_inputs[0], dequants_weights[0]).args[1]
+    # pyre-fixme[58]: Unsupported operand types
+    bias_scale = inputs_inputs[0].args[1] * weight_scale
+    requantize_scale = bias_scale / quant_node.args[1]
+    requantize_scale_t = torch.tensor([requantize_scale])
+
+    (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
+    bias_shape = weights_inputs
+    weight_node = get_weight_node(weights_inputs[0], dequants_weights[0]).args[0]
+    # pyre-fixme[16]: Undefined attribute
+    attr_node = getattr(graph_module, weight_node.target)
+    weight_shape = list(attr_node.shape)
+    bias_shape = weight_shape[0]
+    bias = (
+        bias_inputs[0]
+        if bias_inputs
+        else graph_module.graph.call_function(
+            torch.ops.aten.full.default, ([bias_shape], 0.0)
+        )
+    )
+    bias_int32_quant = graph_module.graph.call_function(
+        torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        (
+            bias,
+            bias_scale,
+            0,
+            -(2**31),
+            (2**31) - 1,
+            torch.int32,
+        ),
+    )
+
+    # Create single element tensors for weight_zero_point, out_multiplier, out_shift.
+    # Note that the function expects int32_t, when it would default to int64_t, so
+    # we explicitly require that type.
+    weight_zero_point_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], dequants_weights[0].args[2]),
+        {"dtype": torch.int32},
+    )
+    out_multiplier_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_multiplier[0].item()),
+        {"dtype": torch.int32},
+    )
+    out_shift_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_shift[0].item()),
+        {"dtype": torch.int32},
+    )
+
+    args = tuple(inputs_inputs + weights_inputs + other_inputs + [bias_int32_quant])
+    kwargs = {
+        "src_zero_point": dequants_inputs[0].args[2],
+        "weight_zero_point": weight_zero_point_,
+        "out_multiplier": out_multiplier_,
+        "out_shift": out_shift_,
+        "out_zero_point": quant_node.args[2],
+        "offset": None,
+    }
+    return args, kwargs
+
+
+def get_args_and_kwargs_conv1d(
+    graph_module: GraphModule,
+    inputs_inputs: List[fx.Node],
+    dequants_inputs: List[fx.Node],
+    other_inputs: List[fx.Node],
+    weights_inputs: List[fx.Node],
+    dequants_weights: List[fx.Node],
+    bias_inputs: List[fx.Node],
+    quant_node: fx.Node,
+    op_node: fx.Node,
+):
+    weight_scale = get_weight_node(weights_inputs[0], dequants_weights[0]).args[1]
+    weight_zero_point = get_weight_node(weights_inputs[0], dequants_weights[0]).args[2]
+    # pyre-fixme[58]: Unsupported operand types
+    bias_scale = inputs_inputs[0].args[1] * weight_scale
+    # pyre-fixme[16]: Undefined attribute
+    stride = [1, 1] if len(op_node.args) < 4 else [1, op_node.args[3][0]]
+    # pyre-fixme[16]: Undefined attribute
+    padding = [0, 0] if len(op_node.args) < 5 else [0, op_node.args[4][0]]
+    # pyre-fixme[16]: Undefined attribute
+    dilation = [1, 1] if len(op_node.args) < 6 else [1, op_node.args[5][0]]
+    groups = 1 if len(op_node.args) < 7 else op_node.args[6]
+    weight_node = get_weight_node(weights_inputs[0], dequants_weights[0]).args[0]
+    # pyre-fixme[16]: Undefined attribute
+    attr_node = getattr(graph_module, weight_node.target)
+    weight_shape = list(attr_node.shape)
+    bias_shape = weight_shape[0]
+
+    # If the bias is empty, create a tensor of zeros with the appropriate shape
+    bias = (
+        bias_inputs[0]
+        if bias_inputs
+        else graph_module.graph.call_function(
+            torch.ops.aten.full.default, ([bias_shape], 0.0)
+        )
+    )
+
+    # The bias is quantized to int32_t
+    bias_int32_quant = graph_module.graph.call_function(
+        torch.ops.quantized_decomposed.quantize_per_tensor.default,
+        (
+            bias,
+            bias_scale,
+            0,
+            -(2**31),
+            (2**31) - 1,
+            torch.int32,
+        ),
+    )
+
+    # Compute the out multiplier and out shift. They are used when the conv op is
+    # replaced by quantized linear, we compute them a priori for simplicity but
+    # may revisit the decision.
+    requantize_scale = bias_scale / quant_node.args[1]
+    requantize_scale_t = torch.tensor([requantize_scale])
+
+    (out_multiplier, out_shift) = quantize_tensor_multiplier(requantize_scale_t)
+
+    out_multiplier_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_multiplier[0].item()),
+        {"dtype": torch.int32},
+    )
+    out_shift_ = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], out_shift[0].item()),
+        {"dtype": torch.int32},
+    )
+
+    # Create a single element tensor for the weight zero point
+    weight_zero_point_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], weight_zero_point),
+        {"dtype": torch.int32},
+    )
+
+    # Create a single element tensor for the bias scale
+    bias_scale_tensor = graph_module.graph.call_function(
+        torch.ops.aten.full.default,
+        ([1], bias_scale),
+        {"dtype": torch.float32},
+    )
+
+    # Make the args and kwargs for the replacement op
+    args = tuple(inputs_inputs + weights_inputs + other_inputs + [bias_int32_quant])
+    kwargs = {
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "groups": groups,
+        "input_zero_point": dequants_inputs[0].args[2],
+        "weight_zero_point": weight_zero_point_tensor,
+        "bias_scale": bias_scale_tensor,
+        "out_scale": quant_node.args[1],
+        "out_zero_point": quant_node.args[2],
+        "out_multiplier": out_multiplier_,
+        "out_shift": out_shift_,
+        "channel_last": False,
+    }
+    return args, kwargs
+
+
 @dataclass
 class PartitionAnchors:
     """
@@ -177,7 +367,34 @@ class LinearPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_linear_pt2.default
+        return torch.ops.xtensa.quantized_linear.default
+
+
+class Conv1dPattern(QuantizationPattern):
+    def partition_types(self) -> List[Type[torch.nn.Module]]:
+        return [torch.nn.Conv1d]
+
+    def get_anchors(
+        self, gm: GraphModule, fused_partition: List[GraphModule]
+    ) -> PartitionAnchors:
+        conv1d_node = fused_partition[0].nodes[-1]
+
+        # If bias is None, replace it with an empty list.
+        bias = (
+            [(conv1d_node, 2)]
+            if len(conv1d_node.args) > 2 and conv1d_node.args[2]
+            else []
+        )
+
+        return PartitionAnchors(
+            inputs=[(conv1d_node, 0)],
+            weights=[(conv1d_node, 1)],
+            biases=bias,
+            output=conv1d_node,
+        )
+
+    def replacement_op(self):
+        return torch.ops.jarvis.quantized_conv.default
 
 
 class GenericQuantizer(Quantizer):
@@ -255,7 +472,7 @@ wgt_qspec = QuantizationSpec(
 )
 
 
-class XtensaQuantizer(ComposableQuantizer):
+class JarvisQuantizer(ComposableQuantizer):
     def __init__(self):
         static_qconfig = QuantizationConfig(
             act_qspec,
@@ -266,6 +483,7 @@ class XtensaQuantizer(ComposableQuantizer):
         super().__init__(
             [
                 GenericQuantizer(LinearPattern(), static_qconfig),
+                GenericQuantizer(Conv1dPattern(), static_qconfig),
             ]
         )
 
@@ -314,76 +532,36 @@ class QuantFusion(ExportPass):
                 assert len(anchors.output.users) == 1
                 quant_node = list(anchors.output.users.keys())[0]
 
+                op_node = anchors.output
+
                 with graph_module.graph.inserting_after(anchors.output):
                     args = tuple(
                         inputs_inputs + weights_inputs + other_inputs + bias_inputs
                     )
                     kwargs = {}
-                    if (
-                        pattern.replacement_op()
-                        == torch.ops.xtensa.quantized_linear_pt2.default
-                    ):
-                        weight_scale = (
-                            weights_inputs[0].args[1]
-                            if weights_inputs[0].name[:13] != "_frozen_param"
-                            else dequants_weights[0].args[1]
+                    if isinstance(pattern, LinearPattern):
+                        args, kwargs = get_args_and_kwargs_linear(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            quant_node,
                         )
-                        bias_scale = inputs_inputs[0].args[1] * weight_scale
-                        requantize_scale = bias_scale / quant_node.args[1]
-                        requantize_scale_t = torch.tensor([requantize_scale])
-
-                        (out_multiplier, out_shift) = quantize_tensor_multiplier(
-                            requantize_scale_t
+                    elif isinstance(pattern, Conv1dPattern):
+                        args, kwargs = get_args_and_kwargs_conv1d(
+                            graph_module,
+                            inputs_inputs,
+                            dequants_inputs,
+                            other_inputs,
+                            weights_inputs,
+                            dequants_weights,
+                            bias_inputs,
+                            quant_node,
+                            op_node,
                         )
-                        bias_shape = weights_inputs
-                        node = (
-                            weights_inputs[0].args[0]
-                            if weights_inputs[0].name[:13] != "_frozen_param"
-                            else dequants_weights[0].args[0]
-                        )
-                        attr_node = getattr(graph_module, node.target)
-                        weight_shape = list(attr_node.shape)
-                        bias_shape = weight_shape[0]
-                        bias = (
-                            bias_inputs[0]
-                            if bias_inputs
-                            else graph_module.graph.call_function(
-                                torch.ops.aten.full.default, ([bias_shape], 0.0)
-                            )
-                        )
-                        bias_int32_quant = graph_module.graph.call_function(
-                            torch.ops.quantized_decomposed.quantize_per_tensor.default,
-                            (
-                                bias,
-                                bias_scale,
-                                0,
-                                -(2**31),
-                                (2**31) - 1,
-                                torch.int32,
-                            ),
-                        )
-
-                        out_multiplier_ = graph_module.graph.call_function(
-                            torch.ops.aten.full.default, ([1], out_multiplier[0].item())
-                        )
-                        out_shift_ = graph_module.graph.call_function(
-                            torch.ops.aten.full.default, ([1], out_shift[0].item())
-                        )
-                        args = tuple(
-                            inputs_inputs
-                            + weights_inputs
-                            + other_inputs
-                            + [bias_int32_quant]
-                        )
-                        kwargs = {
-                            "src_scale": dequants_inputs[0].args[1],
-                            "src_zero_point": dequants_inputs[0].args[2],
-                            "weight_scale": dequants_weights[0].args[1],
-                            "weight_zero_point": dequants_weights[0].args[2],
-                            "out_multiplier": out_multiplier_,
-                            "out_shift": out_shift_,
-                            "out_zero_point": quant_node.args[2],
-                        }
                     fused = graph_module.graph.call_function(
                         pattern.replacement_op(),
                         args,
@@ -406,37 +584,3 @@ class QuantFusion(ExportPass):
         for n in nodes:
             # pyre-fixme[7]: Incompatible return type
             n.meta["QuantFusion"] = True
-
-
-class ReplacePT2QuantWithXtensaQuant(ExportPass):
-    """
-    Replace the pt2 quantization ops with custom xtensa quantization ops.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in {exir_ops.edge.quantized_decomposed.quantize_per_tensor.default}:
-            return super().call_operator(op, args, kwargs, meta)
-
-        return super().call_operator(
-            exir_ops.edge.xtensa.quantize_per_tensor.default,
-            args,
-            kwargs,
-            meta,
-        )
-
-
-class ReplacePT2DequantWithXtensaDequant(ExportPass):
-    """
-    Replace the pt2 dequantization ops with custom xtensa dequantization ops.
-    """
-
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in {exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default}:
-            return super().call_operator(op, args, kwargs, meta)
-
-        return super().call_operator(
-            exir_ops.edge.xtensa.dequantize_per_tensor.default,
-            args,
-            kwargs,
-            meta,
-        )

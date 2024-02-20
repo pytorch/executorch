@@ -34,8 +34,8 @@ target_link_libraries(aten_ops_xtensa PUBLIC executorch)
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "quantized_linear_out.cpp" "quantize_per_tensor.cpp"
-  "dequantize_per_tensor.cpp")
+  custom_ops "quantized_linear_out.cpp" "quantized_conv_out.cpp"
+  "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp")
 target_link_libraries(custom_ops PUBLIC executorch)
 target_link_libraries(custom_ops PRIVATE xtensa_kernels)
 
