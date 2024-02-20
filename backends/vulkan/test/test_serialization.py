@@ -36,7 +36,7 @@ class TestSerialization(unittest.TestCase):
 
         return tensors
 
-    def test_serialize_xnnpack_binary(self):
+    def test_serialize_vulkan_binary(self):
         vk_graph = VkGraph(
             version="0",
             chain=[],

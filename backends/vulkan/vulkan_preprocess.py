@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import ctypes
 from typing import Dict, final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
@@ -178,8 +177,6 @@ class VulkanBackend(BackendDetails):
                     ),
                 )
             elif node.op == "get_attr":
-                # Tensor
-                # Adapted from https://www.internalfb.com/code/fbsource/[18c174b709f321d26e6632e2f826498cde730f8c]/fbcode/executorch/backends/xnnpack/xnnpack_preprocess.py?lines=127
                 buffer_idx = len(const_tensors)
                 const_tensors.append(
                     getattr(node.graph.owning_module, node.target).contiguous()
