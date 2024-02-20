@@ -44,23 +44,19 @@ class VulkanDelegateHeader:
     HEADER_SIZE_IX: ClassVar[slice] = slice(8, 10)
     FLATBUFFER_OFFSET_IX: ClassVar[slice] = slice(10, 14)
     FLATBUFFER_SIZE_IX: ClassVar[slice] = slice(14, 18)
-    CONSTANTS_OFFSET_IX: ClassVar[slice] = slice(18, 22)
-    CONSTANTS_SIZE_IX: ClassVar[slice] = slice(22, 30)
-    SHADERS_OFFSET_IX: ClassVar[slice] = slice(30, 34)
-    SHADERS_SIZE_IX: ClassVar[slice] = slice(34, 42)
+    BYTES_OFFSET_IX: ClassVar[slice] = slice(18, 22)
+    BYTES_SIZE_IX: ClassVar[slice] = slice(22, 30)
 
     # magic bytes that should be at the beginning of the header
-    EXPECTED_MAGIC: ClassVar[bytes] = b"VKDG"
+    EXPECTED_MAGIC: ClassVar[bytes] = b"VH00"
     # The length of the header in bytes
-    EXPECTED_LENGTH: ClassVar[int] = 42
+    EXPECTED_LENGTH: ClassVar[int] = 30
 
     # Instance attributes, @dataclass will turn these into constructor args
     flatbuffer_offset: int
     flatbuffer_size: int
-    constants_offset: int
-    constants_size: int
-    shaders_offset: int
-    shaders_size: int
+    bytes_offset: int
+    bytes_size: int
 
     @staticmethod
     def from_bytes(data: bytes) -> "VulkanDelegateHeader":
@@ -90,18 +86,14 @@ class VulkanDelegateHeader:
 
         flatbuffer_offset_b: bytes = data[VulkanDelegateHeader.FLATBUFFER_OFFSET_IX]
         flatbuffer_size_b: bytes = data[VulkanDelegateHeader.FLATBUFFER_SIZE_IX]
-        constants_offset_b: bytes = data[VulkanDelegateHeader.CONSTANTS_OFFSET_IX]
-        constants_size_b: bytes = data[VulkanDelegateHeader.CONSTANTS_SIZE_IX]
-        shaders_offset_b: bytes = data[VulkanDelegateHeader.SHADERS_OFFSET_IX]
-        shaders_size_b: bytes = data[VulkanDelegateHeader.SHADERS_SIZE_IX]
+        bytes_offset_b: bytes = data[VulkanDelegateHeader.BYTES_OFFSET_IX]
+        bytes_size_b: bytes = data[VulkanDelegateHeader.BYTES_SIZE_IX]
 
         return VulkanDelegateHeader(
             flatbuffer_offset=int.from_bytes(flatbuffer_offset_b, byteorder="little"),
             flatbuffer_size=int.from_bytes(flatbuffer_size_b, byteorder="little"),
-            constants_offset=int.from_bytes(constants_offset_b, byteorder="little"),
-            constants_size=int.from_bytes(constants_size_b, byteorder="little"),
-            shaders_offset=int.from_bytes(shaders_offset_b, byteorder="little"),
-            shaders_size=int.from_bytes(shaders_size_b, byteorder="little"),
+            bytes_offset=int.from_bytes(bytes_offset_b, byteorder="little"),
+            bytes_size=int.from_bytes(bytes_size_b, byteorder="little"),
         )
 
     def is_valid(self) -> bool:
@@ -109,17 +101,11 @@ class VulkanDelegateHeader:
             return False
 
         expected_offset = self.flatbuffer_offset + self.flatbuffer_size
-        if self.constants_offset < expected_offset:
+        if self.bytes_offset < expected_offset:
             return False
 
-        if self.constants_size <= 0:
+        if self.bytes_size < 0:
             return False
-
-        expected_offset = self.constants_offset + self.constants_size
-        if self.shaders_offset < expected_offset:
-            return False
-
-        # shaders_size can be 0
 
         return True
 
@@ -135,10 +121,8 @@ class VulkanDelegateHeader:
             + self.EXPECTED_LENGTH.to_bytes(2, byteorder="little")
             + self.flatbuffer_offset.to_bytes(4, byteorder="little")
             + self.flatbuffer_size.to_bytes(4, byteorder="little")
-            + self.constants_offset.to_bytes(4, byteorder="little")
-            + self.constants_size.to_bytes(8, byteorder="little")
-            + self.shaders_offset.to_bytes(4, byteorder="little")
-            + self.shaders_size.to_bytes(8, byteorder="little")
+            + self.bytes_offset.to_bytes(4, byteorder="little")
+            + self.bytes_size.to_bytes(8, byteorder="little")
         )
 
         assert len(data) == VulkanDelegateHeader.EXPECTED_LENGTH
