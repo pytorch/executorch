@@ -566,9 +566,9 @@ class Llama2Model(EagerModelBase):
             simple_quantizer = INt8dynactint4weightquanthandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
 
-        self.model_.load_state_dict(
-            checkpoint, strict=False
-        )  # self.model_ = Transformer(gptconf)
+        # self.model_.load_state_dict(
+        #     checkpoint, strict=False
+        # )  # self.model_ = Transformer(gptconf)
 
     def get_eager_model(self):
         if self.dtype:
