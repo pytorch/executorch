@@ -495,7 +495,11 @@ def get_node_tensor_specs(
     if not isinstance(specs, (list, tuple)):
         return []
     else:
-        return specs
+        return [
+            spec
+            for spec in specs
+            if not isinstance(spec, (int, float, bool, str, type(None)))
+        ]
 
 
 @register_algo
