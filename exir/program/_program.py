@@ -80,6 +80,7 @@ def _get_updated_graph_signature(
         arg = (
             old_input_spec.arg
             if isinstance(old_input_spec.arg, ConstantArgument)
+            # pyre-fixme[20]: Argument `class_fqn` expected.
             else type(old_input_spec.arg)(node.name)
         )
         new_input_specs.append(
@@ -104,6 +105,7 @@ def _get_updated_graph_signature(
         arg = (
             old_output_spec.arg
             if isinstance(old_output_spec.arg, ConstantArgument)
+            # pyre-fixme[20]: Argument `class_fqn` expected.
             else type(old_output_spec.arg)(node.name)
         )
         new_output_specs.append(
