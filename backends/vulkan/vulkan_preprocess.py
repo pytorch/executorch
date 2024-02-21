@@ -4,12 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import ctypes
 from typing import Dict, final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
-    convert_to_flatbuffer,
+    serialize_vulkan_graph,
 )
 
 from executorch.exir.backend.backend_details import (
@@ -80,12 +79,12 @@ class VulkanBackend(BackendDetails):
         vk_values = []
         vk_input_ids = []
         vk_output_ids = []
-        vk_const_buffers = [vk_graph_schema.Buffer(storage=bytes())]
+        const_tensors = []
 
         # Mapping from node in the executorch graph to corresponding VkValue id
         node_vk_value_ids = {}
 
-        def create_single_vk_value(node: Node, buffer_idx: int = 0) -> int:
+        def create_single_vk_value(node: Node, buffer_idx: int = -1) -> int:
             spec = node.meta.get("spec")
             assert isinstance(spec, TensorSpec)
             new_id = len(vk_values)
@@ -115,7 +114,7 @@ class VulkanBackend(BackendDetails):
             )
             return new_id
 
-        def create_vk_values_for(node: Node, buffer_idx: int = 0):
+        def create_vk_values_for(node: Node, buffer_idx: int = -1):
             spec = node.meta.get("spec")
 
             if isinstance(spec, TensorSpec):
@@ -178,19 +177,10 @@ class VulkanBackend(BackendDetails):
                     ),
                 )
             elif node.op == "get_attr":
-                # Tensor
-                # Adapted from https://www.internalfb.com/code/fbsource/[18c174b709f321d26e6632e2f826498cde730f8c]/fbcode/executorch/backends/xnnpack/xnnpack_preprocess.py?lines=127
-                buffer_idx = len(vk_const_buffers)
-
-                const_val = getattr(node.graph.owning_module, node.target).contiguous()
-                # pyre-ignore
-                array_type = ctypes.c_char * const_val.untyped_storage().nbytes()
-                array = ctypes.cast(
-                    const_val.untyped_storage().data_ptr(),
-                    ctypes.POINTER(array_type),
-                ).contents
-                buffer = vk_graph_schema.Buffer(storage=bytes(array))
-                vk_const_buffers.append(buffer)
+                buffer_idx = len(const_tensors)
+                const_tensors.append(
+                    getattr(node.graph.owning_module, node.target).contiguous()
+                )
 
                 create_vk_values_for(node, buffer_idx)
 
@@ -204,12 +194,13 @@ class VulkanBackend(BackendDetails):
                 raise RuntimeError(f"Unsupported op, {node.op}, in Vulkan Preprocess")
         vk_graph = vk_graph_schema.VkGraph(
             version="0",
-            vknodes=vk_nodes,
-            vkvalues=vk_values,
+            chain=vk_nodes,
+            values=vk_values,
             input_ids=vk_input_ids,
             output_ids=vk_output_ids,
-            constant_buffer=vk_const_buffers,
+            constants=[],
+            shaders=[],
         )
         return PreprocessResult(
-            processed_bytes=convert_to_flatbuffer(vk_graph),
+            processed_bytes=serialize_vulkan_graph(vk_graph, const_tensors, []),
         )
