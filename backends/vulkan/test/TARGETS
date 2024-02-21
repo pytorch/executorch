@@ -20,3 +20,13 @@ python_unittest(
         "//executorch/kernels/portable:custom_ops_generated_lib",
     ],
 )
+
+python_unittest(
+    name = "test_vulkan_delegate_header",
+    srcs = [
+        "test_vulkan_delegate_header.py",
+    ],
+    deps = [
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
