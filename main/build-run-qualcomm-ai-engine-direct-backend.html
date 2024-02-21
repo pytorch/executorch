@@ -428,7 +428,7 @@
               
   <div class="section" id="building-and-running-executorch-with-qualcomm-ai-engine-direct-backend">
 <h1>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend<a class="headerlink" href="#building-and-running-executorch-with-qualcomm-ai-engine-direct-backend" title="Permalink to this heading">¶</a></h1>
-<p>In this tutorial we will walk you through the process of getting setup to
+<p>In this tutorial we will walk you through the process of getting started to
 build ExecuTorch for Qualcomm AI Engine Direct and running a model on it.</p>
 <p>Qualcomm AI Engine Direct is also referred to as QNN in the source and documentation.</p>
 <!----This will show a grid card on the page----->
@@ -492,7 +492,7 @@ on Ubuntu 20.04.</p>
 <ul class="simple">
 <li><p>Follow ExecuTorch recommneded Python version.</p></li>
 <li><p>A compiler to compile AOT parts. GCC 9.4 come with Ubuntu20.04 is verified.</p></li>
-<li><p>Android NDK. This example is verified with NDK 25c.</p></li>
+<li><p><a class="reference external" href="https://developer.android.com/ndk">Android NDK</a>. This example is verified with NDK 25c.</p></li>
 <li><p><a class="reference external" href="https://developer.qualcomm.com/software/qualcomm-ai-engine-direct-sdk">Qualcomm AI Engine Direct SDK</a></p>
 <ul>
 <li><p>Follow the download button. After logging in, search Qualcomm AI Stack at the <em>Tool</em> panel.</p></li>
@@ -536,7 +536,7 @@ i.e., the directory containing <code class="docutils literal notranslate"><span 
 <h3>Setup environment variables<a class="headerlink" href="#setup-environment-variables" title="Permalink to this heading">¶</a></h3>
 <p>We set <code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> to make sure the dynamic linker can find QNN libraries.</p>
 <p>Further, we set <code class="docutils literal notranslate"><span class="pre">PYTHONPATH</span></code> because it’s easier to develop and import ExecuTorch
-Pytho APIs.</p>
+Python APIs.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span>/lib/x86_64-linux-clang/:<span class="nv">$LD_LIBRARY_PATH</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="nv">$EXECUTORCH_ROOT</span>/..
 </pre></div>
@@ -545,7 +545,7 @@ Pytho APIs.</p>
 </div>
 <div class="section" id="build">
 <h2>Build<a class="headerlink" href="#build" title="Permalink to this heading">¶</a></h2>
-<p>An example script for below building instructions is <a class="reference download internal" download="" href="_downloads/d9e3387e8f389f6a68c05c3f3bc13e0b/build.sh"><span class="xref download myst">here</span></a>.</p>
+<p>An example script for below building instructions is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/qualcomm/scripts/build.sh">here</a>.</p>
 <div class="section" id="aot-ahead-of-time-components">
 <h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
 <p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
@@ -569,15 +569,31 @@ cp<span class="w"> </span>-f<span class="w"> </span>backends/qualcomm/PyQnnWrapp
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
 mkdir<span class="w"> </span>build_android
 <span class="nb">cd</span><span class="w"> </span>build_android
-cmake<span class="w"> </span>..<span class="w"> </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
+<span class="c1"># build executorch &amp; qnn_executorch_backend</span>
+cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DANDROID_NATIVE_API_LEVEL<span class="o">=</span><span class="m">23</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DBUCK2<span class="o">=</span>buck2
-cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j8
+<span class="w">    </span>-B<span class="nv">$PWD</span>
+
+cmake<span class="w"> </span>--build<span class="w"> </span><span class="nv">$PWD</span><span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install
+
+cmake<span class="w"> </span>../examples/qualcomm<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="s1">&#39;arm64-v8a&#39;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_NATIVE_API_LEVEL<span class="o">=</span><span class="m">23</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$PWD</span><span class="s2">/lib/cmake/ExecuTorch;</span><span class="nv">$PWD</span><span class="s2">/third-party/gflags;&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE<span class="o">=</span>BOTH<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bexamples/qualcomm
+
+cmake<span class="w"> </span>--build<span class="w"> </span>examples/qualcomm<span class="w"> </span>-j16
 </pre></div>
 </div>
+<p><strong>Note:</strong> If you want to build for release, add <code class="docutils literal notranslate"><span class="pre">-DCMAKE_BUILD_TYPE=Release</span></code> to the <code class="docutils literal notranslate"><span class="pre">cmake</span></code> command options.</p>
 <p>You can find <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> under <code class="docutils literal notranslate"><span class="pre">build_android/examples/qualcomm/</span></code>.</p>
 </div>
 </div>
@@ -585,7 +601,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <h2>Deploying and running on device<a class="headerlink" href="#deploying-and-running-on-device" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="aot-compile-a-model">
 <h3>AOT compile a model<a class="headerlink" href="#aot-compile-a-model" title="Permalink to this heading">¶</a></h3>
-<p>You can refer to <a class="reference download internal" download="" href="_downloads/780f2a7e6f1e5aca7ce0c3869b88c778/deeplab_v3.py"><span class="xref download myst">this script</span></a> for the exact flow.
+<p>You can refer to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/qualcomm/scripts/deeplab_v3.py">this script</a> for the exact flow.
 We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands to compile:</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cd $EXECUTORCH_ROOT
 python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --compile_only --download
@@ -609,7 +625,7 @@ python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --comp
 <p>The compiled model is <code class="docutils literal notranslate"><span class="pre">./deeplab_v3/dlv3_qnn.pte</span></code>.</p>
 </div>
 <div class="section" id="run-model-inference-on-an-android-smartphone-with-qualcomm-socs">
-<h3>Run model Inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this heading">¶</a></h3>
+<h3>Run model inference on an Android smartphone with Qualcomm SoCs<a class="headerlink" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs" title="Permalink to this heading">¶</a></h3>
 <p><em><strong>Step 1</strong></em>. We need to push required QNN libraries to the device.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># make sure you have write-permission on below path.</span>
 <span class="nv">DEVICE_DIR</span><span class="o">=</span>/data/local/tmp/executorch_qualcomm_tutorial/
@@ -645,13 +661,13 @@ adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;c
 <div class="section" id="running-a-model-via-executorch-s-android-demo-app">
 <h3>Running a model via ExecuTorch’s android demo-app<a class="headerlink" href="#running-a-model-via-executorch-s-android-demo-app" title="Permalink to this heading">¶</a></h3>
 <p>An Android demo-app using Qualcomm AI Engine Direct Backend can be found in
-<code class="docutils literal notranslate"><span class="pre">examples</span></code>. Please refer to android demo app tutorial.</p>
+<code class="docutils literal notranslate"><span class="pre">examples</span></code>. Please refer to android demo app <a class="reference external" href="https://pytorch.org/executorch/stable/demo-apps-android.html">tutorial</a>.</p>
 </div>
 </div>
 <div class="section" id="what-is-coming">
 <h2>What is coming?<a class="headerlink" href="#what-is-coming" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/658">An example using quantized mobilebert</a> to solve multi-class text classification.</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/pull/1043">An example using quantized mobilebert</a> to solve multi-class text classification.</p></li>
 <li><p>More Qualcomm AI Engine Direct accelerators, e.g., GPU.</p></li>
 </ul>
 </div>
@@ -727,7 +743,7 @@ issue on ExecuTorch repo and tag use <code class="docutils literal notranslate">
 </li>
 <li><a class="reference internal" href="#deploying-and-running-on-device">Deploying and running on device</a><ul>
 <li><a class="reference internal" href="#aot-compile-a-model">AOT compile a model</a></li>
-<li><a class="reference internal" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs">Run model Inference on an Android smartphone with Qualcomm SoCs</a></li>
+<li><a class="reference internal" href="#run-model-inference-on-an-android-smartphone-with-qualcomm-socs">Run model inference on an Android smartphone with Qualcomm SoCs</a></li>
 <li><a class="reference internal" href="#running-a-model-via-executorch-s-android-demo-app">Running a model via ExecuTorch’s android demo-app</a></li>
 </ul>
 </li>
