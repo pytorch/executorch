@@ -36,7 +36,7 @@ def define_common_targets():
     )
 
     executorch_generated_lib(
-        name = "generated_lib",
+        name = "generated_libApple",
         custom_ops_yaml_target = ":quantized.yaml",
         define_static_targets = True,
         visibility = [
