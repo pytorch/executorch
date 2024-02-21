@@ -448,6 +448,9 @@
     <span class="n">MemoryFormatOpsPass</span><span class="p">,</span>
     <span class="n">OpReplacePass</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.passes.insert_write_back_for_buffers_pass</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">insert_write_back_for_buffers_pass</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="n">RemoveGraphAssertsPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.spec_prop_pass</span> <span class="kn">import</span> <span class="n">SpecPropPass</span>
@@ -467,6 +470,7 @@
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">InputKind</span><span class="p">,</span>
     <span class="n">InputSpec</span><span class="p">,</span>
+    <span class="n">OutputKind</span><span class="p">,</span>
     <span class="n">OutputSpec</span><span class="p">,</span>
     <span class="n">TensorArgument</span><span class="p">,</span>
 <span class="p">)</span>
@@ -1456,6 +1460,7 @@
 
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">gm</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
             <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
