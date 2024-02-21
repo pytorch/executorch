@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -554,6 +554,46 @@ class TorchBuilder:
 
         def forward(self, x):
             return self.avg_pool_2d(x)
+
+    @register_test
+    class simple_mean_dim(torch.nn.Module):
+        data = rand_test_integers(low=15, high=20, size=(20, 16, 50, 32))
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            # will be specialized to aten.mean.dim
+            self.adaptive_avg_pool2d = torch.nn.AdaptiveAvgPool2d((1, 1))
+
+        def forward(self, x):
+            return self.adaptive_avg_pool2d(x)
+
+    @register_test
+    class block_conv2d_mean_dim(torch.nn.Module):
+        data = rand_test_integers(low=15, high=20, size=(1, 3, 128, 128))
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.conv2d = torch.nn.Conv2d(
+                in_channels=3, out_channels=10, kernel_size=5, stride=1, bias=False
+            )
+            # will be specialized to aten.mean.dim
+            self.adaptive_avg_pool2d = torch.nn.AdaptiveAvgPool2d((1, 1))
+            with torch.no_grad():
+                self.conv2d.weight.copy_(
+                    rand_test_integers(low=100, high=130, size=(10, 3, 5, 5))
+                )
+
+        def forward(self, x):
+            x = self.conv2d(x)
+            return self.adaptive_avg_pool2d(x)
 
     @register_test
     class simple_softmax(torch.nn.Module):
