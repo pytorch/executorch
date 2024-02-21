@@ -502,6 +502,7 @@
         <span class="n">arg</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">old_input_spec</span><span class="o">.</span><span class="n">arg</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">old_input_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">ConstantArgument</span><span class="p">)</span>
+            <span class="c1"># pyre-fixme[20]: Argument `class_fqn` expected.</span>
             <span class="k">else</span> <span class="nb">type</span><span class="p">(</span><span class="n">old_input_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">)(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="n">new_input_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
@@ -526,6 +527,7 @@
         <span class="n">arg</span> <span class="o">=</span> <span class="p">(</span>
             <span class="n">old_output_spec</span><span class="o">.</span><span class="n">arg</span>
             <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">old_output_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">,</span> <span class="n">ConstantArgument</span><span class="p">)</span>
+            <span class="c1"># pyre-fixme[20]: Argument `class_fqn` expected.</span>
             <span class="k">else</span> <span class="nb">type</span><span class="p">(</span><span class="n">old_output_spec</span><span class="o">.</span><span class="n">arg</span><span class="p">)(</span><span class="n">node</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>
         <span class="p">)</span>
         <span class="n">new_output_specs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
