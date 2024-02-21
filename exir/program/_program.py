@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from memory_profiler import profile
+
 import copy
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
@@ -1021,6 +1023,7 @@ class EdgeProgramManager:
             new_edge_programs, copy.deepcopy(self._config_methods), config
         )
 
+    @profile
     def to_executorch(
         self, config: Optional[ExecutorchBackendConfig] = None
     ) -> "ExecutorchProgramManager":
@@ -1080,6 +1083,7 @@ class ExecutorchProgramManager:
     Manages the final link in the lowering chain of ATen -> Edge -> ExecuTorch.
     """
 
+    @profile
     def __init__(
         self,
         execution_programs: Dict[str, ExportedProgram],
