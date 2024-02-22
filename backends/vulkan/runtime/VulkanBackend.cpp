@@ -30,7 +30,7 @@ namespace {
 
 // Flatbuffer types
 using VkGraphPtr = const vkgraph::VkGraph*;
-using VkNodePtr = const vkgraph::VkNode*;
+using OpCallPtr = const vkgraph::OperatorCall*;
 using VkValuePtr = const vkgraph::VkValue*;
 using VkTensorPtr = const vkgraph::VkTensor*;
 using VkBytesPtr = const vkgraph::VkBytes*;
@@ -60,27 +60,19 @@ class VulkanBackend final : public PyTorchBackendInterface {
     return true;
   }
 
-  arithmetic::OpType get_native_op_type(
-      const vkgraph::VkArithmeticOpType& delegate_op_type) const {
-    switch (delegate_op_type) {
-      case (vkgraph::VkArithmeticOpType::vk_arithmetic_op_type_add): {
-        return arithmetic::OpType::ADD;
-      }
-      case (vkgraph::VkArithmeticOpType::vk_arithmetic_op_type_sub): {
-        return arithmetic::OpType::SUB;
-      }
-      case (vkgraph::VkArithmeticOpType::vk_arithmetic_op_type_mul): {
-        return arithmetic::OpType::MUL;
-      }
-      case (vkgraph::VkArithmeticOpType::vk_arithmetic_op_type_div): {
-        return arithmetic::OpType::DIV;
-      }
-      case (vkgraph::VkArithmeticOpType::vk_arithmetic_op_type_floor_div): {
-        return arithmetic::OpType::FLOOR_DIV;
-      }
-      case (vkgraph::VkArithmeticOpType::vk_arithmetic_op_type_pow): {
-        return arithmetic::OpType::POW;
-      }
+  arithmetic::OpType get_native_op_type(const std::string& name) const {
+    if (name == "aten.add.Tensor") {
+      return arithmetic::OpType::ADD;
+    } else if (name == "aten.sub.Tensor") {
+      return arithmetic::OpType::SUB;
+    } else if (name == "aten.mul.Tensor") {
+      return arithmetic::OpType::MUL;
+    } else if (name == "aten.div.Tensor") {
+      return arithmetic::OpType::DIV;
+    } else if (name == "aten.div.Tensor_mode") {
+      return arithmetic::OpType::FLOOR_DIV;
+    } else { // if (name == "aten.pow.Tensor_Tensor")
+      return arithmetic::OpType::POW;
     }
   }
 
@@ -204,7 +196,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
     UIntVector input_ids = flatbuffer_graph->input_ids();
 
     for (size_t input_index = 0; input_index < input_ids->size();
-         input_index++) {
+         ++input_index) {
       const uint32_t input_id = input_ids->Get(input_index);
       VkValuePtr input_vk_value = value_mapping->Get(input_id);
 
@@ -232,12 +224,18 @@ class VulkanBackend final : public PyTorchBackendInterface {
     }
 
     // 2. Add all ops to the graph
-    for (VkNodePtr node : *(flatbuffer_graph->chain())) {
-      const vkgraph::VkArithmeticNode* typed_node = node->node();
+    // TODO: Generalize for ops that don't have 2 inputs and 1 output.
+    for (OpCallPtr op_call : *(flatbuffer_graph->chain())) {
+      std::string op_name = op_call->name()->str();
 
-      const uint32_t input1_id = typed_node->input1_id();
-      const uint32_t input2_id = typed_node->input2_id();
-      const uint32_t output_id = typed_node->output_id();
+      ET_CHECK_MSG(
+          op_call->args() != nullptr && op_call->args()->size() == 3,
+          "Vulkan currently only supports OperatorCall with 3 args");
+      const auto arg_ids = op_call->args()->data();
+
+      const uint32_t input1_id = arg_ids[0];
+      const uint32_t input2_id = arg_ids[1];
+      const uint32_t output_id = arg_ids[2];
 
       const ValueRef input1_ref = get_value_ref(
           input1_id,
@@ -260,7 +258,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
           input1_ref,
           input2_ref,
           1.0,
-          get_native_op_type(typed_node->op_type()),
+          get_native_op_type(op_name),
           value_mapping->Get(output_id)->value()->mem_obj_id());
 
       ref_mapping[output_id] = output_ref;

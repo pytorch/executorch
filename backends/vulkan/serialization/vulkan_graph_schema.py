@@ -15,28 +15,10 @@ from enum import IntEnum
 from typing import List
 
 
-class VkArithmeticOpType(IntEnum):
-    vk_arithmetic_op_type_add = 0
-    vk_arithmetic_op_type_sub = 1
-    vk_arithmetic_op_type_mul = 2
-    vk_arithmetic_op_type_div = 3
-    vk_arithmetic_op_type_floor_div = 4
-    vk_arithmetic_op_type_pow = 5
-
-
 @dataclass
-class VkArithmeticNode:
-    input1_id: int
-    input2_id: int
-    output_id: int
-    op_type: VkArithmeticOpType
-    flags: int
-
-
-@dataclass
-class VkNode:
-    node: VkArithmeticNode
-    debug_handle: int
+class OperatorCall:
+    name: str
+    args: List[int]
 
 
 class VkDataType(IntEnum):
@@ -71,7 +53,7 @@ class VkBytes:
 class VkGraph:
     version: str
 
-    chain: List[VkNode]
+    chain: List[OperatorCall]
     values: List[VkValue]
 
     input_ids: List[int]
