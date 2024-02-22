@@ -11,6 +11,22 @@ _SELECT_TYPE = type(select({"DEFAULT": []}))
 def is_select(thing):
     return type(thing) == _SELECT_TYPE
 
+def cpp_library(
+        deps = [],
+        external_deps = [],
+        undefined_symbols = None,
+        visibility = ["PUBLIC"],
+        **kwargs):
+    _unused = (undefined_symbols)  # @unused
+
+    # @lint-ignore BUCKLINT: avoid "native is forbidden in fbcode"
+    native.cxx_library(
+        deps = _maybe_select_map(deps + external_deps_to_targets(external_deps), _fix_deps),
+        visibility = visibility,
+        preferred_linkage = "static",
+        **kwargs
+    )
+
 def rust_library(
         rustc_flags = [],
         deps = [],
@@ -19,10 +35,12 @@ def rust_library(
         test_deps = None,
         test_env = None,
         test_os_deps = None,
+        autocargo = None,
+        unittests = None,
         mapped_srcs = {},
         visibility = ["PUBLIC"],
         **kwargs):
-    _unused = (test_deps, test_env, test_os_deps, named_deps, visibility)  # @unused
+    _unused = (test_deps, test_env, test_os_deps, named_deps, autocargo, unittests, visibility)  # @unused
     deps = _maybe_select_map(deps, _fix_deps)
     mapped_srcs = _maybe_select_map(mapped_srcs, _fix_mapped_srcs)
     if os_deps:
@@ -43,12 +61,13 @@ def rust_library(
 def rust_binary(
         rustc_flags = [],
         deps = [],
+        autocargo = None,
         unittests = None,
         allocator = None,
         default_strip_mode = None,
         visibility = ["PUBLIC"],
         **kwargs):
-    _unused = (unittests, allocator, default_strip_mode)  # @unused
+    _unused = (unittests, allocator, default_strip_mode, autocargo)  # @unused
     deps = _maybe_select_map(deps, _fix_deps)
 
     # @lint-ignore BUCKLINT: avoid "Direct usage of native rules is not allowed."
@@ -144,6 +163,19 @@ def rust_protobuf_library(
             visibility = ["PUBLIC"],
         )
 
+def ocaml_binary(
+        deps = [],
+        visibility = ["PUBLIC"],
+        **kwargs):
+    deps = _maybe_select_map(deps, _fix_deps)
+
+    # @lint-ignore BUCKLINT: avoid "native is forbidden in fbcode"
+    native.ocaml_binary(
+        deps = deps,
+        visibility = visibility,
+        **kwargs
+    )
+
 # Configuration that is used when building open source using Buck2 as the build system.
 # E.g. not applied either internally, or when using Cargo to build the open source code.
 # At the moment of writing, mostly used to disable jemalloc.
@@ -201,6 +233,10 @@ def _fix_dep(x: str) -> [
         return None
     elif x.startswith("//buck2/"):
         return "root//" + x.removeprefix("//buck2/")
+    elif x.startswith("fbcode//common/ocaml/interop/"):
+        return "root//" + x.removeprefix("fbcode//common/ocaml/interop/")
+    elif x.startswith("fbcode//third-party-buck/platform010/build/supercaml"):
+        return "shim//third-party/ocaml" + x.removeprefix("fbcode//third-party-buck/platform010/build/supercaml")
     else:
         fail("Dependency is unaccounted for `{}`.\n".format(x) +
              "Did you forget 'oss-disable'?")
@@ -209,3 +245,12 @@ def _fix_dep_in_string(x: str) -> str:
     """Replace internal labels in string values such as env-vars."""
     return (x
         .replace("//buck2/", "root//"))
+
+# Do a nasty conversion of e.g. ("supercaml", None, "ocaml-dev") to
+# 'fbcode//third-party-buck/platform010/build/supercaml:ocaml-dev'
+# (which will then get mapped to `shim//third-party/ocaml:ocaml-dev`).
+def external_dep_to_target(t):
+    return "fbcode//third-party-buck/platform010/build/{}:{}".format(t[0], t[2])
+
+def external_deps_to_targets(ts):
+    return [external_dep_to_target(t) for t in ts]
