@@ -18,6 +18,7 @@ MODEL_NAME_TO_MODEL = {
     "llama2": ("llama2", "Llama2Model"),
     "mobilebert": ("mobilebert", "MobileBertModelExample"),
     "mv2": ("mobilenet_v2", "MV2Model"),
+    "mv2_untrained": ("mobilenet_v2", "MV2UntrainedModel"),
     "mv3": ("mobilenet_v3", "MV3Model"),
     "vit": ("torchvision_vit", "TorchVisionViTModel"),
     "w2l": ("wav2letter", "Wav2LetterModel"),
