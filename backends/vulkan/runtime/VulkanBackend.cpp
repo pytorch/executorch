@@ -85,9 +85,9 @@ class VulkanBackend final : public PyTorchBackendInterface {
   }
 
   api::ScalarType get_scalar_type(
-      const vkgraph::VkDatatype& vk_datatype) const {
+      const vkgraph::VkDataType& vk_datatype) const {
     switch (vk_datatype) {
-      case (vkgraph::VkDatatype::vk_datatype_fp32): {
+      case (vkgraph::VkDataType::fp32): {
         return api::kFloat;
       }
     }
@@ -111,9 +111,9 @@ class VulkanBackend final : public PyTorchBackendInterface {
     VkTensorPtr vk_tensor = vk_value->value();
 
     ET_CHECK_MSG(
-        vk_tensor->constant_buffer_idx() >= 0,
-        "Only constant buffers are supported when adding tensors to compute graph (indicated by constant_buffer_idx == 0), but got constant_buffer_idx of %d",
-        vk_tensor->constant_buffer_idx());
+        vk_tensor->constant_id() >= 0,
+        "Only constant buffers are supported when adding tensors to compute graph (indicated by constant_id < 0), but got constant_id of %d",
+        vk_tensor->constant_id());
 
     const api::ScalarType& tensor_dtype =
         get_scalar_type(vk_tensor->datatype());
@@ -123,7 +123,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
         tensor_dims_fb->cbegin(), tensor_dims_fb->cend());
 
     const uint8_t* tensor_data = getConstantDataPtr(
-        flatbuffer_graph, vk_tensor->constant_buffer_idx(), constant_data);
+        flatbuffer_graph, vk_tensor->constant_id(), constant_data);
 
     const ValueRef value_ref = compute_graph->add_tensorref(
         tensor_dims_vector, tensor_dtype, tensor_data);
@@ -211,11 +211,11 @@ class VulkanBackend final : public PyTorchBackendInterface {
       VkTensorPtr input_vk_tensor = input_vk_value->value();
 
       ET_CHECK_MSG(
-          input_vk_tensor->constant_buffer_idx() < 0,
+          input_vk_tensor->constant_id() < 0,
           "Expected constant buffer index for input at index %zu with id %d to be < 0 (since it is non-constant), but got: %d",
           input_index,
           input_id,
-          input_vk_tensor->constant_buffer_idx());
+          input_vk_tensor->constant_id());
 
       const api::ScalarType& input_dtype =
           get_scalar_type(input_vk_tensor->datatype());
