@@ -55,8 +55,8 @@ gen_selected_ops("" "" "ON")
 generate_bindings_for_kernels(
   ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
 )
-gen_operators_lib("portable_ops_lib" portable_kernels executorch)
-target_include_directories(portable_ops_lib
+gen_operators_lib("full_portable_ops_lib" portable_kernels executorch)
+target_include_directories(full_portable_ops_lib
     PUBLIC
     ${_common_include_directories}
 )
@@ -87,7 +87,7 @@ target_include_directories(qnn_executor_runner
 )
 target_link_libraries(qnn_executor_runner
     qnn_executorch_backend
-    portable_ops_lib
+    full_portable_ops_lib
     gflags
 )
 target_compile_options(qnn_executor_runner

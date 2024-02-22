@@ -24,6 +24,7 @@ from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
+from executorch.examples.models.llama2 import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
@@ -421,6 +422,7 @@ class TestQNNFloatingPointModel(TestQNN):
             EdsrModel(),
             InceptionV3Model(),
             InceptionV4Model(),
+            Llama2Model(),
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
@@ -428,6 +430,7 @@ class TestQNNFloatingPointModel(TestQNN):
             Wav2LetterModel(),
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
@@ -895,6 +898,7 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": EdsrModel(), "annotation": (annotate_forward,)},
             {"module": InceptionV3Model(), "annotation": ()},
             {"module": InceptionV4Model(), "annotation": ()},
+            {"module": Llama2Model(), "annotation": ()},
             {"module": MV2Model(), "annotation": ()},
             {"module": MV3Model(), "annotation": ()},
             # only works on QNN 2.12 so far
@@ -903,6 +907,7 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": Wav2LetterModel(), "annotation": ()},
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
