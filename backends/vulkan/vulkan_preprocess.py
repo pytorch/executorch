@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, final, List
+from typing import final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
@@ -24,43 +24,12 @@ from executorch.exir.program._program import _copy_module
 from executorch.exir.tensor import TensorSpec
 from torch import dtype, float32
 from torch.fx import Node
-from torch.fx.node import Argument
 
 DEFAULT_DEBUG_HANDLE = 65535
 
 
 @final
 class VulkanBackend(BackendDetails):
-    @staticmethod
-    def get_vk_op_type(
-        target_name: str, kwargs: Dict[str, "Argument"]
-    ) -> vk_graph_schema.VkArithmeticOpType:
-        if target_name == "aten.add.Tensor":
-            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_add
-        elif target_name == "aten.sub.Tensor":
-            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_sub
-        elif target_name == "aten.mul.Tensor":
-            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_mul
-        elif target_name == "aten.div.Tensor":
-            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_div
-        elif target_name == "aten.div.Tensor_mode":
-            if kwargs.get("rounding_mode", None) == "floor":
-                return (
-                    vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_floor_div
-                )
-
-            raise AssertionError(
-                f"Invalid node kwargs for vulkan_preprocess (target_name: {target_name}, "
-                f"kwargs: {kwargs})"
-            )
-        elif target_name == "aten.pow.Tensor_Tensor":
-            return vk_graph_schema.VkArithmeticOpType.vk_arithmetic_op_type_pow
-
-        else:
-            raise AssertionError(
-                f"Invalid node target name for vulkan_preprocess ({target_name})"
-            )
-
     @staticmethod
     def get_vk_datatype(torch_dtype: dtype) -> vk_graph_schema.VkDataType:
         if torch_dtype == float32:
@@ -161,19 +130,13 @@ class VulkanBackend(BackendDetails):
                         "Cannot find input(s) for current node in node_to_value_ids. This means this node is being serialized before its input(s) which is not allowed."
                     )
                 vk_chain.append(
-                    vk_graph_schema.VkNode(
-                        node=vk_graph_schema.VkArithmeticNode(
-                            input1_id=node_to_value_ids[node.all_input_nodes[0]],
-                            input2_id=node_to_value_ids[node.all_input_nodes[1]],
-                            output_id=create_vk_values_for(node),
-                            op_type=VulkanBackend.get_vk_op_type(
-                                target_name=node.target.__name__, kwargs=node.kwargs
-                            ),
-                            flags=0,
-                        ),
-                        debug_handle=node.meta.get(
-                            "debug_handle", DEFAULT_DEBUG_HANDLE
-                        ),
+                    vk_graph_schema.OperatorCall(
+                        name=node.target.__name__,
+                        args=[
+                            node_to_value_ids[node.all_input_nodes[0]],
+                            node_to_value_ids[node.all_input_nodes[1]],
+                            create_vk_values_for(node),
+                        ],
                     ),
                 )
             elif node.op == "get_attr":
