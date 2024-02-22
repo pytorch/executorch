@@ -57,6 +57,7 @@ def define_common_targets():
             "//caffe2:torch_vulkan_graph",
             "//executorch/runtime/backend:interface",
         ],
+        define_static_target = False,
         # VulkanBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
