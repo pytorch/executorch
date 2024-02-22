@@ -7,46 +7,33 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
-import json
 import logging
 import shlex
-from json import JSONDecodeError
+from functools import partial
 from pathlib import Path
-from typing import Any, Dict
+from typing import List
 
 import pkg_resources
 import torch
-from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
-    DuplicateDynamicQuantChainPass,
-)
-
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
     XnnpackPartitioner,
 )
-from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
-from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from torch._export import capture_pre_autograd_graph
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.composable_quantizer import ComposableQuantizer
+from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
-from torch.nn.attention import SDPBackend
 
-from ...portable.utils import export_to_edge, save_pte_program
-from ..model_factory import EagerModelFactory
-from .model import ModelArgs
+from .builder import DType, load_llama_model, WeightType
+
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
-
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -64,38 +51,38 @@ def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
 
 
-def apply_pt2e_quantization(
-    exported_model, example_inputs, quantization_options, args
-) -> torch.nn.Module:
+def get_pt2e_quantizers(args) -> List[Quantizer]:
     """
     Applies embedding bag quantization on a model.
     Args:
-        exported_model: A model to apply quantization on.
-        example_inputs: Inputs to the model.
-        quantization_options: Options for quantization as list of strings. e.g. ["xnnpack_dynamic", "embedding"]
+        args: Arguments to the script.
     Returns:
-        An quantized model.
+        A list of quantizers to pass into LlamaBuilder.
     """
-    try:
-        _ = torch.ops.quantized_decomposed.embedding_byte.out
-    except AttributeError:
-        if args.so_library:
-            print(f"Loading library {args.so_library}")
-            torch.ops.load_library(args.so_library)
-        else:
-            raise RuntimeError(
-                "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
-                "Follow the following steps to build the needed lib via cmake.\n"
-                'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
-                "Set that as TORCH_PACKAGE_DIR.\n"
-                "Then from root executorch dir do the following:\n"
-                "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DREGISTER_QUANTIZED_OPS=ON ..) && cmake --build . -j16\n"
-                'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
-                "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
-            )
+    quantization_options = _get_quantization_options(args)
+
+    def check_embedding_byte_registered():
+        try:
+            _ = torch.ops.quantized_decomposed.embedding_byte.out
+        except AttributeError:
+            if args.so_library:
+                print(f"Loading library {args.so_library}")
+                torch.ops.load_library(args.so_library)
+            else:
+                raise RuntimeError(
+                    "Need to specify shared library path to register quantized ops (and their out variants) into EXIR.\n"
+                    "Follow the following steps to build the needed lib via cmake.\n"
+                    'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
+                    "Set that as TORCH_PACKAGE_DIR.\n"
+                    "Then from root executorch dir do the following:\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DREGISTER_QUANTIZED_OPS=ON ..) && cmake --build . -j16\n"
+                    'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
+                    "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
+                )
 
     quantizers = []
     if "embedding" in quantization_options:
+        check_embedding_byte_registered()
         quantizers.append(EmbeddingQuantizer())
     if "xnnpack_dynamic" in quantization_options:
         dynamic_quantizer = XNNPACKQuantizer()
@@ -104,13 +91,7 @@ def apply_pt2e_quantization(
         )
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
-    composed_quantizer = ComposableQuantizer(quantizers)
-    m = prepare_pt2e(exported_model, composed_quantizer)
-    # Calibrate
-    m(*example_inputs)
-    m = convert_pt2e(m)
-    DuplicateDynamicQuantChainPass()(m)
-    return m
+    return quantizers
 
 
 def quantize(model: torch.nn.Module, qmode: str) -> torch.nn.Module:
@@ -254,32 +235,6 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return return_val
 
 
-def get_metadata(params: ModelArgs, args: argparse.Namespace) -> Dict[str, Any]:
-    metadata = {
-        "append_eos_to_prompt": args.fairseq2,  # For language llama, tell the runtime to always append EOS token(s) to prompt.
-        "get_bos_id": 3 if args.fairseq2 else 1,
-        "get_dtype": None,
-        "get_eos_id": 3 if args.fairseq2 else 2,
-        "get_head_dim": params.dim // params.n_heads,
-        "get_max_batch_size": params.max_batch_size,
-        "get_max_seq_len": params.max_seq_len,
-        "get_n_bos": 1,
-        "get_n_eos": 2 if args.fairseq2 else 1,
-        "get_n_kv_heads": params.n_kv_heads,
-        "get_n_layers": params.n_layers,
-        "get_vocab_size": params.vocab_size,
-        "use_kv_cache": args.use_kv_cache,
-    }
-    if args.metadata:
-        try:
-            extra = json.loads(args.metadata)
-            for k, v in extra.items():
-                metadata[k] = v
-        except JSONDecodeError:
-            logging.error("Invalid metadata, should be a valid JSON string")
-    return metadata
-
-
 def _get_quantization_options(args):
     if args.pt2e_quantize is None:
         return []
@@ -308,89 +263,47 @@ def export_llama(modelname, args) -> str:
 
 
 def _export_llama(modelname, args) -> str:  # noqa: C901
-
+    # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
-
-    model, example_inputs, _ = EagerModelFactory.create_model(
-        "llama2",
-        "Llama2Model",
-        checkpoint=checkpoint_path,
-        params=params_path,
-        use_kv_cache=args.use_kv_cache,
-        fairseq2=args.fairseq2,
-    )
-    edge_config = EdgeCompileConfig(
-        _check_ir_validity=False,
-        _skip_type_promotion=bool(args.dtype_override == "fp16"),
-    )
-
-    # metadata that we want to serialize into .pte file
-    metadata = get_metadata(model.params, args)
-
-    # check the model dtype
-    state_dict = model.state_dict()
-    metadata["get_dtype"] = state_dict[next(iter(state_dict))].dtype
-
-    if args.use_kv_cache:
-        # seq length is fixed to 1 with current kv cache impl
-        dynamic_shapes = None
-    else:
-        dim = torch.export.Dim("token_dim", max=model.params.max_seq_len - 1)
-        dynamic_shapes = {"tokens": {1: dim}}
-
+    modelname = "llama2"
+    weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
+    # source transforms
+    transforms = []
     if args.quantized_ckpt or args.quantization_mode:
         modelname = f"{modelname}_q"
-        model = quantize(model, args.quantization_mode)
-
-        if args.verbose:
-            print(f"{modelname}:")
-            print(f"{model}")
+        transforms.append(partial(quantize, qmode=args.quantization_mode))
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
-        model = EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
-
-    if args.dtype_override is not None:
-        if (
-            args.dtype_override == "fp16" and metadata["get_dtype"] != 5
-        ) or args.quantization_mode == "int4":
-            print("model.to torch.float16")
-            model = model.to(dtype=torch.float16)
-            metadata["get_dtype"] = 5
-        elif args.dtype_override == "fp32" and metadata["get_dtype"] != 6:
-            print("model.to torch.float32")
-            model = model.to(dtype=torch.float32)
-            metadata["get_dtype"] = 6
-        else:
-            raise ValueError(f"Unsupported dtype override: {args.dtype_override}")
-
-    if args.verbose:
-        print(f"{modelname}:")
-        print(f"{model}")
-
-    quantization_options = _get_quantization_options(args)
-    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
-        m = capture_pre_autograd_graph(
-            model, example_inputs, dynamic_shapes=dynamic_shapes
-        )
-        if len(quantization_options) > 0:
-            m = apply_pt2e_quantization(m, example_inputs, quantization_options, args)
-        edge_manager = export_to_edge(
-            m,
-            example_inputs,
-            dynamic_shapes=dynamic_shapes,
-            edge_constant_methods=metadata,
-            edge_compile_config=edge_config,
+        transforms.append(
+            lambda model: EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
         )
 
-    if "xnnpack_dynamic" in quantization_options:
-        edge_manager = edge_manager.to_backend(XnnpackDynamicallyQuantizedPartitioner())
+    # dtype override
+    if args.dtype_override:
+        override = (
+            DType["fp16"]
+            if args.quantization_mode == "int4"
+            else DType[args.dtype_override]
+        )
+    else:
+        override = None
+
+    # export_to_edge
+    quantizers = get_pt2e_quantizers(args)
+
+    # to_backend
+    partitioners = {}
+    if "xnnpack_dynamic" in _get_quantization_options(args):
+        partitioners[
+            XnnpackDynamicallyQuantizedPartitioner.__name__
+        ] = XnnpackDynamicallyQuantizedPartitioner()
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        edge_manager = edge_manager.to_backend(XnnpackPartitioner())
+        partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
 
     # TODO: remove this after xnnpack delegation is ready
@@ -399,28 +312,30 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             "some quantized ops should be lowered to xnnpack, but xnnpack delegate is not ready yet"
         )
 
-    export_program = edge_manager.to_executorch(
-        ExecutorchBackendConfig(
-            extract_constant_segment=True,
-            extract_delegate_segments=True,
-            passes=[
-                QuantFusionPass(),
-            ],
-            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+    builder = (
+        load_llama_model(
+            checkpoint=checkpoint_path,
+            params_path=params_path,
+            use_kv_cache=args.use_kv_cache,
+            weight_type=weight_type,
+            verbose=args.verbose,
         )
+        .set_output_dir(output_dir_path)
+        .set_metadata(args.metadata)
+        .source_transform(transforms)
+        .to_dtype(override)
+        .export_to_edge(quantizers)
+        .to_backend(partitioners)
+        .to_executorch()
     )
+
     if args.profile_memory:
-        generate_memory_trace(export_program, "memory_profile.json")
+        generate_memory_trace(builder.export_program, "memory_profile.json")
 
-    print(
-        "Required memory for activation in bytes: ",
-        export_program._emitter_output.program.execution_plan[0].non_const_buffer_sizes,
-    )
-
-    if metadata["get_dtype"] == 5:
+    if builder.dtype == DType.fp16:
         modelname = f"{modelname}_h"
 
-    save_pte_program(export_program.buffer, modelname, output_dir_path)
-    output_file = f"{output_dir_path}/{modelname}.pte"
+    builder.save(modelname)
+    output_file = f"{builder.output_dir}/{modelname}.pte"
 
     return output_file
