@@ -48,7 +48,6 @@ from torch.export.exported_program import (
     ExportGraphSignature,
     InputKind,
     InputSpec,
-    OutputKind,
     OutputSpec,
     TensorArgument,
 )
