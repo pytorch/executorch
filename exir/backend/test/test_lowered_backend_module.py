@@ -5,16 +5,19 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from typing import Tuple
 
 import executorch.exir.tests.models as models
 
 import torch
 from executorch import exir
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
+from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
 from executorch.exir.schema import DelegateCall, Program
 
@@ -22,6 +25,7 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from hypothesis import given, settings, strategies as st
+from torch.export.wrapper import WrapperModule
 
 
 class TestBackendAPI(unittest.TestCase):
@@ -218,3 +222,11 @@ class TestBackendAPI(unittest.TestCase):
 
             program = nested_lowered_model.program()
             self.validate_lowered_module_program(program)
+
+    def test_delegate_return_constant(self) -> None:
+        def g(x: torch.Tensor, y: torch.Tensor) -> Tuple[int, torch.Tensor]:
+            return 1, x + y
+
+        inputs = (torch.ones(1, 3), torch.ones(1, 3))
+        export_m = torch.export.export(WrapperModule(g), inputs)
+        to_edge(export_m).to_backend(AddMulPartitionerDemo()).to_executorch()

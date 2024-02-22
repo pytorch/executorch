@@ -27,6 +27,7 @@ from executorch.exir.tracer import Value
 
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import (
+    ConstantArgument,
     ExportedProgram,
     ExportGraphSignature,
     InputKind,
@@ -493,15 +494,24 @@ def _get_new_signature(
                 )
         if node.op == "output":
             for output in pytree.tree_leaves((node.args, node.kwargs)):
-                if not isinstance(output, torch.fx.Node):
-                    continue
-                output_specs.append(
-                    OutputSpec(
-                        kind=OutputKind.USER_OUTPUT,
-                        arg=TensorArgument(name=output.name),
-                        target=None,
+                if isinstance(output, (int, float, bool, type(None))):
+                    output_specs.append(
+                        OutputSpec(
+                            kind=OutputKind.USER_OUTPUT,
+                            arg=ConstantArgument(value=output),
+                            target=None,
+                        )
                     )
-                )
+                elif isinstance(output, torch.fx.Node):
+                    output_specs.append(
+                        OutputSpec(
+                            kind=OutputKind.USER_OUTPUT,
+                            arg=TensorArgument(name=output.name),
+                            target=None,
+                        )
+                    )
+                else:
+                    raise RuntimeError(f"Unsupported output type {output}")
 
     return new_signature, new_state_dict, new_constants
 
