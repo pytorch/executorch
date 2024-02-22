@@ -14,7 +14,7 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.qnn_quantizer import (
+from executorch.backends.qualcomm.quantizer.quantizer import (
     get_default_16bit_qnn_ptq_config,
     get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
