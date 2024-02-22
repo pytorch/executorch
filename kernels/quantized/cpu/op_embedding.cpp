@@ -31,6 +31,7 @@ void check_embedding_byte_args(
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
+    const ScalarType out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
@@ -51,6 +52,7 @@ void check_embedding_byte_args(
 
   if (weight_scales_size >= weight.size(0)) {
     if (weight_scales.dim() == 2) {
+#if 0
       auto num_groups = weight_scales.size(1);
       auto remainder = weight.size(1) % num_groups;
       ET_CHECK_MSG(
@@ -59,6 +61,7 @@ void check_embedding_byte_args(
           ", but got # of groups = %zd",
           weight.size(1),
           num_groups);
+#endif
     }
   }
 
@@ -75,9 +78,10 @@ void check_embedding_byte_args(
       static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
-      weight_scales.scalar_type() == out.scalar_type(),
-      "weight scales scalar type %" PRId8 " does not match out.scalar_type()",
-      static_cast<int8_t>(weight_scales.scalar_type()));
+      out_dtype == out.scalar_type(),
+      "out dtype type %" PRId8 " does not match out.scalar_type() %" PRId8,
+      static_cast<int8_t>(out_dtype),
+      static_cast<int8_t>(out.scalar_type()));
 
   if (opt_weight_zero_points.has_value()) {
     ET_CHECK_MSG(
@@ -128,6 +132,7 @@ void embedding_byte_per_channel(
     const Tensor& weight_scales,
     const optional<Tensor>& opt_weight_zero_points,
     const Tensor& indices,
+    const ScalarType out_dtype,
     Tensor& out) {
   // An embedding layer nn.Embedding(num_embeddings, embedding_dim) has a
   // weight of shape (num_embeddings, embedding_dim).
@@ -219,6 +224,7 @@ Tensor& quantized_embedding_byte_out(
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
+    const ScalarType out_dtype,
     Tensor& out) {
   // TODO (jakeszwe): improve these to account for the size of out in relation
   // to weight and indices accounting for a possible batch dimension
@@ -229,6 +235,7 @@ Tensor& quantized_embedding_byte_out(
       weight_quant_min,
       weight_quant_max,
       indices,
+      out_dtype,
       out);
 
   ScalarType w_type = weight.scalar_type();
@@ -238,7 +245,12 @@ Tensor& quantized_embedding_byte_out(
   ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, name, CTYPE_W, [&]() {
     ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
       embedding_byte_per_channel<CTYPE_W, CTYPE_OUT>(
-          weight, weight_scales, opt_weight_zero_points, indices, out);
+          weight,
+          weight_scales,
+          opt_weight_zero_points,
+          indices,
+          out_dtype,
+          out);
     });
   });
 
@@ -253,6 +265,7 @@ Tensor& quantized_embedding_byte_out(
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
+    const ScalarType out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
@@ -265,6 +278,7 @@ Tensor& quantized_embedding_byte_out(
       weight_quant_min,
       weight_quant_max,
       indices,
+      out_dtype,
       out);
 }
 
