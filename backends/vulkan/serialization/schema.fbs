@@ -2,34 +2,8 @@
 
 namespace vkgraph;
 
-// Update after any BC breaking changes
+// Update after any BC breaking changes.
 file_identifier "VK00";
-
-enum VkDatatype : short {
-  /// IEEE754 single-precision floating-point.
-  vk_datatype_fp32 = 0,
-}
-
-// Abstraction to represent a region of bytes in a raw data buffer. Useful for referencing raw data serialized outside of the flatbuffer.
-table VkBytes {
-  offset: ulong;
-  length: ulong;
-}
-
-table VkTensor {
-  // type of the tensor elements.
-  datatype:VkDatatype;
-  // Array of shape dimensions
-  dims:[uint];
-  // Index to the program's constant buffer table, negative value indicates non constant
-  constant_buffer_idx:int;
-  // Indicates which shared memory object this tensor uses; negative value indicates the tensor does not share memory
-  mem_obj_id: int;
-}
-
-table VkValue {
-  value:VkTensor;
-}
 
 enum VkArithmeticOpType : short {
   vk_arithmetic_op_type_add = 0,
@@ -53,22 +27,46 @@ table VkNode {
   debug_handle:uint;
 }
 
+enum VkDataType : short {
+  // IEEE754 single-precision floating-point.
+  fp32 = 0,
+}
+
+table VkTensor {
+  // Type of the tensor elements.
+  datatype:VkDataType;
+  // Shape dimensions.
+  dims:[uint];
+  // Index to the program's constant data. Negative indicates tensor is non-constant.
+  constant_id:int;
+  // Index to the shared memory object. Negative indicates the tensor doesn't share memory.
+  mem_obj_id:int;
+}
+
+table VkValue {
+  value:VkTensor;
+}
+
+// Abstraction to represent a region of bytes in a raw data buffer. Useful for referencing raw data
+// serialized outside of the flatbuffer.
+table VkBytes {
+  offset:ulong;
+  length:ulong;
+}
+
 table VkGraph {
   // Schema version.
   version:string;
+
+  // Objects
   chain:[VkNode];
   values:[VkValue];
 
-  // Ids of external inputs
+  // Indices
   input_ids:[uint];
-
-  // Ids of external outputs
   output_ids:[uint];
 
-  // Tables of constant data, used for constant Values (e.g.
-  // data field of weight tensors). Each constant is assigned an index into the table
-  // which are each individually aligned. 0 index is reserved to be pointed to by non-constant
-  // Tensors
+  // Raw Objects (e.g. weight tensors and custom shaders)
   constants:[VkBytes];
   shaders:[VkBytes];
 }
