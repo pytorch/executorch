@@ -62,9 +62,9 @@ class VulkanBackend(BackendDetails):
             )
 
     @staticmethod
-    def get_vk_datatype(torch_dtype: dtype) -> vk_graph_schema.VkDatatype:
+    def get_vk_datatype(torch_dtype: dtype) -> vk_graph_schema.VkDataType:
         if torch_dtype == float32:
-            return vk_graph_schema.VkDatatype.vk_datatype_fp32
+            return vk_graph_schema.VkDataType.fp32
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 
@@ -75,23 +75,23 @@ class VulkanBackend(BackendDetails):
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
-        vk_nodes = []
+        vk_chain = []
         vk_values = []
         vk_input_ids = []
         vk_output_ids = []
         const_tensors = []
 
-        # Mapping from node in the executorch graph to corresponding VkValue id
-        node_vk_value_ids = {}
+        # Mapping from graph Node to schema VkValue.
+        node_to_value_ids = {}
 
-        def create_single_vk_value(node: Node, buffer_idx: int = -1) -> int:
+        def create_single_vk_value(node: Node, constant_id: int = -1) -> int:
             spec = node.meta.get("spec")
             assert isinstance(spec, TensorSpec)
             new_id = len(vk_values)
-            if node not in node_vk_value_ids:
-                node_vk_value_ids[node] = new_id
+            if node not in node_to_value_ids:
+                node_to_value_ids[node] = new_id
             else:
-                current_ids = node_vk_value_ids[node]
+                current_ids = node_to_value_ids[node]
                 if isinstance(current_ids, int):
                     current_ids = [current_ids, new_id]
                 else:
@@ -107,22 +107,22 @@ class VulkanBackend(BackendDetails):
                     value=vk_graph_schema.VkTensor(
                         datatype=VulkanBackend.get_vk_datatype(spec.dtype),
                         dims=spec.shape,
-                        constant_buffer_idx=buffer_idx,
+                        constant_id=constant_id,
                         mem_obj_id=mem_obj_id,
                     )
                 )
             )
             return new_id
 
-        def create_vk_values_for(node: Node, buffer_idx: int = -1):
+        def create_vk_values_for(node: Node, constant_id: int = -1):
             spec = node.meta.get("spec")
 
             if isinstance(spec, TensorSpec):
-                return create_single_vk_value(node, buffer_idx)
+                return create_single_vk_value(node, constant_id)
             else:
                 ids = []
                 for _ in spec:
-                    ids.append(create_single_vk_value(node, buffer_idx))
+                    ids.append(create_single_vk_value(node, constant_id))
                 return ids
 
         passes = [
@@ -154,17 +154,17 @@ class VulkanBackend(BackendDetails):
             elif node.op == "call_function":
                 # Op
                 if (
-                    node.all_input_nodes[0] not in node_vk_value_ids
-                    or node.all_input_nodes[1] not in node_vk_value_ids
+                    node.all_input_nodes[0] not in node_to_value_ids
+                    or node.all_input_nodes[1] not in node_to_value_ids
                 ):
                     raise AssertionError(
-                        "Cannot find input(s) for current node in node_vk_value_ids. This means this node is being serialized before its input(s) which is not allowed."
+                        "Cannot find input(s) for current node in node_to_value_ids. This means this node is being serialized before its input(s) which is not allowed."
                     )
-                vk_nodes.append(
+                vk_chain.append(
                     vk_graph_schema.VkNode(
                         node=vk_graph_schema.VkArithmeticNode(
-                            input1_id=node_vk_value_ids[node.all_input_nodes[0]],
-                            input2_id=node_vk_value_ids[node.all_input_nodes[1]],
+                            input1_id=node_to_value_ids[node.all_input_nodes[0]],
+                            input2_id=node_to_value_ids[node.all_input_nodes[1]],
                             output_id=create_vk_values_for(node),
                             op_type=VulkanBackend.get_vk_op_type(
                                 target_name=node.target.__name__, kwargs=node.kwargs
@@ -177,24 +177,26 @@ class VulkanBackend(BackendDetails):
                     ),
                 )
             elif node.op == "get_attr":
-                buffer_idx = len(const_tensors)
+                constant_id = len(const_tensors)
                 const_tensors.append(
                     getattr(node.graph.owning_module, node.target).contiguous()
                 )
 
-                create_vk_values_for(node, buffer_idx)
+                create_vk_values_for(node, constant_id)
 
             elif node.op == "output":
-                if node.all_input_nodes[0] not in node_vk_value_ids:
+                if node.all_input_nodes[0] not in node_to_value_ids:
                     raise AssertionError(
-                        "Cannot find input to output node in node_vk_value_ids. This means the output node is being serialized before its corresponding internal node which is not allowed."
+                        "Cannot find input to output node in node_to_value_ids. This means the output node is being serialized before its corresponding internal node which is not allowed."
                     )
-                vk_output_ids.append(node_vk_value_ids[node.all_input_nodes[0]])
+                vk_output_ids.append(node_to_value_ids[node.all_input_nodes[0]])
             else:
                 raise RuntimeError(f"Unsupported op, {node.op}, in Vulkan Preprocess")
+
+        # Raw objects (constants and shaders) are populated in the next line's method.
         vk_graph = vk_graph_schema.VkGraph(
             version="0",
-            chain=vk_nodes,
+            chain=vk_chain,
             values=vk_values,
             input_ids=vk_input_ids,
             output_ids=vk_output_ids,
