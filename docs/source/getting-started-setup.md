@@ -219,9 +219,9 @@ You will need the following prerequisits for this section:
    ```bash
    pip3 install zstd
    ```
-* Version `2023-07-18` of the `buck2` commandline tool — you can download a
+* Version `${executorch_version:buck2}` of the `buck2` commandline tool — you can download a
   prebuilt archive for your system from [the Buck2
-  repo](https://github.com/facebook/buck2/releases/tag/2023-07-18). Note that
+  repo](https://github.com/facebook/buck2/releases/tag/${executorch_version:buck2}). Note that
   the version is important, and newer or older versions may not work with the
   version of the buck2 prelude used by the ExecuTorch repo.
 
