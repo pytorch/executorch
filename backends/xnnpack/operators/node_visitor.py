@@ -20,6 +20,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     Buffer,
     PerChannelQuant,
     PerTensorQuant,
+    PerTokenDynamicQuant,
     XNNDatatype,
     XNNGraph,
     XNNQuantizedTensorValue,
@@ -197,12 +198,9 @@ class NodeVisitor:
         quant_params: Optional[QuantParams],
         node: torch.fx.Node,
         fp32_static_weight: bool = False,
-    ) -> Tuple[XNNDatatype, XNNDatatype]:
+    ) -> XNNDatatype:
         # Default initialization
-        dtype, dq_dtype = (
-            XNNDatatype.xnn_datatype_fp32,
-            XNNDatatype.xnn_datatype_invalid,
-        )
+        dtype = XNNDatatype.xnn_datatype_fp32
 
         def get_node_dtype(node: torch.fx.Node) -> Optional[torch.dtype]:
             """
@@ -233,7 +231,7 @@ class NodeVisitor:
 
         if quant_params is not None:
             if quant_params.is_dynamic:
-                dq_dtype = XNNDatatype.xnn_datatype_qint8
+                dtype = XNNDatatype.xnn_datatype_qdint8
             else:
                 if quant_params.per_channel:
                     dtype = get_per_channel_dtype(quant_params)
@@ -252,7 +250,7 @@ class NodeVisitor:
                     else XNNDatatype.xnn_datatype_fp16
                 )
 
-        return (dtype, dq_dtype)
+        return dtype
 
     def get_quant_params(self, quant_params: QuantParams) -> XNNQuantParams:
         if quant_params.per_channel:
@@ -260,6 +258,10 @@ class NodeVisitor:
             return PerChannelQuant(
                 scale=scale.tolist(),
                 channel_dim=quant_params.axis,
+            )
+        elif quant_params.is_dynamic:
+            return PerTokenDynamicQuant(
+                num_nonbatch_dims=1,  # TODO, currently only per token dynamic quant is supported
             )
 
         return PerTensorQuant(
@@ -333,7 +335,7 @@ class NodeVisitor:
             check_or_raise(len(dims) == 4, "Converting to nhwc requires 4d tensor")
             dims = [dims[i] for i in PERM_NCHW_TO_NHWC]
 
-        dtype, dq_dtype = self.get_serialized_dtype(
+        dtype = self.get_serialized_dtype(
             quant_params, tensor, fp32_static_weight=fp32_static_weights
         )
 
@@ -345,7 +347,6 @@ class NodeVisitor:
             constant_buffer_idx=buffer_idx,
             flags=flag,
             id_out=id_out,
-            dq_datatype=dq_dtype,
         )
 
         # Override the quant params axis since we have
@@ -362,7 +363,7 @@ class NodeVisitor:
 
         ser_val = (
             XValue(xvalue_union=tvalue)
-            if quant_params is None or quant_params.is_dynamic
+            if quant_params is None
             else XValue(
                 xvalue_union=XNNQuantizedTensorValue(
                     tensor_value=tvalue,

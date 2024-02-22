@@ -3,7 +3,7 @@
 namespace fb_xnnpack;
 
 // Update after any BC breaking changes
-file_identifier "XN00";
+file_identifier "XN01";
 
 // datatype for xnn-values
 enum XNNDatatype : short {
@@ -25,12 +25,15 @@ enum XNNDatatype : short {
   xnn_datatype_qcint32 = 7,
   /// Quantized 4-bit signed integer with shared per-channel quantization parameters.
   xnn_datatype_qcint4 = 8,
+  /// Dynamically quantized 8-bit signed integer with per-batch quantization parameters.
+  xnn_datatype_qdint8 = 9,
 }
 
 // type of quantization
 union XNNQuantParams {
   PerChannelQuant,
   PerTensorQuant,
+  PerTokenDynamicQuant,
 }
 
 // taken from executorch
@@ -42,6 +45,10 @@ table Buffer {
 table PerChannelQuant {
   scale:[float];
   channel_dim:int;
+}
+
+table PerTokenDynamicQuant {
+  num_nonbatch_dims:int;
 }
 
 table PerTensorQuant {
@@ -69,9 +76,6 @@ table XNNTensorValue {
   // pointer to the variable that will be initialized with the Value ID upon successful return. If a
   // valid @a external_id was provided, the variable will be initialized with the @a external_id value.
   id_out:uint;
-  // does this value need to be quantized dynamically at runtime?
-  // if we are quantizing at runtime, this field points to a target dtype
-  dq_datatype:XNNDatatype = xnn_datatype_invalid;
 }
 
 table XNNQuantizedTensorValue {
