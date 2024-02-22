@@ -73,7 +73,7 @@ class TestSerialization(unittest.TestCase):
         )
         # Flatbuffer magic should be in the same spot as the Header's magic
         self.assertEqual(
-            serialized_binary[flatbuffer_offset:][XNNHeader.MAGIC_OFFSET], b"XN00"
+            serialized_binary[flatbuffer_offset:][XNNHeader.MAGIC_OFFSET], b"XN01"
         )
 
         # Check constant data
