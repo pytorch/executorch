@@ -22,6 +22,7 @@ from executorch.exir.schema import (
     Bool,
     Chain,
     ContainerMetadata,
+    DataSegment,
     Double,
     EValue,
     ExecutionPlan,
@@ -121,6 +122,8 @@ class EmitterOutput:
         str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]
     ]
 
+    # Constant segment data
+    segment_data: List[bytes]
 
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
@@ -160,6 +163,8 @@ def emit_program(
     debug_handle_map = {}
     method_to_delegate_debug_id_map = {}
     program_state = _ProgramState()
+    program_state.constant_segment_data = bytearray()
+    program_state.constant_segment_offsets = [0]
 
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
@@ -204,8 +209,13 @@ def emit_program(
             constant_buffer=program_state.constant_buffer,
             backend_delegate_data=program_state.backend_delegate_data,
             # Segments may be added at serialization time.
-            segments=[],
+            segments=[
+                DataSegment(offset=0, size=len(program_state.constant_segment_data))
+            ],
             # Subsegment offsets may be added at serialization time.
-            constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
+            constant_segment=SubsegmentOffsets(
+                segment_index=0, offsets=program_state.constant_segment_offsets
+            ),
         ),
+        segment_data=[bytes(program_state.constant_segment_data)],
     )
