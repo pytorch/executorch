@@ -432,11 +432,6 @@ class XValue:
 
 
 @dataclass
-class Buffer:
-    storage: bytes
-
-
-@dataclass
 class ConstantDataOffset:
     offset: int
     size: int
@@ -451,8 +446,5 @@ class XNNGraph:
     num_externs: int
     input_ids: List[int]
     output_ids: List[int]
-
-    constant_buffer: List[Buffer]
-    mem_buffer_sizes: List[int]
 
     constant_data: List[ConstantDataOffset]
