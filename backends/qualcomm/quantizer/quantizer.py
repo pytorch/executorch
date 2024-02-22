@@ -7,11 +7,13 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
 from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
-from executorch.backends.qualcomm.passes.convert_scaled_dot_product_attention import (
-    ConvertScaledDotProductAttention,
+from executorch.backends.qualcomm.passes.decompose_scaled_dot_product_attention import (
+    DecomposeScaledDotProductAttention,
 )
+from executorch.backends.qualcomm.passes.decompose_silu import DecomposeSilu
 from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
+from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
 
 from torch import Tensor
 from torch._ops import OpOverload
@@ -29,7 +31,7 @@ from torch.ao.quantization.quantizer import (
 
 from torch.fx import GraphModule, Node
 
-from .qnn_quantizer_utils import OP_ANNOTATOR, QuantizationConfig
+from .utils import OP_ANNOTATOR, QuantizationConfig
 
 __all__ = [
     "QnnQuantizer",
@@ -194,60 +196,7 @@ def get_ptq_per_channel_weight_config(
 
 
 class QnnQuantizer(Quantizer):
-    SUPPORTED_OPS: Set = {
-        torch.ops.aten.adaptive_avg_pool2d.default,
-        torch.ops.aten.add.Tensor,
-        torch.ops.aten.avg_pool2d.default,
-        torch.ops.aten.bmm.default,
-        torch.ops.aten.cat.default,
-        torch.ops.aten.ceil.default,
-        torch.ops.aten.clamp.default,
-        torch.ops.aten.concat.default,
-        torch.ops.aten.conv1d.default,
-        torch.ops.aten.conv2d.default,
-        torch.ops.aten.div.Tensor,
-        torch.ops.aten.divide.Tensor,
-        torch.ops.aten.expand.default,
-        torch.ops.aten.flatten.using_ints,
-        torch.ops.aten.gelu.default,
-        torch.ops.aten.hardsigmoid.default,
-        torch.ops.aten.hardsigmoid_.default,
-        torch.ops.aten.hardswish.default,
-        torch.ops.aten.hardswish_.default,
-        torch.ops.aten.hardtanh.default,
-        torch.ops.aten.hardtanh_.default,
-        torch.ops.aten.layer_norm.default,
-        torch.ops.aten.linear.default,
-        torch.ops.aten.log_softmax.int,
-        torch.ops.aten.matmul.default,
-        torch.ops.aten.max_pool2d.default,
-        torch.ops.aten.max_pool2d_with_indices.default,
-        torch.ops.aten.mean.default,
-        torch.ops.aten.mean.dim,
-        torch.ops.aten.mul.Scalar,
-        torch.ops.aten.mul.Tensor,
-        torch.ops.aten.pad.default,
-        torch.ops.aten.permute.default,
-        torch.ops.aten.pixel_shuffle.default,
-        torch.ops.aten.relu.default,
-        torch.ops.aten.relu_.default,
-        torch.ops.aten.reshape.default,
-        torch.ops.aten.rsub.Scalar,
-        torch.ops.aten.scaled_dot_product_attention.default,
-        torch.ops.aten.select.int,
-        torch.ops.aten.slice.Tensor,
-        torch.ops.aten.softmax.int,
-        torch.ops.aten.squeeze.default,
-        torch.ops.aten.squeeze.dim,
-        torch.ops.aten.sub.Tensor,
-        torch.ops.aten.tanh.default,
-        torch.ops.aten.transpose.int,
-        torch.ops.aten.unsqueeze.default,
-        torch.ops.aten.unsqueeze_copy.default,
-        torch.ops.aten.upsample_bilinear2d.vec,
-        torch.ops.aten.view.default,
-        torch.ops.aten._softmax.default,
-    }
+    SUPPORTED_OPS: Set = set(OP_ANNOTATOR.keys())
 
     def __init__(self):
         super().__init__()
@@ -324,12 +273,15 @@ class QnnQuantizer(Quantizer):
 
         print(f"No quant config is implemented for op, {op}")
 
-    def transform_for_annotation(self, gm: GraphModule) -> GraphModule:
-        gm = RemoveClone()(gm).graph_module
-        gm = ConvertScaledDotProductAttention()(gm).graph_module
-        gm = ConvertHardsigmoid(quantization_capture=True)(gm).graph_module
-        gm = ReduceDynamicRange()(gm).graph_module
-        return gm
+    def transform_for_annotation(self, model: GraphModule) -> GraphModule:
+        model = RemoveClone()(model).graph_module
+        model = ReduceDynamicRange()(model).graph_module
+        model = ConvertHardsigmoid(quantization_capture=True)(model).graph_module
+        model = DecomposeScaledDotProductAttention()(model).graph_module
+        model = DecomposeSilu()(model).graph_module
+        model = ReplaceInfBuffer()(model).graph_module
+
+        return model
 
     def _annotate(self, gm: GraphModule) -> None:
         for node in gm.graph.nodes:
@@ -344,11 +296,11 @@ class QnnQuantizer(Quantizer):
         for annotation_func in self.custom_quant_annotations:
             annotation_func(gm)
 
-    def annotate(self, gm: GraphModule) -> GraphModule:
-        self._annotate(gm)
-        self._annotate_custom_annotation(gm)
+    def annotate(self, model: GraphModule) -> GraphModule:
+        self._annotate(model)
+        self._annotate_custom_annotation(model)
 
-        return gm
+        return model
 
-    def validate(self, gm: GraphModule) -> None:
+    def validate(self, model: GraphModule) -> None:
         pass

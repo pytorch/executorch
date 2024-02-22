@@ -276,6 +276,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.ones([2, 4, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pow_tensor_scalar(self):
+        module = PowTensorScalar()  # noqa: F405
+        sample_input = (torch.rand([2, 4, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -286,13 +291,26 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_rsqrt(self):
+        module = Rsqrt()  # noqa: F405
+        sample_input = (torch.abs(torch.randn([3, 4])),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_sdpa(self):
         module = ScaledDotProductAttention()  # noqa: F405
+        mask = torch.tril(torch.randn(1, 1, 100, 100))
+        mask[mask == 0] = float("-inf")
         sample_input = (
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
+            mask,
         )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sigmoid(self):
+        module = Sigmoid()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
@@ -308,6 +326,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         )
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_stack(self):
+        module = Stack()  # noqa: F405
+        sample_input = (torch.randn([1, 2, 3, 4]), torch.randn([1, 2, 3, 4]))
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_softmax(self):
         module = Softmax()  # noqa: F405
         sample_input = (torch.randn([1, 4, 8, 8]),)
@@ -321,6 +344,12 @@ class TestQNNFloatingPointOperator(TestQNN):
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.expectedFailure
+    def test_qnn_backend_unbind(self):
+        module = Unbind()  # noqa: F405
+        sample_input = (torch.randn([3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_unsqueeze(self):
@@ -695,6 +724,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pow_tensor_scalar(self):
+        module = PowTensorScalar()  # noqa: F405
+        sample_input = (torch.rand([2, 4, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -707,18 +742,33 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_rsqrt(self):
+        module = Rsqrt()  # noqa: F405
+        sample_input = (torch.abs(torch.randn([3, 4])),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_sdpa(self):
         module = ScaledDotProductAttention()  # noqa: F405
+        mask = torch.tril(torch.randn(1, 1, 100, 100))
+        mask[mask == 0] = torch.finfo(torch.float32).min
         sample_input = (
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
+            mask,
         )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
         module = SelectCopy()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sigmoid(self):
+        module = Sigmoid()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -744,9 +794,25 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_stack(self):
+        module = Stack()  # noqa: F405
+        sample_input = (
+            torch.randn([1, 2, 3, 4]),
+            torch.randn([1, 2, 3, 4]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.expectedFailure
+    def test_qnn_backend_unbind(self):
+        module = Unbind()  # noqa: F405
+        sample_input = (torch.randn([3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -1140,6 +1206,69 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["PA"], 0.85)
             self.assertGreaterEqual(msg["MPA"], 0.70)
             self.assertGreaterEqual(msg["MIoU"], 0.55)
+
+    def test_dummy_llama2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/dummy_llama2.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+    @unittest.expectedFailure
+    def test_ptq_dummy_llama2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/dummy_llama2.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ptq",
+            self.ptq,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(all(msg["is_close"]))
 
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):

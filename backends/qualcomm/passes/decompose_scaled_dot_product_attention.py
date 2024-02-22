@@ -9,7 +9,7 @@ from torch._decomp import get_decompositions
 from torch.fx.experimental.proxy_tensor import make_fx
 
 
-class ConvertScaledDotProductAttention(ExportPass):
+class DecomposeScaledDotProductAttention(ExportPass):
     """
     Decompose from scaled_dot_product_attention to multiple nodes.
     """
@@ -18,11 +18,8 @@ class ConvertScaledDotProductAttention(ExportPass):
         graph = graph_module.graph
         for node in graph.nodes:
             if node.target == torch.ops.aten.scaled_dot_product_attention.default:
-                input_tensors = (
-                    node.args[0].meta["val"],
-                    node.args[1].meta["val"],
-                    node.args[2].meta["val"],
-                )
+                input_tensors = (arg.meta["val"] for arg in node.args)
+
                 # refer to pytorch/test/test_decomp.py
                 decomposed_module = make_fx(
                     node.target,
@@ -35,11 +32,10 @@ class ConvertScaledDotProductAttention(ExportPass):
                     _allow_non_fake_inputs=True,
                 )(*input_tensors)
                 with graph.inserting_before(node):
-                    name_to_input_tensor_map = {
-                        "arg0_1": node.args[0],
-                        "arg1_1": node.args[1],
-                        "arg2_1": node.args[2],
-                    }
+                    name_to_input_tensor_map = {}
+                    for i, arg in enumerate(node.args):
+                        name_to_input_tensor_map[f"arg{i}_1"] = arg
+
                     decomposed_node_to_subgraph_node = {}
                     last_decomposed_node = None
                     # Create a mapping from input nodes in decomposed module to original nodes.

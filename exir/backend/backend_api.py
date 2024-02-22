@@ -250,7 +250,10 @@ def _partition_and_lower_one_graph_module(
                 # Delete the consumed buffers
                 buffer_name = toplevel_signature.inputs_to_buffers.pop(node.name)
                 toplevel_signature.buffers.remove(buffer_name)
-                owning_program.state_dict.pop(buffer_name)
+                if buffer_name in owning_program.state_dict:
+                    owning_program.state_dict.pop(buffer_name)
+                else:
+                    owning_program.constants.pop(buffer_name)
                 tagged_graph_module.graph.erase_node(node)
             elif node.name in toplevel_signature.inputs_to_parameters:
                 # Delete the consumed parameters
