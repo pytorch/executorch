@@ -141,25 +141,26 @@ def get_pt2e_quantizers(quant_params: PT2EQuantOptions, args) -> List[Quantizer]
                 )
 
     quantizers = []
-    if quant_params.quantize_embedding is not None:
+    if quant_params is not None and quant_params.quantize_embedding is not None:
         logging.info("Apply PT2E embedding quantization.")
         check_embedding_byte_registered()
         quantizers.append(EmbeddingQuantizer())
-    if quant_params.quantize_linear is not None:
+    if quant_params is not None and quant_params.quantize_linear is not None:
         logging.info("Apply PT2E dynamic linear quantization.")
         dynamic_quantizer = XNNPACKQuantizer()
+        assert quant_params.quantize_linear is not None
         if not quant_params.quantize_linear.is_per_channel:
             raise ValueError(
                 "At the moment only per channel weight quantization is supported."
             )
         if quant_params.quantize_linear.is_qc4:
-            operator_config_dynamic = get_symmetric_quantization_config(
-                is_per_channel=True, is_dynamic=True, weight_qmin=-8, weight_qmax=7
-            )
+            nbits = 4
         else:
-            operator_config_dynamic = get_symmetric_quantization_config(
-                is_per_channel=True, is_dynamic=True
-            )
+            nbits = 8
+        qmin, qmax = -2 ^ (nbits), 2 ^ (nbits) - 1
+        operator_config_dynamic = get_symmetric_quantization_config(
+            is_per_channel=True, is_dynamic=True, weight_qmin=qmin, weight_qmax=qmax
+        )
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
     return quantizers
