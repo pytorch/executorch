@@ -11,7 +11,7 @@ import logging
 import shlex
 from functools import partial
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import pkg_resources
 import torch
@@ -94,7 +94,11 @@ def get_pt2e_quantizers(args) -> List[Quantizer]:
     return quantizers
 
 
-def quantize(model: torch.nn.Module, qmode: str) -> torch.nn.Module:
+def quantize(
+    model: torch.nn.Module,
+    qmode: str,
+    activation_dtype: Optional[DType],
+) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
     Args:
@@ -103,6 +107,11 @@ def quantize(model: torch.nn.Module, qmode: str) -> torch.nn.Module:
     Returns:
         A quantized model.
     """
+    if activation_dtype is not None:
+        torch_dtype = activation_dtype.to_torch_dtype()
+    else:
+        torch_dtype = torch.float16
+
     if qmode == "int8":
         model_int8 = WeightOnlyInt8QuantHandler(model)
         model_int8_state_dict = model_int8.create_quantized_state_dict()
@@ -110,7 +119,9 @@ def quantize(model: torch.nn.Module, qmode: str) -> torch.nn.Module:
         model_int8.load_state_dict(model_int8_state_dict)
         return model_int8
     elif qmode == "int4":
-        model_int4 = Int8DynActInt4WeightQuantHandler(model)
+        model_int4 = Int8DynActInt4WeightQuantHandler(
+            model, activation_precision=torch_dtype
+        )
         model_int4_state_dict = model_int4.create_quantized_state_dict()
         model_int4 = model_int4.convert_for_runtime()
         print("quantized model:", model_int4)
@@ -269,27 +280,28 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     output_dir_path = canonical_path(args.output_dir, dir=True)
     modelname = "llama2"
     weight_type = WeightType.FAIRSEQ2 if args.fairseq2 else WeightType.LLAMA
+
+    # dtype override
+    if args.dtype_override is not None:
+        dtype_override = DType[args.dtype_override]
+    else:
+        dtype_override = DType["fp16"] if args.quantization_mode == "int4" else None
+
     # source transforms
     transforms = []
     if args.quantized_ckpt or args.quantization_mode:
         modelname = f"{modelname}_q"
-        transforms.append(partial(quantize, qmode=args.quantization_mode))
+        transforms.append(
+            partial(
+                quantize, qmode=args.quantization_mode, activation_dtype=dtype_override
+            )
+        )
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
         transforms.append(
             lambda model: EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
         )
-
-    # dtype override
-    if args.dtype_override:
-        override = (
-            DType["fp16"]
-            if args.quantization_mode == "int4"
-            else DType[args.dtype_override]
-        )
-    else:
-        override = None
 
     # export_to_edge
     quantizers = get_pt2e_quantizers(args)
@@ -323,7 +335,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
         .source_transform(transforms)
-        .to_dtype(override)
+        .to_dtype(dtype_override)
         .export_to_edge(quantizers)
         .to_backend(partitioners)
         .to_executorch()
