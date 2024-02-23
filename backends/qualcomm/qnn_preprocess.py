@@ -12,6 +12,7 @@ from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 from executorch.exir.backend.backend_details import (
@@ -44,6 +45,7 @@ class QnnBackend(BackendDetails):
             passes=[
                 ConvertToLinear(),
                 InsertIOQDQ(edge_program),
+                InsertRequantize(edge_program, insert_requantize=True),
                 LayoutTransform(edge_program, insert_permute=True),
             ]
         )
