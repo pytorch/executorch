@@ -119,7 +119,7 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
   return res;
 }
 
-std::vector<exec_aten::SizesType> Runner::getKVCacheShape() {
+std::vector<exec_aten::SizesType> Runner::getKVCacheShape(int32_t seq_len) {
   // shape: (n_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads,
   // self.head_dim)
   std::vector<std::string> methods = {
@@ -134,6 +134,9 @@ std::vector<exec_aten::SizesType> Runner::getKVCacheShape() {
     // convert from int64_t to int32_t
     result.push_back(getMetadataHelper<int64_t>(methods[i], default_values[i]));
   }
+  // update seq_len if one is provided between 1 and max_seq_len
+  ET_CHECK_MSG(result.size() == 5, "KV cache shape must have 5 elements");
+  result[2] = (seq_len > 0 && seq_len <= result[2]) ? seq_len : result[2];
   return result;
 }
 
@@ -155,6 +158,7 @@ int32_t Runner::logitsToToken(
 
 Error Runner::generate(
     const std::string& prompt,
+    int32_t seq_len,
     std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
@@ -167,6 +171,9 @@ Error Runner::generate(
   int num_prompt_tokens = 0;
   // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
   int* prompt_tokens = new int[prompt.size() + 1 + n_bos_ + n_eos_];
+
+  // Set the sequence length to the max seq length if not provided
+  seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
   tokenizer_->encode(
       prompt.c_str(),
@@ -182,6 +189,10 @@ Error Runner::generate(
       num_prompt_tokens < max_seq_len_,
       "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
 
+  ET_CHECK_MSG(
+      num_prompt_tokens < seq_len,
+      "Sequence length exceeded - please increase the seq_len value passed to generate()");
+
   // start the main loop
   long start =
       0; // used to time our code, only initialized after first iteration
@@ -190,7 +201,7 @@ Error Runner::generate(
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
-  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
+  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape(seq_len);
   std::vector<exec_aten::SizesType> input_shape = {1, 1};
   std::vector<exec_aten::SizesType> pos_shape = {};
   std::vector<uint8_t> k_data;
@@ -215,7 +226,7 @@ Error Runner::generate(
     token_data.resize(1);
   } else {
     // reserve data for tokens, notice the size is still 0.
-    token_data.resize(max_seq_len_);
+    token_data.resize(seq_len);
   }
 
   // initialize tensor wrappers
@@ -235,7 +246,7 @@ Error Runner::generate(
     }
   }
   // create a 1xN int tensor with next as value
-  while (pos < max_seq_len_) {
+  while (pos < seq_len) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
     std::vector<EValue> inputs;
@@ -348,8 +359,8 @@ Error Runner::generate(
   }
   printf("\n");
 
-  if (pos == max_seq_len_) {
-    ET_LOG(Info, "Maximum sequence length reached!");
+  if (pos == seq_len) {
+    ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
   // report achieved tok/s (pos-1 because the timer starts after first
   // iteration)

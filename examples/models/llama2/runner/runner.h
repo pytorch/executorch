@@ -34,6 +34,7 @@ class Runner {
   Error load();
   Error generate(
       const std::string& prompt,
+      int32_t seq_len = 128,
       std::function<void(const std::string&)> callback = {});
   void stop();
 
@@ -44,7 +45,7 @@ class Runner {
   template <typename T>
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
-  std::vector<exec_aten::SizesType> getKVCacheShape();
+  std::vector<exec_aten::SizesType> getKVCacheShape(int32_t seq_len);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
