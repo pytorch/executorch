@@ -16,7 +16,8 @@ TOOLCHAIN=""
 BUCK2="/tmp/buck2"
 PYTHON=$(which python3)
 FLATC=""
-IOS_DEPLOYMENT_TARGET="17.0"
+# TODO(huydhn): 17.0 is too recent and there is no device for that on Device Farm yet
+IOS_DEPLOYMENT_TARGET="15.0"
 COREML=OFF
 MPS=OFF
 XNNPACK=OFF

@@ -7,7 +7,8 @@
 
 set -e
 
-APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"
+APP_NAME=ExecuTorchDemo
+APP_PATH="examples/demo-apps/apple_ios/${APP_NAME}/${APP_NAME}"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 
@@ -63,38 +64,31 @@ say "Creating Simulator"
 
 xcrun simctl create "$SIMULATOR_NAME" "iPhone 14"
 
-say "Running Tests"
+say "Running Simulator Tests"
 
 xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
   -destination name="$SIMULATOR_NAME"
 
-# NB: The instruction is at https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest.html
-say "Package the app"
+# NB: https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest-ui.html
+say "Package The Test Suite"
 
-APP_ARCHIVE_PATH=ExecuTorchDemo.xcarchive
-xcodebuild archive \
+xcodebuild build-for-testing \
   -project "$APP_PATH.xcodeproj" \
-  -scheme App \
-  -archivePath "${APP_ARCHIVE_PATH}"
-
-pushd "${APP_ARCHIVE_PATH}/Products/Applications"
-mkdir Payload
-cp -r ExecuTorchDemo.app Payload
-zip -vr ExecuTorchDemo.ipa Payload
-# DEBUG
-ls -la *
-popd
+  -scheme MobileNetClassifierTest \
+  -destination name="Any iOS Device"
 
 # The hack to figure out where the xctest package locates
-MODE="Debug"
-PLATFORM="iphonesimulator"
 BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
 
+MODE="Debug"
+PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
-XCTEST_ARCHIVE=MobileNetClassifierTest.xctest
-zip -vr "${XCTEST_ARCHIVE}.zip" "${XCTEST_ARCHIVE}"
+
+mkdir Payload
+cp -r "${APP_NAME}.app" Payload && zip -vr "${APP_NAME}.ipa" Payload
 # DEBUG
 ls -la *
+
 popd
