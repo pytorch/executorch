@@ -214,5 +214,19 @@ bool get_view_copy_target_size(
     int64_t dim,
     exec_aten::SizesType* out_sizes);
 
+bool check_diagonal_copy_args(
+    const Tensor& in,
+    int64_t dim1,
+    int64_t dim2,
+    Tensor& out);
+
+void get_diagonal_copy_out_target_size(
+    const Tensor& in,
+    int64_t offset,
+    int64_t dim1,
+    int64_t dim2,
+    Tensor::SizesType* out_sizes,
+    size_t* out_ndim);
+
 } // namespace executor
 } // namespace torch
