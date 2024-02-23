@@ -45,6 +45,7 @@ class WeightType(Enum):
 class DType(Enum):
     fp32 = "fp32"
     fp16 = "fp16"
+    bf16 = "bf16"
 
 
 def load_llama_model(
@@ -75,13 +76,26 @@ def load_llama_model(
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
-    assert dtype in [torch.float16, torch.float32], "Only support fp16 or fp32"
+    assert dtype in [
+        torch.bfloat16,
+        torch.float16,
+        torch.float32,
+    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
     logging.info(f"Loaded model with dtype={dtype}")
+
+    if dtype == torch.bfloat16:
+        dtype = DType.bf16
+    elif dtype == torch.float16:
+        dtype = DType.fp16
+    elif dtype == torch.float32:
+        dtype = DType.fp32
+    else:
+        raise ValueError(f"Unsupported dtype {dtype}")
 
     return LlamaEdgeManager(
         model=model,
         weight_type=weight_type,
-        dtype=DType.fp16 if dtype == torch.float16 else DType.fp32,
+        dtype=dtype,
         use_kv_cache=use_kv_cache,
         example_inputs=example_inputs,
         verbose=verbose,
