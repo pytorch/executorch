@@ -189,6 +189,13 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_cdist_forward",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
+            "//executorch/kernels/portable/cpu/util:distance_util",
+        ],
+    ),
+    op_target(
         name = "op_ceil",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
