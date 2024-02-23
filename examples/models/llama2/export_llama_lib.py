@@ -112,7 +112,9 @@ def _get_pt2e_quantization_params(args) -> Optional[PT2EQuantOptions]:
 
 
 # TODO: move args is used only get so_file. Refactor this
-def get_pt2e_quantizers(quant_params: PT2EQuantOptions, args) -> List[Quantizer]:
+def get_pt2e_quantizers(
+    quant_params: Optional[PT2EQuantOptions], args
+) -> List[Quantizer]:
     """
     Get a list of quantizers from quantization params
     Args:
