@@ -498,6 +498,19 @@ dependencies may have changed.</p>
 </pre></div>
 </div>
 <p>Once this is done, you don’t need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.</p>
+<div class="section" id="cmake-build-options">
+<h3>CMake Build Options<a class="headerlink" href="#cmake-build-options" title="Permalink to this heading">¶</a></h3>
+<p>The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release
+</pre></div>
+</div>
+<p>To further optimize the release build for size, use both:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+-DOPTIMIZE_SIZE<span class="o">=</span>ON
+</pre></div>
+</div>
+<p>See <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/CMakeLists.txt">CMakeLists.txt</a></p>
+</div>
 </div>
 <div class="section" id="build-the-runtime-components">
 <h2>Build the runtime components<a class="headerlink" href="#build-the-runtime-components" title="Permalink to this heading">¶</a></h2>
@@ -657,7 +670,10 @@ your targets and don’t forget to add an extra linker flag <code class="docutil
 <li><a class="reference internal" href="#">Building with CMake</a><ul>
 <li><a class="reference internal" href="#targets-built-by-the-cmake-build-system">Targets Built by the CMake Build System</a></li>
 <li><a class="reference internal" href="#one-time-setup-to-prepare-for-cmake-build">One-time setup to prepare for CMake Build</a></li>
-<li><a class="reference internal" href="#configure-the-cmake-build">Configure the CMake Build</a></li>
+<li><a class="reference internal" href="#configure-the-cmake-build">Configure the CMake Build</a><ul>
+<li><a class="reference internal" href="#cmake-build-options">CMake Build Options</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#build-the-runtime-components">Build the runtime components</a></li>
 <li><a class="reference internal" href="#use-an-example-app-executor-runner-to-execute-a-pte-file">Use an example app <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> to execute a .pte file</a></li>
 <li><a class="reference internal" href="#cross-compilation">Cross compilation</a><ul>
