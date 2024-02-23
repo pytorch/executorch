@@ -69,3 +69,32 @@ xcodebuild test \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
   -destination name="$SIMULATOR_NAME"
+
+# NB: The instruction is at https://docs.aws.amazon.com/devicefarm/latest/developerguide/test-types-ios-xctest.html
+say "Package the app"
+
+APP_ARCHIVE_PATH=ExecuTorchDemo.xcarchive
+xcodebuild archive \
+  -project "$APP_PATH.xcodeproj" \
+  -scheme App \
+  -archivePath "${APP_ARCHIVE_PATH}"
+
+pushd "${APP_ARCHIVE_PATH}/Products/Applications"
+mkdir Payload
+cp -r ExecuTorchDemo.app Payload
+zip -vr ExecuTorchDemo.ipa Payload
+# DEBUG
+ls -la *
+popd
+
+# The hack to figure out where the xctest package locates
+MODE="Debug"
+PLATFORM="iphonesimulator"
+BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
+
+pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
+XCTEST_ARCHIVE=MobileNetClassifierTest.xctest
+zip -vr "${XCTEST_ARCHIVE}.zip" "${XCTEST_ARCHIVE}"
+# DEBUG
+ls -la *
+popd

@@ -34,3 +34,4 @@ sdk/bundled_program/serialize/scalar_type.fbs
 *.swp
 *~
 .~lock.*
+.DS_Store
