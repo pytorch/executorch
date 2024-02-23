@@ -4,11 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import final, List, Optional
+from typing import final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
-import torch
 from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
@@ -24,10 +23,7 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
 from executorch.exir.program._program import _copy_module
-from executorch.exir.tensor import TensorSpec
 from torch import dtype, float32
-from torch._export.utils import get_buffer, get_param, is_buffer, is_param
-from torch.fx import Node
 
 DEFAULT_DEBUG_HANDLE = 65535
 
