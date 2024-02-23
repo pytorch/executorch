@@ -9,9 +9,11 @@
 import argparse
 import logging
 import shlex
+from dataclasses import dataclass
+
 from functools import partial
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import pkg_resources
 import torch
@@ -51,15 +53,73 @@ def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
 
 
-def get_pt2e_quantizers(args) -> List[Quantizer]:
+@dataclass
+class EmbeddingQuantOptions:
+    is_per_channel: bool = True
+    group_size: int = -1
+
+    def __post_init__(self):
+        if self.group_size != -1:
+            raise RuntimeError(
+                "PT2E embedding quantizer does not support groupwise at the moment."
+            )
+
+
+@dataclass
+class DynamicQuantLinearOptions:
+    is_per_channel: bool = True
+    is_qc4: bool = False
+
+
+@dataclass
+class PT2EQuantOptions:
+    quantize_embedding: Optional[EmbeddingQuantOptions] = None
+    quantize_linear: Optional[DynamicQuantLinearOptions] = None
+
+
+def _get_pt2e_quantization_params(args) -> Optional[PT2EQuantOptions]:
+    if args.pt2e_quantize is None:
+        return None
+    if args.quantization_mode:
+        raise ValueError("Cannot specify both --quantization_mode and --pt2e_quantize")
+
+    quantization_options = args.pt2e_quantize.split(",")
+    quantization_options = [option.strip() for option in quantization_options]
+    # This can really be improved significantly.
+    # Hopefully we dont release this in its current form.
+    # Just using this for quick experiments.
+    quant_options = None
+    if "embedding" in quantization_options:
+        quant_options = quant_options or PT2EQuantOptions()
+        quant_options.quantize_embedding = EmbeddingQuantOptions()
+    if (
+        "xnnpack_dynamic" in quantization_options
+        and "xnnpack_dynamic_qc4" in quantization_options
+    ):
+        raise RuntimeError(
+            "For dynamic linear quantization via xnnpack quantizer you can chose only qc8 or qc4 option, not both."
+        )
+    if (
+        "xnnpack_dynamic" in quantization_options
+        or "xnnpack_dynamic_qc4" in quantization_options
+    ):
+        quant_options = quant_options or PT2EQuantOptions()
+        quant_options.quantize_linear = DynamicQuantLinearOptions()
+        if "xnnpack_dynamic_qc4" in quantization_options:
+            quant_options.quantize_linear.is_qc4 = True
+
+    return quant_options
+
+
+# TODO: move args is used only get so_file. Refactor this
+def get_pt2e_quantizers(quant_params: PT2EQuantOptions, args) -> List[Quantizer]:
     """
-    Applies embedding bag quantization on a model.
+    Get a list of quantizers from quantization params
     Args:
-        args: Arguments to the script.
+        args: quant params
     Returns:
         A list of quantizers to pass into LlamaBuilder.
     """
-    quantization_options = _get_quantization_options(args)
 
     def check_embedding_byte_registered():
         try:
@@ -81,14 +141,25 @@ def get_pt2e_quantizers(args) -> List[Quantizer]:
                 )
 
     quantizers = []
-    if "embedding" in quantization_options:
+    if quant_params.quantize_embedding is not None:
+        logging.info("Apply PT2E embedding quantization.")
         check_embedding_byte_registered()
         quantizers.append(EmbeddingQuantizer())
-    if "xnnpack_dynamic" in quantization_options:
+    if quant_params.quantize_linear is not None:
+        logging.info("Apply PT2E dynamic linear quantization.")
         dynamic_quantizer = XNNPACKQuantizer()
-        operator_config_dynamic = get_symmetric_quantization_config(
-            is_per_channel=True, is_dynamic=True
-        )
+        if not quant_params.quantize_linear.is_per_channel:
+            raise ValueError(
+                "At the moment only per channel weight quantization is supported."
+            )
+        if quant_params.quantize_linear.is_qc4:
+            operator_config_dynamic = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=True, weight_qmin=-8, weight_qmax=7
+            )
+        else:
+            operator_config_dynamic = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=True
+            )
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
     return quantizers
@@ -150,7 +221,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pt2e_quantize",
         default=None,
-        help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic, embedding.",
+        help="Use PT2E quantization. Comma separated options. e.g. xnnpack_dynamic (for per channel 8 bit weight), xnnpack_dynamic_qc4 (for per channel 4 bit weight), embedding.",
     )
     parser.add_argument(
         "-qmode",
@@ -235,17 +306,6 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return return_val
 
 
-def _get_quantization_options(args):
-    if args.pt2e_quantize is None:
-        return []
-    if args.quantization_mode:
-        raise ValueError("Cannot specify both --quantization_mode and --pt2e_quantize")
-
-    quantization_options = args.pt2e_quantize.split(",")
-    quantization_options = [option.strip() for option in quantization_options]
-    return quantization_options
-
-
 def export_llama(modelname, args) -> str:
     if args.profile_path is not None:
         try:
@@ -292,11 +352,12 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         override = None
 
     # export_to_edge
-    quantizers = get_pt2e_quantizers(args)
+    pt2e_quant_params = _get_pt2e_quantization_params(args)
+    quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
 
     # to_backend
     partitioners = {}
-    if "xnnpack_dynamic" in _get_quantization_options(args):
+    if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
         partitioners[
             XnnpackDynamicallyQuantizedPartitioner.__name__
         ] = XnnpackDynamicallyQuantizedPartitioner()
