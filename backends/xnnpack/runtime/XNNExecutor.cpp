@@ -13,34 +13,186 @@ namespace executor {
 namespace xnnpack {
 namespace delegate {
 
-Error XNNExecutor::set_external_input(
-    uint32_t id,
-    Tensor* input,
-    struct XNNShape* shape) {
-  // TODO(T165403530): Test ensure accuracy for int64 --> float32 conversion
-  if (input->scalar_type() == ScalarType::Long) {
-    // Input data type is int64. However, XNNPACK doesn't support
-    // int64. This means that the data needs to be casted to float
-    // In order for XNNPACK to properly use it.
-    const int64_t* data_64 = input->const_data_ptr<int64_t>();
-    float* data_f32 = input->mutable_data_ptr<float>();
-    for (int j = 0; j < input->numel(); j++) {
-      data_f32[j] = data_64[j];
-    }
-  }
-  if (input->dim() != shape->num_dims) {
-    ET_LOG(Error, "Input dim mismatch between tensor and shape struct");
+using Tensor = exec_aten::Tensor;
+using ScalarType = exec_aten::ScalarType;
+using SizesType = exec_aten::SizesType;
+
+/**
+ * Initializes the XNNExecutor with the runtime and given number of inputs/outputs
+ * externals_ is resized to the total number of inputs and outputs
+ */
+__ET_NODISCARD Error XNNExecutor::initialize(
+    xnn_runtime_t runtime,
+    uint32_t num_inputs,
+    uint32_t num_outputs) {
+  runtime_ = std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
+      runtime, xnn_delete_runtime);
+
+  auto error = profiler_.initialize(runtime);
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to start profiling: %u.",
+        static_cast<unsigned int>(error));
   }
 
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-  externals_.emplace_back(xnn_external_value{
-      id,
-      input->mutable_data_ptr(),
-      static_cast<size_t>(shape->num_dims),
-      shape->dim});
-#else
-  externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
-#endif
+  // Initialize the external values for inputs and outputs
+  // mapping the executorch arg idx to external IDs
+  num_inputs_ = num_inputs;
+  num_outputs_ = num_outputs;
+
+  externals_.resize(num_inputs_ + num_outputs_);
+
+  return Error::Ok;
+}
+
+/**
+ * Prepares the args for XNNPACK Runtime.
+ *
+ * Creates an array of xnn_externals_values from the EValues passed in.
+ * Reshapes all the external input tensors, in case any input shapes have changed.
+ * The reshapes the entire runtime, propagating shape information through
+ * the runtime.
+ *
+ * Note: the external ids given to the external tensors in the XNNPACK
+ * runtime correspond to their index in the list of arg passed into
+ * delegate->execute()
+ */
+__ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
+  // Create xnn_externals_value from evalue args
+  for (uint32_t i = 0; i < externals_.size(); ++i) {
+    ET_CHECK_OR_RETURN_ERROR(
+        args[i]->isTensor(),
+        InvalidArgument,
+        "Expected argument to delegate at index %u to be a Tensor, but got %" PRIu32,
+        i,
+        args[i]->tag);
+    Tensor* tensor = &args[i]->toTensor();
+
+    externals_[i].id = i;
+    externals_[i].data = tensor->mutable_data_ptr<float>();
+
+    // Reshape runtime inputs
+    if (i < num_inputs_) {
+      size_t num_dims = tensor->dim();
+      size_t dims[XNN_MAX_TENSOR_DIMS];
+      for (int d = 0; d < num_dims; ++d) {
+        dims[d] = tensor->size(d);
+      }
+      xnn_reshape_external_value(runtime_.get(), i, num_dims, dims);
+    }
+  }
+  // Propagate Input Shape and Memory Plan for increased allocation
+  xnn_status status = xnn_reshape_runtime(runtime_.get());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Internal Error: Propagating input shapes failed with code: %s",
+      xnn_status_to_string(status));
+
+
+  return Error::Ok;
+}
+
+/**
+ * Runs the XNNPACK Runtime.
+ *
+ * We first setup the runtime by feeding the externals_ to runtime setup.
+ * After which we then execute the runtime through invoke_runtime.
+ */
+__ET_NODISCARD Error XNNExecutor::forward(BackendExecutionContext& context) {
+  ET_CHECK_OR_RETURN_ERROR(
+      runtime_ != nullptr,
+      Internal,
+      "XNNPACK Delegate did not compile correctly");
+
+  xnn_status status =
+      xnn_setup_runtime_v2(runtime_.get(), externals_.size(), externals_.data());
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "Internal Error: Setting up the runtime failed with code: %s",
+      xnn_status_to_string(status));
+
+  auto error = profiler_.start(context.event_tracer());
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to start profiling: %u.",
+        static_cast<unsigned int>(error));
+  }
+
+  status = xnn_invoke_runtime(runtime_.get());
+
+  error = profiler_.end();
+  if (error != Error::Ok) {
+    ET_LOG(
+        Error,
+        "Failed to end profiling: %u.",
+        static_cast<unsigned int>(error));
+  }
+
+  ET_CHECK_OR_RETURN_ERROR(
+      status == xnn_status_success,
+      Internal,
+      "XNN Runtime invoke failed with code: %s",
+      xnn_status_to_string(status));
+
+  return Error::Ok;
+}
+
+/**
+ * Prepares the outputs for ExecuTorch
+ *
+ * Resizes the output tensors based on the output shapes returned by
+ * the xnnpack runtime.
+ *
+ * Note: For arg_max pooling, we recast the output index tensor. Since
+ * XNNPACK gives the index tensor to us as int32, we need to convert it
+ * back to int64 for ExecuTorch.
+ */
+__ET_NODISCARD Error XNNExecutor::resize_outputs(EValue** args) const {
+  size_t output_idx_start = num_inputs_;
+  for (size_t i = output_idx_start; i < num_inputs_ + num_outputs_; ++i) {
+    Tensor* out_tensor = &args[i]->toTensor();
+
+    size_t num_dim;
+    size_t dims[XNN_MAX_TENSOR_DIMS];
+
+    // Fetch the updated output shapes from xnnpack runtime
+    xnn_status status =
+        xnn_get_external_value_shape(runtime_.get(), i, &num_dim, dims);
+
+    // Convert new output shape into SizesType
+    SizesType expected_output_size[kTensorDimensionLimit];
+    for (size_t d = 0; d < num_dim; ++d) {
+      expected_output_size[d] = static_cast<SizesType>(dims[d]);
+    }
+
+    exec_aten::ArrayRef<SizesType> output_size{
+        expected_output_size, static_cast<size_t>(num_dim)};
+
+    ET_LOG(Debug, "Resizing output tensor to a new shape");
+    Error err = resize_tensor(*out_tensor, output_size);
+    if (err != Error::Ok) {
+      ET_LOG(Error, "Failed to resize output tensor for XNNExecutor");
+      return err;
+    }
+
+    // Output datatype is int64. However, XNNPACK doesn't support
+    // int64. This means that the data was put into this tensor
+    // by XNNPACK as int32 and needs to be copied to int64 form
+    if (out_tensor->scalar_type() == ScalarType::Long) {
+      int64_t* data_64 = out_tensor->mutable_data_ptr<int64_t>();
+      const int32_t* data_32 = out_tensor->const_data_ptr<int32_t>();
+      for (int j = out_tensor->numel() - 1; j >= 0; --j) {
+        data_64[j] = data_32[j];
+      }
+    }
+  }
+
   return Error::Ok;
 }
 

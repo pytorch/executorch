@@ -140,9 +140,7 @@ Error defineTensor(
     std::unordered_map<uint32_t, uint32_t>& remapped_ids,
     ValuePtr value,
     GraphPtr flatbuffer_graph,
-    const uint8_t* constant_data_ptr,
-    XNNExecutor* executor,
-    MemoryAllocator* runtime_allocator) {
+    const uint8_t* constant_data_ptr) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
 
@@ -303,11 +301,6 @@ Error defineTensor(
 
   // map serialized id to newly generated id
   remapped_ids.emplace(std::make_pair(tensor_value->id_out(), id));
-  // Append this external id to the arg list for execute(*args) to extract from
-  // as args[external_id]
-  if (tensor_value->external_id() != XNN_INVALID_VALUE_ID) {
-    executor->append_arg(tensor_value->external_id());
-  }
 
   return Error::Ok;
 };
@@ -1516,13 +1509,7 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   Error err = Error::Ok;
   for (auto value : *flatbuffer_graph->xvalues()) {
     err = defineTensor(
-        subgraph.get(),
-        remapped_ids,
-        value,
-        flatbuffer_graph,
-        constant_data,
-        executor,
-        runtime_allocator);
+        subgraph.get(), remapped_ids, value, flatbuffer_graph, constant_data);
 
     if (err != Error::Ok) {
       return err;
@@ -1554,20 +1541,12 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
       "XNN Runtime creation failed with code: %s",
       xnn_status_to_string(status));
 
-  executor->initialize(runtime_ptr); // NOLINT: runtime_ptr is non-null as
-                                     // error is checked above.
+  uint32_t num_inputs = flatbuffer_graph->input_ids()->size();
+  uint32_t num_outputs = flatbuffer_graph->output_ids()->size();
 
-  for (auto old_id : *flatbuffer_graph->input_ids()) {
-    executor->input_ids_.emplace_back(remapped_ids.at(old_id));
-  }
-  // External ids need to be in order for wiring with args
-  std::sort(executor->input_ids_.begin(), executor->input_ids_.end());
-
-  for (auto old_id : *flatbuffer_graph->output_ids()) {
-    executor->output_ids_.emplace_back(remapped_ids.at(old_id));
-  }
-  // External ids need to be in order for wiring with args
-  std::sort(executor->output_ids_.begin(), executor->output_ids_.end());
+  err = executor->initialize(
+      runtime_ptr, num_inputs, num_outputs); // NOLINT: runtime_ptr is non-null
+                                             // as error is checked above.
 
   return err;
 };
