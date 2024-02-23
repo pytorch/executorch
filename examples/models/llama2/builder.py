@@ -75,7 +75,11 @@ def load_llama_model(
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
-    assert dtype in [torch.float16, torch.float32], "Only support fp16 or fp32"
+    assert dtype in [
+        torch.bfloat16,
+        torch.float16,
+        torch.float32,
+    ], f"Only support bfloat16, fp16 or fp32 got {dtype}"
     logging.info(f"Loaded model with dtype={dtype}")
 
     return LlamaEdgeManager(
