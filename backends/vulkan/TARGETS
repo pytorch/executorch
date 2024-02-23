@@ -8,6 +8,7 @@ define_common_targets()
 runtime.python_library(
     name = "vulkan_preprocess",
     srcs = [
+        "serialization/vulkan_graph_builder.py",
         "serialization/vulkan_graph_schema.py",
         "serialization/vulkan_graph_serialize.py",
         "vulkan_preprocess.py",
