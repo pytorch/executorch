@@ -18,6 +18,7 @@ cmake_install_executorch_lib() {
   retry cmake -DBUCK2="$BUCK2" \
           -DCMAKE_INSTALL_PREFIX=cmake-out \
           -DCMAKE_BUILD_TYPE=Release \
+          -DOPTIMIZE_SIZE=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
   cmake --build cmake-out -j9 --target install --config Release
