@@ -46,6 +46,15 @@ class DType(Enum):
     fp32 = "fp32"
     fp16 = "fp16"
 
+    def to_torch_dtype(self) -> torch.dtype:
+        mapping = {
+            DType.fp32: torch.float32,
+            DType.fp16: torch.float16,
+        }
+        if self not in mapping:
+            raise ValueError(f"Unsupported dtype {self}")
+        return mapping[self]
+
 
 def load_llama_model(
     *,
@@ -145,13 +154,10 @@ class LlamaEdgeManager:
         assert not dtype_override or isinstance(
             dtype_override, DType
         ), "Override dtype needs to be of type <DType>"
-        if dtype_override == DType.fp16 and self.dtype != DType.fp16:
-            logging.info("model.to torch.float16")
-            self.model = self.model.to(dtype=torch.float16)
-            self.dtype = dtype_override
-        elif dtype_override == DType.fp32 and self.dtype != DType.fp32:
-            logging.info("model.to torch.float32")
-            self.model = self.model.to(dtype=torch.float32)
+        if dtype_override is not None and dtype_override != self.dtype:
+            torch_dtype = dtype_override.to_torch_dtype()
+            logging.info(f"model.to {torch_dtype}")
+            self.model = self.model.to(dtype=torch_dtype)
             self.dtype = dtype_override
         return self
 
