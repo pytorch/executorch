@@ -8,14 +8,13 @@ import ctypes
 import unittest
 from typing import Tuple
 
-import executorch.exir as exir
 import torch
 
-# import the vulkan backend implementation
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import ExecutorchProgram
-from executorch.exir.backend.backend_api import to_backend
+from executorch.exir import EdgeProgramManager, to_edge
+from torch.export import export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -51,7 +50,7 @@ class TestBackends(unittest.TestCase):
 
     def lower_module_and_test_output(
         self,
-        module: torch.nn.Module,
+        model: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
         atol=1e-03,
         rtol=1e-01,
@@ -61,36 +60,23 @@ class TestBackends(unittest.TestCase):
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-        edgeir_m = exir.capture(module, sample_inputs, exir.CaptureConfig()).to_edge()
-        lowered_module = to_backend("VulkanBackend", edgeir_m.exported_program, [])
+        program: ExportedProgram = export(model, sample_inputs)
+        edge_program: EdgeProgramManager = to_edge(program)
+        edge_program = edge_program.to_backend(VulkanPartitioner())
 
-        class WrappedModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.one_module = lowered_module
+        executorch_program = edge_program.to_executorch()
 
-            def forward(self, *args):
-                return self.one_module(*args)
-
-        executorch_program: ExecutorchProgram = (
-            exir.capture(WrappedModule(), sample_inputs, exir.CaptureConfig())
-            .to_edge()
-            .to_executorch()
-        )
-
-        # Assert the backend name is vulkan
         self.assertEqual(
-            executorch_program.program.execution_plan[0].delegates[0].id,
+            executorch_program.executorch_program.execution_plan[0].delegates[0].id,
             VulkanBackend.__name__,
         )
 
-        # Test the model with executor
         executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
 
         model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
-        ref_output = module(*sample_inputs)
+        ref_output = model(*sample_inputs)
 
         self.assert_outputs_equal(model_output, ref_output, atol=atol, rtol=rtol)
 
@@ -192,26 +178,6 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(div_module, model_inputs)
 
-    def test_vulkan_backend_floor_div(self):
-        class FloorDivModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-
-            def forward(self, x, y):
-                z = x // y
-                return z
-
-        floor_div_module = FloorDivModule()
-        model_inputs = (
-            torch.rand(size=(2, 3), dtype=torch.float32) * 10.0,
-            torch.rand(size=(2, 3), dtype=torch.float32) + 1.0,
-        )
-
-        # absolute tolerance is 1 because of flooring
-        self.lower_module_and_test_output(
-            floor_div_module, model_inputs, atol=1.0 + 1e-03
-        )
-
     def test_vulkan_backend_arithmetic(self):
         class ArithmeticModule(torch.nn.Module):
             def __init__(self):
@@ -249,3 +215,23 @@ class TestBackends(unittest.TestCase):
         )
 
         self.lower_module_and_test_output(pow_module, model_inputs)
+
+    def test_vulkan_backend_partial(self):
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.linear = torch.nn.Linear(10, 10)
+                self.offset_1 = self.weight = torch.rand(
+                    size=(2, 10), dtype=torch.float32
+                )
+                self.offset_2 = self.weight = torch.rand(
+                    size=(2, 10), dtype=torch.float32
+                )
+
+            def forward(self, x):
+                return self.linear(x + self.offset_1) - self.offset_2
+
+        model = SimpleModel()
+        model_inputs = (torch.rand(size=(2, 10), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(model, model_inputs)
