@@ -7,8 +7,7 @@
 
 set -e
 
-APP_NAME=ExecuTorchDemo
-APP_PATH="examples/demo-apps/apple_ios/${APP_NAME}/${APP_NAME}"
+APP_PATH="examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo"
 MODEL_NAME="mv3"
 SIMULATOR_NAME="executorch"
 
@@ -77,7 +76,7 @@ say "Package The Test Suite"
 xcodebuild build-for-testing \
   -project "$APP_PATH.xcodeproj" \
   -scheme MobileNetClassifierTest \
-  -destination name="Any iOS Device"
+  -destination platform="iOS"
 
 # The hack to figure out where the xctest package locates
 BUILD_DIR=$(xcodebuild -showBuildSettings -project "$APP_PATH.xcodeproj" -json | jq -r ".[0].buildSettings.BUILD_DIR")
@@ -86,9 +85,8 @@ MODE="Debug"
 PLATFORM="iphoneos"
 pushd "${BUILD_DIR}/${MODE}-${PLATFORM}"
 
-mkdir Payload
-cp -r "${APP_NAME}.app" Payload && zip -vr "${APP_NAME}.ipa" Payload
-# DEBUG
-ls -la *
+rm -rf Payload && mkdir Payload
+MOCK_APP_NAME=DeviceFarm
+cp -r "${MOCK_APP_NAME}.app" Payload && zip -vr "${MOCK_APP_NAME}.ipa" Payload
 
 popd
