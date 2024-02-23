@@ -431,6 +431,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       flatcc
       portable_ops_lib
       util
+      torch
       ${PYBIND_LINK_COREML}
       ${PYBIND_LINK_MPS}
       ${PYBIND_LINK_XNNPACK}
