@@ -723,6 +723,9 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_roll",
+    ),
+    op_target(
         name = "op_round",
         deps = [
             "//executorch/kernels/portable/cpu/util:functional_util",
