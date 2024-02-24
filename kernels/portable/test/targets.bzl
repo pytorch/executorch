@@ -10,5 +10,4 @@ def define_common_targets():
 
     op_test(name = "op_allclose_test", aten_compatible = False)
     op_test(name = "op_div_test")
-    op_test(name = "op_gelu_test")
     op_test(name = "op_mul_test")

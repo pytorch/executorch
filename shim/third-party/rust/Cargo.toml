@@ -99,7 +99,7 @@ hyper-timeout = "0.4"
 hyper-unix-connector = "0.2"
 indent_write = "2.2.0"
 indenter = "0.3.3"
-indexmap = { version = "2.1.0", features = ["arbitrary", "rayon", "serde"] }
+indexmap = { version = "1.9.1", features = ["arbitrary", "rayon", "serde-1"] }
 indoc = "1.0.3"
 inferno = { version = "0.11.11", default-features = false }
 internment = { version = "0.7", features = ["arc"] }
