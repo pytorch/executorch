@@ -38,11 +38,6 @@ Tensor& gelu_out(
     if (approximate == "tanh") {
       apply_unary_map_fn(
           [](const CTYPE x) {
-            if (x == -std::numeric_limits<CTYPE>::infinity()) {
-              return static_cast<CTYPE>(0.0);
-            } else if (x == std::numeric_limits<CTYPE>::infinity()) {
-              return std::numeric_limits<CTYPE>::infinity();
-            }
             const CTYPE kBeta = M_SQRT2 * M_2_SQRTPI * 0.5;
             const CTYPE kKappa = static_cast<float>(0.044715);
 
@@ -57,14 +52,7 @@ Tensor& gelu_out(
           in.numel());
     } else if (approximate == "none") {
       apply_unary_map_fn(
-          [](const CTYPE x) {
-            if (x == -std::numeric_limits<CTYPE>::infinity()) {
-              return static_cast<CTYPE>(0.0);
-            } else if (x == std::numeric_limits<CTYPE>::infinity()) {
-              return std::numeric_limits<CTYPE>::infinity();
-            }
-            return static_cast<CTYPE>(0.5 * x * (1 + std::erf(x * M_SQRT1_2)));
-          },
+          [](const CTYPE x) { return 0.5 * x * (1 + std::erf(x * M_SQRT1_2)); },
           in.const_data_ptr<CTYPE>(),
           out.mutable_data_ptr<CTYPE>(),
           in.numel());

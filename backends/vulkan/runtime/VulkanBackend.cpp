@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <ATen/native/vulkan/graph/Arithmetic.h>
 #include <ATen/native/vulkan/graph/Graph.h>
-#include <ATen/native/vulkan/graph/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/schema_generated.h>
@@ -58,6 +58,22 @@ class VulkanBackend final : public PyTorchBackendInterface {
 
   bool is_available() const override {
     return true;
+  }
+
+  arithmetic::OpType get_native_op_type(const std::string& name) const {
+    if (name == "aten.add.Tensor") {
+      return arithmetic::OpType::ADD;
+    } else if (name == "aten.sub.Tensor") {
+      return arithmetic::OpType::SUB;
+    } else if (name == "aten.mul.Tensor") {
+      return arithmetic::OpType::MUL;
+    } else if (name == "aten.div.Tensor") {
+      return arithmetic::OpType::DIV;
+    } else if (name == "aten.div.Tensor_mode") {
+      return arithmetic::OpType::FLOOR_DIV;
+    } else { // if (name == "aten.pow.Tensor_Tensor")
+      return arithmetic::OpType::POW;
+    }
   }
 
   api::ScalarType get_scalar_type(
@@ -237,14 +253,13 @@ class VulkanBackend final : public PyTorchBackendInterface {
           value_mapping,
           constant_data);
 
-      ET_CHECK_MSG(hasOpsFn(op_name), "Missing operator: %s", op_name.c_str());
-      auto vkFn = getOpsFn(op_name);
-      const at::native::vulkan::ValueRef output_ref = vkFn(
+      const ValueRef output_ref = add_arithmetic_node(
           *compute_graph,
-          {input1_ref,
-           input2_ref,
-           1,
-           value_mapping->Get(output_id)->value()->mem_obj_id()});
+          input1_ref,
+          input2_ref,
+          1.0,
+          get_native_op_type(op_name),
+          value_mapping->Get(output_id)->value()->mem_obj_id());
 
       ref_mapping[output_id] = output_ref;
     }
