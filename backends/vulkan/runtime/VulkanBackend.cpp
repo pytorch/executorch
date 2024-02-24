@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <ATen/native/vulkan/graph/Graph.h>
-#include <ATen/native/vulkan/graph/OperatorRegistry.h>
+#include <executorch/backends/vulkan/runtime/graph/Graph.h>
+#include <executorch/backends/vulkan/runtime/graph/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/schema_generated.h>

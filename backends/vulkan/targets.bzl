@@ -39,6 +39,27 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "vulkan_graph_runtime",
+        srcs = native.glob([
+            "runtime/graph/**/*.cpp",
+        ]),
+        exported_headers = native.glob([
+            "runtime/graph/**/*.h",
+        ]),
+        visibility = [
+            "//executorch/backends/...",
+            "//executorch/extension/pybindings/...",
+            "//executorch/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//caffe2:torch_vulkan_api",
+            "//caffe2:torch_vulkan_ops",
+        ],
+        define_static_target = False,
+    )
+
+    runtime.cxx_library(
         name = "vulkan_backend_lib",
         srcs = native.glob([
             "runtime/*.cpp",
@@ -54,7 +75,7 @@ def define_common_targets():
         ],
         deps = [
             ":vk_delegate_schema",
-            "//caffe2:torch_vulkan_graph",
+            ":vulkan_graph_runtime",
             "//executorch/runtime/backend:interface",
         ],
         define_static_target = False,
