@@ -7,6 +7,8 @@
 
 set -exu
 
+source utils.sh
+
 MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2
 DTYPE=$3 # fp16 or fp32
@@ -48,11 +50,7 @@ cleanup_files() {
 PARAMS="params.json"
 touch "${PARAMS}"
 if [[ "${MODEL_NAME}" == "stories110M.pt" ]]; then
-  # Download stories110M.pt and tokenizer from Github
-  wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
-  wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
-  # Create params.json file
-  echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > "${PARAMS}"
+  download_stories_model_artifacts
 else
   echo "Unsupported model name ${MODEL_NAME}"
   exit 1
@@ -80,7 +78,7 @@ buck2 run examples/models/llama2/tokenizer:tokenizer_py -- -t tokenizer.model -o
 
 # Run model.
 echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
-RESULT=$(timeout 500s buck2 run examples/models/llama2:main -- --model_path="${EXPORTED_MODEL_NAME}" --tokenizer_path=tokenizer.bin --prompt="Once" --temperature=0) || true
+RESULT=$(buck2 run examples/models/llama2:main -- --model_path="${EXPORTED_MODEL_NAME}" --tokenizer_path=tokenizer.bin --prompt="Once" --temperature=0 --seq_len=10) || true
 
 # Check results.
 EXPECTED_PREFIX="Once upon a time,"

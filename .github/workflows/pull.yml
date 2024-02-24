@@ -83,8 +83,8 @@ jobs:
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
 
-  test-llama-linux:
-    name: test-llama-linux
+  test-llama-runner-buck2-linux:
+    name: test-llama-runner-buck2-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
@@ -214,8 +214,8 @@ jobs:
     with:
       docker-image: executorch-ubuntu-22.04-clang12
 
-  test-llama-runner-cmake:
-    name: test-llama-runner
+  test-llama-runner-cmake-linux:
+    name: test-llama-runner-cmake-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
