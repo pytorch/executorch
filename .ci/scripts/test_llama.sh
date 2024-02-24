@@ -6,7 +6,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set -exu
-
+# shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 MODEL_NAME=$1 # stories110M.pt
