@@ -83,12 +83,15 @@ jobs:
         # Build and test ExecuTorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
 
-  test-llama-runner-buck2-linux:
-    name: test-llama-runner-buck2-linux
+  test-llama-runner-linux:
+    name: test-llama-runner-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
         dtype: [fp16, fp32]
+        include:
+          - build-tool: buck2
+          - build-tool: cmake
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -102,13 +105,14 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         DTYPE=${{ matrix.dtype }}
+        BUILD_TOOL=${{ matrix.build-tool }}
 
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt buck2 "${DTYPE}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}"
 
   test-custom-ops-linux:
     name: test-custom-ops-linux
@@ -213,27 +217,3 @@ jobs:
     uses: ./.github/workflows/_unittest.yml
     with:
       docker-image: executorch-ubuntu-22.04-clang12
-
-  test-llama-runner-cmake-linux:
-    name: test-llama-runner-cmake-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-    strategy:
-      matrix:
-        include:
-          - build-tool: cmake
-      fail-fast: false
-    with:
-      runner: linux.2xlarge
-      docker-image: executorch-ubuntu-22.04-clang12
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        # The generic Linux job chooses to use base env, not the one setup by the image
-        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-        conda activate "${CONDA_ENV}"
-
-        BUILD_TOOL=${{ matrix.build-tool }}
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
-        # Test selective build
-        PYTHON_EXECUTABLE=python bash examples/models/llama2/test_llama_runner.sh "${BUILD_TOOL}"
