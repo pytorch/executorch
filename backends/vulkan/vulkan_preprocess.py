@@ -7,6 +7,8 @@
 from typing import final, List
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
+
+from executorch.backends.vulkan.serialization.vulkan_graph_builder import VkGraphBuilder
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     serialize_vulkan_graph,
 )
@@ -21,9 +23,7 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
 from executorch.exir.program._program import _copy_module
-from executorch.exir.tensor import TensorSpec
 from torch import dtype, float32
-from torch.fx import Node
 
 DEFAULT_DEBUG_HANDLE = 65535
 
@@ -44,62 +44,13 @@ class VulkanBackend(BackendDetails):
         program: ExportedProgram,
         module_compile_spec: List[CompileSpec],
     ) -> PreprocessResult:
-        vk_chain = []
-        vk_values = []
-        vk_input_ids = []
-        vk_output_ids = []
-        const_tensors = []
-
-        # Mapping from graph Node to schema VkValue.
-        node_to_value_ids = {}
-
-        def create_single_vk_value(node: Node, constant_id: int = -1) -> int:
-            spec = node.meta.get("spec")
-            assert isinstance(spec, TensorSpec)
-            new_id = len(vk_values)
-            if node not in node_to_value_ids:
-                node_to_value_ids[node] = new_id
-            else:
-                current_ids = node_to_value_ids[node]
-                if isinstance(current_ids, int):
-                    current_ids = [current_ids, new_id]
-                else:
-                    current_ids.append(new_id)
-
-            # Negative id indicates that this tensor will have its own dedicated memory.
-            mem_obj_id = -1
-            if spec.mem_obj_id is not None:
-                mem_obj_id = spec.mem_obj_id
-
-            vk_values.append(
-                vk_graph_schema.VkValue(
-                    value=vk_graph_schema.VkTensor(
-                        datatype=VulkanBackend.get_vk_datatype(spec.dtype),
-                        dims=spec.shape,
-                        constant_id=constant_id,
-                        mem_obj_id=mem_obj_id,
-                    )
-                )
-            )
-            return new_id
-
-        def create_vk_values_for(node: Node, constant_id: int = -1):
-            spec = node.meta.get("spec")
-
-            if isinstance(spec, TensorSpec):
-                return create_single_vk_value(node, constant_id)
-            else:
-                ids = []
-                for _ in spec:
-                    ids.append(create_single_vk_value(node, constant_id))
-                return ids
-
         passes = [
             SpecPropPass(),
             MemoryPlanningPass("greedy"),
         ]
 
         new_gm = program.graph_module
+
         for p in passes:
             # This is a workaround to allow the memory planning pass to work without
             # having to first apply ToOutVarPass(). See the `greedy()` function in
@@ -110,62 +61,14 @@ class VulkanBackend(BackendDetails):
             new_gm_res = p(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
+
         _copy_module(program.graph_module, new_gm)
 
-        for node in program.graph_module.graph.nodes:
-            if node.op == "placeholder":
-                # Input
-                ids = create_vk_values_for(node)
-                if isinstance(ids, int):
-                    vk_input_ids.append(ids)
-                else:
-                    vk_input_ids += ids
-            elif node.op == "call_function":
-                # Op
-                if (
-                    node.all_input_nodes[0] not in node_to_value_ids
-                    or node.all_input_nodes[1] not in node_to_value_ids
-                ):
-                    raise AssertionError(
-                        "Cannot find input(s) for current node in node_to_value_ids. This means this node is being serialized before its input(s) which is not allowed."
-                    )
-                vk_chain.append(
-                    vk_graph_schema.OperatorCall(
-                        name=node.target.__name__,
-                        args=[
-                            node_to_value_ids[node.all_input_nodes[0]],
-                            node_to_value_ids[node.all_input_nodes[1]],
-                            create_vk_values_for(node),
-                        ],
-                    ),
-                )
-            elif node.op == "get_attr":
-                constant_id = len(const_tensors)
-                const_tensors.append(
-                    getattr(node.graph.owning_module, node.target).contiguous()
-                )
+        graph_builder = VkGraphBuilder(program)
+        vk_graph = graph_builder.build_graph()
 
-                create_vk_values_for(node, constant_id)
-
-            elif node.op == "output":
-                if node.all_input_nodes[0] not in node_to_value_ids:
-                    raise AssertionError(
-                        "Cannot find input to output node in node_to_value_ids. This means the output node is being serialized before its corresponding internal node which is not allowed."
-                    )
-                vk_output_ids.append(node_to_value_ids[node.all_input_nodes[0]])
-            else:
-                raise RuntimeError(f"Unsupported op, {node.op}, in Vulkan Preprocess")
-
-        # Raw objects (constants and shaders) are populated in the next line's method.
-        vk_graph = vk_graph_schema.VkGraph(
-            version="0",
-            chain=vk_chain,
-            values=vk_values,
-            input_ids=vk_input_ids,
-            output_ids=vk_output_ids,
-            constants=[],
-            shaders=[],
-        )
         return PreprocessResult(
-            processed_bytes=serialize_vulkan_graph(vk_graph, const_tensors, []),
+            processed_bytes=serialize_vulkan_graph(
+                vk_graph, graph_builder.const_tensors, []
+            ),
         )

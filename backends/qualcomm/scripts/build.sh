@@ -30,6 +30,14 @@ BUILD_AARCH64="true"
 CMAKE_AARCH64="build_android"
 CLEAN="true"
 
+if [ -z PYTHON_EXECUTABLE ]; then
+  PYTHON_EXECUTABLE="python3"
+fi
+
+if [ -z BUCK2 ]; then
+  BUCK2="buck2"
+fi
+
 long_options=skip_x86_64,skip_aarch64,no_clean
 
 parsed_args=$(getopt -a --options '' --longoptions $long_options --name "$0" -- "$@")
@@ -59,14 +67,15 @@ if [ "$BUILD_AARCH64" = true ]; then
 
     cd $BUILD_ROOT
     cmake .. \
-        -DBUCK2=buck2 \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \
-        -B$BUILD_ROOT
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -DBUCK2=$BUCK2 \
+	-B$BUILD_ROOT
 
     cmake --build $BUILD_ROOT -j16 --target install
 
@@ -79,6 +88,8 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DANDROID_NATIVE_API_LEVEL=23 \
         -DCMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH \
         -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -DBUCK2=$BUCK2 \
         -B$EXAMPLE_ROOT
 
     cmake --build $EXAMPLE_ROOT -j16
@@ -95,6 +106,8 @@ if [ "$BUILD_X86_64" = true ]; then
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DQNN_SDK_ROOT=${QNN_SDK_ROOT} \
         -DEXECUTORCH_BUILD_QNN=ON \
+        -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+        -DBUCK2=$BUCK2 \
         -S $PRJ_ROOT \
         -B $BUILD_ROOT \
 
