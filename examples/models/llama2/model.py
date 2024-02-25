@@ -262,6 +262,10 @@ class Attention(nn.Module):
         # tensor will be 2-dimensional, regarldess of the values of L & S
         mask = torch.squeeze(mask, [0, 1])
 
+        # FIXME: This should be so automatically! MKG
+        keys = keys.to(dtype=xq.dtype)
+        values = values.to(dtype=xq.dtype)
+
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
         )
