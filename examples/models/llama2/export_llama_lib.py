@@ -231,7 +231,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
     )
-    parser.add_argument("-E", "--embedding-quantize", default=None, action="store_true")
+    parser.add_argument(
+        "-E",
+        "--embedding-quantize",
+        default=None,
+        type=str,
+        help="type of embedding quantization, '<bitwidth>,<groupsize>', e.g., '8,1024'.",
+    )
     parser.add_argument(
         "--pt2e_quantize",
         default=None,
@@ -362,8 +368,16 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     if args.embedding_quantize:
         modelname = f"{modelname}_e"
+        bitwidth, group_size = args.embedding_quantize.split(",")
+        if group_size == "none" or group_size == "None" or group_size == "0":
+            group_size = None
+        else:
+            group_size = int(group_size)
+        bitwidth = int(bitwidth)
         transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(model).convert_for_runtime()
+            lambda model: EmbeddingOnlyInt8QuantHandler(
+                model, bitwidth=bitwidth, group_size=group_size
+            ).convert_for_runtime()
         )
 
     # export_to_edge
