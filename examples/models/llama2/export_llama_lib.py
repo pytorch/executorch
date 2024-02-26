@@ -156,13 +156,13 @@ def get_pt2e_quantizers(
                 "At the moment only per channel weight quantization is supported."
             )
         if quant_params.quantize_linear.is_qc4:
-            nbits = 4
+            operator_config_dynamic = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=True, weight_qmin=-8, weight_qmax=7
+            )
         else:
-            nbits = 8
-        qmin, qmax = -2 ^ (nbits), 2 ^ (nbits) - 1
-        operator_config_dynamic = get_symmetric_quantization_config(
-            is_per_channel=True, is_dynamic=True, weight_qmin=qmin, weight_qmax=qmax
-        )
+            operator_config_dynamic = get_symmetric_quantization_config(
+                is_per_channel=True, is_dynamic=True
+            )
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
     return quantizers
