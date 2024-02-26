@@ -18,6 +18,7 @@ from executorch.examples.qualcomm.scripts.utils import (
     setup_common_args_and_variables,
     SimpleADB,
 )
+from torch.nn.attention import SDPBackend
 
 
 def create_device_inputs(example_inputs, use_kv_cache):
@@ -92,15 +93,17 @@ if __name__ == "__main__":
     pte_filename = "dummy_llama2_qnn"
 
     use_fp16 = False if args.ptq else True
-    build_executorch_binary(
-        instance.get_eager_model().eval(),
-        instance.get_example_inputs(),
-        args.model,
-        f"{args.artifact}/{pte_filename}",
-        inputs,
-        custom_annotations=(),
-        use_fp16=use_fp16,
-    )
+    # Temp bypass the dynamo tracing error, for kv-cache mode only
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        build_executorch_binary(
+            instance.get_eager_model().eval(),
+            instance.get_example_inputs(),
+            args.model,
+            f"{args.artifact}/{pte_filename}",
+            inputs,
+            custom_annotations=(),
+            use_fp16=use_fp16,
+        )
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         artifact_path=f"{args.build_folder}",
