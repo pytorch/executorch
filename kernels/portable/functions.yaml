@@ -562,6 +562,11 @@
     - arg_meta: null
       kernel_name: torch::executor::mul_scalar_out
 
+- op: native_group_norm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_group_norm_out
+
 - op: native_layer_norm.out
   kernels:
     - arg_meta: null

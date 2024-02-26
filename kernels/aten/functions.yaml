@@ -250,6 +250,8 @@
 
 - op: native_batch_norm.out
 
+- op: native_group_norm.out
+
 - op: native_layer_norm.out
 
 - op: ne.Scalar_out
