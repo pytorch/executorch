@@ -84,11 +84,11 @@ void encode_copy_from_vtensor(
 /*
  * OpNode that allows copying data into and out of a staging buffer.
  */
-class StagingNode : public virtual OpNode {
+class StagingNode : public virtual ExecuteNode {
  public:
   explicit StagingNode(ValueRef from, ValueRef to);
 
-  void encode_execute(ComputeGraph* graph) const override;
+  void encode(ComputeGraph* graph) const override;
 };
 
 } // namespace vulkan

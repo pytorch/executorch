@@ -27,9 +27,10 @@ ValueRef add_copy_node(ComputeGraph& graph, const ValueRef from) {
   return to;
 }
 
-CopyNode::CopyNode(const ValueRef from, const ValueRef to) : OpNode(from, to) {}
+CopyNode::CopyNode(const ValueRef from, const ValueRef to)
+    : ExecuteNode(from, to) {}
 
-void CopyNode::encode_execute(ComputeGraph* graph) const {
+void CopyNode::encode(ComputeGraph* graph) const {
   api::PipelineBarrier pipeline_barrier{};
 
   vTensor& from_tensor = graph->get_val(inputs_[0]).toTensor();

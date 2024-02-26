@@ -34,14 +34,14 @@ ValueRef add_arithmetic_node(
     const arithmetic::OpType optype,
     const int64_t shared_object_idx = -1);
 
-class ArithmeticPrepack : public virtual OpNode {
+class ArithmeticPrepack : public virtual PrepackNode {
  public:
   explicit ArithmeticPrepack(const ValueRef tref, const ValueRef packed);
 
-  void encode_prepack(ComputeGraph* graph) const override;
+  void encode(ComputeGraph* graph) const override;
 };
 
-class ArithmeticNode : public virtual OpNode {
+class ArithmeticNode : public virtual ExecuteNode {
  public:
   explicit ArithmeticNode(
       const ValueRef t1,
@@ -50,7 +50,7 @@ class ArithmeticNode : public virtual OpNode {
       const float alpha,
       const arithmetic::OpType optype);
 
-  void encode_execute(ComputeGraph* graph) const override;
+  void encode(ComputeGraph* graph) const override;
 
  private:
   float alpha_;
