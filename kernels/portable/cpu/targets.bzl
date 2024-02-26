@@ -319,6 +319,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_flip",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util",
+        ],
+    ),
+    op_target(
         name = "op_floor",
         deps = [
             "//executorch/kernels/portable/cpu/pattern:pattern",
