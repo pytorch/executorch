@@ -86,6 +86,7 @@ class ModelArgs:
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
     vocab_size: int = -1  # defined later by tokenizer
+    hidden_dim: Optional[int] = None
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
@@ -281,10 +282,18 @@ class Attention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, multiple_of: int):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+        dim = args.dim
+        hidden_dim = args.hidden_dim
+        if hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = args.multiple_of
+            hidden_dim = 4 * dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
@@ -294,18 +303,22 @@ class FeedForward(nn.Module):
 
 
 class ConditionalFeedForward(nn.Module):
-    def __init__(self, config):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        hidden_dim = 4 * config.dim
-        hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = config.multiple_of * (
-            (hidden_dim + config.multiple_of - 1) // config.multiple_of
-        )
-        self.w1 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
-        self.w2 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
-        self.w3 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
-        self.num_experts = config.num_experts
-        self.dim = config.dim
+        self.dim = args.dim
+        hidden_dim = args.hidden_dim
+        if hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = args.multiple_of
+            hidden_dim = 4 * self.dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
+        self.w1 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w2 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w3 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.num_experts = args.num_experts
 
     def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
         w1_weights = self.w1[expert_indices].transpose(-1, -2)  # [T, A, D, D]
@@ -346,11 +359,7 @@ class TransformerBlock(nn.Module):
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
-            self.feed_forward = FeedForward(
-                dim=args.dim,
-                hidden_dim=4 * args.dim,
-                multiple_of=args.multiple_of,
-            )
+            self.feed_forward = FeedForward(args)
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
