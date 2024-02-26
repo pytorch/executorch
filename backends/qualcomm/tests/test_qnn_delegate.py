@@ -1524,6 +1524,7 @@ class TestExampleOssScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
             conn = listener.accept()
@@ -1565,6 +1566,39 @@ class TestExampleOssScript(TestQNN):
             msg = json.loads(conn.recv())
             self.assertGreaterEqual(msg["PSNR"], 24)
             self.assertGreaterEqual(msg["SSIM"], 0.8)
+
+    def test_squeezenet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/squeezenet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 40)
+            self.assertGreaterEqual(msg["top_5"], 70)
 
 
 class TestExampleScript(TestQNN):
