@@ -29,5 +29,22 @@ void get_pdist_out_target_size(
   out_sizes[0] = n * (n - 1) / 2;
 }
 
+bool check_cdist_args(
+    const Tensor& x1,
+    const Tensor& x2,
+    double p,
+    optional<int64_t> compute_mode,
+    const Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(x1, x2));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(x1, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(x1, 2));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(x2, 2));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensors_have_same_size_at_dims(x1, x1.dim() - 1, x2, x2.dim() - 1));
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      p >= 0, "cdist only supports non-negative p values");
+  return true;
+}
+
 } // namespace executor
 } // namespace torch
