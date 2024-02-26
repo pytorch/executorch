@@ -10,5 +10,4 @@
 # 2. Build llama runner binary
 # 3. Run model with the llama runner binary with prompt
 set -e
-# shellcheck source=/dev/null
 bash "$(dirname "${BASH_SOURCE[0]}")/../../../.ci/scripts/test_llama.sh" "$@"
