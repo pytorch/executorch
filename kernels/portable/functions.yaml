@@ -253,6 +253,11 @@
     - arg_meta: null
       kernel_name: torch::executor::detach_copy_out
 
+- op: diagonal_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::diagonal_copy_out
+
 - op: div.out
   kernels:
     - arg_meta: null
