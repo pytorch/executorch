@@ -10,12 +10,12 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import torch
 
 from .node_visitor import NodeVisitor, register_node_visitor
-from .qnn_constants import OpResizeBilinear, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .qnn_constants import OpResizeNearestNeighbor, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
 class ResizeBilinear(NodeVisitor):
-    target = ["aten.upsample_bilinear2d.default"]
+    target = ["aten.upsample_nearest2d.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
@@ -44,23 +44,23 @@ class ResizeBilinear(NodeVisitor):
             is_input_tensor=False,
         )
 
-        reisze_bilinear_op = PyQnnWrapper.PyQnnOpWrapper(
+        reisze_nearest_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpResizeBilinear.op_name,
+            OpResizeNearestNeighbor.op_name,
         )
-        reisze_bilinear_op.AddInputTensors([input_tensor_wrapper])
-        reisze_bilinear_op.AddOutputTensors([output_tensor_wrapper])
-
-        reisze_bilinear_op.AddScalarParam(
-            OpResizeBilinear.param_align_corners,
+        reisze_nearest_op.AddInputTensors([input_tensor_wrapper])
+        reisze_nearest_op.AddOutputTensors([output_tensor_wrapper])
+        # align_corners is guaranteed to be false
+        reisze_nearest_op.AddScalarParam(
+            OpResizeNearestNeighbor.param_align_corners,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": node.args[2]},
+            {"data": False},
         )
-        reisze_bilinear_op.AddScalarParam(
-            OpResizeBilinear.param_half_pixel_centers,
+        reisze_nearest_op.AddScalarParam(
+            OpResizeNearestNeighbor.param_half_pixel_centers,
             PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_BOOL_8,
-            {"data": not node.args[2]},
+            {"data": True},
         )
 
-        return reisze_bilinear_op
+        return reisze_nearest_op
