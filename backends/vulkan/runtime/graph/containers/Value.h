@@ -15,8 +15,8 @@
 #include <ATen/native/vulkan/api/Context.h>
 #include <ATen/native/vulkan/api/Tensor.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Constant.h>
-#include <executorch/backends/vulkan/runtime/graph/Types.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
 namespace at {
 namespace native {

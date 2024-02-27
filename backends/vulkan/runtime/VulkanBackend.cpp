@@ -6,11 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
-#include <executorch/backends/vulkan/runtime/graph/OperatorRegistry.h>
-
 #include <executorch/backends/vulkan/runtime/VulkanDelegateHeader.h>
 #include <executorch/backends/vulkan/schema_generated.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
