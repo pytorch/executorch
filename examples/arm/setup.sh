@@ -221,8 +221,8 @@ function setup_vela() {
     cd "${root_dir}/ethos-u-vela"
 
     # different command for conda vs venv
-    python3 -c "import sys; sys.exit(0) if (sys.prefix != sys.base_prefix) else sys.exit(1)"
-    if [ $? -eq 0 ]; then
+    VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
+    if [ ${VNV} == "venv" ]; then
        pip3 install .
     else
        pip3 install . --user
