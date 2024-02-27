@@ -1,0 +1,8 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains operators that have optimized kernels available.
+
+- func: llama::sdpa.out(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::flash_attention_kernel_out
