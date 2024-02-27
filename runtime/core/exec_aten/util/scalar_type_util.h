@@ -49,6 +49,34 @@ using string_view = torch::executor::string_view;
 
 namespace torch {
 namespace executor {
+
+#if !defined(USE_ATEN_LIB)
+// Util to figure out if the scalar type if one of the
+// supported floating point types.
+// In aten mode, aten lib already has these utils as part of
+// its vec_base.h
+template <typename T>
+struct is_floating_point
+    : std::integral_constant<
+          bool,
+          std::is_floating_point<T>::value ||
+              std::is_same<T, torch::executor::Half>::value ||
+              std::is_same<T, torch::executor::BFloat16>::value> {};
+
+// Util to figure out if the scalar type is one of the
+// reduced precision floating point types.
+template <typename T>
+struct is_reduced_floating_point
+    : std::integral_constant<
+          bool,
+          std::is_same<T, torch::executor::Half>::value ||
+              std::is_same<T, torch::executor::BFloat16>::value> {};
+
+template <typename T>
+constexpr bool is_reduced_floating_point_v =
+    is_reduced_floating_point<T>::value;
+#endif
+
 /// Maps ScalarTypes to C++ types.
 template <exec_aten::ScalarType N>
 struct ScalarTypeToCppType;
