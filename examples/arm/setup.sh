@@ -201,7 +201,7 @@ function setup_tosa_reference_model() {
         n=1
     fi
 
-    make -j"$(n)"
+    make -j"${n}"
     cd reference_model
     tosa_bin_path=`pwd`
     echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
