@@ -111,14 +111,16 @@ RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin
 echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
 if [[ "${BUILD_TOOL}" == "buck2" ]]; then
   # Run model.
-  $BUCK run examples/models/llama2:main -- "${RUNTIME_ARGS}" > result.txt
+  # shellcheck source=/dev/null
+  $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
 elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
   cmake_install_executorch_libraries
   cmake_build_llama_runner
   # Run llama runner
   NOW=$(date +"%H:%M:%S")
   echo "Starting to run llama runner at ${NOW}"
-  cmake-out/examples/models/llama2/llama_main "${RUNTIME_ARGS}" > result.txt
+  # shellcheck source=/dev/null
+  cmake-out/examples/models/llama2/llama_main ${RUNTIME_ARGS} > result.txt
   NOW=$(date +"%H:%M:%S")
   echo "Finished at ${NOW}"
 else

@@ -89,9 +89,7 @@ jobs:
     strategy:
       matrix:
         dtype: [fp16, fp32]
-        include:
-          - build-tool: buck2
-          - build-tool: cmake
+        build-tool: [buck2, cmake]
       fail-fast: false
     with:
       runner: linux.2xlarge
