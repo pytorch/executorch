@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/SharedObject.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
