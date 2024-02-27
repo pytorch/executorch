@@ -24,6 +24,18 @@ def define_tests():
             "//executorch/kernels/test:test_util",
         ] + generated_lib_and_op_deps + deps,
     )
+    runtime.cxx_test(
+        name = "op_sdpa_with_kv_cache_test",
+        srcs = [
+            "op_sdpa_with_kv_cache_test.cpp",
+        ],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/test:test_util",
+        ] + generated_lib_and_op_deps + deps,
+    )
 
 def define_common_targets():
     """Defines targets that should be shared between fbcode and xplat.
@@ -52,6 +64,18 @@ def define_common_targets():
         ],
     )
 
+    et_operator_library(
+        name = "sdpa_with_kv_cache",
+        ops = [
+            "llama::sdpa_with_kv_cache.out",
+        ],
+        define_static_targets = True,
+        visibility = [
+            "//executorch/codegen/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     runtime.cxx_library(
         name = "sdpa",
         srcs = ["op_sdpa.cpp"],
@@ -61,6 +85,7 @@ def define_common_targets():
             "//executorch/kernels/optimized:libblas",
             "//executorch/kernels/optimized:libvec",
         ],
+        compiler_flags = ["-Wno-missing-prototypes"],
         visibility = [
             "//executorch/...",
             "//executorch/examples/models/llama2/custom_ops/...",
@@ -73,6 +98,7 @@ def define_common_targets():
         name = "custom_ops",
         deps = [
             ":sdpa_op",
+            ":sdpa_with_kv_cache",
             ":sdpa",
         ],
         custom_ops_yaml_target = ":custom_ops.yaml",
@@ -80,5 +106,6 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        define_static_targets = True,
     )
     define_tests()
