@@ -10,7 +10,7 @@ set -exu
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 MODEL_NAME=$1 # stories110M.pt
-BUILD_TOOL=$2 # buck2
+BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
 
 if [[ -z "${MODEL_NAME:-}" ]]; then
@@ -106,7 +106,7 @@ echo "Creating tokenizer.bin"
 $PYTHON_EXECUTABLE -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
 
-RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=\"Once\" --temperature=0 --seq_len=10"
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt='Once' --temperature=0 --seq_len=10"
 # Check build tool.
 echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
 if [[ "${BUILD_TOOL}" == "buck2" ]]; then
