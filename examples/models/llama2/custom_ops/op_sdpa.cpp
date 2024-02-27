@@ -15,11 +15,15 @@
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
+#include <array>
+
 namespace torch {
 namespace executor {
 namespace native {
 
 namespace util {
+
+constexpr size_t kKVDim = 4;
 
 template <typename T>
 inline void _store(T* dst, executorch::vec::Vectorized<T> src) {
@@ -190,7 +194,8 @@ void cpu_flash_attention(
     double dropout_p,
     bool is_causal,
     const optional<Tensor>& attn_mask,
-    const optional<double>& scale) {
+    const optional<double>& scale,
+    bool is_with_kv_cache = false) {
   (void)dropout_p;
   // Query (Batch x Num_heads  x Q_seq_len  x Dim_per_head)
   // Key   (Batch x Num_heads  x KV_seq_len x Dim_per_head)
@@ -223,6 +228,12 @@ void cpu_flash_attention(
   int64_t headSize = query.size(3);
   int64_t kvSize = value.size(2);
 
+  if (is_with_kv_cache) {
+    num_head = query.size(2);
+    qSize = query.size(1);
+    kvSize = value.size(1);
+  }
+
   bool has_attn_mask = attn_mask.has_value() && attn_mask.value().numel();
   if (has_attn_mask) {
     /*
@@ -236,43 +247,52 @@ void cpu_flash_attention(
     ET_CHECK_MSG(
         attn_mask.value().size(0) == qSize, "attn_mask shape mismatch");
     ET_CHECK_MSG(
-        attn_mask.value().size(1) == kvSize, "attn_mask shape mismatch");
+        attn_mask.value().size(1) == kvSize,
+        "attn_mask shape mismatch"
+        "attn_mask.size(1)=%ld kvSize=%" PRId64,
+        attn_mask.value().size(1),
+        kvSize);
   }
 
-  exec_aten::StridesType strides[kTensorDimensionLimit];
-  dim_order_to_stride_nocheck(
-      query.sizes().data(),
-      query.dim_order().data(),
-      query.sizes().size(),
-      strides);
-  // Strides
+  auto strides = query.strides();
   int64_t qStrideB = strides[0];
   int64_t qStrideH = strides[1];
   int64_t qStrideM = strides[2];
 
-  dim_order_to_stride_nocheck(
-      key.sizes().data(), key.dim_order().data(), key.sizes().size(), strides);
+  if (is_with_kv_cache) {
+    qStrideH = strides[2];
+    qStrideM = strides[1];
+  }
+
+  strides = key.strides();
   int64_t kStrideB = strides[0];
   int64_t kStrideH = strides[1];
   int64_t kStrideN = strides[2];
 
-  dim_order_to_stride_nocheck(
-      value.sizes().data(),
-      value.dim_order().data(),
-      value.sizes().size(),
-      strides);
+  if (is_with_kv_cache) {
+    kStrideH = strides[2];
+    kStrideN = strides[1];
+  }
+
+  strides = value.strides();
   int64_t vStrideB = strides[0];
   int64_t vStrideH = strides[1];
   int64_t vStrideN = strides[2];
 
-  dim_order_to_stride_nocheck(
-      output.sizes().data(),
-      output.dim_order().data(),
-      output.sizes().size(),
-      strides);
+  if (is_with_kv_cache) {
+    vStrideH = strides[2];
+    vStrideN = strides[1];
+  }
+
+  strides = output.strides();
   int64_t oStrideB = strides[0];
   int64_t oStrideH = strides[1];
   int64_t oStrideM = strides[2];
+
+  if (is_with_kv_cache) {
+    oStrideH = strides[2];
+    oStrideM = strides[1];
+  }
 
   int64_t mStrideB = 0;
   int64_t mStrideH = 0;
@@ -286,12 +306,7 @@ void cpu_flash_attention(
     //(has_attn_mask && attn_mask.value().size(1) > 1)
     //    ? attn_mask.value().stride(1)
     //    : 0;
-    Tensor attn_mask_value = attn_mask.value();
-    dim_order_to_stride_nocheck(
-        attn_mask_value.sizes().data(),
-        attn_mask_value.dim_order().data(),
-        attn_mask_value.sizes().size(),
-        strides);
+    strides = attn_mask.value().strides();
     mStrideM = strides[0];
   }
 
@@ -312,11 +327,11 @@ void cpu_flash_attention(
       /* qk_sum */ qSplitSize +
       /* dst    */ qSplitSize * headSize;
 
-  int64_t size_bytes = size_per_thread * num_thread * 4;
+  int64_t size_bytes = size_per_thread * num_thread * query.element_size();
   std::vector<char> buf_vec(size_bytes);
   void* buf = reinterpret_cast<void*>(buf_vec.data());
   // Need to double check the following
-  size_bytes = num_thread * qSplitSize * kvSplitSize * 4;
+  size_bytes = num_thread * qSplitSize * kvSplitSize * query.element_size();
   std::vector<char> buf_reduced_vec(size_bytes);
   void* buf_reduced = reinterpret_cast<void*>(buf_reduced_vec.data());
   // at::Tensor buf_reduced = at::empty(
@@ -356,12 +371,13 @@ void cpu_flash_attention(
               qk_max_data,
               -std::numeric_limits<accum_t>::infinity(),
               qBlockSize);
-          fill_stub(qk_sum_data, static_cast<accum_t>(0), qBlockSize);
           int64_t num_keys =
               is_causal ? std::min(m + qBlockSize, kvSize) : kvSize;
           for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
             int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
             // Calculate scale * q @ k.T
+            fill_stub(
+                qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
             executorch::cpublas::gemm(
                 executorch::cpublas::TransposeType::Transpose,
                 executorch::cpublas::TransposeType::NoTranspose,
@@ -493,6 +509,14 @@ bool validate_flash_attention_args(
       "scaled_dot_product_attention_flash_attention: Q/K/V should have the same head size");
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (query.scalar_type() == ScalarType::Float), "Query must be Float type");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (query.scalar_type() == key.scalar_type()) &&
+          (query.scalar_type() == value.scalar_type()),
+      "Key and Value must have the same data type as Query");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
       !attn_mask.has_value() || attn_mask.value().dim() == 2,
       "Attention mask must be a 2D tensor");
 
@@ -500,7 +524,121 @@ bool validate_flash_attention_args(
       !attn_mask.has_value() ||
           attn_mask.value().scalar_type() == query.scalar_type(),
       "Attention mask must be a 2D tensor");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      is_default_dim_order(query.dim_order().data(), query.dim()),
+      "key cache must be in default dim order");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      is_default_dim_order(key.dim_order().data(), key.dim()),
+      "value cache must be in default dim order");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      is_default_dim_order(value.dim_order().data(), value.dim()),
+      "value cache must be in default dim order");
+
+  if (attn_mask.has_value()) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        is_default_dim_order(
+            attn_mask.value().dim_order().data(), attn_mask.value().dim()),
+        "value cache must be in default dim order");
+  }
+
   return true;
+}
+
+bool validate_cache_params(
+    const Tensor& k_cache,
+    const Tensor& v_cache,
+    int64_t layer_id,
+    int64_t start_pos,
+    int64_t seq_length) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      k_cache.dim() == 5, "kcache must be a 5D tensor");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      v_cache.dim() == 5, "v_cache must be a 5D tensor");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      layer_id < k_cache.size(0), "layer_id must be less than kcache dim 0");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      layer_id < v_cache.size(0), "layer_id must be less than vcache dim 0");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      start_pos < k_cache.size(2),
+      "start_pos must be less than key cache at dim 1");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      start_pos < v_cache.size(2),
+      "start_pos must be less than value cache at dim 1");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (start_pos + seq_length) < k_cache.size(2),
+      "start_post + seq_length must be less than max seq length supported by key cache."
+      "start pos: %" PRId64 ", seq_length: %" PRId64
+      "."
+      "key cache size: %ld",
+      start_pos,
+      seq_length,
+      k_cache.size(2));
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      (start_pos + seq_length) < v_cache.size(2),
+      "start_post + seq_length must be less than max seq length supported by key cache."
+      "start pos: %" PRId64 ", seq_length: %" PRId64
+      "."
+      "value cache size: %ld",
+      start_pos,
+      seq_length,
+      v_cache.size(2));
+
+  // Make sure they are in default dim order
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      is_default_dim_order(k_cache.dim_order().data(), k_cache.dim()),
+      "key cache must be in default dim order");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      is_default_dim_order(v_cache.dim_order().data(), v_cache.dim()),
+      "value cache must be in default dim order");
+
+  return true;
+}
+
+// TODO: seq_length is not yet used for copy
+void update_cache(
+    const Tensor& projected_value,
+    const Tensor& cache,
+    int64_t layer_id,
+    int64_t start_pos,
+    int64_t seq_length) {
+  ET_CHECK_MSG(seq_length == 1, "seq_length must be 1");
+  ET_CHECK_MSG(
+      projected_value.size(0) == 1,
+      "projected_value must have batch size of 1");
+  ET_CHECK_MSG(cache.size(1) == 1, "cache must have batch size of 1");
+  ET_CHECK_MSG(
+      is_default_dim_order(
+          projected_value.dim_order().data(), projected_value.dim()),
+      "projected value must be in default dim order");
+  const void* projected_value_data = projected_value.const_data_ptr();
+  void* cache_data = cache.mutable_data_ptr();
+
+  ET_CHECK_MSG(projected_value_data != nullptr, "projected_value data is null");
+  ET_CHECK_MSG(cache_data, "cache data is null");
+
+  auto strides = cache.strides();
+  exec_aten::StridesType layer_stride = strides[0];
+  exec_aten::StridesType seq_dim_stride = strides[2];
+  exec_aten::SizesType pos_offset =
+      layer_id * layer_stride + start_pos * seq_dim_stride;
+  exec_aten::SizesType pos_offset_bytes =
+      pos_offset * projected_value.element_size();
+  exec_aten::SizesType num_bytes =
+      projected_value.numel() * projected_value.element_size();
+  // NOLINTNEXTLINE
+  std::memcpy(
+      (uint8_t*)cache_data + pos_offset_bytes, projected_value_data, num_bytes);
 }
 
 } // anonymous namespace
@@ -533,6 +671,9 @@ Tensor& flash_attention_kernel_out(
 
   ET_SWITCH_FLOAT_TYPES(
       query.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
+        // TODO we need to re-evaluate this for ARM CPUs
+        // And there can be many so instead of templatizing
+        // we might consider another appraoch
         if (q_seq_len >= 768) {
           cpu_flash_attention<CTYPE, 256, 512>(
               output,
@@ -568,6 +709,163 @@ Tensor& flash_attention_kernel_out(
   return output;
 }
 
+/*
+  Input params
+  @params[in]: q_projected: Projected query with query weights.
+  Format [n_layers, batch size, seq_len, num heads, head dim]
+  @params[in]: k_projected: Projected query with key weights.
+  Format [n_layers, batch size, seq_len, num heads, head dim]
+  @params[in]: v_projected: Projected query with value weights.
+  Format [n_layers, batch size, seq_len, num heads, head dim]
+  @params[in]: key_cache: Cache of previous k_projected.
+  Format [n_layers, batch size, max_seq_len, num heads, head dim]
+  @params[in]: key_cache: Cache of previous v_projected.
+  Format [n_layers, batch size, max_seq_len, num heads, head dim]
+  ....
+  @params[in] layer_id: which layer this call belongs to.
+  Used to updated appropriate entry of kv cache
+  @params[in]: start_pos: sequence position
+  @params[in]: seq_len: Seq length. e.g. seq_len dim of q_projected.
+*/
+Tensor& sdpa_with_kv_cache_out(
+    RuntimeContext& ctx,
+    const Tensor& q_projected,
+    const Tensor& k_projected,
+    const Tensor& v_projected,
+    const Tensor& key_cache,
+    const Tensor& value_cache,
+    const int64_t layer_id, // THis should be gone with buffer based impl
+    const int64_t start_pos,
+    const int64_t seq_len,
+    const optional<Tensor>& attn_mask,
+    const double dropout_p,
+    const bool is_causal,
+    // @lint-ignore CLANGTIDY facebook-hte-ParameterMightThrowOnCopy
+    const optional<double> scale,
+    Tensor& output) {
+  (void)ctx;
+  ET_KERNEL_CHECK(
+      ctx,
+      validate_cache_params(
+          key_cache, value_cache, layer_id, start_pos, seq_len),
+      InvalidArgument,
+      false);
+
+  ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
+
+  update_cache(k_projected, key_cache, layer_id, start_pos, seq_len);
+  update_cache(v_projected, value_cache, layer_id, start_pos, seq_len);
+
+  auto q_seq_len = q_projected.size(1);
+
+  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_key_dim_order{
+      0, 1, 2, 3};
+  std::array<exec_aten::SizesType, util::kKVDim> sliced_key_sizes;
+  sliced_key_sizes[0] = key_cache.size(1);
+  sliced_key_sizes[1] = start_pos + seq_len; // key_cache.size(2);
+  sliced_key_sizes[2] = key_cache.size(3);
+  sliced_key_sizes[3] = key_cache.size(4);
+  std::array<exec_aten::StridesType, util::kKVDim> sliced_key_strides;
+  dim_order_to_stride_nocheck(
+      sliced_key_sizes.data(),
+      sliced_key_dim_order.data(),
+      util::kKVDim,
+      sliced_key_strides.data());
+  void* key_cache_data = reinterpret_cast<void*>(
+      reinterpret_cast<ptrdiff_t>(key_cache.mutable_data_ptr()) +
+      layer_id * key_cache.strides()[0] * key_cache.element_size());
+  TensorImpl k_impl = TensorImpl(
+      key_cache.scalar_type(),
+      util::kKVDim,
+      sliced_key_sizes.data(),
+      key_cache_data,
+      sliced_key_dim_order.data(),
+      sliced_key_strides.data(),
+      TensorShapeDynamism::STATIC);
+  Tensor sliced_key_cache(&k_impl);
+
+  std::array<exec_aten::DimOrderType, util::kKVDim> sliced_value_dim_order{
+      0, 1, 2, 3};
+  std::array<exec_aten::SizesType, util::kKVDim> sliced_value_sizes;
+  sliced_value_sizes[0] = value_cache.size(1);
+  sliced_value_sizes[1] = start_pos + seq_len; // value_cache.size(2);
+  sliced_value_sizes[2] = value_cache.size(3);
+  sliced_value_sizes[3] = value_cache.size(4);
+  std::array<exec_aten::StridesType, util::kKVDim> sliced_value_strides;
+  dim_order_to_stride_nocheck(
+      sliced_value_sizes.data(),
+      sliced_value_dim_order.data(),
+      util::kKVDim,
+      sliced_value_strides.data());
+  void* value_cache_data = reinterpret_cast<void*>(
+      reinterpret_cast<ptrdiff_t>(value_cache.mutable_data_ptr()) +
+      layer_id * value_cache.strides()[0] * value_cache.element_size());
+  TensorImpl value_impl = TensorImpl(
+      value_cache.scalar_type(),
+      util::kKVDim,
+      sliced_value_sizes.data(),
+      value_cache_data,
+      sliced_value_dim_order.data(),
+      sliced_value_strides.data(),
+      TensorShapeDynamism::STATIC);
+  Tensor sliced_value_cache(&value_impl);
+
+  // Is this true?
+  // Cant do this as is because the expectation of this kernel is
+  // that q, k, v are [B, num heads, seq length, head dim]
+  // and the cache is [B, max seq len, num heads, head dim]
+  // and q, k, v are all [B, seq length, num heads, head dim]
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(output, q_projected.sizes()) == Error::Ok,
+      InvalidArgument,
+      false);
+
+  // TODO(task): replace the template param selection logic
+  // with whatever apprpriately makes more sense for
+  ET_SWITCH_FLOAT_TYPES(
+      q_projected.scalar_type(), ctx, "flash_attention", CTYPE, [&] {
+        // TODO we need to re-evaluate this for ARM CPUs
+        // And there can be many so instead of templatizing
+        // we might consider another appraoch
+        if (q_seq_len >= 768) {
+          cpu_flash_attention<CTYPE, 256, 512>(
+              output,
+              q_projected,
+              sliced_key_cache,
+              sliced_value_cache,
+              dropout_p,
+              is_causal,
+              attn_mask,
+              scale,
+              true);
+        } else if (q_seq_len >= 192) {
+          cpu_flash_attention<CTYPE, 64, 512>(
+              output,
+              q_projected,
+              sliced_key_cache,
+              sliced_value_cache,
+              dropout_p,
+              is_causal,
+              attn_mask,
+              scale,
+              true);
+        } else {
+          cpu_flash_attention<CTYPE, 32, 512>(
+              output,
+              q_projected,
+              sliced_key_cache,
+              sliced_value_cache,
+              dropout_p,
+              is_causal,
+              attn_mask,
+              scale,
+              true);
+        }
+      });
+  return output;
+}
 } // namespace native
 } // namespace executor
 } // namespace torch
