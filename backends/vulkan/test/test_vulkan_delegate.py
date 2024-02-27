@@ -241,12 +241,8 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(10, 10)
-                self.offset_1 = self.weight = torch.rand(
-                    size=(2, 10), dtype=torch.float32
-                )
-                self.offset_2 = self.weight = torch.rand(
-                    size=(2, 10), dtype=torch.float32
-                )
+                self.offset_1 = torch.rand(size=(2, 10), dtype=torch.float32)
+                self.offset_2 = torch.rand(size=(2, 10), dtype=torch.float32)
 
             def forward(self, x):
                 return self.linear(x + self.offset_1) - self.offset_2
