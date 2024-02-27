@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Example script for exporting Llama2 to flatbuffer
+from memory_profiler import profile
 
 import argparse
 import logging
@@ -342,6 +343,7 @@ def export_llama(modelname, args) -> str:
         return _export_llama(modelname, args)
 
 
+@profile
 def _export_llama(modelname, args) -> str:  # noqa: C901
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint)

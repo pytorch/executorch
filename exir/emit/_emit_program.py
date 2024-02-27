@@ -5,6 +5,8 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+from memory_profiler import profile
+
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Union
 
@@ -122,6 +124,7 @@ class EmitterOutput:
     ]
 
 
+@profile
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,

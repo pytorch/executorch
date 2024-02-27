@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+from memory_profiler import profile
 
 import copy
 import json
@@ -416,7 +417,7 @@ def _extract_segments(
         )
     return program, segments
 
-
+@profile
 def _append_segments(
     program_data: bytes,
     segments: List[bytes],
@@ -500,6 +501,7 @@ def _append_segments(
     return b"".join(padded_segments)
 
 
+@profile
 def serialize_pte_binary(
     program: Program,
     *,
