@@ -66,10 +66,10 @@ def define_torch_vulkan_targets():
             "spv.h": ["spv.h"],
         },
         cmd = "$(exe :gen_aten_vulkan_spv_bin) " +
-            "--glsl-paths " + get_glsl_paths() + " " +
-            "--output-path $OUT --env FLOAT_IMAGE_FORMAT=" + get_glsl_image_format() + " " +
-            "--glslc-path=$(exe :glslc) " +
-            "--tmp-dir-path=$OUT ",
+              "--glsl-paths " + get_glsl_paths() + " " +
+              "--output-path $OUT --env FLOAT_IMAGE_FORMAT=" + get_glsl_image_format() + " " +
+              "--glslc-path=$(exe :glslc) " +
+              "--tmp-dir-path=$OUT ",
         default_outs = ["."],
         labels = ["uses_dotslash"],
     )

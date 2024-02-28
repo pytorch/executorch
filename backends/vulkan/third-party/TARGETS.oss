@@ -5,9 +5,9 @@ native.cxx_library(
     header_namespace = "",
     exported_headers = subdir_glob(
         [
-        ("Vulkan-Headers/include/vulkan", "*.h"),
+            ("Vulkan-Headers/include/vulkan", "*.h"),
         ],
-        prefix = "vulkan"
+        prefix = "vulkan",
     ),
 )
 
@@ -22,12 +22,12 @@ native.cxx_library(
         "-DVK_NO_PROTOTYPES",
     ],
     preprocessor_flags = [
-        "-DVOLK_DEFAULT_VISIBILITY"
+        "-DVOLK_DEFAULT_VISIBILITY",
     ],
+    visibility = ["//third-party/..."],
     exported_deps = [
         ":vulkan-headers",
     ],
-    visibility = ["//third-party/..."]
 )
 
 native.cxx_library(
