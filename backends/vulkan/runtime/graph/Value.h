@@ -182,6 +182,13 @@ struct Value final {
   }
 };
 
+using ValueRef = int32_t;
+
+struct IOValueRef {
+  ValueRef value;
+  ValueRef staging;
+};
+
 } // namespace vulkan
 } // namespace native
 } // namespace at
