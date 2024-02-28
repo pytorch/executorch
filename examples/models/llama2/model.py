@@ -525,12 +525,31 @@ class Llama2Model(EagerModelBase):
         device = "cpu"
         # flake8: noqa: TOR102
         checkpoint = torch.load(checkpoint_path, map_location=device)
-        if kwargs.get("fairseq2", False):
+        fairseq2_checkpoint = kwargs.get("fairseq2", False)
+        if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
         if "model" in checkpoint:
             # NB: some checkpoint contains a "model" field, which is the actual weights dict
             checkpoint = checkpoint["model"]
+
+        if (not fairseq2_checkpoint) and checkpoint.get(
+            "final_proj.weight", None
+        ) is not None:
+            print(
+                """
+
+************************************************************
+This looks like a Fairseq2 checkpoint (based on the presence
+of `final_proj.weight`.
+
+You can import Fairseq2 checkpoints using the --fairseq2
+option, but --fairseq2 was not specified.  Please verify
+the checkpoint format to avoid generating faulty models.
+************************************************************
+"""
+            )
+
         # get checkpoint dtype
         self.dtype = None
         if len(checkpoint) > 0:
