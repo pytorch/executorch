@@ -375,7 +375,10 @@ endif()
 # Build pybind
 option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
 if(EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+    # This has already been added if above flag is on
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
@@ -390,7 +393,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(PYBIND_LINK_XNNPACK)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
     set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
 

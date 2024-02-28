@@ -93,6 +93,7 @@ class CMakeBuild(build_ext):
         # Can be set with Conda-Build, for example.
         cmake_generator = os.environ.get("CMAKE_GENERATOR", "")
 
+
         # Set Python_EXECUTABLE instead if you use PYBIND11_FINDPYTHON
         # EXAMPLE_VERSION_INFO shows you how to pass a value into the C++ code
         # from Python.
@@ -107,6 +108,13 @@ class CMakeBuild(build_ext):
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             f"-DCMAKE_BUILD_TYPE={cfg}",  # not used on MSVC, but no harm
         ]
+        # Build with XNNPACK if EXECUTORCH_BUILD_XNNPACK is on
+        if os.environ.get("EXEUCTORCH_BUILD_XNNPACK", None):
+            cmake_args.extend([
+                "-DEXECUTORCH_BUILD_XNNPACK=ON",
+                "-DPYBIND_LINK_XNNPACK=ON",
+            ])
+
         build_args = []
         # Adding CMake arguments set as environment variable
         # (needed e.g. to build for ARM OSx on conda-forge)
