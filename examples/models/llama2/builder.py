@@ -21,6 +21,8 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
+
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from torch._export import capture_pre_autograd_graph
@@ -310,6 +312,9 @@ class LlamaEdgeManager:
                 passes=[
                     QuantFusionPass(),
                 ],
+                memory_planning_pass=MemoryPlanningPass(
+                    "greedy", alloc_graph_input=False
+                ),
                 sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
             )
         )
