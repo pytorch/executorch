@@ -22,6 +22,7 @@ from executorch.exir.schema import (
     Bool,
     Chain,
     ContainerMetadata,
+    DataSegment,
     Double,
     EValue,
     ExecutionPlan,
@@ -120,12 +121,14 @@ class EmitterOutput:
     method_to_delegate_debug_id_map: Dict[
         str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]
     ]
+    constant_segment: bytearray
 
 
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
     prim_getters: Optional[Dict[str, Any]] = None,
+    extract_constant_segment: bool = False,
 ) -> EmitterOutput:
     """
     Given a exported program, it returns the program in the format
@@ -179,6 +182,7 @@ def emit_program(
             operator_cache={},
             delegate_cache={},
             emit_stacktrace=emit_stacktrace,
+            extract_constant_segment=extract_constant_segment,
         )
 
         emitter = _TopLevelEmitter(name, exported_program, program_state, emitter_state)
@@ -195,6 +199,14 @@ def emit_program(
     if prim_getters is not None:
         plans.extend(_emit_prim_getters(prim_getters))
 
+    if extract_constant_segment:
+        # clear constant_buffer
+        program_state.constant_buffer = []
+        # remove the last constant segment offset
+        program_state.constant_segment_offsets.pop()
+    else:
+        program_state.constant_segment_offsets = []
+
     return EmitterOutput(
         debug_handle_map=debug_handle_map,
         method_to_delegate_debug_id_map=method_to_delegate_debug_id_map,
@@ -204,8 +216,13 @@ def emit_program(
             constant_buffer=program_state.constant_buffer,
             backend_delegate_data=program_state.backend_delegate_data,
             # Segments may be added at serialization time.
-            segments=[],
+            segments=[DataSegment(offset=0, size=len(program_state.constant_segment))]
+            if extract_constant_segment
+            else [],
             # Subsegment offsets may be added at serialization time.
-            constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
+            constant_segment=SubsegmentOffsets(
+                segment_index=0, offsets=program_state.constant_segment_offsets
+            ),
         ),
+        constant_segment=program_state.constant_segment,
     )

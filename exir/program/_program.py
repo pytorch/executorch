@@ -423,8 +423,8 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
+                constant_segment=self.constant_segment,
                 extract_delegate_segments=self._extract_delegate_segments,
-                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -432,10 +432,22 @@ class ExecutorchProgram:
         return self._buffer
 
     @property
+    def constant_segment(self) -> bytearray:
+        if self._emitter_output is None:
+            self._emitter_output = emit_program(
+                methods=self.exported_program,
+                emit_stacktrace=self._emit_stacktrace,
+                extract_constant_segment=self._extract_constant_segment,
+            )
+        return self._emitter_output.constant_segment
+
+    @property
     def program(self) -> Program:
         if self._emitter_output is None:
             self._emitter_output = emit_program(
-                self.exported_program, self._emit_stacktrace
+                methods=self.exported_program,
+                emit_stacktrace=self._emit_stacktrace,
+                extract_constant_segment=self._extract_constant_segment,
             )
         return self._emitter_output.program
 
@@ -725,13 +737,13 @@ class MultiMethodExecutorchProgram:
         for name, prog in executorch_dialect_program.methods().items():
             temp[name] = prog.exported_program
         self._emitter_output: EmitterOutput = emit_program(
-            temp,
-            emit_stacktrace,
-            executorch_dialect_program.prim_getters(),
+            methods=temp,
+            emit_stacktrace=emit_stacktrace,
+            prim_getters=executorch_dialect_program.prim_getters(),
+            extract_constant_segment=extract_constant_segment,
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
         self._extract_delegate_segments: bool = extract_delegate_segments
-        self._extract_constant_segment: bool = extract_constant_segment
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -742,8 +754,8 @@ class MultiMethodExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
+                constant_segment=self._emitter_output.constant_segment,
                 extract_delegate_segments=self._extract_delegate_segments,
-                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -753,6 +765,10 @@ class MultiMethodExecutorchProgram:
     @property
     def program(self) -> Program:
         return self._emitter_output.program
+
+    @property
+    def constant_segment(self) -> bytearray:
+        return self._emitter_output.constant_segment
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
@@ -1111,16 +1127,17 @@ class ExecutorchProgramManager:
 
         # Emit methods
         self._emitter_output: EmitterOutput = emit_program(
-            self._execution_programs,
-            backend_config.emit_stacktrace,
-            self._config_methods,
+            methods=self._execution_programs,
+            emit_stacktrace=backend_config.emit_stacktrace,
+            prim_getters=self._config_methods,
+            extract_constant_segment=backend_config.extract_constant_segment,
         )
 
         # Serialize emitter output to a buffer
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
+            constant_segment=self._emitter_output.constant_segment,
             extract_delegate_segments=backend_config.extract_delegate_segments,
-            extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,
