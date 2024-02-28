@@ -392,7 +392,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     set(PYBIND_LINK_MPS "mpsdelegate")
   endif()
 
-  if(PYBIND_LINK_XNNPACK)
+  if(EXECUTORCH_BUILD_XNNPACK)
+    # set PYBIND_LINK_XNNPACK variable to link with portable lib library
     set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
 
