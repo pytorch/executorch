@@ -14,7 +14,7 @@
 #include <ATen/native/vulkan/api/Tensor.h>
 #include <ATen/native/vulkan/api/Types.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
 namespace at {
 namespace native {
