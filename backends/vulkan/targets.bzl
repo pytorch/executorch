@@ -1,3 +1,4 @@
+load("@fbsource//xplat/executorch/backends/vulkan/third-party:third_party_libs.bzl", "third_party_dep")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def define_common_targets():
@@ -53,8 +54,8 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//caffe2:torch_vulkan_api",
-            "//caffe2:torch_vulkan_ops",
+            third_party_dep("torch_vulkan_api"),
+            third_party_dep("torch_vulkan_ops"),
         ],
         define_static_target = False,
     )

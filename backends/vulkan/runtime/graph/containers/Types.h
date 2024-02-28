@@ -10,6 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
+#include <cstdint>
 #include <ostream>
 
 namespace at {

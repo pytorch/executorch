@@ -4,11 +4,14 @@ load(":gflags.bzl", "define_gflags")
 load(":glob_defs.bzl", "subdir_glob")
 load(":gtest_defs.bzl", "define_gtest_targets")
 load(":prebuilt_python_defs.bzl", "add_prebuilt_python_library_targets")
+load(":torch_vulkan_defs.bzl", "define_torch_vulkan_targets")
 load("@prelude//rules.bzl", "prebuilt_cxx_library")
 
 define_gflags()
 
 define_gtest_targets()
+
+define_torch_vulkan_targets()
 
 prebuilt_python_library_defs = {
     "prettytable": {

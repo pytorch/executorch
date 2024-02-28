@@ -1,0 +1,40 @@
+load("//third-party:glob_defs.bzl", "subdir_glob")
+
+native.cxx_library(
+    name = "vulkan-headers",
+    header_namespace = "",
+    exported_headers = subdir_glob(
+        [
+        ("Vulkan-Headers/include/vulkan", "*.h"),
+        ],
+        prefix = "vulkan"
+    ),
+)
+
+native.cxx_library(
+    name = "volk",
+    srcs = ["volk/volk.c"],
+    header_namespace = "",
+    exported_headers = subdir_glob([
+        ("volk", "volk.h"),
+    ]),
+    exported_preprocessor_flags = [
+        "-DVK_NO_PROTOTYPES",
+    ],
+    preprocessor_flags = [
+        "-DVOLK_DEFAULT_VISIBILITY"
+    ],
+    exported_deps = [
+        ":vulkan-headers",
+    ],
+    visibility = ["//third-party/..."]
+)
+
+native.cxx_library(
+    name = "VulkanMemoryAllocator",
+    header_namespace = "",
+    exported_headers = subdir_glob([
+        ("VulkanMemoryAllocator", "include/vk_mem_alloc.h"),
+    ]),
+    visibility = ["//third-party/..."],
+)
