@@ -62,7 +62,7 @@ class RMSNorm(torch.nn.Module):
             torch.Tensor: The normalized tensor.
 
         """
-        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+        return x * torch.rsqrt((x * x).mean(-1, keepdim=True) + self.eps)
 
     def forward(self, x):
         """
@@ -86,6 +86,7 @@ class ModelArgs:
     n_heads: int = 32
     n_kv_heads: Optional[int] = None
     vocab_size: int = -1  # defined later by tokenizer
+    hidden_dim: Optional[int] = None
     multiple_of: int = 256  # make SwiGLU hidden layer size multiple of large power of 2
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
@@ -96,11 +97,14 @@ class ModelArgs:
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
     # Additional Model Metadata needed at runtime
-    vocab_size: int = 256206
     bos_idx: int = 1
     eos_idx: int = 3
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
+
+    def __post_init__(self):
+        if self.n_kv_heads is None:
+            self.n_kv_heads = self.n_heads
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -163,24 +167,36 @@ class Attention(nn.Module):
         self.n_local_kv_heads = self.n_kv_heads // model_parallel_size
         self.n_rep = self.n_local_heads // self.n_local_kv_heads
         self.head_dim = args.dim // args.n_heads
+        self.max_batch_size = args.max_batch_size
+        self.max_seq_len = args.max_seq_len
         # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
-        mask = torch.full((1, 1, args.max_seq_len, args.max_seq_len), float("-inf"))
+        mask = torch.full(
+            (1, 1, args.max_seq_len, args.max_seq_len),
+            float("-inf"),
+        )
+
         mask = torch.triu(mask, diagonal=1)
         self.register_buffer("mask", mask)
 
         # This is what we would use if ExecuTorch could support mutable buffers. We can't at this time, so instead
         # what is done is this module takes in the cache as io.
-        self.cache_k = torch.zeros(
-            (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        )
-        self.cache_v = torch.zeros(
-            (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        )
+        # self.cache_k = torch.zeros(
+        #     (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        # )
+        # self.cache_v = torch.zeros(
+        #     (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        # )
+        self.kv_cache_sizes = [
+            args.max_batch_size,
+            args.max_seq_len,
+            self.n_kv_heads,
+            self.head_dim,
+        ]
 
     def forward(
         self,
@@ -207,13 +223,23 @@ class Attention(nn.Module):
         xq, xk = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
+            assert start_pos is not None
             assert cache_k is not None and cache_v is not None
-            # Replace the entry in the cache for this token
-            cache_k[:bsz, start_pos : start_pos + seqlen] = xk  # pyre-ignore[58]
-            cache_v[:bsz, start_pos : start_pos + seqlen] = xv  # pyre-ignore[58]
 
-            keys = cache_k[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
-            values = cache_v[:bsz, 0 : start_pos + seqlen]  # pyre-ignore[58]
+            # Replace the entry in the cache for this token
+            # The following lines are equivalent to:
+            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+            # We use .narrow() here to make the compiler happy
+            narrowed_k = cache_k[:bsz].narrow(1, start_pos, seqlen)
+            narrowed_v = cache_v[:bsz].narrow(1, start_pos, seqlen)
+
+            narrowed_k.copy_(xk)
+            narrowed_v.copy_(xv)
+
+            keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
+            values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
+
         else:
             keys = xk
             values = xv
@@ -227,16 +253,19 @@ class Attention(nn.Module):
         keys = keys.transpose(1, 2)
         values = values.transpose(1, 2)
 
-        if self.use_kv_cache:
-            mask = None
-        else:
-            assert hasattr(self, "mask")
-            mask = self.mask[:, :, :seqlen, :seqlen]
+        assert hasattr(self, "mask")
+        mask = self.mask[:, :, :seqlen, :seqlen]
 
-            # This is needed to support XNNPACK which requires mask shape to be 2D.
-            # This is a temporary workaround. Once we update XNNPACK we should be able to handle this.
-            # Shape before: [1, 1, L, S], after: [L, S]
-            mask = torch.squeeze(self.mask[:, :, :seqlen, :seqlen])
+        # This is needed to support XNNPACK which requires mask shape to be 2D.
+        # This is a temporary workaround. Once we update XNNPACK we should be able to handle this.
+        # Shape before: [1, 1, L, S], after: [L, S]
+        # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
+        # tensor will be 2-dimensional, regarldess of the values of L & S
+        mask = torch.squeeze(mask, [0, 1])
+
+        # FIXME: This should be so automatically! MKG
+        keys = keys.to(dtype=xq.dtype)
+        values = values.to(dtype=xq.dtype)
 
         output = F.scaled_dot_product_attention(
             xq, keys, values, attn_mask=mask, dropout_p=0.0
@@ -253,10 +282,18 @@ class Attention(nn.Module):
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim: int, hidden_dim: int, multiple_of: int):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+        dim = args.dim
+        hidden_dim = args.hidden_dim
+        if hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = args.multiple_of
+            hidden_dim = 4 * dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
         self.w1 = nn.Linear(dim, hidden_dim, bias=False)
         self.w2 = nn.Linear(hidden_dim, dim, bias=False)
         self.w3 = nn.Linear(dim, hidden_dim, bias=False)
@@ -266,18 +303,22 @@ class FeedForward(nn.Module):
 
 
 class ConditionalFeedForward(nn.Module):
-    def __init__(self, config):
+    def __init__(self, args: ModelArgs):
         super().__init__()
-        hidden_dim = 4 * config.dim
-        hidden_dim = int(2 * hidden_dim / 3)
-        hidden_dim = config.multiple_of * (
-            (hidden_dim + config.multiple_of - 1) // config.multiple_of
-        )
-        self.w1 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
-        self.w2 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
-        self.w3 = nn.Parameter(torch.randn(config.num_experts, hidden_dim, config.dim))
-        self.num_experts = config.num_experts
-        self.dim = config.dim
+        self.dim = args.dim
+        hidden_dim = args.hidden_dim
+        if hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = args.multiple_of
+            hidden_dim = 4 * self.dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
+
+        self.w1 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w2 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w3 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.num_experts = args.num_experts
 
     def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
         w1_weights = self.w1[expert_indices].transpose(-1, -2)  # [T, A, D, D]
@@ -318,11 +359,7 @@ class TransformerBlock(nn.Module):
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
-            self.feed_forward = FeedForward(
-                dim=args.dim,
-                hidden_dim=4 * args.dim,
-                multiple_of=args.multiple_of,
-            )
+            self.feed_forward = FeedForward(args)
         self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
@@ -374,56 +411,61 @@ class Transformer(nn.Module):
         start_pos: Optional[
             torch.Tensor
         ] = None,  # Scalar tensor indicating size of window of the caches
-        cache_k_list: Optional[
-            List[torch.Tensor]
-        ] = None,  # n_layers long, Passed as a list because each Attention needs its own cache with a likely unique shape
-        cache_v_list: Optional[List[torch.Tensor]] = None,  # n_layers long
+        cache_k: Optional[
+            torch.Tensor
+        ] = None,  # n_layers long, it should be a list of tensors to accommodate the potential size difference among attention layers. The current implementation is overly simplified.
+        cache_v: Optional[torch.Tensor] = None,  # n_layers long
     ) -> Union[
         torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
     ]:
-
-        if self.use_kv_cache:
-            assert (
-                cache_k_list is not None
-                and cache_v_list is not None
-                and start_pos is not None
-            ), "Caches and start_pos must be provided when use_kv_cache is True"
-            assert (
-                len(cache_k_list) == self.n_layers
-            ), f"{len(cache_k_list)} != {self.n_layers}"
-            assert (
-                len(cache_v_list) == self.n_layers
-            ), f"{len(cache_v_list)} != {self.n_layers}"
-        else:
-            assert (
-                start_pos is None and cache_k_list is None and cache_v_list is None,
-                "Caches and start_pos are unused when use_kv_cache is False",
-            )
-
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
-        freqs_cos = self.freqs_cos[:seqlen]
-        freqs_sin = self.freqs_sin[:seqlen]
 
         if self.use_kv_cache:
-            sp = start_pos.item()  # pyre-ignore[16]
+            assert (
+                cache_k is not None and cache_v is not None and start_pos is not None
+            ), "Caches and start_pos must be provided when use_kv_cache is True"
+            assert (
+                cache_k.size(0) == self.n_layers
+            ), f"{cache_k.size(0)} != {self.n_layers}"
+            assert (
+                cache_v.size(0) == self.n_layers
+            ), f"{cache_v.size(0)} != {self.n_layers}"
+
+            sp = start_pos.item()
             # self.params.max_seq_len - 1 because of 0 based indexing, and - 1 again because our input seq len is 1 and its added to the cache before accessing the cache
             torch._constrain_as_size(sp, min=0, max=self.params.max_seq_len - 2)
+            torch._constrain_as_value(
+                cache_k.shape[0],
+                max=self.n_layers,
+                min=self.n_layers,
+            )
+            torch._constrain_as_value(
+                cache_v.shape[0], min=self.n_layers, max=self.n_layers
+            )
+            # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
+            freqs_cos = self.freqs_cos[sp : sp + seqlen]
+            freqs_sin = self.freqs_sin[sp : sp + seqlen]
+        else:
+            assert (
+                start_pos is None and cache_k is None and cache_v is None,
+            ), "Caches and start_pos are unused when use_kv_cache is False"
+            freqs_cos = self.freqs_cos[:seqlen]
+            freqs_sin = self.freqs_sin[:seqlen]
 
-        index = 0
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
             if self.use_kv_cache:
-                # Export doesnt allow mutations on inputs right now for some reason. Clone "fixes" this and then we can remove this clone in a later pass.
-                cache_k = cache_k_list[index].clone()  # pyre-ignore[16]
-                cache_v = cache_v_list[index].clone()
-
-                h, cache_k, cache_v = layer(
-                    h, freqs_cos, freqs_sin, sp, cache_k, cache_v  # pyre-ignore[61]
+                h, updated_cache_k, updated_cache_v = layer(
+                    h,
+                    freqs_cos,
+                    freqs_sin,
+                    sp,  # pyre-ignore[61]
+                    cache_k[index],  # pyre-ignore[16]
+                    cache_v[index],
                 )
-                cache_k_list[index] = cache_k  # pyre-ignore[16]
-                cache_v_list[index] = cache_v
+                cache_k[index] = updated_cache_k  # pyre-ignore[16]
+                cache_v[index] = updated_cache_v
 
-                index += 1
             else:
                 h, _, _ = layer(h, freqs_cos, freqs_sin)
 
@@ -431,7 +473,7 @@ class Transformer(nn.Module):
 
         logits = self.output(h)
         if self.use_kv_cache:
-            return (logits, cache_k_list, cache_v_list)  # pyre-ignore
+            return (logits, cache_k, cache_v)  # pyre-ignore
         else:
             # 'None' is not a valid return for export so have to split the return into if else
             return logits
@@ -439,7 +481,7 @@ class Transformer(nn.Module):
     # For each layer return the sizes of the needed caches
     def get_cache_sizes(self):
         # cache_k and cache_v have the same shape so could pick either here.
-        return [x.attention.cache_k.shape for x in self.layers]
+        return [self.n_layers, *self.layers[0].attention.kv_cache_sizes]
 
 
 class Llama2Model(EagerModelBase):
@@ -483,6 +525,26 @@ class Llama2Model(EagerModelBase):
         device = "cpu"
         # flake8: noqa: TOR102
         checkpoint = torch.load(checkpoint_path, map_location=device)
+        if kwargs.get("fairseq2", False):
+            print("Using fairseq2 checkpoint")
+            checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if "model" in checkpoint:
+            # NB: some checkpoint contains a "model" field, which is the actual weights dict
+            checkpoint = checkpoint["model"]
+        # get checkpoint dtype
+        self.dtype = None
+        if len(checkpoint) > 0:
+            first = checkpoint[next(iter(checkpoint))]
+            self.dtype = first.dtype
+            mismatched_dtypes = [
+                (key, value.dtype)
+                for key, value in checkpoint.items()
+                if value.dtype != self.dtype
+            ]
+            if len(mismatched_dtypes) > 0:
+                print(
+                    f"Mixed dtype model. Dtype of {first.key}: {first.dtype}. Mismatches in the checkpoint: {mismatched_dtypes}"
+                )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
         max_seq_len = 128
@@ -496,6 +558,12 @@ class Llama2Model(EagerModelBase):
         if kwargs.get("fairseq2", False):
             print("Using fairseq2 checkpoint")
             checkpoint = convert_to_llama_checkpoint(checkpoint=checkpoint)
+        if kwargs.get("verbose", False):
+            print("============= weights ================")
+            print("{key} : {weights.numel()} : {weights.size()}")
+            for key, weights in checkpoint.items():
+                print(f"{key} : {weights.numel()} : {weights.size()}")
+            print("============= /weights ================")
         self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):
@@ -504,13 +572,26 @@ class Llama2Model(EagerModelBase):
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
+        elif "int4" in str(checkpoint_path):
+            print("Using int4 weight-only quantization!")
+            from .quantize import Int8DynActInt4WeightQuantHandler
+
+            simple_quantizer = INt8dynactint4weightquanthandler(self.model_)
+            self.model_ = simple_quantizer.convert_for_runtime()
 
         self.model_.load_state_dict(
             checkpoint, strict=False
         )  # self.model_ = Transformer(gptconf)
 
     def get_eager_model(self):
-        return self.model_
+        if self.dtype:
+            # convert to the type of the provided checkpoint
+            # input and output are torch.long, so signature unchanged
+            return self.model_.to(self.dtype)
+        else:
+            # int8 quantization code has some bf16,
+            # switch all to FP32
+            return self.model_.to(torch.float32)
 
     def get_example_inputs(self):
         if self.use_kv_cache:
@@ -524,8 +605,8 @@ class Llama2Model(EagerModelBase):
 
     def get_example_inputs_kvcache(self):
         cache_sizes = self.model_.get_cache_sizes()
-        cache_k_list = [torch.zeros(x) for x in cache_sizes]
-        cache_v_list = [torch.zeros(x) for x in cache_sizes]
+        cache_k = torch.zeros(cache_sizes)
+        cache_v = torch.zeros(cache_sizes)
         return (
             torch.tensor(
                 [[1]], dtype=torch.long
@@ -533,6 +614,6 @@ class Llama2Model(EagerModelBase):
             torch.tensor(
                 0, dtype=torch.long
             ),  # start_pos, what token of output are we on.
-            cache_k_list,  # key caches
-            cache_v_list,  # value caches
+            cache_k,  # key caches
+            cache_v,  # value caches
         )

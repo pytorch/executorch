@@ -102,6 +102,9 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(
     bool copy_data = false);
 
 std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor);
+
+// Utility to get size in bytes of QNN data type
+std::uint32_t GetDataTypeSize(Qnn_DataType_t data_type);
 } // namespace qnn
 } // namespace executor
 } // namespace torch

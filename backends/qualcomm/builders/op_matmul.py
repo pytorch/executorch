@@ -25,23 +25,10 @@ class Matmul(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        output_tensor = self.get_tensor(node, node)
-        output_tensor_wrapper = self.define_tensor(
-            node,
-            output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers,
-        )
-        matmul_output_tensors = [output_tensor_wrapper]
-
         matmul_input_tensors = []
         for index in range(2):
             input_node = node.args[index]
             input_tensor = self.get_tensor(input_node, node)
-
-            # For constant input, the size of tensor is torch.Size([])
-            if len(input_tensor.shape) == 0:
-                input_tensor = input_tensor.expand(output_tensor.shape).contiguous()
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
@@ -50,6 +37,15 @@ class Matmul(NodeVisitor):
                 nodes_to_wrappers,
             )
             matmul_input_tensors.append(input_tensor_wrapper)
+
+        output_tensor = self.get_tensor(node, node)
+        output_tensor_wrapper = self.define_tensor(
+            node,
+            output_tensor,
+            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            nodes_to_wrappers,
+        )
+        matmul_output_tensors = [output_tensor_wrapper]
 
         matmul_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpMatMul.op_name

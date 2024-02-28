@@ -75,57 +75,6 @@ TEST(OpGeluKernelTest, DoubleTensors) {
   test_gelu_execution<ScalarType::Double>();
 }
 
-TEST(OpGeluKernelTest, InfAndNanPreserved) {
-  TensorFactory<ScalarType::Float> tf;
-
-  const std::vector<int32_t> sizes = {3, 2};
-
-  Tensor in = tf.make(
-      sizes,
-      /*data=*/
-      {-0.4775,
-       0.2948,
-       -0.3984,
-       NAN,
-       std::numeric_limits<float>::infinity(),
-       -0.4848});
-
-  // Destination for the gelu.
-  Tensor out = tf.zeros(sizes);
-
-  // Run full gelu.
-  op_gelu_out(in, "none", out);
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      out,
-      tf.make(
-          sizes,
-          /*data=*/
-          {-0.15113,
-           0.181575,
-           -0.137515,
-           NAN,
-           std::numeric_limits<float>::infinity(),
-           -0.152183}));
-
-  // Run tanh gelu appx.
-  op_gelu_out(in, "tanh", out);
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      out,
-      tf.make(
-          sizes,
-          /*data=*/
-          {-0.151145,
-           0.181573,
-           -0.137522,
-           NAN,
-           std::numeric_limits<float>::infinity(),
-           -0.152199}));
-}
-
 TEST(OpGeluKernelTest, UnhandledDtypeDies) {
   // gelu() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;

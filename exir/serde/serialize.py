@@ -18,8 +18,8 @@ import executorch.exir as exir
 import executorch.exir.memory as memory
 import executorch.exir.serde.export_serialize as export_serialize
 import torch
-import torch._export.exported_program as ep
 import torch._export.serde.schema as schema
+import torch.export.exported_program as ep
 from executorch.exir import delegate
 from executorch.exir.backend.compile_spec_schema import (
     CompileSpec as delegate_CompileSpec,
@@ -337,7 +337,7 @@ class ExportedProgramSerializer(export_serialize.ExportedProgramSerializer):
         constants = {}
         for n, c in gm_serializer.custom_objs.items():
             constants[n] = c
-        for n, t in exported_program.tensor_constants.items():
+        for n, t in exported_program.constants.items():
             assert n not in constants
             constants[n] = t
 
@@ -647,14 +647,12 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
         )
 
         # TODO: No need to do this once CustomClassHolders are lifted to the ExportedProgram
-        tensor_constants = {
-            k: v for k, v in constants.items() if isinstance(v, torch.Tensor)
-        }
+        constants = {k: v for k, v in constants.items() if isinstance(v, torch.Tensor)}
 
         res = GraphModuleDeserializer(state_dict).deserialize(
             serialized_artifact.exported_program.graph_module,  # pyre-ignore
             symbol_name_to_range,
-            tensor_constants,
+            constants,
         )
 
         graph_module = res.graph_module

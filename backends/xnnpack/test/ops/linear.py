@@ -6,6 +6,9 @@
 
 import unittest
 
+from itertools import product
+from typing import Optional
+
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
@@ -16,9 +19,21 @@ from executorch.backends.xnnpack.test.tester.tester import Partition
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
 )
+from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import QuantizationConfig
 
 
 class TestLinear(unittest.TestCase):
+    def test_fp16_linear(self):
+        for use_bias in (True, False):
+            self._test_linear(
+                lambda in_size, out_size: torch.nn.Linear(
+                    in_size, out_size, bias=use_bias  # noqa
+                ),
+                uses_bias=use_bias,
+                dtype=torch.float16,
+                atol=5e-2,
+            )
+
     def test_fp32_linear(self):
         for use_bias in (True, False):
             self._test_linear(
@@ -36,8 +51,8 @@ class TestLinear(unittest.TestCase):
         class AddMMModule(torch.nn.Module):
             def __init__(self, in_size, out_size):
                 super().__init__()
-                self.mat = torch.randn(out_size, in_size)
-                self.bias = torch.randn(1, out_size)
+                self.mat = torch.nn.Parameter(torch.randn(out_size, in_size))
+                self.bias = torch.nn.Parameter(torch.randn(1, out_size))
 
             def forward(self, x):
                 return torch.addmm(self.bias, x, torch.transpose(self.mat, 0, 1))
@@ -79,6 +94,43 @@ class TestLinear(unittest.TestCase):
                 inputs,
                 is_per_channel=True,
                 uses_bias=uses_bias,
+            )
+
+    @staticmethod
+    def _get_4b_dqconfig() -> QuantizationConfig:
+        """
+        Returns a QuantizationConfig for 4b dynamic quantization for XNNPACK.
+        """
+        qconfig: QuantizationConfig = get_symmetric_quantization_config(
+            is_per_channel=True,
+            is_dynamic=True,
+            weight_qmin=-8,
+            weight_qmax=7,
+        )
+        return qconfig
+
+    def test_qd8_per_channel_4w_linear(self):
+        qconfig = self._get_4b_dqconfig()
+        input_channels = [2, 63]
+        output_channels = [1, 8, 127]
+        batches = [1, 2]
+        use_bias = [False, True]
+
+        for bs, bias, ipc, opc in product(
+            batches,
+            use_bias,
+            input_channels,
+            output_channels,
+        ):
+            inputs = (torch.rand(bs, ipc),)
+            module = torch.nn.Linear(ipc, opc, bias=bias)
+
+            self._test_dqlinear(
+                module,
+                inputs,
+                is_per_channel=True,
+                uses_bias=bias,
+                qconfig=qconfig,
             )
 
     def test_qd8_per_channel_linear_parallel(self):
@@ -243,7 +295,14 @@ class TestLinear(unittest.TestCase):
                 quant=True,
             )
 
-    def _test_linear(self, make_module, uses_bias, quant=False):
+    def _test_linear(
+        self,
+        make_module,
+        uses_bias,
+        quant=False,
+        dtype: torch.dtype = torch.float,
+        atol=1e-03,
+    ):
         aten_op, edge_op = (
             (
                 "aten.addmm.default",
@@ -268,9 +327,10 @@ class TestLinear(unittest.TestCase):
             in_size = int(in_sizes[i])
             input_size = int(input_sizes[i])
             output_size = int(output_sizes[i])
+            print(f"Testing {in_size} {input_size} {output_size}")
 
-            module = make_module(input_size, output_size).eval()
-            inputs = (torch.randn(in_size, input_size),)
+            module = make_module(input_size, output_size).eval().to(dtype)
+            inputs = (torch.randn(in_size, input_size).to(dtype),)
 
             tester = Tester(module, inputs)
 
@@ -295,10 +355,17 @@ class TestLinear(unittest.TestCase):
             tester.to_executorch()
             tester.serialize()
             tester.run_method()
-            tester.compare_outputs(qtol=quant)
+            tester.compare_outputs(qtol=quant, atol=atol)
+            print("success")
 
     def _test_dqlinear(
-        self, module, inputs, linear_count=1, is_per_channel=False, uses_bias=False
+        self,
+        module,
+        inputs,
+        linear_count=1,
+        is_per_channel=False,
+        uses_bias=False,
+        qconfig: Optional[QuantizationConfig] = None,
     ):
         aten_op, edge_op = (
             (
@@ -312,7 +379,7 @@ class TestLinear(unittest.TestCase):
             )
         )
 
-        quant_config = get_symmetric_quantization_config(
+        quant_config = qconfig or get_symmetric_quantization_config(
             is_per_channel=is_per_channel,
             is_dynamic=True,
         )
@@ -323,7 +390,7 @@ class TestLinear(unittest.TestCase):
         tester.export()
         tester.check_count({aten_op: linear_count})
         tester.check(["torch.ops.quantized_decomposed"])
-
+        tester.dump_artifact()
         tester.to_edge()
         tester.check_count({edge_op: linear_count})
 

@@ -94,7 +94,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-# -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
+# -ffunction-sections -fdata-sections: breaks function and
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
@@ -102,6 +102,16 @@ set(CMAKE_CXX_FLAGS_RELEASE
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
+
+option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
+if(OPTIMIZE_SIZE)
+  # -Os: Optimize for size
+  set(CMAKE_CXX_FLAGS_RELEASE "-Os ${CMAKE_CXX_FLAGS_RELEASE}")
+else()
+  # -O2: Moderate opt.
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
+endif()
+
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 # Option to register quantized ops with quantized kernels. See
@@ -122,16 +132,18 @@ option(EXECUTORCH_BUILD_SDK
 option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
        OFF)
 
-# Build dataloader library
+# Build dataloader extension library
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
        "Build the extension/data_loader directory" OFF)
-if(NOT BUCK2)
-  set(BUCK2 buck2)
-endif()
 
-# Build dataloader library
+# Build module extension library
 option(EXECUTORCH_BUILD_EXTENSION_MODULE
        "Build the extension/module directory" OFF)
+
+# Build the runner_util extension library
+option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
+       "Build the extension/runner_util directory" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -303,9 +315,9 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-# Add Android demo app JNI subdirectory
-if(EXECUTORCH_BUILD_ANDROID_DEMO_APP_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/demo-apps/android/jni)
+# Add Android JNI subdirectory
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 if(EXECUTORCH_BUILD_SDK)
@@ -321,6 +333,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_MODULE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/module)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
@@ -359,9 +375,24 @@ endif()
 # Build pybind
 option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
 if(EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
+
+  if(PYBIND_LINK_COREML)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
+    set(PYBIND_LINK_COREML "coremldelegate")
+  endif()
+
+  if(PYBIND_LINK_MPS)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
+    set(PYBIND_LINK_MPS "mpsdelegate")
+  endif()
+
+  if(PYBIND_LINK_XNNPACK)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+    set(PYBIND_LINK_XNNPACK "xnnpack_backend")
+  endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
@@ -390,16 +421,21 @@ if(EXECUTORCH_BUILD_PYBIND)
                              PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
-  target_link_libraries(
-    portable_lib
-    PUBLIC ${TORCH_PYTHON_LIBRARY}
-           portable_ops_lib
-           executorch
-           extension_data_loader
-           bundled_program
-           etdump
-           flatcc
-           util)
+  target_link_libraries(portable_lib
+    PUBLIC
+      ${TORCH_PYTHON_LIBRARY}
+      bundled_program
+      etdump
+      executorch
+      extension_data_loader
+      flatcc
+      portable_ops_lib
+      util
+      torch
+      ${PYBIND_LINK_COREML}
+      ${PYBIND_LINK_MPS}
+      ${PYBIND_LINK_XNNPACK}
+  )
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)

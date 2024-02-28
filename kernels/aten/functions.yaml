@@ -41,6 +41,10 @@
 
 - op: any.all_out
 
+- op: any.dims_out
+
+- op: any.out
+
 - op: arange.out
 
 - op: arange.start_out
@@ -56,6 +60,8 @@
 - op: asinh.out
 
 - op: atan.out
+
+- op: atan2.out
 
 - op: atanh.out
 
@@ -110,6 +116,8 @@
 
 - op: div.out
 
+- op: div.Scalar_mode_out
+
 - op: div.Scalar_out
 
 - op: div.out_mode
@@ -127,6 +135,8 @@
 - op: exp.out
 
 - op: expand_copy.out
+
+- op: expm1.out
 
 - op: eye.out
 
@@ -186,6 +196,12 @@
 
 - op: log.out
 
+- op: log10.out
+
+- op: log1p.out
+
+- op: log2.out
+
 - op: logical_and.out
 
 - op: logical_not.out
@@ -207,6 +223,8 @@
 - op: max.dim_max
 
 - op: max.unary_out
+
+- op: maximum.out
 
 - op: mean.out
 
@@ -244,6 +262,10 @@
 
 - op: pow.Tensor_Scalar_out
 
+- op: prod.int_out
+
+- op: prod.out
+
 - op: reciprocal.out
 
 - op: relu.out
@@ -253,6 +275,18 @@
 - op: remainder.Scalar_out
 
 - op: repeat.out
+
+- op: reflection_pad1d.out
+
+- op: reflection_pad2d.out
+
+- op: reflection_pad3d.out
+
+- op: replication_pad1d.out
+
+- op: replication_pad2d.out
+
+- op: replication_pad3d.out
 
 - op: round.out
 
@@ -315,6 +349,8 @@
 - op: transpose_copy.int_out
 
 - op: tril.out
+
+- op: trunc.out
 
 - op: unbind_copy.int_out
 

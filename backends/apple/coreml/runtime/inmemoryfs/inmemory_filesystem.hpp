@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <memory>
 #include <stdio.h>
@@ -48,8 +49,8 @@ public:
         {}
     };
     
-    using MetadataReader = std::function<void(const InMemoryFileSystemMetadata&, std::ostream&)>;
-    using MetadataWriter = std::function<std::optional<InMemoryFileSystemMetadata>(std::istream&)>;
+    using MetadataWriter = std::function<void(const InMemoryFileSystemMetadata&, std::ostream&)>;
+    using MetadataReader = std::function<std::optional<InMemoryFileSystemMetadata>(std::istream&)>;
     
     /// A class representing an in-memory node. This could either be a file node or a directory node.
     class InMemoryNode {
@@ -262,7 +263,7 @@ public:
     /// @param ostream   The output stream.
     void serialize(const std::vector<std::string>& canonical_path,
                    size_t alignment,
-                   const MetadataReader& metadata_writer,
+                   const MetadataWriter& metadata_writer,
                    std::ostream& ostream) const noexcept;
     
     /// Computes the size of the buffer that would be needed to serialized the item at the specified path.
@@ -273,7 +274,7 @@ public:
     /// @retval The size of the buffer that will be needed to write the item at the specified path.
     size_t get_serialization_size(const std::vector<std::string>& canonical_path,
                                   size_t alignment,
-                                  const MetadataReader& metadata_writer) const noexcept;
+                                  const MetadataWriter& metadata_writer) const noexcept;
     
     /// Constructs an `InMemoryFileSystem` instance from the buffer contents.
     ///
@@ -281,7 +282,7 @@ public:
     /// @param metadata_reader The function to use when reading the filesystem metadata.
     /// @retval The constructed `InMemoryFileSystem` or `nullptr` if the deserialization failed.
     static std::unique_ptr<InMemoryFileSystem> make(const std::shared_ptr<MemoryBuffer>& buffer,
-                                                    const MetadataWriter& metadata_reader) noexcept;
+                                                    const MetadataReader& metadata_reader) noexcept;
     
 private:
     const std::unique_ptr<InMemoryNode> root_;

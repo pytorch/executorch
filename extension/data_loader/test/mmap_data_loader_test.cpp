@@ -153,6 +153,42 @@ void MmapDataLoaderTest::test_in_bounds_loads_succeed(
     EXPECT_EQ(fb->size(), size);
     EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
   }
+
+  //
+  // Unaligned offsets and sizes
+  //
+
+  // Load a single, partial page with an offset that is not a multiple of the
+  // page size.
+  {
+    const size_t offset = 128; // Small power of 2
+    EXPECT_LT(offset, page_size_);
+    const size_t size = page_size_ / 2;
+    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    ASSERT_EQ(fb.error(), Error::Ok);
+    EXPECT_EQ(fb->size(), size);
+    EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
+  }
+
+  // Load multiple pages from a non-page-aligned but power-of-two offset.
+  {
+    const size_t offset = page_size_ + 128; // Small power of 2
+    const size_t size = page_size_ * 3 + page_size_ / 2 + 1; // Odd size
+    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    ASSERT_EQ(fb.error(), Error::Ok);
+    EXPECT_EQ(fb->size(), size);
+    EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
+  }
+
+  // Load multiple pages from an offset that is not a power of 2.
+  {
+    const size_t offset = page_size_ * 2 + 3; // Not a power of 2
+    const size_t size = page_size_ * 3 + page_size_ / 2 + 1; // Odd size
+    Result<FreeableBuffer> fb = mdl->Load(offset, size);
+    ASSERT_EQ(fb.error(), Error::Ok);
+    EXPECT_EQ(fb->size(), size);
+    EXPECT_EQ(0, std::memcmp(fb->data(), &contents[offset], fb->size()));
+  }
 }
 
 TEST_F(MmapDataLoaderTest, InBoundsLoadsSucceedNoMlock) {
@@ -235,33 +271,6 @@ TEST_F(MmapDataLoaderTest, OutOfBoundsLoadFails) {
     ASSERT_EQ(offset % page_size_, 0);
 
     Result<FreeableBuffer> fb = mdl->Load(offset, /*size=*/0);
-    EXPECT_NE(fb.error(), Error::Ok);
-  }
-}
-
-TEST_F(MmapDataLoaderTest, UnalignedOffsetFails) {
-  // Create a multi-page file; contents don't matter.
-  const size_t contents_size = 8 * page_size_;
-  auto contents = std::make_unique<uint8_t[]>(contents_size);
-  memset(contents.get(), 0x55, contents_size);
-  TempFile tf(contents.get(), contents_size);
-
-  Result<MmapDataLoader> mdl = MmapDataLoader::from(tf.path().c_str());
-  ASSERT_EQ(mdl.error(), Error::Ok);
-
-  // Loading from an unaligned offset should fail, even if the offset is
-  // a power of 2 and size is a whole page.
-  {
-    Result<FreeableBuffer> fb =
-        mdl->Load(/*offset=*/page_size_ / 2, /*size=*/page_size_);
-    EXPECT_NE(fb.error(), Error::Ok);
-  }
-
-  // Loading from an unaligned offset should fail, even if the offset is
-  // a power of 2 and size ends at the next page.
-  {
-    Result<FreeableBuffer> fb =
-        mdl->Load(/*offset=*/page_size_ / 2, /*size=*/page_size_ / 2);
     EXPECT_NE(fb.error(), Error::Ok);
   }
 }

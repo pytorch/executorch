@@ -27,8 +27,7 @@ class TestSub(unittest.TestCase):
             z = x - x
             return z
 
-    def test_fp32_sub(self):
-        inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
+    def _test_sub(self, inputs):
         (
             Tester(self.Sub(), inputs)
             .export()
@@ -43,6 +42,17 @@ class TestSub(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_sub(self):
+        inputs = (
+            torch.randn((1, 3)).to(torch.float16),
+            torch.randn((4, 3)).to(torch.float16),
+        )
+        self._test_sub(inputs)
+
+    def test_fp32_sub(self):
+        inputs = (torch.randn((1, 3)), torch.randn((4, 3)))
+        self._test_sub(inputs)
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
     def test_qs8_sub(self):

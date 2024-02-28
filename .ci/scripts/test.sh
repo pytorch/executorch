@@ -43,13 +43,7 @@ build_cmake_executor_runner() {
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
 }
 
-test_model() {
-  if [[ "${MODEL_NAME}" == "llama2" ]]; then
-    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama
-  fi
-  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
-  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
-
+run_portable_executor_runner() {
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
@@ -62,6 +56,20 @@ test_model() {
     echo "Invalid build tool ${BUILD_TOOL}. Only buck2 and cmake are supported atm"
     exit 1
   fi
+}
+
+test_model() {
+  if [[ "${MODEL_NAME}" == "llama2" ]]; then
+    # Install requirements for export_llama
+    bash examples/models/llama2/install_requirements.sh
+    # Test export_llama script: python3 -m examples.models.llama2.export_llama
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_rand_params.pth -p examples/models/llama2/params/demo_config.json
+    run_portable_executor_runner
+    rm "./${MODEL_NAME}.pte"
+  fi
+  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
+  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
+  run_portable_executor_runner
 }
 
 build_cmake_xnn_executor_runner() {

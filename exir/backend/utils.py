@@ -25,7 +25,8 @@ T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.def
 log: logging.Logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=128)
+# NB: Set this to None to handle validation from MobileBert
+@lru_cache(maxsize=None)
 def is_same_node(
     node_left: Iterable[torch.fx.Node],
     node_right: Iterable[torch.fx.Node],
@@ -206,6 +207,57 @@ def get_delegates(graph: torch.fx.Graph) -> List[torch.fx.Node]:
         for node in graph.nodes
         if node.op == "get_attr" and node.name.startswith("lowered_module_")
     ]
+
+
+def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
+    """
+    Print the graph of including lowered_module (both backend id and original graph) together with the graph module. Example output:
+    graph():
+        %arg0_1 : [num_users=2] = placeholder[target=arg0_1]
+        %arg1_1 : [num_users=2] = placeholder[target=arg1_1]
+        %arg2_1 : [num_users=2] = placeholder[target=arg2_1]
+        %lowered_module_0 : [num_users=1] = get_attr[target=lowered_module_0]
+            backend_id: BackendWithCompilerDemo
+            lowered graph():       %arg0_1 : [num_users=1] = placeholder[target=arg0_1]
+            %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+            %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
+            %aten_mm_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%arg0_1, %arg1_1), kwargs = {})
+            %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default, %arg2_1), kwargs = {})
+            return [aten_add_tensor]
+        %executorch_call_delegate : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, %arg0_1, %arg1_1, %arg2_1), kwargs = {})
+        %getitem : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate, 0), kwargs = {})
+        %aten_sub_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.sub.Tensor](args = (%getitem, %arg0_1), kwargs = {})
+        %lowered_module_1 : [num_users=1] = get_attr[target=lowered_module_1]
+            backend_id: BackendWithCompilerDemo
+            lowered graph():       %aten_sub_tensor : [num_users=1] = placeholder[target=aten_sub_tensor]
+            %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+            %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
+            %aten_mm_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%aten_sub_tensor, %arg1_1), kwargs = {})
+            %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default_1, %arg2_1), kwargs = {})
+            return [aten_add_tensor_1]
+        %executorch_call_delegate_1 : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_1, %aten_sub_tensor, %arg1_1, %arg2_1), kwargs = {})
+        %getitem_1 : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate_1, 0), kwargs = {})
+        return [getitem_1]
+    """
+    lowered_module_dict = {
+        node.name: getattr(graph_module, node.name)
+        for node in graph_module.graph.nodes
+        if node.op == "get_attr" and node.name.startswith("lowered_module_")
+    }
+    indent = "  "
+    graph_format_str = "graph():\n"
+    for node in graph_module.graph.nodes:
+        graph_format_str += f"{indent}{node.format_node()}\n"
+        if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+            lowered_module = lowered_module_dict[node.name]
+            graph_format_str += f"{indent * 2}backend_id: {lowered_module.backend_id}\n"
+            graph_format_str += f"{indent * 2}lowered graph(): "
+            for node_in_lowered_module in lowered_module.original_module.graph.nodes:
+                graph_format_str += (
+                    f"{indent * 3}{node_in_lowered_module.format_node()}\n"
+                )
+    print(graph_format_str)
+    return graph_format_str
 
 
 # TODO - style: use templated types

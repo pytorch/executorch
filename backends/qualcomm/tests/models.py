@@ -111,7 +111,45 @@ class Clamp(torch.nn.Module):
         return torch.clamp(x, max=0)
 
 
-class ConvSequential(torch.nn.Module):
+class Conv1DSequential(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.first = torch.nn.Conv1d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3),
+            padding=1,
+            bias=True,
+        )
+
+        self.second = torch.nn.Conv1d(
+            in_channels=3,
+            out_channels=2,
+            kernel_size=(3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.second(self.first(x))
+
+
+# small models
+class Conv1dReluLogSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv1d(
+            in_channels=2, out_channels=2, kernel_size=1, stride=1, padding=1
+        )
+        self.logsoftmax = torch.nn.LogSoftmax(dim=1)
+
+    def forward(self, x):
+        x = torch.nn.functional.relu(self.conv(x))
+        x = self.logsoftmax(x)
+        return x
+
+
+class Conv2DSequential(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.first = torch.nn.Conv2d(
@@ -131,6 +169,80 @@ class ConvSequential(torch.nn.Module):
 
     def forward(self, x):
         return self.second(self.first(x))
+
+
+class Conv2dAvgPool2d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            3, 16, 7, bias=True, stride=2, padding=3, dilation=1
+        )
+        self.pool = torch.nn.AvgPool2d(3, stride=2, padding=1)
+
+    def forward(self, x):
+        return self.pool(self.conv(x))
+
+
+class Conv2dBnHardtanhMean(torch.nn.Module):
+    def __init__(self):
+        super(Conv2dBnHardtanhMean, self).__init__()
+        groups = 1
+        stride = [2, 2]
+        padding = [1, 1]
+        dilation = [1, 1]
+        in_channels = 1
+        out_channels = 1
+
+        self.conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=(3, 3),
+            stride=stride,
+            padding=padding,
+            groups=groups,
+            dilation=dilation,
+            bias=True,
+        )
+        self.conv.weight = torch.nn.Parameter(torch.randn(self.conv.weight.size()))
+        self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
+        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
+        self.eval()
+
+    def forward(self, x):
+        x1 = self.conv(x)
+        x2 = self.native_batchnorm(x1)
+        x3 = self.hardtanh(x2)
+        x4 = torch.mean(x3, (1), keepdim=True)
+        return x4
+
+
+class Conv2dCat(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = torch.nn.Conv2d(3, 3, 3)
+        self.conv2 = torch.nn.Conv2d(3, 3, 3)
+
+    def forward(self, x, y):
+        x = self.conv1(x)
+        y = self.conv2(y)
+        z = torch.cat([x, y], dim=1)
+        return z
+
+
+class Conv2dMaxPool2d(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=2,
+            out_channels=2,
+            kernel_size=(1, 1),
+            padding=1,
+            bias=True,
+        )
+        self.pool = torch.nn.MaxPool2d(1, 1)
+
+    def forward(self, x):
+        return self.pool(self.conv(x))
 
 
 class Div(torch.nn.Module):
@@ -174,6 +286,15 @@ class ExpandCopy(torch.nn.Module):
         return x.expand(3, 4)
 
 
+class Gelu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.gelu = torch.nn.GELU()
+
+    def forward(self, x):
+        return self.gelu(x)
+
+
 class HardSigmoid(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -201,6 +322,16 @@ class HardTanh(torch.nn.Module):
         return self.hardtanh(x)
 
 
+class LayerNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer_norm = torch.nn.LayerNorm([768], eps=1e-6)
+        self.linear = torch.nn.Linear(768, 196)
+
+    def forward(self, x):
+        return self.linear(self.layer_norm(x))
+
+
 class Linear(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -208,6 +339,14 @@ class Linear(torch.nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class LogSoftmax(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.nn.functional.log_softmax(x, dim=-1)
 
 
 class MaxPool2d(torch.nn.Module):
@@ -265,6 +404,28 @@ class MulConstantLong(torch.nn.Module):
         return 10 * x
 
 
+class MulScalar(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self._scalar = 3.14
+
+    def forward(self, x):
+        out1 = torch.ops.aten.mul.Scalar(x, self._scalar)
+        return out1
+
+
+class MultiheadAttention(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.multi_head_attention = torch.nn.MultiheadAttention(
+            96, 12, dropout=0.0, batch_first=True
+        )
+
+    def forward(self, x):
+        attn_output, _ = self.multi_head_attention(x, x, x, need_weights=False)
+        return attn_output
+
+
 class Pad(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -284,6 +445,14 @@ class PixelShuffle(torch.nn.Module):
         return self.pixel_shuffle(x)
 
 
+class PowTensorScalar(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.pow(x, 2)
+
+
 class Relu(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -301,6 +470,59 @@ class Reshape(torch.nn.Module):
         return x.reshape(1, 12)
 
 
+class ResidualBlockModule(torch.nn.Module):
+    def __init__(self):
+        super(ResidualBlockModule, self).__init__()
+        groups = 1
+        stride = [1, 1]
+        padding = [1, 1]
+        dilation = [1, 1]
+        in_channels = 32
+        out_channels = 32
+
+        self.conv = torch.nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=(3, 3),
+            stride=stride,
+            padding=padding,
+            groups=groups,
+            dilation=dilation,
+            bias=True,
+        )
+        self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
+        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6.0)
+        self.eval()
+
+    def forward(self, x):
+        x1 = self.conv(x)
+        x2 = self.native_batchnorm(x1)
+        x3 = self.conv(x2)
+        x4 = self.native_batchnorm(x3)
+        x5 = self.hardtanh(x4)
+        x6 = torch.add(x5, x2)
+        return x6
+
+
+class Rsqrt(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.rsqrt(x)
+
+
+class ScaledDotProductAttention(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, query_layer, key_layer, value_layer, attn_mask):
+        attn_output = torch.nn.functional.scaled_dot_product_attention(
+            query_layer, key_layer, value_layer, attn_mask
+        )
+        return attn_output
+
+
 class SelectCopy(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -314,6 +536,52 @@ class SelectCopy(torch.nn.Module):
 
     def forward(self, x):
         return self.conv(x)[0, 1, 1:2]
+
+
+class Sigmoid(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sigmoid(x)
+
+
+class SimpleModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        kernel_sz = 32
+        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
+        self.conv3 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
+        self.conv4 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
+        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
+        self.relu = torch.nn.ReLU()
+        self.batch_norm = torch.nn.BatchNorm2d(kernel_sz)
+        self.add = torch.add
+        self.mean = torch.mean
+        self.reshape = torch.reshape
+        self.linear = torch.nn.Linear(4, 10)
+        self.permute = torch.permute
+        self.eval()
+
+    def forward(self, x, y):
+        x1 = self.conv1(x)
+        x2 = self.batch_norm(x1)
+        x3 = self.relu(x2)
+        x4 = self.conv2(x3)
+        x5 = self.relu(x4)
+        y1 = self.conv3(y)
+        y2 = self.batch_norm(y1)
+        y3 = self.relu(y2)
+        y4 = self.conv4(y3)
+        y5 = self.relu(y4)
+        z = self.add(x5, y5)
+        z1 = self.permute(z, (0, 3, 2, 1))
+        z2 = torch.mean(z1, [1, 2], True)
+        z3 = self.reshape(z2, (8, -1))
+        z4 = self.linear(z3)
+        z5 = self.hardtanh(z4)
+        return z5
 
 
 class SliceCopy(torch.nn.Module):
@@ -348,6 +616,22 @@ class SqrtConstant(torch.nn.Module):
 
     def forward(self, x):
         return x / torch.sqrt(torch.tensor([64]))
+
+
+class Squeeze(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.squeeze()
+
+
+class Stack(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, y):
+        return torch.stack((x, y))
 
 
 class StaticResizeBilinear2DSizeModule(torch.nn.Module):
@@ -396,6 +680,14 @@ class Tanh(torch.nn.Module):
         return torch.tanh(x)
 
 
+class Unbind(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.unbind(x)
+
+
 class Unsqueeze(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -413,153 +705,6 @@ class View(torch.nn.Module):
     def forward(self, x, y):
         new_shape = x.size()[:-1] + (self.first_size, self.second_size)
         return x.view(new_shape)
-
-
-# small models
-class Conv2dBnHardtanhMean(torch.nn.Module):
-    def __init__(self):
-        super(Conv2dBnHardtanhMean, self).__init__()
-        groups = 1
-        stride = [2, 2]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 1
-        out_channels = 1
-
-        self.conv = torch.nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=(3, 3),
-            stride=stride,
-            padding=padding,
-            groups=groups,
-            dilation=dilation,
-            bias=True,
-        )
-        self.conv.weight = torch.nn.Parameter(torch.randn(self.conv.weight.size()))
-        self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
-        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
-        self.eval()
-
-    def forward(self, x):
-        x1 = self.conv(x)
-        x2 = self.native_batchnorm(x1)
-        x3 = self.hardtanh(x2)
-        x4 = torch.mean(x3, (1), keepdim=True)
-        return x4
-
-
-class Conv2dAvgPool2d(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            3, 16, 7, bias=True, stride=2, padding=3, dilation=1
-        )
-        self.pool = torch.nn.AvgPool2d(3, stride=2, padding=1)
-
-    def forward(self, x):
-        return self.pool(self.conv(x))
-
-
-class Conv2dMaxPool2d(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = torch.nn.Conv2d(
-            in_channels=2,
-            out_channels=2,
-            kernel_size=(1, 1),
-            padding=1,
-            bias=True,
-        )
-        self.pool = torch.nn.MaxPool2d(1, 1)
-
-    def forward(self, x):
-        return self.pool(self.conv(x))
-
-
-class Conv2dCat(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = torch.nn.Conv2d(3, 3, 3)
-        self.conv2 = torch.nn.Conv2d(3, 3, 3)
-
-    def forward(self, x, y):
-        x = self.conv1(x)
-        y = self.conv2(y)
-        z = torch.cat([x, y], dim=1)
-        return z
-
-
-class ResidualBlockModule(torch.nn.Module):
-    def __init__(self):
-        super(ResidualBlockModule, self).__init__()
-        groups = 1
-        stride = [1, 1]
-        padding = [1, 1]
-        dilation = [1, 1]
-        in_channels = 32
-        out_channels = 32
-
-        self.conv = torch.nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=(3, 3),
-            stride=stride,
-            padding=padding,
-            groups=groups,
-            dilation=dilation,
-            bias=True,
-        )
-        self.native_batchnorm = torch.nn.BatchNorm2d(out_channels)
-        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6.0)
-        self.eval()
-
-    def forward(self, x):
-        x1 = self.conv(x)
-        x2 = self.native_batchnorm(x1)
-        x3 = self.conv(x2)
-        x4 = self.native_batchnorm(x3)
-        x5 = self.hardtanh(x4)
-        x6 = torch.add(x5, x2)
-        return x6
-
-
-class SimpleModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        kernel_sz = 32
-        self.conv1 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
-        self.conv2 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=True)
-        self.conv3 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
-        self.conv4 = torch.nn.Conv2d(kernel_sz, kernel_sz, 3, padding=1, bias=False)
-        self.hardtanh = torch.nn.Hardtanh(min_val=0, max_val=6)
-        self.relu = torch.nn.ReLU()
-        self.batch_norm = torch.nn.BatchNorm2d(kernel_sz)
-        self.add = torch.add
-        self.mean = torch.mean
-        self.reshape = torch.reshape
-        self.linear = torch.nn.Linear(4, 10)
-        self.permute = torch.permute
-        self.eval()
-
-    def forward(self, x, y):
-        x1 = self.conv1(x)
-        x2 = self.batch_norm(x1)
-        x3 = self.relu(x2)
-        x4 = self.conv2(x3)
-        x5 = self.relu(x4)
-        y1 = self.conv3(y)
-        y2 = self.batch_norm(y1)
-        y3 = self.relu(y2)
-        y4 = self.conv4(y3)
-        y5 = self.relu(y4)
-        z = self.add(x5, y5)
-        z1 = self.permute(z, (0, 3, 2, 1))
-        z2 = torch.mean(z1, [1, 2], True)
-        z3 = self.reshape(z2, (8, -1))
-        z4 = self.linear(z3)
-        z5 = self.hardtanh(z4)
-        return z5
 
 
 class ViewPermuteMatMul(torch.nn.Module):

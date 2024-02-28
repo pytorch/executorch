@@ -1,17 +1,23 @@
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 import operator
 import os
-from typing import final
+from typing import final, List
 
 import torch
 from executorch.backends.arm.arm_backend import ArmBackend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
     PartitionResult,
 )
 from executorch.exir.dialects._ops import ops as exir_ops
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
 
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -47,10 +53,8 @@ class TOSASupportedOperators(OperatorSupportBase):
 
 @final
 class ArmPartitioner(Partitioner):
-    compile_spec = []
-
-    def __init__(self) -> None:
-        self.delegation_spec = DelegationSpec(ArmBackend.__name__, self.compile_spec)
+    def __init__(self, compile_spec: List[CompileSpec]) -> None:
+        self.delegation_spec = DelegationSpec(ArmBackend.__name__, compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible

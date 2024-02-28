@@ -8,6 +8,9 @@
 
 #include <json_util.hpp>
 
+#include <string>
+#include <vector>
+
 namespace {
 
 struct JSONParseState {

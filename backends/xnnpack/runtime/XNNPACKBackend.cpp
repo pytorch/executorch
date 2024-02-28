@@ -55,7 +55,7 @@ class XnnpackBackend final : public PyTorchBackendInterface {
   }
 
   Error execute(
-      __ET_UNUSED BackendExecutionContext& context,
+      BackendExecutionContext& context,
       DelegateHandle* handle,
       EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
@@ -111,11 +111,7 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       return err;
     }
 
-    err = executor->forward();
-
-#ifdef ENABLE_XNNPACK_PROFILING
-    executor->log_op_timings(); // Log the op execution time.
-#endif
+    err = executor->forward(context);
 
     // Resize output tensors - should be a no-op for static models
     for (int i = 0; i < executor->getNumOutputs(); i++) {

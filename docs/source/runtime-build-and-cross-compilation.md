@@ -65,6 +65,21 @@ cd executorch
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
 
+### CMake Build Options
+
+The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.
+```bash
+-DCMAKE_BUILD_TYPE=Release
+```
+
+To further optimize the release build for size, use both:
+```bash
+-DCMAKE_BUILD_TYPE=Release \
+-DOPTIMIZE_SIZE=ON
+```
+
+See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
+
 ## Build the runtime components
 
 Build all targets with

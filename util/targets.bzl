@@ -24,6 +24,8 @@ def define_common_targets():
     for aten_mode in (True, False):
         aten_suffix = ("_aten" if aten_mode else "")
 
+        # DEPRECATED: Remove this once all users have migrated to
+        # extension/runner_util:inputs.
         runtime.cxx_library(
             name = "util" + aten_suffix,
             srcs = [],
@@ -33,9 +35,9 @@ def define_common_targets():
                 "@EXECUTORCH_CLIENTS",
             ],
             exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/extension/runner_util:inputs" + aten_suffix,
+                "//executorch/runtime/core:core",
                 "//executorch/runtime/executor:program" + aten_suffix,
-                "//executorch/runtime/platform:platform",
             ],
         )
 

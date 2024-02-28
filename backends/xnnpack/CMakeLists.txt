@@ -38,9 +38,17 @@ set(_common_compile_options -Wno-deprecated-declarations)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
+set(_xnnpack_flatbuffer__outputs)
+foreach(fbs_file ${_xnnpack_schema__srcs})
+  string(REGEX REPLACE "([^/]+)[.]fbs$" "\\1_generated.h"
+                       generated "${fbs_file}")
+  list(APPEND _xnnpack_flatbuffer__outputs
+       "${_xnnpack_schema__include_dir}/executorch/${generated}")
+endforeach()
+
 set(_xnnpack_schema__outputs)
 foreach(fbs_file ${_xnnpack_schema__srcs})
-  string(REGEX REPLACE "serialization/([^/]+)[.]fbs$" "\\1_generated.h"
+  string(REGEX REPLACE "runtime_([^/]+)[.]fbs$" "\\1_generated.h"
                        generated "${fbs_file}")
   list(APPEND _xnnpack_schema__outputs
        "${_xnnpack_schema__include_dir}/executorch/${generated}")
@@ -51,8 +59,10 @@ add_custom_command(
   OUTPUT ${_xnnpack_schema__outputs}
   COMMAND
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
-    "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack"
+    "${_xnnpack_schema__include_dir}/executorch/backends/xnnpack/serialization"
     ${_xnnpack_schema__srcs}
+  COMMAND
+    mv ${_xnnpack_flatbuffer__outputs} ${_xnnpack_schema__outputs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   COMMENT "Generating xnnpack_schema headers"
   VERBATIM)

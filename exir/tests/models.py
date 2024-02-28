@@ -154,7 +154,7 @@ class CompositeDelegateModule(torch.nn.Module):
             exir.CaptureConfig(),
         ).to_edge()
         lowered_module = LoweredBackendModule(
-            edge_program=edge_ir_m,
+            edge_program=edge_ir_m.exported_program,
             backend_id="backend_demo",
             processed_bytes=bytes("basic_module_add", encoding="utf8"),
             compile_specs=[],
@@ -193,6 +193,7 @@ class TensorSplit(nn.Module):
         super().__init__()
 
     def forward(self, input: Tensor, sections: int, dim: int = 0) -> List[Tensor]:
+        # pyre-fixme[7]: Expected `List[Tensor]` but got `Tuple[Tensor, ...]`.
         return torch.tensor_split(input, sections, dim)
 
 

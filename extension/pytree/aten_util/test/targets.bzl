@@ -15,6 +15,6 @@ def define_common_targets():
             "//caffe2:torch-cpp",
         ],
         xplat_deps = [
-            "//xplat/caffe2:torch_mobile_all_ops",
+            "//xplat/caffe2:torch_mobile_all_ops_et",
         ],
     )

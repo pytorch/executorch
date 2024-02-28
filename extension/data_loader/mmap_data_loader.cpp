@@ -26,6 +26,34 @@ namespace torch {
 namespace executor {
 namespace util {
 
+namespace {
+
+struct Range {
+  // Address or offset.
+  uintptr_t start;
+  // Size in bytes.
+  size_t size;
+};
+
+/**
+ * Given an address region, returns the start offset and byte size of the set of
+ * pages that completely covers the region.
+ */
+Range get_overlapping_pages(uintptr_t offset, size_t size, size_t page_size) {
+  size_t page_mask = ~(page_size - 1);
+  // The address of the page that starts at or before the beginning of the
+  // region.
+  uintptr_t start = offset & page_mask;
+  // The address of the page that starts after the end of the region.
+  uintptr_t end = (offset + size + ~page_mask) & page_mask;
+  return {
+      /*start=*/start,
+      /*size=*/static_cast<size_t>(end - start),
+  };
+}
+
+} // namespace
+
 MmapDataLoader::~MmapDataLoader() {
   // file_name_ can be nullptr if this instance was moved from, but freeing a
   // null pointer is safe.
@@ -41,7 +69,7 @@ Result<MmapDataLoader> MmapDataLoader::from(
   // Cache the page size.
   long page_size = sysconf(_SC_PAGESIZE);
   if (page_size < 0) {
-    ET_LOG(Error, "Could not get page size: %s (%d)", strerror(errno), errno);
+    ET_LOG(Error, "Could not get page size: %s (%d)", ::strerror(errno), errno);
     return Error::AccessFailed;
   }
   if ((page_size & ~(page_size - 1)) != page_size) {
@@ -53,7 +81,11 @@ Result<MmapDataLoader> MmapDataLoader::from(
   int fd = ::open(file_name, O_RDONLY);
   if (fd < 0) {
     ET_LOG(
-        Error, "Failed to open %s: %s (%d)", file_name, strerror(errno), errno);
+        Error,
+        "Failed to open %s: %s (%d)",
+        file_name,
+        ::strerror(errno),
+        errno);
     return Error::AccessFailed;
   }
 
@@ -89,9 +121,28 @@ Result<MmapDataLoader> MmapDataLoader::from(
 }
 
 namespace {
-/// FreeableBuffer::FreeFn-compatible callback.
-void MunmapSegment(__ET_UNUSED void* context, void* data, size_t size) {
-  ::munmap(data, size);
+/**
+ * FreeableBuffer::FreeFn-compatible callback.
+ *
+ * `context` is actually the OS page size as a uintptr_t.
+ */
+void MunmapSegment(void* context, void* data, size_t size) {
+  const uintptr_t page_size = reinterpret_cast<uintptr_t>(context);
+
+  Range range =
+      get_overlapping_pages(reinterpret_cast<uintptr_t>(data), size, page_size);
+  int ret = ::munmap(reinterpret_cast<void*>(range.start), range.size);
+  if (ret < 0) {
+    // Let the user know that something went wrong, but there's nothing we can
+    // do about it.
+    ET_LOG(
+        Error,
+        "munmap(0x%zx, %zu) failed: %s (ignored)",
+        (size_t)range.start,
+        range.size,
+        ::strerror(errno),
+        errno);
+  }
 }
 } // namespace
 
@@ -110,13 +161,6 @@ Result<FreeableBuffer> MmapDataLoader::Load(size_t offset, size_t size) {
       size,
       file_size_);
   ET_CHECK_OR_RETURN_ERROR(
-      (offset & ~(page_size_ - 1)) == offset,
-      InvalidArgument,
-      "File %s: offset 0x%zx not aligned to 0x%zx",
-      file_name_,
-      offset,
-      page_size_);
-  ET_CHECK_OR_RETURN_ERROR(
       // Recommended by a lint warning.
       offset <= std::numeric_limits<off_t>::max(),
       InvalidArgument,
@@ -128,43 +172,74 @@ Result<FreeableBuffer> MmapDataLoader::Load(size_t offset, size_t size) {
     return FreeableBuffer(nullptr, 0, /*free_fn=*/nullptr);
   }
 
+  // Find the range of pages that covers the requested region.
+  Range range =
+      get_overlapping_pages(static_cast<uintptr_t>(offset), size, page_size_);
+
   // Map the pages read-only. MAP_PRIVATE vs. MAP_SHARED doesn't matter since
   // the data is read-only, but use PRIVATE just to further avoid accidentally
   // modifying the file.
-  void* pages = mmap(
-      nullptr, size, PROT_READ, MAP_PRIVATE, fd_, static_cast<off_t>(offset));
+  void* pages = ::mmap(
+      nullptr,
+      range.size,
+      PROT_READ,
+      MAP_PRIVATE,
+      fd_,
+      static_cast<off_t>(range.start));
   ET_CHECK_OR_RETURN_ERROR(
       pages != MAP_FAILED,
       AccessFailed,
       "Failed to map %s: mmap(..., size=%zd, ..., fd=%d, offset=0x%zx)",
       file_name_,
-      size,
+      range.size,
       fd_,
-      offset);
+      range.start);
 
   if (mlock_config_ == MlockConfig::UseMlock ||
       mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-    int err = mlock(pages, size);
+    int err = ::mlock(pages, size);
     if (err < 0) {
-      ET_LOG(
-          Error,
-          "File %s: mlock(%p, %zu) failed: %s (%d)",
-          file_name_,
-          pages,
-          size,
-          strerror(errno),
-          errno);
       if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
-        ET_LOG(Info, "Ignoring mlock() error");
+        ET_LOG(
+            Info,
+            "Ignoring mlock error for file %s (off=0x%zd): "
+            "mlock(%p, %zu) failed: %s (%d)",
+            file_name_,
+            offset,
+            pages,
+            size,
+            ::strerror(errno),
+            errno);
       } else {
-        munmap(pages, size);
+        ET_LOG(
+            Error,
+            "File %s (off=0x%zd): mlock(%p, %zu) failed: %s (%d)",
+            file_name_,
+            offset,
+            pages,
+            size,
+            ::strerror(errno),
+            errno);
+        ::munmap(pages, size);
         return Error::NotSupported;
       }
     }
     // No need to keep track of this. munmap() will unlock as a side effect.
   }
 
-  return FreeableBuffer(pages, size, MunmapSegment);
+  // The requested data is at an offset into the mapped pages.
+  const void* data = static_cast<const uint8_t*>(pages) + offset - range.start;
+
+  return FreeableBuffer(
+      // The callback knows to unmap the whole pages that encompass this region.
+      data,
+      size,
+      MunmapSegment,
+      /*free_fn_context=*/
+      reinterpret_cast<void*>(
+          // Pass the cached OS page size to the callback so it doesn't need to
+          // query it again.
+          static_cast<uintptr_t>(page_size_)));
 }
 
 Result<size_t> MmapDataLoader::size() const {

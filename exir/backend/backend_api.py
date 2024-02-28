@@ -250,7 +250,10 @@ def _partition_and_lower_one_graph_module(
                 # Delete the consumed buffers
                 buffer_name = toplevel_signature.inputs_to_buffers.pop(node.name)
                 toplevel_signature.buffers.remove(buffer_name)
-                owning_program.state_dict.pop(buffer_name)
+                if buffer_name in owning_program.state_dict:
+                    owning_program.state_dict.pop(buffer_name)
+                else:
+                    owning_program.constants.pop(buffer_name)
                 tagged_graph_module.graph.erase_node(node)
             elif node.name in toplevel_signature.inputs_to_parameters:
                 # Delete the consumed parameters
@@ -350,7 +353,7 @@ def _(
 
     # TODO(angelayi): Update this signature in a less manual way (maybe through
     # retracing)
-    new_signature, new_state_dict = _get_new_signature(
+    new_signature, new_state_dict, new_constants = _get_new_signature(
         edge_program, tagged_graph_module
     )
     return ExportedProgram(
@@ -362,4 +365,5 @@ def _(
         module_call_graph=copy.deepcopy(edge_program.module_call_graph),
         example_inputs=None,
         verifier=edge_program.verifier,
+        constants=new_constants,
     )

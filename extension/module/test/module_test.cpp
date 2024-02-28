@@ -16,69 +16,69 @@ namespace torch::executor {
 
 class ModuleTest : public ::testing::Test {};
 
-TEST_F(ModuleTest, testLoad) {
+TEST_F(ModuleTest, TestLoad) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  EXPECT_FALSE(module.isLoaded());
+  EXPECT_FALSE(module.is_loaded());
   const auto error = module.load();
   EXPECT_EQ(error, Error::Ok);
-  EXPECT_TRUE(module.isLoaded());
+  EXPECT_TRUE(module.is_loaded());
 }
 
-TEST_F(ModuleTest, testLoadNonExistent) {
+TEST_F(ModuleTest, TestLoadNonExistent) {
   Module module("/path/to/nonexistent/file.pte");
   const auto error = module.load();
 
   EXPECT_NE(error, Error::Ok);
-  EXPECT_FALSE(module.isLoaded());
+  EXPECT_FALSE(module.is_loaded());
 }
 
-TEST_F(ModuleTest, testLoadCorruptedFile) {
+TEST_F(ModuleTest, TestLoadCorruptedFile) {
   Module module("/dev/null");
   const auto error = module.load();
 
   EXPECT_NE(error, Error::Ok);
-  EXPECT_FALSE(module.isLoaded());
+  EXPECT_FALSE(module.is_loaded());
 }
 
-TEST_F(ModuleTest, testMethodNames) {
+TEST_F(ModuleTest, TestMethodNames) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  const auto methodNames = module.methodNames();
-  EXPECT_TRUE(methodNames.ok());
-  EXPECT_EQ(methodNames.get(), std::vector<std::string>{"forward"});
+  const auto method_names = module.method_names();
+  EXPECT_TRUE(method_names.ok());
+  EXPECT_EQ(method_names.get(), std::unordered_set<std::string>{"forward"});
 }
 
-TEST_F(ModuleTest, testNonExistentMethodNames) {
+TEST_F(ModuleTest, TestNonExistentMethodNames) {
   Module module("/path/to/nonexistent/file.pte");
 
-  const auto methodNames = module.methodNames();
-  EXPECT_FALSE(methodNames.ok());
+  const auto method_names = module.method_names();
+  EXPECT_FALSE(method_names.ok());
 }
 
-TEST_F(ModuleTest, testLoadMethod) {
+TEST_F(ModuleTest, TestLoadMethod) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  EXPECT_FALSE(module.isMethodLoaded("forward"));
-  const auto error = module.loadMethod("forward");
+  EXPECT_FALSE(module.is_method_loaded("forward"));
+  const auto error = module.load_method("forward");
   EXPECT_EQ(error, Error::Ok);
-  EXPECT_TRUE(module.isMethodLoaded("forward"));
-  EXPECT_TRUE(module.isLoaded());
+  EXPECT_TRUE(module.is_method_loaded("forward"));
+  EXPECT_TRUE(module.is_loaded());
 }
 
-TEST_F(ModuleTest, testLoadNonExistentMethod) {
+TEST_F(ModuleTest, TestLoadNonExistentMethod) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  const auto error = module.loadMethod("backward");
+  const auto error = module.load_method("backward");
   EXPECT_NE(error, Error::Ok);
-  EXPECT_FALSE(module.isMethodLoaded("backward"));
-  EXPECT_TRUE(module.isLoaded());
+  EXPECT_FALSE(module.is_method_loaded("backward"));
+  EXPECT_TRUE(module.is_loaded());
 }
 
-TEST_F(ModuleTest, testMethodMeta) {
+TEST_F(ModuleTest, TestMethodMeta) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  const auto meta = module.methodMeta("forward");
+  const auto meta = module.method_meta("forward");
   EXPECT_TRUE(meta.ok());
   EXPECT_STREQ(meta->name(), "forward");
   EXPECT_EQ(meta->num_inputs(), 1);
@@ -86,28 +86,28 @@ TEST_F(ModuleTest, testMethodMeta) {
   EXPECT_EQ(meta->num_outputs(), 1);
   EXPECT_EQ(*(meta->output_tag(0)), Tag::Tensor);
 
-  const auto inputMeta = meta->input_tensor_meta(0);
-  EXPECT_TRUE(inputMeta.ok());
-  EXPECT_EQ(inputMeta->scalar_type(), ScalarType::Float);
-  EXPECT_EQ(inputMeta->sizes().size(), 2);
-  EXPECT_EQ(inputMeta->sizes()[0], 1);
-  EXPECT_EQ(inputMeta->sizes()[1], 2);
+  const auto input_meta = meta->input_tensor_meta(0);
+  EXPECT_TRUE(input_meta.ok());
+  EXPECT_EQ(input_meta->scalar_type(), ScalarType::Float);
+  EXPECT_EQ(input_meta->sizes().size(), 2);
+  EXPECT_EQ(input_meta->sizes()[0], 1);
+  EXPECT_EQ(input_meta->sizes()[1], 2);
 
-  const auto outputMeta = meta->output_tensor_meta(0);
-  EXPECT_TRUE(outputMeta.ok());
-  EXPECT_EQ(outputMeta->scalar_type(), ScalarType::Float);
-  EXPECT_EQ(outputMeta->sizes().size(), 1);
-  EXPECT_EQ(outputMeta->sizes()[0], 1);
+  const auto output_meta = meta->output_tensor_meta(0);
+  EXPECT_TRUE(output_meta.ok());
+  EXPECT_EQ(output_meta->scalar_type(), ScalarType::Float);
+  EXPECT_EQ(output_meta->sizes().size(), 1);
+  EXPECT_EQ(output_meta->sizes()[0], 1);
 }
 
-TEST_F(ModuleTest, testNonExistentMethodMeta) {
+TEST_F(ModuleTest, TestNonExistentMethodMeta) {
   Module module("/path/to/nonexistent/file.pte");
 
-  const auto meta = module.methodMeta("forward");
+  const auto meta = module.method_meta("forward");
   EXPECT_FALSE(meta.ok());
 }
 
-TEST_F(ModuleTest, testExecute) {
+TEST_F(ModuleTest, TestExecute) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
   std::array<float, 2> input{1, 2};
@@ -117,38 +117,19 @@ TEST_F(ModuleTest, testExecute) {
 
   const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
   EXPECT_TRUE(result.ok());
-  EXPECT_TRUE(module.isLoaded());
-  EXPECT_TRUE(module.isMethodLoaded("forward"));
+  EXPECT_TRUE(module.is_loaded());
+  EXPECT_TRUE(module.is_method_loaded("forward"));
 
   const auto data = result->at(0).toTensor().const_data_ptr<float>();
 
   EXPECT_NEAR(data[0], 1.5, 1e-5);
 }
 
-TEST_F(ModuleTest, testExecutePreload) {
+TEST_F(ModuleTest, TestExecutePreload) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  const auto loadError = module.load();
-  EXPECT_EQ(loadError, Error::Ok);
-
-  std::array<float, 2> input{1, 2};
-  std::array<int32_t, 2> sizes{1, 2};
-  TensorImpl tensor(
-      ScalarType::Float, sizes.size(), sizes.data(), input.data());
-
-  const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
-  EXPECT_TRUE(result.ok());
-
-  const auto data = result->at(0).toTensor().const_data_ptr<float>();
-
-  EXPECT_NEAR(data[0], 1.5, 1e-5);
-}
-
-TEST_F(ModuleTest, testExecutePreloadMethod) {
-  Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
-
-  const auto loadMethodError = module.loadMethod("forward");
-  EXPECT_EQ(loadMethodError, Error::Ok);
+  const auto error = module.load();
+  EXPECT_EQ(error, Error::Ok);
 
   std::array<float, 2> input{1, 2};
   std::array<int32_t, 2> sizes{1, 2};
@@ -163,14 +144,11 @@ TEST_F(ModuleTest, testExecutePreloadMethod) {
   EXPECT_NEAR(data[0], 1.5, 1e-5);
 }
 
-TEST_F(ModuleTest, testExecutePreloadProgramAndMethod) {
+TEST_F(ModuleTest, TestExecutePreload_method) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
-  const auto loadError = module.load();
-  EXPECT_EQ(loadError, Error::Ok);
-
-  const auto loadMethodError = module.loadMethod("forward");
-  EXPECT_EQ(loadMethodError, Error::Ok);
+  const auto error = module.load_method("forward");
+  EXPECT_EQ(error, Error::Ok);
 
   std::array<float, 2> input{1, 2};
   std::array<int32_t, 2> sizes{1, 2};
@@ -185,7 +163,29 @@ TEST_F(ModuleTest, testExecutePreloadProgramAndMethod) {
   EXPECT_NEAR(data[0], 1.5, 1e-5);
 }
 
-TEST_F(ModuleTest, testExecuteOnNonExistent) {
+TEST_F(ModuleTest, TestExecutePreloadProgramAndMethod) {
+  Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
+
+  const auto load_error = module.load();
+  EXPECT_EQ(load_error, Error::Ok);
+
+  const auto load_method_error = module.load_method("forward");
+  EXPECT_EQ(load_method_error, Error::Ok);
+
+  std::array<float, 2> input{1, 2};
+  std::array<int32_t, 2> sizes{1, 2};
+  TensorImpl tensor(
+      ScalarType::Float, sizes.size(), sizes.data(), input.data());
+
+  const auto result = module.execute("forward", {EValue(Tensor(&tensor))});
+  EXPECT_TRUE(result.ok());
+
+  const auto data = result->at(0).toTensor().const_data_ptr<float>();
+
+  EXPECT_NEAR(data[0], 1.5, 1e-5);
+}
+
+TEST_F(ModuleTest, TestExecuteOnNonExistent) {
   Module module("/path/to/nonexistent/file.pte");
 
   const auto result = module.execute("forward");
@@ -193,7 +193,7 @@ TEST_F(ModuleTest, testExecuteOnNonExistent) {
   EXPECT_FALSE(result.ok());
 }
 
-TEST_F(ModuleTest, testExecuteOnCurrupted) {
+TEST_F(ModuleTest, TestExecuteOnCurrupted) {
   Module module("/dev/null");
 
   const auto result = module.execute("forward");
@@ -201,7 +201,7 @@ TEST_F(ModuleTest, testExecuteOnCurrupted) {
   EXPECT_FALSE(result.ok());
 }
 
-TEST_F(ModuleTest, testForward) {
+TEST_F(ModuleTest, TestForward) {
   auto module = std::make_unique<Module>(
       std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
@@ -227,7 +227,7 @@ TEST_F(ModuleTest, testForward) {
   EXPECT_NEAR(data2[0], 2.5, 1e-5);
 }
 
-TEST_F(ModuleTest, testForwardWithInvalidInputs) {
+TEST_F(ModuleTest, TestForwardWithInvalidInputs) {
   Module module(std::getenv("RESOURCES_PATH") + std::string("/model.pte"));
 
   const auto result = module.forward({EValue()});

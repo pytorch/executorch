@@ -31,6 +31,13 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 endif()
 
+# Source root directory for pytorch.
+if(NOT TORCH_ROOT)
+  set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
+endif()
+
+add_compile_options("-Wall" "-Werror")
+
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
@@ -42,6 +49,7 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 target_include_directories(executorch INTERFACE ${_common_include_directories})
+target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 
 find_package(
   gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
@@ -54,6 +62,16 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   # mps_executor_runner: Like executor_runner but with MPS, the binary will
   # be at ${CMAKE_BINARY_DIR}/examples/apple/executor_runner/mps
   #
+
+# portable_ops_lib
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+gen_selected_ops("" "" "ON")
+generate_bindings_for_kernels(
+  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+)
+gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+
 set(mps_executor_runner_libs "-framework Foundation"
                               "-weak_framework MetalPerformanceShaders"
                               "-weak_framework MetalPerformanceShadersGraph"
@@ -69,6 +87,7 @@ set(
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 
+set(_mps_schema_headers ${CMAKE_BINARY_DIR}/../../../schema/include/)
 include(${EXECUTORCH_SRCS_FILE})
 target_include_directories(
   bundled_program
@@ -76,15 +95,24 @@ target_include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/include
   ${CMAKE_CURRENT_BINARY_DIR}/../../../sdk/bundled_program
   ${EXECUTORCH_ROOT}/third-party/flatbuffers/include
+  ${EXECUTORCH_ROOT}/third-party/flatcc/include
+  ${_mps_schema_headers}
 )
 list(TRANSFORM _mps_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_executable(mps_executor_runner ${_mps_executor_runner__srcs})
-target_include_directories(
-  mps_executor_runner INTERFACE ${CMAKE_BINARY_DIR}/schema/include/
-                          ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
+
+if(CMAKE_BUILD_TYPE MATCHES "Debug")
+    set(FLATCC_LIB flatcc_d)
+else()
+    set(FLATCC_LIB flatcc)
+endif()
+
 target_link_libraries(mps_executor_runner bundled_program
                                           executorch gflags
+                                          etdump
+                                          ${FLATCC_LIB}
                                           mpsdelegate
+                                          portable_ops_lib
                                           ${mps_executor_runner_libs})
 target_compile_options(mps_executor_runner PUBLIC ${_common_compile_options})
 endif()

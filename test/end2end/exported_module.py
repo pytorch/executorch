@@ -11,9 +11,9 @@ import inspect
 from typing import Callable, Sequence, Type
 
 import executorch.exir as exir
-from executorch.exir import ExecutorchBackendConfig, ExecutorchProgram
+import torch
+from executorch.exir import ExecutorchBackendConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.dynamic_shape import DynamicMemoryPlanningMode
-from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (
     DebugPass,
     MemoryPlanningPass,
@@ -21,7 +21,7 @@ from executorch.exir.passes import (
     ToOutVarPass,
 )
 from torch import nn
-from torch.fx import GraphModule
+from torch.export import export
 
 
 class ExportedModule:
@@ -31,7 +31,7 @@ class ExportedModule:
         eager_module: The original nn.Module that was exported.
         methods: The names of the eager_module methods that were traced.
         executorch_program: The resulting ExecutorchProgram.
-        graph_module: The resulting GraphModule.
+        exported_program: The resulting ExportedProgram.
         trace_inputs: The inputs that were used when tracing eager_module.
     """
 
@@ -39,16 +39,16 @@ class ExportedModule:
         self,
         eager_module: nn.Module,
         methods: Sequence[str],
-        executorch_program: ExecutorchProgram,
-        graph_module: GraphModule,
+        executorch_program: ExecutorchProgramManager,
+        exported_program: torch.export.ExportedProgram,
         trace_inputs: Sequence,
         get_random_inputs_fn: Callable[[], Sequence],
     ):
         """INTERNAL ONLY: Use ExportedModule.export() instead."""
         self.eager_module: nn.Module = eager_module
         self.methods: Sequence[str] = methods
-        self.executorch_program: ExecutorchProgram = executorch_program
-        self.graph_module: GraphModule = graph_module
+        self.executorch_program: ExecutorchProgramManager = executorch_program
+        self.exported_program: torch.export.ExportedProgram = exported_program
         self.trace_inputs: Sequence = trace_inputs
         self.__get_random_inputs_fn = get_random_inputs_fn
 
@@ -64,6 +64,7 @@ class ExportedModule:
         dynamic_memory_planning_mode: DynamicMemoryPlanningMode = DynamicMemoryPlanningMode.UPPER_BOUND,
         capture_config=None,
         extract_constant_segment: bool = True,
+        skip_type_promotion: bool = False,
     ) -> "ExportedModule":
         """
         Creates a new ExportedModule for the specified module class.
@@ -131,52 +132,62 @@ class ExportedModule:
         for method in methods:
             method_name_to_args[method] = trace_inputs
 
-        method_name_to_constraints = None
-        if hasattr(eager_module, "get_constraints"):
+        method_name_to_dynamic_shapes = None
+        if hasattr(eager_module, "get_dynamic_shapes"):
             assert capture_config is not None
             assert capture_config.enable_aot is True
-            trace_constraints = eager_module.get_constraints()
-            method_name_to_constraints = {}
+            trace_dynamic_shapes = eager_module.get_dynamic_shapes()
+            method_name_to_dynamic_shapes = {}
             for method in methods:
-                method_name_to_constraints[method] = trace_constraints
+                method_name_to_dynamic_shapes[method] = trace_dynamic_shapes
 
         memory_planning_pass = MemoryPlanningPass("greedy")
         if hasattr(eager_module, "get_memory_planning_pass"):
             memory_planning_pass = eager_module.get_memory_planning_pass()
 
-        # Capture an executorch program.
-        executorch_program = (
-            exir.capture_multiple(
+        class WrapperModule(nn.Module):
+            def __init__(self, method):
+                super().__init__()
+                self.forward = method
+
+        exported_methods = {}
+        # These cleanup passes are required to convert the `add` op to its out
+        # variant, along with some other transformations.
+        for method_name, method_input in method_name_to_args.items():
+            # if not isinstance(eager_module, torch.nn.Module):
+            exported_methods[method_name] = export(
                 eager_module,
-                method_name_to_args,
-                capture_config,
-                constraints=method_name_to_constraints,
+                method_input,
+                dynamic_shapes=method_name_to_dynamic_shapes[method_name]
+                if method_name_to_dynamic_shapes
+                else None,
             )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .to_executorch(
-                ExecutorchBackendConfig(
-                    passes=[
-                        DebugPass(
-                            show_src=True,
-                            show_spec=False,
-                            show_full_path=True,
-                            show_all_frames=True,
-                        ),
-                        to_scratch_op_pass,
-                    ],
-                    dynamic_memory_planning_mode=dynamic_memory_planning_mode,
-                    memory_planning_pass=memory_planning_pass,
-                    to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
-                    extract_constant_segment=extract_constant_segment,
-                )
+
+        exec_prog = to_edge(
+            exported_methods,
+            compile_config=exir.EdgeCompileConfig(
+                _check_ir_validity=False, _skip_type_promotion=skip_type_promotion
+            ),
+        ).to_executorch(
+            ExecutorchBackendConfig(
+                passes=[
+                    DebugPass(
+                        show_src=True,
+                        show_spec=False,
+                        show_full_path=True,
+                        show_all_frames=True,
+                    ),
+                    to_scratch_op_pass,
+                ],
+                dynamic_memory_planning_mode=dynamic_memory_planning_mode,
+                memory_planning_pass=memory_planning_pass,
+                to_out_var_pass=ToOutVarPass(ignore_to_out_var_failure),
+                extract_constant_segment=extract_constant_segment,
             )
         )
 
         # Generate the graph module created during capture.
-        graph_module = executorch_program.dump_graph_module()
-        graph_module = PassManager(
-            passes=[DebugPass(show_spec=True)], run_checks_after_each_pass=True
-        )(graph_module).graph_module
+        exported_program = exec_prog.exported_program()
 
         # Get a function that creates random inputs appropriate for testing.
         get_random_inputs_fn = get_inputs_adapter(
@@ -189,8 +200,8 @@ class ExportedModule:
         return ExportedModule(
             eager_module=eager_module,
             methods=methods,
-            executorch_program=executorch_program,
-            graph_module=graph_module,
+            executorch_program=exec_prog,
+            exported_program=exported_program,
             trace_inputs=trace_inputs,
             get_random_inputs_fn=get_random_inputs_fn,
         )

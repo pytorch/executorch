@@ -15,20 +15,22 @@ from enum import IntEnum
 from typing import List
 
 
-class VkDatatype(IntEnum):
-    vk_datatype_fp32 = 0
-
-
 @dataclass
-class Buffer:
-    storage: bytes
+class OperatorCall:
+    name: str
+    args: List[int]
+
+
+class VkDataType(IntEnum):
+    fp32 = 0
 
 
 @dataclass
 class VkTensor:
-    datatype: VkDatatype
+    datatype: VkDataType
     dims: List[int]
-    constant_buffer_idx: int
+    constant_id: int
+    mem_obj_id: int
 
 
 @dataclass
@@ -41,35 +43,21 @@ class VkValue:
     value: VkTensor
 
 
-class VkArithmeticOpType(IntEnum):
-    vk_arithmetic_op_type_add = 0
-    vk_arithmetic_op_type_sub = 1
-    vk_arithmetic_op_type_mul = 2
-    vk_arithmetic_op_type_div = 3
-
-
 @dataclass
-class VkArithmeticNode:
-    input1_id: int
-    input2_id: int
-    output_id: int
-    op_type: VkArithmeticOpType
-    flags: int
-
-
-@dataclass
-class VkNode:
-    node: VkArithmeticNode
-    debug_handle: int
+class VkBytes:
+    offset: int
+    length: int
 
 
 @dataclass
 class VkGraph:
     version: str
-    vknodes: List[VkNode]
-    vkvalues: List[VkValue]
+
+    chain: List[OperatorCall]
+    values: List[VkValue]
 
     input_ids: List[int]
     output_ids: List[int]
 
-    constant_buffer: List[Buffer]
+    constants: List[VkBytes]
+    shaders: List[VkBytes]

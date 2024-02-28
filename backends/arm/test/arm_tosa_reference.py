@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -8,17 +8,21 @@ import os
 import subprocess
 import tempfile
 
+from typing import List, Optional, Tuple
+
 import executorch.exir as exir
 
 import numpy as np
+from executorch.backends.arm.arm_backend import generate_tosa_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.test.test_models import TestList, TosaProfile
 from executorch.backends.arm.test.test_tosa import prepare_model_and_ref
-
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.exir.capture._config import ExecutorchBackendConfig, to_edge
+from executorch.exir import EdgeProgramManager
+from executorch.exir.capture._config import ExecutorchBackendConfig
 
 from executorch.exir.dialects._ops import ops as exir_ops
+
+from executorch.exir.program import to_edge
 
 from torch.export import export
 
@@ -49,7 +53,7 @@ SUPPORTED_BI_TEST_LIST = [
 ]
 
 
-def get_input_quantization_params(captured_model):
+def get_input_quantization_params(captured_model: EdgeProgramManager):
     input_scales = {}
     input_zeropoints = {}
     input_names = []
@@ -69,10 +73,13 @@ def get_input_quantization_params(captured_model):
             input_scales[node.args[0].name] = float(node.args[1])
             input_zeropoints[node.args[0].name] = int(node.args[2])
 
+    assert input_scales != {}, "Input scale not set for quantized input"
+    assert input_zeropoints != {}, "Zeropoint not set for BI for quantized input"
+
     return input_scales, input_zeropoints
 
 
-def get_output_quantization_param(captured_model):
+def get_output_quantization_param(captured_model: EdgeProgramManager):
     output_scale = 0.0
     output_zeropoint = 0
     output_name = ""
@@ -89,17 +96,20 @@ def get_output_quantization_param(captured_model):
             output_scale = float(node.args[1])
             output_zeropoint = int(node.args[2])
 
+    assert output_scale != 0.0
+
     return output_scale, output_zeropoint
 
 
 def tosa_ref_dump_inputs(
-    model_edge,
+    model_edge: EdgeProgramManager,
     inputs,
     path,
     input_quantization_scales,
     input_quantization_zps,
     profile=TosaProfile.MI,
-):
+    save_on_disk=True,
+) -> Optional[List[Tuple[np.ndarray, str]]]:
     # Emit TOSA test data from the model inputs - assumes whole graph lowered so we just have
     # placeholders for the TOSA delegate. Emits data in tosa_ref_model expected layout.
     # - Skips placeholders which are encoded as constants (i.e. are already captured weights)
@@ -117,20 +127,25 @@ def tosa_ref_dump_inputs(
         else:
             break
 
+    name_data_pair = []
     for arg in zip(argument_names, inputs):
         name = arg[0]
         data = arg[1].detach().numpy()
-        file_path = path + "/" + name + ".npy"
 
         # Torch is doing Input[FP32]->Q[INT8]->DQ[FP32]->Operator[FP32]->Q[INT]->DQ[FP32]->[Output]FP32
         # Need to quantize the input to INT8 for TOSA comsumption
         if profile is TosaProfile.BI:
-            data_quantized = (
+            data = (
                 (data / input_quantization_scales[name]) - input_quantization_zps[name]
             ).astype(np.int8)
-            np.save(file_path, data_quantized, allow_pickle=False)
-        else:
+
+        if save_on_disk:
+            file_path = os.path.join(path, name + ".npy")
             np.save(file_path, data, allow_pickle=False)
+        else:
+            name_data_pair.append((name, data))
+
+    return name_data_pair if name_data_pair else None
 
 
 def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
@@ -157,10 +172,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     # Debug flags for compilers
     # - Emit some debug files into /tmp
     # - output_format TOSA for this test (and pure tosa flows)
-    compile_spec = [
-        CompileSpec("debug_tosa_path", bytes(TOSA_OUT_PATH, "utf8")),
-        CompileSpec("output_format", bytes("tosa", "utf8")),
-    ]
+    compile_spec = generate_tosa_compile_spec(TOSA_OUT_PATH)
 
     model, inputs, torch_output = prepare_model_and_ref(op, profile)
 
@@ -172,8 +184,6 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     model_capture = export(model, inputs)
     model_edge = to_edge(model_capture, compile_config=_EDGE_COMPILE_CONFIG)
 
-    ArmPartitioner.compile_spec = compile_spec
-
     if profile == TosaProfile.BI:
         (
             input_quantization_scales,
@@ -184,7 +194,7 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             output_quantization_zp,
         ) = get_output_quantization_param(model_edge)
 
-    model_edge = model_edge.to_backend(ArmPartitioner())
+    model_edge = model_edge.to_backend(ArmPartitioner(compile_spec))
     exec_prog = model_edge.to_executorch(
         config=ExecutorchBackendConfig(extract_constant_segment=False)
     )

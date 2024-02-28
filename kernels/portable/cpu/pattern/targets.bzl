@@ -10,10 +10,10 @@ def define_common_targets():
     runtime.cxx_library(
         name = "pattern",
         srcs = [
+            "unary_ufunc_realhb_to_bool.cpp",
+            "unary_ufunc_realhb_to_floath.cpp",
+            "unary_ufunc_realh.cpp",
             "binary_ufunc_realb_realb_to_realb_logical.cpp",
-            "unary_ufunc_realb_to_bool.cpp",
-            "unary_ufunc_realb_to_float.cpp",
-            "unary_ufunc_real.cpp",
         ],
         exported_headers = [
             "pattern.h",

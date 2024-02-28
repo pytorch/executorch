@@ -13,63 +13,12 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
-
-namespace {
-
-//
-// Override min/max so we can emulate PyTorch's behavior with NaN entries.
-//
-
-template <
-    typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
-FLOAT_T min_override(FLOAT_T a, FLOAT_T b) {
-  if (std::isnan(a)) {
-    return a;
-  } else if (std::isnan(b)) {
-    return b;
-  } else {
-    return std::min(a, b);
-  }
-}
-
-template <
-    typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
-FLOAT_T max_override(FLOAT_T a, FLOAT_T b) {
-  if (std::isnan(a)) {
-    return a;
-  } else if (std::isnan(b)) {
-    return b;
-  } else {
-    return std::max(a, b);
-  }
-}
-
-template <
-    typename INT_T,
-    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
-INT_T min_override(INT_T a, INT_T b) {
-  return std::min(a, b);
-}
-
-template <
-    typename INT_T,
-    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
-INT_T max_override(INT_T a, INT_T b) {
-  return std::max(a, b);
-}
-
-} // namespace
-
-using namespace utils;
 
 using Scalar = exec_aten::Scalar;
 using ScalarType = exec_aten::ScalarType;
@@ -94,7 +43,7 @@ bool is_out_of_bounds(CTYPE_VAL val) {
 
   ET_SWITCH_SCALAR_OBJ_TYPES(val_type, ctx, "clamp.out", CTYPE_VAL, [&]() {
     CTYPE_VAL val = 0;
-    ET_EXTRACT_SCALAR(val_scalar, val);
+    utils::extract_scalar(val_scalar, &val);
     if (isIntegralType(out_type, /*includeBool=*/false)) {
       ET_SWITCH_INT_TYPES(out_type, ctx, "clamp.out", CTYPE_OUT, [&]() {
         if (is_out_of_bounds<CTYPE_VAL, CTYPE_OUT, long>(val)) {
@@ -175,7 +124,7 @@ Tensor& clamp_out(
     if (has_min) {
       ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "clamp", CTYPE_MIN, [&]() {
         CTYPE_MIN min_val = 0;
-        ET_EXTRACT_SCALAR(min_opt.value(), min_val);
+        utils::extract_scalar(min_opt.value(), &min_val);
         min = static_cast<CTYPE_OUT>(min_val);
       });
     }
@@ -185,7 +134,7 @@ Tensor& clamp_out(
     if (has_max) {
       ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "clamp", CTYPE_MAX, [&]() {
         CTYPE_MAX max_val = 0;
-        ET_EXTRACT_SCALAR(max_opt.value(), max_val);
+        utils::extract_scalar(max_opt.value(), &max_val);
         max = static_cast<CTYPE_OUT>(max_val);
       });
     }
@@ -195,10 +144,10 @@ Tensor& clamp_out(
           [has_min, min, has_max, max](const CTYPE_IN val_in) {
             CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
             if (has_min) {
-              val_out = max_override(val_out, min);
+              val_out = utils::max_override(val_out, min);
             }
             if (has_max) {
-              val_out = min_override(val_out, max);
+              val_out = utils::min_override(val_out, max);
             }
             return val_out;
           },

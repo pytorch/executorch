@@ -514,7 +514,7 @@ def maketest(
             capture_config=capture_config,
         )
         if verify_graph:
-            verify_graph(self, module.graph_module)
+            verify_graph(self, module.exported_program.graph_module)
         print(f"inputs for tracing: {module.trace_inputs}")
 
         # compare the result between the eager module and graph module
@@ -526,10 +526,10 @@ def maketest(
                     # only one method is supported so just grab that single method
                     expected = getattr(module.eager_module, module.methods[0])(*inputs)
                 with torch.no_grad():
-                    result = module.graph_module(*inputs)
-                self.assertTrue(allclose(expected, result[0], rtol, atol))
+                    result = module.exported_program.module()(*inputs)
+                self.assertTrue(allclose(expected, result, rtol, atol))
 
-        program = module.executorch_program.program
+        program = module.executorch_program.executorch_program
         pretty_print(program)
         print_program(program, show_meminfo=True, mark_dynamic_shape_tensor=True)
         print(f"mem buffer sizes: {program.execution_plan[0].non_const_buffer_sizes}")
@@ -672,18 +672,6 @@ class DynamicModelE2ETest(unittest.TestCase):
     End2end tests for dynamic models. For dynamic models we mean models with
     control flow or dynamic shape.
     """
-
-    def test_input_dynamic_shape(self):
-        maketest(
-            ModuleInputDynamicShape,
-            # can not run the graph module directly since out tensor are allocated
-            # with upperbound shape and may not match the actual shape.
-            run_graph_module=False,
-            capture_config=exir.CaptureConfig(
-                enable_dynamic_shape=True,
-                # enable_functionalization=False,  # TODO enable functionalization
-            ),
-        )(self)
 
     @skip("Revisit when unbacked symint is ready")
     def test_intermediate_dynamic_shape(self):

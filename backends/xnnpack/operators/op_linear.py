@@ -13,16 +13,14 @@ from executorch.backends.xnnpack.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.xnnpack.operators.quant_params import QuantParams
+from executorch.backends.xnnpack.passes.fuse_activation_pass import FuseActivationPass
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
-    OutputMinMax,
     XNNFullyConnected,
     XNNGraph,
     XNode,
 )
-from executorch.backends.xnnpack.utils.utils import get_relu_fused_node
 
 from executorch.backends.xnnpack.utils.xnnpack_constants import XNN_INVALID_VALUE_ID
-from executorch.exir.dialects._ops import ops as exir_ops
 
 
 @register_node_visitor
@@ -61,6 +59,7 @@ class LinearVisitor(NodeVisitor):
             xnn_graph,
             vals_to_ids,
             quant_params=weight_quant_params,
+            fp32_static_weights=True,
         )
         filter_id = vals_to_ids[weight_node]
 
@@ -75,26 +74,22 @@ class LinearVisitor(NodeVisitor):
                 xnn_graph,
                 vals_to_ids,
                 quant_params=bias_quant_params,
+                fp32_static_weights=True,
             )
             bias_id = vals_to_ids[bias_node]
         else:
             bias_id = XNN_INVALID_VALUE_ID
 
         # output
-        output_node = get_relu_fused_node(node) or node
-        output_min_max = None
-        if output_node.target == exir_ops.edge.aten.relu.default:
-            output_node.meta["XNNPACK_FUSED"] = True
-            output_min_max = OutputMinMax(output_min=0, output_max="+inf")
-
-        output_quant_params = QuantParams.from_outputs(output_node)
+        output_min_max = FuseActivationPass.get_fused_activation(node)
+        output_quant_params = QuantParams.from_outputs(node)
         self.define_tensor(
-            output_node,
+            node,
             xnn_graph,
             vals_to_ids,
             quant_params=output_quant_params,
         )
-        output_id = vals_to_ids[output_node]
+        output_id = vals_to_ids[node]
 
         ser_node = XNode(
             xnode_union=XNNFullyConnected(

@@ -17,6 +17,7 @@ import torch
 from executorch.exir.tensor import (
     contiguous_stride_from_shape,
     dim_order_from_stride,
+    make_allocation_info,
     make_tensor_value,
     num_bytes_from_shape_and_dtype,
     scalar_type_enum,
@@ -88,6 +89,90 @@ class TestTensor(unittest.TestCase):
         # thus strides = (3*4*5, 4*5, 5, 1)
         # whereas strides for torch.memory_format = torch.channels_last is
         # (3*4*5, 1, 5*3, 3))
+
+    def test_allocation_info_succeeds(self) -> None:
+        test_cases = (
+            (
+                {"mem_id": 0, "mem_offset": 0},
+                schema.AllocationDetails(
+                    memory_id=0, memory_offset_low=0, memory_offset_high=0
+                ),
+            ),
+            (
+                # Easily fits in 32 bits
+                {"mem_id": 1, "mem_offset": 55555},
+                schema.AllocationDetails(
+                    memory_id=1, memory_offset_low=55555, memory_offset_high=0
+                ),
+            ),
+            (
+                # Just fits in 32 bits
+                {"mem_id": 1, "mem_offset": (1 << 32) - 1},
+                schema.AllocationDetails(
+                    memory_id=1, memory_offset_low=0xFFFFFFFF, memory_offset_high=0
+                ),
+            ),
+            (
+                # Smallest 32-bit overflow.
+                {"mem_id": 1, "mem_offset": 1 << 32},
+                schema.AllocationDetails(
+                    memory_id=1, memory_offset_low=0, memory_offset_high=1
+                ),
+            ),
+            (
+                # Easily fits in 64 bits.
+                {"mem_id": 1, "mem_offset": (1 << 64) - 55555555},
+                schema.AllocationDetails(
+                    memory_id=1,
+                    memory_offset_low=4239411741,
+                    memory_offset_high=4294967295,
+                ),
+            ),
+            (
+                # Just fits in 64 bits
+                {"mem_id": 1, "mem_offset": (1 << 64) - 1},
+                schema.AllocationDetails(
+                    memory_id=1,
+                    memory_offset_low=0xFFFFFFFF,
+                    memory_offset_high=0xFFFFFFFF,
+                ),
+            ),
+        )
+        for test_case in test_cases:
+            allocation_info = make_allocation_info(**(test_case[0]))
+            self.assertEqual(allocation_info, test_case[1])
+
+    def test_allocation_info_fails(self) -> None:
+        test_cases = (
+            (
+                # Significant negative underflow.
+                {"mem_id": 0, "mem_offset": -55555},
+                # Error message should complain about the negative value.
+                "negative",
+            ),
+            (
+                # Smallest negative underflow.
+                {"mem_id": 0, "mem_offset": -1},
+                # Error message should complain about the negative value.
+                "negative",
+            ),
+            (
+                # Smallest 64-bit overflow.
+                {"mem_id": 1, "mem_offset": 1 << 64},
+                # Error message should complain that the value is too large.
+                "64 bits",
+            ),
+            (
+                # Significant 64-bit overflow.
+                {"mem_id": 1, "mem_offset": (1 << 64) + 55555},
+                # Error message should complain that the value is too large.
+                "64 bits",
+            ),
+        )
+        for test_case in test_cases:
+            kwargs = test_case[0]
+            with self.assertRaisesRegex(ValueError, test_case[1], msg=f"{kwargs}"):
+                make_allocation_info(**kwargs)
 
     def test_contiguous_stride_from_shape(self) -> None:
         shape = (2, 3, 4)

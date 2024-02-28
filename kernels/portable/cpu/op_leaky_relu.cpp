@@ -46,7 +46,7 @@ Tensor& leaky_relu_out(
     ET_SWITCH_SCALAR_OBJ_TYPES(
         sc_type, ctx, "leaky_relu.out", CTYPE_MIN, [&]() {
           CTYPE_MIN negative_slope_val;
-          ET_EXTRACT_SCALAR(negative_slope, negative_slope_val);
+          utils::extract_scalar(negative_slope, &negative_slope_val);
           negative_slope_casted = static_cast<CTYPE>(negative_slope_val);
         });
 

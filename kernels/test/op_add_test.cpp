@@ -66,6 +66,7 @@ void test_add() {
 
 template <ScalarType DTYPE_A, ScalarType DTYPE_B>
 void test_add_enumerate_out_types() {
+  test_add<DTYPE_A, DTYPE_B, ScalarType::Half>();
   test_add<DTYPE_A, DTYPE_B, ScalarType::Float>();
   test_add<DTYPE_A, DTYPE_B, ScalarType::Double>();
   // Integral out type is only allowed if both inputs are integral types
@@ -80,7 +81,7 @@ void test_add_enumerate_b_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_add_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
 }
@@ -89,7 +90,7 @@ void test_add_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_add_enumerate_b_types<ScalarType::dtype>();
 
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
 }
@@ -147,6 +148,7 @@ TEST(OpAddOutKernelTest, BoolAndIntInputTensor) {
 }
 
 TEST(OpAddOutKernelTest, BoolAndBoolInputTensor) {
+  et_pal_init();
   TensorFactory<ScalarType::Bool> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -387,6 +389,8 @@ TEST(OpAddOutKernelTest, MismatchedOutputShapesDies) {
 }
 
 TEST(OpAddOutKernelTest, SimpleGeneratedCase) {
+  et_pal_init();
+
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(

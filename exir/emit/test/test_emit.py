@@ -8,6 +8,7 @@
 
 import typing
 import unittest
+from contextlib import contextmanager
 from typing import List, Optional, Tuple
 
 import executorch.exir as exir
@@ -19,7 +20,7 @@ from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.emit import emit_program  # noqa
-from executorch.exir.passes.const_prop_pass import ConstPropPass
+from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -34,6 +35,7 @@ from executorch.exir.schema import (
     KernelTypes,
     MoveCall,
     Null,
+    OptionalTensorList,
     Program,
     String,
     Tensor,
@@ -53,6 +55,26 @@ class WrapperModule(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         return self.fn(*args, **kwargs)
+
+
+@contextmanager
+def patch_forward(obj: torch.nn.Module, new_method):
+    """Helper method to make it easier to cleanly torch.export() a method on a
+    module that is not `forward`.
+
+    TODO(suo): upstream this to torch.export.wrapper.
+    """
+    # Save the original method
+    original_method = obj.forward
+
+    # Patch the method
+    obj.forward = new_method.__get__(obj, obj.__class__)
+
+    try:
+        yield
+    finally:
+        # Restore the original method
+        obj.forward = original_method
 
 
 class TestEmit(unittest.TestCase):
@@ -187,6 +209,39 @@ class TestEmit(unittest.TestCase):
             "T2#1#0(T1#1($),D0())",
         )
 
+    def test_constant_output(self):
+        class M(torch.nn.Module):
+            def forward(self, x):
+                return [((1, 3, 1.2), True, [x + x, x * x])]
+
+        ep = torch.export.export(M(), (torch.ones(2, 3),))
+        res = ep(torch.ones(2, 3))
+        self.assertEqual(res[0][0], (1, 3, 1.2))
+        program = to_edge(ep).to_executorch().executorch_program
+        outputs = program.execution_plan[0].outputs
+        self.assertEqual(len(outputs), 6)
+        self.assertEqual(program.execution_plan[0].values[outputs[0]].val.int_val, 1)
+        self.assertEqual(program.execution_plan[0].values[outputs[1]].val.int_val, 3)
+        self.assertEqual(
+            program.execution_plan[0].values[outputs[2]].val.double_val, 1.2
+        )
+        self.assertEqual(
+            program.execution_plan[0].values[outputs[3]].val.bool_val, True
+        )
+
+    def test_int_list_input(self):
+        class M(torch.nn.Module):
+            def forward(self, x, y, z):
+                return x + y, x + x, x + y + z
+
+        ep = torch.export.export(M(), (torch.ones(2, 3), 2, True))
+        ep(torch.ones(2, 3), 2, True)
+        program = to_edge(ep).to_executorch().executorch_program
+        inputs = program.execution_plan[0].inputs
+        self.assertEqual(len(inputs), 3)
+        self.assertEqual(program.execution_plan[0].values[inputs[1]].val.int_val, 2)
+        self.assertEqual(program.execution_plan[0].values[inputs[2]].val.bool_val, True)
+
     def test_buffers_with_perfect_alignment(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -194,43 +249,35 @@ class TestEmit(unittest.TestCase):
 
         f = Foo()
 
-        program = (
-            to_edge(export(f, (torch.randn(100),)))
-            .transform(
-                [
-                    ConstPropPass(),
-                ]
-            )
-            .to_executorch()
-            .executorch_program
-        )
-        self.assertEqual(len(program.constant_buffer), 3)
+        program = to_edge(constant_prop_pass(export(f, (torch.randn(100),))))
+        program = program.to_executorch().executorch_program
+        self.assertEqual(len(program.constant_buffer), 2)
         instructions = program.execution_plan[0].chains[0].instructions
         values = program.execution_plan[0].values
 
-        # first arg to first torch_add is a constant tensor
+        # first arg to first torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[0].instr_args.args[0], values, 1, None, None  # pyre-ignore[16]
+            instructions[1].instr_args.args[0], values, 0, 1, 800  # pyre-ignore[16]
         )
         # second arg to first torch_add is an input tensor
         self.check_tensor_buffer_loc(
-            instructions[0].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
+            instructions[1].instr_args.args[1], values, 0, 1, 400  # pyre-ignore[16]
         )
         # output of first torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[0].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
+            instructions[1].instr_args.args[3], values, 0, 1, 1200  # pyre-ignore[16]
         )
         # first arg to second torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[0], values, 0, 1, 400  # pyre-ignore[16]
+            instructions[-1].instr_args.args[0], values, 0, 1, 1200  # pyre-ignore[16]
         )
-        # second arg to second torch_add is a constant tensor
+        # second arg to second torch_add is a input tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[1], values, 2, None, None  # pyre-ignore[16]
+            instructions[-1].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
         )
         # output of second torch_add is a dynamic tensor
         self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[3], values, 0, 1, 0  # pyre-ignore[16]
+            instructions[-1].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
         )
 
     def test_inplace_ops(self) -> None:
@@ -525,12 +572,12 @@ class TestEmit(unittest.TestCase):
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
                 a = torch.nonzero(x)
+                torch._constrain_as_size(a.shape[0], min=1)
                 b = torch.ops.aten.index.Tensor(x, [a])
                 return b
 
         f = Foo()
-
-        x = (torch.randn(3, 2),)
+        x = (torch.triu(torch.ones(2, 2)),)
         program = (
             to_edge(
                 export(f, x),
@@ -538,6 +585,9 @@ class TestEmit(unittest.TestCase):
             )
             .to_executorch()
             .executorch_program
+        )
+        self.assertTrue(
+            isinstance(program.execution_plan[0].values[3].val, OptionalTensorList)
         )
         self._assertCallLength(program, 0, 3)
         self._assertCallLength(program, 1, 4)
@@ -548,14 +598,9 @@ class TestEmit(unittest.TestCase):
                 return torch.nn.functional.interpolate(x, scale_factor=2)
 
         x = (torch.randn(1, 1, 2, 2),)
-        program = (
-            to_edge(export(M(), x))
-            .transform([ConstPropPass()])
-            .to_executorch()
-            .executorch_program
-        )
+        program = to_edge(export(M(), x)).to_executorch().executorch_program
         self.assertIsInstance(
-            program.execution_plan[0].values[4].val, schema.OptionalTensorList
+            program.execution_plan[0].values[-1].val, schema.OptionalTensorList
         )
 
     def test_emit_cond(self) -> None:
@@ -806,14 +851,16 @@ class TestEmit(unittest.TestCase):
 
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
-        program_relu = to_edge(
-            export(WrapperModule(model.forward_relu), inputs),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch()
-        program_sigmoid = to_edge(
-            export(WrapperModule(model.forward_sigmoid), inputs),
-            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
-        ).to_executorch()
+        with patch_forward(model, model.forward_relu):
+            program_relu = to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+        with patch_forward(model, model.forward_sigmoid):
+            program_sigmoid = to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
         exir_input = {
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
@@ -869,12 +916,10 @@ class TestEmit(unittest.TestCase):
 
         model = SimpleLinear()
         inputs = (torch.ones(10, 5),)
-        program_relu = to_edge(
-            export(WrapperModule(model.forward_relu), inputs)
-        ).to_executorch()
-        program_sigmoid = to_edge(
-            export(WrapperModule(model.forward_sigmoid), inputs)
-        ).to_executorch()
+        with patch_forward(model, model.forward_relu):
+            program_relu = to_edge(export(model, inputs)).to_executorch()
+        with patch_forward(model, model.forward_sigmoid):
+            program_sigmoid = to_edge(export(model, inputs)).to_executorch()
         exir_input = {
             "forward_relu": program_relu.exported_program(),
             "forward_sigmoid": program_sigmoid.exported_program(),
@@ -1273,3 +1318,78 @@ class TestEmit(unittest.TestCase):
         self.assertTrue(
             len(exec_prog.delegate_map.get("forward").get(0).get("delegate_map")) != 0
         )
+
+    def test_emit_weight_view(self) -> None:
+        class ModWithWeightViews(nn.Module):
+            def __init__(self):
+                super(ModWithWeightViews, self).__init__()
+                self.W = torch.nn.Parameter(torch.randn(2))
+                self.W1 = self.W[:1]
+                self.W2 = self.W[1:]
+
+            def forward(self, x):
+                return self.W1 + self.W2 + x
+
+        model = ModWithWeightViews()
+        # each weight is a view of the same storage
+        self.assertEqual(model.W1.nbytes, 4)
+        self.assertEqual(model.W1.untyped_storage().nbytes(), 8)
+        self.assertEqual(model.W2.nbytes, 4)
+        self.assertEqual(model.W2.untyped_storage().nbytes(), 8)
+        program = to_edge(
+            export(
+                model,
+                (torch.ones(1),),
+            )
+        ).to_executorch()
+
+        program = program._emitter_output.program
+        # each emitted weight is not a view
+        self.assertEqual(len(program.constant_buffer[1].storage), 4)
+        self.assertEqual(len(program.constant_buffer[2].storage), 4)
+
+    def test_non_persistent_buffer(self) -> None:
+        class NonPersistentBuffer(nn.Module):
+            def __init__(self):
+                super(NonPersistentBuffer, self).__init__()
+                self.register_buffer("buf", torch.tensor([1]), persistent=False)
+
+            def forward(self, x):
+                return x + self.buf
+
+        model = NonPersistentBuffer()
+        program = to_edge(
+            export(
+                model,
+                (torch.ones(1),),
+            )
+        ).to_executorch()
+        program = program._emitter_output.program
+        # confirm that the buffer was emitted
+        self.assertEqual(len(program.constant_buffer), 2)
+        self.assertEqual(len(program.constant_buffer[1].storage), 8)
+
+    def test_emit_lifted_tensor_constant(self) -> None:
+        class LiftedConstants(nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x * torch.tensor([[4, 3], [1, 2], [5, 6]], dtype=torch.float)
+                return x
+
+        model = LiftedConstants()
+
+        program = to_edge(
+            export(
+                model,
+                (torch.ones(3, 2),),
+            )
+        ).to_executorch()
+
+        program = program._emitter_output.program
+        exec_plan = program.execution_plan[0]
+        # There should only be 1 input to this model.
+        self.assertEqual(len(exec_plan.inputs), 1)
+        self.assertEqual(len(program.constant_buffer), 2)
+        self.assertEqual(len(program.constant_buffer[1].storage), 24)

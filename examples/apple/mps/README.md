@@ -33,10 +33,10 @@ cmake -DBUCK2="$BUCK" \
           -DCMAKE_BUILD_TYPE=Release \
           -DEXECUTORCH_BUILD_SDK=ON \
           -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+          -DEXECUTORCH_BUILD_MPS=ON \
           -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
           -Bcmake-out .
 cmake --build cmake-out -j9 --target install --config Release
-# Build the mps_executor_runner
 CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
 # build mps_executor_runner
 rm -rf cmake-out/examples/apple/mps

@@ -87,6 +87,16 @@
     - arg_meta: null
       kernel_name: torch::executor::any_all_out
 
+- op: any.dims_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_dims_out
+
+- op: any.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_out
+
 - op: arange.out
   kernels:
     - arg_meta: null
@@ -126,6 +136,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::atan_out
+
+- op: atan2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atan2_out
 
 - op: atanh.out
   kernels:
@@ -238,6 +253,11 @@
     - arg_meta: null
       kernel_name: torch::executor::div_out
 
+- op: div.Scalar_mode_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_scalar_mode_out
+
 - op: div.Scalar_out
   kernels:
     - arg_meta: null
@@ -264,6 +284,11 @@
     - arg_meta: null
       kernel_name: torch::executor::eq_scalar_out
 
+- op: eq.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::eq_tensor_out
+
 - op: erf.out
   kernels:
     - arg_meta: null
@@ -278,6 +303,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::expand_copy_out
+
+- op: expm1.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expm1_out
 
 - op: fill.Scalar_out
   kernels:
@@ -407,6 +437,21 @@
     - arg_meta: null
       kernel_name: torch::executor::log_out
 
+- op: log10.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log10_out
+
+- op: log1p.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log1p_out
+
+- op: log2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log2_out
+
 - op: logical_and.out
   kernels:
     - arg_meta: null
@@ -451,6 +496,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::max_out
+
+- op: maximum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::maximum_out
 
 - op: max_pool2d_with_indices.out
   kernels:
@@ -542,6 +592,16 @@
     - arg_meta: null
       kernel_name: torch::executor::pow_Tensor_Tensor_out
 
+- op: prod.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::prod_int_out
+
+- op: prod.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::prod_out
+
 - op: reciprocal.out
   kernels:
     - arg_meta: null
@@ -566,6 +626,36 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::repeat_out
+
+- op: reflection_pad1d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reflection_pad1d_out
+
+- op: reflection_pad2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reflection_pad2d_out
+
+- op: reflection_pad3d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reflection_pad3d_out
+
+- op: replication_pad1d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad1d_out
+
+- op: replication_pad2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad2d_out
+
+- op: replication_pad3d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad3d_out
 
 - op: round.out
   kernels:
@@ -701,6 +791,11 @@
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::tril_out
+
+- op: trunc.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::trunc_out
 
 - op: unbind_copy.int_out
   kernels:

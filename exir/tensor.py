@@ -148,11 +148,17 @@ class TensorSpec:
         self.alignment = new_alignment
         return self.allocated_memory
 
+    def nbytes(self) -> int:
+        return num_bytes_from_shape_and_dtype(self.shape, self.dtype)
+
     @classmethod
     def from_tensor(cls, tensor: torch.Tensor, const: bool = False) -> TensorSpec:
         if const:
             # for non-contigous tensors, convert to a contiguous one
             tensor = tensor.contiguous()
+            # Weights cannot be views during emission or serialization
+            if tensor.nbytes != tensor.untyped_storage().nbytes():
+                tensor = tensor.clone()
 
         spec = cls(
             dtype=tensor.dtype,
@@ -171,6 +177,7 @@ class TensorSpec:
     def init_mem_planning_fields(self) -> None:
         self.lifetime = [None, None]
         self.mem_id = None
+        self.mem_obj_id = None
         self.mem_offset = None
 
     @property
@@ -279,8 +286,17 @@ def make_allocation_info(mem_id: int, mem_offset: int) -> schema.AllocationDetai
     """
     Creates the allocation_details object for creating tensors
     """
+    if mem_offset < 0:
+        raise ValueError(f"mem_offset {mem_offset} must not be negative")
+    memory_offset_low = mem_offset & ((1 << 32) - 1)
+    memory_offset_high = mem_offset >> 32
+    if memory_offset_high >= 1 << 32:
+        raise ValueError(f"mem_offset {mem_offset} does not fit in 64 bits")
+
     allocation_info = schema.AllocationDetails(
-        memory_id=mem_id, memory_offset=mem_offset
+        memory_id=mem_id,
+        memory_offset_low=memory_offset_low,
+        memory_offset_high=memory_offset_high,
     )
     return allocation_info
 

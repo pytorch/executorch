@@ -36,7 +36,16 @@ class ConvertToSDPAPass(XNNPACKPass):
                 and node.target == exir_ops.edge.aten.mul.Scalar
             ):
                 scale = node.args[1]
+
+                dtype = torch.float
+                mul_val = node.meta.get("val", None)
+                if mul_val is not None:
+                    dtype = mul_val.dtype
+
                 if isinstance(scale, float):
+                    # Convert scale value to fp16 (reducing precision)
+                    scale = torch.tensor(scale, dtype=dtype).item()
+
                     # since scale we extracted this before the QK^T.
                     return scale**2
                 break
@@ -90,7 +99,7 @@ class ConvertToSDPAPass(XNNPACKPass):
         logger.debug("ConvertToSDPA Begin: ")
         logger.debug(graph_module.print_readable(print_output=False))
 
-        for pattern in sdpa.Graphs:
+        for pattern in sdpa.get_graphs():
             sm = SubgraphMatcher(pattern.graph, ignore_literals=True)
             matches = list(sm.match(graph_module.graph))
             for partition_to_replace in matches:

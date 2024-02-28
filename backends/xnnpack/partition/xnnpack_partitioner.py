@@ -32,6 +32,7 @@ from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner impor
     generate_partitions_from_list_of_nodes,
     generate_pattern_op_partitions,
 )
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -100,12 +101,65 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         self.ep = ep
         assert len(self.constraints)
 
+    def _check_inputs_are_valid_dtypes(self, node, valid_dtypes):
+        # Check inputs are valid dtypes
+
+        # Gather all args which are nodes
+        args_to_check = []
+        for arg in node.args:
+            if isinstance(arg, list) or isinstance(arg, tuple):
+                for item in arg:
+                    if isinstance(item, torch.fx.Node):
+                        args_to_check.append(item)
+
+            if isinstance(arg, torch.fx.Node):
+                args_to_check.append(arg)
+
+        for arg in args_to_check:
+            arg_val = arg.meta.get("val", None)
+
+            if arg_val is None or isinstance(arg_val, tuple):
+                continue
+
+            # Being conservative for now, UX >> Perf
+            # TODO: We need a pass to scrub these out.
+            if not isinstance(arg_val, torch.Tensor):
+                return False
+
+            # XNNPACK does not support empty tensors
+            if arg_val.numel() == 0:
+                return False
+
+            if arg_val.dtype not in valid_dtypes:
+                return False
+
+        return True
+
+    def _check_outputs_are_valid_dtypes(self, node, valid_dtypes):
+        # Check outputs are valid dtype
+        node_val = node.meta.get("val", None)
+        if node_val is None:
+            return True
+
+        if not isinstance(node_val, tuple):
+            node_val = (node_val,)
+
+        for val in node_val:
+            if not isinstance(val, torch.Tensor):
+                return False
+
+            if val.dtype not in valid_dtypes:
+                return False
+
+        return True
+
     def check_node_has_valid_dtype(self, node):
         if node.target in {exir_ops.edge.aten.max_pool2d_with_indices.default}:
             return True
 
         valid_dtypes = {
             torch.float32,
+            torch.float16,
             torch.int8,
             torch.qint8,
         }
@@ -116,29 +170,9 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         ):
             return False
 
-        # Check inputs are valid dtypes
-        for arg in node.args:
-            if not isinstance(arg, torch.fx.Node):
-                continue
-            arg_val = arg.meta.get("val", None)
-
-            if arg_val is None or isinstance(arg_val, tuple):
-                continue
-
-            if arg_val.dtype not in valid_dtypes:
-                return False
-
-        # Check outputs are valid dtype
-        node_val = node.meta.get("val", None)
-        if node_val is not None:
-            if not isinstance(node_val, tuple):
-                node_val = (node_val,)
-
-            for val in node_val:
-                if val.dtype not in valid_dtypes:
-                    return False
-
-        return True
+        return self._check_inputs_are_valid_dtypes(
+            node, valid_dtypes
+        ) and self._check_outputs_are_valid_dtypes(node, valid_dtypes)
 
     def check_common_constraints(self, node) -> bool:
         has_valid_dtypes = self.check_node_has_valid_dtype(node)
@@ -172,6 +206,7 @@ class XnnpackOperatorSupport(OperatorSupportBase):
             node
         )
 
+    @staticmethod
     def _constraint(target):  # noqa
         """
         Decorator to register a constraint fn for a node
@@ -959,11 +994,11 @@ class XnnpackPartitioner(Partitioner):
         self, ep, quant: Optional[bool]
     ) -> List[List[torch.fx.Node]]:
         graph_module = ep.graph_module
-        graphs = bilinear_2d.Graphs
+        graphs = bilinear_2d.get_graphs()
 
         # Temporary for lowering SDPA
         if self._lower_recomposed_sdpa:
-            graphs += sdpa.Graphs
+            graphs += sdpa.get_graphs()
 
         graph_patterns = [gm_pattern.graph for gm_pattern in graphs]
         partitions = generate_pattern_op_partitions(
@@ -1057,6 +1092,9 @@ class XnnpackDynamicallyQuantizedPartitioner(XnnpackQuantizedPartitioner):
             for match in self.get_module_partitions(exported_program)
         ]
         partition_tags: Dict[str, DelegationSpec] = {}
+        self.delegation_spec = DelegationSpec(
+            XnnpackBackend.__name__, [CompileSpec("dqlinear_partitioner", bytes())]
+        )
 
         if self.check_partitions(partitions):
             partition_tags = self.tag_nodes(partitions)

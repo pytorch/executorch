@@ -10,13 +10,12 @@ python_library(
     deps = [
         ":const_prop_pass",
         ":debug_handle_generator_pass",
+        ":insert_write_back_for_buffers_pass",
         ":memory_format_ops_pass",
         ":memory_planning_pass",
         ":normalize_transpose_pass",
-        ":pass_registry",
         ":prim_ops_py_registry",
         ":quant_fusion_pass",
-        ":remove_mixed_type_operators",
         ":remove_noop_pass",
         ":replace_aten_with_edge_pass",
         ":replace_broken_ops_with_function_ops_pass",
@@ -50,6 +49,16 @@ python_library(
     deps = [
         "//executorch/exir:error",
         "//executorch/exir:pass_manager",
+    ],
+)
+
+python_library(
+    name = "insert_write_back_for_buffers_pass",
+    srcs = [
+        "insert_write_back_for_buffers_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
     ],
 )
 

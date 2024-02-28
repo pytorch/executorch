@@ -6,25 +6,74 @@
 import logging
 import unittest
 
-from typing import Any, Tuple
+from typing import Any, Tuple, Union
 
 import executorch.exir as exir
-
 import torch
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
-from executorch.exir import ExecutorchProgram, ExirExportedProgram
-from executorch.exir.backend.backend_api import to_backend, validation_disabled
-
-from executorch.exir.print_program import print_program
+from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgram,
+    ExirExportedProgram,
+    to_edge,
+)
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.backend_details import CompileSpec
+from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.tracer import Value
 from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
+from torch._export import capture_pre_autograd_graph
+from torch.export import export, ExportedProgram
 
 # Config for Capturing the weights, will be moved in the future
 _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=True)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(_check_ir_validity=False)
+
+
+def _to_core_aten(
+    model: Union[torch.fx.GraphModule, torch.nn.Module],
+    example_inputs: Tuple[Value, ...],
+) -> ExportedProgram:
+    # post autograd export. eventually this will become .to_core_aten
+    if not isinstance(model, torch.fx.GraphModule):
+        raise ValueError(
+            f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
+        )
+    core_aten_ep = export(model, example_inputs)
+    logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
+    return core_aten_ep
+
+
+def _core_aten_to_edge(
+    core_aten_exir_ep: ExportedProgram,
+    edge_compile_config=None,
+) -> EdgeProgramManager:
+    if not edge_compile_config:
+        edge_compile_config = exir.EdgeCompileConfig(
+            _check_ir_validity=False,  # quant ops currently break ir verification
+        )
+    edge_manager: EdgeProgramManager = to_edge(
+        core_aten_exir_ep, compile_config=edge_compile_config
+    )
+
+    edge_manager.exported_program().graph.print_tabular()
+    logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+    return edge_manager
+
+
+def export_to_edge(
+    model: Union[torch.fx.GraphModule, torch.nn.Module],
+    example_inputs: Tuple[Value, ...],
+    edge_compile_config=_EDGE_COMPILE_CONFIG,
+) -> EdgeProgramManager:
+    core_aten_ep = _to_core_aten(model, example_inputs)
+    return _core_aten_to_edge(core_aten_ep, edge_compile_config)
 
 
 class ansi_colors:
@@ -37,27 +86,6 @@ class ansi_colors:
     ENDC = "\033[0m"
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
-
-
-def dump_executorch_program_info(
-    edge: ExirExportedProgram, module_info: str = "Lowered"
-):
-    module_info = f"\033[92m{module_info}\033[0m"
-
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} exported edge graph:\n", edge.exported_program.graph)
-    executorch_program = edge.to_executorch()
-    program = executorch_program.program
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} flatbuffer representation:")
-    exir.print_program.pretty_print(program)
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} instruction list:")
-    print_program(program=program, show_meminfo=True, mark_dynamic_shape_tensor=True)
-    logging.info("-----------------------------------")
-    logging.info(f"{module_info} executorch program:")
-    logging.info(executorch_program.dump_exported_program())
-    logging.info("-----------------------------------")
 
 
 class OpSequencesAddConv2d(torch.nn.Module):
@@ -119,17 +147,16 @@ class TestMPS(unittest.TestCase):
         module: Any,
         sample_inputs: Tuple[torch.Tensor],
         func_name: str,
-        use_partitioner: bool = False,
-        dump_non_lowered_module: bool = False,
-        dump_lowered_module: bool = False,
+        use_partitioner: bool = True,
+        use_fp16: bool = False,
     ) -> ExirExportedProgram:
         """
-        Helper testing function that takes a torch.nn.Module and lowers it to XNNPACK with
+        Helper testing function that takes a torch.nn.Module and lowers it to MPS with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
 
-        logging.info("Step 1: EXIR capturing of original module...")
+        logging.info("Step 1: EXIR capturing of original module")
 
         class WrappedModule(torch.nn.Module):
             def __init__(self):
@@ -139,68 +166,71 @@ class TestMPS(unittest.TestCase):
             def forward(self, *args):
                 return self.one_module(*args)
 
-        edge_program = exir.capture(
-            WrappedModule(), sample_inputs, _CAPTURE_CONFIG
-        ).to_edge(_EDGE_COMPILE_CONFIG)
+        model = WrappedModule()
+        model = model.eval()
+        model = capture_pre_autograd_graph(model, sample_inputs)
 
-        if dump_non_lowered_module:
-            dump_executorch_program_info(edge=edge_program, module_info="Non-lowered")
+        edge_program = export_to_edge(
+            model,
+            sample_inputs,
+            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
 
-        logging.info("Step 2: Lowering to MPSGraph...")
+        logging.info(
+            f"Step 2: Lowering to MPSGraph {'with' if use_partitioner else 'without'} partitioner"
+        )
+        compile_specs = [CompileSpec("use_fp16", bytes([use_fp16]))]
+
         if use_partitioner:
-            with validation_disabled():
-                None
+            logging.info(f"Edge IR graph:\n{edge_program.exported_program().graph}")
+            edge = edge_program.to_backend(MPSPartitioner(compile_specs=compile_specs))
+            logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+
+            executorch_program = edge.to_executorch(
+                config=ExecutorchBackendConfig(extract_constant_segment=False)
+            )
         else:
             delegated_program = to_backend(
-                "MPSBackend", edge_program.exported_program, []
+                MPSBackend.__name__, edge_program.exported_program(), compile_specs
             )
 
-        logging.info("Step 3: Capturing executorch program with lowered module...")
-
-        class WrappedModule(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.mps_module = delegated_program
-
-            def forward(self, *args):
-                return self.mps_module(*args)
+            executorch_program = (
+                exir.capture(
+                    delegated_program,
+                    sample_inputs,
+                    exir.CaptureConfig(enable_aot=True, _unlift=False),
+                )
+                .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+                .to_executorch(
+                    config=ExecutorchBackendConfig(extract_constant_segment=False)
+                )
+            )
 
         exported_program: ExirExportedProgram = exir.capture(
             WrappedModule(), sample_inputs, _CAPTURE_CONFIG
         ).to_edge(_EDGE_COMPILE_CONFIG)
 
-        if dump_lowered_module:
-            tmp_exported_program: ExirExportedProgram = exir.capture(
-                delegated_program, sample_inputs, _CAPTURE_CONFIG
-            ).to_edge(_EDGE_COMPILE_CONFIG)
-            dump_executorch_program_info(
-                edge=tmp_exported_program, module_info="Lowered"
-            )
-
         executorch_program: ExecutorchProgram = exported_program.to_executorch()
 
-        # Assert the backend name is mps
-        self.assertEqual(
-            executorch_program.program.execution_plan[0].delegates[0].id,
-            MPSBackend.__name__,
-        )
-
-        logging.info("Step 4: Generating bundled program...")
+        logging.info("Step 3: Generating bundled program")
         logging.info(
             "  -> Number of execution plans: {len(executorch_program.program.execution_plan)}"
         )
+
+        expected_output = module(*sample_inputs)
 
         method_test_suites = [
             MethodTestSuite(
                 method_name="forward",
                 test_cases=[
                     MethodTestCase(
-                        input=sample_inputs, expected_outputs=module(*sample_inputs)
+                        inputs=sample_inputs, expected_outputs=module(*sample_inputs)
                     )
                 ],
             )
         ]
 
+        logging.info(f"Expected output: {expected_output}")
         logging.info("  -> Test suites generated successfully")
 
         bundled_program = BundledProgram(executorch_program, method_test_suites)
@@ -208,8 +238,8 @@ class TestMPS(unittest.TestCase):
             bundled_program
         )
 
-        filename = f"{func_name}.bpte"
-        logging.info(f"Step 5: Saving bundled program to {filename}...")
+        filename = f"{func_name}.pte"
+        logging.info(f"Step 4: Saving bundled program to {filename}")
         with open(filename, "wb") as file:
             file.write(bundled_program_buffer)
 
@@ -218,12 +248,14 @@ class TestMPS(unittest.TestCase):
         graph_module,
         example_inputs,
         func_name: str,
+        use_fp16: bool = False,
     ):
         logging.info(func_name)
         # MPS TODO: partitioner support
         self.lower_module_and_test_output(
             graph_module,
             example_inputs,
-            use_partitioner=False,
+            use_partitioner=True,
             func_name=func_name,
+            use_fp16=use_fp16,
         )

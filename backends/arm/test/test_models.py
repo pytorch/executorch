@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -188,7 +188,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_3x3_1x3x256x256_st1(torch.nn.Module):
+    class simple_conv2d_3x3_1x3x256x256_stride1(torch.nn.Module):
         data = torch.ones(1, 3, 256, 256)
         inputs = {
             TosaProfile.BI: (data,),
@@ -214,8 +214,32 @@ class TorchBuilder:
             x = self.conv2d(x)
             return x
 
+    # A test where `(input + 2 * pad - dilation * (weight - 1) - 1) / stride` is not an integer.
     @register_test
-    class simple_conv2d_1x1_1x2x128x128_st1(torch.nn.Module):
+    class simple_conv2d_3x3_1x3x12x12_st2_pad1(torch.nn.Module):
+        data = torch.ones(1, 3, 12, 12)
+        inputs = {
+            TosaProfile.BI: (data,),
+            TosaProfile.MI: (data,),
+        }
+
+        def __init__(self):
+            super().__init__()
+            self.conv2d = torch.nn.Conv2d(
+                in_channels=3, out_channels=4, kernel_size=3, stride=2, padding=1
+            )
+            with torch.no_grad():
+                self.conv2d.weight.copy_(
+                    rand_test_integers(low=1, high=4, size=(4, 3, 3, 3))
+                )
+                self.conv2d.bias.copy_(rand_test_integers(low=1, high=4, size=(4)))
+
+        def forward(self, x):
+            x = self.conv2d(x)
+            return x
+
+    @register_test
+    class simple_conv2d_1x1_1x2x128x128_stride1(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(1, 2, 128, 128)))
         )
@@ -244,7 +268,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_2x2_1x1x14x14_st2(torch.nn.Module):
+    class simple_conv2d_2x2_1x1x14x14_stride2(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(1, 1, 14, 14)))
         )
@@ -273,7 +297,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_5x5_3x2x128x128_st1(torch.nn.Module):
+    class simple_conv2d_5x5_3x2x128x128_stride1(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(3, 2, 128, 128)))
         )

@@ -3,7 +3,7 @@
 namespace fb_xnnpack;
 
 // Update after any BC breaking changes
-file_identifier "XN00";
+file_identifier "XN01";
 
 // datatype for xnn-values
 enum XNNDatatype : short {
@@ -23,23 +23,31 @@ enum XNNDatatype : short {
   xnn_datatype_qcint8 = 6,
   /// Quantized 32-bit signed integer with shared per-channel quantization parameters.
   xnn_datatype_qcint32 = 7,
+  /// Quantized 4-bit signed integer with shared per-channel quantization parameters.
+  xnn_datatype_qcint4 = 8,
+  /// Dynamically quantized 8-bit signed integer with per-batch quantization parameters.
+  xnn_datatype_qdint8 = 9,
 }
 
 // type of quantization
 union XNNQuantParams {
   PerChannelQuant,
   PerTensorQuant,
+  PerTokenDynamicQuant,
 }
 
-// taken from executorch
-// Data buffer abstraction.
+// Deprecated buffer abstraction, const data buffers do not belong in flatbuffer
 table Buffer {
-  storage:[ubyte] (force_align: 16);
+  storage:[ubyte] (deprecated, force_align: 16);
 }
 
 table PerChannelQuant {
   scale:[float];
   channel_dim:int;
+}
+
+table PerTokenDynamicQuant {
+  num_nonbatch_dims:int;
 }
 
 table PerTensorQuant {
@@ -67,9 +75,6 @@ table XNNTensorValue {
   // pointer to the variable that will be initialized with the Value ID upon successful return. If a
   // valid @a external_id was provided, the variable will be initialized with the @a external_id value.
   id_out:uint;
-  // does this value need to be quantized dynamically at runtime?
-  // if we are quantizing at runtime, this field points to a target dtype
-  dq_datatype:XNNDatatype = xnn_datatype_invalid;
 }
 
 table XNNQuantizedTensorValue {
@@ -318,18 +323,14 @@ table XNNGraph {
   // Ids of external outputs
   output_ids:[uint];
 
-  // Tables of constant data, used for constant Values (e.g.
-  // data field of weight tensors). Each constant is assigned an index into the table
-  // which are each individually aligned. 0 index is reserved to be pointed to by non-constant
-  // Tensors. Exactly one of constant_buffer and constant_data must be non-empty
-  constant_buffer:[Buffer];
+  // Deprecated constant buffer storage in flatbuffer
+  constant_buffer:[Buffer] (deprecated);
 
-  // the list index is memory buffer id, the value is the memory buffer size.
-  mem_buffer_sizes: [uint];
+  // Deprecated memory_buffer size tracking in flatbuffer
+  mem_buffer_sizes: [uint] (deprecated);
 
   // List of the constant data that follows the XNNGraph in this file. Each constant data is assigned an index into
-  // the table. 0 index is reserved to be pointed to by non-constant Tensor. Exactly one of constant_buffer and
-  // constant_data must be non-empty
+  // the table. 0 index is reserved to be pointed to by non-constant Tensor.
   constant_data:[ConstantDataOffset];
 }
 

@@ -3,70 +3,30 @@
 //  Provided subject to the LICENSE file in the top level directory.
 //
 
+// Obj-C headers
 #import <Foundation/Foundation.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
-#include "MPSCompiler.h"
-#include <executorch/backends/apple/mps/utils/MPSGraphPackageExport.h>
+
+// MPS headers
+#include <executorch/backends/apple/mps/runtime/MPSDevice.h>
+#include <executorch/backends/apple/mps/runtime/MPSCompiler.h>
+#include <executorch/backends/apple/mps/runtime/MPSGraphBuilder.h>
+#include <executorch/backends/apple/mps/schema_generated.h>
+
+// Runtime headers
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
+
 #include <unordered_map>
 #include <string>
+#include <iostream>
 
 #define MPS_UNUSED(x) ( (void)(x) )
-
-@interface MPSGraphExecutable()
--(NSArray<MPSGraphShapedType *> *) getInputShapes;
--(NSArray<MPSGraphShapedType *> *) getOutputShapes;
-@end
 
 namespace torch {
 namespace executor {
 namespace mps {
 namespace delegate {
-
-void printLoadedGraph(MPSGraphExecutable* executable) {
-  NSLog(@"Loaded graph: %@", [executable debugDescription]);
-}
-
-MPSGraphExecutable* loadExecutable(
-  const void* buffer_pointer,
-  size_t num_bytes) {
-  ExirMPSGraphPackage* exirMPSGraphPackage = (ExirMPSGraphPackage*)buffer_pointer;
-  NSData *new_manifest_plist_data = [NSData dataWithBytes:exirMPSGraphPackage->data length:exirMPSGraphPackage->model_0_offset];
-  NSData *new_model_0_data = [NSData dataWithBytes:exirMPSGraphPackage->data + exirMPSGraphPackage->model_0_offset length:exirMPSGraphPackage->model_1_offset - exirMPSGraphPackage->model_0_offset];
-  NSData *new_model_1_data = [NSData dataWithBytes:exirMPSGraphPackage->data + exirMPSGraphPackage->model_1_offset length:exirMPSGraphPackage->total_bytes - sizeof(ExirMPSGraphPackage) - exirMPSGraphPackage->model_1_offset];
-
-  NSError* error = nil;
-  NSString* packageName = [NSString stringWithUTF8String:(
-      std::string("%@/mpsgraphmodule_") + std::to_string(arc4random_uniform(INT_MAX)) + ".mpsgraphpackage").c_str()];
-#if TARGET_OS_IPHONE
-  NSArray *paths = NSSearchPathForDirectoriesInDomains
-      (NSDocumentDirectory, NSUserDomainMask, YES);
-  NSString *documentsDirectory = [paths objectAtIndex:0];
-#else
-  NSString *documentsDirectory = @"/tmp";
-#endif
-
-  NSString *dataFileNSStr = [NSString stringWithFormat:packageName,
-                                                        documentsDirectory];
-
-  NSString* manifestFileStr = [NSString stringWithFormat:@"%@/manifest.plist", dataFileNSStr];
-  NSString* model0FileStr = [NSString stringWithFormat:@"%@/model_0.mpsgraph", dataFileNSStr];
-  NSString* model1FileStr = [NSString stringWithFormat:@"%@/model_1.mpsgraph", dataFileNSStr];
-
-  NSFileManager *fileManager= [NSFileManager defaultManager];
-  [fileManager createDirectoryAtPath:dataFileNSStr withIntermediateDirectories:NO attributes:nil error:&error];
-
-  [new_manifest_plist_data writeToFile:manifestFileStr options:NSDataWritingAtomic error:&error];
-  [new_model_0_data writeToFile:model0FileStr options:NSDataWritingAtomic error:&error];
-  [new_model_1_data writeToFile:model1FileStr options:NSDataWritingAtomic error:&error];
-
-  NSURL *bundleURL = [NSURL fileURLWithPath:dataFileNSStr];
-  MPSGraphCompilationDescriptor *compilationDescriptor = [MPSGraphCompilationDescriptor new];
-  MPSGraphExecutable *newExec = [[MPSGraphExecutable new] initWithMPSGraphPackageAtURL:bundleURL compilationDescriptor:compilationDescriptor];
-
-  return newExec;
-}
 
 /*
 Builds the mps runtime object using the buffer pointer. The buffer pointer
@@ -82,26 +42,25 @@ __ET_NODISCARD Error MPSCompiler::compileModel(
 
   Error err = Error::Ok;
 
-  id mpsCD = NSClassFromString(@"MPSGraph");
-  static bool _macos_14_0_plus = [mpsCD instancesRespondToSelector:@selector(imToColWithSourceTensor:descriptor:name:)] == YES;
+  std::unique_ptr<MPSGraphBuilder> mpsGraphBuilder(
+    new MPSGraphBuilder(buffer_pointer, executor->_mpsGraphTensorToId));
+  err = mpsGraphBuilder->compileModel();
   ET_CHECK_OR_RETURN_ERROR(
-      _macos_14_0_plus,
-      NotSupported,
-      "MPS Executorch runtime is supported only from macOS 14.0 and above.");
+    err == Error::Ok, Internal, "Failed to construct the MPS graph object");
 
-  MPSGraphExecutable* executable = loadExecutable(buffer_pointer, num_bytes);
+  executor->_executable = mpsGraphBuilder->getMPSGraphExecutable();
   ET_CHECK_OR_RETURN_ERROR(
-      executable != nil,
+      executor->_executable != nil,
       InvalidProgram,
-      "Invalid flatbuffer contents - could not deserialize MPSGraphExecutable");
+      "Invalid FlatBuffer contents - could not create MPSGraphExecutable");
 
-  executor->inputShapes_ = [[executable getInputShapes] retain];
-  executor->outputShapes_ = [[executable getOutputShapes] retain];
+  err = executor->initDataBuffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      err == Error::Ok, Internal, "Could not allocate data buffers");
 
-  ET_LOG(Info, "Num inputs: %lu", [executor->inputShapes_ count]);
-  ET_LOG(Info, "Num outputs: %lu", [executor->outputShapes_ count]);
+  ET_LOG(Debug, "MPSGraphExecutable total inputs: %lu", [executor->_inputShapes count]);
+  ET_LOG(Debug, "MPSGraphExecutable total outputs: %lu", [executor->_outputShapes count]);
 
-  executor->executable_ = executable;
   return err;
 }
 

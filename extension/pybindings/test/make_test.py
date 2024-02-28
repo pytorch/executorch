@@ -96,7 +96,9 @@ def make_test(  # noqa: C901
             # These cleanup passes are required to convert the `add` op to its out
             # variant, along with some other transformations.
             for method_name, method_input in input_map.items():
-                wrapped_mod = WrapperModule(getattr(eager_module, method_name))  # pyre-ignore[16]
+                wrapped_mod = WrapperModule(  # pyre-ignore[16]
+                    getattr(eager_module, method_name)
+                )
                 exported_methods[method_name] = export(wrapped_mod, method_input)
 
             exec_prog = to_edge(exported_methods).to_executorch()
@@ -207,7 +209,7 @@ def make_test(  # noqa: C901
                     executorch_output = executorch_module(inputs)[0]  # noqa
                     tester.assertFalse(True)  # should be unreachable
                 except Exception:
-                    tester.assertTrue("The length of given input array" in str(out))
+                    tester.assertTrue(str(out).find("The length of given input array"))
 
         test_e2e(tester)
         test_multiple_entry(tester)

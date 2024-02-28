@@ -10,9 +10,7 @@ from typing import final, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
-from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
-    ConvertAddmmmmWithLinear,
-)
+from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
@@ -22,7 +20,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.passes import PassManager
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 DEFAULT_DEBUG_HANDLE = 65535
 
@@ -44,7 +42,7 @@ class QnnBackend(BackendDetails):
         # QNN Delegate Specific Passes
         qnn_compiler_passes = PassManager(
             passes=[
-                ConvertAddmmmmWithLinear(),
+                ConvertToLinear(),
                 InsertIOQDQ(edge_program),
                 LayoutTransform(edge_program, insert_permute=True),
             ]
@@ -64,7 +62,10 @@ class QnnBackend(BackendDetails):
                         node, nodes_to_wrappers
                     )
                     if py_op_wrapper is not None:
-                        py_op_wrapper_list.append(py_op_wrapper)
+                        if isinstance(py_op_wrapper, List):
+                            py_op_wrapper_list.extend(py_op_wrapper)
+                        else:
+                            py_op_wrapper_list.append(py_op_wrapper)
                 else:
                     raise RuntimeError(
                         f"For {node}, {node.op}:{node.target.__name__} is not supported in Qnn Delegate"

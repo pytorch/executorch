@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -11,21 +13,7 @@ excludes = [
   "^third-party",
 ]
 
-[targets.executor_runner]
-buck_targets = [
-  "//examples/portable/executor_runner:executor_runner",
-]
-filters = [
-  ".cpp$",
-]
-excludes = [
-  "^codegen",
-]
-deps = [
-  "executorch",
-  "portable_kernels",
-  "quantized_kernels",
-]
+# ---------------------------------- core start ----------------------------------
 
 [targets.executorch]
 buck_targets = [
@@ -38,31 +26,6 @@ filters = [
   ".cpp$",
 ]
 
-[targets.extension_data_loader]
-buck_targets = [
-  "//extension/data_loader:buffer_data_loader",
-  "//extension/data_loader:file_data_loader",
-  "//extension/data_loader:mmap_data_loader",
-  "//extension/data_loader:shared_ptr_data_loader",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
-]
-
-[targets.extension_module]
-buck_targets = [
-  "//extension/module:module",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
-  "extension_data_loader",
-]
 
 [targets.portable_kernels]
 buck_targets = [
@@ -106,15 +69,63 @@ filters = [
   ".fbs$",
 ]
 
-[targets.print_evalue]
+# ---------------------------------- core end ----------------------------------
+# ---------------------------------- extension start ----------------------------------
+
+[targets.extension_data_loader]
 buck_targets = [
-  "//extension/evalue_util:print_evalue",
+  "//extension/data_loader:buffer_data_loader",
+  "//extension/data_loader:file_data_loader",
+  "//extension/data_loader:mmap_data_loader",
+  "//extension/data_loader:shared_ptr_data_loader",
 ]
 filters = [
   ".cpp$",
 ]
 deps = [
   "executorch",
+]
+
+[targets.extension_module]
+buck_targets = [
+  "//extension/module:module",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "extension_data_loader",
+]
+
+[targets.extension_runner_util]
+buck_targets = [
+  "//extension/runner_util:inputs",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
+# ---------------------------------- extension end ----------------------------------
+# ---------------------------------- binary start ----------------------------------
+
+[targets.executor_runner]
+buck_targets = [
+  "//examples/portable/executor_runner:executor_runner",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "portable_kernels",
+  "quantized_kernels",
 ]
 
 [targets.size_test]
@@ -130,7 +141,8 @@ excludes = [
 deps = [
   "executorch",
 ]
-
+# ---------------------------------- binary end ----------------------------------
+# ---------------------------------- MPS start ----------------------------------
 [targets.mps_executor_runner]
 buck_targets = [
   "//examples/apple/mps/executor_runner:mps_executor_runner",
@@ -156,6 +168,17 @@ filters = [
 deps = [
   "executorch",
 ]
+
+[targets.mps_schema]
+buck_targets = [
+  "//backends/apple/mps:mps_schema",
+]
+filters = [
+  ".fbs$",
+]
+
+# ---------------------------------- MPS end ----------------------------------
+# ---------------------------------- XNNPACK start ----------------------------------
 
 [targets.xnn_executor_runner]
 buck_targets = [
@@ -194,8 +217,29 @@ filters = [
 
 [targets.xnnpack_schema]
 buck_targets = [
-  "//backends/xnnpack:xnnpack_schema",
+  "//backends/xnnpack/serialization:xnnpack_flatbuffer_header",
 ]
 filters = [
   ".fbs$",
 ]
+# ---------------------------------- XNNPACK end ----------------------------------
+# ---------------------------------- LLama start ----------------------------------
+
+[targets.llama_runner]
+buck_targets = [
+  "//examples/models/llama2/runner:runner",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "extension_module",
+  "portable_kernels",
+  "quantized_kernels",
+  "xnnpack_backend",
+]
+# ---------------------------------- LLama start ----------------------------------

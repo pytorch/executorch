@@ -44,11 +44,12 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.ceil.default,
-        exir_ops.edge.aten._softmax.default,
+        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
+        exir_ops.edge.aten._log_softmax.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.full.default,
-        exir_ops.edge.aten.embedding.default,
+        exir_ops.edge.aten.gelu.default,
         _operator.getitem,
     }
 
@@ -61,14 +62,6 @@ class LayoutTransform(ExportPass):
         3: ("NCW", "NWC"),
         4: ("NCHW", "NHWC"),
         5: ("NCDHW", "NDHWC"),
-    }
-
-    q_ops = {
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
     }
 
     @classmethod

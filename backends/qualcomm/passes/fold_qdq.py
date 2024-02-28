@@ -8,22 +8,13 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.passes import dead_code_elimination_pass
 
+from .utils import dq_ops, q_ops
+
 
 class FoldQDQ(ExportPass):
     """
     Erase QDQ pattern.
     """
-
-    q_ops = {
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    }
-    dq_ops = {
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    }
 
     def __init__(self):
         super(FoldQDQ, self).__init__()
@@ -32,7 +23,7 @@ class FoldQDQ(ExportPass):
         # remove dq
         for n in graph_module.graph.nodes:
             user_list = list(n.users.keys())
-            if n.target not in self.dq_ops:
+            if n.target not in dq_ops:
                 continue
             for user_n in user_list:
                 user_n.replace_input_with(n, n.args[0])
@@ -40,7 +31,7 @@ class FoldQDQ(ExportPass):
 
         # remove q
         for n in graph_module.graph.nodes:
-            if n.target not in self.q_ops:
+            if n.target not in q_ops:
                 continue
             to_be_removed = [n]
             source_n = n.args[0]
@@ -52,7 +43,7 @@ class FoldQDQ(ExportPass):
                     "source_fn_stack"
                 )
 
-            # add quantization attributes to the meta of source node
+            # collecting quant nodes to be removed
             for i in range(1, len(n.args)):
                 if type(n.args[i]) == torch.fx.node.Node:
                     to_be_removed.append(n.args[i])

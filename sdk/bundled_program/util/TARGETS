@@ -11,7 +11,6 @@ python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//executorch/exir:schema",
         "//executorch/sdk/bundled_program:config",
     ],
 )

@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from functools import lru_cache
 from typing import List, Optional
 
 import torch
@@ -12,7 +13,8 @@ from torch import Tensor
 from torch.export import export
 
 
-def get_sdpa_graphs() -> List[torch.fx.GraphModule]:
+@lru_cache(maxsize=None)
+def get_graphs() -> List[torch.fx.GraphModule]:
     """
     Returns a list of SDPA graphs.
     """
@@ -57,24 +59,25 @@ def get_sdpa_graphs() -> List[torch.fx.GraphModule]:
 
     graphs = []
     for mask in masks:
-        edge = to_edge(
-            export(
-                SDPA(),
-                (
-                    q,
-                    k,
-                    v,
-                    mask,
-                ),
+        # These two seems to generate different graphs - P1136301928
+        for dtype in [torch.float, torch.float16]:
+            q = q.to(dtype)
+            k = k.to(dtype)
+            v = v.to(dtype)
+            mask = mask.to(dtype)
+
+            edge = to_edge(
+                export(
+                    SDPA(),  # pyre-ignore[16]
+                    (
+                        q,
+                        k,
+                        v,
+                        mask,
+                    ),
+                )
             )
-        )
-        gm = edge.exported_program().graph_module
-        print(f"mask: {mask}, graph: {gm}")
-        graphs.append(gm)
+            gm = edge.exported_program().graph_module
+            graphs.append(gm)
 
     return graphs
-
-
-Graphs: List[torch.fx.GraphModule] = get_sdpa_graphs()
-
-# TODO - Add a standard interface around these modules

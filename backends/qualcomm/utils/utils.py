@@ -17,9 +17,10 @@ import torch
 from executorch.backends.qualcomm.passes.annotate_and_quant_scalar import (
     AnnotateAndQuantScalar,
 )
+from executorch.backends.qualcomm.passes.annotate_decomposed import AnnotateDecomposed
 from executorch.backends.qualcomm.passes.annotate_quant_attrs import AnnotateQuantAttrs
-from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
-    ConvertAddmmmmWithLinear,
+from executorch.backends.qualcomm.passes.convert_binary_op_with_scalar import (
+    ConvertBinaryOpsWithScalar,
 )
 from executorch.backends.qualcomm.passes.convert_bmm_to_matmul import ConvertBmmToMatmul
 from executorch.backends.qualcomm.passes.convert_hardsigmoid import ConvertHardsigmoid
@@ -27,6 +28,7 @@ from executorch.backends.qualcomm.passes.convert_hardswish import ConvertHardswi
 from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d import (
     ConvertInterpolateWithUpsample2D,
 )
+from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
@@ -54,11 +56,15 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
 ) -> exir.ExirExportedProgram:
-    ex_prog = exir.capture(
+    exir_exported_program = exir.capture(
         module,
         inputs,
         qnn_capture_config(),
-    ).to_edge(qnn_edge_config())
+    )
+    # We choose call_operator by target in ConvertBinaryOpsWithScalar
+    # because it is the same source_fn_stack for MultiheadAttention
+    exir_exported_program.transform(ConvertBinaryOpsWithScalar())
+    ex_prog = exir_exported_program.to_edge(qnn_edge_config())
 
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
@@ -66,16 +72,17 @@ def capture_program(
     edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
-    ConvertAddmmmmWithLinear()(graph_module)
+    ConvertToLinear()(graph_module)
     ConvertHardsigmoid()(graph_module)
     ConvertHardswish()(graph_module)
     ConvertBmmToMatmul()(graph_module)
     ConvertInterpolateWithUpsample2D()(graph_module)
     I64toI32(edge_program)(graph_module)
-    LayoutTransform(edge_program)(graph_module)
     AnnotateQuantAttrs(edge_program)(graph_module)
     AnnotateAndQuantScalar(edge_program)(graph_module)
+    AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
+    LayoutTransform(edge_program)(graph_module)
     return ex_prog
 
 
@@ -108,6 +115,8 @@ def generate_qnn_executorch_option(
             option.log_level = PyQnnManager.QnnExecuTorchLogLevel(
                 int.from_bytes(compiler_spec.value, sys.byteorder)
             )
+        elif compiler_spec.key == "online_prepare":
+            option.online_prepare = bool.from_bytes(compiler_spec.value, sys.byteorder)
         elif compiler_spec.key == "library_path":
             option.library_path = compiler_spec.value.decode("utf-8")
         elif compiler_spec.key == "htp_performance_mode":
@@ -126,8 +135,13 @@ def generate_qnn_executorch_option(
     return option
 
 
+# TODO: refactor this for supporting other backends
 def generate_qnn_executorch_compiler_spec(
-    is_fp16: bool, soc_model: SoCModel, debug: bool, saver: bool = False
+    is_fp16: bool,
+    soc_model: SoCModel,
+    debug: bool = False,
+    saver: bool = False,
+    online_prepare: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -141,6 +155,7 @@ def generate_qnn_executorch_compiler_spec(
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+        online_prepare: Compose QNN graph on device if set to True
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
         saver: Instead of compiling the model, run QNN Saver. Please check
@@ -204,5 +219,7 @@ def generate_qnn_executorch_compiler_spec(
             "library_path", bytes("libQnnSaver.so", encoding="utf-8")
         )
         compiler_spec.append(library_path)
+
+    compiler_spec.append(CompileSpec("online_prepare", bytes([online_prepare])))
 
     return compiler_spec

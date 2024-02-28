@@ -11,34 +11,12 @@
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
-
-namespace {
-
-template <
-    typename CTYPE,
-    typename std::enable_if<std::is_floating_point<CTYPE>::value, int>::type =
-        0>
-CTYPE remainder_override(CTYPE a, CTYPE b) {
-  float rem = std::fmod(a, b);
-  if (((a < 0) ^ (b < 0)) && rem != 0) {
-    rem += b;
-  }
-  return rem;
-}
-
-template <
-    typename CTYPE,
-    typename std::enable_if<std::is_integral<CTYPE>::value, int>::type = 0>
-CTYPE remainder_override(CTYPE a, CTYPE b) {
-  return a % b;
-}
-
-} // namespace
 
 using Tensor = exec_aten::Tensor;
 
@@ -84,8 +62,8 @@ Tensor& remainder_Tensor_out(
                                     static_cast<CTYPE_IN>(val_a);
                                 CTYPE_IN b_casted =
                                     static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value =
-                                    remainder_override(a_casted, b_casted);
+                                CTYPE_IN value = utils::remainder_override(
+                                    a_casted, b_casted);
 
                                 return static_cast<CTYPE_OUT>(value);
                               },
@@ -127,7 +105,7 @@ Tensor& remainder_Scalar_out(
         ET_SWITCH_SCALAR_OBJ_TYPES(
             b_type, ctx, "remainder.Scalar_out", CTYPE_B, [&]() {
               CTYPE_B val_b = 0;
-              ET_EXTRACT_SCALAR(b, val_b);
+              utils::extract_scalar(b, &val_b);
               ET_SWITCH_REAL_TYPES(
                   common_type, ctx, "remainder.Scalar_out", CTYPE_IN, [&]() {
                     ET_SWITCH_REAL_TYPES(
@@ -142,8 +120,8 @@ Tensor& remainder_Scalar_out(
                                     static_cast<CTYPE_IN>(val_a);
                                 CTYPE_IN b_casted =
                                     static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value =
-                                    remainder_override(a_casted, b_casted);
+                                CTYPE_IN value = utils::remainder_override(
+                                    a_casted, b_casted);
 
                                 return static_cast<CTYPE_OUT>(value);
                               },

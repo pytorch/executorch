@@ -5,12 +5,15 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+
+import logging
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 import torch
+import torch.export._trace as export_trace
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
@@ -26,9 +29,16 @@ from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 
-from executorch.extension.pybindings.portable_lib import (  # @manual
-    _load_for_executorch_from_buffer,
-)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+try:
+    from executorch.extension.pybindings.portable_lib import (  # @manual
+        _load_for_executorch_from_buffer,
+    )
+except ImportError as e:
+    logger.warning(f"{e=}")
+    pass
+
 from torch._export.pass_base import PassType
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 from torch.ao.quantization.quantizer.quantizer import Quantizer
@@ -77,7 +87,7 @@ class Stage(ABC):
         if isinstance(self.artifact, ExportedProgram):
             return self.artifact(*inputs)
         else:
-            return self.artifact.exported_program()(*inputs)
+            return self.artifact.exported_program().module()(*inputs)
 
     # Debug Tools for stages
     def artifact_str(self):
@@ -143,7 +153,7 @@ class Quantize(Stage):
     def run(
         self, artifact: torch.nn.Module, inputs: Optional[Tuple[torch.Tensor]]
     ) -> None:
-        captured_graph = torch.export._trace._export(
+        captured_graph = export_trace._export(
             artifact, inputs, pre_dispatch=True
         ).module()
 
@@ -153,7 +163,7 @@ class Quantize(Stage):
             # Calibrate prepared model to provide data to quantization observers.
             prepared(*inputs)
 
-        converted = convert_pt2e(prepared, fold_quantize=True)
+        converted = convert_pt2e(prepared)
         self.converted_graph = converted
 
     @property
@@ -495,7 +505,7 @@ class Tester:
                 ref_output[i],
                 atol=atol,
                 rtol=rtol,
-            )
+            ), f" Output {i} does not match reference output. Max difference: {torch.max(torch.abs(model_output[i] - ref_output[i]))}"
 
     def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
         """
@@ -568,5 +578,5 @@ class Tester:
 
             dequant_node.target = dequant_shim
 
-        output = program(*inputs)
+        output = program.module()(*inputs)
         return output, scale

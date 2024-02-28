@@ -8,7 +8,7 @@
 
 import copy
 import operator
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.utils._pytree as pytree
@@ -25,12 +25,14 @@ from executorch.exir.schema import Program
 
 from executorch.exir.tracer import Value
 
-from torch._export.exported_program import ExportedProgram
 from torch._subclasses import FakeTensor
 from torch.export.exported_program import (
+    ExportedProgram,
     ExportGraphSignature,
     InputKind,
     InputSpec,
+    ModuleCallEntry,
+    ModuleCallSignature,
     OutputKind,
     OutputSpec,
     TensorArgument,
@@ -70,6 +72,29 @@ class LoweredBackendModule(torch.nn.Module):
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
+
+    # pyre-ignore
+    def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
+        # Copy exported program
+        copied_program = ExportedProgram(
+            root=copy.deepcopy(self._original_module.graph_module),
+            graph=copy.deepcopy(self._original_module.graph),
+            graph_signature=copy.deepcopy(self._original_module.graph_signature),
+            state_dict=self._original_module.state_dict,
+            range_constraints=copy.deepcopy(self._original_module.range_constraints),
+            module_call_graph=copy.deepcopy(self._original_module.module_call_graph),
+            verifier=copy.deepcopy(self._original_module.verifier),
+            constants=self._original_module.constants,
+        )
+
+        res = LoweredBackendModule(
+            edge_program=copied_program,
+            backend_id=self._backend_id,
+            processed_bytes=self._processed_bytes,
+            compile_specs=copy.deepcopy(self._compile_specs, memo),
+        )
+        res.meta = copy.copy(getattr(self, "meta", {}))
+        return res
 
     @property
     def backend_id(self) -> str:
@@ -388,7 +413,11 @@ def arrange_graph_placeholders(
 # TODO Don't regenerate new signature manually.
 def _get_new_signature(
     original_program: ExportedProgram, gm: torch.fx.GraphModule
-) -> Tuple[ExportGraphSignature, Dict[str, Union[torch.Tensor, torch.nn.Parameter]]]:
+) -> Tuple[
+    ExportGraphSignature,
+    Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
+    Dict[str, Union[torch.Tensor, torch.ScriptObject]],
+]:
     old_signature = original_program.graph_signature
 
     input_specs = []
@@ -397,6 +426,9 @@ def _get_new_signature(
         input_specs=input_specs, output_specs=output_specs
     )
     new_state_dict = {}
+    new_constants = {}
+
+    non_persistent_buffers = set(old_signature.non_persistent_buffers)
 
     for node in gm.graph.nodes:
         if node.op == "placeholder":
@@ -417,17 +449,39 @@ def _get_new_signature(
                 ]
             elif node.name in old_signature.inputs_to_buffers:
                 buffer_name = old_signature.inputs_to_buffers[node.name]
+                persistent = buffer_name not in non_persistent_buffers
                 # add buffer to graph signature
                 input_specs.append(
                     InputSpec(
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=node.name),
                         target=buffer_name,
+                        persistent=persistent,
                     )
                 )
 
                 # add param to new_state_dict
-                new_state_dict[buffer_name] = original_program.state_dict[buffer_name]
+                if persistent:
+                    new_state_dict[buffer_name] = original_program.state_dict[
+                        buffer_name
+                    ]
+                else:
+                    new_constants[buffer_name] = original_program.constants[buffer_name]
+            elif node.name in old_signature.inputs_to_lifted_tensor_constants:
+                constant_name = old_signature.inputs_to_lifted_tensor_constants[
+                    node.name
+                ]
+                # add constant to graph signature
+                input_specs.append(
+                    InputSpec(
+                        kind=InputKind.CONSTANT_TENSOR,
+                        arg=TensorArgument(name=node.name),
+                        target=constant_name,
+                    )
+                )
+
+                # add constant to new_constants
+                new_constants[constant_name] = original_program.constants[constant_name]
             else:
                 # not param or buffer then user input
                 input_specs.append(
@@ -449,7 +503,7 @@ def _get_new_signature(
                     )
                 )
 
-    return new_signature, new_state_dict
+    return new_signature, new_state_dict, new_constants
 
 
 def create_exported_program_from_submodule(
@@ -472,9 +526,12 @@ def create_exported_program_from_submodule(
     submodule = arrange_graph_placeholders(submodule, owning_program)
 
     # Get updated graph signature
-    subgraph_signature, subgraph_state_dict = _get_new_signature(
+    subgraph_signature, subgraph_state_dict, subgraph_constants = _get_new_signature(
         owning_program, submodule
     )
+
+    in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
+    out_spec = pytree.tree_flatten(subgraph_signature.user_outputs)[1]
 
     return ExportedProgram(
         root=submodule,
@@ -482,8 +539,16 @@ def create_exported_program_from_submodule(
         graph_signature=subgraph_signature,
         state_dict=subgraph_state_dict,
         range_constraints=copy.deepcopy(owning_program.range_constraints),
-        module_call_graph=[],
+        module_call_graph=[
+            ModuleCallEntry(
+                "",
+                ModuleCallSignature(
+                    inputs=[], outputs=[], in_spec=in_spec, out_spec=out_spec
+                ),
+            )
+        ],
         verifier=owning_program.verifier,
+        constants=subgraph_constants,
     )
 
 

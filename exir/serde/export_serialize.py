@@ -459,7 +459,10 @@ class GraphModuleSerializer:
                 path, ty = val
 
                 assert isinstance(path, str)
-                normalized_ty = ty.__module__ + "." + ty.__qualname__
+                if isinstance(ty, str):
+                    normalized_ty = ty
+                else:
+                    normalized_ty = ty.__module__ + "." + ty.__qualname__
                 return path + "," + normalized_ty
 
             # Serialize to "key,orig_path,type_str"
@@ -699,6 +702,7 @@ class GraphModuleSerializer:
             # serialize/deserialize function.
             custom_obj_name = f"_custom_obj_{len(self.custom_objs)}"
             self.custom_objs[custom_obj_name] = arg
+            # pyre-fixme[20]: Argument `class_fqn` expected.
             return Argument.create(as_custom_obj=CustomObjArgument(custom_obj_name))
         else:
             raise SerializeError(f"Unsupported argument type: {type(arg)}")
@@ -735,10 +739,12 @@ class GraphModuleSerializer:
         elif spec.kind == ep.InputKind.BUFFER:
             assert spec.target is not None
             assert isinstance(spec.arg, ep.TensorArgument)
+            assert spec.persistent is not None
             return InputSpec.create(
                 buffer=InputToBufferSpec(
                     arg=TensorArgument(name=spec.arg.name),
                     buffer_name=spec.target,  # pyre-ignore
+                    persistent=spec.persistent,  # pyre-ignore
                 )
             )
         elif spec.kind == ep.InputKind.CONSTANT_TENSOR:
@@ -1038,7 +1044,7 @@ class ExportedProgramSerializer:
         constants = {}
         for n, c in gm_serializer.custom_objs.items():
             constants[n] = c
-        for n, t in exported_program.tensor_constants.items():
+        for n, t in exported_program.constants.items():
             assert n not in constants
             constants[n] = t
 
@@ -1129,8 +1135,6 @@ class GraphModuleDeserializer:
                             sym,
                             compiler_min=vr.lower,  # type: ignore[arg-type]
                             compiler_max=vr.upper,  # type: ignore[arg-type]
-                            runtime_min=vr.lower,  # type: ignore[arg-type]
-                            runtime_max=vr.upper,  # type: ignore[arg-type]
                         )
 
             if val.hint is None:
@@ -1315,6 +1319,7 @@ class GraphModuleDeserializer:
                 kind=ep.InputKind.BUFFER,
                 arg=PyTensorArgument(name=i.buffer.arg.name),
                 target=i.buffer.buffer_name,
+                persistent=i.buffer.persistent,
             )
         elif i.type == "tensor_constant":
             return ep.InputSpec(
@@ -1708,9 +1713,7 @@ class ExportedProgramDeserializer:
         constants = deserialize_torch_artifact(serialized_artifact.constants)
 
         # TODO: No need to do this once CustomClassHolders are lifted to the ExportedProgram
-        tensor_constants = {
-            k: v for k, v in constants.items() if isinstance(v, torch.Tensor)
-        }
+        constants = {k: v for k, v in constants.items() if isinstance(v, torch.Tensor)}
 
         res = GraphModuleDeserializer().deserialize(
             serialized_artifact.exported_program.graph_module,  # pyre-ignore
@@ -1743,7 +1746,7 @@ class ExportedProgramDeserializer:
             verifier=load_verifier(
                 serialized_artifact.exported_program.dialect  # pyre-ignore
             ),
-            tensor_constants=tensor_constants,
+            constants=constants,  # type: ignore[arg-type]
         )
         return upgrader.upgrade(exported_program)
 

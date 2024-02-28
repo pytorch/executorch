@@ -10,61 +10,12 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {
 namespace native {
-
-namespace {
-
-//
-// Override min/max so we can emulate PyTorch's behavior with NaN entries.
-//
-
-template <
-    typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
-FLOAT_T min_override(FLOAT_T a, FLOAT_T b) {
-  if (std::isnan(a)) {
-    return a;
-  } else if (std::isnan(b)) {
-    return b;
-  } else {
-    return std::min(a, b);
-  }
-}
-
-template <
-    typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
-FLOAT_T max_override(FLOAT_T a, FLOAT_T b) {
-  if (std::isnan(a)) {
-    return a;
-  } else if (std::isnan(b)) {
-    return b;
-  } else {
-    return std::max(a, b);
-  }
-}
-
-template <
-    typename INT_T,
-    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
-INT_T min_override(INT_T a, INT_T b) {
-  return std::min(a, b);
-}
-
-template <
-    typename INT_T,
-    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
-INT_T max_override(INT_T a, INT_T b) {
-  return std::max(a, b);
-}
-
-} // namespace
 
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
@@ -96,20 +47,21 @@ Tensor& hardtanh_out(
     CTYPE min_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(min_type, ctx, "hardtanh.out", CTYPE_MIN, [&]() {
       CTYPE_MIN min_val;
-      ET_EXTRACT_SCALAR(min, min_val);
+      utils::extract_scalar(min, &min_val);
       min_casted = static_cast<CTYPE>(min_val);
     });
 
     CTYPE max_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(max_type, ctx, "hardtanh.out", CTYPE_MAX, [&]() {
       CTYPE_MAX max_val;
-      ET_EXTRACT_SCALAR(max, max_val);
+      utils::extract_scalar(max, &max_val);
       max_casted = static_cast<CTYPE>(max_val);
     });
 
     apply_unary_map_fn(
         [min_casted, max_casted](const CTYPE val_in) {
-          return min_override(max_override(val_in, min_casted), max_casted);
+          return utils::min_override(
+              utils::max_override(val_in, min_casted), max_casted);
         },
         in.const_data_ptr<CTYPE>(),
         out.mutable_data_ptr<CTYPE>(),

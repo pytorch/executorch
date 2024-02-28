@@ -45,6 +45,16 @@ void test_integer_sigmoid_out() {
       tf_out.make(sizes, /*data=*/{0.731059, 0.880797, 0.982014, 0.999665}));
 }
 
+TEST(OpSigmoidOutKernelTest, AllRealInputHalfOutputSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype) \
+  test_integer_sigmoid_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST(OpSigmoidOutKernelTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_sigmoid_out<ScalarType::dtype, ScalarType::Float>();

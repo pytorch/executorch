@@ -56,9 +56,12 @@ def define_common_targets():
             "executor_pal_override_test.cpp",
         ],
         deps = [
+            # This must come first to ensure that the weak platform
+            # calls are overriden.
+            # buildifier: do not sort
+            ":stub_platform",
             "//executorch/runtime/core:core",
             "//executorch/runtime/platform:platform",
-            ":stub_platform",
         ],
     )
 
@@ -73,5 +76,20 @@ def define_common_targets():
         compiler_flags = [
             # Turn on debug logging.
             "-DET_MIN_LOG_LEVEL=Debug",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "clock_test",
+        srcs = [
+            "clock_test.cpp",
+        ],
+        deps = [
+            # This must come first to ensure that the weak platform
+            # calls are overriden.
+            # buildifier: do not sort
+            ":stub_platform",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/platform:platform",
         ],
     )
