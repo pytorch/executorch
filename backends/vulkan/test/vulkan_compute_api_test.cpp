@@ -13,8 +13,8 @@
 #include <ATen/native/vulkan/impl/Arithmetic.h>
 #include <ATen/native/vulkan/impl/Packing.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Arithmetic.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 using namespace at::native::vulkan;
 
