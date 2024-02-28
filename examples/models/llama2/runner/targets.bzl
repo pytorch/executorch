@@ -29,9 +29,9 @@ def define_common_targets():
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/kernels/portable:" + ("generated_lib_aten" if aten else "generated_lib_all_ops"),
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-            ] + [
+            ] + ([
                 "//executorch/examples/models/llama2/custom_ops:custom_ops",
-            ] if ((not aten) and (not runtime.is_oss)) else [],
+            ] if ((not aten) and (not runtime.is_oss)) else []),
             external_deps = [
                 "libtorch",
             ] if aten else [],
