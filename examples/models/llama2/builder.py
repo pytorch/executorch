@@ -62,6 +62,7 @@ def load_llama_model(
     checkpoint: str,
     params_path: str,
     use_kv_cache: bool = False,
+    use_sdpa_with_kv_cache: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     verbose: bool = False,
 ) -> "LlamaEdgeManager":
@@ -81,6 +82,7 @@ def load_llama_model(
         checkpoint=checkpoint,
         params=params_path,
         use_kv_cache=use_kv_cache,
+        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         fairseq2=weight_type == WeightType.FAIRSEQ2,
     )
     state_dict = model.state_dict()
@@ -106,6 +108,7 @@ def load_llama_model(
         weight_type=weight_type,
         dtype=dtype,
         use_kv_cache=use_kv_cache,
+        use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         example_inputs=example_inputs,
         verbose=verbose,
     )
@@ -122,6 +125,7 @@ class LlamaEdgeManager:
         weight_type,
         dtype,
         use_kv_cache,
+        use_sdpa_with_kv_cache,
         example_inputs,
         verbose: bool = False,
     ):
@@ -130,6 +134,7 @@ class LlamaEdgeManager:
         self.dtype = dtype
         self.example_inputs = example_inputs
         self.use_kv_cache = use_kv_cache
+        self.use_sdpa_with_kv_cache = use_sdpa_with_kv_cache
         self.metadata = None
         self.verbose = verbose
         self.applied_source_transforms = []
@@ -220,6 +225,7 @@ class LlamaEdgeManager:
             "get_n_layers": params.n_layers,
             "get_vocab_size": params.vocab_size,
             "use_kv_cache": self.use_kv_cache,
+            "use_sdpa_with_kv_cache": self.use_sdpa_with_kv_cache,
         }
         if self.metadata:
             try:

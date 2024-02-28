@@ -32,6 +32,8 @@ except ImportError:
 
 from ..model_base import EagerModelBase
 
+from .custom_ops.sdpa_with_kv_cache import *
+
 
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -96,6 +98,9 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
+    use_sdpa_with_kv_cache_op: bool = (
+        False  # Use custom sdpa op that updates kv cache in-place
+    )
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -105,6 +110,9 @@ class ModelArgs:
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
+
+        if self.use_sdpa_with_kv_cache_op:
+            assert self.use_kv_cache, "use_sdpa_with_kv_cache_op requires use_kv_cache"
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -157,7 +165,7 @@ def apply_rotary_emb(
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs):
+    def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
@@ -174,6 +182,9 @@ class Attention(nn.Module):
         self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
+
+        self.use_sdpa_with_kv_cache_op = args.use_sdpa_with_kv_cache_op
+        self.layer_id = layer_id
 
         mask = torch.full(
             (1, 1, args.max_seq_len, args.max_seq_len),
@@ -204,17 +215,22 @@ class Attention(nn.Module):
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
         start_pos: Optional[int] = None,
-        cache_k: Optional[
-            torch.Tensor
-        ] = None,  # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        cache_v: Optional[
-            torch.Tensor
-        ] = None,  # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        cache_k: Optional[torch.Tensor] = None,
+        # if use_sdpa_with_kv_cache_op
+        # shape: (num_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        # otherwise
+        # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        cache_v: Optional[torch.Tensor] = None,
+        # if use_sdpa_with_kv_cache_op
+        # shape: (num_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        # otherwise
+        # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
     ):
         bsz, seqlen, _ = x.shape
 
         # QKV
         xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+        # We need view_copy elimination
         xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
         xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
         xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
@@ -226,20 +242,37 @@ class Attention(nn.Module):
             assert start_pos is not None
             assert cache_k is not None and cache_v is not None
 
-            # Replace the entry in the cache for this token
-            # The following lines are equivalent to:
-            # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-            # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
-            # We use .narrow() here to make the compiler happy
-            narrowed_k = cache_k[:bsz].narrow(1, start_pos, seqlen)
-            narrowed_v = cache_v[:bsz].narrow(1, start_pos, seqlen)
+            # TODO(T180671810)
+            # Refactor this code to make custom op based
+            # SDPA into a separate optimized attention module
+            if self.use_sdpa_with_kv_cache_op:
+                output = torch.ops.llama.sdpa_with_kv_cache(
+                    xq,
+                    xk,
+                    xv,
+                    cache_k,
+                    cache_v,
+                    self.layer_id,
+                    start_pos,
+                    seqlen,
+                )
+                output = output.view(bsz, seqlen, -1)
+                output = self.wo(output)
+                return output, cache_k, cache_v
+            else:
+                # Replace the entry in the cache for this token
+                # The following lines are equivalent to:
+                # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
+                # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
+                # We use .narrow() here to make the compiler happy
+                narrowed_k = cache_k[:bsz].narrow(1, start_pos, seqlen)
+                narrowed_v = cache_v[:bsz].narrow(1, start_pos, seqlen)
 
-            narrowed_k.copy_(xk)
-            narrowed_v.copy_(xv)
+                narrowed_k.copy_(xk)
+                narrowed_v.copy_(xv)
 
-            keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
-            values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
-
+                keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
+                values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
         else:
             keys = xk
             values = xv
@@ -256,11 +289,11 @@ class Attention(nn.Module):
         assert hasattr(self, "mask")
         mask = self.mask[:, :, :seqlen, :seqlen]
 
-        # This is needed to support XNNPACK which requires mask shape to be 2D.
-        # This is a temporary workaround. Once we update XNNPACK we should be able to handle this.
-        # Shape before: [1, 1, L, S], after: [L, S]
-        # We make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
-        # tensor will be 2-dimensional, regarldess of the values of L & S
+        # this is needed to support xnnpack which requires mask shape to be 2d.
+        # this is a temporary workaround. once we update xnnpack we should be able to handle this.
+        # shape before: [1, 1, l, s], after: [l, s]
+        # we make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
+        # tensor will be 2-dimensional, regarldess of the values of l & s
         mask = torch.squeeze(mask, [0, 1])
 
         # FIXME: This should be so automatically! MKG
@@ -355,12 +388,11 @@ class TransformerBlock(nn.Module):
         self.n_heads = args.n_heads
         self.dim = args.dim
         self.head_dim = args.dim // args.n_heads
-        self.attention = Attention(args)
+        self.attention = Attention(args, layer_id)
         if args.moe:
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
-        self.layer_id = layer_id
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
@@ -455,16 +487,26 @@ class Transformer(nn.Module):
 
         for index, layer in enumerate(self.layers):
             if self.use_kv_cache:
-                h, updated_cache_k, updated_cache_v = layer(
-                    h,
-                    freqs_cos,
-                    freqs_sin,
-                    sp,  # pyre-ignore[61]
-                    cache_k[index],  # pyre-ignore[16]
-                    cache_v[index],
-                )
-                cache_k[index] = updated_cache_k  # pyre-ignore[16]
-                cache_v[index] = updated_cache_v
+                if self.params.use_sdpa_with_kv_cache_op:
+                    h, updated_cache_k, updated_cache_v = layer(
+                        h,
+                        freqs_cos,
+                        freqs_sin,
+                        sp,  # pyre-ignore[61]
+                        cache_k,
+                        cache_v,
+                    )
+                else:
+                    h, updated_cache_k, updated_cache_v = layer(
+                        h,
+                        freqs_cos,
+                        freqs_sin,
+                        sp,  # pyre-ignore[61]
+                        cache_k[index],  # pyre-ignore[16]
+                        cache_v[index],
+                    )
+                    cache_k[index] = updated_cache_k  # pyre-ignore[16]
+                    cache_v[index] = updated_cache_v
 
             else:
                 h, _, _ = layer(h, freqs_cos, freqs_sin)
@@ -520,6 +562,11 @@ class Llama2Model(EagerModelBase):
         self.use_kv_cache = (
             kwargs["use_kv_cache"] if "use_kv_cache" in kwargs else False
         )
+        self.use_sdpa_with_kv_cache_op = (
+            kwargs["use_sdpa_with_kv_cache"]
+            if "use_sdpa_with_kv_cache" in kwargs
+            else False
+        )
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
@@ -553,6 +600,7 @@ class Llama2Model(EagerModelBase):
             max_seq_len=max_seq_len,
             max_batch_size=max_batch_size,
             use_kv_cache=self.use_kv_cache,
+            use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
             **params,
         )
         if kwargs.get("fairseq2", False):
