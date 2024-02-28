@@ -6,9 +6,11 @@
 # LICENSE file in the root directory of this source tree.
 
 set -exu
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 MODEL_NAME=$1 # stories110M.pt
-BUILD_TOOL=$2 # buck2
+BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
 
 if [[ -z "${MODEL_NAME:-}" ]]; then
@@ -26,15 +28,42 @@ if [[ -z "${DTYPE:-}" ]]; then
   exit 1
 fi
 
+if [[ -z "${BUCK:-}" ]]; then
+  BUCK=buck2
+fi
+
+if [[ -z "${PYTHON_EXECUTABLE:-}" ]]; then
+  PYTHON_EXECUTABLE=python3
+fi
+
 which "${PYTHON_EXECUTABLE}"
 
-# Check build tool.
-if [[ "${BUILD_TOOL}" == "buck2" ]]; then
-  :
-else
-  echo "Invalid build tool ${BUILD_TOOL}. Only buck2 is supported atm"
-  exit 1
-fi
+
+cmake_install_executorch_libraries() {
+    echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
+    rm -rf cmake-out
+    retry cmake -DBUCK2="$BUCK" \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -Bcmake-out .
+    cmake --build cmake-out -j9 --target install --config Release
+}
+
+cmake_build_llama_runner() {
+    echo "Building llama runner"
+    dir="examples/models/llama2"
+    retry cmake -DBUCK2="$BUCK" \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -Bcmake-out/${dir} \
+        ${dir}
+    cmake --build cmake-out/${dir} -j9 --config Release
+
+}
 
 cleanup_files() {
   echo "Deleting downloaded and generated files"
@@ -42,17 +71,15 @@ cleanup_files() {
   rm tokenizer.model
   rm tokenizer.bin
   rm "${EXPORTED_MODEL_NAME}"
+  rm result.txt
+  rm params.json
 }
 
 # Download and create artifacts.
 PARAMS="params.json"
 touch "${PARAMS}"
 if [[ "${MODEL_NAME}" == "stories110M.pt" ]]; then
-  # Download stories110M.pt and tokenizer from Github
-  wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
-  wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
-  # Create params.json file
-  echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > "${PARAMS}"
+  download_stories_model_artifacts
 else
   echo "Unsupported model name ${MODEL_NAME}"
   exit 1
@@ -72,16 +99,35 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-python3 -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}"
+$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}"
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
-buck2 run examples/models/llama2/tokenizer:tokenizer_py -- -t tokenizer.model -o tokenizer.bin
+$PYTHON_EXECUTABLE -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
 
-# Run model.
+
+RUNTIME_ARGS="--model_path=${EXPORTED_MODEL_NAME} --tokenizer_path=tokenizer.bin --prompt=Once --temperature=0 --seq_len=10"
+# Check build tool.
 echo "Running ${EXPORTED_MODEL_NAME} in portable mode"
-RESULT=$(timeout 500s buck2 run examples/models/llama2:main -- --model_path="${EXPORTED_MODEL_NAME}" --tokenizer_path=tokenizer.bin --prompt="Once" --temperature=0) || true
-
+if [[ "${BUILD_TOOL}" == "buck2" ]]; then
+  # Run model.
+  # shellcheck source=/dev/null
+  $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
+elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+  cmake_install_executorch_libraries
+  cmake_build_llama_runner
+  # Run llama runner
+  NOW=$(date +"%H:%M:%S")
+  echo "Starting to run llama runner at ${NOW}"
+  # shellcheck source=/dev/null
+  cmake-out/examples/models/llama2/llama_main ${RUNTIME_ARGS} > result.txt
+  NOW=$(date +"%H:%M:%S")
+  echo "Finished at ${NOW}"
+else
+  echo "Invalid build tool ${BUILD_TOOL}. Only buck2 is supported atm"
+  exit 1
+fi
+RESULT=$(cat result.txt)
 # Check results.
 EXPECTED_PREFIX="Once upon a time,"
 # Expected result - may take too long to generate:
