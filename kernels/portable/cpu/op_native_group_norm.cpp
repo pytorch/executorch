@@ -90,12 +90,12 @@ void group_norm(
         const int64_t c = g * D + j;
         const CTYPE scale =
             rstd_value * (weight_data == nullptr ? 1.0 : weight_data[c]);
-        const CTYPE bias =
+        const CTYPE beta =
             -scale * mean_value + (bias_data == nullptr ? 0.0 : bias_data[c]);
         x = input_data + (i * D + j) * HxW;
         CTYPE* y = out_data + (i * D + j) * HxW;
         for (size_t k = 0; k < HxW; k++) {
-          y[k] = scale * x[k] + bias;
+          y[k] = scale * x[k] + beta;
         }
       }
     }
