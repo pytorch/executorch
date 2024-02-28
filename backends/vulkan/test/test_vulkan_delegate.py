@@ -199,6 +199,26 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(arithmetic_module, model_inputs)
 
+    def test_vulkan_backend_floor_div(self):
+        class FloorDivModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x, y):
+                z = x // y
+                return z
+
+        floor_div_module = FloorDivModule()
+        model_inputs = (
+            torch.rand(size=(2, 3), dtype=torch.float32) * 10.0,
+            torch.rand(size=(2, 3), dtype=torch.float32) + 1.0,
+        )
+
+        # absolute tolerance is 1 because of flooring
+        self.lower_module_and_test_output(
+            floor_div_module, model_inputs, atol=1.0 + 1e-03
+        )
+
     def test_vulkan_backend_pow(self):
         class PowModule(torch.nn.Module):
             def __init__(self):
@@ -221,12 +241,8 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.linear = torch.nn.Linear(10, 10)
-                self.offset_1 = self.weight = torch.rand(
-                    size=(2, 10), dtype=torch.float32
-                )
-                self.offset_2 = self.weight = torch.rand(
-                    size=(2, 10), dtype=torch.float32
-                )
+                self.offset_1 = torch.rand(size=(2, 10), dtype=torch.float32)
+                self.offset_2 = torch.rand(size=(2, 10), dtype=torch.float32)
 
             def forward(self, x):
                 return self.linear(x + self.offset_1) - self.offset_2

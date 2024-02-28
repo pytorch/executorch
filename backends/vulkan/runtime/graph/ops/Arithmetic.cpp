@@ -61,11 +61,11 @@ ValueRef add_arithmetic_node(
 }
 
 ArithmeticPrepack::ArithmeticPrepack(const ValueRef tref, const ValueRef packed)
-    : OpNode(tref, packed) {}
+    : PrepackNode(tref, packed) {}
 
-void ArithmeticPrepack::encode_prepack(ComputeGraph* graph) const {
-  TensorRef tref = graph->get_val(inputs_[0]).toTensorRef();
-  vTensor packed = graph->get_val(outputs_[0]).toTensor();
+void ArithmeticPrepack::encode(ComputeGraph* graph) const {
+  TensorRef tref = graph->get_val(tref_).toTensorRef();
+  vTensor packed = graph->get_val(packed_).toTensor();
 
   api::StorageBuffer staging(
       graph->context(), packed.dtype(), packed.gpu_nbytes());
@@ -83,9 +83,9 @@ ArithmeticNode::ArithmeticNode(
     const ValueRef out,
     const float alpha,
     const arithmetic::OpType optype)
-    : OpNode({t1, t2}, {out}), alpha_(alpha), optype_(optype) {}
+    : ExecuteNode({t1, t2}, {out}), alpha_(alpha), optype_(optype) {}
 
-void ArithmeticNode::encode_execute(ComputeGraph* graph) const {
+void ArithmeticNode::encode(ComputeGraph* graph) const {
   vTensor& in1 = graph->get_val(inputs_[0]).toTensor();
   vTensor& in2 = graph->get_val(inputs_[1]).toTensor();
   vTensor& out = graph->get_val(outputs_[0]).toTensor();
