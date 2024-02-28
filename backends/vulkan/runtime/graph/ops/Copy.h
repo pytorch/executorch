@@ -19,11 +19,11 @@ namespace vulkan {
 void add_copy_node(ComputeGraph& graph, const ValueRef from, const ValueRef to);
 ValueRef add_copy_node(ComputeGraph& graph, const ValueRef from);
 
-class CopyNode : public virtual OpNode {
+class CopyNode : public virtual ExecuteNode {
  public:
   explicit CopyNode(const ValueRef from, const ValueRef to);
 
-  void encode_execute(ComputeGraph* graph) const override;
+  void encode(ComputeGraph* graph) const override;
 };
 
 } // namespace vulkan
