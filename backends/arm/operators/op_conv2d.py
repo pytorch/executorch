@@ -28,6 +28,24 @@ class Conv2dVisitor(NodeVisitor):
     def __init__(self, *args):
         super().__init__(*args)
 
+    # torch.nn.Conv2d does not require the result of
+    # `(input + 2 * pad - dilation * (weight - 1) - 1) / stride`
+    # must be an integer, but tosa currently strictly require this property.
+    # This function adjusts the pad value to meet the requirement.
+    def adjust_pad_if_needed(self, input, weight, stride, pad, dilation):
+        mod_remainder = (input + 2 * pad - dilation * (weight - 1) - 1) % stride
+
+        # No need to adjust
+        if mod_remainder == 0:
+            return pad
+
+        if mod_remainder > pad:
+            raise RuntimeError(
+                f"ignoring input element is not currently supported, got a large stride {stride}"
+            )
+
+        return pad - mod_remainder
+
     def define_node(
         self,
         node: torch.fx.Node,
@@ -52,6 +70,23 @@ class Conv2dVisitor(NodeVisitor):
         pad_attr = [val for val in pad.special for _ in (0, 1)]
         stride_attr = stride.special
         dilation_attr = dilation.special
+
+        # Adjust the pad value if needed to meet the strict convolution output shape calculation.
+        pad_attr[1] = self.adjust_pad_if_needed(
+            input.shape[2],
+            weight.shape[2],
+            stride_attr[0],
+            pad_attr[1],
+            dilation_attr[0],
+        )
+        pad_attr[3] = self.adjust_pad_if_needed(
+            input.shape[3],
+            weight.shape[3],
+            stride_attr[1],
+            pad_attr[3],
+            dilation_attr[1],
+        )
+
         attr.ConvAttribute(
             pad=pad_attr,
             stride=stride_attr,
