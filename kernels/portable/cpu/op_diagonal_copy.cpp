@@ -87,7 +87,6 @@ Tensor& diagonal_copy_out(
       InvalidArgument,
       out);
 
-  auto in_scalar_type = in.scalar_type();
   constexpr auto name = "diagonal_copy.out";
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {

@@ -193,8 +193,8 @@ void ComputeGraph::copy_from_staging(
 }
 
 void ComputeGraph::encode_prepack() {
-  for (std::unique_ptr<OpNode>& node : prepack_nodes_) {
-    node->encode_prepack(this);
+  for (std::unique_ptr<PrepackNode>& node : prepack_nodes_) {
+    node->encode(this);
   }
 }
 
@@ -216,8 +216,8 @@ void ComputeGraph::encode_execute() {
     shared_object.bind_users(this);
   }
 
-  for (std::unique_ptr<OpNode>& node : execute_nodes_) {
-    node->encode_execute(this);
+  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+    node->encode(this);
   }
 }
 
