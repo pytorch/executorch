@@ -36,7 +36,7 @@ def define_common_targets():
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-            ] + _get_operator_lib(aten),
+            ] + (_get_operator_lib(aten)),
             external_deps = [
                 "libtorch",
             ] if aten else [],
