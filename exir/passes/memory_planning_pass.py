@@ -107,11 +107,13 @@ class MemoryPlanningPass(PassBase):
         verifier = Verifier(
             graph_module, self.alloc_graph_input, self.alloc_graph_output
         )
-        num_reuse_pairs = verifier.verify_storage_reuse(
-            self.allow_lifetime_and_storage_overlap
-        )
-        logging.debug(
-            f"The {self.memory_planning_algo} algorithm reuses storage for {num_reuse_pairs} pair of tensors"
-        )
+
+        if logging.getLogger().isEnabledFor(logging.DEBUG):
+            num_reuse_pairs = verifier.verify_storage_reuse(
+                self.allow_lifetime_and_storage_overlap
+            )
+            logging.debug(
+                f"The {self.memory_planning_algo} algorithm reuses storage for {num_reuse_pairs} pair of tensors"
+            )
         verifier.verify_graph_input_output()
         return PassResult(graph_module, True)
