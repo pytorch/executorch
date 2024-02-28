@@ -118,8 +118,6 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (torch.randn(4, 4, 4),)
         self._test_add_tosa_MI_pipeline(self.Add(), test_data)
 
-    # TODO: Will this type of parametrization be supported? pytest seem
-    # have issue with it.
     @parameterized.expand(
         [
             (torch.ones(5),),  # test_data
