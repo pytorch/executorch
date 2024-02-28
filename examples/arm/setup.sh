@@ -223,9 +223,12 @@ function setup_vela() {
     # different command for conda vs venv
     VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
     if [ ${VNV} == "venv" ]; then
-       pip3 install .
+	pip install .
     else
-       pip3 install . --user
+       # if not venv, we need the site-path where the vela
+       vela_path=$(python -c "import site; print(site.USER_BASE+'/bin')")
+       echo "export PATH=\${PATH}:${vela_path}" >> ${setup_path_script}
+       pip install . --user
     fi
 }
 
