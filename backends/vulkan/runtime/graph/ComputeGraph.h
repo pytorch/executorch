@@ -16,11 +16,13 @@
 #include <ATen/native/vulkan/api/Tensor.h>
 #include <ATen/native/vulkan/api/Types.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Config.h>
-#include <executorch/backends/vulkan/runtime/graph/ExecuteNode.h>
-#include <executorch/backends/vulkan/runtime/graph/PrepackNode.h>
-#include <executorch/backends/vulkan/runtime/graph/SharedObject.h>
-#include <executorch/backends/vulkan/runtime/graph/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
+
+#include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
 namespace at {
 namespace native {
