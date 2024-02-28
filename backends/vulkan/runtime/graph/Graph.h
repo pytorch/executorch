@@ -33,32 +33,52 @@ struct IOValueRef {
 class ComputeGraph;
 
 /*
- * Represents a single op in a ML model. In graph mode, ops will be implemented
- * introducing a derived class that implements encode_execute, which will
- * implement encoding of the shader corresponding to the op into the command
- * buffer of a ComputeGraph, as well as encode_prepack, which will implement
+ * Represents a single prepacking op in a ML model. In graph mode, ops will be
+ * implemented in a derived class that implements encode, which will implement
  * encoding of shaders transferring necessary data (such as weights and biases)
- * to the GPU, wherever prepacking is necessary.
+ * to the GPU.
  */
-class OpNode {
+class PrepackNode {
   friend class ComputeGraph;
 
  public:
-  OpNode(ValueRef input, ValueRef output) : inputs_{input}, outputs_{output} {}
-  OpNode(
+  PrepackNode(ValueRef tref, ValueRef packed) : tref_{tref}, packed_{packed} {}
+
+  virtual ~PrepackNode() = default;
+
+ protected:
+  ValueRef tref_;
+  ValueRef packed_;
+
+ public:
+  virtual void encode(ComputeGraph* graph) const = 0;
+};
+
+/*
+ * Represents a single execution op in a ML model. In graph mode, ops will be
+ * implemented in a derived class that implements encode, which will implement
+ * encoding of the shader corresponding to the op into the command buffer of a
+ * ComputeGraph.
+ */
+class ExecuteNode {
+  friend class ComputeGraph;
+
+ public:
+  ExecuteNode(ValueRef input, ValueRef output)
+      : inputs_{input}, outputs_{output} {}
+  ExecuteNode(
       const std::vector<ValueRef>& inputs,
       const std::vector<ValueRef>& outputs)
       : inputs_(inputs), outputs_(outputs) {}
 
-  virtual ~OpNode() = default;
+  virtual ~ExecuteNode() = default;
 
  protected:
   std::vector<ValueRef> inputs_;
   std::vector<ValueRef> outputs_;
 
  public:
-  virtual void encode_prepack(ComputeGraph* graph) const {}
-  virtual void encode_execute(ComputeGraph* graph) const {}
+  virtual void encode(ComputeGraph* graph) const = 0;
 };
 
 struct SharedObject {
@@ -99,8 +119,8 @@ class ComputeGraph final {
   std::vector<SharedObject> shared_objects_;
   std::vector<Value> values_;
 
-  std::vector<std::unique_ptr<OpNode>> prepack_nodes_;
-  std::vector<std::unique_ptr<OpNode>> execute_nodes_;
+  std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
+  std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
 
   std::vector<ValueRef> inputs_;
   std::vector<ValueRef> outputs_;
@@ -149,11 +169,11 @@ class ComputeGraph final {
     VK_THROW("Could not get dtype of value with type ", val.type());
   }
 
-  inline std::vector<std::unique_ptr<OpNode>>& prepack_nodes() {
+  inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
     return prepack_nodes_;
   }
 
-  inline std::vector<std::unique_ptr<OpNode>>& execute_nodes() {
+  inline std::vector<std::unique_ptr<ExecuteNode>>& execute_nodes() {
     return execute_nodes_;
   }
 

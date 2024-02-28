@@ -26,10 +26,10 @@ class VulkanSupportedOperators(OperatorSupportBase):
         supported = node.op == "call_function" and node.target in [
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.div.Tensor,
+            exir_ops.edge.aten.div.Tensor_mode,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.pow.Tensor_Tensor,
-            exir_ops.edge.aten.floor_divide.default,
         ]
         return supported
 
