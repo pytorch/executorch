@@ -98,7 +98,9 @@ class ModelArgs:
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
     use_kv_cache: bool = False  # Use key/value cache
-    use_sdpa_with_kv_cache_op: bool = False  # Use key/value cache
+    use_sdpa_with_kv_cache_op: bool = (
+        False  # Use custom sdpa op that updates kv cache in-place
+    )
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -108,6 +110,9 @@ class ModelArgs:
     def __post_init__(self):
         if self.n_kv_heads is None:
             self.n_kv_heads = self.n_heads
+
+        if self.use_sdpa_with_kv_cache_op:
+            assert self.use_kv_cache, "use_sdpa_with_kv_cache_op requires use_kv_cache"
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -160,7 +165,7 @@ def apply_rotary_emb(
 
 
 class Attention(nn.Module):
-    def __init__(self, args: ModelArgs, layer_id):
+    def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
         self.use_kv_cache = args.use_kv_cache
         self.n_kv_heads = args.n_heads if args.n_kv_heads is None else args.n_kv_heads
@@ -237,6 +242,9 @@ class Attention(nn.Module):
             assert start_pos is not None
             assert cache_k is not None and cache_v is not None
 
+            # TODO(T180671810)
+            # Refactor this code to make custom op based
+            # SDPA into a separate optimized attention module
             if self.use_sdpa_with_kv_cache_op:
                 output = torch.ops.llama.sdpa_with_kv_cache(
                     xq,
@@ -422,7 +430,6 @@ class Transformer(nn.Module):
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
         self.use_kv_cache = params.use_kv_cache
-        self.use_sdpa_with_kv_cache_op = params.use_sdpa_with_kv_cache_op
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             self.params.dim // self.params.n_heads, self.params.max_seq_len
@@ -480,13 +487,13 @@ class Transformer(nn.Module):
 
         for index, layer in enumerate(self.layers):
             if self.use_kv_cache:
-                if self.use_sdpa_with_kv_cache_op:
+                if self.params.use_sdpa_with_kv_cache_op:
                     h, updated_cache_k, updated_cache_v = layer(
                         h,
                         freqs_cos,
                         freqs_sin,
                         sp,  # pyre-ignore[61]
-                        cache_k,  # pyre-ignore[16]
+                        cache_k,
                         cache_v,
                     )
                 else:
