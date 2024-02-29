@@ -6,6 +6,7 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #include <system_error>
+#include <unordered_map>
 #include <vector>
 
 namespace executorchcoreml {

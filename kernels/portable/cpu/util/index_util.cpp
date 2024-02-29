@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/index_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {
@@ -65,7 +66,7 @@ void get_index_select_out_target_size(
     const Tensor& in,
     int64_t dim,
     const Tensor& index,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim();
   for (size_t i = 0; i < in.dim(); ++i) {
@@ -127,6 +128,40 @@ bool check_scatter_add_args(
         nonempty_size(self, dim));
   }
   return true;
+}
+
+int64_t adjust_slice_indices(
+    int64_t dim_length,
+    int64_t* start,
+    int64_t* end,
+    int64_t step) {
+  int64_t num_values = 0;
+
+  // Update start and end index
+  // First convert it to c++ style from python style if needed.
+  // The start index is using python style E.g., for the shape {2, 3, 4},
+  // dim = -1 would refer to dim[2], dim = -2 would refer to dim[1], and so on.
+  *start = *start < 0 ? *start + dim_length : *start;
+  *end = *end < 0 ? *end + dim_length : *end;
+  // Second, if start or end still negative, which means user want to start or
+  // end slicing from very beginning, so set it to zero
+  *start = *start < 0 ? 0 : *start;
+  *end = *end < 0 ? 0 : *end;
+  // Last, if start or end larger than maximum value (dim_length - 1), indicates
+  // user want to start slicing after end or slicing until the end, so update it
+  // to dim_length
+  *start = *start > dim_length ? dim_length : *start;
+  *end = *end > dim_length ? dim_length : *end;
+
+  if (*start >= dim_length || *end <= 0 || *start >= *end) {
+    // Set num_values to 0 if interval [start, end) is non-exist or do not
+    // overlap with [0, dim_length)
+    num_values = 0;
+  } else {
+    // Update num_values to min(max_num_values, num_values)
+    num_values = (*end - 1 - *start) / step + 1;
+  }
+  return num_values;
 }
 
 } // namespace executor

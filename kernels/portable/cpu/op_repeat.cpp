@@ -21,8 +21,11 @@ void calculate_output_size(
     const exec_aten::ArrayRef<exec_aten::SizesType>& self_sizes,
     const exec_aten::ArrayRef<int64_t>& repeats,
     Tensor::SizesType* out_sizes_ptr) {
-  ET_CHECK_MSG(
+  ET_KERNEL_CHECK_MSG(
+      ctx,
       repeats.size() >= self_sizes.size(),
+      InvalidArgument,
+      ,
       "Repeats vector size is %zu must be >= self_sizes %zu.",
       repeats.size(),
       self_sizes.size());
@@ -51,9 +54,15 @@ Tensor& repeat_out(
   (void)ctx;
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   calculate_output_size(self.sizes(), repeats, expected_output_size);
-  auto error = resize_tensor(out, {expected_output_size, repeats.size()});
-  // TODO: Construct error message with requested output sizes.
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, {expected_output_size, repeats.size()}) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
   return repeat_tensor(self, repeats, out);
 }
 

@@ -19,6 +19,7 @@ from executorch.sdk.bundled_program.config import (
     MethodTestSuite,
 )
 from torch.export import export
+from torch.export.unflatten import _assign_attr, _AttrKind
 
 # A hacky integer to deal with a mismatch between execution plan and complier.
 #
@@ -45,8 +46,8 @@ class SampleModel(torch.nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
-        self.a: torch.Tensor = 3 * torch.ones(2, 2, dtype=torch.int32)
-        self.b: torch.Tensor = 2 * torch.ones(2, 2, dtype=torch.int32)
+        self.register_buffer("a", 3 * torch.ones(2, 2, dtype=torch.int32))
+        self.register_buffer("b", 2 * torch.ones(2, 2, dtype=torch.int32))
         self.method_names = ["encode", "decode"]
 
     def encode(
@@ -228,6 +229,28 @@ def get_random_test_suites_with_eager_model(
     return inputs_per_program, method_test_suites
 
 
+class StatefulWrapperModule(torch.nn.Module):
+    """A version of wrapper module that preserves parameters/buffers.
+
+    Use this if you are planning to wrap a non-forward method on an existing
+    module.
+    """
+
+    def __init__(self, base_mod, method) -> None:  # pyre-ignore
+        super().__init__()
+        state_dict = base_mod.state_dict()
+        for name, value in base_mod.named_parameters():
+            _assign_attr(value, self, name, _AttrKind.PARAMETER)
+        for name, value in base_mod.named_buffers():
+            _assign_attr(
+                value, self, name, _AttrKind.BUFFER, persistent=name in state_dict
+            )
+        self.fn = method  # pyre-ignore
+
+    def forward(self, *args, **kwargs):  # pyre-ignore
+        return self.fn(*args, **kwargs)
+
+
 def get_common_executorch_program() -> Tuple[
     ExecutorchProgramManager, List[MethodTestSuite]
 ]:
@@ -245,7 +268,10 @@ def get_common_executorch_program() -> Tuple[
 
     # Trace to FX Graph and emit the program
     method_graphs = {
-        m_name: export(getattr(eager_model, m_name), capture_inputs[m_name])
+        m_name: export(
+            StatefulWrapperModule(eager_model, getattr(eager_model, m_name)),
+            capture_inputs[m_name],
+        )
         for m_name in eager_model.method_names
     }
 

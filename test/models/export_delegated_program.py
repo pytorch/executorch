@@ -13,12 +13,14 @@ from typing import Dict, final, Optional, Sequence, Type
 import executorch.exir as exir
 
 import torch
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
 )
 from torch import nn
+from torch.export import export
 
 """Traces and exports delegated nn.Modules to ExecuTorch .pte program files.
 
@@ -73,7 +75,7 @@ def export_module_to_program(
     module_class: Type[nn.Module],
     *,
     backend_id: str,
-    extract_segments: bool,
+    extract_delegate_segments: bool,
     constant_tensor_alignemnt: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
     method: str = "forward",
@@ -82,15 +84,20 @@ def export_module_to_program(
     inputs = ()
     if hasattr(eager_module, "get_random_inputs"):
         inputs = eager_module.get_random_inputs()
-    capture_config = exir.CaptureConfig()
 
-    edge: exir.ExirExportedProgram = exir.capture(
-        getattr(eager_module, method),
-        args=inputs,
-        config=capture_config,
-    ).to_edge()
+    class WrapperModule(torch.nn.Module):
+        def __init__(self, fn):
+            super().__init__()
+            self.fn = fn
 
-    lowered_module = to_backend(backend_id, edge.exported_program, compile_specs=[])
+        def forward(self, *args, **kwargs):
+            return self.fn(*args, **kwargs)
+
+    edge: exir.EdgeProgramManager = to_edge(
+        export(WrapperModule(getattr(eager_module, method)), args=inputs)
+    )
+
+    lowered_module = to_backend(backend_id, edge.exported_program(), compile_specs=[])
 
     class CompositeModule(nn.Module):
         def __init__(self):
@@ -103,19 +110,11 @@ def export_module_to_program(
     composite_module = CompositeModule()
     composite_module(*inputs)
 
-    executorch_program = (
-        exir.capture(
-            composite_module,
-            args=inputs,
-            config=capture_config,
-        )
-        .to_edge()
-        .to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                extract_segments=extract_segments,
-                constant_tensor_alignment=constant_tensor_alignemnt,
-                delegate_alignment=delegate_alignment,
-            )
+    executorch_program = to_edge(export(composite_module, args=inputs)).to_executorch(
+        config=exir.ExecutorchBackendConfig(
+            extract_delegate_segments=extract_delegate_segments,
+            constant_tensor_alignment=constant_tensor_alignemnt,
+            delegate_alignment=delegate_alignment,
         )
     )
 
@@ -169,8 +168,8 @@ def main() -> None:
     # Export and write to the output files.
     os.makedirs(args.outdir, exist_ok=True)
     for module_name, module_class in module_names_to_classes.items():
-        for extract_segments in (True, False):
-            suffix = "" if extract_segments else "-nosegments"
+        for extract_delegate_segments in (True, False):
+            suffix = "" if extract_delegate_segments else "-nosegments"
             # Create files with the default alignment, and a large alignment.
             # This alignment should be so large that it's extremely unlikely for
             # the data to accidentally be aligned to it in the default case.
@@ -182,7 +181,7 @@ def main() -> None:
                         export_module_to_program(
                             module_class,
                             backend_id=args.backend_id,
-                            extract_segments=extract_segments,
+                            extract_delegate_segments=extract_delegate_segments,
                             delegate_alignment=delegate_alignment,
                         )
                     )

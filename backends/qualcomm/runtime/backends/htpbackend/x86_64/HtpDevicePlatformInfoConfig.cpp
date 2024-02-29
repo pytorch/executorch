@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevicePlatformInfoConfig.h>
 namespace torch {
 namespace executor {
@@ -17,6 +18,13 @@ HtpDevicePlatformInfoConfig::CreateDevicePlatformInfo(
   QnnDevice_HardwareDeviceInfo_t* p_hw_device_info = nullptr;
   QnnHtpDevice_DeviceInfoExtension_t* p_device_info_extension = nullptr;
   QnnDevice_CoreInfo_t* p_core_info = nullptr;
+
+  QNN_EXECUTORCH_LOG(
+      kLogLevelInfo,
+      "[Qnn ExecuTorch] Got soc_name=%s, vtcm=%d, arch=%d",
+      qcom_target_soc_info.m_socName.c_str(),
+      qcom_target_soc_info.m_vtcmSizeinMB,
+      qcom_target_soc_info.m_htpArch);
 
   p_platform_info = AllocDevicePlatformInfo();
   p_platform_info->version = QNN_DEVICE_PLATFORM_INFO_VERSION_1;

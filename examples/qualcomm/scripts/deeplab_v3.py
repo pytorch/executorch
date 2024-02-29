@@ -4,12 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import argparse
 import json
 import os
 import random
 import re
 import sys
+from multiprocessing.connection import Client
 
 import numpy as np
 
@@ -17,7 +17,9 @@ from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
+    parse_skip_delegation_node,
     segmentation_metrics,
+    setup_common_args_and_variables,
     SimpleADB,
 )
 
@@ -51,7 +53,7 @@ def get_dataset(data_size, dataset_dir, download):
         if index >= data_size:
             break
         image, target = data
-        inputs.append(image.unsqueeze(0))
+        inputs.append((image.unsqueeze(0),))
         targets.append(np.array(target.resize(input_size)))
         input_list += f"input_{index}_0.raw\n"
 
@@ -59,7 +61,8 @@ def get_dataset(data_size, dataset_dir, download):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = setup_common_args_and_variables()
+
     parser.add_argument(
         "-a",
         "--artifact",
@@ -67,33 +70,7 @@ if __name__ == "__main__":
         default="./deeplab_v3",
         type=str,
     )
-    parser.add_argument(
-        "-b",
-        "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-s",
-        "--device",
-        help="serial number for android device communicated via ADB.",
-        type=str,
-    )
-    parser.add_argument(
-        "-H",
-        "--host",
-        help="hostname where android device is connected.",
-        default=None,
-        type=str,
-    )
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
-        type=str,
-        required=True,
-    )
+
     parser.add_argument(
         "-d",
         "--download",
@@ -101,29 +78,11 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
-    parser.add_argument(
-        "-c",
-        "--compile_only",
-        help="If specified, only compile the model.",
-        action="store_true",
-        default=False,
-    )
-
-    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
-    # So maybe it's fine to just use the environment.
-    if "QNN_SDK_ROOT" not in os.environ:
-        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
-    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
 
     args = parser.parse_args()
+
+    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
+
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
@@ -146,6 +105,8 @@ if __name__ == "__main__":
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
     )
 
     if args.compile_only:
@@ -221,7 +182,13 @@ if __name__ == "__main__":
         )
 
     pa, mpa, miou, cls_iou = segmentation_metrics(predictions, targets, classes)
-    print(f"PA   : {pa}%")
-    print(f"MPA  : {mpa}%")
-    print(f"MIoU : {miou}%")
-    print(f"CIoU : \n{json.dumps(cls_iou, indent=2)}")
+    if args.ip and args.port != -1:
+        with Client((args.ip, args.port)) as conn:
+            conn.send(
+                json.dumps({"PA": float(pa), "MPA": float(mpa), "MIoU": float(miou)})
+            )
+    else:
+        print(f"PA   : {pa}%")
+        print(f"MPA  : {mpa}%")
+        print(f"MIoU : {miou}%")
+        print(f"CIoU : \n{json.dumps(cls_iou, indent=2)}")

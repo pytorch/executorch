@@ -30,7 +30,13 @@ Tensor& empty_out(
     Tensor& out) {
   (void)context;
 
-  ET_CHECK(resize_tensor(out, size) == torch::executor::Error::Ok);
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, size) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   return out;
 }

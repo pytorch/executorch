@@ -31,8 +31,12 @@ Tensor& cat_out(
   Tensor::SizesType expected_out_size[kTensorDimensionLimit];
   size_t expected_out_dim = 0;
   get_cat_out_target_size(tensors, dim, expected_out_size, &expected_out_dim);
-  ET_CHECK(
-      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok);
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {expected_out_size, expected_out_dim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   // Special handling when all inputs are 1D-empty tensors for aten consistency
   // In that case, just return an 1D-empty tensor without checking dim
@@ -52,12 +56,12 @@ Tensor& cat_out(
   const size_t ninputs = tensors.size();
 
   const auto out_type = out.scalar_type();
-  ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "cat.out", CTYPE_OUT, [&] {
+  ET_SWITCH_REALHB_TYPES(out_type, ctx, "cat.out", CTYPE_OUT, [&] {
     CTYPE_OUT* out_ptr = out.mutable_data_ptr<CTYPE_OUT>();
     for (size_t i = 0; i < outer; ++i) {
       for (size_t j = 0; j < ninputs; ++j) {
         const auto in_type = tensors[j].scalar_type();
-        ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "cat.out", CTYPE_IN, [&] {
+        ET_SWITCH_REALHB_TYPES(in_type, ctx, "cat.out", CTYPE_IN, [&] {
           if (tensors[j].numel() == 0) {
             return;
           }

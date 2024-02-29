@@ -11,7 +11,8 @@ namespace torch {
 namespace executor {
 namespace qnn {
 std::vector<QnnGraph_CustomConfig_t>
-HtpGraphCustomConfig::CreateGraphCustomConfig() {
+HtpGraphCustomConfig::CreateGraphCustomConfig(
+    const HtpInfo& qcom_target_soc_info) {
   std::vector<QnnGraph_CustomConfig_t> ret;
   QnnHtpGraph_CustomConfig_t* p_custom_config = nullptr;
 
@@ -51,6 +52,11 @@ HtpGraphCustomConfig::CreateGraphCustomConfig() {
   p_custom_config->optimizationOption.type =
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   p_custom_config->optimizationOption.floatValue = 3;
+  ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
+
+  p_custom_config = AllocGraphCustomConfig();
+  p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
+  p_custom_config->vtcmSizeInMB = qcom_target_soc_info.m_vtcmSizeinMB;
   ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
 
   return ret;

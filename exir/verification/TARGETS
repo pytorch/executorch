@@ -1,5 +1,6 @@
 load("@fbcode_macros//build_defs:cpp_python_extension.bzl", "cpp_python_extension")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
 oncall("executorch")
 
@@ -55,5 +56,15 @@ python_library(
         "//executorch/exir:lowered_backend_module",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/emit:emit",
+    ],
+)
+
+python_unittest(
+    name = "test_verifier",
+    srcs = ["test/test_verifier.py"],
+    deps = [
+        ":verifier",
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
     ],
 )

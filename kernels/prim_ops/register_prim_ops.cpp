@@ -80,6 +80,23 @@ static Kernel prim_ops[] = {
           int64_t size = self_tensor.size(dim_val);
           out = EValue(size);
         }),
+    // aten::_local_scalar_dense(Tensor self) -> Scalar
+    Kernel(
+        "aten::_local_scalar_dense",
+        [](RuntimeContext& context, EValue** stack) {
+          (void)context;
+          EValue& self = *stack[0];
+          EValue& out = *stack[1];
+          exec_aten::Tensor self_tensor = self.to<exec_aten::Tensor>();
+          ET_SWITCH_REAL_TYPES(
+              self_tensor.scalar_type(),
+              context,
+              "_local_scalar_dense",
+              CTYPE,
+              [&]() {
+                out = EValue(Scalar(self_tensor.const_data_ptr<CTYPE>()[0]));
+              });
+        }),
     // aten::sym_numel(Tensor self) -> SymInt
     Kernel(
         "aten::sym_numel",

@@ -19,23 +19,6 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-
-void check_preconditions(
-    const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list,
-    bool keepdim,
-    Tensor& out) {
-  check_dim_list_is_valid(in, dim_list);
-  ET_CHECK_MSG(
-      out.dim() == compute_reduced_out_dim(in, dim_list, keepdim),
-      "Number of dims of out tensor is not compatible with inputs and params");
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
-}
-
-} // namespace
-
 Tensor& var_out(
     RuntimeContext& ctx,
     const Tensor& in,
@@ -45,10 +28,17 @@ Tensor& var_out(
     Tensor& out) {
   (void)ctx;
 
-  check_preconditions(in, dim_list, keepdim, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_reduction_args(in, dim_list, keepdim, {}, out),
+      InvalidArgument,
+      out);
 
-  Error e = resize_reduction_out(in, dim_list, keepdim, out);
-  ET_CHECK_MSG(e == Error::Ok, "Failed to resize out tensor in var_out");
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "var.out", CTYPE_IN, [&] {
     ET_SWITCH_FLOAT_TYPES(out.scalar_type(), ctx, "var.out", CTYPE_OUT, [&] {

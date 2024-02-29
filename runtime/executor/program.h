@@ -89,11 +89,13 @@ class Program final {
   ~Program() = default;
 
   /**
-   * Get the constant buffer inside Program with index buffer_idx
-   * @param[in] buffer_idx the index of the buffer in the constant_buffer
-   * @return The buffer with corresponding index
+   * Get the constant buffer inside Program with index buffer_idx.
+   * @param[in] buffer_idx the index of the buffer in the constant_buffer.
+   * @param[in] nbytes the number of bytes to read from the buffer.
+   * @return The buffer with corresponding index.
    */
-  Result<const void*> get_constant_buffer_data(size_t buffer_idx) const;
+  Result<const void*> get_constant_buffer_data(size_t buffer_idx, size_t nbytes)
+      const;
 
   /**
    * Returns the number of methods in the program.
@@ -254,12 +256,14 @@ class Program final {
       DataLoader* loader,
       size_t segment_base_offset,
       FreeableBuffer&& program_data,
-      const executorch_flatbuffer::Program* internal_program)
+      const executorch_flatbuffer::Program* internal_program,
+      FreeableBuffer&& constant_segment_data)
       : program_data_(std::move(program_data)),
         // Don't need the loader if there are no segments.
         loader_(segment_base_offset > 0 ? loader : nullptr),
         internal_program_(internal_program),
-        segment_base_offset_(segment_base_offset) {}
+        segment_base_offset_(segment_base_offset),
+        constant_segment_data_(std::move(constant_segment_data)) {}
 
   // Not copyable or assignable.
   Program(const Program& rhs) = delete;
@@ -279,6 +283,9 @@ class Program final {
   /// The offset to the first segment, in bytes. If zero, no segments should
   /// be present in internal_program_.
   size_t segment_base_offset_;
+
+  /// Constant segment data.
+  FreeableBuffer constant_segment_data_;
 };
 
 } // namespace executor

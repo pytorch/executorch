@@ -14,7 +14,6 @@ import torch.utils._pytree as pytree
 
 from executorch.exir.schema import (
     AllocationDetails,
-    Buffer,
     Chain,
     ContainerMetadata,
     EValue,
@@ -27,6 +26,7 @@ from executorch.exir.schema import (
     Program,
     ScalarType,
     String,
+    SubsegmentOffsets,
     Tensor,
     TensorShapeDynamism,
 )
@@ -53,7 +53,9 @@ def get_test_program() -> Program:
                             layout=0,
                             constant_buffer_idx=0,
                             allocation_info=AllocationDetails(
-                                memory_id=1, memory_offset=16
+                                memory_id=1,
+                                memory_offset_high=0,
+                                memory_offset_low=16,
                             ),
                             shape_dynamism=TensorShapeDynamism.STATIC,
                         )
@@ -77,9 +79,10 @@ def get_test_program() -> Program:
                 non_const_buffer_sizes=[0, 1024],
             )
         ],
-        constant_buffer=[Buffer(storage=b"")],
+        constant_buffer=[],
         backend_delegate_data=[],
         segments=[],
+        constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
     )
 
 

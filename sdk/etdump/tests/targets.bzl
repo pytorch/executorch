@@ -16,5 +16,6 @@ def define_common_targets():
             "//executorch/sdk/etdump:etdump_flatcc",
             "//executorch/sdk/etdump:etdump_schema_flatcc",
             "//executorch/runtime/platform:platform",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
         ],
     )

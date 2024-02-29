@@ -39,9 +39,7 @@ from executorch.exir.passes.executorch_prim_ops_registry import _EXECUTORCH_SYM_
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
-from executorch.exir.passes.pass_registry import PassRegistry
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
-from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
 from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
@@ -65,6 +63,7 @@ __all__ = [
     "OpReplacePass",
     "EdgeToBackendOpsPass",
     "MemoryFormatOpsPass",
+    "MemoryPlanningPass",
     "HintBasedSymShapeEvalPass",
 ]
 
@@ -304,16 +303,12 @@ def make_alloc_node(
 class ToOutVarPass(PassBase):
     def __init__(self, ignore_to_out_var_failure: bool = False) -> None:
         self.ignore_to_out_var_failure = ignore_to_out_var_failure
-        self.missing_out_vars: Set[str] = set()
-
-    def ensures(self, graph_module: torch.fx.GraphModule) -> None:
-        if (not self.ignore_to_out_var_failure) and len(self.missing_out_vars) > 0:
-            raise RuntimeError(f"Missing out variants: {self.missing_out_vars}")
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:  # noqa: C901
         """
         Converts all of the functions to contain an out variant if it does not exist
         """
+        missing_out_vars: Set[str] = set()
 
         def get_submodule(node: torch.fx.Node) -> torch.fx.GraphModule:
             assert node.op == "get_attr"
@@ -372,7 +367,7 @@ class ToOutVarPass(PassBase):
                 logging.info(
                     f"Failed converting '{target}' to its out variant with error: '{e}'"
                 )
-                self.missing_out_vars.add(op_name)
+                missing_out_vars.add(op_name)
                 continue
 
             assert out_var_target
@@ -418,6 +413,8 @@ class ToOutVarPass(PassBase):
             node.target = out_var_target
             node.kwargs = out_var_kwargs
 
+        if (not self.ignore_to_out_var_failure) and len(missing_out_vars) > 0:
+            raise RuntimeError(f"Missing out variants: {missing_out_vars}")
         return PassResult(graph_module, True)
 
 
@@ -466,7 +463,8 @@ def dead_code_elimination_pass(graph_module: torch.fx.GraphModule) -> PassResult
 
 
 # Passes to convert a graph module from ATen to Edge IR
-aten_to_edge_passes = PassManager(
+
+base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = PassManager(
     passes=[
         # ReplaceSymSizeOpPass need to be run before other passes which inherits
         # from ExportPass. ExportPass can not handle OpOverloadPacket in its
@@ -477,27 +475,18 @@ aten_to_edge_passes = PassManager(
         ReplaceBrokenOpsWithFunctionalOpsPass(),
         ScalarToTensorPass(),
         SymToTensorPass(),
-        RemoveMixedTypeOperators(),
         RemoveNoopPass(),
+    ]
+).passes
+
+base_post_op_replace_passes: List[
+    Callable[[torch.nn.Module], PassResult]
+] = PassManager(
+    passes=[
         dead_code_elimination_pass,
         DebugHandleGeneratorPass(),
     ]
-)
-
-
-def register_passes() -> None:
-    """
-    Register an aten-to-edge collection of passes, and instances of PassBase
-    subclasses declared in this file.
-    """
-
-    PassRegistry.register("aten_to_edge_passes")(aten_to_edge_passes)
-    PassRegistry.register("debug_pass")(DebugPass())
-    PassRegistry.register("memory_planning_pass")(MemoryPlanningPass())
-    PassRegistry.register("to_out_var_pass")(ToOutVarPass())
-
-
-register_passes()
+).passes
 
 
 def propagate_dynamic_shape(

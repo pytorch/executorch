@@ -71,22 +71,27 @@ inline EventTracerEntry event_tracer_start_profiling_delegate(
  * @param[in] event_tracer The event tracer instance that is doing the logging.
  * @param[in] event_tracer_entry The EventTracerEntry returned by a call to
  * start_profiling_delegate().
- * @param[in] metadata Free-form metadata associated with the delegate event.
- * Users calling this interface do not need to keep the memory pointed to by
- * this pointer around. The string must be copied over into internal memory
- * during this call. The input string must also be null terminated.
+ * @param[in] metadata Optional data relevant to the execution that the user
+ * wants to log along with this event. Pointer to metadata doesn't need to be
+ * valid after the call to this function. The contents and format of the data
+ * are transparent to the event tracer. It will just pipe along the data and
+ * make it available for the user again in the post-processing stage.
+ * @param[in] metadata_len Length of the metadata buffer.
  */
 inline void event_tracer_end_profiling_delegate(
     EventTracer* event_tracer,
     EventTracerEntry event_tracer_entry,
-    const char* metadata = nullptr) {
+    const void* metadata = nullptr,
+    size_t metadata_len = 0) {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
-    event_tracer->end_profiling_delegate(event_tracer_entry, metadata);
+    event_tracer->end_profiling_delegate(
+        event_tracer_entry, metadata, metadata_len);
   }
 #else //! ET_EVENT_TRACER_ENABLED
   (void)event_tracer_entry;
   (void)metadata;
+  (void)metadata_len;
 #endif
 }
 
@@ -110,12 +115,12 @@ inline void event_tracer_end_profiling_delegate(
  * backend then -1 should be passed in here.
  * @param[in] start_time The timestamp when the delegate event started.
  * @param[in] end_time The timestamp when the delegate event finished.
- * @param[in] metadata Any extra data relevant to the execution that the user
+ * @param[in] metadata Optional data relevant to the execution that the user
  * wants to log along with this event. Pointer to metadata doesn't need to be
- * valid after the call to this function. Users calling this interface do not
- * need to keep the memory pointed to by this pointer around. The string must
- * be copied over into internal memory during this call. The input string must
- * also be a null terminated.
+ * valid after the call to this function. The contents and format of the data
+ * are transparent to the event tracer. It will just pipe along the data and
+ * make it available for the user again in the post-processing stage.
+ * @param[in] metadata_len Length of the metadata buffer.
  */
 inline void event_tracer_log_profiling_delegate(
     EventTracer* event_tracer,
@@ -123,11 +128,12 @@ inline void event_tracer_log_profiling_delegate(
     DebugHandle delegate_debug_id,
     et_timestamp_t start_time,
     et_timestamp_t end_time,
-    const char* metadata = nullptr) {
+    const void* metadata = nullptr,
+    size_t metadata_len = 0) {
 #ifdef ET_EVENT_TRACER_ENABLED
   if (event_tracer) {
     event_tracer->log_profiling_delegate(
-        name, delegate_debug_id, start_time, end_time, metadata);
+        name, delegate_debug_id, start_time, end_time, metadata, metadata_len);
   }
 #else //! ET_EVENT_TRACER_ENABLED
   (void)name;
@@ -135,6 +141,7 @@ inline void event_tracer_log_profiling_delegate(
   (void)start_time;
   (void)end_time;
   (void)metadata;
+  (void)metadata_len;
 #endif
 }
 

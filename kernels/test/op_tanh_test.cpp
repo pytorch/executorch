@@ -66,6 +66,16 @@ void test_floating_point_tanh_out() {
   // clang-format on
 }
 
+TEST(OpTanhOutKernelTest, AllRealInputHalfOutputSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype) \
+  test_floating_point_tanh_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST(OpTanhOutKernelTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_tanh_out<ScalarType::dtype, ScalarType::Float>();

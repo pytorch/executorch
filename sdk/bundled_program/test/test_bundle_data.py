@@ -14,7 +14,7 @@ import executorch.sdk.bundled_program.schema as bp_schema
 import torch
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.sdk.bundled_program.config import ConfigValue
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.core import BundledProgram
 from executorch.sdk.bundled_program.util.test_util import get_common_executorch_program
 
 
@@ -43,14 +43,14 @@ class TestBundle(unittest.TestCase):
     def test_bundled_program(self) -> None:
         executorch_program, method_test_suites = get_common_executorch_program()
 
-        bundled_program = create_bundled_program(executorch_program, method_test_suites)
+        bundled_program = BundledProgram(executorch_program, method_test_suites)
 
         method_test_suites = sorted(method_test_suites, key=lambda t: t.method_name)
 
         for plan_id in range(len(executorch_program.executorch_program.execution_plan)):
-            bundled_plan_test = bundled_program._bundled_program.method_test_suites[
-                plan_id
-            ]
+            bundled_plan_test = (
+                bundled_program.serialize_to_schema().method_test_suites[plan_id]
+            )
             method_test_suite = method_test_suites[plan_id]
 
             self.assertEqual(
@@ -68,7 +68,7 @@ class TestBundle(unittest.TestCase):
                 )
 
         self.assertEqual(
-            bundled_program._bundled_program.program,
+            bundled_program.serialize_to_schema().program,
             _serialize_pte_binary(executorch_program.executorch_program),
         )
 
@@ -78,7 +78,7 @@ class TestBundle(unittest.TestCase):
         # only keep the testcases for the first method to mimic the case that user only creates testcases for the first method.
         method_test_suites = method_test_suites[:1]
 
-        _ = create_bundled_program(executorch_program, method_test_suites)
+        _ = BundledProgram(executorch_program, method_test_suites)
 
     def test_bundled_wrong_method_name(self) -> None:
         executorch_program, method_test_suites = get_common_executorch_program()
@@ -86,7 +86,7 @@ class TestBundle(unittest.TestCase):
         method_test_suites[-1].method_name = "wrong_method_name"
         self.assertRaises(
             AssertionError,
-            create_bundled_program,
+            BundledProgram,
             executorch_program,
             method_test_suites,
         )
@@ -98,7 +98,7 @@ class TestBundle(unittest.TestCase):
         method_test_suites[0].test_cases[-1].inputs = ["WRONG INPUT TYPE"]
         self.assertRaises(
             AssertionError,
-            create_bundled_program,
+            BundledProgram,
             executorch_program,
             method_test_suites,
         )
@@ -112,7 +112,7 @@ class TestBundle(unittest.TestCase):
         ]
         self.assertRaises(
             AssertionError,
-            create_bundled_program,
+            BundledProgram,
             executorch_program,
             method_test_suites,
         )

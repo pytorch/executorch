@@ -20,36 +20,6 @@ namespace native {
 using exec_aten::optional;
 using exec_aten::Tensor;
 
-namespace {
-
-void check_preconditions(
-    const Tensor& in,
-    optional<int64_t> dim,
-    bool keepdim,
-    Tensor& out) {
-  if (in.dim() == 0) {
-    if (dim.has_value()) {
-      ET_CHECK(dim.value() == 0 || dim.value() == -1);
-    }
-    return;
-  }
-  if (dim.has_value()) {
-    ET_CHECK_VALID_DIM(dim.value(), in.dim());
-    ET_CHECK_NON_ZERO_DIM_SIZE(dim.value(), in);
-  }
-  ET_CHECK_MSG(
-      out.scalar_type() == ScalarType::Long,
-      "Expected out tensor to have dtype Long, but got %" PRId8 " instead",
-      static_cast<int8_t>(out.scalar_type()));
-  ET_CHECK_MSG(
-      out.dim() == compute_reduced_out_dim(in, dim, keepdim),
-      "Number of dims of out tensor is not compatible with inputs and params");
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
-}
-
-} // namespace
-
 Tensor& argmax_out(
     RuntimeContext& ctx,
     const Tensor& in,
@@ -58,10 +28,17 @@ Tensor& argmax_out(
     Tensor& out) {
   (void)ctx;
 
-  check_preconditions(in, dim, keepdim, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_argmin_argmax_args(in, dim, keepdim, out),
+      InvalidArgument,
+      out);
 
-  Error error = resize_reduction_out(in, dim, keepdim, out);
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize out tensor in argmax_out");
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_reduction_out(in, dim, keepdim, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "argmax.out", CTYPE, [&] {
     long* out_data = out.mutable_data_ptr<long>();

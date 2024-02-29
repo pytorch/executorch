@@ -27,6 +27,11 @@ class Tensor:
 
 
 @dataclass
+class TensorList:
+    tensors: List[Tensor]
+
+
+@dataclass
 class Null:
     pass
 
@@ -70,6 +75,7 @@ class ValueType(Enum):
     FLOAT = "Float"
     DOUBLE = "Double"
     TENSOR = "Tensor"
+    TENSOR_LIST = "TensorList"
     STRING = "String"
 
 
@@ -77,6 +83,7 @@ class ValueType(Enum):
 class Value:
     val: str  # Member of ValueType
     tensor: Optional[Tensor]
+    tensor_list: Optional[TensorList]
     int_value: Optional[Int]
     float_value: Optional[Float]
     double_value: Optional[Double]
@@ -106,7 +113,7 @@ class ProfileEvent:
     instruction_id: int
     delegate_debug_id_int: Optional[int]
     delegate_debug_id_str: Optional[str]
-    delegate_debug_metadata: Optional[str]
+    delegate_debug_metadata: Optional[bytes]
     start_time: int
     end_time: int
 

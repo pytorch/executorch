@@ -17,29 +17,6 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-
-void check_preconditions(
-    const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list,
-    bool keepdim,
-    optional<ScalarType> dtype,
-    Tensor& out) {
-  if (dtype.has_value()) {
-    ET_CHECK_MSG(
-        dtype.value() == out.scalar_type(),
-        "out tensor should be of the same dtype with dtype");
-  }
-  check_dim_list_is_valid(in, dim_list);
-  ET_CHECK_MSG(
-      out.dim() == compute_reduced_out_dim(in, dim_list, keepdim),
-      "Number of dims of out tensor is not compatible with inputs and params");
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(in);
-  ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(out);
-}
-
-} // namespace
-
 Tensor& sum_dim_out(
     RuntimeContext& ctx,
     const Tensor& in,
@@ -49,10 +26,17 @@ Tensor& sum_dim_out(
     Tensor& out) {
   (void)ctx;
 
-  check_preconditions(in, dim_list, keepdim, dtype, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_reduction_args(in, dim_list, keepdim, dtype, out),
+      InvalidArgument,
+      out);
 
-  Error e = resize_reduction_out(in, dim_list, keepdim, out);
-  ET_CHECK_MSG(e == Error::Ok, "Failed to resize out tensor in sum_dim_out");
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in.scalar_type(), ctx, "sum.IntList_out", CTYPE_IN, [&] {

@@ -14,7 +14,7 @@ from .qnn_constants import OpMatMul, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
 @register_node_visitor
-class Bmm(NodeVisitor):
+class BMM(NodeVisitor):
     target = "aten.bmm.default"
 
     def __init__(self, *args) -> None:
@@ -25,23 +25,10 @@ class Bmm(NodeVisitor):
         node: torch.fx.Node,
         nodes_to_wrappers: Dict[torch.fx.Node, PyQnnWrapper.TensorWrapper],
     ) -> PyQnnWrapper.PyQnnOpWrapper:
-        output_tensor = self.get_tensor(node, node)
-        output_tensor_wrapper = self.define_tensor(
-            node,
-            output_tensor,
-            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
-            nodes_to_wrappers,
-        )
-        bmm_output_tensors = [output_tensor_wrapper]
-
         bmm_input_tensors = []
         for index in range(2):
             input_node = node.args[index]
             input_tensor = self.get_tensor(input_node, node)
-
-            # For constant input, the size of tensor is torch.Size([])
-            if len(input_tensor.shape) == 0:
-                input_tensor = input_tensor.expand(output_tensor.shape).contiguous()
 
             input_tensor_wrapper = self.define_tensor(
                 input_node,
@@ -51,10 +38,17 @@ class Bmm(NodeVisitor):
             )
             bmm_input_tensors.append(input_tensor_wrapper)
 
+        output_tensor = self.get_tensor(node, node)
+        output_tensor_wrapper = self.define_tensor(
+            node,
+            output_tensor,
+            PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
+            nodes_to_wrappers,
+        )
+        bmm_output_tensors = [output_tensor_wrapper]
+
         bmm_op = PyQnnWrapper.PyQnnOpWrapper(
-            node.name,
-            QNN_OP_PACKAGE_NAME_QTI_AISW,
-            OpMatMul.op_name,
+            node.name, QNN_OP_PACKAGE_NAME_QTI_AISW, OpMatMul.op_name
         )
         bmm_op.AddInputTensors(bmm_input_tensors)
         bmm_op.AddOutputTensors(bmm_output_tensors)

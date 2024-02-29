@@ -9,6 +9,7 @@
 #pragma once
 
 #include <executorch/backends/xnnpack/runtime/XNNStatus.h>
+#include <executorch/backends/xnnpack/runtime/profiling/XNNProfiler.h>
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/util/tensor_util.h>
@@ -23,42 +24,29 @@ namespace executor {
 namespace xnnpack {
 namespace delegate {
 
+struct XNNShape {
+  size_t num_dims;
+  size_t dim[XNN_MAX_TENSOR_DIMS];
+};
+
 class XNNExecutor {
  private:
   std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)> runtime_{
       nullptr,
       &xnn_delete_runtime};
+
+  profiling::XNNProfiler profiler_;
   std::vector<uint32_t> input_ids_;
   std::vector<uint32_t> output_ids_;
   std::vector<uint32_t> external_id_args_;
   bool is_sorted_args_list_ = false;
   std::vector<xnn_external_value> externals_;
-  std::map<uint32_t, Tensor> qinputs_;
-  bool needs_resize_output = false;
+  std::vector<uint32_t> qinputs_;
 
-  Error set_external_input(uint32_t id, Tensor* input);
-
-  // XNNPACK Profiling
-  // Used to hold profiling data
-  //  * To hold op names and duration (in usec) for each operator execution
-  //  * Both indexed with xnn_node_idx (0.. node_id)
-  using microsecond_t = uint64_t;
-  size_t num_ops_;
-  std::vector<char> op_names_;
-  // op_timings[i][j] represents the runtime of operator j on the ith run
-  std::vector<std::vector<microsecond_t>> op_timings_;
-
-  void get_runtime_operator_names(std::vector<char>& operator_names);
-  void get_runtime_num_operators(size_t& num_operators);
-  void get_runtime_operator_timings(std::vector<uint64_t>& timing_stats);
+  Error set_external_input(uint32_t id, Tensor* input, struct XNNShape* shape);
 
  public:
   XNNExecutor() = default;
-
-  // XNNPACK Profiling public fn
-  void init_profiler();
-  void log_op_timings();
-  void print_avg_op_timings();
 
   inline void append_arg(uint32_t id) {
     external_id_args_.push_back(id);
@@ -94,20 +82,26 @@ class XNNExecutor {
     return output_ids_.size();
   }
 
-  inline bool needsResizeOutput() {
-    return needs_resize_output;
+  inline void initialize(xnn_runtime_t runtime) {
+    runtime_ = std::unique_ptr<xnn_runtime, decltype(&xnn_delete_runtime)>(
+        runtime, xnn_delete_runtime);
+
+    auto error = profiler_.initialize(runtime);
+    ET_CHECK_MSG(
+        error == Error::Ok,
+        "Failed to initialize profiler with error: %d",
+        static_cast<int>(error));
   }
 
-  inline void setNeedsResizeOutput() {
-    needs_resize_output = true;
+  inline void addDynamicQinput(uint32_t id) {
+    qinputs_.emplace_back(id);
   }
 
-  inline void addDynamicQinput(uint32_t id, TensorImpl* qinput) {
-    qinputs_.insert({id, Tensor(qinput)});
-  }
-
-  __ET_NODISCARD Error
-  set_inputs(std::vector<Tensor*>& inputs, std::vector<Tensor*>& outputs) {
+  __ET_NODISCARD Error set_inputs(
+      std::vector<Tensor*>& inputs,
+      std::vector<Tensor*>& outputs,
+      std::vector<struct XNNShape>& input_shapes,
+      std::vector<struct XNNShape>& output_shapes) {
     externals_.clear();
 
     ET_CHECK_OR_RETURN_ERROR(
@@ -118,7 +112,7 @@ class XNNExecutor {
         inputs.size());
 
     for (int i = 0; i < inputs.size(); i++) {
-      auto err = set_external_input(input_ids_[i], inputs[i]);
+      auto err = set_external_input(input_ids_[i], inputs[i], &input_shapes[i]);
       ET_CHECK_OR_RETURN_ERROR(
           err == Error::Ok, Internal, "Failed to set_external_input");
     }
@@ -130,14 +124,22 @@ class XNNExecutor {
         outputs.size());
 
     for (int i = 0; i < outputs.size(); i++) {
+#ifdef ENABLE_DYNAMIC_QUANTIZATION
+      externals_.emplace_back(xnn_external_value{
+          output_ids_[i],
+          outputs[i]->mutable_data_ptr<float>(),
+          static_cast<size_t>(output_shapes[i].num_dims),
+          output_shapes[i].dim});
+#else
       externals_.emplace_back(xnn_external_value{
           output_ids_[i], outputs[i]->mutable_data_ptr<float>()});
+#endif
     }
 
     return Error::Ok;
   }
 
-  __ET_NODISCARD Error forward() {
+  __ET_NODISCARD Error forward(BackendExecutionContext& context) {
     ET_CHECK_OR_RETURN_ERROR(
         runtime_ != nullptr,
         Internal,
@@ -151,7 +153,23 @@ class XNNExecutor {
         "XNN Runtime setup failed with code: %s",
         xnn_status_to_string(status));
 
+    auto error = profiler_.start(context.event_tracer());
+    if (error != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to start profiling: %u.",
+          static_cast<unsigned int>(error));
+    }
+
     status = xnn_invoke_runtime(runtime_.get());
+
+    error = profiler_.end();
+    if (error != Error::Ok) {
+      ET_LOG(
+          Error,
+          "Failed to end profiling: %u.",
+          static_cast<unsigned int>(error));
+    }
 
     ET_CHECK_OR_RETURN_ERROR(
         status == xnn_status_success,
@@ -164,37 +182,41 @@ class XNNExecutor {
 
   /** Resize output tensor to support dynamic input shapes */
   __ET_NODISCARD Error resizeOutput(
-      const exec_aten::Tensor* input_tensor,
-      exec_aten::Tensor* output_tensor) const {
-    if (!needs_resize_output) {
+      exec_aten::Tensor* output_tensor,
+      struct XNNShape* output_shape) const {
+    const size_t n_dim = output_tensor->dim();
+
+    // Rank can't change
+    if (n_dim != output_shape->num_dims) {
       ET_LOG(
           Error,
-          "Attempted to resize output tensor when resizing is not needed by XNNExecutor");
+          "Found output shape with a different number of dimensions than the output tensor. Expected: %zu, Actual: %zu",
+          n_dim,
+          output_shape->num_dims);
       return Error::NotSupported;
     }
 
-    const size_t n_dim = output_tensor->dim() - 1;
-
-    bool same_outer_shape = true;
-    for (size_t i = 0; (i < n_dim) && same_outer_shape; i++) {
-      same_outer_shape = (output_tensor->size(i) == input_tensor->size(i));
+    // Early exit?
+    bool same_shape = true;
+    for (size_t i = 0; (i < n_dim) && same_shape; i++) {
+      same_shape = (output_tensor->size(i) == output_shape->dim[i]);
     }
-    if (same_outer_shape) {
-      // Output tensor shape is already compatible with input; Don't resize
+    if (same_shape) {
       return Error::Ok;
     }
 
     exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
     for (size_t i = 0; i < n_dim; i++) {
-      expected_output_size[i] = input_tensor->size(i);
+      expected_output_size[i] =
+          static_cast<exec_aten::SizesType>(output_shape->dim[i]);
     }
-    expected_output_size[n_dim] = output_tensor->size(n_dim);
 
     exec_aten::ArrayRef<exec_aten::SizesType> output_size{
         expected_output_size, static_cast<size_t>(output_tensor->dim())};
 
     // Ok to dereference pointer here because resize_tensor takes in a tensor
     // and not a tensor&
+    ET_LOG(Debug, "Resizing output tensor to a new shape");
     Error err = resize_tensor(*output_tensor, output_size);
     if (err != Error::Ok) {
       ET_LOG(Error, "Failed to resize output tensor for XNNExecutor");

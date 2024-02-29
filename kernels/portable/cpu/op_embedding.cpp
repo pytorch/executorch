@@ -8,6 +8,7 @@
 
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 // A simple lookup table that looks up embeddings in a fixed dictionary and
@@ -57,26 +58,6 @@ void embedding_kernel(
     out_data += nbytes_per_entry;
   }
 }
-
-void resize_out_tensor(
-    const Tensor& weight,
-    const Tensor& indices,
-    Tensor& out) {
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-  for (size_t i = 0; i < indices.dim(); i++) {
-    expected_output_size[i] = indices.size(i);
-  }
-  const size_t embedding_dim = weight.size(1);
-  expected_output_size[out.dim() - 1] = embedding_dim;
-
-  ArrayRef<Tensor::SizesType> output_size{
-      expected_output_size, static_cast<size_t>(out.dim())};
-
-  torch::executor::Error err = resize_tensor(out, output_size);
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in embedding_out");
-}
 } // namespace
 
 // embedding.out(Tensor weight, Tensor indices, int padding_idx=-1, bool
@@ -94,38 +75,24 @@ Tensor& embedding_out(
   (void)scale_grad_by_freq;
   (void)sparse;
 
-  // Ensure weight is 2-D. It could be empty.
-  ET_CHECK_MSG(weight.dim() == 2, "weight.dim() %zd != 2", weight.dim());
+  ET_KERNEL_CHECK(
+      ctx, check_embedding_args(weight, indices, out), InvalidArgument, out);
 
-  // Ensure out is k+1 dimension tensor where k is the indices.dim()
-  // out's first k dimension shall be same as indices, and the last dim shall
-  // equal weight's last dim
-  ET_CHECK_MSG(
-      out.dim() == indices.dim() + 1,
-      "out.dim() %zd != indices.dim() %zd + 1",
-      out.dim(),
-      indices.dim());
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_embedding_output(weight, indices, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
-  resize_out_tensor(weight, indices, out);
-
-  for (size_t i = 0; i < indices.dim(); i++) {
-    ET_CHECK_MSG(
-        out.size(i) == indices.size(i),
-        "out.size(%zd) %zd != indices.size(%zd) %zd",
-        i,
-        out.size(i),
-        i,
-        indices.size(i));
-  }
-  ET_CHECK_MSG(
+  ET_KERNEL_CHECK_MSG(
+      ctx,
       out.size(out.dim() - 1) == weight.size(1),
+      InvalidArgument,
+      out,
       "out.size(%zd) %zd != weight.size(1) %zd",
       out.dim() - 1,
       out.size(1),
       weight.size(1));
-
-  // Ensure dtype is the same for out and weight
-  ET_CHECK_SAME_DTYPE2(weight, out);
 
   ScalarType ix_type = indices.scalar_type();
   ET_CHECK_MSG(

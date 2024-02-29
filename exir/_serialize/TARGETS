@@ -18,8 +18,8 @@ cpp_python_extension(
         "//executorch/sdk/etdump/...",
     ],
     deps = [
-        "fbsource//arvr/third-party/pybind11:pybind11",
         "fbsource//third-party/flatbuffers:flatc_library",
+        "fbsource//third-party/pybind11/2.6.2:pybind11",
     ],
 )
 
@@ -51,7 +51,7 @@ runtime.python_library(
         "//executorch/extension/pybindings/test:test",
         "//executorch/extension/pybindings/test:test-library",
         "//executorch/profiler/...",
-        "//executorch/sdk/bundled_program:core",
+        "//executorch/sdk:lib",
         "//executorch/sdk/bundled_program/serialize:lib",
         "//executorch/sdk/bundled_program/tests/...",
         "//executorch/sdk/experimental/...",

@@ -14,6 +14,7 @@ enum ScalarType : byte {
   SHORT = 2,
   INT = 3,
   LONG = 4,
+  HALF = 5,
   FLOAT = 6,
   DOUBLE = 7,
   BOOL = 11,
@@ -24,7 +25,6 @@ enum ScalarType : byte {
   QUINT4X2 = 16,
   QUINT2X4 = 17,
   // Types currently not implemented.
-  // Half = 5,
   // COMPLEXHALF = 8,
   // COMPLEXFLOAT = 9,
   // COMPLEXDOUBLE = 10,

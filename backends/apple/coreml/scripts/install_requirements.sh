@@ -40,14 +40,6 @@ if [ $STATUS -ne 0 ]; then
     exit 1
 fi
 
-echo "${green}ExecuTorch: Checking out 'executorch_integration' branch in coremltools repo."
-git checkout executorch_integration
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to checkout 'executorch_integration' branch in coremltools repo."
-    exit 1
-fi
-
 mkdir /tmp/coremltools/build
 cmake -S /tmp/coremltools/ -B /tmp/coremltools/build
 cmake --build /tmp/coremltools/build --parallel

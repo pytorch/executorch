@@ -9,12 +9,13 @@
 #include <executorch/runtime/executor/tensor_parser.h>
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/program_generated.h>
 
-#include <ATen/ATen.h> // @manual=//caffe2/aten:ATen-core
+#include <ATen/ATen.h> // @donotremove @manual=//caffe2/aten:ATen-core
 
 namespace torch {
 namespace executor {
@@ -43,10 +44,29 @@ Result<at::Tensor> parseTensor(
 
   // get metadata
   at::ScalarType type = static_cast<at::ScalarType>(s_tensor->scalar_type());
+  ET_CHECK_OR_RETURN_ERROR(
+      isValid(type),
+      InvalidProgram,
+      "Invalid ScalarType %" PRId8,
+      static_cast<int8_t>(type));
   auto options = at::CPU(type).options();
 
-  // convert int32 in serialization to int64 for aten
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->sizes() != nullptr, InvalidProgram, "Missing sizes field");
   size_t ndim = s_tensor->sizes()->size();
+
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order() != nullptr,
+      InvalidProgram,
+      "Missing dim_order field");
+  ET_CHECK_OR_RETURN_ERROR(
+      s_tensor->dim_order()->size() == ndim,
+      InvalidProgram,
+      "dim_order size %" PRIu32 " != ndim %zu",
+      s_tensor->dim_order()->size(),
+      ndim);
+
+  // convert int32 in serialization to int64 for aten
   std::vector<int64_t> sizes(
       s_tensor->sizes()->begin(), s_tensor->sizes()->end());
   std::vector<int64_t> strides(ndim);

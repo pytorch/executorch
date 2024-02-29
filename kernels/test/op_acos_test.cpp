@@ -60,6 +60,16 @@ void test_floating_point_acos_out(
   // clang-format on
 }
 
+TEST(OpAcosOutKernelTest, AllRealInputHalfOutputStaticDynamismSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype) \
+  test_floating_point_acos_out<ScalarType::dtype, ScalarType::Half>();
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
 TEST(OpAcosOutKernelTest, AllRealInputFloatOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_acos_out<ScalarType::dtype, ScalarType::Float>();
@@ -71,6 +81,17 @@ TEST(OpAcosOutKernelTest, AllRealInputDoubleOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_acos_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
+#undef TEST_ENTRY
+}
+
+TEST(OpAcosOutKernelTest, AllRealInputHalfOutputBoundDynamismSupport) {
+  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+    GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
+  }
+#define TEST_ENTRY(ctype, dtype)                                     \
+  test_floating_point_acos_out<ScalarType::dtype, ScalarType::Half>( \
+      {10, 10}, TensorShapeDynamism::DYNAMIC_BOUND);
+  ET_FORALL_REALH_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 

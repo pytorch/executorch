@@ -23,6 +23,14 @@ def define_common_targets():
     )
 
     runtime.cxx_test(
+        name = "half_test",
+        srcs = ["half_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/portable_type:portable_type",
+        ],
+    )
+
+    runtime.cxx_test(
         name = "scalar_test",
         srcs = ["scalar_test.cpp"],
         deps = [
@@ -34,6 +42,7 @@ def define_common_targets():
         name = "tensor_impl_test",
         srcs = ["tensor_impl_test.cpp"],
         deps = [
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/runtime/core/portable_type:portable_type",
         ],
     )

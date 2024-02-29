@@ -87,7 +87,7 @@ from executorch.exir.tensor import (
 )
 from executorch.exir.types import LeafValueSpec, ValueSpec
 
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 from torch.utils import _pytree as pytree
 
 from typing_extensions import TypeAlias
@@ -377,6 +377,14 @@ class _Emitter(torch.fx.Interpreter):
             self.program_state.cached_spec_hash_values[hashed] = buffer_idx
             self.program_state.constant_buffer.append(buffer)
 
+        if spec.const and spec.nbytes() != len(buffer_data):
+            raise InternalError(
+                self._emit_node_specific_error(
+                    self.node,
+                    f"Tensor spec has buffer of size {len(buffer_data)}, but expected nbytes of {spec.nbytes()}",
+                )
+            )
+
         # For constant tensors, allocation_info = None.
         return EValue(make_tensor_value(buffer_idx, None, spec))
 
@@ -640,19 +648,22 @@ class _Emitter(torch.fx.Interpreter):
             selcect_copy op # if not continue. return add_tensor
         """
         assert isinstance(
-            subemitter_binding_output_values, list
+            subemitter_binding_output_values, (list, tuple)
         ), f"Expect a list for subemitter_binding_output_values for map. Got {subemitter_binding_output_values}."
 
         if len(subemitter_binding_output_values) != 1:
             raise RuntimeError(
                 f"Multiple outputs are not supported. Got {len(subemitter_binding_output_values)}."
             )
-        f, num_mapped_args = args[:2]
+        f, mapped_args, inputs = args
+        assert isinstance(mapped_args, (list, tuple))
+        num_mapped_args: int = len(mapped_args)
         if num_mapped_args != 1:
             raise RuntimeError(
                 f"Emitting map with more than one mapped args is not supported. Got {num_mapped_args}."
             )
-        x, *inputs = args[2:]
+        x = mapped_args[0]
+
         assert isinstance(f, torch.fx.GraphModule)
 
         # Generate the EValue that we will use as our iterator index to keep track of which
@@ -1271,7 +1282,6 @@ class _TopLevelEmitter(_Emitter):
             if spec is None:
                 return ""
             assert isinstance(spec, pytree.TreeSpec), type(spec)
-            # pyre-fixme[16]: `TreeSpec` has no attribute `num_leaves`.
             dummy_leaves = [0] * spec.num_leaves
             tree = torch.utils._pytree.tree_unflatten(dummy_leaves, spec)
             # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
@@ -1298,17 +1308,44 @@ class _TopLevelEmitter(_Emitter):
         if isinstance(target, str) and (
             target in self.exported_program.graph_signature.inputs_to_parameters
             or target in self.exported_program.graph_signature.inputs_to_buffers
+            or target
+            in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
         ):
+            if (
+                target
+                in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
+            ):
+                fqn = self.exported_program.graph_signature.inputs_to_lifted_tensor_constants[
+                    target
+                ]
+            elif target in self.exported_program.graph_signature.inputs_to_buffers:
+                fqn = self.exported_program.graph_signature.inputs_to_buffers[target]
+            else:
+                fqn = self.exported_program.graph_signature.inputs_to_parameters[target]
+            if fqn in self.exported_program.state_dict:
+                spec = TensorSpec.from_tensor(
+                    self.exported_program.state_dict[fqn], const=True
+                )
+                const_tensor = True
+            elif fqn in self.exported_program.constants:
+                spec = TensorSpec.from_tensor(
+                    self.exported_program.constants[fqn], const=True
+                )
+                const_tensor = True
+            else:
+                buffers = self.exported_program.named_buffers()
+                buf = next((x[1] for x in buffers if x[0] == fqn), None)
+                if buf is not None:
+                    spec = TensorSpec.from_tensor(buf, const=True)
+                    const_tensor = True
+                else:
+                    raise InternalError(
+                        self._emit_node_specific_error(
+                            self.node,
+                            f"Could not find buffer with fqn {fqn} in state_dict or named_buffers",
+                        )
+                    )
 
-            fqn = (
-                self.exported_program.graph_signature.inputs_to_parameters[target]
-                if target in self.exported_program.graph_signature.inputs_to_parameters
-                else self.exported_program.graph_signature.inputs_to_buffers[target]
-            )
-            spec = TensorSpec.from_tensor(
-                self.exported_program.state_dict[fqn], const=True
-            )
-            const_tensor = True
         evalue = (
             self._tensor_spec_to_evalue(spec)
             if isinstance(spec, TensorSpec)

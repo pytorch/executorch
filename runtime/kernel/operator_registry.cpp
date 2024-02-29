@@ -41,7 +41,7 @@ Error OperatorRegistry::register_kernels(const ArrayRef<Kernel>& kernels) {
   // have any side effect even if falled multiple times.
   ::et_pal_init();
 
-  if (kernels.size() + this->num_kernels_ >= kMaxNumOfKernels) {
+  if (kernels.size() + this->num_kernels_ > kMaxNumOfKernels) {
     ET_LOG(
         Error,
         "The total number of kernels to be registered is larger than the limit %" PRIu32
@@ -91,33 +91,50 @@ bool hasOpsFn(const char* name, ArrayRef<TensorMeta> kernel_key) {
   return getOperatorRegistry().hasOpsFn(name, kernel_key);
 }
 
-static void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf) {
+static int copy_char_as_number_to_buf(char num, char* buf) {
+  if ((char)num < 10) {
+    *buf = '0' + (char)num;
+    buf += 1;
+    return 1;
+  } else {
+    *buf = '0' + ((char)num) / 10;
+    buf += 1;
+    *buf = '0' + ((char)num) % 10;
+    buf += 1;
+    return 2;
+  }
+}
+
+void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf);
+
+void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf) {
   if (key.empty()) {
     // If no tensor is present in an op, kernel key does not apply
-    *buf = 0xff;
     return;
   }
-  strncpy(buf, "v0/", 3);
+  strncpy(buf, "v1/", 3);
   buf += 3;
   for (size_t i = 0; i < key.size(); i++) {
     auto& meta = key[i];
-    *buf = (char)meta.dtype_;
-    buf += 1;
+    buf += copy_char_as_number_to_buf((char)meta.dtype_, buf);
     *buf = ';';
     buf += 1;
-    memcpy(buf, (char*)meta.dim_order_.data(), meta.dim_order_.size());
-    buf += meta.dim_order_.size();
-    *buf = (i < (key.size() - 1)) ? '|' : 0xff;
+    for (int j = 0; j < meta.dim_order_.size(); j++) {
+      buf += copy_char_as_number_to_buf((char)meta.dim_order_[j], buf);
+      if (j != meta.dim_order_.size() - 1) {
+        *buf = ',';
+        buf += 1;
+      }
+    }
+    *buf = (i < (key.size() - 1)) ? '|' : 0x00;
     buf += 1;
   }
 }
 
-constexpr int BUF_SIZE = 307;
-
 bool OperatorRegistry::hasOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list) {
-  char buf[BUF_SIZE] = {0};
+  char buf[KernelKey::MAX_SIZE] = {0};
   make_kernel_key_string(meta_list, buf);
   KernelKey kernel_key = KernelKey(buf);
 
@@ -140,7 +157,7 @@ const OpFunction& getOpsFn(const char* name, ArrayRef<TensorMeta> kernel_key) {
 const OpFunction& OperatorRegistry::getOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list) {
-  char buf[BUF_SIZE] = {0};
+  char buf[KernelKey::MAX_SIZE] = {0};
   make_kernel_key_string(meta_list, buf);
   KernelKey kernel_key = KernelKey(buf);
 

@@ -22,14 +22,8 @@ The MPS backend device maps machine learning computational graphs and primitives
 ## Prerequisites (Hardware and Software)
 
 In order to be able to successfully build and run a model using the MPS backend for ExecuTorch, you'll need the following hardware and software components.
-
-### Hardware
-- [Apple Silicon](https://support.apple.com/en-us/HT211814)
-
-### Software
-- [macOS Sonoma](https://www.apple.com/macos/sonoma/) (for lowering to MPS delegate)
-- [iOS 17](https://www.apple.com/ios/ios-17/) / [iPadOS 17](https://www.apple.com/ipados/ipados-17/) (for running on device)
-- [Xcode 15](https://developer.apple.com/xcode/) (for building the [AOT](#aot-ahead-of-time-components) and [runtime](#runtime))
+ - macOS 12 / iOS 15 or later (for MPS runtime)
+ - Xcode command-line tools: xcode-select --install
 
 ## Setting up Developer Environment
 
@@ -50,7 +44,7 @@ In order to be able to successfully build and run a model using the MPS backend 
 
 ```bash
 cd executorch
-python3 -m unittest backends.apple.mps.test.test_mps --verbose -k mv3
+python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3" --bundled
 ```
 
 ### Runtime
@@ -58,22 +52,36 @@ python3 -m unittest backends.apple.mps.test.test_mps --verbose -k mv3
 **Building the MPS executor runner**
 - In this step, you'll be building the `mps_executor_runner` that is able to run MPS lowered modules.
 
-***Step 1***. Run the CMake build.
-
 ```bash
 # Build the mps_executor_runner
-rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake -DEXECUTORCH_BUILD_MPS=1 -DBUCK2=/tmp/buck2 —trace .. && cmake --build . && cd ..
-```
-
-***Step 2***. Run the model using the `mps_executor_runner`.
 ```bash
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3.pte --bundled_program
-```
+# Build and install executorch
+cmake -DBUCK2="$BUCK" \
+          -DCMAKE_INSTALL_PREFIX=cmake-out \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DEXECUTORCH_BUILD_SDK=ON \
+          -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
+          -DEXECUTORCH_BUILD_MPS=ON \
+          -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+          -Bcmake-out .
+cmake --build cmake-out -j9 --target install --config Release
+CMAKE_PREFIX_PATH="${PWD}/cmake-out/lib/cmake/ExecuTorch;${PWD}/cmake-out/third-party/gflags"
+# build mps_executor_runner
+rm -rf cmake-out/examples/apple/mps
+cmake \
+    -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+    -Bcmake-out/examples/apple/mps \
+    examples/apple/mps
 
-You should see the following results. Note that no output file will be generated in this example:
-```
-./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3.pte --bundled_program
-I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3.pte is loaded.
+cmake --build cmake-out/examples/apple/mps -j9 --config Release
+
+# Run the mv2 generated model using the mps_executor_runner
+./cmake-out/examples/apple/mps/mps_executor_runner --model_path mv3_mps_bundled_fp16.pte --bundled_program
+
+# You should see the following results. Note that no output file will be generated in this example:
+I 00:00:00.003290 executorch:mps_executor_runner.mm:286] Model file mv3_mps_bundled_fp16.pte is loaded.
 I 00:00:00.003306 executorch:mps_executor_runner.mm:292] Program methods: 1
 I 00:00:00.003308 executorch:mps_executor_runner.mm:294] Running method forward
 I 00:00:00.003311 executorch:mps_executor_runner.mm:349] Setting up non-const buffer 1, size 606112.

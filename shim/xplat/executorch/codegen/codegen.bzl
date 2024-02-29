@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "get_default_executorch_platforms", "runtime", "struct_to_json")
 
 # Headers that declare the function signatures of the C++ functions that
 # map to entries in functions.yaml and custom_ops.yaml.
@@ -44,6 +44,7 @@ CUSTOM_OPS_SCHEMA_REGISTRATION_SOURCES = [
 def et_operator_library(
         name,
         ops = [],
+        ops_dict = {},
         model = None,
         include_all_operators = False,
         ops_schema_yaml_target = None,
@@ -59,6 +60,11 @@ def et_operator_library(
     if ops:
         genrule_cmd.append(
             "--root_ops=" + ",".join(ops),
+        )
+    if ops_dict:
+        ops_dict_json = struct_to_json(ops_dict)
+        genrule_cmd.append(
+            "--ops_dict='{}'".format(ops_dict_json),
         )
     if model:
         genrule_cmd.append(
@@ -378,7 +384,7 @@ def executorch_generated_lib(
         deps: Additinal deps of the main C++ library. Needs to be in either `//executorch` or `//caffe2` module.
         platforms: platforms args to runtime.cxx_library (only used when in xplat)
         manual_registration: if true, generate RegisterKernels.cpp and RegisterKernels.h.
-        use_default_aten_ops_lib: If `aten_mode` is True AND this flag is True, use `torch_mobile_all_ops` for ATen operator library.
+        use_default_aten_ops_lib: If `aten_mode` is True AND this flag is True, use `torch_mobile_all_ops_et` for ATen operator library.
         xplat_deps: Additional xplat deps, can be used to provide custom operator library.
         fbcode_deps: Additional fbcode deps, can be used to provide custom operator library.
         compiler_flags: compiler_flags args to runtime.cxx_library

@@ -129,6 +129,11 @@ Follow these steps:
    ./install_requirements.sh
    ```
 
+   **Optional:** Install ExecuTorch as an editable installation:
+   ```bash
+   pip install --editable . --config-settings editable_mode=strict --no-build-isolation
+   ```
+
 1. Expose FlatBuffers compiler:
 
    ExecuTorch uses `flatc` to export models and builds it from sources at
@@ -189,7 +194,7 @@ time creating a `mul.pte` program file that multiplies its inputs:
 import executorch.exir as exir
 from executorch.exir.tests.models import Mul
 m = Mul()
-open("mul.pte", "wb").write(exir.capture(m, m.get_random_inputs()).to_edge().to_executorch().buffer)
+open("mul.pte", "wb").write(to_edge(export(m, m.get_random_inputs())).to_executorch().buffer)
 ```
 
 In this step, you learned how you can export your PyTorch program to an ExecuTorch

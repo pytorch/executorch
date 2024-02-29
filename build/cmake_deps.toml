@@ -1,6 +1,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -24,6 +26,7 @@ excludes = [
 deps = [
   "executorch",
   "portable_kernels",
+  "quantized_kernels",
 ]
 
 [targets.executorch]
@@ -51,11 +54,50 @@ deps = [
   "executorch",
 ]
 
+[targets.extension_module]
+buck_targets = [
+  "//extension/module:module",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+  "extension_data_loader",
+]
+
+[targets.extension_runner_util]
+buck_targets = [
+  "//extension/runner_util:inputs",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
 [targets.portable_kernels]
 buck_targets = [
   # //kernels/portable:operators would be more appropriate, but buck2 doesn't
   # think it has any "inputs" since its srcs list is empty.
   "//kernels/portable:generated_lib_all_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  # Exclude the codegen templates, which are picked up because the buck target
+  # is the generated_lib and not the unwrapped set of kernels.
+  "^codegen/templates",
+]
+deps = [
+  "executorch",
+]
+
+[targets.quantized_kernels]
+buck_targets = [
+  "//kernels/quantized:generated_lib",
 ]
 filters = [
   ".cpp$",
@@ -119,13 +161,21 @@ deps = [
 
 [targets.mps_backend]
 buck_targets = [
-  "//backends/apple/mps:mps_backend",
+  "//backends/apple/mps:mps",
 ]
 filters = [
   "(.mm|.cpp)$",
 ]
 deps = [
   "executorch",
+]
+
+[targets.mps_schema]
+buck_targets = [
+  "//backends/apple/mps:mps_schema",
+]
+filters = [
+  ".fbs$",
 ]
 
 [targets.xnn_executor_runner]
@@ -139,6 +189,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "executorch",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -164,7 +215,7 @@ filters = [
 
 [targets.xnnpack_schema]
 buck_targets = [
-  "//backends/xnnpack:xnnpack_schema",
+  "//backends/xnnpack/serialization:xnnpack_flatbuffer_header",
 ]
 filters = [
   ".fbs$",

@@ -27,7 +27,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 0
+              "memory_offset_low": 0,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"
@@ -50,7 +51,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 16
+              "memory_offset_low": 16,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"
@@ -73,7 +75,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 32
+              "memory_offset_low": 32,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"
@@ -96,7 +99,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 48
+              "memory_offset_low": 48,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"
@@ -119,7 +123,8 @@
             "constant_buffer_idx": 0,
             "allocation_info": {
               "memory_id": 1,
-              "memory_offset": 0
+              "memory_offset_low": 0,
+              "memory_offset_high": 0
             },
             "layout": 0,
             "shape_dynamism": "STATIC"
@@ -224,5 +229,11 @@
   ],
   "segments": [
 
-  ]
+  ],
+  "constant_segment": {
+    "segment_index": 0,
+    "offsets": [
+
+    ]
+  }
 }

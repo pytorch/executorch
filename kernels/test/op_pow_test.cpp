@@ -20,6 +20,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
+Tensor&
+op_pow_scalar_out(const Scalar& self, const Tensor& exponent, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::pow_outf(context, self, exponent, out);
+}
+
 Tensor& op_pow_tensor_scalar_out(
     const Tensor& self,
     const Scalar& exponent,
@@ -63,12 +69,58 @@ TEST(OpPowTest, TensorTensorSanityCheck2) {
   EXPECT_TENSOR_EQ(out, tf3.make({2, 2}, {4, 9, 16, 25}));
 }
 
+TEST(OpPowTest, TensorTensorHalfSupport) {
+  TensorFactory<ScalarType::Half> tf;
+
+  Tensor self = tf.make({2, 2}, {2.0, 3.0, 4.0, 5.0});
+  Tensor exp = tf.make({2, 1}, {3.0, 2.0});
+  Tensor out = tf.zeros({2, 2});
+
+  Tensor ret = op_pow_tensor_tensor_out(self, exp, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {8.0, 27.0, 16.0, 25.0}));
+}
+
 TEST(OpPowTest, TensorScalarSanityCheck) {
   TensorFactory<ScalarType::Byte> tf;
   Tensor self = tf.make({2, 2}, {2, 2, 2, 2});
   Tensor out = tf.make({2, 2}, {16, 16, 16, 16});
 
   Tensor ret = op_pow_tensor_scalar_out(self, 4, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
+}
+
+TEST(OpPowTest, TensorScalarHalfSupport) {
+  TensorFactory<ScalarType::Half> tf;
+  Tensor self = tf.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
+  Tensor out = tf.zeros({2, 2});
+
+  Tensor ret = op_pow_tensor_scalar_out(self, 4, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16.0, 16.0, 16.0, 16.0}));
+}
+
+TEST(OpPowTest, ScalarSanityCheck) {
+  TensorFactory<ScalarType::Byte> tf;
+  Tensor exp = tf.make({2, 2}, {2, 2, 2, 2});
+  Tensor out = tf.make({2, 2}, {16, 16, 16, 16});
+
+  Tensor ret = op_pow_scalar_out(4, exp, out);
+
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
+}
+
+TEST(OpPowTest, ScalarHalfSupport) {
+  TensorFactory<ScalarType::Half> tf;
+  Tensor exp = tf.make({2, 2}, {2, 2, 2, 2});
+  Tensor out = tf.zeros({2, 2});
+
+  Tensor ret = op_pow_scalar_out(4, exp, out);
 
   EXPECT_TENSOR_EQ(out, ret);
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));

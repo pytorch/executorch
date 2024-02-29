@@ -57,6 +57,45 @@ install_buck() {
   fi
 }
 
+function write_sccache_stub() {
+  OUTPUT=$1
+  BINARY=$(basename "${OUTPUT}")
+
+  printf "#!/bin/sh\nif [ \$(ps auxc \$(ps auxc -o ppid \$\$ | grep \$\$ | rev | cut -d' ' -f1 | rev) | tr '\\\\n' ' ' | rev | cut -d' ' -f2 | rev) != sccache ]; then\n  exec sccache %s \"\$@\"\nelse\n  exec %s \"\$@\"\nfi" "$(which "${BINARY}")" "$(which "${BINARY}")" > "${OUTPUT}"
+  chmod a+x "${OUTPUT}"
+}
+
+install_sccache() {
+  # Use existing S3 cache bucket for self-hosted MacOS runner
+  export SCCACHE_BUCKET=ossci-compiler-cache-circleci-v2
+  export SCCACHE_S3_KEY_PREFIX=executorch
+  export SCCACHE_IDLE_TIMEOUT=0
+  export SCCACHE_ERROR_LOG=/tmp/sccache_error.log
+  export RUST_LOG=sccache::server=error
+
+  SCCACHE_PATH="/usr/local/bin"
+  # NB: The function is adopted from PyTorch MacOS build workflow
+  # https://github.com/pytorch/pytorch/blob/main/.github/workflows/_mac-build.yml
+  if ! command -v sccache &> /dev/null; then
+    sudo curl --retry 3 "https://s3.amazonaws.com/ossci-macos/sccache/sccache-v0.4.1-${RUNNER_ARCH}" --output "${SCCACHE_PATH}/sccache"
+    sudo chmod +x "${SCCACHE_PATH}/sccache"
+  fi
+
+  export PATH="${SCCACHE_PATH}:${PATH}"
+
+  # Create temp directory for sccache shims
+  TMP_DIR=$(mktemp -d)
+  trap 'rm -rfv ${TMP_DIR}' EXIT
+
+  write_sccache_stub "${TMP_DIR}/c++"
+  write_sccache_stub "${TMP_DIR}/cc"
+  write_sccache_stub "${TMP_DIR}/clang++"
+  write_sccache_stub "${TMP_DIR}/clang"
+
+  export PATH="${TMP_DIR}:$PATH"
+  sccache --zero-stats || true
+}
+
 # This is the same rpath fix copied from PyTorch macos setup script
 # https://github.com/pytorch/pytorch/blob/main/.ci/pytorch/macos-common.sh
 print_cmake_info() {
@@ -77,9 +116,17 @@ print_cmake_info() {
 # NB: we need buck2 in all cases because cmake build also depends on calling
 # buck2 atm
 install_buck
-install_conda
 install_pip_dependencies
+
+# TODO(huydhn): Unlike our self-hosted runner, GitHub runner doesn't have access
+# to our infra, so compiler caching needs to be setup differently using GitHub
+# cache. However, I need to figure out how to set that up for Nova MacOS job
+if [[ -z "${GITHUB_RUNNER:-}" ]]; then
+  install_sccache
+fi
+
 print_cmake_info
+install_pytorch_and_domains
 install_flatc_from_source
 install_executorch
 build_executorch_runner "${BUILD_TOOL}"

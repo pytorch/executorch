@@ -28,10 +28,11 @@ from executorch.exir.schema import (
     Int,
     Program,
     String,
+    SubsegmentOffsets,
 )
 from executorch.exir.tensor import layout_enum, scalar_type_enum
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 
 def _emit_prim_getters(prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
@@ -204,5 +205,7 @@ def emit_program(
             backend_delegate_data=program_state.backend_delegate_data,
             # Segments may be added at serialization time.
             segments=[],
+            # Subsegment offsets may be added at serialization time.
+            constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
         ),
     )

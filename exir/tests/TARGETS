@@ -211,11 +211,10 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
         "//executorch/exir/emit:lib",
-        "//executorch/exir/passes:const_prop_pass",
         "//executorch/exir/passes:constant_prop_pass",
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:lib",
-        "//executorch/exir/passes:remove_assert_async_pass",
+        "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:remove_mixed_type_operators",
         "//executorch/exir/passes:replace_edge_with_backend_pass",
         "//executorch/exir/passes:scalar_to_tensor_pass",
@@ -281,7 +280,6 @@ python_unittest(
         "//executorch/exir:lib",
         "//executorch/exir:schema",
         "//executorch/exir/passes:const_prop_pass",
-        "//executorch/exir/passes:lib",
         "//executorch/exir/verification:interpreter",
         "//executorch/exir/verification:verifier",
     ],
@@ -430,7 +428,6 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
-        "//executorch/exir/passes:lib",
     ],
 )
 

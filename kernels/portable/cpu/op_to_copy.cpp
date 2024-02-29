@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -32,51 +34,23 @@ Tensor& to_copy_out(
     bool non_blocking,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {
-  // Right now we only support blocking data transfer
-  ET_CHECK(non_blocking == false);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_to_copy_args(self, non_blocking, memory_format, out),
+      InvalidArgument,
+      out);
 
-  // Right now we only focus on contiguous memory, memory_format shall be
-  // exec::aten::MemoryFormat::Contiguous or none.
-  ET_CHECK(
-      !memory_format.has_value() ||
-      memory_format.value() == MemoryFormat::Contiguous);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, self.sizes()) == torch::executor::Error::Ok,
+      InvalidArgument,
+      out);
 
-  torch::executor::Error err = resize_tensor(out, self.sizes());
-  ET_CHECK_MSG(
-      err == torch::executor::Error::Ok,
-      "Failed to resize out Tensor in to_copy_out");
-
-  // self and out should be in same size.
-  ET_CHECK_SAME_SHAPE2(self, out);
-// Use a two layer switch to hanldle each possible data pairs
-#define TO_IMPL(SELF_CTYPE, OUT_CTYPE, out_dtype) \
-  case ScalarType::out_dtype:                     \
-    _to_impl<SELF_CTYPE, OUT_CTYPE>(self, out);   \
-    break;
-
-#define CASE_TENSOR_DTYPE(SELF_CTYPE, self_dtype)              \
-  case ScalarType::self_dtype:                                 \
-    switch (out.scalar_type()) {                               \
-      ET_FORALL_REAL_TYPES_AND_WITH(Bool, SELF_CTYPE, TO_IMPL) \
-      default:                                                 \
-        ET_CHECK_MSG(                                          \
-            false,                                             \
-            "Unhandled output dtype %" PRId8,                  \
-            static_cast<int8_t>(out.scalar_type()));           \
-    }                                                          \
-    break;
-
-  switch (self.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND(Bool, CASE_TENSOR_DTYPE);
-    default:
-      ET_CHECK_MSG(
-          false,
-          "Unhandled input dtype %" PRId8,
-          static_cast<int8_t>(self.scalar_type()));
-  }
-
-#undef CASE_TENSOR_DTYPE
-#undef TO_IMPL
+  ET_SWITCH_REALHB_TYPES(self.scalar_type(), ctx, "to_copy", CTYPE_IN, [&] {
+    ET_SWITCH_REALHB_TYPES(out.scalar_type(), ctx, "to_copy", CTYPE_OUT, [&] {
+      _to_impl<CTYPE_IN, CTYPE_OUT>(self, out);
+    });
+  });
 
   return out;
 }

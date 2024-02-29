@@ -7,7 +7,6 @@
  */
 
 #pragma once
-
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>

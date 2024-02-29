@@ -24,11 +24,11 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4 MB
 
@@ -59,7 +59,9 @@ int main(int argc, char** argv) {
   const char* model_path = FLAGS_model_path.c_str();
   Result<FileDataLoader> loader = FileDataLoader::from(model_path);
   ET_CHECK_MSG(
-      loader.ok(), "FileDataLoader::from() failed: 0x%" PRIx32, loader.error());
+      loader.ok(),
+      "FileDataLoader::from() failed: 0x%" PRIx32,
+      (uint32_t)loader.error());
 
   // Parse the program file. This is immutable, and can also be reused between
   // multiple execution invocations across multiple threads.
@@ -83,9 +85,9 @@ int main(int argc, char** argv) {
   Result<MethodMeta> method_meta = program->method_meta(method_name);
   ET_CHECK_MSG(
       method_meta.ok(),
-      "Failed to get method_meta for %s: 0x%x",
+      "Failed to get method_meta for %s: 0x%" PRIx32,
       method_name,
-      (unsigned int)method_meta.error());
+      (uint32_t)method_meta.error());
 
   //
   // The runtime does not use malloc/new; it allocates all memory using the
@@ -146,12 +148,17 @@ int main(int argc, char** argv) {
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
       method_name,
-      method.error());
+      (uint32_t)method.error());
   ET_LOG(Info, "Method loaded.");
 
-  // Prepare the inputs.
-  // Use ones-initialized inputs.
-  auto inputs = util::PrepareInputTensors(*method);
+  // Allocate input tensors and set all of their elements to 1. The `inputs`
+  // variable owns the allocated memory and must live past the last call to
+  // `execute()`.
+  auto inputs = util::prepare_input_tensors(*method);
+  ET_CHECK_MSG(
+      inputs.ok(),
+      "Could not prepare inputs: 0x%" PRIx32,
+      (uint32_t)inputs.error());
   ET_LOG(Info, "Inputs prepared.");
 
   // Run the model.
@@ -160,7 +167,7 @@ int main(int argc, char** argv) {
       status == Error::Ok,
       "Execution of method %s failed with status 0x%" PRIx32,
       method_name,
-      status);
+      (uint32_t)status);
   ET_LOG(Info, "Model executed successfully.");
 
   // Print the outputs.
@@ -174,6 +181,5 @@ int main(int argc, char** argv) {
     std::cout << "Output " << i << ": " << outputs[i] << std::endl;
   }
 
-  util::FreeInputs(inputs);
   return 0;
 }

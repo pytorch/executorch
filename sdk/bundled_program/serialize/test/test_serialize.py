@@ -8,7 +8,7 @@
 
 import unittest
 
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.core import BundledProgram
 
 from executorch.sdk.bundled_program.serialize import (
     deserialize_from_flatbuffer_to_bundled_program,
@@ -21,7 +21,7 @@ class TestSerialize(unittest.TestCase):
     def test_bundled_program_serialization(self) -> None:
         executorch_program, method_test_suites = get_common_executorch_program()
 
-        bundled_program = create_bundled_program(executorch_program, method_test_suites)
+        bundled_program = BundledProgram(executorch_program, method_test_suites)
         flat_buffer_bundled_program = serialize_from_bundled_program_to_flatbuffer(
             bundled_program
         )
@@ -29,7 +29,7 @@ class TestSerialize(unittest.TestCase):
             deserialize_from_flatbuffer_to_bundled_program(flat_buffer_bundled_program)
         )
         self.assertEqual(
-            bundled_program._bundled_program,
+            bundled_program.serialize_to_schema(),
             regenerate_bundled_program_in_schema,
             "Regenerated bundled program mismatches original one",
         )

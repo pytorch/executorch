@@ -36,6 +36,26 @@ class SpecPropPass(ExportPass):
             attr.data,
         )
 
+    def update_placeholder_tensor_specs(
+        self,
+        exported_program: torch.export.ExportedProgram,
+        graph_module: torch.fx.GraphModule,
+    ) -> None:
+        """
+        Update the tensor specs for all placeholder nodes such that
+        placeholders that are parameters are marked as constant.
+        """
+        for node in graph_module.graph.nodes:
+            if node.op != "placeholder":
+                continue
+            if "spec" not in node.meta:
+                raise RuntimeError(f"Placeholder node {node} missing meta['spec']")
+            spec = node.meta["spec"]
+            if isinstance(node.target, str) and (
+                node.target in exported_program.graph_signature.inputs_to_parameters
+            ):
+                spec.const = True
+
     # pyre-ignore
     def placeholder(self, name: str, arg, meta):
         meta["spec"] = make_spec(arg)
@@ -65,21 +85,20 @@ class SpecPropPass(ExportPass):
     def call_map(
         self,
         f: torch.fx.GraphModule,
-        num_args: int,
-        args: List[ProxyValue],
+        mapped_args: List[ProxyValue],
+        operands: List[ProxyValue],
         meta: NodeMetadata,
     ) -> ProxyValue:
-        args_data = pytree.tree_map_only(ProxyValue, lambda x: x.data, args)
-        xs_data = args_data[:num_args]
+        mapped_dim_size = [arg.data for arg in mapped_args][0].size(0)
         *_, body_out_node = f.graph.nodes
         body_out_node_fake_tensor = body_out_node.meta["val"]
         map_fake_tensor = pytree.tree_map_only(
             torch.Tensor,
-            lambda x: x.new_empty(xs_data[0].size(0), *x.shape),
+            lambda x: x.new_empty(mapped_dim_size, *x.shape),
             body_out_node_fake_tensor,
         )
         meta["spec"] = pytree.tree_map(make_spec, map_fake_tensor)
-        return super().call_map(f, num_args, args, meta)
+        return super().call_map(f, mapped_args, operands, meta)
 
     # pyre-ignore
     def call_delegate(self, lowered_module, args, kwargs, meta):

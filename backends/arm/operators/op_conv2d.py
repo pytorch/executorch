@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,9 +11,9 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import buildRescaleOpConvOutput
+from executorch.backends.arm.tosa_quant_utils import build_rescale_conv_output
 from executorch.backends.arm.tosa_utils import (
-    buildReshape,
+    build_reshape,
     getNodeArgs,
     transpose_helper,
 )
@@ -52,7 +52,14 @@ class Conv2dVisitor(NodeVisitor):
         pad_attr = [val for val in pad.special for _ in (0, 1)]
         stride_attr = stride.special
         dilation_attr = dilation.special
-        attr.ConvAttribute(pad_attr, stride_attr, dilation_attr, 0, 0)
+        attr.ConvAttribute(
+            pad=pad_attr,
+            stride=stride_attr,
+            dilation=dilation_attr,
+            input_zp=0,
+            weight_zp=0,
+            local_bound=False,
+        )
 
         # Non-bias case.
         if len(node.all_input_nodes) == 2:
@@ -87,7 +94,7 @@ class Conv2dVisitor(NodeVisitor):
                 ts.DType.INT8 if is_quant_node else weight.dtype,
             )
 
-            buildReshape(
+            build_reshape(
                 tosa_graph, weight.name, weight_post_shape, weight_reshaped.name
             )
 
@@ -162,7 +169,7 @@ class Conv2dVisitor(NodeVisitor):
             _, weight_scale, _, _, _, _ = getNodeArgs(node.args[1])
             _, output_scale, _, _, _, _ = getNodeArgs(list(node.users)[0])
 
-            conv2d_res = buildRescaleOpConvOutput(
+            conv2d_res = build_rescale_conv_output(
                 tosa_graph,
                 conv2d_res,
                 actual_out_type,

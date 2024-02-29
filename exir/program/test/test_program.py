@@ -50,12 +50,18 @@ def foo_meta(a, b):
 
 
 def get_exported_programs() -> Dict[str, ExportedProgram]:
-    def forward(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        z = torch.mul(x, y)
-        return torch.add(z, x)
+    class Forward(torch.nn.Module):
+        def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            z = torch.mul(x, y)
+            return torch.add(z, x)
 
-    def foo(x: torch.Tensor) -> torch.Tensor:
-        return torch.add(x, torch.ones(1))
+    forward = Forward()
+
+    class Foo(torch.nn.Module):
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return torch.add(x, torch.ones(1))
+
+    foo = Foo()
 
     programs = {}
     programs["forward"] = export(
@@ -144,12 +150,41 @@ class TestProgramManagers(unittest.TestCase):
             3,
         )
 
+    def test_no_getattr(self):
+        class Mul(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x * 3.14
+
+        mul = Mul()
+        ep = to_edge(torch.export.export(mul, (torch.ones(1),))).exported_program()
+        for node in ep.graph.nodes:
+            self.assertNotEqual(node.op, "get_attr")
+        self.assertEqual(
+            len([node for node in ep.graph.nodes if node.op == "placeholder"]), 2
+        )
+
+    def test_constraint_present_after_dce(self):
+        import executorch.exir as exir
+
+        class M(torch.nn.Module):
+            def forward(self, x, y):
+                z = y.item()
+                torch._constrain_as_value(z, 0, 4)
+                return x[z : z + y.shape[0]]
+
+        ep = torch.export.export(M(), (torch.randn(10), torch.tensor([3])))
+
+        edge_manager = to_edge(
+            ep, compile_config=exir.EdgeCompileConfig(_check_ir_validity=False)
+        )
+        edge_manager.to_executorch()
+
     def test_edge_manager_transform(self):
         edge_manager: EdgeProgramManager = to_edge(
             get_exported_programs(), get_config_methods()
         )
 
-        original_res = edge_manager.exported_program("forward")(
+        original_res = edge_manager.exported_program("forward").module()(
             torch.ones(1), torch.ones(1)
         )
 
@@ -163,17 +198,20 @@ class TestProgramManagers(unittest.TestCase):
         # still have all our methods
         self.assertEqual(len(transformed_edge.methods), 2)
         self.assertEqual(len(transformed_edge.config_methods), 2)
-        print(transformed_edge.exported_program("forward").graph_module.graph)
 
         # transformation was applied
         self.assertEqual(
-            transformed_edge.exported_program("forward")(torch.ones(1), torch.ones(1)),
+            transformed_edge.exported_program("forward").module()(
+                torch.ones(1), torch.ones(1)
+            ),
             torch.ones(1),  # x * y * x
         )
 
         # original unchanged
         self.assertEqual(
-            edge_manager.exported_program("forward")(torch.ones(1), torch.ones(1)),
+            edge_manager.exported_program("forward").module()(
+                torch.ones(1), torch.ones(1)
+            ),
             original_res,  # x * y + x
         )
 
@@ -189,12 +227,14 @@ class TestProgramManagers(unittest.TestCase):
         )
 
         self.assertEqual(
-            transformed_edge.exported_program("forward")(torch.ones(1), torch.ones(1)),
+            transformed_edge.exported_program("forward").module()(
+                torch.ones(1), torch.ones(1)
+            ),
             torch.ones(1),  # x * y * x
         )
 
         self.assertEqual(
-            transformed_edge.exported_program("foo")(
+            transformed_edge.exported_program("foo").module()(
                 torch.ones(1),
             ),
             torch.ones(1) + 1,  # x + 1
@@ -210,7 +250,7 @@ class TestProgramManagers(unittest.TestCase):
 
         forward_program = delegate_manager.exported_program("forward")
         self.assertEqual(
-            forward_program(torch.ones(1), torch.ones(1)),
+            forward_program.module()(torch.ones(1), torch.ones(1)),
             torch.ones(1) + 1,  # x * y + x
         )
 
@@ -244,7 +284,7 @@ class TestProgramManagers(unittest.TestCase):
         self.assertEqual(
             len(
                 delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_segments=True)
+                    ExecutorchBackendConfig(extract_delegate_segments=True)
                 )
                 ._emitter_output.program.execution_plan[0]
                 .delegates
@@ -254,7 +294,7 @@ class TestProgramManagers(unittest.TestCase):
         self.assertEqual(
             len(
                 delegate_manager.to_executorch(
-                    ExecutorchBackendConfig(extract_segments=True)
+                    ExecutorchBackendConfig(extract_delegate_segments=True)
                 )
                 ._emitter_output.program.execution_plan[1]
                 .delegates
@@ -272,7 +312,7 @@ class TestProgramManagers(unittest.TestCase):
 
         forward_program = delegate_manager.exported_program("forward")
         self.assertEqual(
-            forward_program(torch.ones(1), torch.ones(1)),
+            forward_program.module()(torch.ones(1), torch.ones(1)),
             torch.ones(1) + 1,  # x * y + x
         )
 
@@ -333,6 +373,9 @@ class TestProgramManagers(unittest.TestCase):
             one,
             two,
         )
+        if not isinstance(callable, torch.nn.Module):
+            callable = torch.export.WrapperModule(callable)
+
         exported_foo = export(callable, inputs)
         _ = to_edge(exported_foo, compile_config=edge_compile_config)
 

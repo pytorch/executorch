@@ -51,6 +51,10 @@ class Softmax(NodeVisitor):
         if "axis_order" in node.meta:
             dim = node.meta["axis_order"].index(dim)
 
+        # softmax only supports last dimension for now, which is channel in QNN
+        if dim != input_tensor.dim() - 1:
+            return None
+
         softmax_op = PyQnnWrapper.PyQnnOpWrapper(
             node.name,
             QNN_OP_PACKAGE_NAME_QTI_AISW,

@@ -128,13 +128,29 @@ class TorchBuilder:
     @register_test
     class simple_linear(torch.nn.Module):
         inputs = {
-            TosaProfile.BI: (torch.ones(100, 20),),
-            TosaProfile.MI: (torch.ones(100, 20),),
+            TosaProfile.BI: (torch.rand(1, 2),),
+            TosaProfile.MI: (torch.rand(1, 2),),
         }
 
         def __init__(self):
             super().__init__()
             torch.manual_seed(seed)
+            self.fc = torch.nn.Linear(2, 3)
+
+        def forward(self, x):
+            x = self.fc(x)
+            return x
+
+    @register_test
+    class simple_linear_rank4(torch.nn.Module):
+        inputs = {
+            TosaProfile.BI: (torch.rand(5, 10, 25, 20),),
+            TosaProfile.MI: (torch.rand(5, 10, 25, 20),),
+        }
+
+        def __init__(self):
+            super().__init__()
+            torch.manual_seed(42)
             self.fc = torch.nn.Linear(20, 30)
 
         def forward(self, x):
@@ -172,7 +188,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_3x3_1x3x256x256_st1(torch.nn.Module):
+    class simple_conv2d_3x3_1x3x256x256_stride1(torch.nn.Module):
         data = torch.ones(1, 3, 256, 256)
         inputs = {
             TosaProfile.BI: (data,),
@@ -199,7 +215,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_1x1_1x2x128x128_st1(torch.nn.Module):
+    class simple_conv2d_1x1_1x2x128x128_stride1(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(1, 2, 128, 128)))
         )
@@ -228,7 +244,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_2x2_1x1x14x14_st2(torch.nn.Module):
+    class simple_conv2d_2x2_1x1x14x14_stride2(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(1, 1, 14, 14)))
         )
@@ -257,7 +273,7 @@ class TorchBuilder:
             return x
 
     @register_test
-    class simple_conv2d_5x5_3x2x128x128_st1(torch.nn.Module):
+    class simple_conv2d_5x5_3x2x128x128_stride1(torch.nn.Module):
         data = torch.from_numpy(
             np.float32(rng.integers(low=10, high=20, size=(3, 2, 128, 128)))
         )

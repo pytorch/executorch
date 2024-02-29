@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 
+#include <executorch/kernels/portable/cpu/util/index_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -33,19 +34,6 @@ void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
   }
 }
 
-void check_preconditions(const Tensor& input, const Tensor& output) {
-  (void)input;
-
-  ET_CHECK_MSG(
-      output.scalar_type() == ScalarType::Long,
-      "Expected out to be a Long tensor but received %" PRId8,
-      static_cast<int8_t>(output.scalar_type()));
-  ET_CHECK_MSG(
-      output.dim() == 2,
-      "Expected out to be a 2d tensor received %zd",
-      ssize_t(output.dim()));
-}
-
 /**
  * Two pass algorithm where we first count the number of non zeros, then resize
  * out to the appropriate size, and then loop again and properly write into out
@@ -66,7 +54,12 @@ void nonzero(const Tensor& input, Tensor& output) {
   // resize out
   SizesType out_shape[2] = {
       static_cast<SizesType>(num_nonzero), static_cast<SizesType>(input.dim())};
-  resize(output, ArrayRef<exec_aten::SizesType>(out_shape, 2));
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(output, ArrayRef<exec_aten::SizesType>(out_shape, 2)) ==
+          Error::Ok,
+      InvalidArgument,
+      out);
 
   size_t index[kTensorDimensionLimit];
   memset(index, 0, sizeof(index));
@@ -94,7 +87,7 @@ void nonzero(const Tensor& input, Tensor& output) {
 Tensor& nonzero_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
-  check_preconditions(in, out);
+  ET_KERNEL_CHECK(ctx, check_nonzero_args(in, out), InvalidArgument, out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {

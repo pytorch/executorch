@@ -34,8 +34,10 @@ def write_schema(d: str, schema_name: str) -> None:
         )
 
 
-def serialize_from_bundled_program_to_json(bundled_program: BundledProgram) -> str:
-    return json.dumps(bundled_program._bundled_program, cls=_DataclassEncoder)
+def serialize_from_bundled_program_to_json(
+    bundled_program: bp_schema.BundledProgram,
+) -> str:
+    return json.dumps(bundled_program, cls=_DataclassEncoder)
 
 
 def deserialize_from_json_to_bundled_program(
@@ -90,8 +92,10 @@ def serialize_from_bundled_program_to_flatbuffer(
         The serialized FlatBuffer binary data in bytes.
     """
 
+    bundled_program_in_schema = bundled_program.serialize_to_schema()
+
     return convert_to_flatbuffer(
-        serialize_from_bundled_program_to_json(bundled_program)
+        serialize_from_bundled_program_to_json(bundled_program_in_schema)
     )
 
 

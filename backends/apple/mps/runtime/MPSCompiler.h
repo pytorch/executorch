@@ -5,12 +5,14 @@
 
 #pragma once
 
+#include <executorch/backends/apple/mps/runtime/MPSExecutor.h>
+
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/platform/compiler.h>
+
 #include <memory>
 #include <vector>
-#include "MPSExecutor.h"
 
 namespace torch {
 namespace executor {

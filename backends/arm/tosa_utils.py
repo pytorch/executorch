@@ -1,9 +1,17 @@
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
 import logging
 import os
+
+import executorch.backends.arm.tosa_quant_utils as tosa_quant_utils
 
 import numpy as np
 import serializer.tosa_serializer as ts
 from executorch.backends.arm.tosa_mapping import TosaArg
+from executorch.exir.dialects._ops import ops as exir_ops
 from serializer.tosa_serializer import TosaOp
 
 logger = logging.getLogger(__name__)
@@ -41,11 +49,15 @@ def dbg_tosa_dump(tosa_graph, path):
     fb = tosa_graph.serialize()
     js = tosa_graph.writeJson(filename)
 
-    with open(path + filename, "wb") as f:
+    filepath_tosa_fb = os.path.join(path, filename)
+    with open(filepath_tosa_fb, "wb") as f:
         f.write(fb)
+    assert os.path.exists(filepath_tosa_fb), "Failed to write TOSA flatbuffer"
 
-    with open(path + "desc.json", "w") as f:
+    filepath_desc_json = os.path.join(path, "desc.json")
+    with open(filepath_desc_json, "w") as f:
         f.write(js)
+    assert os.path.exists(filepath_desc_json), "Failed to write TOSA JSON"
 
 
 def dbg_fail(node, tosa_graph, path):
@@ -101,8 +113,8 @@ def getNodeArgs(node):
 
 # Helper function to do broadcasting
 # Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_broadcasting
-def broadcastShapes(shape1, shape2):
-    assert len(shape1) == len(shape2), "broadcastShape::shapes must have same ranks"
+def broadcast_shapes(shape1, shape2):
+    assert len(shape1) == len(shape2), "broadcast_shapes::shapes must have same ranks"
 
     need_broadcasting = False
     for val1, val2 in zip(shape1, shape2):
@@ -119,7 +131,7 @@ def broadcastShapes(shape1, shape2):
         else:
             assert not (
                 shape2[idx] != 1 and shape2[idx] != broadcasted_shape[idx]
-            ), "broadcastShape::broadcast shape mismatch"
+            ), "broadcast_shapes::broadcast shape mismatch"
 
     return broadcasted_shape
 
@@ -128,7 +140,37 @@ def broadcastShapes(shape1, shape2):
     No data conversion happens during a reshape operation. """
 
 
-def buildReshape(tosa_fb, input_name, new_shape, output_name):
+def build_reshape(tosa_fb, input_name, new_shape, output_name):
     attr = ts.TosaSerializerAttribute()
     attr.ReshapeAttribute(new_shape)
     tosa_fb.addOperator(TosaOp.Op().RESHAPE, [input_name], [output_name], attr)
+
+
+def is_permute_node_before_addmm(node):
+    return (
+        node.target == exir_ops.edge.aten.permute_copy.default
+        and list(node.users)[0].target == exir_ops.edge.aten.addmm.default
+    )
+
+
+def is_bias_node_for_addmm(node):
+    consumer_node = list(node.users)[0]
+    # consumer node is addmm
+    is_rank2_linear_bias = (
+        consumer_node.target == exir_ops.edge.aten.addmm.default
+        and list(consumer_node.users)[0].target == tosa_quant_utils.q_op
+    )
+
+    # rank>2 linear layers
+    # consumer_consumer node is view_copy
+    is_rank_greater_than_2_linear_bias = False
+    if (
+        consumer_node.target == exir_ops.edge.aten.addmm.default
+        and list(consumer_node.users)[0].target == exir_ops.edge.aten.view_copy.default
+    ):
+        consumer_consumer_node = list(consumer_node.users)[0]
+        is_rank_greater_than_2_linear_bias = (
+            list(consumer_consumer_node.users)[0].target == tosa_quant_utils.q_op
+        )
+
+    return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias

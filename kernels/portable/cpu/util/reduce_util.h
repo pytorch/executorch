@@ -144,7 +144,7 @@ void apply_on_flat_ix_with_dim_mask_and_base(
 // Helper Functions
 //
 
-void check_dim_list_is_valid(
+[[nodiscard]] bool check_dim_list_is_valid(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list);
 
@@ -153,21 +153,25 @@ bool check_dim_in_dim_list(
     const size_t max_dim,
     const exec_aten::ArrayRef<int64_t>& dim_list);
 
-size_t get_reduced_dim_product(const Tensor& in, const optional<int64_t>& dim);
+size_t get_reduced_dim_product(
+    const exec_aten::Tensor& in,
+    const exec_aten::optional<int64_t>& dim);
 
 size_t get_reduced_dim_product(
-    const Tensor& in,
+    const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list);
 
-size_t get_out_numel(const Tensor& in, const optional<int64_t>& dim);
+size_t get_out_numel(
+    const exec_aten::Tensor& in,
+    const exec_aten::optional<int64_t>& dim);
 
 size_t get_out_numel(
-    const Tensor& in,
+    const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list);
 
 size_t get_init_index(
-    const Tensor& in,
-    const optional<int64_t>& dim,
+    const exec_aten::Tensor& in,
+    const exec_aten::optional<int64_t>& dim,
     const size_t out_ix);
 
 size_t get_init_index(
@@ -189,8 +193,8 @@ size_t get_init_index(
 template <typename Fn>
 void apply_over_dim(
     const Fn& fn,
-    const Tensor& in,
-    const optional<int64_t>& dim) {
+    const exec_aten::Tensor& in,
+    const exec_aten::optional<int64_t>& dim) {
   // If dim is null, apply fn over the entire tensor
   if (!dim.has_value()) {
     fn(in.numel(), 1, 0);
@@ -239,8 +243,8 @@ void apply_over_dim(
 template <typename Fn>
 void apply_over_dim(
     const Fn& fn,
-    const Tensor& in,
-    const optional<int64_t>& dim,
+    const exec_aten::Tensor& in,
+    const exec_aten::optional<int64_t>& dim,
     const size_t out_ix,
     const int64_t start = 0,
     const int64_t end = -1) {
@@ -297,12 +301,12 @@ void apply_over_dim(
 template <typename Fn>
 void apply_over_dim_list(
     const Fn& fn,
-    const Tensor& in,
-    const optional<ArrayRef<int64_t>>& dim_list,
+    const exec_aten::Tensor& in,
+    const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix,
     const int64_t start = 0,
     const int64_t end = -1) {
-  check_dim_list_is_valid(in, dim_list);
+  ET_CHECK(check_dim_list_is_valid(in, dim_list));
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim_list),
       "Out index %zd is out of bounds",
@@ -451,7 +455,7 @@ CTYPE_OUT map_reduce_over_dim_list(
     const exec_aten::Tensor& in,
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
     const size_t out_ix) {
-  check_dim_list_is_valid(in, dim_list);
+  ET_CHECK(check_dim_list_is_valid(in, dim_list));
 
   ET_CHECK_MSG(
       out_ix < get_out_numel(in, dim_list),
@@ -591,6 +595,54 @@ Error resize_reduction_out(
     const exec_aten::optional<exec_aten::ArrayRef<int64_t>>& dim_list,
     bool keepdim,
     exec_aten::Tensor& out);
+
+#ifndef USE_ATEN_LIB
+bool check_reduction_args(
+    const Tensor& in,
+    const optional<ArrayRef<int64_t>>& dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out);
+
+bool check_reduction_args_single_dim(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out);
+
+bool check_mean_dim_args(
+    const Tensor& in,
+    optional<ArrayRef<int64_t>> dim_list,
+    bool keepdim,
+    optional<ScalarType> dtype,
+    Tensor& out);
+
+bool check_amin_amax_args(
+    const Tensor& in,
+    ArrayRef<int64_t> dim_list,
+    bool keepdim,
+    Tensor& out);
+
+bool check_argmin_argmax_args(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    Tensor& out);
+
+bool check_min_max_args(
+    const Tensor& in,
+    int64_t dim,
+    bool keepdim,
+    Tensor& max,
+    Tensor& max_indices);
+
+bool check_prod_out_args(
+    const Tensor& in,
+    optional<ScalarType> dtype,
+    Tensor& out);
+
+#endif
 
 } // namespace executor
 } // namespace torch

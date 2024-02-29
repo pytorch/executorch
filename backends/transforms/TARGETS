@@ -1,5 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 runtime.python_library(
     name = "lib",
     srcs = [
@@ -24,5 +26,30 @@ runtime.python_library(
         "//executorch/exir:pass_base",
         "//executorch/exir:sym_util",
         "//executorch/exir/dialects:lib",
+    ],
+)
+
+runtime.python_library(
+    name = "duplicate_dynamic_quant_chain",
+    srcs = ["duplicate_dynamic_quant_chain.py"],
+    visibility = [
+        "//executorch/backends/...",
+        "//executorch/examples/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_duplicate_dynamic_quant_chain",
+    srcs = [
+        "test/test_duplicate_dynamic_quant_chain.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
+        ":duplicate_dynamic_quant_chain",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
     ],
 )
