@@ -423,6 +423,7 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
+                constant_segment_data=self.constant_segment_data,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
@@ -433,11 +434,11 @@ class ExecutorchProgram:
 
     @property
     def program(self) -> Program:
-        if self._emitter_output is None:
-            self._emitter_output = emit_program(
-                self.exported_program, self._emit_stacktrace
-            )
-        return self._emitter_output.program
+        return self._get_emitter_output().program
+
+    @property
+    def constant_segment_data(self) -> Optional[bytearray]:
+        return self._get_emitter_output().constant_segment_data
 
     @property
     def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
@@ -456,6 +457,16 @@ class ExecutorchProgram:
     @property
     def graph_module(self) -> torch.fx.GraphModule:
         return self.exported_program.graph_module
+
+    def _get_emitter_output(self) -> EmitterOutput:
+        if self._emitter_output is None:
+            self._emitter_output = emit_program(
+                methods=self.exported_program,
+                emit_stacktrace=self._emit_stacktrace,
+                extract_constant_segment=self._extract_constant_segment,
+                constant_tensor_alignment=self._constant_tensor_alignment,
+            )
+        return self._emitter_output
 
     # TODO (zhxchen17) Change this to property.
     def dump_graph_module(self) -> torch.fx.GraphModule:
@@ -725,9 +736,11 @@ class MultiMethodExecutorchProgram:
         for name, prog in executorch_dialect_program.methods().items():
             temp[name] = prog.exported_program
         self._emitter_output: EmitterOutput = emit_program(
-            temp,
-            emit_stacktrace,
-            executorch_dialect_program.prim_getters(),
+            methods=temp,
+            emit_stacktrace=emit_stacktrace,
+            prim_getters=executorch_dialect_program.prim_getters(),
+            extract_constant_segment=extract_constant_segment,
+            constant_tensor_alignment=constant_tensor_alignment,
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
         self._extract_delegate_segments: bool = extract_delegate_segments
@@ -742,6 +755,7 @@ class MultiMethodExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
+                constant_segment_data=self._emitter_output.constant_segment_data,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
@@ -1111,14 +1125,17 @@ class ExecutorchProgramManager:
 
         # Emit methods
         self._emitter_output: EmitterOutput = emit_program(
-            self._execution_programs,
-            backend_config.emit_stacktrace,
-            self._config_methods,
+            methods=self._execution_programs,
+            emit_stacktrace=backend_config.emit_stacktrace,
+            prim_getters=self._config_methods,
+            extract_constant_segment=backend_config.extract_constant_segment,
+            constant_tensor_alignment=backend_config.constant_tensor_alignment,
         )
 
         # Serialize emitter output to a buffer
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
+            constant_segment_data=self._emitter_output.constant_segment_data,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,

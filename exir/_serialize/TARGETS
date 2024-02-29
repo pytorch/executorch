@@ -60,5 +60,6 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/exir:schema",
+        "//executorch/exir:tensor",
     ],
 )

@@ -108,6 +108,7 @@ def determine_tensor_dynanism(shape: torch.Size) -> TensorShapeDynamism:
             return TensorShapeDynamism.DYNAMIC_UNBOUND
 
 
+# Default tensor alignment. Keep in sync with tensor-alignment in program.fbs.
 ALIGNMENT = 16
 
 
