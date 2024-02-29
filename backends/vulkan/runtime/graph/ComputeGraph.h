@@ -16,85 +16,17 @@
 #include <ATen/native/vulkan/api/Tensor.h>
 #include <ATen/native/vulkan/api/Types.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Config.h>
-#include <executorch/backends/vulkan/runtime/graph/Value.h>
+#include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
+
+#include <executorch/backends/vulkan/runtime/graph/containers/SharedObject.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
-
-using ValueRef = int32_t;
-
-struct IOValueRef {
-  ValueRef value;
-  ValueRef staging;
-};
-
-class ComputeGraph;
-
-/*
- * Represents a single prepacking op in a ML model. In graph mode, ops will be
- * implemented in a derived class that implements encode, which will implement
- * encoding of shaders transferring necessary data (such as weights and biases)
- * to the GPU.
- */
-class PrepackNode {
-  friend class ComputeGraph;
-
- public:
-  PrepackNode(ValueRef tref, ValueRef packed) : tref_{tref}, packed_{packed} {}
-
-  virtual ~PrepackNode() = default;
-
- protected:
-  ValueRef tref_;
-  ValueRef packed_;
-
- public:
-  virtual void encode(ComputeGraph* graph) const = 0;
-};
-
-/*
- * Represents a single execution op in a ML model. In graph mode, ops will be
- * implemented in a derived class that implements encode, which will implement
- * encoding of the shader corresponding to the op into the command buffer of a
- * ComputeGraph.
- */
-class ExecuteNode {
-  friend class ComputeGraph;
-
- public:
-  ExecuteNode(ValueRef input, ValueRef output)
-      : inputs_{input}, outputs_{output} {}
-  ExecuteNode(
-      const std::vector<ValueRef>& inputs,
-      const std::vector<ValueRef>& outputs)
-      : inputs_(inputs), outputs_(outputs) {}
-
-  virtual ~ExecuteNode() = default;
-
- protected:
-  std::vector<ValueRef> inputs_;
-  std::vector<ValueRef> outputs_;
-
- public:
-  virtual void encode(ComputeGraph* graph) const = 0;
-};
-
-struct SharedObject {
-  friend class ComputeGraph;
-
-  explicit SharedObject() = default;
-
-  VkMemoryRequirements aggregate_memory_requirements;
-  VmaAllocationCreateInfo aggregate_create_info;
-  std::vector<ValueRef> users;
-  api::MemoryAllocation allocation;
-
-  void add_user(ComputeGraph* const graph, const ValueRef idx);
-  void allocate(ComputeGraph* const graph);
-  void bind_users(ComputeGraph* const graph);
-};
 
 /*
  * This is the core data structure used to execute Vulkan models in graph mode.
