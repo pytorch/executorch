@@ -134,6 +134,9 @@ option(EXECUTORCH_BUILD_EXTENSION_MODULE
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
        "Build the extension/runner_util directory" OFF)
 
+# Build gtest
+option(EXECUTORCH_BUILD_GTEST "Build GTEST" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -428,6 +431,18 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)
+endif()
+
+if(EXECUTORCH_BUILD_GTEST)
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+  )
+  # For Windows: Prevent overriding the parent project's compiler/linker settings
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  add_subdirectory(runtime/kernel/test)
 endif()
 # Print all summary
 executorch_print_configuration_summary()
