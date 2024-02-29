@@ -15,7 +15,7 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.qnn_quantizer import QnnQuantizer
+from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
 from executorch.backends.qualcomm.utils.utils import capture_program, SoCModel
 from executorch.examples.qualcomm.scripts.utils import SimpleADB
 
@@ -45,6 +45,7 @@ class TestQNN(unittest.TestCase):
     artifact_dir: Literal = ""
     image_dataset: Literal = ""
     pretrained_weight: Literal = ""
+    online_prepare: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))

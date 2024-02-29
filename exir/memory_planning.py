@@ -24,7 +24,7 @@ from executorch.exir.error import (
     internal_assert,
     InternalError,
 )
-from executorch.exir.operator.convert import is_out_variant
+from executorch.exir.operator.convert import is_inplace_variant, is_out_variant
 from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 
@@ -266,6 +266,16 @@ def _is_out_var_node(node: torch.fx.Node) -> bool:
     )
 
 
+def _is_inplace_node(node: torch.fx.Node) -> bool:
+    return (
+        node.op == "call_function"
+        and isinstance(node.target, torch._ops.OpOverload)
+        and is_inplace_variant(
+            node.target._schema.name, node.target._schema.overload_name
+        )
+    )
+
+
 def update_tensor_lifetime(spec: TensorSpec, node_idx: int) -> None:
     r"""
     Update the lifetime of the tensor to cover node_idx. A tensor's lifetime
@@ -349,6 +359,9 @@ def collect_specs_from_nodes(  # noqa: C901
             continue
 
         if not (specs := get_node_tensor_specs(node)):
+            continue
+
+        if _is_inplace_node(node):
             continue
 
         if do_assertion:
@@ -495,7 +508,11 @@ def get_node_tensor_specs(
     if not isinstance(specs, (list, tuple)):
         return []
     else:
-        return specs
+        return [
+            spec
+            for spec in specs
+            if not isinstance(spec, (int, float, bool, str, type(None)))
+        ]
 
 
 @register_algo

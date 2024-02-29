@@ -18,8 +18,6 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     const QnnExecuTorchHtpBackendOptions& htp_options) {
   auto backend_params = std::make_unique<BackendConfigParameters>();
   switch (backend_type) {
-    case kGpuBackend:
-      throw NotImplementedException();
     case kHtpBackend:
       backend_params->qnn_backend_ptr_ =
           std::make_unique<HtpBackend>(implementation, logger);
@@ -41,8 +39,8 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
       return backend_params;
       break;
+    case kGpuBackend:
     case kDspBackend:
-      throw NotImplementedException();
     case kUndefinedBackend:
     default:
       return nullptr;

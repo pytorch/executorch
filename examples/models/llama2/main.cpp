@@ -24,6 +24,11 @@ DEFINE_double(
     0.8f,
     "Temperature; Default is 0.8f. 0 = greedy argmax sampling (deterministic). Lower temperature = more deterministic");
 
+DEFINE_int32(
+    seq_len,
+    128,
+    "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -38,11 +43,13 @@ int32_t main(int32_t argc, char** argv) {
 
   double temperature = FLAGS_temperature;
 
+  int32_t seq_len = FLAGS_seq_len;
+
   // create llama runner
   ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
 
   // generate
-  runner.generate(prompt);
+  runner.generate(prompt, seq_len);
 
   return 0;
 }
