@@ -28,7 +28,7 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.pass_base import ExportPass
-from torch._export.utils import is_buffer, is_param
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
 
 
@@ -161,11 +161,13 @@ def _get_node_list_with_same_tag(
             if node.op == "output":
                 raise RuntimeError(f"output node {node} should not be tagged")
             if node.op == "placeholder":
-                if not is_param(owning_program, node) and not is_buffer(
-                    owning_program, node
+                if (
+                    not is_param(owning_program, node)
+                    and not is_buffer(owning_program, node)
+                    and not is_lifted_tensor_constant(owning_program, node)
                 ):
                     raise RuntimeError(
-                        f"placeholder node for non-params and non-buffer should not be tagged: {node} "
+                        f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                     )
             node_list.append(node)
     return node_list
@@ -250,7 +252,10 @@ def _partition_and_lower_one_graph_module(
                 # Delete the consumed buffers
                 buffer_name = toplevel_signature.inputs_to_buffers.pop(node.name)
                 toplevel_signature.buffers.remove(buffer_name)
-                owning_program.state_dict.pop(buffer_name)
+                if buffer_name in owning_program.state_dict:
+                    owning_program.state_dict.pop(buffer_name)
+                else:
+                    owning_program.constants.pop(buffer_name)
                 tagged_graph_module.graph.erase_node(node)
             elif node.name in toplevel_signature.inputs_to_parameters:
                 # Delete the consumed parameters

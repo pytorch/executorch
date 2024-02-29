@@ -26,8 +26,44 @@ This example tries to reuse the Python code, with modifications to make it compa
 
 
 # Instructions:
+### Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/stable/getting-started-setup) to set up ExecuTorch
 2. `cd examples/third-party/llama`
 3. `pip install -e .`
-4. Go back to `executorch` root, run `python3 -m examples.models.llama2.export_llama`. The exported program, llama2.pte would be saved in current directory using the dummy checkpoint.
-5. Llama2 pretrained parameters can be downloaded [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) and run with `python3 -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json>`.
+4. Go back to `executorch` root, run `bash examples/models/llama2/install_requirements.sh`.
+
+### Export llama2 models
+2. From `executorch` root, run `python3 -m examples.models.llama2.export_llama`. The exported program, llama2.pte would be saved in current directory using the dummy checkpoint.
+3. Llama2 pretrained parameters can be downloaded [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) and run with `python3 -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json>`.
+
+### Export and run stories110M model
+
+1. Download `stories110M.pt` and `tokenizer.model` from Github.
+    ```
+    wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
+    wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
+    ```
+2. Create params file.
+    ```
+    echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json
+    ```
+3. Export model. Export options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/export_llama_lib.py#L161).
+    ```
+    python3 -m examples.models.llama2.export_llama -c stories110M.pt -p params.json
+    ```
+4. Create tokenizer.bin.
+
+    Build with buck2:
+    ```
+    buck2 run examples/models/llama2/tokenizer:tokenizer_py -- -t tokenizer.model -o tokenizer.bin
+    ```
+    Build with cmake: todo
+
+5. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L13).
+    Build with buck2:
+    ```
+    buck2 run examples/models/llama2:main -- --model_path=llama2.pte --tokenizer_path=tokenizer.bin --prompt="Once"
+    ```
+    Build with cmake: todo
+
+See test script [here](https://github.com/pytorch/executorch/blob/main/.ci/scripts/test_llama.sh).

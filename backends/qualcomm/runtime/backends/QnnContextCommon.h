@@ -47,7 +47,7 @@ class QnnContext {
   std::vector<Qnn_Tensor_t> GetGraphOutputs() {
     return cache_->GetGraphOutputs();
   }
-  QnnBackendCache::CacheState GetCacheState() {
+  QnnBackendCache::CacheState GetCacheState() const {
     return cache_->GetCacheState();
   };
 

@@ -11,7 +11,7 @@ from executorch.backends.qualcomm.builders.utils import set_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import get_parameter, get_quant_attrs
+from .utils import dq_ops, get_parameter, get_quant_attrs, q_ops
 
 
 class AnnotateQuantAttrs(ExportPass):
@@ -19,18 +19,6 @@ class AnnotateQuantAttrs(ExportPass):
     Add "quant_attrs" to graph nodes' meta from the QDQ information
     generated after quatization process.
     """
-
-    q_ops = {
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    }
-
-    dq_ops = {
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
-        exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
-    }
 
     def __init__(self, edge_program: torch.export.ExportedProgram):
         super(AnnotateQuantAttrs, self).__init__()
@@ -58,13 +46,12 @@ class AnnotateQuantAttrs(ExportPass):
         self, graph_module: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
-
             # With fold_quant enabled, check if the input of dq op is quantized param.
             param = None
-            if n.target in self.dq_ops:
+            if n.target in dq_ops:
                 param = get_parameter(n.args[0], self.edge_program)
 
-            if n.target not in self.q_ops and param is None:
+            if n.target not in q_ops and param is None:
                 continue
 
             quant_attrs = get_quant_attrs(self.edge_program, n)
