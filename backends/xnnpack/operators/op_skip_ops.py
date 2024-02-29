@@ -51,15 +51,6 @@ class OpDequantizePerChannelDefault(OpSkipOps):
 
 
 @register_node_visitor
-class OpDequantizePerTensorTensor(OpSkipOps):
-    """
-    do nothing if node is dequantize_per_tensor.tensor
-    """
-
-    target = "quantized_decomposed.dequantize_per_tensor.tensor"
-
-
-@register_node_visitor
 class OpGetItem(OpSkipOps):
     """
     do nothing if node is getitem
@@ -75,15 +66,6 @@ class OpQuantizePerChannelDefault(OpSkipOps):
     """
 
     target = "quantized_decomposed.quantize_per_channel.default"
-
-
-@register_node_visitor
-class OpQuantizePerTensorTensor(OpSkipOps):
-    """
-    do nothing if node is quantize_per_tensor.tensor
-    """
-
-    target = "quantized_decomposed.quantize_per_tensor.tensor"
 
 
 @register_node_visitor

@@ -11,7 +11,6 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
-#include <executorch/backends/qualcomm/runtime/backends/QnnFactory.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
@@ -52,7 +51,7 @@ typedef struct BackendConfigParameters {
 
 } BackendConfigParameters;
 
-class QnnBackendFactory : public QnnFactory {
+class QnnBackendFactory {
  public:
   std::unique_ptr<BackendConfigParameters> Create(
       const QnnImplementation& implementation,

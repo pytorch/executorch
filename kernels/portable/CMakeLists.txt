@@ -60,4 +60,4 @@ target_compile_options(portable_kernels PUBLIC ${_common_compile_options})
 # runtime
 gen_operators_lib("portable_ops_lib" portable_kernels executorch)
 
-install(TARGETS portable_kernels DESTINATION lib)
+install(TARGETS portable_kernels portable_ops_lib DESTINATION lib)
