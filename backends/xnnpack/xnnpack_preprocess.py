@@ -11,8 +11,6 @@ from dataclasses import dataclass
 from typing import Dict, final, List
 
 import torch
-
-from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
@@ -20,19 +18,18 @@ from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
-    Buffer,
-    PerChannelQuant,
-    PerTensorQuant,
-    XNNDatatype,
+    ConstantDataOffset,
     XNNGraph,
-    XNNQuantizedTensorValue,
-    XNNTensorValue,
-    XValue,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     serialize_xnnpack_binary,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
+
+from executorch.backends.xnnpack.utils.xnnpack_constants import (
+    XNN_VALUE_FLAG_EXTERNAL_INPUT,
+    XNN_VALUE_FLAG_EXTERNAL_OUTPUT,
+)
 
 from executorch.exir.backend.backend_details import (
     BackendDetails,
@@ -42,17 +39,6 @@ from executorch.exir.backend.backend_details import (
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
 from torch.export.exported_program import ExportedProgram
 
-XNN_VALUE_FLAG_NON_EXTERNAL = 0
-XNN_VALUE_FLAG_EXTERNAL_INPUT = 1
-XNN_VALUE_FLAG_EXTERNAL_OUTPUT = 2
-XNN_FLAG_TRANSPOSE_WEIGHTS = 1
-XNN_INVALID_VALUE_ID = 2**32 - 1
-XNN_TYPE_MAP = {
-    torch.float32: XNNDatatype.xnn_datatype_fp32,
-    torch.uint8: XNNDatatype.xnn_datatype_quint8,
-    torch.int8: XNNDatatype.xnn_datatype_qint8,
-    torch.int32: XNNDatatype.xnn_datatype_qint32,
-}
 DEFAULT_DEBUG_HANDLE = 65535
 
 logger = logging.getLogger(__name__)
@@ -63,97 +49,6 @@ logger.setLevel(logging.WARNING)
 class ExternalMeta:
     external_id: int
     io_type: int
-
-
-def node_to_xvalue(
-    node: torch.fx.Node,
-    constant_buffer_idx: int,
-    external_id: int,
-    flags: int,
-    id_out: int,
-    dq_datatype=XNNDatatype.xnn_datatype_invalid,
-) -> XValue:
-    node_val = node.meta["val"]
-    node_value = XValue(
-        xvalue_union=XNNTensorValue(
-            datatype=XNN_TYPE_MAP[node_val.dtype],
-            num_dims=node_val.dim(),
-            dims=get_shape(node),
-            constant_buffer_idx=constant_buffer_idx,
-            external_id=external_id,
-            flags=flags,
-            id_out=id_out,
-            dq_datatype=dq_datatype,
-        )
-    )
-    return node_value
-
-
-def node_to_per_tensor_quantized_xvalue(
-    node: torch.fx.Node,
-    dtype: torch.dtype,
-    constant_buffer_idx: int,
-    external_id: int,
-    flags: int,
-    id_out: int,
-    scale: float,
-    zero_point: int,
-) -> XValue:
-    node_val = node.meta["val"]
-    node_xvalue = XNNTensorValue(
-        datatype=XNN_TYPE_MAP[dtype],
-        num_dims=node_val.dim(),
-        dims=get_shape(node),
-        constant_buffer_idx=constant_buffer_idx,
-        external_id=external_id,
-        flags=flags,
-        id_out=id_out,
-        dq_datatype=XNNDatatype.xnn_datatype_invalid,  # always invalid
-    )
-
-    per_tensor_quantized_params = PerTensorQuant(scale=scale, zero_point=zero_point)
-    quantized_node_val = XValue(
-        xvalue_union=XNNQuantizedTensorValue(
-            tensor_value=node_xvalue,
-            quant_params=per_tensor_quantized_params,
-        )
-    )
-    return quantized_node_val
-
-
-def node_to_per_channel_quantized_xvalue(
-    node: torch.fx.Node,
-    dtype: torch.dtype,
-    constant_buffer_idx: int,
-    external_id: int,
-    flags: int,
-    id_out: int,
-    channel_dim: int,
-    scale: torch.Tensor,
-) -> XValue:
-    node_val = node.meta["val"]
-    assert dtype == torch.torch.int8
-    node_xvalue = XNNTensorValue(
-        datatype=XNNDatatype.xnn_datatype_qcint8,  # HACK: XNN_TYPE_MAP[dtype],
-        num_dims=node_val.dim(),
-        dims=get_shape(node),
-        constant_buffer_idx=constant_buffer_idx,
-        external_id=external_id,
-        flags=flags,
-        id_out=id_out,
-        dq_datatype=XNNDatatype.xnn_datatype_invalid,  # always invalid
-    )
-
-    per_channel_quantized_params = PerChannelQuant(
-        scale=scale.tolist(), channel_dim=channel_dim
-    )
-    quantized_node_val = XValue(
-        xvalue_union=XNNQuantizedTensorValue(
-            tensor_value=node_xvalue,
-            quant_params=per_channel_quantized_params,
-        )
-    )
-    return quantized_node_val
 
 
 def generate_node_to_external_map(
@@ -239,12 +134,11 @@ class XnnpackBackend(BackendDetails):
             num_externs=len(node_to_external_map),
             input_ids=[],
             output_ids=[],
-            constant_buffer=[Buffer(storage=b"")],
-            mem_buffer_sizes=[0],
-            constant_data=[],
+            constant_data=[ConstantDataOffset(0, 0)],
         )
 
-        node_visitors = get_node_visitors(ep, node_to_external_map)
+        constant_data_bytes = bytearray()
+        node_visitors = get_node_visitors(ep, node_to_external_map, constant_data_bytes)
 
         for node in graph_module.graph.nodes:
             if node.op == "call_function":
@@ -269,5 +163,8 @@ class XnnpackBackend(BackendDetails):
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
         return PreprocessResult(
-            processed_bytes=serialize_xnnpack_binary(xnnpack_graph), debug_handle_map={}
+            processed_bytes=serialize_xnnpack_binary(
+                xnnpack_graph, constant_data_bytes
+            ),
+            debug_handle_map={},
         )

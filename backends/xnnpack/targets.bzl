@@ -40,7 +40,6 @@ def define_common_targets():
         ] + ([] if runtime.is_oss else ["-DENABLE_DYNAMIC_QUANTIZATION"]),
         deps = [
             third_party_dep("XNNPACK"),
-            ":dynamic_quant_utils",  # TODO Use (1) portable for choose_qparams(), (2) xnnpack for quantize_per_tensor(),
             "//executorch/runtime/backend:interface",
             "//executorch/backends/xnnpack/serialization:xnnpack_flatbuffer_header",
             "//executorch/backends/xnnpack/threadpool:threadpool",

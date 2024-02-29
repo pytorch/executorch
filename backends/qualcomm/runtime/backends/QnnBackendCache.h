@@ -20,6 +20,7 @@ class QnnBackendCache {
     INVALID = 0,
     SERIALIZE = 1,
     DESERIALIZE = 2,
+    ONLINE_PREPARE = 3,
   };
   explicit QnnBackendCache(const QnnExecuTorchContextBinary& qnn_context_blob);
 

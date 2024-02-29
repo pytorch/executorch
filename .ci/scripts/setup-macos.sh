@@ -27,34 +27,25 @@ install_buck() {
     brew install wget
   fi
 
-  BUCK2_NOT_AVAILABLE=false
-  if ! command -v buck2 &> /dev/null; then
-    BUCK2_NOT_AVAILABLE=true
-  else
-    BUCK2_BINARY=$(which buck2)
-    BUCK2_ARCH=$(file -b "${BUCK2_BINARY}")
+  pushd .ci/docker
 
-    if [[ "${BUCK2_ARCH}" != "Mach-O 64-bit executable arm64" ]]; then
-      echo "Reinstall buck2 because ${BUCK2_BINARY} is ${BUCK2_ARCH}, not 64-bit arm64"
-      BUCK2_NOT_AVAILABLE=true
-    fi
-  fi
+  # TODO(huydo): This is a one-off copy of buck2 2024-02-15 to unblock Jon and
+  # re-enable ShipIt. It’s not ideal that upgrading buck2 will require a manual
+  # update the cached binary on S3 bucket too. Let me figure out if there is a
+  # way to correctly implement the previous setup of installing a new version of
+  # buck2 only when it’s needed. AFAIK, the complicated part was that buck2
+  # --version doesn't say anything w.r.t its release version, i.e. 2024-02-15.
+  # See D53878006 for more details.
+  BUCK2=buck2-aarch64-apple-darwin.zst
+  wget -q "https://ossci-macos.s3.amazonaws.com/${BUCK2}"
 
-  if [[ "${BUCK2_NOT_AVAILABLE}" == true ]]; then
-    pushd .ci/docker
+  zstd -d "${BUCK2}" -o buck2
 
-    BUCK2=buck2-aarch64-apple-darwin.zst
-    BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
+  chmod +x buck2
+  mv buck2 /opt/homebrew/bin
 
-    wget -q "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/${BUCK2}"
-    zstd -d "${BUCK2}" -o buck2
-
-    chmod +x buck2
-    mv buck2 /opt/homebrew/bin
-
-    rm "${BUCK2}"
-    popd
-  fi
+  rm "${BUCK2}"
+  popd
 }
 
 function write_sccache_stub() {
