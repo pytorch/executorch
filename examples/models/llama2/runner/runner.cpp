@@ -119,7 +119,7 @@ T Runner::getMetadataHelper(std::string method_name, T default_val) {
   return res;
 }
 
-std::vector<exec_aten::SizesType> Runner::getKVCacheShape(int32_t seq_len) {
+std::vector<exec_aten::SizesType> Runner::getKVCacheShape() {
   // shape: (n_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads,
   // self.head_dim)
   std::vector<std::string> methods = {
@@ -134,9 +134,6 @@ std::vector<exec_aten::SizesType> Runner::getKVCacheShape(int32_t seq_len) {
     // convert from int64_t to int32_t
     result.push_back(getMetadataHelper<int64_t>(methods[i], default_values[i]));
   }
-  // update seq_len if one is provided between 1 and max_seq_len
-  ET_CHECK_MSG(result.size() == 5, "KV cache shape must have 5 elements");
-  result[2] = (seq_len > 0 && seq_len <= result[2]) ? seq_len : result[2];
   return result;
 }
 
@@ -201,7 +198,7 @@ Error Runner::generate(
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
-  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape(seq_len);
+  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
   std::vector<exec_aten::SizesType> input_shape = {1, 1};
   std::vector<exec_aten::SizesType> pos_shape = {};
   std::vector<uint8_t> k_data;
