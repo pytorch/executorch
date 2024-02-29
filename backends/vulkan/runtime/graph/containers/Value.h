@@ -15,8 +15,8 @@
 #include <ATen/native/vulkan/api/Context.h>
 #include <ATen/native/vulkan/api/Tensor.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Constant.h>
-#include <executorch/backends/vulkan/runtime/graph/Types.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
 namespace at {
 namespace native {
@@ -180,6 +180,13 @@ struct Value final {
     payload.u.as_int = 0;
     tag = TypeTag::NONE;
   }
+};
+
+using ValueRef = int32_t;
+
+struct IOValueRef {
+  ValueRef value;
+  ValueRef staging;
 };
 
 } // namespace vulkan
