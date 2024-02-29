@@ -76,8 +76,10 @@ void check_embedding_byte_args(
 
   ET_CHECK_MSG(
       weight_scales.scalar_type() == out.scalar_type(),
-      "weight scales scalar type %" PRId8 " does not match out.scalar_type()",
-      static_cast<int8_t>(weight_scales.scalar_type()));
+      "weight scales scalar type %" PRId8
+      " does not match out.scalar_type() %" PRId8,
+      static_cast<int8_t>(weight_scales.scalar_type()),
+      static_cast<int8_t>(out.scalar_type()));
 
   if (opt_weight_zero_points.has_value()) {
     ET_CHECK_MSG(
