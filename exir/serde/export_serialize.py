@@ -702,6 +702,7 @@ class GraphModuleSerializer:
             # serialize/deserialize function.
             custom_obj_name = f"_custom_obj_{len(self.custom_objs)}"
             self.custom_objs[custom_obj_name] = arg
+            # pyre-fixme[20]: Argument `class_fqn` expected.
             return Argument.create(as_custom_obj=CustomObjArgument(custom_obj_name))
         else:
             raise SerializeError(f"Unsupported argument type: {type(arg)}")
@@ -1134,8 +1135,6 @@ class GraphModuleDeserializer:
                             sym,
                             compiler_min=vr.lower,  # type: ignore[arg-type]
                             compiler_max=vr.upper,  # type: ignore[arg-type]
-                            runtime_min=vr.lower,  # type: ignore[arg-type]
-                            runtime_max=vr.upper,  # type: ignore[arg-type]
                         )
 
             if val.hint is None:

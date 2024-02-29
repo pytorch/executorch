@@ -26,7 +26,7 @@ class HtpGraph : public QnnGraph {
       : QnnGraph(implementation, context, graph_name),
         htp_options_(htp_options) {
     htp_graph_custom_config_ =
-        std::make_unique<HtpGraphCustomConfig>(htp_options);
+        std::make_unique<HtpGraphCustomConfig>(htp_options, context);
   }
   ~HtpGraph() {}
 

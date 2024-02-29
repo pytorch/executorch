@@ -262,6 +262,7 @@ class ToExecutorch(Stage):
     ):
         self.config = config or ExecutorchBackendConfig(
             passes=[SpecPropPass()],
+            extract_delegate_segments=True,
         )
         self.executorch_program = None
 

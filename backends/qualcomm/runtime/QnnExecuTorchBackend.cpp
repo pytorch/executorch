@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
@@ -22,6 +23,7 @@ enum QnnExecuTorchOptionsTypes {
   kLibraryPath,
   kSkelLibraryDir,
   kLogLevel,
+  kOnlinePrepare,
   kHtpSocModel,
   kHtpPerformanceMode,
   kHtpPrecision,
@@ -38,6 +40,7 @@ constexpr std::array<std::pair<const char*, int>, kNumOptions - 1>
         {"library_path", kLibraryPath},
         {"skel_library_dir", kSkelLibraryDir},
         {"log_level", kLogLevel},
+        {"online_prepare", kOnlinePrepare},
         {"htp_soc_model", kHtpSocModel},
         {"htp_performance_mode", kHtpPerformanceMode},
         {"htp_precision", kHtpPrecision},
@@ -84,6 +87,10 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       case kLogLevel:
         options.log_level = *static_cast<const QnnExecuTorchLogLevel*>(
             compile_spec.value.buffer);
+        break;
+      case kOnlinePrepare:
+        options.online_prepare =
+            *static_cast<const bool*>(compile_spec.value.buffer);
         break;
       case kLibraryPath:
         options.library_path =
@@ -141,10 +148,128 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       qnn_manager->Init() == Error::Ok,
       Internal,
       "Fail to initialize Qnn Manager");
-  ET_CHECK_OR_RETURN_ERROR(
-      qnn_manager->AllocateTensor() == Error::Ok,
-      Internal,
-      "Fail to allocate tensor");
+
+  if (qnn_manager->IsOnlinePrepare()) {
+    auto graph = qcir::GetGraph(options.qnn_context_blob.buffer);
+    // qcir tensors to TensorWrapper
+    std::vector<std::shared_ptr<TensorWrapper>> tensors, graph_inputs,
+        graph_outputs;
+    for (const auto& tensor : *graph->tensors()) {
+      tensors.emplace_back(CreateTensorWrapper(ToTensor(tensor)));
+      if (tensor->type() == qcir::TensorType::WRITE) {
+        graph_inputs.push_back(tensors.back());
+      } else if (tensor->type() == qcir::TensorType::READ) {
+        graph_outputs.push_back(tensors.back());
+      }
+    }
+
+    std::vector<std::shared_ptr<OpWrapper>> op_wrappers;
+    // qcir graph node to OpWrapper
+    for (const auto& node : *graph->nodes()) {
+      std::shared_ptr<OpWrapper> op = std::make_shared<OpWrapper>(
+          node->name()->str(),
+          node->package_name()->str(),
+          node->type_name()->str());
+
+      // qcir input tensors to OpWrapper input tensors
+      std::vector<std::shared_ptr<TensorWrapper>> inputs;
+      for (uint32_t index : *node->inputs()) {
+        inputs.push_back(tensors[index]);
+      }
+      op->AddInputTensors(inputs);
+
+      // qcir output tensors to OpWrapper output tensors
+      std::vector<std::shared_ptr<TensorWrapper>> outputs;
+      for (uint32_t index : *node->outputs()) {
+        outputs.push_back(tensors[index]);
+      }
+      op->AddOutputTensors(outputs);
+
+      // qcir operator param to OpWrapper param
+      for (uint32_t index : *node->params()) {
+        const auto& tensor = graph->tensors()->Get(index);
+        std::string name = tensor->name()->str();
+        Qnn_DataType_t dtype = ToDataType(tensor->dtype());
+        if (tensor->shape()->size() != 0) {
+          // add tensor param
+          op->AddTensorParam(
+              name,
+              dtype,
+              tensor->shape()->size(),
+              tensor->shape()->data(),
+              tensor->data()->data());
+        } else {
+          // add scalar param
+          switch (dtype) {
+            case Qnn_DataType_t::QNN_DATATYPE_INT_32:
+              op->AddScalarParam(
+                  name,
+                  dtype,
+                  *reinterpret_cast<const int32_t*>(tensor->data()->Data()));
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_INT_16:
+              op->AddScalarParam(
+                  name,
+                  dtype,
+                  *reinterpret_cast<const int16_t*>(tensor->data()->Data()));
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_INT_8:
+              op->AddScalarParam(
+                  name, dtype, static_cast<int8_t>(*tensor->data()->Data()));
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_UINT_32:
+              op->AddScalarParam(
+                  name,
+                  dtype,
+                  *reinterpret_cast<const uint32_t*>(tensor->data()->Data()));
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_UINT_16:
+              op->AddScalarParam(
+                  name,
+                  dtype,
+                  *reinterpret_cast<const uint16_t*>(tensor->data()->Data()));
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_UINT_8:
+              op->AddScalarParam(name, dtype, *tensor->data()->Data());
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_32:
+            case Qnn_DataType_t::QNN_DATATYPE_FLOAT_16:
+              op->AddScalarParam(
+                  name,
+                  dtype,
+                  *reinterpret_cast<const float*>(tensor->data()->Data()));
+              break;
+            case Qnn_DataType_t::QNN_DATATYPE_BOOL_8:
+              op->AddScalarParam(name, dtype, *tensor->data()->Data());
+              break;
+            default:
+              QNN_EXECUTORCH_LOG(
+                  kLogLevelError,
+                  "[Qnn ExecuTorch] Invalid scalar type: %s",
+                  tensor->name()->c_str());
+              break;
+          }
+        }
+      }
+      op_wrappers.push_back(std::move(op));
+    }
+
+    QnnExecuTorchContextBinary context_binary;
+    ET_CHECK_OR_RETURN_ERROR(
+        qnn_manager->Compile(op_wrappers, context_binary) == Error::Ok,
+        Internal,
+        "Fail to compile graph in online prepare stage");
+
+    ET_CHECK_OR_RETURN_ERROR(
+        qnn_manager->AllocateTensor(graph_inputs, graph_outputs) == Error::Ok,
+        Internal,
+        "Fail to allocate tensor in online prepare stage");
+  } else {
+    ET_CHECK_OR_RETURN_ERROR(
+        qnn_manager->AllocateTensor() == Error::Ok,
+        Internal,
+        "Fail to allocate tensor");
+  }
   return qnn_manager;
 }
 
