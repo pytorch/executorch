@@ -174,8 +174,9 @@ def quantize_per_token(
     """
     _quant_min_max_bounds_check(quant_min, quant_max, dtype)
     _per_token_quant_qparam_dim_check(input, scales, zero_points)
-    input = torch.round(input / scales).clamp(quant_min, quant_max).to(dtype)
-    input = input + zero_points
+    input = (
+        torch.round(input / scales + zero_points).clamp(quant_min, quant_max).to(dtype)
+    )
     return input
 
 
