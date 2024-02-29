@@ -148,9 +148,14 @@ option(EXECUTORCH_BUILD_EXTENSION_MODULE
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
        "Build the extension/runner_util directory" OFF)
 
+<<<<<<< HEAD
 # Build test binaries that rely on googletest
 option(EXECUTORCH_BUILD_GTESTS
        "Build googletest based test binaries" OFF)
+=======
+# Build gtest
+option(EXECUTORCH_BUILD_GTEST "Build GTEST" OFF)
+>>>>>>> 2949c3271 (Add CMakeLists.txt to run GTEST for runtime/kernel/test)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -454,5 +459,16 @@ if(EXECUTORCH_BUILD_PYBIND)
           LIBRARY DESTINATION executorch/extension/pybindings)
 endif()
 
+if(EXECUTORCH_BUILD_GTEST)
+  include(FetchContent)
+  FetchContent_Declare(
+    googletest
+    URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+  )
+  # For Windows: Prevent overriding the parent project's compiler/linker settings
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(googletest)
+  add_subdirectory(runtime/kernel/test)
+endif()
 # Print all summary
 executorch_print_configuration_summary()
