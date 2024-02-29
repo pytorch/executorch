@@ -239,14 +239,15 @@ if os.environ.get("EXECUTORCH_BUILD_PYBIND", None):
 setup(
     package_dir={
         "executorch/backends": "backends",
+        "executorch/examples": "examples",
         "executorch/exir": "exir",
+        "executorch/extension": "extension",
         "executorch/schema": "schema",
         "executorch/sdk": "sdk",
-        "executorch/util": "util",
-        "executorch/extension": "extension",
         "executorch/sdk/bundled_program": "sdk/bundled_program",
-        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
+        "executorch/util": "util",
         "serializer": "backends/arm/third-party/serialization_lib/python/serializer",
+        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
     },
     cmdclass=cmdclass,
     ext_modules=ext_modules,
