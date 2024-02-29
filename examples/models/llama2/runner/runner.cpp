@@ -68,6 +68,7 @@ Error Runner::load() {
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
   use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
@@ -155,6 +156,7 @@ int32_t Runner::logitsToToken(
 
 Error Runner::generate(
     const std::string& prompt,
+    int32_t seq_len,
     std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
@@ -167,6 +169,9 @@ Error Runner::generate(
   int num_prompt_tokens = 0;
   // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
   int* prompt_tokens = new int[prompt.size() + 1 + n_bos_ + n_eos_];
+
+  // Set the sequence length to the max seq length if not provided
+  seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
   tokenizer_->encode(
       prompt.c_str(),
@@ -182,6 +187,10 @@ Error Runner::generate(
       num_prompt_tokens < max_seq_len_,
       "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
 
+  ET_CHECK_MSG(
+      num_prompt_tokens < seq_len,
+      "Sequence length exceeded - please increase the seq_len value passed to generate()");
+
   // start the main loop
   long start =
       0; // used to time our code, only initialized after first iteration
@@ -190,6 +199,8 @@ Error Runner::generate(
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
+  int k_cache_index = 0;
+  int v_cache_index = 0;
   std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
   std::vector<exec_aten::SizesType> input_shape = {1, 1};
   std::vector<exec_aten::SizesType> pos_shape = {};
@@ -203,6 +214,14 @@ Error Runner::generate(
     // set pos to 0, refill token by token
     pos = 0;
     logits_index = 2;
+    k_cache_index = 0;
+    v_cache_index = 1;
+    // TODO(): Fix this by inspecting graph signature
+    if (use_sdpa_with_kv_cache_) {
+      logits_index = 0;
+      k_cache_index = 1;
+      v_cache_index = 2;
+    }
     // initialize kv cache
     size_t n_bytes = 1;
     for (exec_aten::SizesType shape : kv_cache_shape) {
@@ -211,11 +230,13 @@ Error Runner::generate(
     n_bytes *= torch::executor::elementSize(dtype);
 
     k_data.resize(n_bytes);
+    std::fill(k_data.begin(), k_data.end(), 0);
     v_data.resize(n_bytes);
+    std::fill(v_data.begin(), v_data.end(), 0);
     token_data.resize(1);
   } else {
     // reserve data for tokens, notice the size is still 0.
-    token_data.resize(max_seq_len_);
+    token_data.resize(seq_len);
   }
 
   // initialize tensor wrappers
@@ -235,7 +256,7 @@ Error Runner::generate(
     }
   }
   // create a 1xN int tensor with next as value
-  while (pos < max_seq_len_) {
+  while (pos < seq_len) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
     std::vector<EValue> inputs;
@@ -338,18 +359,18 @@ Error Runner::generate(
       // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
       memcpy(
           k_data.data(),
-          outputs.at(0).toTensor().const_data_ptr(),
+          outputs.at(k_cache_index).toTensor().const_data_ptr(),
           k_data.size());
       memcpy(
           v_data.data(),
-          outputs.at(1).toTensor().const_data_ptr(),
+          outputs.at(v_cache_index).toTensor().const_data_ptr(),
           v_data.size());
     }
   }
   printf("\n");
 
-  if (pos == max_seq_len_) {
-    ET_LOG(Info, "Maximum sequence length reached!");
+  if (pos == seq_len) {
+    ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
   // report achieved tok/s (pos-1 because the timer starts after first
   // iteration)

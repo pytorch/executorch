@@ -27,7 +27,8 @@ QnnManager::QnnManager(const QnnExecuTorchOptions* options)
       htp_options_(options->htp_options),
       log_level_(options->log_level),
       qnn_context_blob_(options->qnn_context_blob),
-      qnn_loaded_backend_(library_path_) {
+      qnn_loaded_backend_(library_path_),
+      online_prepare_(options->online_prepare) {
   if (!skel_library_dir_.empty()) {
     setenv("ADSP_LIBRARY_PATH", skel_library_dir_.c_str(), /*overwrite=*/1);
   }
@@ -121,6 +122,14 @@ Error QnnManager::AllocateTensor() {
   return Error::Ok;
 }
 
+Error QnnManager::AllocateTensor(
+    std::vector<std::shared_ptr<TensorWrapper>>& inputs,
+    std::vector<std::shared_ptr<TensorWrapper>>& outputs) {
+  input_tensors_ = std::move(inputs);
+  output_tensors_ = std::move(outputs);
+  return Error::Ok;
+}
+
 Error QnnManager::Execute(
     const std::vector<Qnn_Tensor_t>& input_tensor_structs,
     std::vector<Qnn_Tensor_t>& output_tensor_structs) {
@@ -151,6 +160,10 @@ void QnnManager::Destroy() {
 
 bool QnnManager::IsAvailable() {
   return true;
+}
+
+bool QnnManager::IsOnlinePrepare() {
+  return online_prepare_;
 }
 
 bool QnnManager::IsNodeSupportedByBackend(
@@ -245,11 +258,15 @@ Error QnnManager::Compile(
     return Error::Internal;
   }
 
-  ET_CHECK_OR_RETURN_ERROR(
-      backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
-          qnn_executorch_context_binary) == Error::Ok,
-      Internal,
-      "Fail to get context binary.");
+  // no need to generate extra context binary in online prepare scenario
+  if (!IsOnlinePrepare()) {
+    ET_CHECK_OR_RETURN_ERROR(
+        backend_params_ptr_->qnn_context_ptr_->GetContextBinary(
+            qnn_executorch_context_binary) == Error::Ok,
+        Internal,
+        "Fail to get context binary.");
+  }
+
   return Error::Ok;
 };
 } // namespace qnn

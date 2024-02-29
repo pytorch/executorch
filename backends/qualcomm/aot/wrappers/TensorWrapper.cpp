@@ -189,7 +189,8 @@ std::shared_ptr<TensorWrapper> CreateTensorWrapper(const Qnn_Tensor_t& tensor) {
       CreateQuantizationParamWrapper(QNN_VER_PTR(tensor)->quantizeParams),
       QNN_VER_PTR(tensor)->rank,
       QNN_VER_PTR(tensor)->dimensions,
-      QNN_VER_PTR(tensor)->clientBuf.dataSize);
+      QNN_VER_PTR(tensor)->clientBuf.dataSize,
+      QNN_VER_PTR(tensor)->clientBuf.data);
 }
 } // namespace qnn
 } // namespace executor

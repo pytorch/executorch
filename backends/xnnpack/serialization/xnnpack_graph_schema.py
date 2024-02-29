@@ -380,6 +380,7 @@ class XNNDatatype(IntEnum):
     xnn_datatype_qcint8 = 6
     xnn_datatype_qcint32 = 7
     xnn_datatype_qcint4 = 8
+    xnn_datatype_qdint8 = 9
 
 
 @dataclass
@@ -389,12 +390,17 @@ class PerChannelQuant:
 
 
 @dataclass
+class PerTokenDynamicQuant:
+    num_nonbatch_dims: int
+
+
+@dataclass
 class PerTensorQuant:
     scale: float
     zero_point: int
 
 
-XNNQuantParams = Union[PerChannelQuant, PerTensorQuant]
+XNNQuantParams = Union[PerChannelQuant, PerTensorQuant, PerTokenDynamicQuant]
 
 
 @dataclass
@@ -406,7 +412,6 @@ class XNNTensorValue:
     external_id: int
     flags: int
     id_out: int
-    dq_datatype: XNNDatatype = XNNDatatype.xnn_datatype_invalid
 
 
 @dataclass
@@ -427,11 +432,6 @@ class XValue:
 
 
 @dataclass
-class Buffer:
-    storage: bytes
-
-
-@dataclass
 class ConstantDataOffset:
     offset: int
     size: int
@@ -446,8 +446,5 @@ class XNNGraph:
     num_externs: int
     input_ids: List[int]
     output_ids: List[int]
-
-    constant_buffer: List[Buffer]
-    mem_buffer_sizes: List[int]
 
     constant_data: List[ConstantDataOffset]
