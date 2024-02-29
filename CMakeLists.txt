@@ -315,6 +315,15 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
+# Options to build test targets
+option(EXECUTORCH_BUILD_VULKAN_TESTS
+       "Build the backends/vulkan/tests directory" OFF)
+
+# Add googletest if any test targets should be build
+if(EXECUTORCH_BUILD_VULKAN_TESTS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
+endif()
+
 # Add Android JNI subdirectory
 if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
@@ -342,6 +351,11 @@ endif()
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
+
+option(EXECUTORCH_BUILD_VULKAN "Build the backends/vulkan directory" OFF)
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
