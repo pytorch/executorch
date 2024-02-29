@@ -416,7 +416,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   target_include_directories(util PUBLIC ${_common_include_directories}
                                          ${TORCH_INCLUDE_DIRS})
   target_compile_options(util PUBLIC ${_pybind_compile_options})
-  target_link_libraries(util PRIVATE torch c10 executorch)
+  target_link_libraries(util PUBLIC torch c10 executorch)
 
   # pybind portable_lib
   pybind11_add_module(portable_lib extension/pybindings/pybindings.cpp)
