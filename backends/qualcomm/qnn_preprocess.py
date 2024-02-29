@@ -10,9 +10,7 @@ from typing import final, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
-from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
-    ConvertAddmmmmWithLinear,
-)
+from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
@@ -44,7 +42,7 @@ class QnnBackend(BackendDetails):
         # QNN Delegate Specific Passes
         qnn_compiler_passes = PassManager(
             passes=[
-                ConvertAddmmmmWithLinear(),
+                ConvertToLinear(),
                 InsertIOQDQ(edge_program),
                 LayoutTransform(edge_program, insert_permute=True),
             ]

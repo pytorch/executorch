@@ -85,8 +85,7 @@ target_sources(qnn_graph
     ${CMAKE_CURRENT_LIST_DIR}/QnnGraphCommon.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraph.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.h
-    # When preparation on x86 host, need to set graph config from Qnn Graph.
-    ${HOST_ARCHITECTURE}/HtpGraphCustomConfig.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpGraphCustomConfig.cpp
 )
 
 # qnn_backend
@@ -102,7 +101,6 @@ target_sources(qnn_backend
 target_sources(qnn_factory
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.h
-    ${CMAKE_CURRENT_LIST_DIR}/QnnFactory.h
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.cpp
 )

@@ -109,11 +109,6 @@ Result<at::Tensor> parseTensor(
       ET_LOG(Error, "getTensorDataPtr() failed: 0x%" PRIx32, data_ptr.error());
       return data_ptr.error();
     }
-    ET_CHECK_OR_RETURN_ERROR(
-        data_ptr.get() != nullptr,
-        Internal,
-        "Expected non-null data for tensor with shape dynamism %d",
-        int(s_tensor->shape_dynamism()));
     tensor.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(
         at::DataPtr(data_ptr.get(), DeviceType::CPU));
   }

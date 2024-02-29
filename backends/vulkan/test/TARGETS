@@ -1,5 +1,7 @@
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
+oncall("executorch")
+
 python_unittest(
     name = "test_vulkan_delegate",
     srcs = [
@@ -13,10 +15,31 @@ python_unittest(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/exir:lib",
-        "//executorch/exir/backend:backend_api",
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
+    ],
+)
+
+python_unittest(
+    name = "test_vulkan_delegate_header",
+    srcs = [
+        "test_vulkan_delegate_header.py",
+    ],
+    deps = [
+        "//executorch/backends/vulkan:vulkan_preprocess",
+    ],
+)
+
+python_unittest(
+    name = "test_serialization",
+    srcs = [
+        "test_serialization.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_preprocess",
     ],
 )

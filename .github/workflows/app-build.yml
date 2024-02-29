@@ -14,6 +14,7 @@ on:
       - build/build_apple_frameworks.sh
       - build/test_ios_ci.sh
       - examples/demo-apps/**
+      - extension/module/**
   workflow_dispatch:
 
 concurrency:

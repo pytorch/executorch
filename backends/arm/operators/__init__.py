@@ -15,6 +15,7 @@ from . import (  # noqa
     op_div,
     op_get_item,
     op_hardtanh,
+    op_mean_dim,
     op_permute,
     op_quant,
     op_softmax,
