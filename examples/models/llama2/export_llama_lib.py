@@ -266,6 +266,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Whether or not to export a model using kv cache",
     )
     parser.add_argument(
+        "--use_sdpa_with_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether to use sdpa_with_kv_cache update op when using kv cache",
+    )
+    parser.add_argument(
         "-p",
         "--params",
         default=f"{ckpt_dir}/params/demo_config.json",
@@ -407,6 +413,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             checkpoint=checkpoint_path,
             params_path=params_path,
             use_kv_cache=args.use_kv_cache,
+            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
             verbose=args.verbose,
         )
