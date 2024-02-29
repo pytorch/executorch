@@ -1311,6 +1311,11 @@ class TestExampleScript(TestQNN):
 
     @unittest.expectedFailure
     def test_ptq_mobilebert(self):
+        # TODO: 2 approaches to resolve accuracy issue
+        # 1. fallback embedding layers:
+        #    - skip annotation in quantizer (need PR to provide helper funciton)
+        #    - skip operators in partitioner (use existent "skip_node_op_set")
+        # 2. investigate different quantization configurations / mechanisms
         if not self.required_envs([self.pretrained_weight]):
             self.skipTest("missing required envs")
 
