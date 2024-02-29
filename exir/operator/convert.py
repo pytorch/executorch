@@ -280,3 +280,11 @@ def is_out_variant(qualified_opname: str, overload: str) -> bool:
     if schema is None:
         return False
     return schema.is_out_fn()
+
+
+def is_inplace_variant(qualified_opname: str, overload: str) -> bool:
+    op_overload = get_op_overload(qualified_opname, overload)
+    schema = _get_overload_schema(op_overload)
+    if schema is None:
+        return False
+    return schema.kind() == SchemaKind.inplace
