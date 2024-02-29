@@ -46,3 +46,12 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
 	url = https://review.mlplatform.org/ml/ethos-u/ethos-u-core-driver
+[submodule "backends/vulkan/third-party/VulkanMemoryAllocator"]
+	path = backends/vulkan/third-party/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "backends/vulkan/third-party/volk"]
+	path = backends/vulkan/third-party/volk
+	url = https://github.com/zeux/volk
+[submodule "backends/vulkan/third-party/Vulkan-Headers"]
+	path = backends/vulkan/third-party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers

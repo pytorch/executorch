@@ -26,6 +26,9 @@ from executorch.exir.passes import (
     MemoryFormatOpsPass,
     OpReplacePass,
 )
+from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    insert_write_back_for_buffers_pass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
@@ -76,6 +79,7 @@ def _get_updated_graph_signature(
         arg = (
             old_input_spec.arg
             if isinstance(old_input_spec.arg, ConstantArgument)
+            # pyre-fixme[20]: Argument `class_fqn` expected.
             else type(old_input_spec.arg)(node.name)
         )
         new_input_specs.append(
@@ -100,6 +104,7 @@ def _get_updated_graph_signature(
         arg = (
             old_output_spec.arg
             if isinstance(old_output_spec.arg, ConstantArgument)
+            # pyre-fixme[20]: Argument `class_fqn` expected.
             else type(old_output_spec.arg)(node.name)
         )
         new_output_specs.append(
@@ -1034,6 +1039,7 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            gm, _ = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config):
                 new_gm_res = p(new_gm)

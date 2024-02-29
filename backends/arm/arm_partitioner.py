@@ -44,11 +44,23 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.mean.dim,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         ]
+
+        supported &= self.is_node_supported_custom(node)
+
         return supported
+
+    def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
+        if node.target == exir_ops.edge.aten.mean.dim:
+            dim = node.args[1]
+            keep_dim = node.args[2]
+            if dim != [-1, -2] or keep_dim is False:
+                return False
+        return True
 
 
 @final
