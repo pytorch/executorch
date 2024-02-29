@@ -133,6 +133,15 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(float, Float)                \
   _(double, Double)
 
+#define ET_FORALL_FLOAT_TYPES_AND(SCALARTYPE, _)    \
+  _(float, Float)                                   \
+  _(double, Double)                                 \
+  _(::torch::executor::ScalarTypeToCppType<         \
+        ::exec_aten::ScalarType::SCALARTYPE>::type, \
+    SCALARTYPE)
+
+#define ET_FORALL_FLOATH_TYPES(_) ET_FORALL_FLOAT_TYPES_AND(Half, _)
+
 // Here `ANOTHER_INPUT` should be another variable to be forwarded to a given
 // function. Not to be confused with another scalar type as in
 // `ET_FORALL_FLOAT_TYPES_AND`.
@@ -189,6 +198,8 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
   _(::torch::executor::ScalarTypeToCppType<         \
         ::exec_aten::ScalarType::SCALARTYPE>::type, \
     SCALARTYPE)
+
+#define ET_FORALL_REALH_TYPES(_) ET_FORALL_REAL_TYPES_AND(Half, _)
 
 #define ET_FORALL_REAL_TYPES_AND_WITH(SCALARTYPE, ANOTHER_INPUT, _) \
   _(ANOTHER_INPUT, uint8_t, Byte)                                   \
@@ -252,6 +263,16 @@ ET_FORALL_SCALAR_TYPES(SPECIALIZE_CppTypeToScalarType)
 //
 // Utility functions to retrieve metadata for a given ScalarType
 //
+
+/**
+ * Returns true if the parameter is one of the values covered by
+ * ET_FORALL_SCALAR_TYPES.
+ */
+inline bool isValid(exec_aten::ScalarType type) {
+  return static_cast<int8_t>(type) >= 0 &&
+      type < exec_aten::ScalarType::NumOptions &&
+      type != exec_aten::ScalarType::Undefined;
+}
 
 /**
  * Returns the name of a ScalarType as a C string.
@@ -484,10 +505,12 @@ To convert(From val) {
 /**
  * Implements type promotion rules that are consistent with ATen behaviour,
  * which in turn is consistent with NumPy's promote_types.
+ * If half_to_float is set to true, then half will be promoted to float instead
  */
 inline exec_aten::ScalarType promoteTypes(
     exec_aten::ScalarType a,
-    exec_aten::ScalarType b) {
+    exec_aten::ScalarType b,
+    bool half_to_float = false) {
   // This is generated according to NumPy's promote_types
   constexpr auto u1 = exec_aten::ScalarType::Byte;
   constexpr auto i1 = exec_aten::ScalarType::Char;
@@ -538,39 +561,14 @@ inline exec_aten::ScalarType promoteTypes(
           /* b1 */ {u1, i1, i2, i4, i8, f2, f4, f8, c2, c4, c8, b1},
       };
 
-  return _promoteTypesLookup[static_cast<int>(a)][static_cast<int>(b)];
-}
+  exec_aten::ScalarType promoted_type =
+      _promoteTypesLookup[static_cast<int>(a)][static_cast<int>(b)];
 
-/**
- * Return the size of corresponding ctype given ScalarType.
- */
-inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
-  // Reject types that are not yet supported or are out of bounds.
-  ET_CHECK_MSG(
-      type != exec_aten::ScalarType::Half &&
-          type != exec_aten::ScalarType::ComplexHalf &&
-          type != exec_aten::ScalarType::ComplexFloat &&
-          type != exec_aten::ScalarType::ComplexDouble &&
-          type != exec_aten::ScalarType::BFloat16 &&
-          type != exec_aten::ScalarType::Undefined,
-      "Invalid or unsupported ScalarType %" PRId8,
-      static_cast<int8_t>(type));
-
-  size_t type_size = 0;
-#define SCALAR_TYPE_SIZE(ctype, dtype) \
-  case exec_aten::ScalarType::dtype:   \
-    type_size = sizeof(ctype);         \
-    break;
-
-  switch (type) {
-    ET_FORALL_SCALAR_TYPES(SCALAR_TYPE_SIZE)
-    default:
-      ET_CHECK_MSG(
-          false, "Invalid input ScalarType %" PRId8, static_cast<int8_t>(type));
+  if (half_to_float && promoted_type == exec_aten::ScalarType::Half) {
+    promoted_type = exec_aten::ScalarType::Float;
   }
-#undef SCALAR_TYPE_SIZE
 
-  return type_size;
+  return promoted_type;
 }
 
 //
@@ -606,7 +604,7 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
         ET_CHECK_MSG(                                \
             false,                                   \
             "Unhandled dtype %s for %s",             \
-            toString(_st),                           \
+            torch::executor::toString(_st),          \
             et_switch_name);                         \
     }                                                \
   }()
@@ -679,6 +677,14 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
   ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, __VA_ARGS__)               \
   ET_INTERNAL_SWITCH_CASE(                                                   \
       exec_aten::ScalarType::ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                    \
+    ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, ...)                     \
+  ET_INTERNAL_SWITCH_CASE_REAL_TYPES(CTYPE_ALIAS, __VA_ARGS__)      \
+  ET_INTERNAL_SWITCH_CASE(                                          \
+      exec_aten::ScalarType::ADDITIONAL1, CTYPE_ALIAS, __VA_ARGS__) \
+  ET_INTERNAL_SWITCH_CASE(                                          \
+      exec_aten::ScalarType::ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_INTERNAL_SWITCH_CASE_INT_TYPES(CTYPE_ALIAS, ...)   \
   ET_INTERNAL_SWITCH_CASE(                                    \
@@ -809,6 +815,25 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
       ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND(          \
           ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__))
 
+#define ET_SWITCH_REAL_TYPES_AND2(                                   \
+    ADDITIONAL1, ADDITIONAL2, TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_INTERNAL_SWITCH(                                                \
+      TYPE,                                                          \
+      CONTEXT,                                                       \
+      NAME,                                                          \
+      ET_INTERNAL_SWITCH_CASE_REAL_TYPES_AND2(                       \
+          ADDITIONAL1, ADDITIONAL2, CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_REALH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_REALB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND(Bool, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
+#define ET_SWITCH_REALHB_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_REAL_TYPES_AND2(                                          \
+      Half, Bool, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
+
 #define ET_SWITCH_INT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                              \
       TYPE,                                                        \
@@ -840,6 +865,9 @@ inline size_t sizeof_scalar_type(exec_aten::ScalarType type) {
       NAME,                                            \
       ET_INTERNAL_SWITCH_CASE_FLOAT_TYPES_AND(         \
           ADDITIONAL, CTYPE_ALIAS, __VA_ARGS__))
+
+#define ET_SWITCH_FLOATH_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
+  ET_SWITCH_FLOAT_TYPES_AND(Half, TYPE, CONTEXT, NAME, CTYPE_ALIAS, __VA_ARGS__)
 
 #define ET_SWITCH_QINT_TYPES(TYPE, CONTEXT, NAME, CTYPE_ALIAS, ...) \
   ET_INTERNAL_SWITCH(                                               \

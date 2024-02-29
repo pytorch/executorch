@@ -20,11 +20,14 @@ from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 from executorch.exir.error import ExportError
 from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
-    aten_to_edge_passes,
+    base_post_op_replace_passes,
+    base_pre_op_replace_passes,
     EdgeToBackendOpsPass,
+    MemoryFormatOpsPass,
     OpReplacePass,
 )
-from executorch.exir.passes.remove_assert_async_pass import RemoveAssertAsyncPass
+from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
+from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
@@ -34,15 +37,106 @@ from executorch.exir.verification.verifier import (
     EXIREdgeDialectVerifier,
     get_aten_verifier,
 )
-from torch._export import ExportedProgram
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
-from torch._guards import detect_fake_mode
-from torch.export.exported_program import InputKind, InputSpec, TensorArgument
+from torch.export import ExportedProgram
+from torch.export.exported_program import (
+    _get_updated_range_constraints,
+    ConstantArgument,
+    ExportGraphSignature,
+    InputKind,
+    InputSpec,
+    OutputSpec,
+    TensorArgument,
+)
 from torch.fx import _pytree as fx_pytree
 from torch.fx._compatibility import compatibility
+from torch.fx.passes.infra.pass_manager import PassManager
 from torch.utils import _pytree as pytree
 
 Val = Any
+
+
+def _get_updated_graph_signature(
+    old_signature: ExportGraphSignature,
+    new_gm: torch.fx.GraphModule,
+) -> ExportGraphSignature:
+    """
+    Update the graph signature's user_input/user_outputs.
+    """
+    new_input_specs = []
+    i = 0
+    for node in new_gm.graph.nodes:
+        if node.op != "placeholder":
+            continue
+
+        assert i < len(
+            old_signature.input_specs
+        ), "Number of inputs changed after transformation"
+        old_input_spec = old_signature.input_specs[i]
+        arg = (
+            old_input_spec.arg
+            if isinstance(old_input_spec.arg, ConstantArgument)
+            else type(old_input_spec.arg)(node.name)
+        )
+        new_input_specs.append(
+            InputSpec(
+                old_input_spec.kind,
+                arg,
+                old_input_spec.target,
+                persistent=old_input_spec.persistent,
+            )
+        )
+        i += 1
+
+    output_node = list(new_gm.graph.nodes)[-1]
+    assert output_node.op == "output"
+
+    new_output_specs = []
+    for i, node in enumerate(output_node.args[0]):
+        assert i < len(
+            old_signature.output_specs
+        ), "Number of outputs changed after transformation"
+        old_output_spec = old_signature.output_specs[i]
+        arg = (
+            old_output_spec.arg
+            if isinstance(old_output_spec.arg, ConstantArgument)
+            else type(old_output_spec.arg)(node.name)
+        )
+        new_output_specs.append(
+            OutputSpec(old_output_spec.kind, arg, old_output_spec.target)
+        )
+
+    new_signature = ExportGraphSignature(
+        input_specs=new_input_specs, output_specs=new_output_specs
+    )
+    return new_signature
+
+
+def _transform(self, *passes: PassType) -> "ExportedProgram":
+    pm = PassManager(list(passes))
+    res = pm(self.graph_module)
+    transformed_gm = res.graph_module if res is not None else self.graph_module
+    assert transformed_gm is not None
+
+    if transformed_gm is self.graph_module and not res.modified:
+        return self
+
+    transformed_ep = ExportedProgram(
+        root=transformed_gm,
+        graph=transformed_gm.graph,
+        graph_signature=_get_updated_graph_signature(
+            self.graph_signature, transformed_gm
+        ),
+        state_dict=self.state_dict,
+        range_constraints=_get_updated_range_constraints(transformed_gm),
+        module_call_graph=copy.deepcopy(self._module_call_graph),
+        example_inputs=self.example_inputs,
+        verifier=self.verifier,
+        constants=self.constants,
+    )
+    transformed_ep.graph_module.meta.update(self.graph_module.meta)
+    transformed_ep.graph_module.meta.update(res.graph_module.meta)
+    return transformed_ep
 
 
 def _copy_module(new_prog, new_gm):
@@ -71,12 +165,9 @@ def lift_constant_tensor_pass(ep):
     graph_signature = ep.graph_signature
     buffers = graph_signature.buffers
 
-    fake_mode = detect_fake_mode(
-        tuple(node.meta["val"] for node in ep.graph.nodes if node.op == "placeholder")
-    )
-
+    fake_mode = list(ep.graph.nodes)[0].meta["val"].fake_mode
     first_user_input = None
-    lifted_buffers = []
+    lifted_constants = []
     for node in ep.graph.nodes:
         if node.op == "placeholder" and node.name in graph_signature.user_inputs:
             first_user_input = node
@@ -106,11 +197,12 @@ def lift_constant_tensor_pass(ep):
                 ep.graph.erase_node(node)
 
                 # Add the constant as a buffer to the graph signature
-                lifted_buffers.append(
+                lifted_constants.append(
                     InputSpec(
                         kind=InputKind.BUFFER,
                         arg=TensorArgument(name=const_placeholder_node.name),
                         target=constant_tensor_fqn,
+                        persistent=True,
                     )
                 )
                 buffers.append(constant_tensor_fqn)
@@ -118,9 +210,9 @@ def lift_constant_tensor_pass(ep):
 
     new_input_specs = []
     for s in graph_signature.input_specs:
-        if s.kind == InputKind.USER_INPUT and len(lifted_buffers) > 0:
-            new_input_specs.extend(lifted_buffers)
-            lifted_buffers.clear()
+        if s.kind == InputKind.USER_INPUT and len(lifted_constants) > 0:
+            new_input_specs.extend(lifted_constants)
+            lifted_constants.clear()
         new_input_specs.append(s)
     ep.graph_signature.input_specs = new_input_specs
     ep.graph_module.recompile()
@@ -144,21 +236,19 @@ class HackedUpExportedProgramDONOTUSE(ExportedProgram):
         call_spec,
         state_dict,
         range_constraints,
-        equality_constraints,
         module_call_graph,
         example_inputs,
         verifier,
     ):
         super().__init__(
-            root,
-            graph,
-            graph_signature,
-            state_dict,
-            range_constraints,
-            equality_constraints,
-            module_call_graph,
-            example_inputs,
-            verifier,
+            root=root,
+            graph=graph,
+            graph_signature=graph_signature,
+            state_dict=state_dict,
+            range_constraints=range_constraints,
+            module_call_graph=module_call_graph,
+            example_inputs=example_inputs,
+            verifier=verifier,
         )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -235,11 +325,11 @@ class ExirExportedProgram:
         self.after_to_edge_passes = after_to_edge_passes
 
     def transform(self, *passes: PassType) -> "ExirExportedProgram":
-        self.exported_program = self.exported_program._transform(*passes)
+        self.exported_program = _transform(self.exported_program, *passes)
         return self
 
     def __call__(self, *args: Any) -> Any:
-        return self.exported_program(*args)
+        return self.exported_program.module()(*args)
 
     # TODO(ycao): Change this to a composable function.
     def to_edge(
@@ -274,7 +364,8 @@ class ExirExportedProgram:
         executorch_prog = ExecutorchProgram(
             new_prog,
             emit_stacktrace=config.emit_stacktrace,
-            extract_segments=config.extract_segments,
+            extract_delegate_segments=config.extract_delegate_segments,
+            extract_constant_segment=config.extract_constant_segment,
             segment_alignment=config.segment_alignment,
             constant_tensor_alignment=config.constant_tensor_alignment,
             delegate_alignment=config.delegate_alignment,
@@ -302,7 +393,8 @@ class ExecutorchProgram:
         self,
         exir_exported_program: ExirExportedProgram,
         emit_stacktrace: bool,
-        extract_segments: bool,
+        extract_delegate_segments: bool,
+        extract_constant_segment: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -315,7 +407,8 @@ class ExecutorchProgram:
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
-        self._extract_segments: bool = extract_segments
+        self._extract_delegate_segments: bool = extract_delegate_segments
+        self._extract_constant_segment: bool = extract_constant_segment
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -325,7 +418,8 @@ class ExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self.program,
-                extract_segments=self._extract_segments,
+                extract_delegate_segments=self._extract_delegate_segments,
+                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -366,6 +460,23 @@ class ExecutorchProgram:
         return self.exported_program
 
 
+def _get_aten_to_edge_passes(config: EdgeCompileConfig):
+    # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
+    # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
+    # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
+    # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
+
+    pre_op_replace_passes = base_pre_op_replace_passes + (
+        [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
+    )
+
+    post_op_replace_passes = (
+        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
+    ) + base_post_op_replace_passes
+
+    return pre_op_replace_passes, post_op_replace_passes
+
+
 def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if config._check_ir_validity:
         try:
@@ -381,24 +492,19 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     if dialect == "ATEN":
         ep = ExirExportedProgram(
             ExportedProgram(
-                ep.exported_program.graph_module,
-                ep.exported_program.graph_module.graph,
-                ep.exported_program.graph_signature,
-                ep.exported_program.state_dict,
-                ep.exported_program.range_constraints,
-                ep.exported_program.equality_constraints,
-                ep.exported_program.module_call_graph,
-                ep.exported_program.example_inputs,
+                root=ep.exported_program.graph_module,
+                graph=ep.exported_program.graph_module.graph,
+                graph_signature=ep.exported_program.graph_signature,
+                state_dict=ep.exported_program.state_dict,
+                range_constraints=ep.exported_program.range_constraints,
+                module_call_graph=ep.exported_program.module_call_graph,
+                example_inputs=ep.exported_program.example_inputs,
                 verifier=get_aten_verifier(enable=config._check_ir_validity),
+                constants=ep.exported_program.constants,
             ),
             False,
         )
-    # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
-    # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
-    # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
-    # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
-    pre_op_replace_passes = aten_to_edge_passes.passes[:-2]
-    post_op_replace_passes = aten_to_edge_passes.passes[-2:]
+    pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
 
     new_ep = copy.deepcopy(ep).transform(*pre_op_replace_passes)
     if dialect == "ATEN":
@@ -416,19 +522,21 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm = new_gm_res.graph_module
 
     new_ep.exported_program = ExportedProgram(
-        new_gm,
-        new_gm.graph,
-        new_ep.exported_program.graph_signature,
-        new_ep.exported_program.state_dict,
-        new_ep.exported_program.range_constraints,
-        new_ep.exported_program.equality_constraints,
-        new_ep.exported_program.module_call_graph,
-        new_ep.exported_program.example_inputs,
+        root=new_gm,
+        graph=new_gm.graph,
+        graph_signature=_get_updated_graph_signature(
+            new_ep.exported_program.graph_signature, new_gm
+        ),
+        state_dict=new_ep.exported_program.state_dict,
+        range_constraints=new_ep.exported_program.range_constraints,
+        module_call_graph=new_ep.exported_program.module_call_graph,
+        example_inputs=new_ep.exported_program.example_inputs,
         verifier=EXIREdgeDialectVerifier(
             check_edge_ops=config._use_edge_ops,
             enable=config._check_ir_validity,
             class_only=True,
         ),
+        constants=new_ep.exported_program.constants,
     )
     new_ep.after_to_edge_passes = True
     return new_ep
@@ -439,8 +547,11 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
     passes: List[PassType] = [
         *config.passes,
         SpecPropPass(),
+        # ExecuTorch backend ops are unable to handle unbacked symints. So after
+        # this pass, passes cannot be Interpreter-based, because it will fail if
+        # there exists an unbacked symint operation.
         EdgeToBackendOpsPass(),
-        RemoveAssertAsyncPass(),
+        RemoveGraphAssertsPass(),
         config.sym_shape_eval_pass,
         config.to_out_var_pass,
         config.memory_planning_pass,
@@ -597,7 +708,8 @@ class MultiMethodExecutorchProgram:
         self,
         executorch_dialect_program: "MultiMethodExirExportedProgram",
         emit_stacktrace: bool,
-        extract_segments: bool,
+        extract_delegate_segments: bool,
+        extract_constant_segment: bool,
         segment_alignment: int,
         constant_tensor_alignment: Optional[int] = None,
         delegate_alignment: Optional[int] = None,
@@ -613,7 +725,8 @@ class MultiMethodExecutorchProgram:
             executorch_dialect_program.prim_getters(),
         )
         self._executorch_dialect_ir_program = executorch_dialect_program
-        self._extract_segments: bool = extract_segments
+        self._extract_delegate_segments: bool = extract_delegate_segments
+        self._extract_constant_segment: bool = extract_constant_segment
         self._segment_alignment: int = segment_alignment
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
@@ -624,7 +737,8 @@ class MultiMethodExecutorchProgram:
         if self._buffer is None:
             self._buffer = _serialize_pte_binary(
                 program=self._emitter_output.program,
-                extract_segments=self._extract_segments,
+                extract_delegate_segments=self._extract_delegate_segments,
+                extract_constant_segment=self._extract_constant_segment,
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
@@ -675,7 +789,8 @@ def multi_method_program_to_executorch(
     return MultiMethodExecutorchProgram(
         executorch_dialect_program=MultiMethodExirExportedProgram(res),
         emit_stacktrace=config.emit_stacktrace,
-        extract_segments=config.extract_segments,
+        extract_delegate_segments=config.extract_delegate_segments,
+        extract_constant_segment=config.extract_constant_segment,
         segment_alignment=config.segment_alignment,
         constant_tensor_alignment=config.constant_tensor_alignment,
         delegate_alignment=config.delegate_alignment,
@@ -712,9 +827,7 @@ def to_edge(
     edge_programs: Dict[str, ExportedProgram] = {}
     for name, program in aten_programs.items():
         # Decompose to Core ATen
-        program = program.run_decompositions(
-            _default_decomposition_table()  # pyre-ignore[6]
-        )
+        program = program.run_decompositions(_default_decomposition_table())
 
         if config._check_ir_validity:
             try:
@@ -723,46 +836,40 @@ def to_edge(
                 logging.info(f"Input program {name} is not in ATen dialect.")
                 raise e
 
-        # TODO: the last two passes for aten_to_edge need to be eliminated_dead_code -> debug_handle_generator. After enable
-        # use_edge_op it can be moved to aten_to_edge_passes before eliminated_dead_code pass. Also ExportPass doesn't play
-        # well with node.meta, meaning after some passes permuting operators, we may lose some information in node.meta.
-        # It might be regenerated in SpecPropPass so it may not be visiable. However debug handle will be lost.
-        program = lift_constant_tensor_pass(program)
+        pre_op_replace_passes, post_op_replace_passes = _get_aten_to_edge_passes(config)
+
         passes = []
         passes.append(
             ReplaceViewOpsWithViewCopyOpsPass()
         )  # TODO move inside aten_to_edge passes after all users are migrated off v1 capture
-        passes.extend(aten_to_edge_passes.passes[:-2])
+        passes.extend(pre_op_replace_passes)
+        if config._use_edge_ops:
+            passes.append(OpReplacePass())
+
         gm = program.graph_module
-        edge_program = program
         for p in passes:
             gm_res = p(gm)
-            assert gm_res is not None
-            gm = gm_res.graph_module
-
-        if config._use_edge_ops:
-            gm_res = OpReplacePass()(gm)
             assert gm_res is not None
             gm = gm_res.graph_module
 
         edge_program = ExportedProgram(
             root=gm,
             graph=gm.graph,
-            graph_signature=edge_program.graph_signature,
-            state_dict=edge_program.state_dict,
-            range_constraints=edge_program.range_constraints,
-            equality_constraints=edge_program.equality_constraints,
-            module_call_graph=edge_program.module_call_graph,
-            example_inputs=edge_program.example_inputs,
+            graph_signature=_get_updated_graph_signature(program.graph_signature, gm),
+            state_dict=program.state_dict,
+            range_constraints=program.range_constraints,
+            module_call_graph=program.module_call_graph,
+            example_inputs=program.example_inputs,
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=config._use_edge_ops,
                 enable=config._check_ir_validity,
                 class_only=True,
             ),
+            constants=program.constants,
         )
-        passes = []
-        passes.extend(aten_to_edge_passes.passes[-2:])
-        edge_program = edge_program._transform(*passes)
+        # Lift the tensor constants created in ScalarToTensorPass
+        edge_program = lift_constant_tensor_pass(edge_program)
+        edge_program = _transform(edge_program, *post_op_replace_passes)
         edge_programs[name] = edge_program
     return EdgeProgramManager(edge_programs, constant_methods, config)
 
@@ -848,7 +955,7 @@ class EdgeProgramManager:
         if isinstance(passes, dict):
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
-                    new_programs[name] = program._transform(*passes[name])
+                    new_programs[name] = _transform(program, *passes[name])
                     EXIREdgeDialectVerifier(enable=check_ir_validity)(
                         new_programs[name].graph_module
                     )
@@ -857,7 +964,7 @@ class EdgeProgramManager:
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
-                new_programs[name] = program._transform(*passes)
+                new_programs[name] = _transform(program, *passes)
                 EXIREdgeDialectVerifier(enable=check_ir_validity)(
                     new_programs[name].graph_module
                 )
@@ -932,9 +1039,23 @@ class EdgeProgramManager:
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
-            new_prog = copy.deepcopy(program)
-            _copy_module(new_prog.graph_module, new_gm)
-            execution_programs[name] = new_prog
+                if isinstance(p, SpecPropPass):
+                    # Note that this is a hacky way to get around the fact that
+                    # placeholder nodes corresponding to the parameters of the graph module
+                    # shall not participate in memory planning. It increases runtime memory
+                    # footprint.
+                    # Proper way would be to have ExportPass work with ExportedProgram
+                    # instead of GraphModule. This is because ExportPass should work
+                    # on top of the export artifact of torch.export whichi s ExportedProgram.
+                    # Working with GraphModule does not provide all the information contained
+                    # in the ExportedProgram
+                    # TODO(who?)
+                    p.update_placeholder_tensor_specs(program, new_gm)
+
+            # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
+
+            _copy_module(program.graph_module, new_gm)
+            execution_programs[name] = program
 
         return ExecutorchProgramManager(
             execution_programs, self._config_methods, config
@@ -992,7 +1113,8 @@ class ExecutorchProgramManager:
         # Serialize emitter output to a buffer
         self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
-            extract_segments=backend_config.extract_segments,
+            extract_delegate_segments=backend_config.extract_delegate_segments,
+            extract_constant_segment=backend_config.extract_constant_segment,
             segment_alignment=backend_config.segment_alignment,
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,

@@ -25,7 +25,8 @@ T_DQuantPerTensor = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.def
 log: logging.Logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=128)
+# NB: Set this to None to handle validation from MobileBert
+@lru_cache(maxsize=None)
 def is_same_node(
     node_left: Iterable[torch.fx.Node],
     node_right: Iterable[torch.fx.Node],
@@ -208,6 +209,57 @@ def get_delegates(graph: torch.fx.Graph) -> List[torch.fx.Node]:
     ]
 
 
+def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
+    """
+    Print the graph of including lowered_module (both backend id and original graph) together with the graph module. Example output:
+    graph():
+        %arg0_1 : [num_users=2] = placeholder[target=arg0_1]
+        %arg1_1 : [num_users=2] = placeholder[target=arg1_1]
+        %arg2_1 : [num_users=2] = placeholder[target=arg2_1]
+        %lowered_module_0 : [num_users=1] = get_attr[target=lowered_module_0]
+            backend_id: BackendWithCompilerDemo
+            lowered graph():       %arg0_1 : [num_users=1] = placeholder[target=arg0_1]
+            %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+            %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
+            %aten_mm_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%arg0_1, %arg1_1), kwargs = {})
+            %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default, %arg2_1), kwargs = {})
+            return [aten_add_tensor]
+        %executorch_call_delegate : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, %arg0_1, %arg1_1, %arg2_1), kwargs = {})
+        %getitem : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate, 0), kwargs = {})
+        %aten_sub_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.sub.Tensor](args = (%getitem, %arg0_1), kwargs = {})
+        %lowered_module_1 : [num_users=1] = get_attr[target=lowered_module_1]
+            backend_id: BackendWithCompilerDemo
+            lowered graph():       %aten_sub_tensor : [num_users=1] = placeholder[target=aten_sub_tensor]
+            %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+            %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
+            %aten_mm_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%aten_sub_tensor, %arg1_1), kwargs = {})
+            %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default_1, %arg2_1), kwargs = {})
+            return [aten_add_tensor_1]
+        %executorch_call_delegate_1 : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_1, %aten_sub_tensor, %arg1_1, %arg2_1), kwargs = {})
+        %getitem_1 : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate_1, 0), kwargs = {})
+        return [getitem_1]
+    """
+    lowered_module_dict = {
+        node.name: getattr(graph_module, node.name)
+        for node in graph_module.graph.nodes
+        if node.op == "get_attr" and node.name.startswith("lowered_module_")
+    }
+    indent = "  "
+    graph_format_str = "graph():\n"
+    for node in graph_module.graph.nodes:
+        graph_format_str += f"{indent}{node.format_node()}\n"
+        if node.op == "get_attr" and node.name.startswith("lowered_module_"):
+            lowered_module = lowered_module_dict[node.name]
+            graph_format_str += f"{indent * 2}backend_id: {lowered_module.backend_id}\n"
+            graph_format_str += f"{indent * 2}lowered graph(): "
+            for node_in_lowered_module in lowered_module.original_module.graph.nodes:
+                graph_format_str += (
+                    f"{indent * 3}{node_in_lowered_module.format_node()}\n"
+                )
+    print(graph_format_str)
+    return graph_format_str
+
+
 # TODO - style: use templated types
 class DelegateMappingBuilder:
     """
@@ -245,7 +297,8 @@ class DelegateMappingBuilder:
 
     def insert_delegate_mapping_entry(
         self,
-        nodes: Union[Node, List[Node]],
+        nodes: Optional[Union[Node, List[Node]]] = None,
+        handles: Optional[Union[int, List[Optional[int]]]] = None,
         identifier: Optional[Union[int, str]] = None,
     ) -> Union[int, str]:
         """
@@ -260,8 +313,12 @@ class DelegateMappingBuilder:
 
         Args:
             nodes (Union[Node, List[Node]]): A (list of) Node(s)
+            handles (Union[int, List[Optional[int]]]): A (list of) debug handle(s)
             identifier (Optional[Union[int, str]]):
                 Debug identifier corresponding to the Node(s)
+
+        Note: Exactly one of nodes and handles must be provided
+        Note: If a debug handle is missing or None, it is skipped
 
         Returns:
             Union[int, str]:
@@ -279,6 +336,12 @@ class DelegateMappingBuilder:
                 "This delegate debug identifier was already inserted. Duplicate delegate debug identifiers are not allowed."
             )
 
+        # Check for exactly one of nodes and handles being populated
+        if not ((nodes is not None) ^ (handles is not None)):
+            raise Exception(
+                "Only one of nodes or handles must be provided. Either both were provided or neither were provided. Failed to add or update entry."
+            )
+
         # Resolve Identifier
         if identifier is None:
             if self._generated_identifiers:
@@ -289,14 +352,24 @@ class DelegateMappingBuilder:
                     "No identifier provided. Failed to add or update entry."
                 )
 
-        # Get all debug handles found in the nodes
-        # Note that missing debug handles are not surfaced
-        new_debug_handles = {
-            handle
-            for node in (nodes if isinstance(nodes, List) else [nodes])
-            if (handle := node.meta.get("debug_handle")) is not None
+        # Collect debug handles
+        if nodes is not None:
+            new_debug_handles = {
+                node.meta.get("debug_handle")
+                for node in (nodes if isinstance(nodes, List) else [nodes])
+            }
+        else:
+            new_debug_handles = (
+                handles if isinstance(handles, (tuple, List)) else [handles]
+            )
+
+        # Filter for empty debug handles
+        filtered_debug_handles = {
+            handle for handle in new_debug_handles if handle is not None
         }
+        if len(filtered_debug_handles) == 0:
+            raise Exception("No valid debug handles found. Failed to add entry.")
 
         # pyre-ignore Warning from Union[int, st] keys
-        self._debug_handle_map[identifier].update(new_debug_handles)
+        self._debug_handle_map[identifier] = filtered_debug_handles
         return identifier

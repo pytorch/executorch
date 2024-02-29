@@ -27,8 +27,7 @@ class TestDiv(unittest.TestCase):
             z = x / x
             return z
 
-    def test_fp32_div(self):
-        inputs = (torch.ones(1), torch.ones(1))
+    def _test_div(self, inputs):
         (
             Tester(self.Div(), inputs)
             .export()
@@ -43,6 +42,14 @@ class TestDiv(unittest.TestCase):
             .run_method()
             .compare_outputs()
         )
+
+    def test_fp16_div(self):
+        inputs = (torch.ones(1).to(torch.float16), torch.ones(1).to(torch.float16))
+        self._test_div(inputs)
+
+    def test_fp32_div(self):
+        inputs = (torch.ones(1), torch.ones(1))
+        self._test_div(inputs)
 
     def test_fp32_div_single_input(self):
         inputs = (torch.ones(1),)

@@ -143,7 +143,7 @@ void profiling_create_block(const char* name);
 // object goes out of scope.
 class ExecutorchProfiler {
  public:
-  ExecutorchProfiler(const char* name);
+  explicit ExecutorchProfiler(const char* name);
 
   ~ExecutorchProfiler();
 

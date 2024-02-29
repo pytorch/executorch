@@ -11,7 +11,7 @@ import logging
 from .meta_registrations import *  # noqa
 
 import torch
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     prepared_model(*example_inputs)
 
     # Convert
-    converted_model = convert_pt2e(prepared_model, fold_quantize=True)
+    converted_model = convert_pt2e(prepared_model)
 
     # pyre-fixme[16]: Pyre doesn't get that XtensaQuantizer has a patterns attribute
     patterns = [q.pattern for q in quantizer.quantizers]
@@ -84,7 +84,7 @@ if __name__ == "__main__":
         .transform(
             [ReplacePT2QuantWithXtensaQuant(), ReplacePT2DequantWithXtensaDequant()]
         )
-        .to_executorch()
+        .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
     )
 
     logging.info(f"Final exported graph:\n{exec_prog.exported_program().graph}")

@@ -25,9 +25,14 @@ Tensor& bitwise_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(in, out);
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
   if (in.scalar_type() == exec_aten::ScalarType::Bool) {
     apply_unary_map_fn(
@@ -44,8 +49,11 @@ Tensor& bitwise_not_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
           in.numel());
     });
   } else {
-    ET_CHECK_MSG(
+    ET_KERNEL_CHECK_MSG(
+        ctx,
         false,
+        InvalidArgument,
+        out,
         "Unsupported input dtype %" PRId8,
         static_cast<int8_t>(in.scalar_type()));
   }

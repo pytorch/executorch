@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 
 QNN_OP_PACKAGE_NAME_QTI_AISW = "qti.aisw"
+QNN_uint16 = "uint16"
 
 # Below constants should be same as those in QNN headers.
-# Maybe someday we should expose these constants by pynind
+# Maybe someday we should expose these constants by pybind
 # instead of replicating them here.
 
 
@@ -178,6 +179,13 @@ class OpSoftmax:
 
 
 @dataclass(init=False, frozen=True)
+class OpLogSoftmax:
+    op_name: str = "LogSoftmax"
+    param_axis: str = "axis"
+    param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
 class OpPad:
     op_name: str = "Pad"
     param_scheme: str = "scheme"
@@ -231,3 +239,20 @@ class OpDepthToSpace:
 @dataclass(init=False, frozen=True)
 class OpTanh:
     op_name: str = "Tanh"
+
+
+@dataclass(init=False, frozen=True)
+class OpLayerNorm:
+    op_name: str = "LayerNorm"
+    param_epsilon = "epsilon"
+    param_axes = "axes"
+
+
+@dataclass(init=False, frozen=True)
+class OpGelu:
+    op_name: str = "Gelu"
+
+
+@dataclass(init=False, frozen=True)
+class OpSqueeze:
+    op_name: str = "Squeeze"

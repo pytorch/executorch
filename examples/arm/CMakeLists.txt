@@ -12,6 +12,9 @@
 cmake_minimum_required(VERSION 3.19)
 project(arm_example)
 
+# Option to register op list
+option(EXECUTORCH_SELECT_OPS_LIST "Register the following list of ops" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT PYTHON_EXECUTABLE)

@@ -14,6 +14,7 @@ from executorch.backends.transforms.addmm_mm_to_linear import (
     apply_addmm_mm_to_linear_transform,
 )
 from executorch.backends.xnnpack.passes.xnnpack_pass import XNNPACKPass
+from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from torch.fx.passes.infra.pass_base import PassResult
@@ -44,6 +45,8 @@ class ConvertToLinearPass(XNNPACKPass):
         kind: str = "args",
         index: int = 0,
     ):
+        # This is a hack to support lifted graphs.
+        # TODO(T171263351) - fix source partitioning for lifted graphs
         if not node or node in args or node.op == "placeholder":
             return node
         if kind == "args":
@@ -67,32 +70,17 @@ class ConvertToLinearPass(XNNPACKPass):
             map_ = {"input": 0, "weight": 1}
             return None if arg == "bias" else node.args[map_[arg]]
 
-    @staticmethod
-    def find_bias_for_mm(src_partition: SourcePartition, weight: torch.fx.Node):
+    def find_bias_for_mm(self, src_partition: SourcePartition, weight: torch.fx.Node):
         """
-        For linear decomposed with mm + add, find bias from src partition params
+        For linear decomposed with mm + add, find bias in src partition
         """
-        params = src_partition.params
-        nparams = len(params)
-        weight_in_params = weight in params
         out_channels = get_shape(weight)[0]
         bias = None
 
-        def find_param_with_shape(params, shape):
-            for param in params:
-                if get_shape(param) == shape:
-                    return param
-            return None
-
-        if nparams == 0:
-            # TODO also find bias in input args (not just in params)
-            bias = None
-        elif nparams == 1:
-            bias = params[0] if not weight_in_params else None
-        elif nparams == 2:
-            bias = params[params.index(weight) % 2] if weight_in_params else None
-        elif nparams > 2:
-            bias = find_param_with_shape(params, [out_channels])
+        # Try to find bias node in all nodes
+        for node in src_partition.nodes:
+            if is_param_node(self.exported_program, node) and node != weight:
+                bias = node
 
         if bias is not None:
             assert get_shape(bias) == [
@@ -167,28 +155,40 @@ class ConvertToLinearPass(XNNPACKPass):
         logger.debug("ConvertToLinear Begin: ")
         logger.debug(graph_module.print_readable(print_output=False))
 
-        src_partition_dict = get_source_partitions(
-            graph_module.graph, self.linear_modules
-        )
-
-        src_node_dict = {
-            node: src_partition
-            for src_partitions in src_partition_dict.values()
-            for src_partition in src_partitions
-            for node in src_partition.nodes
-            if node.target in self.targets
-        }
-
-        if len(src_node_dict) == 0:
-            logger.debug(
-                "Did not find any [add]mm target in source partitions, skipping the pass."
+        processed_partitions = 0
+        while True:
+            src_partition_dict = get_source_partitions(
+                graph_module.graph, self.linear_modules
             )
 
-        logger.debug("Converting [add]mm into Linear")
+            src_node_dict = {
+                node: src_partition
+                for src_partitions in src_partition_dict.values()
+                for src_partition in src_partitions
+                for node in src_partition.nodes
+                if node.target in self.targets
+            }
 
-        for node in src_node_dict.keys():
-            self.create_linear(graph_module, node, src_node_dict[node])
+            # No more [add]mm target in source partitions
+            if len(src_node_dict) == 0:
+                if processed_partitions == 0:
+                    logger.debug(
+                        "Did not find any [add]mm target in source partitions, skipping the pass."
+                    )
+                else:
+                    logger.debug(
+                        f"Converted {processed_partitions} [add]mm target(s) into Linear."
+                    )
+                break
 
+            logger.debug("Converting [add]mm into Linear")
+            for node in src_node_dict.keys():
+                self.create_linear(graph_module, node, src_node_dict[node])
+                processed_partitions += 1
+                # Only convert the first [add]mm target
+                break
+
+        # fall back to linear transform
         graph_module.graph = apply_addmm_mm_to_linear_transform(graph_module.graph)
 
         graph_module.recompile()
@@ -198,4 +198,5 @@ class ConvertToLinearPass(XNNPACKPass):
 
         logger.debug("ConvertToLinear End: ")
         logger.debug(graph_module.print_readable(print_output=False))
+
         return PassResult(graph_module, True)

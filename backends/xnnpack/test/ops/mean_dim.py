@@ -17,10 +17,11 @@ class TestMeanDim(unittest.TestCase):
             self.dims = dims
 
         def forward(self, x):
-            return torch.mean(x, self.dims, keepdim=True)
+            y = x + x
+            z = torch.mean(y, self.dims, keepdim=True)
+            return z
 
-    def test_fp32_mean_dim(self):
-        inputs = (torch.randn(1, 5, 4, 4),)
+    def _test_mean_dim(self, inputs):
         (
             Tester(self.MeanDim((-1, -2)), inputs)
             .export()
@@ -36,6 +37,14 @@ class TestMeanDim(unittest.TestCase):
             .compare_outputs()
         )
 
+    def test_fp16_mean_dim(self):
+        inputs = (torch.randn(1, 5, 4, 4).to(torch.float16),)
+        self._test_mean_dim(inputs)
+
+    def test_fp32_mean_dim(self):
+        inputs = (torch.randn(1, 5, 4, 4),)
+        self._test_mean_dim(inputs)
+
     def test_fp32_mean_dim_unsupported(self):
         """
         XNNPack mean.dim implementation only supports innermost two dimensions. As such,
@@ -50,4 +59,32 @@ class TestMeanDim(unittest.TestCase):
             .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
             .partition()
             .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+        )
+
+    def test_qs8_mean_dim(self):
+        inputs = (torch.randn(1, 5, 4, 4),)
+        (
+            Tester(self.MeanDim((-1, -2)), inputs)
+            .quantize()
+            .export()
+            .check_node_count(
+                {
+                    torch.ops.aten.mean.dim: 1,
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default: 3,
+                }
+            )
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_mean_dim": 1})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(
+                [
+                    "executorch_exir_dialects_edge__ops_aten_mean_dim",
+                    "torch.ops.quantized_decomposed",
+                ]
+            )
+            .to_executorch()
+            .serialize()
+            .run_method()
+            .compare_outputs(qtol=1)
         )

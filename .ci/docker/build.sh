@@ -14,37 +14,43 @@ echo "Building ${IMAGE_NAME} Docker image"
 
 OS=ubuntu
 OS_VERSION=22.04
-CLANG_VERSION=12
+CLANG_VERSION=""
+GCC_VERSION=""
 PYTHON_VERSION=3.10
-MINICONDA_VERSION=23.5.1-0
+MINICONDA_VERSION=23.10.0-1
 BUCK2_VERSION=$(cat ci_commit_pins/buck2.txt)
 
 case "${IMAGE_NAME}" in
+  executorch-ubuntu-22.04-gcc9)
+    LINTRUNNER=""
+    GCC_VERSION=9
+    ;;
   executorch-ubuntu-22.04-clang12)
     LINTRUNNER=""
+    CLANG_VERSION=12
     ;;
   executorch-ubuntu-22.04-linter)
     LINTRUNNER=yes
+    CLANG_VERSION=12
     ;;
   executorch-ubuntu-22.04-arm-sdk)
     ARM_SDK=yes
+    CLANG_VERSION=12
     ;;
   *)
     echo "Invalid image name ${IMAGE_NAME}"
     exit 1
 esac
 
-NIGHTLY=$(cat ci_commit_pins/nightly.txt)
 TORCH_VERSION=$(cat ci_commit_pins/pytorch.txt)
-TORCHAUDIO_VERSION=$(cat ci_commit_pins/audio.txt)
-TORCHVISION_VERSION=$(cat ci_commit_pins/vision.txt)
-
 BUILD_DOCS=1
 
 # Copy requirements-lintrunner.txt from root to here
 cp ../../requirements-lintrunner.txt ./
 
 # Copy arm setup script from root to here
+# TODO(huydhn): Figure out a way to rebuild the Docker image automatically
+# with a new image hash when the content here is updated
 cp -r ../../examples/arm/ ./arm
 
 docker build \
@@ -52,11 +58,10 @@ docker build \
   --progress=plain \
   --build-arg "OS_VERSION=${OS_VERSION}" \
   --build-arg "CLANG_VERSION=${CLANG_VERSION}" \
+  --build-arg "GCC_VERSION=${GCC_VERSION}" \
   --build-arg "PYTHON_VERSION=${PYTHON_VERSION}" \
   --build-arg "MINICONDA_VERSION=${MINICONDA_VERSION}" \
-  --build-arg "TORCH_VERSION=${TORCH_VERSION}.${NIGHTLY}" \
-  --build-arg "TORCHAUDIO_VERSION=${TORCHAUDIO_VERSION}.${NIGHTLY}" \
-  --build-arg "TORCHVISION_VERSION=${TORCHVISION_VERSION}.${NIGHTLY}" \
+  --build-arg "TORCH_VERSION=${TORCH_VERSION}" \
   --build-arg "BUCK2_VERSION=${BUCK2_VERSION}" \
   --build-arg "LINTRUNNER=${LINTRUNNER:-}" \
   --build-arg "BUILD_DOCS=${BUILD_DOCS}" \

@@ -1,0 +1,172 @@
+# Copyright 2024 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+from enum import Enum
+from typing import Optional, Tuple
+
+import torch
+from executorch.backends.arm.arm_backend import (
+    generate_ethosu_compile_spec,
+    generate_tosa_compile_spec,
+)
+
+from executorch.backends.arm.arm_partitioner import ArmPartitioner
+
+from executorch.backends.arm.test.tosautil.tosa_test_utils import (
+    TosaProfile,
+    TosaTestUtils,
+)
+
+from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester.tester import (
+    Export,
+    Partition,
+    Quantize,
+    ToEdge,
+)
+
+from executorch.exir import EdgeCompileConfig
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+
+
+class ArmBackendSelector(Enum):
+    TOSA = "tosa"
+    ETHOS_U55 = "ethos-u55"
+
+
+class ArmTester(Tester):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        inputs: Tuple[torch.Tensor],
+        backend: ArmBackendSelector = ArmBackendSelector.TOSA,
+        profile: TosaProfile = TosaProfile.BI,
+    ):
+        """
+        Args:
+            model (torch.nn.Module): The model to test
+            inputs (Tuple[torch.Tensor]): The inputs to the model
+            backend (ArmBackendSelector): The backend to use. E.g. TOSA or
+                ETHOS_U55.
+                TOSA: Lower to TOSA and test numerical correctness compared to
+                    torch reference.
+                ETHOS_U55: Lower to TOSA, then let Vela compile. Only
+                    functional test, no numerical checks.
+            profile (TosaProfile): The TOSA profile to use. Either
+                TosaProfile.BI or TosaProfile.MI
+        """
+        self.tosa_test_util = None
+        if backend == ArmBackendSelector.TOSA:
+            self.tosa_test_util = TosaTestUtils(profile=profile)
+            # The spec below tiggers arm_backend.py to output two files:
+            #   1) output.tosa
+            #   2) desc.json
+            # Saved on disk in self.tosa_test_util.intermediate_path
+            self.compile_spec = generate_tosa_compile_spec(
+                self.tosa_test_util.intermediate_path
+            )
+        elif backend == ArmBackendSelector.ETHOS_U55:
+            self.compile_spec = generate_ethosu_compile_spec("ethos-u55-128")
+        else:
+            raise ValueError(f"Unknown backend: {backend}")
+        super().__init__(model, inputs)
+
+    def quantize(self, quantize_stage: Optional[Quantize] = None):
+        if quantize_stage is None:
+            # Using the XNNPACKQuantizer for now
+            quantize_stage = Quantize(
+                XNNPACKQuantizer(),
+                get_symmetric_quantization_config(is_per_channel=False),
+            )
+        return super().quantize(quantize_stage)
+
+    def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
+        if to_edge_stage is None:
+            to_edge_stage = ToEdge(EdgeCompileConfig(_check_ir_validity=False))
+        return super().to_edge(to_edge_stage)
+
+    def partition(self, partition_stage: Optional[Partition] = None):
+        if partition_stage is None:
+            arm_partitioner = ArmPartitioner(compile_spec=self.compile_spec)
+            partition_stage = Partition(arm_partitioner)
+        return super().partition(partition_stage)
+
+    def run_method(
+        self, stage: Optional[str] = None, inputs: Optional[Tuple[torch.Tensor]] = None
+    ):
+        """
+        This function runs the tosa_reference_model tool to get output data
+        needed for comparison with the torch reference data.
+
+        Args:
+            stage: (Optional[str]): Allows you input a custom stage. Currently
+                not used.
+            inputs (Optional[Tuple[torch.Tensor]]): Allows you to input custom
+                input data.
+
+        Todo:
+            * A lot of the stuff in this method should be broken out into a
+              run_artifact() method on a ToExecutorch stage class.
+            * See "TODO" inline below
+        """
+        assert (
+            self.tosa_test_util is not None
+        ), "self.tosa_test_util is not initialized, cannot use run_method()"
+        inputs_to_run = inputs or self.inputs
+
+        # TODO: we can't possible need to use all these stages??
+        export_stage = self.stages[
+            self.stage_name(Export)
+        ]  # this is what XNNpack use to get quant params
+        toedge_stage = self.stages[
+            self.stage_name(ToEdge)
+        ]  # this is what get_input_quantization_params use to get quant params
+        partition_stage = self.stages[
+            self.stage_name(Partition)
+        ]  # this is what tosa_ref_dump_inputs use....
+
+        # TODO: I'd prefer to use this TOSA buffer instead of output.tosa,
+        # generated by arm_backend.py. The issue is that we're still depending
+        # on desc.json, which is created from TosaSerializer class, not from
+        # the serialized TOSA buffer. Leave this here for review purposes.
+        # ts_serialized = self._get_serialized_tosa_buffer(  # unused
+        #     partition_stage.artifact
+        # )
+
+        # This is where the torch reference output is calculated and set
+        # TODO: This sets self.quantization_scale, which is duplicates
+        # self.tosa_test_util.quantization.output.scales (?). Fixme.
+        (
+            self.reference_output,
+            self.quantization_scale,
+        ) = self._calculate_reference_output(export_stage.artifact, inputs_to_run)
+
+        # Convert the torch inputs to something TOSA ref model can use
+        tensor_names_and_inputs_np = self.tosa_test_util.convert_inputs_to_tosa(
+            partition_stage.artifact, toedge_stage.artifact, inputs_to_run
+        )
+
+        # Run the TOSA ref model to get the output tensor, which will be
+        # compared to the torch output in compare_outputs()
+        self.stage_output = self.tosa_test_util.run_tosa_ref_model(
+            tensor_names_and_inputs_np
+        )
+
+        return self
+
+    def _get_serialized_tosa_buffer(self, partition_stage: Partition) -> bytes:
+        """
+        This is just a prototype...
+        Todo:
+            * The "_0" indicates that there are many lowered modules. Loop it!
+            * There's probably a better way to get this buffer. An API? Yes,
+              it seems the serialize stage does this for you...
+        """
+        return partition_stage._edge_programs[
+            "forward"
+        ]._graph_module.lowered_module_0.processed_bytes

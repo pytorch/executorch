@@ -18,7 +18,14 @@ from executorch.exir.scalar_type import ScalarType
 @dataclass
 class AllocationDetails:
     memory_id: int
-    memory_offset: int
+    # Low 32 bits
+    memory_offset_low: int
+    # High 32 bits (typically zero)
+    memory_offset_high: int
+
+    @property
+    def memory_offset(self) -> int:
+        return self.memory_offset_low | (self.memory_offset_high << 32)
 
 
 @dataclass
@@ -245,9 +252,16 @@ class DataSegment:
 
 
 @dataclass
+class SubsegmentOffsets:
+    segment_index: int
+    offsets: List[int]
+
+
+@dataclass
 class Program:
     version: int
     execution_plan: List[ExecutionPlan]
     constant_buffer: List[Buffer]
     backend_delegate_data: List[BackendDelegateInlineData]
     segments: List[DataSegment]
+    constant_segment: SubsegmentOffsets

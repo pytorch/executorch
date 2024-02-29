@@ -71,8 +71,9 @@ include_directories(
 # declare targets
 #
 add_library(executorch_backend INTERFACE)
-add_library(qnn_executorch_backend STATIC)
+add_library(qnn_executorch_backend SHARED)
 add_library(qnn_executorch_header INTERFACE)
+add_library(qnn_executorch_logging STATIC)
 add_library(qnn_manager STATIC)
 add_library(qnn_function_interface INTERFACE)
 add_library(qnn_implementation STATIC)
@@ -86,7 +87,6 @@ add_library(qnn_graph STATIC)
 add_library(qnn_backend STATIC)
 add_library(qnn_factory STATIC)
 add_library(qnn_header INTERFACE)
-add_library(qnn_logging STATIC)
 add_library(wrappers STATIC)
 add_library(utils STATIC)
 
@@ -105,7 +105,7 @@ target_link_libraries(qnn_implementation
     PRIVATE
     qnn_function_interface
     qnn_header
-    qnn_logging
+    qnn_executorch_logging
     ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_sys_function_interface
@@ -116,7 +116,7 @@ target_link_libraries(qnn_sys_implementation
     PRIVATE
     qnn_sys_function_interface
     qnn_header
-    qnn_logging
+    qnn_executorch_logging
     ${CMAKE_DL_LIBS}
 )
 target_link_libraries(qnn_logger
@@ -131,6 +131,7 @@ target_link_libraries(qnn_backend
 )
 target_link_libraries(qnn_device
     PRIVATE
+    qnn_executorch_logging
     qnn_implementation
     qnn_logger
     utils
@@ -149,8 +150,10 @@ target_link_libraries(qnn_context
 )
 target_link_libraries(qnn_graph
     PRIVATE
+    qnn_executorch_logging
     qnn_implementation
     qnn_context
+    utils
 )
 target_link_libraries(qnn_factory
     PUBLIC
@@ -171,6 +174,10 @@ target_link_libraries(qnn_executorch_backend
     qnn_executorch_header
     qnn_manager
     executorch
+)
+target_link_libraries(utils
+    PRIVATE
+    qnn_executorch_logging
 )
 
 #
@@ -193,6 +200,7 @@ add_subdirectory(
     ${QNN_EXECUTORCH_ROOT_DIR}/aot/wrappers
     ${CMAKE_CURRENT_BINARY_DIR}/qnn_executorch/wrappers
 )
+install(TARGETS qnn_executorch_backend DESTINATION lib)
 
 # QNN pybind
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
@@ -214,7 +222,7 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
         pybind11::module
         pybind11::lto
         wrappers
-        qnn_logging
+        qnn_executorch_logging
         qnn_executorch_header
     )
 

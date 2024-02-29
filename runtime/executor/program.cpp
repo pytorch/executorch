@@ -27,6 +27,8 @@
 #define ET_ENABLE_PROGRAM_VERIFICATION 1
 #endif
 
+#pragma clang diagnostic ignored "-Wshadow"
+
 namespace torch {
 namespace executor {
 
@@ -142,19 +144,70 @@ Result<executorch_flatbuffer::ExecutionPlan*> get_execution_plan(
   const executorch_flatbuffer::Program* flatbuffer_program =
       executorch_flatbuffer::GetProgram(program_data->data());
 
-  // The FreeableBuffer owns the data that flatbuffer_program points into. Also
-  // keep a pointer to the loader so it can load more segments when necessary.
-  return Program(
-      loader,
-      segment_base_offset,
-      std::move(program_data.get()),
-      flatbuffer_program);
+  // Constant data may live inside the flatbuffer data (constant_buffer) or in a
+  // separate segment (constant_segment). It should not be in both.
+  const auto* constant_segment = flatbuffer_program->constant_segment();
+  if (constant_segment != nullptr && constant_segment->offsets() != nullptr &&
+      constant_segment->offsets()->size() > 0) {
+    // The constant data is inside a separate segment.
+    const auto* constant_buffer = flatbuffer_program->constant_buffer();
+    ET_CHECK_OR_RETURN_ERROR(
+        constant_buffer == nullptr || constant_buffer->size() == 0,
+        InvalidProgram,
+        "constant_buffer contains %u items, "
+        "constant_segment.offsets contains %u items. Only one should be used.",
+        constant_buffer->size(),
+        constant_segment->offsets()->size());
+    const auto* segments = flatbuffer_program->segments();
+    ET_CHECK_OR_RETURN_ERROR(
+        segments != nullptr, InvalidProgram, "No segments in program");
+
+    // Load constant segment.
+    // TODO(T171839323): Add test for segment_index > num available segments.
+    ET_CHECK_OR_RETURN_ERROR(
+        constant_segment->segment_index() < segments->size(),
+        InvalidProgram,
+        "Constant segment index %d invalid for program segments range %d",
+        constant_segment->segment_index(),
+        segments->size());
+
+    const executorch_flatbuffer::DataSegment* data_segment =
+        segments->Get(constant_segment->segment_index());
+    Result<FreeableBuffer> constant_segment_data = loader->Load(
+        segment_base_offset + data_segment->offset(), data_segment->size());
+    if (!constant_segment_data.ok()) {
+      return constant_segment_data.error();
+    }
+    // The FreeableBuffer owns the data that flatbuffer_program points into.
+    // Also keep a pointer to the loader so it can load more segments when
+    // necessary.
+    return Program(
+        loader,
+        segment_base_offset,
+        std::move(program_data.get()),
+        flatbuffer_program,
+        std::move(constant_segment_data.get()));
+  } else {
+    // The constant data is stored inside the flatbuffer, so this program does
+    // not contain a separate segment for it.
+    return Program(
+        loader,
+        segment_base_offset,
+        std::move(program_data.get()),
+        flatbuffer_program,
+        /*constant_segment_data=*/FreeableBuffer{});
+  }
 }
 
 size_t Program::num_methods() const {
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->execution_plan()->size();
+  const auto execution_plan = internal_program->execution_plan();
+  if (execution_plan != nullptr) {
+    return execution_plan->size();
+  } else {
+    return 0;
+  }
 }
 
 Result<const char*> Program::get_method_name(size_t plan_index) const {
@@ -163,7 +216,12 @@ Result<const char*> Program::get_method_name(size_t plan_index) const {
   }
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  return internal_program->execution_plan()->Get(plan_index)->name()->c_str();
+  // We know that the execution plan exists because num_methods() returned > 0.
+  auto name = internal_program->execution_plan()->Get(plan_index)->name();
+  if (name == nullptr) {
+    return Error::InvalidProgram;
+  }
+  return name->c_str();
 }
 
 Result<Method> Program::load_method(
@@ -174,6 +232,13 @@ Result<Method> Program::load_method(
   internal::event_tracer_create_event_block(event_tracer, "Default");
   internal::EventTracerProfileScope event_tracer_scope =
       internal::EventTracerProfileScope(event_tracer, "Program::load_method");
+  // If we can't create a MethodMeta for the Method, the Method is corrupt;
+  // Method::method_meta() assumes success, so we must fail here.
+  Result<MethodMeta> meta = method_meta(method_name);
+  if (!meta.ok()) {
+    return meta.error();
+  }
+
   auto plan = get_execution_plan(internal_program_, method_name);
   if (!plan.ok()) {
     return plan.error();
@@ -186,25 +251,85 @@ Result<MethodMeta> Program::method_meta(const char* method_name) const {
   if (!plan.ok()) {
     return plan.error();
   }
+  // Check any fields whose accessors don't return Result<> in case they're
+  // missing or corrupt.
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->name() != nullptr, InvalidProgram, "Missing name field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->non_const_buffer_sizes() != nullptr,
+      InvalidProgram,
+      "Missing non_const_buffer_sizes field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->inputs() != nullptr, InvalidProgram, "Missing inputs field");
+  ET_CHECK_OR_RETURN_ERROR(
+      plan.get()->outputs() != nullptr,
+      InvalidProgram,
+      "Missing outputs field");
   return MethodMeta(plan.get());
 }
 
 Result<const void*> Program::get_constant_buffer_data(
-    size_t buffer_index) const {
+    size_t buffer_index,
+    size_t nbytes) const {
   auto internal_program =
       static_cast<const executorch_flatbuffer::Program*>(internal_program_);
-  size_t size = internal_program->constant_buffer()->size();
-  ET_CHECK_OR_RETURN_ERROR(
-      buffer_index < size,
-      InvalidArgument,
-      "Constant buffer %zu out of program buffer range %zu",
-      buffer_index,
-      size);
 
-  const auto& constant_buffer = *internal_program->constant_buffer();
+  // Constant data is either in a separate segment (constant_segment_data) and
+  // loaded during Program::load, or stored inside the flatbuffer data
+  // (constant_buffer).
+  if (constant_segment_data_.data() != nullptr) {
+    size_t num_elems = internal_program->constant_segment()->offsets()->size();
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer_index < num_elems,
+        InvalidArgument,
+        "Constant segment buffer index %zu invalid for program constant segment range %zu",
+        buffer_index,
+        num_elems);
 
-  return static_cast<const void*>(
-      constant_buffer[buffer_index]->storage()->data());
+    // All constant data is stored in one segment, with each tensor aligned to
+    // @executorch_tensor_alignment. Tensor offsets are stored in the flatbuffer
+    // data in Program.constant_segment.offsets.
+    // The constant data at buffer_index is located at: base address of the
+    // constant segment + offset for tensor at buffer_index.
+    uint64_t offset = static_cast<uint64_t>(
+        (*internal_program->constant_segment()->offsets())[buffer_index]);
+
+    size_t size = constant_segment_data_.size();
+    ET_CHECK_OR_RETURN_ERROR(
+        offset + nbytes <= size,
+        InvalidArgument,
+        "Constant segment offset %" PRIu64
+        " + size_bytes %zu invalid for program constant segment size %zu",
+        offset,
+        nbytes,
+        size);
+
+    // Offset is wrt the beginning of the constant segment.
+    return static_cast<const void*>(
+        static_cast<const unsigned char*>(constant_segment_data_.data()) +
+        offset);
+  } else {
+    // Otherwise, the constant data is stored inside Program.constant_buffer.
+    size_t num_elems = internal_program->constant_buffer()->size();
+    ET_CHECK_OR_RETURN_ERROR(
+        buffer_index < num_elems,
+        InvalidArgument,
+        "Constant buffer index %zu invalid for program constant buffer range %zu",
+        buffer_index,
+        num_elems);
+
+    const auto& constant_buffer = *internal_program->constant_buffer();
+
+    ET_CHECK_OR_RETURN_ERROR(
+        constant_buffer[buffer_index]->storage()->size() <= nbytes,
+        InvalidArgument,
+        "Constant buffer size %u larger than allocated nbytes %zu",
+        constant_buffer[buffer_index]->storage()->size(),
+        nbytes);
+
+    return static_cast<const void*>(
+        constant_buffer[buffer_index]->storage()->data());
+  }
 }
 
 Result<int64_t> Program::get_non_const_buffer_size(

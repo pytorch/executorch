@@ -31,6 +31,10 @@ class PlatformIntercept {
     return 0;
   }
 
+  virtual et_tick_ratio_t ticks_to_ns_multiplier() {
+    return {1, 1};
+  }
+
   /// Called when et_pal_emit_log_message() is called.
   virtual void emit_log_message(
       __ET_UNUSED et_timestamp_t timestamp,

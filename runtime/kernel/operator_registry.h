@@ -105,20 +105,18 @@ struct TensorMeta {
  * registered.
  *
  * The format of a kernel key data is a string:
- *                              "v<version>/<tensor_meta>|<tensor_meta>...\xff"
- * Size: Up to 307               1    1    1     (18     +1) * 16
+ *                              "v<version>/<tensor_meta>|<tensor_meta>..."
+ * Size: Up to 691               1    1    1     (42     +1) * 16
  *           Assuming max number of tensors is 16               ^
- * Version is v0 for now
- * Example: v0/0x07;0x00 0x01 0x02 0x03 \xff
+ * Kernel key version is v1 for now. If the kernel key format changes,
+ * update the version to avoid breaking pre-existing kernel keys.
+ * Example: v1/7;0,1,2,3
  * The kernel key has only one tensor: a double tensor with dimension 0, 1, 2, 3
  *
- * The string is a byte array and contains non-printable characters. It must
- * be terminated with a '\xff' so 0xff cannot be a scalar type.
- *
- * Each tensor_meta has the following format: "<dtype>;<dim_order...>"
- * Size: Up to 18                                 1   1    16
- * Assuming that the max number of dims is 16              ^
- * Example: 0x07;0x00 0x01 0x02 0x03 for [double; 0, 1, 2, 3]
+ * Each tensor_meta has the following format: "<dtype>;<dim_order,...>"
+ * Size: Up to 42                               1-2   1    24 (1 byte for 0-9; 2
+ * for 10-15) + 15 commas Assuming that the max number of dims is 16 ^ Example:
+ * 7;0,1,2,3 for [double; 0, 1, 2, 3]
  *
  * IMPORTANT:
  * Users should not construct a kernel key manually. Instead, it should be
@@ -131,7 +129,7 @@ struct KernelKey {
   /* implicit */ KernelKey(const char* kernel_key_data)
       : kernel_key_data_(kernel_key_data), is_fallback_(false) {}
 
-  constexpr static char TERMINATOR = 0xff;
+  constexpr static int MAX_SIZE = 691;
 
   bool operator==(const KernelKey& other) const {
     return this->equals(other);
@@ -148,16 +146,7 @@ struct KernelKey {
     if (is_fallback_) {
       return true;
     }
-    size_t i;
-    for (i = 0; kernel_key_data_[i] != TERMINATOR &&
-         other.kernel_key_data_[i] != TERMINATOR;
-         i++) {
-      if (kernel_key_data_[i] != other.kernel_key_data_[i]) {
-        return false;
-      }
-    }
-    return kernel_key_data_[i] == TERMINATOR &&
-        other.kernel_key_data_[i] == TERMINATOR;
+    return strncmp(kernel_key_data_, other.kernel_key_data_, MAX_SIZE) == 0;
   }
 
   bool is_fallback() const {

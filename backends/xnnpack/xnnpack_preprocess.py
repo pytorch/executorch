@@ -16,6 +16,8 @@ from executorch.backends.transforms import get_shape
 from executorch.backends.xnnpack.operators.node_visitor import get_node_visitors
 
 from executorch.backends.xnnpack.passes import XNNPACKPassManager
+from executorch.backends.xnnpack.passes.convert_to_linear import ConvertToLinearPass
+from executorch.backends.xnnpack.passes.tag_implicit_q_dq_pass import TagImplicitQDqPass
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     Buffer,
@@ -28,7 +30,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     XValue,
 )
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
-    convert_to_flatbuffer,
+    serialize_xnnpack_binary,
 )
 from executorch.backends.xnnpack.utils.utils import is_param_node
 
@@ -38,7 +40,7 @@ from executorch.exir.backend.backend_details import (
     PreprocessResult,
 )
 from executorch.exir.verification.verifier import EXIREdgeDialectVerifier
-from torch._export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram
 
 XNN_VALUE_FLAG_NON_EXTERNAL = 0
 XNN_VALUE_FLAG_EXTERNAL_INPUT = 1
@@ -191,30 +193,37 @@ class XnnpackBackend(BackendDetails):
     ) -> PreprocessResult:
         ep = copy.deepcopy(edge_program)
         # Need to wrap EP here because xnnpack does addmm to linear
-        # transforms. This makes resulting graph not aten comliant
+        # transforms. This makes resulting graph not aten compliant
         # as aten.linear is not a core aten op.
         # Ideal fix would be to have XNNPACK verifier that bypass
         # most checks but the base Verifier itself has some strict changes
-        # and to bypass those, we would basicallyy copy what EdgeDialectVerifier
+        # and to bypass those, we would basically copy what EdgeDialectVerifier
         # does. So for now instead of copy pasting that, just instantiate
         # EdgeDialectVerifier, but disable it.
         # TODO (task link) to implement NullVerifier or something similar
         ep = ExportedProgram(
-            ep.graph_module,
-            ep.graph,
-            ep.graph_signature,
-            ep.state_dict,
-            ep.range_constraints,
-            ep.equality_constraints,
-            copy.deepcopy(ep.module_call_graph),
-            ep.example_inputs,
+            root=ep.graph_module,
+            graph=ep.graph,
+            graph_signature=ep.graph_signature,
+            state_dict=ep.state_dict,
+            range_constraints=ep.range_constraints,
+            module_call_graph=copy.deepcopy(ep.module_call_graph),
+            example_inputs=ep.example_inputs,
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=False, enable=False, class_only=True
             ),
+            constants=ep.constants,
         )
 
+        passes = []
+        for spec in compile_specs:
+            if spec.key == "dqlinear_partitioner":
+                passes.append(ConvertToLinearPass)
+                passes.append(TagImplicitQDqPass)
+
+        passes = passes if len(passes) > 0 else None
         # XNNPACK Delegate Specific Passes
-        ep = XNNPACKPassManager(ep).transform()
+        ep = XNNPACKPassManager(ep, passes=passes).transform()
         graph_module = ep.graph_module
 
         node_to_external_map = generate_node_to_external_map(ep, graph_module)
@@ -232,6 +241,7 @@ class XnnpackBackend(BackendDetails):
             output_ids=[],
             constant_buffer=[Buffer(storage=b"")],
             mem_buffer_sizes=[0],
+            constant_data=[],
         )
 
         node_visitors = get_node_visitors(ep, node_to_external_map)
@@ -258,4 +268,6 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
-        return PreprocessResult(processed_bytes=convert_to_flatbuffer(xnnpack_graph))
+        return PreprocessResult(
+            processed_bytes=serialize_xnnpack_binary(xnnpack_graph), debug_handle_map={}
+        )

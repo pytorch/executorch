@@ -1,5 +1,7 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+oncall("executorch")
+
 runtime.python_library(
     name = "operators",
     srcs = glob(["*.py"]),
@@ -8,10 +10,18 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
+        ":convert_to_qc4w",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:graph_module",
-        "//executorch/exir/_serialize:_bindings",
-        "//executorch/exir/_serialize:lib",
         "//executorch/exir/backend:backend_details",
     ],
+)
+
+runtime.cxx_library(
+    name = "convert_to_qc4w",
+    srcs = ["convert_to_qc4w.cpp"],
+    visibility = [
+        "//executorch/...",
+    ],
+    external_deps = ["libtorch"],
 )

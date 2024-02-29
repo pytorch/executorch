@@ -24,10 +24,12 @@ Tensor& lt_tensor_out(
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  (void)ctx;
-
   // Determine output size and resize for dynamic shapes
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -67,8 +69,12 @@ Tensor& lt_scalar_out(
   (void)ctx;
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
@@ -82,7 +88,7 @@ Tensor& lt_scalar_out(
             ET_SWITCH_REAL_TYPES_AND(
                 Bool, out_type, ctx, "lt.Scalar_out", CTYPE_OUT, [&]() {
                   CTYPE_B val_b = 0;
-                  ET_EXTRACT_SCALAR(b, val_b);
+                  utils::extract_scalar(b, &val_b);
                   apply_unary_map_fn(
                       [val_b](const CTYPE_A val_a) {
                         CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);

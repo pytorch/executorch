@@ -43,15 +43,7 @@ build_cmake_executor_runner() {
   cmake --build ${CMAKE_OUTPUT_DIR} -j4
 }
 
-test_model() {
-  if [[ "${MODEL_NAME}" == "llama2" ]]; then
-    cd examples/third-party/llama
-    pip install -e .
-    cd ../../..
-  fi
-
-  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
-
+run_portable_executor_runner() {
   # Run test model
   if [[ "${BUILD_TOOL}" == "buck2" ]]; then
     buck2 run //examples/portable/executor_runner:executor_runner -- --model_path "./${MODEL_NAME}.pte"
@@ -66,6 +58,20 @@ test_model() {
   fi
 }
 
+test_model() {
+  if [[ "${MODEL_NAME}" == "llama2" ]]; then
+    # Install requirements for export_llama
+    bash examples/models/llama2/install_requirements.sh
+    # Test export_llama script: python3 -m examples.models.llama2.export_llama
+    "${PYTHON_EXECUTABLE}" -m examples.models.llama2.export_llama -c examples/models/llama2/params/demo_rand_params.pth -p examples/models/llama2/params/demo_config.json
+    run_portable_executor_runner
+    rm "./${MODEL_NAME}.pte"
+  fi
+  # python3 -m examples.portable.scripts.export --model_name="llama2" should works too
+  "${PYTHON_EXECUTABLE}" -m examples.portable.scripts.export --model_name="${MODEL_NAME}"
+  run_portable_executor_runner
+}
+
 build_cmake_xnn_executor_runner() {
   echo "Building xnn_executor_runner"
   SITE_PACKAGES="$(${PYTHON_EXECUTABLE} -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')"
@@ -77,7 +83,6 @@ build_cmake_xnn_executor_runner() {
     && retry cmake -DBUCK2=buck2 \
       -DCMAKE_BUILD_TYPE=Release \
       -DEXECUTORCH_BUILD_XNNPACK=ON \
-      -DREGISTER_QUANTIZED_OPS=ON \
       -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
       -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" ..)
 

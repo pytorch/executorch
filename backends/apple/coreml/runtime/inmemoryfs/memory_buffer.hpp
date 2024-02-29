@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string>
 #include <memory>
+#include <vector>
 
 #include <system_error>
 

@@ -52,7 +52,6 @@ cd "$OUTPUT"
 
 say "Updating the Submodules"
 
-git submodule sync
 git submodule update --init
 
 say "Activating a Virtual Environment"
@@ -62,14 +61,14 @@ source .venv/bin/activate
 
 say "Installing Requirements"
 
-pip install cmake
+pip install --upgrade cmake pip setuptools wheel zstd
+
+curl -LO "https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst"
+zstd -cdq buck2-aarch64-apple-darwin.zst > .venv/bin/buck2 && chmod +x .venv/bin/buck2
+
 ./install_requirements.sh
 export PATH="$(realpath third-party/flatbuffers/cmake-out):$PATH"
 ./build/install_flatc.sh
-
-curl -LO "https://github.com/facebook/buck2/releases/download/2023-07-18/buck2-aarch64-apple-darwin.zst"
-pip install zstd
-zstd -cdq buck2-aarch64-apple-darwin.zst > .venv/bin/buck2 && chmod +x .venv/bin/buck2
 
 say "Installing CoreML Backend Requirements"
 
@@ -78,6 +77,10 @@ say "Installing CoreML Backend Requirements"
 say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
+
+say "Installing Python Bindings"
+
+EXECUTORCH_BUILD_PYBIND=ON CMAKE_ARGS="-DPYBIND_LINK_COREML=ON -DPYBIND_LINK_MPS=ON -DPYBIND_LINK_XNNPACK=ON -DBUCK2=$(pwd)/.venv/bin/buck2" pip install . --no-build-isolation
 
 say "Exporting Models"
 

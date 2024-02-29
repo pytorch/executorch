@@ -106,6 +106,19 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "padding_util",
+        srcs = ["padding_util.cpp"],
+        exported_headers = [
+            "padding_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "normalization_ops_util",
         srcs = ["normalization_ops_util.cpp"],
         exported_headers = [
@@ -157,14 +170,24 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
 
-    # Utility functions that can be used by operators that perform reduction
     runtime.cxx_library(
-        name = "reduce_util",
-        srcs = ["reduce_util.cpp"],
-        exported_headers = ["reduce_util.h"],
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/runtime/core/exec_aten/util:tensor_util",
-        ],
+        name = "math_util",
+        srcs = [],
+        exported_headers = ["math_util.h"],
         visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
     )
+
+    # Utility functions that can be used by operators that perform reduction
+    for aten_mode in [True, False]:
+        suffix = "_aten" if aten_mode else ""
+        runtime.cxx_library(
+            name = "reduce_util{}".format(suffix),
+            srcs = ["reduce_util.cpp"],
+            exported_headers = ["reduce_util.h"],
+            deps = [
+                "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
+                "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
+            ],
+            exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        )

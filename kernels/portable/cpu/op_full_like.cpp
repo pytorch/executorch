@@ -25,14 +25,21 @@ Tensor& full_like_out(
   (void)ctx;
 
   if (memory_format.has_value()) {
-    ET_CHECK_MSG(
+    ET_KERNEL_CHECK_MSG(
+        ctx,
         memory_format.value() == MemoryFormat::Contiguous,
+        InvalidArgument,
+        out,
         "memory_format must be contiguous");
   }
 
-  Error err = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(
-      err == Error::Ok, "Failed to resize out Tensor in full_like_out");
+  // Resize for dynamic shape
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, in.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType val_type = utils::get_scalar_dtype(fill_value);
   ScalarType out_type = out.scalar_type();
@@ -40,7 +47,7 @@ Tensor& full_like_out(
   ET_SWITCH_REAL_TYPES_AND(
       Bool, val_type, ctx, "full_like.out", CTYPE_VAL, [&] {
         CTYPE_VAL val;
-        ET_EXTRACT_SCALAR(fill_value, val);
+        utils::extract_scalar(fill_value, &val);
 
         ET_SWITCH_REAL_TYPES_AND(
             Bool, out_type, ctx, "full_like.out", CTYPE_OUT, [&] {

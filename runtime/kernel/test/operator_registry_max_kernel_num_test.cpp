@@ -27,7 +27,7 @@ class OperatorRegistryMaxKernelNumTest : public ::testing::Test {
   }
 };
 
-// Register one kernel when max_kernel_num=2; success
+// Register one kernel when max_kernel_num=1; success
 TEST_F(OperatorRegistryMaxKernelNumTest, RegisterOneOp) {
   Kernel kernels[] = {Kernel("foo", [](RuntimeContext&, EValue**) {})};
   ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
@@ -37,13 +37,15 @@ TEST_F(OperatorRegistryMaxKernelNumTest, RegisterOneOp) {
   EXPECT_TRUE(hasOpsFn("foo"));
 }
 
-// Register two kernels when max_kernel_num=2; fail
+// Register two kernels when max_kernel_num=1; fail
 TEST_F(OperatorRegistryMaxKernelNumTest, RegisterTwoOpsFail) {
   Kernel kernels[] = {
       Kernel("foo1", [](RuntimeContext&, EValue**) {}),
       Kernel("foo2", [](RuntimeContext&, EValue**) {})};
   ArrayRef<Kernel> kernels_array = ArrayRef<Kernel>(kernels);
-  ET_EXPECT_DEATH({ register_kernels(kernels_array); }, "");
+  ET_EXPECT_DEATH(
+      { register_kernels(kernels_array); },
+      "The total number of kernels to be registered is larger than the limit 1");
 }
 
 } // namespace executor

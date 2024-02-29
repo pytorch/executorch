@@ -28,15 +28,29 @@ bool check_cat_args(
 void get_cat_out_target_size(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
+bool check_expand_copy_args(
+    const Tensor& self,
+    ArrayRef<int64_t> expand_sizes,
+    bool implicit,
+    Tensor& out);
+
+bool get_expand_copy_out_target_size(
+    exec_aten::ArrayRef<exec_aten::SizesType> self_sizes,
+    exec_aten::ArrayRef<int64_t> expand_sizes,
+    exec_aten::SizesType* output_sizes,
+    size_t* output_rank);
+
 bool check_permute_copy_args(const Tensor& in, IntArrayRef dims, Tensor& out);
+
+bool check_unbind_copy_args(const Tensor& in, int64_t dim, TensorList out);
 
 void get_permute_copy_out_target_size(
     const Tensor& in,
     IntArrayRef dims,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_pixel_shuffle_args(
@@ -47,7 +61,7 @@ bool check_pixel_shuffle_args(
 void get_pixel_shuffle_out_target_size(
     const Tensor& in,
     int64_t upscale_factor,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_select_copy_out_args(
@@ -59,7 +73,7 @@ bool check_select_copy_out_args(
 void get_select_copy_out_target_size(
     const Tensor& in,
     int64_t dim,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_slice_copy_args(
@@ -72,7 +86,7 @@ void get_slice_copy_out_target_size(
     const Tensor& in,
     int64_t dim,
     int64_t num_values,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_split_with_sizes_copy_args(
@@ -85,7 +99,7 @@ void get_split_with_sizes_copy_out_target_size(
     const Tensor& in,
     int64_t split_size,
     int64_t dim,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_squeeze_copy_dim_args(
@@ -96,7 +110,7 @@ bool check_squeeze_copy_dim_args(
 void get_squeeze_copy_dim_out_target_size(
     const Tensor in,
     int64_t dim,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_squeeze_copy_dims_args(
@@ -107,7 +121,7 @@ bool check_squeeze_copy_dims_args(
 void get_squeeze_copy_dims_out_target_size(
     const Tensor in,
     const exec_aten::ArrayRef<int64_t> dims,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_stack_args(
@@ -118,10 +132,38 @@ bool check_stack_args(
 void get_stack_out_target_size(
     exec_aten::ArrayRef<Tensor> tensors,
     int64_t dim,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim);
 
 bool check_tril_args(const Tensor& in, Tensor& out);
+
+bool check_split_copy_args(
+    const Tensor& input,
+    int64_t split_size,
+    int64_t dim,
+    TensorList out);
+
+bool check_to_copy_args(
+    const Tensor& input,
+    bool non_blocking,
+    exec_aten::optional<exec_aten::MemoryFormat> memory_format,
+    Tensor& out);
+
+bool check_unsqueeze_copy_args(
+    const Tensor input,
+    int64_t dim,
+    const Tensor out);
+
+bool check_view_copy_args(
+    const Tensor& self,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    Tensor& out);
+
+bool get_view_copy_target_size(
+    const Tensor input,
+    exec_aten::ArrayRef<int64_t> size_int64_t,
+    int64_t dim,
+    exec_aten::SizesType* out_sizes);
 
 } // namespace executor
 } // namespace torch

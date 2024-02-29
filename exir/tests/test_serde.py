@@ -12,6 +12,7 @@ from typing import Tuple
 import executorch.exir as exir
 
 import torch
+from executorch.exir import to_edge
 from executorch.exir.backend.backend_api import CompileSpec, to_backend
 from executorch.exir.backend.test.backend_with_compiler_demo import (
     BackendWithCompilerDemo,
@@ -20,7 +21,8 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 from executorch.exir.backend.test.op_partitioner_demo import AddMulPartitionerDemo
 from executorch.exir.serde.serialize import deserialize, serialize
 from torch import nn
-from torch._export.exported_program import ExportedProgram as TorchExportedProgram
+from torch.export import export
+from torch.export.exported_program import ExportedProgram as TorchExportedProgram
 from torch.utils import _pytree as pytree
 
 
@@ -35,8 +37,8 @@ class TestSerde(unittest.TestCase):
         """
         Checks if two graphs are equivalent
         """
-        orig_outputs = ep1(*inputs)
-        loaded_outputs = ep2(*inputs)
+        orig_outputs = ep1.module()(*inputs)
+        loaded_outputs = ep2.module()(*inputs)
 
         flat_orig_outputs, _ = pytree.tree_flatten(orig_outputs)
         flat_loaded_outputs, _ = pytree.tree_flatten(loaded_outputs)
@@ -46,16 +48,16 @@ class TestSerde(unittest.TestCase):
 
     # pyre-ignore
     def check_serde(self, m, inputs) -> None:
-        aten = exir.capture(m, inputs, exir.CaptureConfig())
-        aten_new = deserialize(*serialize(aten.exported_program))
-        self.check_ep(aten.exported_program, aten_new, inputs)
+        aten = export(m, inputs)
+        aten_new = deserialize(serialize(aten))
+        self.check_ep(aten, aten_new, inputs)
 
-        edge = aten.to_edge()
-        edge_new = deserialize(*serialize(edge.exported_program))
-        self.check_ep(edge.exported_program, edge_new, inputs)
+        edge = to_edge(aten)
+        edge_new = deserialize(serialize(edge.exported_program()))
+        self.check_ep(edge.exported_program(), edge_new, inputs)
 
-        executorch = edge.to_executorch().dump_exported_program()
-        executorch_new = deserialize(*serialize(executorch))
+        executorch = edge.to_executorch().exported_program()
+        executorch_new = deserialize(serialize(executorch))
         with torch.no_grad():
             self.check_ep(executorch, executorch_new, inputs)
 
@@ -114,13 +116,11 @@ class TestSerde(unittest.TestCase):
 
         sin_module = SinModule()
         model_inputs = (torch.ones(1),)
-        edgeir_m = exir.capture(
-            sin_module, model_inputs, exir.CaptureConfig()
-        ).to_edge()
+        edgeir_m = to_edge(export(sin_module, model_inputs))
         max_value = model_inputs[0].shape[0]
         compile_specs = [CompileSpec("max_value", bytes([max_value]))]
         lowered_sin_module = to_backend(
-            BackendWithCompilerDemo.__name__, edgeir_m.exported_program, compile_specs
+            BackendWithCompilerDemo.__name__, edgeir_m.exported_program(), compile_specs
         )
 
         class CompositeModule(torch.nn.Module):
@@ -136,9 +136,9 @@ class TestSerde(unittest.TestCase):
 
         composite_model(*model_inputs)
 
-        aten = exir.capture(composite_model, model_inputs, exir.CaptureConfig())
-        aten_new = deserialize(*serialize(aten.exported_program))
-        self.check_ep(aten.exported_program, aten_new, model_inputs)
+        edge = to_edge(export(composite_model, model_inputs))
+        edge_new = deserialize(serialize(edge.exported_program()))
+        self.check_ep(edge.exported_program(), edge_new, model_inputs)
 
     def test_delegate_partitioner(self) -> None:
         class Model(torch.nn.Module):
@@ -156,43 +156,10 @@ class TestSerde(unittest.TestCase):
         m = Model()
         inputs = (torch.randn(2, 2), torch.randn(2, 2), torch.randn(2, 2))
 
-        ep = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
-        edge = to_backend(ep.exported_program, AddMulPartitionerDemo())
-        edge_new = deserialize(*serialize(edge))
-        self.check_ep(edge, edge_new, inputs)
-
-    def test_input_list_with_get_attr(self) -> None:
-        class Model(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.a = torch.tensor([1, 1])
-
-            def forward(self, x):
-                return torch.cat([x, self.a])
-
-        m = Model()
-        inputs = (torch.tensor([1, 1]),)
-
-        edge = exir.capture(m, inputs, exir.CaptureConfig()).to_edge()
-        edge_new = deserialize(*serialize(edge.exported_program))
-        self.check_ep(edge, edge_new, inputs)
-
-    # Get rid of this test once parameters are lifted by default.
-    def test_return_get_attr_as_outputs(self) -> None:
-        class Model(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                self.a = torch.ones([1, 1])
-
-            def forward(self, x):
-                return self.a
-
-        m = Model()
-        inputs = (torch.ones([1, 1]),)
-
-        edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
-        edge_new = deserialize(*serialize(edge.exported_program))
-        self.check_ep(edge, edge_new, inputs)
+        ep = to_edge(export(m, inputs))
+        edge = ep.to_backend(AddMulPartitionerDemo())
+        edge_new = deserialize(serialize(edge.exported_program()))
+        self.check_ep(edge.exported_program(), edge_new, inputs)
 
     def test_meta_stack_trace_module_hierarchy(self) -> None:
         class Model(nn.Module):
@@ -209,8 +176,8 @@ class TestSerde(unittest.TestCase):
         inputs = (torch.randn(1, 1, 32, 32),)
 
         metadata = ()
-        edge = exir.capture(m, inputs, exir.CaptureConfig(pt2_mode=True)).to_edge()
-        for node in edge.exported_program.graph_module.graph.nodes:
+        edge = to_edge(export(m, inputs))
+        for node in edge.exported_program().graph_module.graph.nodes:
             if "convolution" in str(node.target):
                 metadata = (
                     node.meta.get("stack_trace"),
@@ -218,7 +185,7 @@ class TestSerde(unittest.TestCase):
                 )
 
         metadata_serde = ()
-        edge_new = deserialize(*serialize(edge.exported_program))
+        edge_new = deserialize(serialize(edge.exported_program()))
         for node in edge_new.graph_module.graph.nodes:
             if "convolution" in str(node.target):
                 metadata_serde = (

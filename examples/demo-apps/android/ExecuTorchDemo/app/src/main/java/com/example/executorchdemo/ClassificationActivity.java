@@ -18,11 +18,11 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
-import com.example.executorchdemo.executor.EValue;
-import com.example.executorchdemo.executor.Module;
-import com.example.executorchdemo.executor.Tensor;
-import com.example.executorchdemo.executor.TensorImageUtils;
 import java.io.IOException;
+import org.pytorch.executorch.EValue;
+import org.pytorch.executorch.Module;
+import org.pytorch.executorch.Tensor;
+import org.pytorch.executorch.TensorImageUtils;
 
 public class ClassificationActivity extends Activity implements Runnable {
 

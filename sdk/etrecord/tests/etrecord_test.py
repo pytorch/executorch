@@ -14,7 +14,7 @@ import torch
 from executorch import exir
 from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
+from executorch.sdk.bundled_program.core import BundledProgram
 from executorch.sdk.etrecord import generate_etrecord, parse_etrecord
 from executorch.sdk.etrecord._etrecord import (
     _get_reference_outputs,
@@ -62,7 +62,7 @@ class TestETRecord(unittest.TestCase):
         edge_output_copy = copy.deepcopy(edge_output)
         et_output = edge_output.to_executorch()
 
-        bundled_program = create_bundled_program(et_output, method_test_suites)
+        bundled_program = BundledProgram(et_output, method_test_suites)
         return (captured_output_copy, edge_output_copy, bundled_program)
 
     def get_test_model_with_manager(self):

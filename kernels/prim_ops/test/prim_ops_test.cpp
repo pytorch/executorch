@@ -251,5 +251,26 @@ TEST_F(RegisterPrimOpsTest, TestBooleanOps) {
   EXPECT_EQ(stack[2]->toBool(), false);
 }
 
+TEST_F(RegisterPrimOpsTest, LocalScalarDenseReturnsCorrectValue) {
+  testing::TensorFactory<ScalarType::Int> tf;
+
+  Tensor self_tensor = tf.ones({1});
+  const int64_t num_vals = 2;
+  EValue values[num_vals];
+  int64_t out = 0;
+  values[0] = EValue(self_tensor);
+  values[1] = EValue(out);
+
+  EValue* stack[num_vals];
+  for (size_t i = 0; i < num_vals; i++) {
+    stack[i] = &values[i];
+  }
+
+  getOpsFn("aten::_local_scalar_dense")(context, stack);
+
+  int64_t expected = 1;
+  EXPECT_EQ(stack[1]->toInt(), expected);
+}
+
 } // namespace executor
 } // namespace torch

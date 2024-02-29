@@ -90,8 +90,7 @@ struct KernelControl {
     //     TensorMeta(ScalarType::Float, contiguous), // other
     //     TensorMeta(ScalarType::Float, contiguous), // out
     //     TensorMeta(ScalarType::Float, contiguous)}; // out (repeated)
-    KernelKey key = torch::executor::KernelKey(
-        "v0/\x06;\x00\x01|\x06;\x00\x01|\x06;\x00\x01|\x06;\x00\x01\xff");
+    KernelKey key = torch::executor::KernelKey("v1/6;0,1|6;0,1|6;0,1|6;0,1");
     Kernel kernel = torch::executor::Kernel(
         "aten::add.out", key, KernelControl::kernel_hook);
     Error err = torch::executor::register_kernels({kernel});
@@ -129,6 +128,8 @@ KernelControl KernelControl::singleton_;
 class KernelIntegrationTest : public ::testing::Test {
  protected:
   void SetUp() override {
+    torch::executor::runtime_init();
+
     // Register the controllable kernel hook.
     KernelControl::register_singleton();
     // Ensure that its state is clear.

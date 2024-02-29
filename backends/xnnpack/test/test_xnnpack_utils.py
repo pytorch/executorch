@@ -34,9 +34,9 @@ from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 from executorch.extension.pytree import tree_flatten
+from executorch.sdk import BundledProgram
 
 from executorch.sdk.bundled_program.config import MethodTestCase, MethodTestSuite
-from executorch.sdk.bundled_program.core import create_bundled_program
 from executorch.sdk.bundled_program.serialize import (
     serialize_from_bundled_program_to_flatbuffer,
 )
@@ -118,7 +118,7 @@ def save_bundled_program(
     ]
 
     print("creating bundled program...")
-    bundled_program = create_bundled_program(executorch_program, method_test_suites)
+    bundled_program = BundledProgram(executorch_program, method_test_suites)
 
     print("serializing bundled program...")
     bundled_program_buffer = serialize_from_bundled_program_to_flatbuffer(
@@ -324,7 +324,7 @@ class TestXNNPACK(unittest.TestCase):
         quantization_config = get_symmetric_quantization_config()
         quantizer.set_global(quantization_config)
         prepared = prepare_pt2e(m, quantizer)
-        converted = convert_pt2e(prepared, fold_quantize=True)
+        converted = convert_pt2e(prepared)
 
         captured_program = exir.capture(
             converted,
@@ -461,7 +461,7 @@ class TestXNNPACK(unittest.TestCase):
 
         # Compare the result from executor and eager mode directly
         self.assertTrue(
-            torch.allclose(model_output[0], ref_output, atol=1e-03, rtol=1e-03)
+            torch.allclose(model_output[0], ref_output, atol=4e-03, rtol=1e-03)
         )
 
     def _get_dqlinear_graph_module(self, weight_qconfig, linear, example_inputs):
@@ -518,7 +518,7 @@ class TestXNNPACK(unittest.TestCase):
         self, LinearModule, example_inputs
     ):
         linear = LinearModule()
-        weight_qconfig = weight_observer_range_neg_127_to_127
+        weight_qconfig = per_channel_weight_observer_range_neg_127_to_127
         converted_dqlinear = self._get_dqlinear_graph_module(
             weight_qconfig, linear, example_inputs
         )

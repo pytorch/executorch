@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -17,9 +17,18 @@ dq_op = exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default
 dq_q_ops = [q_op, dq_op]
 
 
-def isQuantNode(node):
+def is_quant_node(node):
     consumer_node = list(node.users)[0]
     input = node.all_input_nodes[0]
+
+    # For Rank > 2 Linear layers, the quant node is after the view_copy
+    if (
+        node.target == exir_ops.edge.aten.addmm.default
+        and list(node.users)[0].target == exir_ops.edge.aten.view_copy.default
+    ):
+        consumer_consumer_node = list(consumer_node.users)[0]
+        return True if consumer_consumer_node.target == q_op else False
+
     return (
         consumer_node.target == q_op
         or node.target in dq_q_ops
@@ -27,19 +36,19 @@ def isQuantNode(node):
     )
 
 
-def isQuantArg(arg):
+def is_quant_arg(arg):
     consumer_node = list(arg.users)[0]
     return consumer_node.target == q_op
 
 
-def getQuantNodeArgs(node):
+def get_quant_node_args(node):
     quant_args = [TosaArg(arg) for arg in node.args]
     # Return the scale and zp
     return quant_args[1].number, quant_args[2].number
 
 
 # Check if scale32 mode is used for given output element type
-def isScale32(type):
+def is_scale32(type):
     return type == ts.DType.INT8
 
 
@@ -47,7 +56,7 @@ def isScale32(type):
 # The RESCALE operator is defined using an integer multiply, add, and shift.
 # This utility function is for calculating the multier and shift given a scale.
 # Ref: https://www.mlplatform.org/tosa/tosa_spec.html#_precision_scaling
-def computeMultiplierAndShift(scale, scaleWidth=32):
+def compute_multiplier_and_shift(scale, scaleWidth=32):
     if scaleWidth == 16:
         offset = 15
     elif scaleWidth == 32:
@@ -83,7 +92,7 @@ def computeMultiplierAndShift(scale, scaleWidth=32):
     return multiplier, shift
 
 
-def buildRescale(
+def build_rescale(
     tosa_fb,
     scale,
     input_node,
@@ -93,9 +102,8 @@ def buildRescale(
     output_zp,
     is_double_round,
 ):
-    is_scale32 = isScale32(output_type)
-    scale_width = 32 if is_scale32 else 16
-    multiplier, shift = computeMultiplierAndShift(scale, scale_width)
+    scale_width = 32 if is_scale32(output_type) else 16
+    multiplier, shift = compute_multiplier_and_shift(scale, scale_width)
 
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
@@ -103,9 +111,11 @@ def buildRescale(
         output_zp=output_zp,
         multiplier=[multiplier],
         shift=[shift],
-        scale32=is_scale32,
+        scale32=is_scale32(output_type),
         double_round=is_double_round,
         per_channel=False,
+        input_unsigned=False,
+        output_unsigned=False,
     )
 
     rescale_out = tosa_fb.addIntermediate(output_shape, output_type)
@@ -116,10 +126,10 @@ def buildRescale(
     return rescale_out
 
 
-def buildRescaleToInt32(
+def build_rescale_to_int32(
     tosa_fb, input, input_zp, rescale_scale, is_scale32=True, is_double_round=True
 ) -> TosaSerializerTensor:
-    multiplier, shift = computeMultiplierAndShift(rescale_scale)
+    multiplier, shift = compute_multiplier_and_shift(rescale_scale)
     attr_rescale = ts.TosaSerializerAttribute()
     attr_rescale.RescaleAttribute(
         input_zp=input_zp,
@@ -129,6 +139,8 @@ def buildRescaleToInt32(
         scale32=is_scale32,
         double_round=is_double_round,
         per_channel=False,
+        input_unsigned=False,
+        output_unsigned=False,
     )
     input_A_rescaled_to_int32 = tosa_fb.addIntermediate(input.shape, ts.DType.INT32)
     tosa_fb.addOperator(
@@ -141,7 +153,7 @@ def buildRescaleToInt32(
     return input_A_rescaled_to_int32
 
 
-def buildRescaleFromInt32(
+def build_rescale_from_int32(
     tosa_fb,
     input_name,
     output_name,
@@ -150,7 +162,7 @@ def buildRescaleFromInt32(
     is_scale32=True,
     is_double_round=True,
 ) -> TosaSerializerTensor:
-    multiplier, shift = computeMultiplierAndShift(rescale_scale)
+    multiplier, shift = compute_multiplier_and_shift(rescale_scale)
     attr_rescale_output = ts.TosaSerializerAttribute()
     attr_rescale_output.RescaleAttribute(
         input_zp=0,
@@ -160,6 +172,8 @@ def buildRescaleFromInt32(
         scale32=is_scale32,
         double_round=is_double_round,
         per_channel=False,
+        input_unsigned=False,
+        output_unsigned=False,
     )
 
     tosa_fb.addOperator(
@@ -172,17 +186,17 @@ def buildRescaleFromInt32(
 """ Creates a TOSA rescale op based on conv2d parameters. """
 
 
-def buildRescaleOpConvOutput(
+def build_rescale_conv_output(
     tosa_fb, op, output_type, input_scale, weight_scale, output_scale
 ):
     # Only use double round if we are doing 32 bit scaling
-    double_round = isScale32(output_type)
+    double_round = is_scale32(output_type)
 
     # TODO add check to verify if this is a Per-channel quantization.
     post_conv2d_scale = (input_scale.number * weight_scale.number) / output_scale.number
 
     # Since we assume the input tensor that is being rescaled is int32 date type, zero point must be 0.
-    rescale_op = buildRescale(
+    rescale_op = build_rescale(
         tosa_fb, post_conv2d_scale, op, output_type, op.shape, 0, 0, double_round
     )
     return rescale_op

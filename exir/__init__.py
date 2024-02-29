@@ -8,6 +8,7 @@ from typing import Any
 
 from executorch.exir.capture import (
     _capture_legacy_do_not_use,
+    CallSpec,
     capture,
     capture_multiple,
     CaptureConfig,
@@ -28,11 +29,7 @@ from executorch.exir.program import (
     to_edge,
 )
 from executorch.exir.tracer import ExirDynamoConfig
-from torch._export import (  # lots of people are doing from exir import CallSpec, ExportGraphSignature, ExportedProgram which seems wrong
-    CallSpec,
-    ExportedProgram,
-    ExportGraphSignature,
-)
+from torch.export import ExportedProgram, ExportGraphSignature
 
 Value = Any
 

@@ -8,6 +8,7 @@
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
@@ -26,22 +27,24 @@ Tensor& masked_fill_scalar_out(
     Tensor& out) {
   (void)ctx;
 
-  ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
+  ET_KERNEL_CHECK(
+      ctx, check_masked_fill_args(in, mask, value, out), InvalidArgument, out);
 
   ScalarType in_type = in.scalar_type();
-  ScalarType mask_type = mask.scalar_type();
   ScalarType val_type = utils::get_scalar_dtype(value);
 
-  ET_KERNEL_CHECK(ctx, mask_type == ScalarType::Bool, InvalidArgument, out);
-
-  resize_to_broadcast_target_size(in, mask, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(in, mask, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in_type, ctx, "masked_fill.Scalar_out", CTYPE, [&]() {
         ET_SWITCH_REAL_TYPES_AND(
             Bool, val_type, ctx, "masked_fill.Scalar_out", CTYPE_VAL, [&]() {
               CTYPE_VAL value_v;
-              ET_EXTRACT_SCALAR(value, value_v);
+              utils::extract_scalar(value, &value_v);
               CTYPE val = static_cast<CTYPE>(value_v);
 
               apply_binary_elementwise_fn<CTYPE, bool, CTYPE>(

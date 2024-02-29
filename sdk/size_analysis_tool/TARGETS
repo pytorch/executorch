@@ -2,6 +2,8 @@ load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
+oncall("executorch")
+
 python_library(
     name = "size_analysis_tool_lib",
     srcs = [

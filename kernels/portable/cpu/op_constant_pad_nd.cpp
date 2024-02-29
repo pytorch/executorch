@@ -12,47 +12,13 @@
 #include <executorch/runtime/kernel/kernel_includes.h>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/kernel_ops_util.h>
 
 namespace torch {
 namespace executor {
 namespace native {
 
 namespace {
-
-void check_input_output(const Tensor& self, const Tensor& out) {
-  ET_CHECK_SAME_DTYPE2(self, out);
-  ET_CHECK_MSG(
-      self.dim() == out.dim(),
-      "self and out must have the same number of dims");
-}
-
-void check_padding_arg(const Tensor& self, IntArrayRef pad) {
-  ET_CHECK_MSG(pad.size() % 2 == 0, "Padding array must be a multiple of 2");
-
-  ET_CHECK_MSG(
-      pad.size() / 2 <= self.dim(), "Padding array contains too many elements");
-}
-
-Error resize_to_expected_out_size(
-    const Tensor& self,
-    IntArrayRef pad,
-    Tensor& out) {
-  Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-
-  int pad_i = self.dim() - 1;
-  for (size_t i = 0; i < self.dim(); ++i, --pad_i) {
-    expected_output_size[i] = self.size(i);
-    if (pad_i >= 0 && pad_i < pad.size() / 2) {
-      expected_output_size[i] += pad[2 * pad_i] + pad[2 * pad_i + 1];
-    }
-  }
-
-  ArrayRef<Tensor::SizesType> output_size{
-      expected_output_size, static_cast<size_t>(self.dim())};
-  auto error = resize_tensor(out, output_size);
-
-  return error;
-}
 
 template <typename CTYPE>
 void set_all_to_value(CTYPE* out_data, size_t step_len, CTYPE value) {
@@ -201,19 +167,19 @@ Tensor& constant_pad_nd_out(
     Tensor& out) {
   (void)ctx;
 
-  check_input_output(in, out);
-  check_padding_arg(in, pad);
+  ET_KERNEL_CHECK(
+      ctx, check_constant_pad_args(in, pad, value, out), InvalidArgument, out);
 
   // resize out tensor for dynamic shapes
-  auto error = resize_to_expected_out_size(in, pad, out);
-  // TODO: Construct error message with requested output sizes.
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_constant_pad_output(in, pad, out) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ScalarType in_type = in.scalar_type();
   ScalarType value_type = utils::get_scalar_dtype(value);
-  ScalarType out_type = out.scalar_type();
-
-  ET_CHECK(in_type == out_type);
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in_type, ctx, "constant_pad_nd.out", CTYPE, [&]() {
@@ -221,7 +187,7 @@ Tensor& constant_pad_nd_out(
         ET_SWITCH_SCALAR_OBJ_TYPES(
             value_type, ctx, "constant_pad_nd.out", CTYPE_VALUE, [&]() {
               CTYPE_VALUE val;
-              ET_EXTRACT_SCALAR(value, val);
+              utils::extract_scalar(value, &val);
               value_v = static_cast<CTYPE>(val);
             });
         constant_pad_nd_out_impl<CTYPE>(in, pad, value_v, out);

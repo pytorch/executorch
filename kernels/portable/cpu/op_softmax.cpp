@@ -27,7 +27,11 @@ Tensor& softmax_out(
     Tensor& out) {
   (void)ctx;
 
-  check_softmax_args(in, dim, half_to_float, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      check_softmax_args(in, dim, half_to_float, out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
@@ -35,7 +39,7 @@ Tensor& softmax_out(
   // Adjust for negative dim
   dim = dim < 0 ? dim + nonzero_dim(in) : dim;
 
-  ET_SWITCH_FLOAT_TYPES(in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
+  ET_SWITCH_FLOATH_TYPES(in.scalar_type(), ctx, "_softmax.out", CTYPE, [&]() {
     const CTYPE* const in_data = in.const_data_ptr<CTYPE>();
     CTYPE* const out_data = out.mutable_data_ptr<CTYPE>();
 

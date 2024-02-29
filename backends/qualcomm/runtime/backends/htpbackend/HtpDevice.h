@@ -82,7 +82,6 @@ class HtpDevice : public QnnDevice {
       down_vote_power_configs_ptr_;
 
   QnnExecuTorchHtpBackendOptions htp_options_;
-  HtpInfo qcom_target_soc_info_;
 };
 } // namespace qnn
 } // namespace executor

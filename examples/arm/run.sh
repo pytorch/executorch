@@ -2,6 +2,8 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
+#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -68,6 +70,7 @@ function build_executorch() {
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+        -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B${et_build_dir}                                 \
@@ -99,27 +102,28 @@ function build_executorch_runner() {
     echo "[${FUNCNAME[0]}] Generating ExecuTorch libraries"
     [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}]" "Expecting a single pte file as argument got, $*"; exit 1; }
     local pte=${1}
-    cd "${ethos_u_root_dir}"/core_platform
-    cmake                                         \
-        -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
-        -B build targets/corstone-300             \
-        -DET_DIR_PATH:PATH=${et_root_dir}         \
-        -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
-        -DET_PTE_FILE_PATH:PATH="${pte}"          \
-        -DPYTHON_EXECUTABLE=$(which python3)
+    cd ${script_dir}/executor_runner
+    cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
+	  -DTARGET_CPU=cortex-m55 \
+	  -B build \
+	  -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir} \
+	  -DET_DIR_PATH:PATH=${et_root_dir}         \
+	  -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
+	  -DET_PTE_FILE_PATH:PATH="${pte}"          \
+	  -DPYTHON_EXECUTABLE=$(which python3)
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build build -- -j"$((n - 5))" executor_runner
+    cmake --build build -- -j"$((n - 5))" arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
-    find . -name "executor_runner.elf"
+    find build -name "arm_executor_runner"
 }
 
 # Execute the executor_runner on FVP Simulator
 function run_fvp() {
     [[ $# -ne 1 ]] && { echo "[${FUNCNAME[0]}]" "Expexted elf binary name, got $*"; exit 1; }
     local elf_name=${1}
-    elf=$(find ${ethos_u_build_dir} -name "${elf_name}")
+    elf=$(find ${script_dir}/executor_runner -name "${elf_name}")
     [[ ! -f $elf ]] && { echo "[${FUNCNAME[0]}]: Unable to find executor_runner elf: ${elf}"; exit 1; }
     FVP_Corstone_SSE-300_Ethos-U55                          \
         -C ethosu.num_macs=128                              \
@@ -169,7 +173,7 @@ for i in "${!test_model[@]}"; do
     pte=$(generate_pte_file "${test_model[i]}" "${test_delegate[i]}")
     # Rebuild the application as the pte is imported as a header/c array
     build_executorch_runner "${pte}"
-    run_fvp executor_runner.elf
+    run_fvp arm_executor_runner
 done
 
 exit 0

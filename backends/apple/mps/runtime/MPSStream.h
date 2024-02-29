@@ -3,13 +3,19 @@
 //  Provided subject to the LICENSE file in the top level directory.
 //
 
+#pragma once
+
+// Obj-C headers
 #include <Foundation/Foundation.h>
 #include <Metal/Metal.h>
 #include <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #include <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
+// MPS Headers
+#include <executorch/backends/apple/mps/runtime/MPSDevice.h>
+// Runtime headers
 #include <executorch/runtime/core/error.h>
-#include <map>
-#include "MPSDevice.h"
+
+#include <unordered_map>
 
 namespace torch {
 namespace executor {
@@ -25,6 +31,22 @@ enum class SyncType {
   COMMIT_ADAPTIVE, // commit adaptively based on available memory
 };
 
+// Helper structure to copy data between CPU <-> GPU
+struct CPUBufferWrapper {
+  void* srcBuffer;
+  void* dstBuffer;
+  size_t length;
+  size_t srcOffset;
+  size_t dstOffset;
+  union {
+    struct {
+      unsigned int srcCpu : 1;
+      unsigned int dstCpu : 1;
+    };
+    uint16_t flags;
+  };
+};
+
 class MPSStream {
  public:
   MPSStream();
@@ -37,22 +59,38 @@ class MPSStream {
     return _serialQueue;
   }
 
+  bool hasLiveCommandBuffer();
   MPSCommandBuffer* commandBuffer();
   id<MTLComputeCommandEncoder> commandEncoder();
   void endKernelCoalescing();
   __ET_NODISCARD Error synchronize(SyncType syncType);
-  // void commitAdaptive(const TensorList& inputTensors, const TensorList&
-  // outputTensors, void* profilerHandle);
   bool commitAndContinueEnabled();
+  void copy(
+      id<MTLBuffer> srcBuffer,
+      id<MTLBuffer> dstBuffer,
+      size_t length,
+      size_t srcOffset,
+      size_t dstOffset,
+      SyncType syncType = SyncType::NONE);
+  void copy(
+      std::vector<CPUBufferWrapper>& dataBuffers,
+      SyncType syncType = SyncType::NONE);
+  void copy_and_sync(
+      id<MTLBuffer> srcBuffer,
+      id<MTLBuffer> dstBuffer,
+      size_t length,
+      size_t srcOffset,
+      size_t dstOffset,
+      bool non_blocking);
+  void copy_and_sync(
+      std::vector<CPUBufferWrapper>& dataBuffers,
+      bool non_blocking);
 
  private:
   id<MTLCommandQueue> _commandQueue = nil;
   MPSCommandBuffer* _commandBuffer = nil;
   MPSCommandBuffer* _prevCommandBuffer = nil;
   id<MTLComputeCommandEncoder> _commandEncoder = nil;
-  MPSGraphExecutionDescriptor* _executionDescriptor = nil;
-  MPSGraphExecutableExecutionDescriptor* _executableExecutionDescriptor = nil;
-  MPSGraphCompilationDescriptor* _compilationDescriptor = nil;
   dispatch_queue_t _serialQueue = nullptr;
   // CommitAndContinue is disabled by default
   bool _enableCommitAndContinue = false;

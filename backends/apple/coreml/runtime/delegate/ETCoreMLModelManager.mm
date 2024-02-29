@@ -492,7 +492,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
             if (![asset prewarmAndReturnError:&prewarmError]) {
                 ETCoreMLLogError(localError,
                                  "%@: Failed to prewarm asset with identifier = %@",
-                                 NSStringFromClass(self.assetManager.class),
+                                 NSStringFromClass(strongSelf.assetManager.class),
                                  asset.identifier);
                 return;
             }

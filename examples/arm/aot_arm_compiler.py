@@ -1,6 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -11,10 +11,10 @@ import argparse
 import logging
 
 import torch
-import torch._export as export
+from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 
 from ..portable.utils import export_to_edge, save_pte_program
 
@@ -121,7 +121,7 @@ if __name__ == "__main__":
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
-    model = export.capture_pre_autograd_graph(model, example_inputs)
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
     edge = export_to_edge(
         model,
@@ -133,10 +133,14 @@ if __name__ == "__main__":
     logging.info(f"Exported graph:\n{edge.exported_program().graph}")
 
     if args.delegate is True:
-        edge = edge.to_backend(ArmPartitioner())
+        edge = edge.to_backend(
+            ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128"))
+        )
         logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
 
-    exec_prog = edge.to_executorch()
+    exec_prog = edge.to_executorch(
+        config=ExecutorchBackendConfig(extract_constant_segment=False)
+    )
 
     model_name = f"{args.model_name}" + (
         "_arm_delegate" if args.delegate is True else ""

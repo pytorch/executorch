@@ -28,7 +28,7 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "operator_registry_TWO_KERNELS_TEST_ONLY",
+        name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
         srcs = ["operator_registry.cpp"],
         exported_headers = [
             "operator_registry.h",
@@ -43,7 +43,7 @@ def define_common_targets():
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
         ],
-        preprocessor_flags = ["-DMAX_KERNEL_NUM=2"],
+        preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
     )
 
     for aten_mode in (True, False):
@@ -63,6 +63,7 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/platform:platform",
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
                 # TODO(T147221312): This will eventually depend on exec_aten
                 # once KernelRuntimeContext support tensor resizing, which is
                 # why this target supports aten mode.

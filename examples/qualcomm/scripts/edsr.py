@@ -4,9 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import argparse
+import json
 import os
 import re
+import sys
+from multiprocessing.connection import Client
 
 import numpy as np
 import piq
@@ -15,6 +17,8 @@ from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
+    parse_skip_delegation_node,
+    setup_common_args_and_variables,
     SimpleADB,
 )
 
@@ -95,8 +99,10 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
     import itertools
 
     from executorch.backends.qualcomm.qnn_quantizer import (
-        _is_annotated,
         get_ptq_per_channel_weight_config,
+    )
+    from executorch.backends.qualcomm.qnn_quantizer_utils import (
+        _is_annotated,
         QUANT_ANNOTATION_KEY,
     )
     from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation
@@ -145,7 +151,8 @@ def annotate_forward(gm: torch.fx.GraphModule) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = setup_common_args_and_variables()
+
     parser.add_argument(
         "-a",
         "--artifact",
@@ -153,34 +160,7 @@ if __name__ == "__main__":
         default="./edsr",
         type=str,
     )
-    parser.add_argument(
-        "-b",
-        "--build_folder",
-        help="path to cmake binary directory for android, e.g., /path/to/build_android",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-s",
-        "--device",
-        help="serial number for android device communicated via ADB.",
-        type=str,
-        required=True,
-    )
-    parser.add_argument(
-        "-H",
-        "--host",
-        help="hostname where android device is connected.",
-        default=None,
-        type=str,
-    )
-    parser.add_argument(
-        "-m",
-        "--model",
-        help="SoC model of current device. e.g. 'SM8550' for Snapdragon 8 Gen 2.",
-        type=str,
-        required=True,
-    )
+
     parser.add_argument(
         "-r",
         "--hr_ref_dir",
@@ -188,6 +168,7 @@ if __name__ == "__main__":
         default="",
         type=str,
     )
+
     parser.add_argument(
         "-l",
         "--lr_dir",
@@ -195,6 +176,7 @@ if __name__ == "__main__":
         default="",
         type=str,
     )
+
     parser.add_argument(
         "-d",
         "--default_dataset",
@@ -203,24 +185,18 @@ if __name__ == "__main__":
         default=False,
     )
 
-    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
-    # So maybe it's fine to just use the environment.
-    if "QNN_SDK_ROOT" not in os.environ:
-        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
-    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
-
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
-
     args = parser.parse_args()
+
+    skip_node_id_set, skip_node_op_set = parse_skip_delegation_node(args)
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
+
+    if not args.compile_only and args.device is None:
+        raise RuntimeError(
+            "device serial is required if not compile only. "
+            "Please specify a device serial by -s/--device argument."
+        )
 
     dataset = get_dataset(
         args.hr_ref_dir, args.lr_dir, args.default_dataset, args.artifact
@@ -235,9 +211,15 @@ if __name__ == "__main__":
         (inputs[0],),
         args.model,
         f"{args.artifact}/{pte_filename}",
-        inputs,
+        [(input,) for input in inputs],
         custom_annotations=(annotate_forward,),
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
     )
+
+    if args.compile_only:
+        sys.exit(0)
+
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
     # artifact_path : path where artifacts were built
@@ -289,5 +271,12 @@ if __name__ == "__main__":
     for i, hr in enumerate(targets):
         psnr_list.append(piq.psnr(hr, output_raws[i]))
         ssim_list.append(piq.ssim(hr, output_raws[i]))
-    print("Average of PNSR is: ", sum(psnr_list) / len(psnr_list))
-    print("Average of SSIM is: ", sum(ssim_list) / len(ssim_list))
+
+    avg_PNSR = sum(psnr_list).item() / len(psnr_list)
+    avg_SSIM = sum(ssim_list).item() / len(ssim_list)
+    if args.ip and args.port != -1:
+        with Client((args.ip, args.port)) as conn:
+            conn.send(json.dumps({"PNSR": avg_PNSR, "SSIM": avg_SSIM}))
+    else:
+        print(f"Average of PNSR is: {avg_PNSR}")
+        print(f"Average of SSIM is: {avg_SSIM}")

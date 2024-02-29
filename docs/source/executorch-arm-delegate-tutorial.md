@@ -350,25 +350,34 @@ To generate these libraries, use following commands,
 
 ```bash
 # Empty and already created
-cd <executorch_build_dir>
+cd <executorch_source_root_dir>
 
 toolchain_cmake=<executorch_source_root_dir>/examples/arm/ethos-u-setup/arm-none-eabi-gcc.cmake
 
 cmake                                                 \
     -DBUCK2=${buck2}                                  \
-    -DEXECUTORCH_BUILD_XNNPACK=OFF                    \
-    -DEXECUTORCH_BUILD_GFLAGS=OFF                     \
+    -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
     -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF            \
-    -DEXECUTORCH_BUILD_HOST_TARGETS=OFF               \
-    -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
     -DCMAKE_BUILD_TYPE=Release                        \
     -DEXECUTORCH_ENABLE_LOGGING=ON                    \
-    -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+    -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
     -DFLATC_EXECUTABLE="$(which flatc)"               \
     -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
+    -B<executorch_build_dir>                          \
     <executorch_source_root_dir>
 
-cmake --build . -- VERBOSE=1
+cmake --build <executorch_build_dir> --target install --config Release VERBOSE=1
+
+cmake                                                 \
+    -DCMAKE_INSTALL_PREFIX=<executorch_build_dir>     \
+    -DCMAKE_BUILD_TYPE=Release                        \
+    -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+    -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
+    -B<executorch_build_dir>/examples/arm             \
+    <executorch_source_root_dir>/examples/arm
+
+cmake --build <executorch_build_dir>/examples/arm --config Release
+
 ```
 
 `EXECUTORCH_SELECT_OPS_LIST` will decide the number of portable operators included in the build and are available at runtime. It must match with `.pte` file's requirements, otherwise you will get `Missing Operator` error at runtime.

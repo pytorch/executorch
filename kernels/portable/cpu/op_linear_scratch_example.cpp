@@ -33,6 +33,26 @@ using optional = exec_aten::optional<T>;
 // https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/README.md
 // @lint-ignore-every CLANGTIDY
 
+namespace {
+bool check_linear_scratch_example_args(
+    const Tensor& input,
+    const Tensor& weight,
+    const optional<Tensor>& bias,
+    Tensor& out,
+    Tensor& scratch) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      input.size(1) == weight.size(1), "Unexpected weight size 1");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      scratch.size(0) == input.size(0), "Unexpected scratch size 0");
+
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      scratch.size(1) == weight.size(0), "Unexpected scratch size 1");
+
+  return true;
+}
+} // namespace
+
 /*
  * A simple example of using scratch tensor. In this specific case we could also
  * update the out tensor in place to avoid the scratch tensor.
@@ -50,9 +70,12 @@ Tensor& linear_scratch_example(
   M = input.size(0);
   N = input.size(1);
   K = weight.size(0);
-  ET_CHECK_MSG(N == weight.size(1), "Unexpected weight size 1");
-  ET_CHECK_MSG(scratch.size(0) == M, "Unexpected scratch size 0");
-  ET_CHECK_MSG(scratch.size(1) == K, "Unexpected scratch size 1");
+
+  ET_KERNEL_CHECK(
+      ctx,
+      check_linear_scratch_example_args(input, weight, bias, out, scratch),
+      InvalidArgument,
+      out);
 
   // input @ weight -> scratch
   // TODO: does not handle the case that accumulator has different type
@@ -80,7 +103,12 @@ Tensor& linear_scratch_example(
 
     // add the bias
     if (bias.has_value()) {
-      ET_CHECK_MSG(K == bias.value().numel(), "Unexpected numel for bias");
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          K == bias.value().numel(),
+          InvalidArgument,
+          out,
+          "Unexpected numel for bias");
       for (size_t i = 0; i < M; ++i) {
         for (size_t j = 0; j < K; ++j) {
           scalar_t* scratch_ptr =

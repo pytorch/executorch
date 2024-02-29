@@ -15,7 +15,7 @@ namespace executor {
 namespace native {
 
 Tensor& sinh_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realb_to_float(std::sinh, ctx, in, out);
+  return internal::unary_ufunc_realhb_to_floath(std::sinh, ctx, in, out);
 }
 
 } // namespace native

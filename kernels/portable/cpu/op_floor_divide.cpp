@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
+#include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 #include <cmath>
@@ -19,58 +20,25 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-
-/**
- * Python's __floordiv__ operator is more complicated than just floor(a / b).
- * It aims to maintain the property: a == (a // b) * b + remainder(a, b)
- * which can otherwise fail due to rounding errors in the remainder.
- * So, instead it is calculated as: a // b = (a - remainder(a, b)) / b
- * With some additional fix-ups added to the result.
- */
-template <
-    typename INT_T,
-    typename std::enable_if<std::is_integral<INT_T>::value, bool>::type = true>
-INT_T floor_divide(INT_T a, INT_T b) {
-  const auto quot = a / b;
-  if (std::signbit(a) == std::signbit(b)) {
-    return quot;
-  }
-  const auto rem = a % b;
-  return rem ? quot - 1 : quot;
-}
-
-template <
-    typename FLOAT_T,
-    typename std::enable_if<std::is_floating_point<FLOAT_T>::value, bool>::
-        type = true>
-FLOAT_T floor_divide(FLOAT_T a, FLOAT_T b) {
-  if (b == 0) {
-    return std::signbit(a) ? -INFINITY : INFINITY;
-  }
-  const auto mod = std::fmod(a, b);
-  auto div = (a - mod) / b;
-  if ((mod != 0) && std::signbit(b) != std::signbit(mod)) {
-    return div - 1;
-  }
-  return div;
-}
-
-} // namespace
-
 Tensor& floor_divide_out(
     RuntimeContext& ctx,
     const Tensor& a,
     const Tensor& b,
     Tensor& out) {
-  resize_to_broadcast_target_size(a, b, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(a, b, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(canCast(common_type, out_type));
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+
+  auto div_by_zero_error = false;
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, a_type, ctx, "floor_divide.out", CTYPE_A, [&]() {
@@ -84,18 +52,21 @@ Tensor& floor_divide_out(
                               CTYPE_A,
                               CTYPE_B,
                               CTYPE_OUT>(
-                              [common_type](
+                              [common_type, &div_by_zero_error](
                                   const CTYPE_A val_a, const CTYPE_B val_b) {
                                 if (isIntegralType(
                                         common_type, /*includeBool=*/true)) {
-                                  ET_CHECK(val_b != 0);
+                                  if (val_b == 0) {
+                                    div_by_zero_error = true;
+                                    return static_cast<CTYPE_OUT>(0);
+                                  }
                                 }
                                 CTYPE_IN a_casted =
                                     static_cast<CTYPE_IN>(val_a);
                                 CTYPE_IN b_casted =
                                     static_cast<CTYPE_IN>(val_b);
-                                CTYPE_IN value =
-                                    floor_divide<CTYPE_IN>(a_casted, b_casted);
+                                CTYPE_IN value = utils::floor_divide<CTYPE_IN>(
+                                    a_casted, b_casted);
 
                                 return static_cast<CTYPE_OUT>(value);
                               },
@@ -106,6 +77,13 @@ Tensor& floor_divide_out(
                   });
             });
       });
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      !div_by_zero_error,
+      InvalidArgument,
+      out,
+      "Floor divide operation encountered integer division by zero");
 
   return out;
 }

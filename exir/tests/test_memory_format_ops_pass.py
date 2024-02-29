@@ -5,71 +5,148 @@
 # LICENSE file in the root directory of this source tree.
 
 import unittest
+from dataclasses import dataclass
+from typing import Any, Tuple
 
 import torch
-from executorch import exir
-from executorch.exir import CaptureConfig, EdgeCompileConfig
-from executorch.exir.passes import MemoryFormatOpsPass
+from executorch.exir import EdgeCompileConfig, to_edge
+from torch.export import export
 from torch.testing import FileCheck
 
 
+@dataclass
+class MemoryFormatTestSet:
+    module: torch.nn.Module
+    sample_input: Tuple[Any, ...]
+    target_memory_format: torch.memory_format
+
+
 class TestMemoryFormatOpsPass(unittest.TestCase):
-    def test_op_to_copy_replacement(self) -> None:
-        class F(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
+    def is_channel_last(self, x: torch.Tensor):
+        # This is a heuristic to determine if the input tensor is in NHWC (channel last)
+        # due to we do not have a good way to infer the dimension order or the memory format
+        # of the input tensor. Please not this function is specific for contiguous tensors
+        # whose dim(1) is channel one only, other types of tensors may not work well
+        # due to different channel configuration and memory arrangement.
 
-            def forward(
-                self, x: torch.Tensor, mem_format: torch.memory_format
-            ) -> torch.Tensor:
-                return x.to(dtype=torch.double, memory_format=mem_format)
+        return x.stride(1) == 1
 
-        module = F().eval()
-        sample_inputs = [
-            (torch.randn([2, 2], dtype=torch.float32), torch.contiguous_format),
-            (torch.randn([2, 2, 2], dtype=torch.float32), torch.contiguous_format),
-            (torch.randn([2, 2, 2, 2], dtype=torch.float32), torch.channels_last),
-            (
-                torch.rand_like(
-                    torch.zeros([2, 2, 2, 2]),
-                    dtype=torch.float32,
-                    memory_format=torch.channels_last,
-                ),
-                torch.contiguous_format,
-            ),
-        ]
-
+    def memory_format_test_runner(self, test_set: MemoryFormatTestSet):
         aten_op_str = "torch.ops.aten._to_copy.default"
         edge_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
 
-        for sample_input in sample_inputs:
-            before = exir.capture(
-                module,
-                sample_input,
-                CaptureConfig(enable_dynamic_shape=True),
+        before = export(test_set.module, test_set.sample_input)
+
+        # check op strings before
+        FileCheck().check_count(aten_op_str, 1, exactly=True).check_not(
+            edge_op_str
+        ).run(before.graph_module.code)
+
+        # TODO(gasoonjia): make to_dim_copy pass verifier
+        epm = to_edge(
+            before,
+            compile_config=EdgeCompileConfig(
+                _check_ir_validity=False, _skip_dim_order=False
+            ),
+        )
+
+        # check op strings
+        FileCheck().check_not(aten_op_str).check_count(
+            edge_op_str, 1, exactly=True
+        ).run(epm.exported_program().graph_module.code)
+
+        # check EdgeOp and the new BackendOp should behave the same
+        expected = before.module()(*test_set.sample_input)
+        actual = epm.exported_program().module()(*test_set.sample_input)
+        self.assertTrue(torch.allclose(actual, expected))
+        self.assertEqual(
+            self.is_channel_last(actual),
+            self.is_channel_last(expected),
+        )
+        if test_set.target_memory_format == torch.channels_last:
+            self.assertTrue(self.is_channel_last(actual))
+        elif test_set.target_memory_format == torch.contiguous_format:
+            self.assertFalse(self.is_channel_last(actual))
+        else:
+            raise RuntimeError("Unknown memory format")
+
+        # TODO - more
+        epm.to_executorch()
+
+    def test_op_to_copy_replacement_2d(self) -> None:
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(dtype=torch.double, memory_format=torch.contiguous_format)
+
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=Module().eval(),
+                sample_input=(torch.randn([3, 4, 5], dtype=torch.float32),),
+                target_memory_format=torch.contiguous_format,
             )
+        )
 
-            # check op strings before
-            FileCheck().check_count(aten_op_str, 1, exactly=True).check_not(
-                edge_op_str
-            ).run(before.exported_program.graph_module.code)
+    def test_op_to_copy_replacement_4d(self) -> None:
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
 
-            ep = before.to_edge(
-                config=EdgeCompileConfig(_check_ir_validity=False)
-            )  # Only replacing edge_ops
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(dtype=torch.double, memory_format=torch.contiguous_format)
 
-            # Run the pass - TODO move this in to_edge passes
-            after = ep.transform(MemoryFormatOpsPass())
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=Module().eval(),
+                sample_input=(torch.randn([3, 4, 5, 6], dtype=torch.float32),),
+                target_memory_format=torch.contiguous_format,
+            )
+        )
 
-            # check op strings
-            FileCheck().check_not(aten_op_str).check_count(
-                edge_op_str, 1, exactly=True
-            ).run(after.exported_program.graph_module.code)
+    def test_op_dim_order_update(self) -> None:
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
 
-            # check EdgeOp and the new BackendOp should behave the same
-            expected = before(*sample_input)
-            actual = after(*sample_input)
-            self.assertTrue(torch.allclose(actual, expected))
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(dtype=torch.double, memory_format=torch.channels_last)
 
-            # TODO - more
-            after.to_executorch()
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=Module().eval(),
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+            ),
+        )
+
+    def test_op_dim_order_propagation(self) -> None:
+        class Module(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                t1 = x.to(dtype=torch.double, memory_format=torch.channels_last)
+                t2 = t1 + t1
+                return t1 * t2
+
+        self.memory_format_test_runner(
+            MemoryFormatTestSet(
+                module=Module().eval(),
+                sample_input=(
+                    torch.rand_like(
+                        torch.zeros([2, 2, 2, 2]),
+                        dtype=torch.float32,
+                        memory_format=torch.contiguous_format,
+                    ),
+                ),
+                target_memory_format=torch.channels_last,
+            )
+        )

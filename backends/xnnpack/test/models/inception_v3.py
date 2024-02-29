@@ -9,6 +9,7 @@ import unittest
 import torch
 import torchvision.models as models
 from executorch.backends.xnnpack.test.tester import Tester
+from executorch.backends.xnnpack.test.tester.tester import Quantize
 
 
 class TestInceptionV3(unittest.TestCase):
@@ -53,7 +54,7 @@ class TestInceptionV3(unittest.TestCase):
 
         (
             Tester(self.ic3, self.model_inputs)
-            .quantize()
+            .quantize(Quantize(calibrate=False))
             .export()
             .to_edge()
             .check(list(ops_after_quantization))

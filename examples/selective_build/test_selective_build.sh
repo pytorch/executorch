@@ -15,17 +15,6 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/../../.ci/scripts/utils.sh"
 
-cmake_install_executorch_lib() {
-    echo "Installing libexecutorch.a and libportable_kernels.a"
-    rm -rf cmake-out
-    retry cmake -DBUCK2="$BUCK" \
-            -DCMAKE_INSTALL_PREFIX=cmake-out \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-            -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Release
-}
-
 test_buck2_select_all_ops() {
     echo "Exporting MobilenetV3"
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="mv3"
@@ -47,6 +36,21 @@ test_buck2_select_ops_in_list() {
     $BUCK run //examples/selective_build:selective_build_test \
         --config=executorch.max_kernel_num=17 \
         --config=executorch.select_ops=list \
+        -- --model_path=./add_mul.pte
+
+    echo "Removing add_mul.pte"
+    rm "./add_mul.pte"
+}
+
+test_buck2_select_ops_in_dict() {
+    echo "Exporting add_mul"
+    ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
+
+    echo "Running selective build test"
+    # select ops and their dtypes using the dictionary API.
+    $BUCK run //examples/selective_build:selective_build_test \
+        --config=executorch.select_ops=dict \
+        --config=executorch.dtype_selective_build_lib=//examples/selective_build:select_ops_in_dict_lib \
         -- --model_path=./add_mul.pte
 
     echo "Removing add_mul.pte"
@@ -164,5 +168,6 @@ elif [[ $1 == "buck2" ]];
 then
     test_buck2_select_all_ops
     test_buck2_select_ops_in_list
+    test_buck2_select_ops_in_dict
     test_buck2_select_ops_from_yaml
 fi

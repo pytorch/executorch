@@ -44,11 +44,12 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.sub.Tensor,
         exir_ops.edge.aten.div.Tensor,
         exir_ops.edge.aten.ceil.default,
-        exir_ops.edge.aten._softmax.default,
+        exir_ops.edge.aten._softmax.default,  # TODO: Need to find a new solution to do "axis_order" to transform axis.
+        exir_ops.edge.aten._log_softmax.default,
         exir_ops.edge.aten.constant_pad_nd.default,
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.full.default,
-        exir_ops.edge.aten.embedding.default,
+        exir_ops.edge.aten.gelu.default,
         _operator.getitem,
     }
 
@@ -187,7 +188,11 @@ class LayoutTransform(ExportPass):
 
     def traverse(self, node: torch.fx.Node, graph_module: torch.fx.GraphModule) -> None:
         for arg in node.args:
-            self.annotate_layout(arg, graph_module, revert_layout=False)
+            if isinstance(arg, list):
+                for arg_node in arg:
+                    self.annotate_layout(arg_node, graph_module, revert_layout=False)
+            else:
+                self.annotate_layout(arg, graph_module, revert_layout=False)
 
         node_users = set(node.users.keys())
         for user in node_users:

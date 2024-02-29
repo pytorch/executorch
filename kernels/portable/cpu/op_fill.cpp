@@ -29,17 +29,21 @@ Tensor& fill_scalar_out(
   ScalarType b_type = utils::get_scalar_dtype(b);
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(a_type == out_type);
+  ET_KERNEL_CHECK(ct, a_type == out_type, InvalidArgument, out);
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Scalar_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "fill.Scalar_out", CTYPE_B, [&] {
       CTYPE_B b_val;
-      ET_EXTRACT_SCALAR(b, b_val);
+      utils::extract_scalar(b, &b_val);
       b_casted = static_cast<CTYPE_A>(b_val);
     });
 
@@ -61,24 +65,28 @@ Tensor& fill_tensor_out(
   (void)ctx;
 
   // Assert `b` must be a scalar tensor.
-  ET_CHECK(b.dim() == 0 && b.numel() == 1);
+  ET_KERNEL_CHECK(ctx, tensor_is_scalar(b), InvalidArgument, b);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_CHECK(a_type == out_type);
+  ET_KERNEL_CHECK(ctx, a_type == out_type, InvalidArgument, out);
 
   // Resize for dynamic shape
-  auto error = resize_tensor(out, a.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      resize_tensor(out, a.sizes()) == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "fill.Tensor_out", CTYPE_A, [&] {
     CTYPE_A b_casted;
     ET_SWITCH_REAL_TYPES_AND(
         Bool, b_type, ctx, "fill.Tensor_out", CTYPE_B, [&] {
           CTYPE_B b_val;
-          ET_EXTRACT_SCALAR_TENSOR(b, b_val);
+          extract_scalar_tensor(b, &b_val);
           b_casted = static_cast<CTYPE_A>(b_val);
         });
 

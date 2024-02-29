@@ -301,8 +301,20 @@ class XNNELU:
     flags: int
 
 
+@dataclass
 class XNNPReLU(XNNNode2x1):
     pass
+
+
+@dataclass
+class XNNScaledDotProductAttention:
+    query_id: int
+    key_id: int
+    value_id: int
+    scale_id: int
+    mask_id: int
+    output_id: int
+    flags: int
 
 
 XNodeUnion = Union[
@@ -341,6 +353,7 @@ XNodeUnion = Union[
     XNNConcatenate3,
     XNNConcatenate4,
     XNNStaticSlice,
+    XNNScaledDotProductAttention,
 ]
 
 
@@ -366,6 +379,7 @@ class XNNDatatype(IntEnum):
     xnn_datatype_qint32 = 5
     xnn_datatype_qcint8 = 6
     xnn_datatype_qcint32 = 7
+    xnn_datatype_qcint4 = 8
 
 
 @dataclass
@@ -418,6 +432,12 @@ class Buffer:
 
 
 @dataclass
+class ConstantDataOffset:
+    offset: int
+    size: int
+
+
+@dataclass
 class XNNGraph:
     version: str
     xnodes: List[XNode]
@@ -429,3 +449,5 @@ class XNNGraph:
 
     constant_buffer: List[Buffer]
     mem_buffer_sizes: List[int]
+
+    constant_data: List[ConstantDataOffset]

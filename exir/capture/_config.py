@@ -34,6 +34,9 @@ class EdgeCompileConfig:
     _check_ir_validity: bool = True
     # TODO(larryliu): remove this
     _use_edge_ops: bool = True
+    _skip_type_promotion: bool = False
+    # TODO(gasoonjia): set it as False by default, and remove it in the long term
+    _skip_dim_order: bool = True
 
 
 @compatibility(is_backward_compatible=False)
@@ -47,14 +50,19 @@ class ExecutorchBackendConfig:
     )
     emit_stacktrace: bool = False
 
-    # Whether to move certain data blobs from the Program into separate
+    # Whether to move delegate data blobs from the Program into separate
     # segments, rather than encoding those blobs in the flatbuffer data.
     # This makes it possible to free those blobs at runtime.
-    extract_segments: bool = False
+    extract_delegate_segments: bool = False
+
+    # Whether to extract constants from the Program into separate segments,
+    # rather than encoding those constants in the flatbuffer data.
+    # This reduces the memory overhead of creating the .pte file for models with
+    # large constant data.
+    extract_constant_segment: bool = True
 
     # When extracting segments, the starting offset of each segment will be
-    # aligned to this value (in bytes). When using mmap() to load segments, this
-    # should be a multiple of the OS page size.
+    # aligned to this value (in bytes). Must be a power of two.
     segment_alignment: int = 4096
 
     # If provided, the minimum alignment of tensor buffers in the program. Must
