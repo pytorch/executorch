@@ -10,21 +10,21 @@
 
 #ifdef USE_VULKAN_API
 
-#include <executorch/backends/vulkan/runtime/graph/Graph.h>
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
 
-#define DEFINE_OP_FN(name) \
-  ValueRef name(ComputeGraph& graph, const std::vector<ValueRef>& args);
+void add_copy_node(ComputeGraph& graph, const ValueRef from, const ValueRef to);
+ValueRef add_copy_node(ComputeGraph& graph, const ValueRef from);
 
-DEFINE_OP_FN(add);
-DEFINE_OP_FN(sub);
-DEFINE_OP_FN(mul);
-DEFINE_OP_FN(div);
-DEFINE_OP_FN(floor_div);
-DEFINE_OP_FN(pow);
+class CopyNode : public virtual ExecuteNode {
+ public:
+  explicit CopyNode(const ValueRef from, const ValueRef to);
+
+  void encode(ComputeGraph* graph) const override;
+};
 
 } // namespace vulkan
 } // namespace native
