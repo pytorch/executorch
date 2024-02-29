@@ -1,5 +1,13 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _get_operator_lib(aten = False):
+    if aten:
+        return ["//executorch/kernels/portable:generated_lib_aten"]
+    elif runtime.is_oss:
+        return ["//executorch/kernels/portable:generated_lib_all_ops"]
+    else:
+        return ["//executorch/kernels/portable:generated_lib_all_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops"]
+
 def define_common_targets():
     for aten in (True, False):
         aten_suffix = "_aten" if aten else ""
@@ -27,11 +35,8 @@ def define_common_targets():
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
-                "//executorch/kernels/portable:" + ("generated_lib_aten" if aten else "generated_lib_all_ops"),
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-            ] + ([
-                "//executorch/examples/models/llama2/custom_ops:custom_ops",
-            ] if ((not aten) and (not runtime.is_oss)) else []),
+            ] + (_get_operator_lib(aten)),
             external_deps = [
                 "libtorch",
             ] if aten else [],
