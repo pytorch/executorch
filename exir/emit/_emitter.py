@@ -108,11 +108,27 @@ class _ProgramState:
     # emitted graph modules, not any weights emitted from itself. This should speed up the lookup,
     # from O(N) to O(1)
     cached_spec_hash_values: Dict[str, int] = field(default_factory=dict)
-    # The 0 index is reserved to be pointed to by non-constant tensors, so add an empty placeholder.
-    constant_buffer: List[Buffer] = field(default_factory=lambda: [Buffer(storage=b"")])
+    # If this is non-empty, constant_segment_data and constant_segment_offsets must be empty.
+    constant_buffer: Optional[List[Buffer]] = None
+    # Constant data stored directly in a segment blob. If this is provided, constant_segment_offsets must
+    # be non-empty and constant_buffer must be empty.
+    constant_segment_data: Optional[bytearray] = None
+    # Offsets for each constant tensor in constant_segment_data.
+    constant_segment_offsets: Optional[List[int]] = None
     # Delegate data stored directly in the flatbuffer. Pointed to by BackendDelegateDataReference,
     # and should be copied to Program.backend_delegate_data.
     backend_delegate_data: List[BackendDelegateInlineData] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # One of constant_buffer and constant_segment_data should be initialized.
+        if self.constant_buffer is None and self.constant_segment_data is None:
+            raise InternalError(
+                "Constant buffer and constant segment data cannot both be empty"
+            )
+        if self.constant_buffer is not None and self.constant_segment_data is not None:
+            raise InternalError(
+                "Constant buffer and constant segment data cannot both be set"
+            )
 
 
 @dataclass
@@ -123,13 +139,24 @@ class _EmitterState:
     from control flow.
     """
 
+    # List of emitted EValues.
     values: List[EValue]
+    # List of emitted operators.
     operators: List[Operator]
+    # List of emitted backend delegate references. The delegate data blobs are stored in _ProgramState.
     delegates: List[BackendDelegate]
+    # Number of values emitted (length of values list above).
     num_values: int
+    # Map of (name, overload) -> op_index. Used to avoid reemitting the same operator.
     operator_cache: Dict[Tuple[str, str], int]
+    # Map of (processed_bytes) -> delegate_index. Used to avoid reemitting the same delegate.
     delegate_cache: Dict[bytes, int]
+    # If true, emit the stacktrace for each instruction, if it exists.
     emit_stacktrace: bool
+    # If true, emit constant data into a segment blob separate from the program, otherwise emit to the program.
+    extract_constant_segment: bool
+    # The minimum alignment of tensor buffers in the constant segment. Must be a power of 2.
+    constant_tensor_alignment: int
 
     spec2id_dict: Dict[TensorSpec, int] = field(default_factory=dict)
 
@@ -369,14 +396,15 @@ class _Emitter(torch.fx.Interpreter):
 
         # Haven't seen this constant before
         if buffer_idx == -1:
-            # Update buffer_idx to point to the end of the list where we are adding the new buffer.
             buffer = Buffer(storage=buffer_data)
-            buffer_idx = len(self.program_state.constant_buffer)
-            self.program_state.allocated_specs.append(spec)
-            # +1 because the first buffer location is reserved
-            self.program_state.cached_spec_hash_values[hashed] = buffer_idx
-            self.program_state.constant_buffer.append(buffer)
-
+            if self.program_state.constant_buffer is not None:
+                # Update buffer_idx to point to the end of the list where we are adding the new buffer.
+                buffer_idx = len(self.program_state.constant_buffer)
+                self.program_state.allocated_specs.append(spec)
+                # +1 because the first buffer location is reserved
+                self.program_state.cached_spec_hash_values[hashed] = buffer_idx
+                assert isinstance(self.program_state.constant_buffer, list)
+                self.program_state.constant_buffer.append(buffer)
         if spec.const and spec.nbytes() != len(buffer_data):
             raise InternalError(
                 self._emit_node_specific_error(

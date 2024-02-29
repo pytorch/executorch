@@ -337,7 +337,7 @@ table ExecutionPlan {
 table Buffer {
   // During serialization, this alignment may be rewritten to a larger value.
   // The magic "@executorch-tensor-alignment" comment tells EXIR which lines to
-  // patch.
+  // patch. Keep in sync with ALIGNMENT in exir/tensor.py
   storage:[ubyte] (force_align: 16);  // @executorch-tensor-alignment
 }
 

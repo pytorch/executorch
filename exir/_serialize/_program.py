@@ -29,6 +29,7 @@ from executorch.exir.schema import (
     Program,
     SubsegmentOffsets,
 )
+from executorch.exir.tensor import ALIGNMENT
 
 
 # Byte order of numbers written to program headers. Always little-endian
@@ -503,6 +504,7 @@ def _append_segments(
 def serialize_pte_binary(
     program: Program,
     *,
+    constant_segment_data: Optional[bytearray] = None,
     extract_delegate_segments: bool = False,
     extract_constant_segment: bool = False,
     segment_alignment: int = 4096,
@@ -513,6 +515,9 @@ def serialize_pte_binary(
 
     Args:
         program: The Program to serialize.
+        constant_segment_data: If provided, a bytearray containing the constant data
+            in a segment blob. If not provided, there are either no constants, or
+            constants are stored inside program.constant_buffer.
         extract_delegate_segments: Whether to move delegate data blobs from the
             Program into separate segments, rather than encoding those blobs
             in the flatbuffer data. When true, will also:
@@ -535,7 +540,7 @@ def serialize_pte_binary(
     """
     # Default tensor alignment.
     if constant_tensor_alignment is None:
-        constant_tensor_alignment = 16
+        constant_tensor_alignment = ALIGNMENT
 
     # Segment data to be written to the file following the flatbuffer data.
     segments: List[bytes] = []
