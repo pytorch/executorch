@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/Types.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
 namespace at {
 namespace native {
