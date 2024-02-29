@@ -64,14 +64,6 @@ class LayoutTransform(ExportPass):
         5: ("NCDHW", "NDHWC"),
     }
 
-    q_ops = {
-        torch.ops.quantized_decomposed.quantize_per_channel.default,
-        torch.ops.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
-        exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
-    }
-
     @classmethod
     def get_axis_order(cls, size: List[int], reverse=False) -> Tuple[int]:
         old_layout, new_layout = cls.layout_type[len(size)]

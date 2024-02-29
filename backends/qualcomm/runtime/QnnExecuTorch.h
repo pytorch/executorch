@@ -148,6 +148,8 @@ typedef struct { // NOLINT
   /// QNN context blob is the same as SizedBuffer given by user
   QnnExecuTorchContextBinary qnn_context_blob;
 
+  /// Check if on-device graph construction. Default is false
+  bool online_prepare;
 } QnnExecuTorchOptions;
 
 // clang-format off
@@ -160,6 +162,7 @@ typedef struct { // NOLINT
     QNN_EXECUTORCH_HTP_OPTION_INIT,      /*htp_options*/                \
     kLogOff,                             /*log_level*/                  \
     QNN_EXECUTORCH_CONTEXT_BINARY,       /*qnn_context_blob*/           \
+    false,                               /*online_prepare*/             \
   }
 // clang-format on
 
