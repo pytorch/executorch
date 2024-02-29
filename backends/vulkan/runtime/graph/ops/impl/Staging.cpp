@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <ATen/native/vulkan/impl/Packing.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Staging.h>
+#include <ATen/native/vulkan/impl/Packing.h>
 
 namespace at {
 namespace native {
