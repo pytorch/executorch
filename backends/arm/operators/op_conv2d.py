@@ -11,7 +11,10 @@ from executorch.backends.arm.operators.node_visitor import (
     register_node_visitor,
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
-from executorch.backends.arm.tosa_quant_utils import build_rescale_conv_output
+from executorch.backends.arm.tosa_quant_utils import (
+    build_rescale_conv_output,
+    get_quant_node_args,
+)
 from executorch.backends.arm.tosa_utils import build_reshape, getNodeArgs
 
 from serializer.tosa_serializer import TosaOp
@@ -76,11 +79,15 @@ class Conv2dVisitor(NodeVisitor):
             dilation_attr[1],
         )
 
+        input_zp = (
+            get_quant_node_args(node.all_input_nodes[0])[1] if is_quant_node else 0
+        )
+
         attr.ConvAttribute(
             pad=pad_attr,
             stride=stride_attr,
             dilation=dilation_attr,
-            input_zp=0,
+            input_zp=input_zp,
             weight_zp=0,
             local_bound=False,
         )
@@ -125,29 +132,23 @@ class Conv2dVisitor(NodeVisitor):
             build_reshape(
                 tosa_graph, weight.name, weight_post_shape, weight_reshaped.name
             )
-
-            tosa_graph.addOperator(
-                TosaOp.Op().DEPTHWISE_CONV2D,
-                [
-                    input.name,
-                    weight_reshaped.name,
-                    bias.name,
-                ],
-                [conv2d_output_name],
-                attr,
-            )
+            tosa_op = TosaOp.Op().DEPTHWISE_CONV2D
+            weight_name = weight_reshaped.name
         else:
             """Regular convolution case"""
-            tosa_graph.addOperator(
-                TosaOp.Op().CONV2D,
-                [
-                    input.name,
-                    weight.name,
-                    bias.name,
-                ],
-                [conv2d_output_name],
-                attr,
-            )
+            tosa_op = TosaOp.Op().CONV2D
+            weight_name = weight.name
+
+        tosa_graph.addOperator(
+            tosa_op,
+            [
+                input.name,
+                weight_name,
+                bias.name,
+            ],
+            [conv2d_output_name],
+            attr,
+        )
 
         # For quantized convolution, rescale the output value back to the same
         # integer value domain of the next op. Otherwise return float32 output.
@@ -155,7 +156,7 @@ class Conv2dVisitor(NodeVisitor):
             # Get scale_factor from input, weight, and output.
             _, input_scale, _, _, _, _ = getNodeArgs(node.args[0])
             _, weight_scale, _, _, _, _ = getNodeArgs(node.args[1])
-            _, output_scale, _, _, _, _ = getNodeArgs(list(node.users)[0])
+            _, output_scale, output_zp, _, _, _ = getNodeArgs(list(node.users)[0])
             build_rescale_conv_output(
                 tosa_graph,
                 conv2d_res,
@@ -164,4 +165,5 @@ class Conv2dVisitor(NodeVisitor):
                 input_scale,
                 weight_scale,
                 output_scale,
+                output_zp,
             )

@@ -39,15 +39,7 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 )
 
 SUPPORTED_BI_TEST_LIST = [
-    "simple_add",
     "simple_add_broadcast",
-    "simple_conv2d_3x3_1x3x256x256_stride1",
-    "simple_conv2d_1x1_1x2x128x128_stride1",
-    "simple_conv2d_2x2_1x1x14x14_stride2",
-    "simple_conv2d_5x5_3x2x128x128_stride1",
-    "simple_conv2d_2x2_3x1x40x40_non_bias",
-    "block_two_conv2d",
-    "block_two_conv2d_non_bias",
     "block_bottleneck_residual",
 ]
 

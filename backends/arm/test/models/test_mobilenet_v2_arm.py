@@ -6,25 +6,21 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import shutil
 import unittest
 
 import torch
 import torchvision.models as models
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
-# TODO: fixme! These globs are a temporary workaround. Reasoning:
-# Running the jobs in _unittest.yml will not work since that environment don't
-# have the vela tool, nor the tosa_reference_model tool. Hence, we need a way to
-# run what we can in that env temporarily. Long term, vela and tosa_reference_model
-# should be installed in the CI env.
-TOSA_REF_MODEL_INSTALLED = shutil.which("tosa_reference_model")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+torch.manual_seed(42)
 
 
 class TestMobileNetV2(unittest.TestCase):
@@ -79,15 +75,17 @@ class TestMobileNetV2(unittest.TestCase):
             .partition()
             .to_executorch()
         )
-
-        if TOSA_REF_MODEL_INSTALLED:
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
             )
 
-    @unittest.skip("This test is not supported yet")
+    @unittest.skipIf(
+        not common.VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
     def test_mv2_u55_BI(self):
         (
             ArmTester(

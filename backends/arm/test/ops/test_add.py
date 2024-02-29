@@ -1,31 +1,25 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import shutil
 import unittest
 
 from typing import Optional, Tuple
 
 import torch
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
 from parameterized import parameterized
 
-# TODO: fixme! These globs are a temporary workaround. Reasoning:
-# Running the jobs in _unittest.yml will not work since that environment don't
-# have the vela tool, nor the tosa_reference_model tool. Hence, we need a way to
-# run what we can in that env temporarily. Long term, vela and tosa_reference_model
-# should be installed in the CI env.
-TOSA_REF_MODEL_INSTALLED = shutil.which("tosa_reference_model")
-VELA_INSTALLED = shutil.which("vela")
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+torch.manual_seed(42)
 
 
 class TestSimpleAdd(unittest.TestCase):
@@ -64,7 +58,7 @@ class TestSimpleAdd(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
-        if TOSA_REF_MODEL_INSTALLED:
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
             logger.warning(
@@ -91,7 +85,8 @@ class TestSimpleAdd(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
-        if TOSA_REF_MODEL_INSTALLED:
+
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs(qtol=1)
         else:
             logger.warning(
@@ -133,7 +128,7 @@ class TestSimpleAdd(unittest.TestCase):
         self._test_add_tosa_BI_pipeline(self.Add(), test_data)
 
     @unittest.skipIf(
-        not VELA_INSTALLED,
+        not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",
     )
     def test_add_u55_BI(self):
@@ -149,7 +144,7 @@ class TestSimpleAdd(unittest.TestCase):
         self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
 
     @unittest.skipIf(
-        not VELA_INSTALLED,
+        not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",
     )
     def test_add2_u55_BI(self):
