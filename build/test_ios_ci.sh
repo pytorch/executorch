@@ -39,6 +39,10 @@ say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
 
+say "Installing Python Bindings"
+
+EXECUTORCH_BUILD_PYBIND=ON CMAKE_ARGS="-DPYBIND_LINK_COREML=ON -DPYBIND_LINK_MPS=ON -DPYBIND_LINK_XNNPACK=ON -DBUCK2=$(which buck2)" pip install . --no-build-isolation
+
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="$MODEL_NAME" --segment_alignment=0x4000
@@ -61,7 +65,7 @@ mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"
 
-xcrun simctl create "$SIMULATOR_NAME" "iPhone 14"
+xcrun simctl create "$SIMULATOR_NAME" "iPhone 15"
 
 say "Running Tests"
 
