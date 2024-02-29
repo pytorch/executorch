@@ -450,7 +450,7 @@
     <span class="n">LoweredBackendModule</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.pass_base</span> <span class="kn">import</span> <span class="n">ExportPass</span>
-<span class="kn">from</span> <span class="nn">torch._export.utils</span> <span class="kn">import</span> <span class="n">is_buffer</span><span class="p">,</span> <span class="n">is_param</span>
+<span class="kn">from</span> <span class="nn">torch._export.utils</span> <span class="kn">import</span> <span class="n">is_buffer</span><span class="p">,</span> <span class="n">is_lifted_tensor_constant</span><span class="p">,</span> <span class="n">is_param</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 
 
@@ -583,11 +583,13 @@
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
                 <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;output node </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> should not be tagged&quot;</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
-                <span class="k">if</span> <span class="ow">not</span> <span class="n">is_param</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_buffer</span><span class="p">(</span>
-                    <span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span>
+                <span class="k">if</span> <span class="p">(</span>
+                    <span class="ow">not</span> <span class="n">is_param</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_buffer</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
+                    <span class="ow">and</span> <span class="ow">not</span> <span class="n">is_lifted_tensor_constant</span><span class="p">(</span><span class="n">owning_program</span><span class="p">,</span> <span class="n">node</span><span class="p">)</span>
                 <span class="p">):</span>
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
-                        <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params and non-buffer should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
+                        <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
                     <span class="p">)</span>
             <span class="n">node_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">node_list</span>
