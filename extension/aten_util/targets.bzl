@@ -25,8 +25,9 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        deps = [
+        exported_deps = [
             "//executorch/runtime/core:core",
+            "//executorch/runtime/core:evalue",
             "//executorch/runtime/core/exec_aten:lib",
         ],
         external_deps = [

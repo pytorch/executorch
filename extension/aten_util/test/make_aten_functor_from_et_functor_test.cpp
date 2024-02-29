@@ -9,8 +9,6 @@
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
-#include <executorch/runtime/kernel/kernel_runtime_context.h>
-#include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 #include <torch/library.h>

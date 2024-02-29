@@ -14,6 +14,7 @@ def define_common_targets():
         exported_headers = [
             "operator_registry.h",
             "make_boxed_from_unboxed_functor.h",
+            "meta_programming.h",
             "type_list.h",
         ],
         visibility = [
@@ -33,6 +34,7 @@ def define_common_targets():
         exported_headers = [
             "operator_registry.h",
             "make_boxed_from_unboxed_functor.h",
+            "meta_programming.h",
             "type_list.h",
         ],
         visibility = [
