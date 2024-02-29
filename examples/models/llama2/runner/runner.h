@@ -45,7 +45,7 @@ class Runner {
   template <typename T>
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
-  std::vector<exec_aten::SizesType> getKVCacheShape(int32_t seq_len);
+  std::vector<exec_aten::SizesType> getKVCacheShape();
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
