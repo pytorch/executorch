@@ -27,6 +27,9 @@ class QnnManager {
   ~QnnManager();
   Error Init();
   Error AllocateTensor();
+  Error AllocateTensor(
+      std::vector<std::shared_ptr<TensorWrapper>>& inputs,
+      std::vector<std::shared_ptr<TensorWrapper>>& outputs);
 
   Error Execute(
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
@@ -35,6 +38,8 @@ class QnnManager {
   void Destroy();
 
   bool IsAvailable();
+
+  bool IsOnlinePrepare();
 
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
@@ -69,6 +74,7 @@ class QnnManager {
   std::unique_ptr<QnnLogger> logger_;
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors_;
   std::vector<std::shared_ptr<TensorWrapper>> output_tensors_;
+  bool online_prepare_;
 };
 } // namespace qnn
 } // namespace executor

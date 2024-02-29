@@ -54,7 +54,14 @@ class Cat(NodeVisitor):
             nodes_to_wrappers,
         )
 
-        axis = cast(int, node.args[1])
+        # node args[1] might not exist
+        axis = 0
+        if len(node.args) == 2:
+            axis = cast(int, node.args[1])
+
+        if axis < 0:
+            axis += node.meta["val"].dim()
+
         if "axis_order" in node.meta:
             axis = node.meta["axis_order"].index(axis)
 

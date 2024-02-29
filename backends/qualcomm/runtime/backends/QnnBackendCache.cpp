@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCache.h>
 namespace torch {
 namespace executor {
@@ -93,6 +94,17 @@ QnnBackendCache::QnnBackendCache(
     QNN_EXECUTORCH_LOG(
         kLogLevelInfo, "[Qnn ExecuTorch] Caching: Caching is in SAVE MODE.");
     return;
+  } else {
+    // check if context binary came from flatbuffer
+    flatbuffers::FlatBufferBuilder builder;
+    flatbuffers::Verifier verifier(
+        static_cast<const uint8_t* const>(qnn_context_blob_.buffer),
+        qnn_context_blob_.nbytes);
+
+    if (qcir::VerifyGraphBuffer(verifier)) {
+      state_ = ONLINE_PREPARE;
+      return;
+    }
   }
 
   if (qnn_sys_impl_.Load() != Error::Ok) {
@@ -160,6 +172,7 @@ std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphInputs() {
 std::vector<Qnn_Tensor_t> QnnBackendCache::GetGraphOutputs() {
   if (state_ != DESERIALIZE)
     return {};
+
   return output_tensor_structs_;
 }
 } // namespace qnn
