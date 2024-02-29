@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/Constant.h>
+#include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
 
 namespace at {
 namespace native {
