@@ -122,17 +122,9 @@ const uint8_t* getConstantDataPtr(
     const uint8_t* constant_data_ptr) {
   auto buffer_idx = tensor_value->constant_buffer_idx();
   if (buffer_idx) {
-    if (!constant_data_ptr) {
-      // TODO(T172265611): Remove constant_buffer in flatbuffer path after BC
-      // window
-      const auto& constant_buffer = *flatbuffer_graph->constant_buffer();
-      return constant_buffer[buffer_idx]->storage()->data();
-    } else {
-      const auto& constant_data_offsets = *flatbuffer_graph->constant_data();
-      uint64_t constant_data_offset =
-          constant_data_offsets[buffer_idx]->offset();
-      return constant_data_ptr + constant_data_offset;
-    }
+    const auto& constant_data_offsets = *flatbuffer_graph->constant_data();
+    uint64_t constant_data_offset = constant_data_offsets[buffer_idx]->offset();
+    return constant_data_ptr + constant_data_offset;
   }
 
   return nullptr;
@@ -191,107 +183,28 @@ Error defineTensor(
       getConstantDataPtr(tensor_value, flatbuffer_graph, constant_data_ptr);
 
   xnn_status status;
-  // The type we might have to convert to
-  auto dq_datatype = getDataType(tensor_value->dq_datatype());
-
-  if (dq_datatype != xnn_datatype::xnn_datatype_invalid) {
-    if (dq_datatype != xnn_datatype::xnn_datatype_qint8) {
-      ET_CHECK_OR_RETURN_ERROR(
-          false,
-          Internal,
-          "Only int8_t is supported for dq_datatype for now, got: %d",
-          dq_datatype);
-    } else {
-      ET_CHECK_OR_RETURN_ERROR(
-          (tensor_value->flags() & XNN_VALUE_FLAG_EXTERNAL_INPUT),
-          Internal,
-          "Dynamic quantization of tensor is only allowed for the external input tensor value for now! got flags: %u",
-          tensor_value->flags());
-    }
-  }
+  auto datatype = getDataType(tensor_value->datatype());
 
   if (qtensor_value == nullptr) {
-    // FP32 tensor
-    if (!isQuantizedDataType(dq_datatype)) {
-      // Define non-quantied tensor
-      status = xnn_define_tensor_value(
-          /*subgraph=*/subgraph_ptr,
-          /*datatype=*/getDataType(tensor_value->datatype()),
-          /*num_dims=*/tensor_value->num_dims(),
-          /*dims=*/dims_data.data(),
-          /*data=*/buffer_ptr,
-          /*external_id=*/tensor_value->external_id(),
-          /*flags=*/tensor_value->flags(),
-          /*id_out=*/&id);
-    } else if (dq_datatype != xnn_datatype::xnn_datatype_invalid) {
-      ET_CHECK_OR_RETURN_ERROR(
-          isQuantizedDataType(dq_datatype),
-          Internal,
-          "Dynamic quantization can only produce supported quantized dtypes");
-      ET_CHECK_OR_RETURN_ERROR(
-          tensor_value->external_id() != XNN_INVALID_VALUE_ID,
-          Internal,
-          "Dynamic quantization can only work with external inputs for now, got an internal ID");
-      ET_CHECK_OR_RETURN_ERROR(
-          buffer_ptr == nullptr,
-          Internal,
-          "Dynamic quantization can only work with external inputs for now, got const data");
-
-      switch (dq_datatype) {
-        case xnn_datatype::xnn_datatype_qint8: {
-          // HACK TO Maintain FC/BC for ASR this will be removed after 01/2024
-
-          // When encountering a dynamically quantized tensor via dq_datatype,
-          // which is the old flow for serializing dynamically quantized linear.
-          // We replace the definition of a single tensor with a new dynamic
-          // Quantization pattern. We change the pattern from:
-          //     serialized_qd_input
-          //           to
-          // (fp32_input --> convert --> qdint8_input)
-
-          status = xnn_define_dynamically_quantized_tensor_value(
-              /*subgraph=*/subgraph_ptr,
-              /*datatype=*/xnn_datatype_qdint8,
-              /*num_dims=*/tensor_value->num_dims(),
-              /*num_nonbatch_dims=*/1, // always do per token quantization
-              /*dims=*/dims_data.data(),
-              /*external_id=*/XNN_INVALID_VALUE_ID, // always internal value id
-              /*flags=*/0, // this is netiher external input or output
-              /*id_out=*/&id);
-
-          // this is the FP16 or FP32 external value that is being dynamically
-          // quantized
-          uint32_t float_id;
-          enum xnn_datatype fp_datatype = getDataType(tensor_value->datatype());
-          status = xnn_define_tensor_value(
-              /*subgraph=*/subgraph_ptr,
-              /*datatype=*/fp_datatype,
-              /*num_dims=*/tensor_value->num_dims(),
-              /*dims=*/dims_data.data(),
-              /*data=*/buffer_ptr,
-              /*external_id=*/tensor_value->external_id(),
-              /*flags=*/tensor_value->flags(),
-              /*id_out=*/&float_id);
-          executor->addDynamicQinput(float_id);
-
-          // Define dynamic conversion from float to qdint8
-          status = xnn_define_convert(
-              /*subgraph=*/subgraph_ptr,
-              /*input_id=*/float_id,
-              /*output_id=*/id,
-              /*flags=*/0);
-          break;
-        }
-        default:
-          ET_CHECK_OR_RETURN_ERROR(
-              false,
-              NotImplemented,
-              "Unhandled Dyanmic Quantization dtype: %d",
-              dq_datatype);
-      }
-    } else {
-      ET_CHECK_OR_RETURN_ERROR(false, NotImplemented, "Unhandled fp32 tensor");
-    }
+    // Define FP32 tensor
+    ET_CHECK_OR_RETURN_ERROR(
+        !isQuantizedDataType(datatype),
+        Internal,
+        "xnn_datatype is quantized, but is not quantized tensor value");
+    status = xnn_define_tensor_value(
+        /*subgraph=*/subgraph_ptr,
+        /*datatype=*/datatype,
+        /*num_dims=*/tensor_value->num_dims(),
+        /*dims=*/dims_data.data(),
+        /*data=*/buffer_ptr,
+        /*external_id=*/tensor_value->external_id(),
+        /*flags=*/tensor_value->flags(),
+        /*id_out=*/&id);
+    ET_CHECK_OR_RETURN_ERROR(
+        xnn_status_success == status,
+        Internal,
+        "Failed to define tensor with id %i",
+        id);
   } else {
     // define tensor for quantized
     switch (qtensor_value->quant_params_type()) {
@@ -305,7 +218,7 @@ Error defineTensor(
             qparams->zero_point());
         status = xnn_define_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
-            /*datatype=*/getDataType(tensor_value->datatype()),
+            /*datatype=*/datatype,
             /*zero_point=*/qparams->zero_point(),
             /*scale=*/qparams->scale(),
             /*num_dims=*/tensor_value->num_dims(),
@@ -318,9 +231,8 @@ Error defineTensor(
       }
       case fb_xnnpack::XNNQuantParams::PerChannelQuant: {
         auto qparams = qtensor_value->quant_params_as_PerChannelQuant();
-        enum xnn_datatype dtype = getDataType(tensor_value->datatype());
         int32_t zero_point =
-            (dtype == xnn_datatype::xnn_datatype_qcint4 ? 8 : 0);
+            (datatype == xnn_datatype::xnn_datatype_qcint4 ? 8 : 0);
 
         ET_LOG(
             Debug,
@@ -328,11 +240,11 @@ Error defineTensor(
             buffer_ptr,
             qparams->scale()->size(),
             qparams->channel_dim(),
-            dtype,
+            datatype,
             zero_point);
         status = xnn_define_channelwise_quantized_tensor_value_v2(
             /*subgraph=*/subgraph_ptr,
-            /*datatype=*/dtype,
+            /*datatype=*/datatype,
             /*zero_point=*/zero_point,
             /*scale=*/qparams->scale()->data(),
             /*num_dims=*/tensor_value->num_dims(),
@@ -362,7 +274,7 @@ Error defineTensor(
             "Dynamically Quantized Tensors currently only support per token quantization");
         status = xnn_define_dynamically_quantized_tensor_value(
             /*subgraph=*/subgraph_ptr,
-            /*datatype=*/getDataType(tensor_value->datatype()),
+            /*datatype=*/datatype,
             /*num_dims=*/tensor_value->num_dims(),
             /*num_nonbatch_dims*/ qparams->num_nonbatch_dims(),
             /*dims=*/dims_data.data(),
@@ -1543,7 +1455,13 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
     constant_data = reinterpret_cast<const uint8_t*>(buffer_pointer) +
         header->constant_data_offset;
   } else if (header.error() == Error::NotFound) {
-    flatbuffer_data = reinterpret_cast<const uint8_t*>(buffer_pointer);
+    ET_LOG(
+        Error,
+        "XNNHeader version mismatch: '%.4s' != expected '%.4s'",
+        // Header Magic and FlatbufferIdentifier are same offset and size
+        flatbuffers::GetBufferIdentifier(buffer_pointer),
+        XNNHeader::kMagic);
+    return header.error();
   } else {
     ET_LOG(Error, "XNNHeader may be corrupt");
     return header.error();
@@ -1558,8 +1476,9 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   ET_CHECK_OR_RETURN_ERROR(
       is_supported_version,
       DelegateInvalidCompatibility,
-      "XNNPACK Delegate Serialization Format version identifier '%.4s' != expected XN00 or XN01'",
-      flatbuffers::GetBufferIdentifier(flatbuffer_data));
+      "XNNPACK Delegate flatbuffer version mismatch: '%.4s' != expected '%.4s'",
+      flatbuffers::GetBufferIdentifier(flatbuffer_data),
+      fb_xnnpack::XNNGraphIdentifier());
 
   auto flatbuffer_graph = fb_xnnpack::GetXNNGraph(flatbuffer_data);
   // initialize xnnpack
@@ -1638,18 +1557,8 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   executor->initialize(runtime_ptr); // NOLINT: runtime_ptr is non-null as
                                      // error is checked above.
 
-  // HACK FOR FC/BC this is only to support old dq_datatype
-  if (executor->qinputs_.size() > 0) {
-    // qinputs_ is only set when using the old dq linear path. At which point
-    // We need to overide the input_ids_ This workse based off the assumption
-    // old dqlinear path will be single node single input delegate
-    for (uint32_t id : executor->qinputs_) {
-      executor->input_ids_.emplace_back(id);
-    }
-  } else {
-    for (auto old_id : *flatbuffer_graph->input_ids()) {
-      executor->input_ids_.emplace_back(remapped_ids.at(old_id));
-    }
+  for (auto old_id : *flatbuffer_graph->input_ids()) {
+    executor->input_ids_.emplace_back(remapped_ids.at(old_id));
   }
   // External ids need to be in order for wiring with args
   std::sort(executor->input_ids_.begin(), executor->input_ids_.end());
@@ -1659,23 +1568,6 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   }
   // External ids need to be in order for wiring with args
   std::sort(executor->output_ids_.begin(), executor->output_ids_.end());
-
-  if (!executor->qinputs_.empty() && flatbuffer_graph->xnodes()->size() > 0 &&
-      flatbuffer_graph->xnodes()->Get(0)->xnode_union_type() ==
-          fb_xnnpack::XNodeUnion::XNNFullyConnected) {
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-    // This delegate is for DQLinear which supports dynamic input shapes
-    if (executor->getNumInputs() < 1 || executor->getNumOutputs() != 1) {
-      ET_LOG(
-          Error,
-          "DQLinear should have at least one input and exactly one output");
-      return Error::NotSupported;
-    }
-#else
-    ET_LOG(Error, "DQ Linear is not supported");
-    return Error::NotSupported;
-#endif
-  }
 
   return err;
 };

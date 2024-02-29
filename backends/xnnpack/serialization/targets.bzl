@@ -4,14 +4,14 @@ def define_common_targets():
     runtime.genrule(
         name = "gen_xnnpack_schema",
         srcs = [
-            "runtime_schema.fbs",
+            "schema.fbs",
         ],
         # We're only generating a single file, so it seems like we could use
         # `out`, but `flatc` takes a directory as a parameter, not a single
         # file. Use `outs` so that `${OUT}` is expanded as the containing
         # directory instead of the file itself.
         outs = {
-            "schema_generated.h": ["runtime_schema_generated.h"],
+            "schema_generated.h": ["schema_generated.h"],
         },
         cmd = " ".join([
             "$(exe {})".format(runtime.external_dep_location("flatc")),

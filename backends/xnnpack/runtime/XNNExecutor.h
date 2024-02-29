@@ -41,7 +41,6 @@ class XNNExecutor {
   std::vector<uint32_t> external_id_args_;
   bool is_sorted_args_list_ = false;
   std::vector<xnn_external_value> externals_;
-  std::vector<uint32_t> qinputs_;
 
   Error set_external_input(uint32_t id, Tensor* input, struct XNNShape* shape);
 
@@ -91,10 +90,6 @@ class XNNExecutor {
         error == Error::Ok,
         "Failed to initialize profiler with error: %d",
         static_cast<int>(error));
-  }
-
-  inline void addDynamicQinput(uint32_t id) {
-    qinputs_.emplace_back(id);
   }
 
   __ET_NODISCARD Error set_inputs(
