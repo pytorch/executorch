@@ -13,18 +13,20 @@
 # It should also be cmake-lint clean.
 #
 enable_testing()
-find_package(GTest REQUIRED)
-
+find_package(Torch CONFIG REQUIRED)
+# find_package(GTest REQUIRED)
 add_executable(
-  make_boxed_from_unboxed_functor_test
-  make_boxed_from_unboxed_functor_test.cpp
+  make_aten_functor_from_et_functor_test
+  make_aten_functor_from_et_functor_test.cpp
 )
 target_link_libraries(
-  make_boxed_from_unboxed_functor_test
+  make_aten_functor_from_et_functor_test
   executorch
+  torch
   GTest::gtest_main
 )
-target_include_directories(make_boxed_from_unboxed_functor_test PUBLIC GTEST_INCLUDE_DIR)
+target_include_directories(make_aten_functor_from_et_functor_test PUBLIC GTEST_INCLUDE_DIRS TORCH_INCLUDE_DIRS)
+target_compile_options(make_aten_functor_from_et_functor_test PUBLIC -frtti -fexceptions)
 
 include(GoogleTest)
-gtest_discover_tests(make_boxed_from_unboxed_functor_test)
+gtest_discover_tests(make_aten_functor_from_et_functor_test)

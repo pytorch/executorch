@@ -10,7 +10,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_bridge",
         srcs = ["aten_bridge.cpp"],
-        exported_headers = ["aten_bridge.h"],
+        exported_headers = ["aten_bridge.h", "make_aten_functor_from_et_functor.h"],
         compiler_flags = [
             "-frtti",
             "-fno-omit-frame-pointer",

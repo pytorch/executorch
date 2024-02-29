@@ -9,7 +9,10 @@ def define_common_targets():
 
     runtime.cxx_test(
         name = "aten_bridge_test",
-        srcs = ["aten_bridge_test.cpp"],
+        srcs = [
+            "aten_bridge_test.cpp",
+            "make_aten_functor_from_et_functor_test.cpp",
+        ],
         deps = [
             "//executorch/runtime/core:core",
             "//executorch/runtime/core/exec_aten:lib",
