@@ -27,6 +27,7 @@ def _to_core_aten(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
+    verbose=True,
 ) -> ExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
     if not isinstance(model, torch.fx.GraphModule) and not isinstance(
@@ -36,7 +37,8 @@ def _to_core_aten(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
     core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
-    logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
+    if verbose:
+        logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
     return core_aten_ep
 
 
@@ -44,6 +46,7 @@ def _core_aten_to_edge(
     core_aten_exir_ep: ExportedProgram,
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=None,
+    verbose=True,
 ) -> EdgeProgramManager:
     if not edge_compile_config:
         edge_compile_config = exir.EdgeCompileConfig(
@@ -54,7 +57,8 @@ def _core_aten_to_edge(
         constant_methods=edge_constant_methods,
         compile_config=edge_compile_config,
     )
-    logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+    if verbose:
+        logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
     return edge_manager
 
 
@@ -64,9 +68,12 @@ def export_to_edge(
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
+    verbose=True,
 ) -> EdgeProgramManager:
-    core_aten_ep = _to_core_aten(model, example_inputs, dynamic_shapes)
-    return _core_aten_to_edge(core_aten_ep, edge_constant_methods, edge_compile_config)
+    core_aten_ep = _to_core_aten(model, example_inputs, dynamic_shapes, verbose=verbose)
+    return _core_aten_to_edge(
+        core_aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
+    )
 
 
 def export_to_exec_prog(

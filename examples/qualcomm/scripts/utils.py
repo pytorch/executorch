@@ -14,7 +14,7 @@ import numpy as np
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
-from executorch.backends.qualcomm.qnn_quantizer import (
+from executorch.backends.qualcomm.quantizer.quantizer import (
     get_default_16bit_qnn_ptq_config,
     get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
@@ -92,6 +92,7 @@ class SimpleADB:
                 f"{self.qnn_sdk}/lib/aarch64-android/"
                 f"libQnnHtpV{self.soc_model}Stub.so"
             ),
+            f"{self.qnn_sdk}/lib/aarch64-android/libQnnHtpPrepare.so",
             f"{self.qnn_sdk}/lib/aarch64-android/libQnnSystem.so",
             f"{self.artifact_path}/examples/qualcomm/qnn_executor_runner",
             f"{self.artifact_path}/backends/qualcomm/libqnn_executorch_backend.so",

@@ -5,6 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <executorch/backends/qualcomm/aot/ir/qcir_utils.h>
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
@@ -97,6 +98,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def_readwrite("backend_type", &QnnExecuTorchOptions::backend_type)
       .def_readwrite("htp_options", &QnnExecuTorchOptions::htp_options)
       .def_readwrite("log_level", &QnnExecuTorchOptions::log_level)
+      .def_readwrite("online_prepare", &QnnExecuTorchOptions::online_prepare)
       .def_property(
           "library_path",
           [](const QnnExecuTorchOptions& self) -> py::str {
@@ -128,9 +130,88 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
           [](QnnManager& self,
              std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
             QnnExecuTorchContextBinary context_binary;
-            if (self.Compile(op_wrappers, context_binary) != Error::Ok) {
+            flatbuffers::FlatBufferBuilder builder;
+
+            if (self.IsOnlinePrepare()) {
+              std::vector<flatbuffers::Offset<qcir::Tensor>> tensors;
+              std::unordered_map<void*, int> tensor_map;
+
+              auto set_tensor =
+                  [&](const std::shared_ptr<TensorWrapper>& wrapper,
+                      std::vector<int>& index) {
+                    auto it = tensor_map.find(wrapper.get());
+                    if (it != tensor_map.end()) {
+                      index.push_back(it->second);
+                    } else {
+                      int i = tensors.size();
+                      tensor_map[wrapper.get()] = i;
+                      index.push_back(i);
+                      tensors.emplace_back(
+                          ToTensor(wrapper->CloneTensorStruct(), &builder));
+                    }
+                  };
+
+              std::vector<flatbuffers::Offset<qcir::Operator>> operators;
+              for (std::shared_ptr<OpWrapper>& op_wrapper : op_wrappers) {
+                std::vector<int> inputs, outputs, params;
+
+                for (const auto& tensor_wrapper :
+                     op_wrapper->GetInputTensors()) {
+                  set_tensor(tensor_wrapper, inputs);
+                }
+
+                for (const auto& tensor_wrapper :
+                     op_wrapper->GetOutputTensors()) {
+                  set_tensor(tensor_wrapper, outputs);
+                }
+
+                for (const auto& param : op_wrapper->GetParams()) {
+                  auto* p_tensor_param =
+                      dynamic_cast<TensorParamWrapper*>(param.get());
+                  if (p_tensor_param != nullptr) {
+                    auto wrapper = p_tensor_param->GetTensorWrapper();
+                    wrapper->SetName(param->GetName());
+                    set_tensor(wrapper, params);
+                  } else {
+                    Error err = param->PopulateQnnParam();
+                    if (err != Error::Ok) {
+                      QNN_EXECUTORCH_LOG(
+                          kLogLevelError,
+                          "[Qnn ExecuTorch] Fail to get scalar parameter in online prepare stage");
+                      return py::array_t<char>(0);
+                    }
+                    Qnn_Param_t p = param->GetQnnParam();
+                    Qnn_Tensor_t t = QNN_TENSOR_INIT;
+                    QNN_VER_PTR(t)->name = p.name;
+                    QNN_VER_PTR(t)->dataType = p.scalarParam.dataType;
+                    QNN_VER_PTR(t)->clientBuf.data =
+                        static_cast<void*>(&p.scalarParam.uint8Value);
+                    QNN_VER_PTR(t)->clientBuf.dataSize =
+                        GetDataTypeSize(QNN_VER_PTR(t)->dataType);
+                    params.push_back(tensors.size());
+                    tensors.emplace_back(ToTensor(t, &builder));
+                  }
+                }
+
+                Qnn_OpConfig_t op_config = op_wrapper->GetOpConfig();
+                operators.emplace_back(qcir::CreateOperatorDirect(
+                    builder,
+                    QNN_VER_PTR(op_config)->name,
+                    QNN_VER_PTR(op_config)->packageName,
+                    QNN_VER_PTR(op_config)->typeName,
+                    &inputs,
+                    &outputs,
+                    &params));
+              }
+              auto graph =
+                  qcir::CreateGraphDirect(builder, &operators, &tensors);
+              builder.Finish(graph);
+              context_binary.buffer = builder.GetBufferPointer();
+              context_binary.nbytes = builder.GetSize();
+            } else if (self.Compile(op_wrappers, context_binary) != Error::Ok) {
               return py::array_t<char>(0);
             }
+
             // allocate py::array (to pass the result of the C++ function to
             // Python)
             auto result = py::array_t<char>(context_binary.nbytes);

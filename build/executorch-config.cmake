@@ -43,7 +43,7 @@ endif()
 
 set(lib_list
     etdump bundled_program extension_data_loader ${FLATCC_LIB} mpsdelegate
-    qnn_executorch_backend
+    qnn_executorch_backend portable_ops_lib extension_module
 )
 foreach(lib ${lib_list})
     # Name of the variable which stores result of the find_library search
@@ -53,7 +53,14 @@ foreach(lib ${lib_list})
         message("${lib} library is not found.
             If needed rebuild with the proper options in CMakeLists.txt")
     else()
-        add_library(${lib} STATIC IMPORTED)
+        if("${lib}" STREQUAL "extension_module" AND (NOT CMAKE_TOOLCHAIN_IOS))
+            add_library(${lib} SHARED IMPORTED)
+        else()
+            # Building a share library on iOS requires code signing, so it's
+            # easier to keep all libs as static when CMAKE_TOOLCHAIN_IOS is
+            # used
+            add_library(${lib} STATIC IMPORTED)
+        endif()
         set_target_properties(
             ${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}"
         )

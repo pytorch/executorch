@@ -791,7 +791,14 @@ def _calc_padded_size_linear_int4(k, groupsize=1, inner_k_tiles=1):
     return find_multiple(k, groupsize, inner_k_tiles * 16)
 
 
-def replace_linear_8da4w(module, group_size, inner_k_tiles, padding_allowed):
+def replace_linear_8da4w(
+    module,
+    group_size,
+    inner_k_tiles,
+    padding_allowed,
+    activation_precision,
+    weight_precision,
+):
     for name, child in module.named_children():
         if isinstance(child, nn.Linear):
             if (
@@ -807,20 +814,37 @@ def replace_linear_8da4w(module, group_size, inner_k_tiles, padding_allowed):
                         bias=False,
                         group_size=group_size,
                         inner_k_tiles=inner_k_tiles,
+                        activation_precision=activation_precision,
+                        weight_precision=weight_precision,
                     ),
                 )
         else:
-            replace_linear_8da4w(child, group_size, inner_k_tiles, padding_allowed)
+            replace_linear_8da4w(
+                child,
+                group_size,
+                inner_k_tiles,
+                padding_allowed,
+                activation_precision,
+                weight_precision,
+            )
 
 
 class Int8DynActInt4WeightQuantHandler:
-    def __init__(self, mod, group_size=128, inner_k_tiles=8, padding_allowed=True):
+    def __init__(
+        self,
+        mod,
+        group_size=128,
+        inner_k_tiles=8,
+        padding_allowed=True,
+        activation_precision=torch.float16,
+        weight_precision=torch.float16,
+    ):
         self.mod = mod
         self.group_size = group_size
         self.inner_k_tiles = inner_k_tiles
         self.padding_allowed = padding_allowed
-        # TODO: make this an argument
-        self.precision = torch.float16
+        self.activation_precision = activation_precision
+        self.weight_precision = weight_precision
         assert group_size in [32, 64, 128, 256]
         assert inner_k_tiles in [2, 4, 8]
 
@@ -861,7 +885,9 @@ class Int8DynActInt4WeightQuantHandler:
                     weight_int4pack,
                     scales_and_zeros,
                 ) = prepare_int4_weight_and_scales_and_zeros(
-                    weight.to(self.precision), self.group_size, self.inner_k_tiles
+                    weight.to(self.weight_precision),
+                    self.group_size,
+                    self.inner_k_tiles,
                 )
                 cur_state_dict[f"{fqn}.weight"] = weight_int4pack.to("cpu")
                 cur_state_dict[f"{fqn}.scales_and_zeros"] = scales_and_zeros.to("cpu")
@@ -870,7 +896,12 @@ class Int8DynActInt4WeightQuantHandler:
 
     def convert_for_runtime(self):
         replace_linear_8da4w(
-            self.mod, self.group_size, self.inner_k_tiles, self.padding_allowed
+            self.mod,
+            self.group_size,
+            self.inner_k_tiles,
+            self.padding_allowed,
+            self.activation_precision,
+            self.weight_precision,
         )
         return self.mod
 
@@ -891,6 +922,8 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
         dtype=None,
         group_size: int = 128,
         inner_k_tiles: int = 8,
+        activation_precision: torch.dtype = torch.float16,
+        weight_precision: torch.dtype = torch.float16,
     ) -> None:
         super().__init__()
         # always pad if needed since it becomes a noop at runtime if not needed
@@ -903,7 +936,8 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
         assert not bias, "require bias=False"
         self.group_size = group_size
         self.inner_k_tiles = inner_k_tiles
-        self.precision = torch.float16
+        self.weight_precision = weight_precision
+        self.activation_precision = activation_precision
 
         # assert out_features % 8 == 0, "require out_features % 8 == 0"
         assert (
@@ -917,12 +951,13 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
         self.register_buffer(
             "scales_and_zeros",
             torch.empty(
-                (in_features // group_size, out_features, 2), dtype=self.precision
+                (in_features // group_size, out_features, 2),
+                dtype=self.weight_precision,
             ),
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
-        input = input.to(self.precision)
+        input = input.to(self.activation_precision)
         input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
 
         (
@@ -937,15 +972,21 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
             input, scales, zero_points, quant_min, quant_max, torch.int8
         )
         input = torch.ops.quantized_decomposed.dequantize_per_token(
-            input, scales, zero_points, quant_min, quant_max, torch.int8, self.precision
+            input,
+            scales,
+            zero_points,
+            quant_min,
+            quant_max,
+            torch.int8,
+            self.activation_precision,
         )
 
-        input = input.to(self.precision)
+        input = input.to(self.activation_precision)
         return linear_forward_int4(
             input,
             self.weight,
             self.scales_and_zeros,
             self.out_features,
             self.group_size,
-            self.precision,
+            self.weight_precision,
         )

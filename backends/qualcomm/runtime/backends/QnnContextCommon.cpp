@@ -59,7 +59,9 @@ Error QnnContext::Configure() {
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
-  } else if (cache_->GetCacheState() == QnnBackendCache::SERIALIZE) {
+  } else if (
+      cache_->GetCacheState() == QnnBackendCache::SERIALIZE ||
+      cache_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
     error = qnn_interface.qnn_context_create(
         backend_->GetHandle(),
         device_->GetHandle(),
