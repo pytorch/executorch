@@ -13,6 +13,9 @@ not_supported_operator = [
     exir_ops.edge.aten.index.Tensor,
     exir_ops.edge.aten.full.default,
     exir_ops.edge.aten.embedding.default,
+    exir_ops.edge.aten.rsqrt.default,
+    exir_ops.edge.aten.pow.Tensor_Scalar,
+    exir_ops.edge.aten.sigmoid.default,
 ]
 
 allow_list_operator = [
