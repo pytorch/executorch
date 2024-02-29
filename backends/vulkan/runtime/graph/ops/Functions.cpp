@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/backends/vulkan/runtime/graph/ops/Functions.h>
+
 #include <ATen/native/vulkan/impl/Arithmetic.h>
 #include <ATen/native/vulkan/impl/Common.h>
 
-#include <executorch/backends/vulkan/runtime/graph/Functions.h>
-
-#include <executorch/backends/vulkan/runtime/graph/ops/Arithmetic.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 
 namespace at {
 namespace native {
