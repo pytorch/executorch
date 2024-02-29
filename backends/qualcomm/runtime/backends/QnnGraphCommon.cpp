@@ -33,7 +33,9 @@ Error QnnGraph::Configure() {
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
     }
-  } else if (context_->GetCacheState() == QnnBackendCache::SERIALIZE) {
+  } else if (
+      context_->GetCacheState() == QnnBackendCache::SERIALIZE ||
+      context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE) {
     Qnn_ErrorHandle_t error = qnn_interface.qnn_graph_create(
         context_->GetHandle(),
         graph_name_.c_str(),

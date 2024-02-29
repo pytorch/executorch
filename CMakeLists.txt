@@ -94,7 +94,7 @@ if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-# -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
+# -ffunction-sections -fdata-sections: breaks function and
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
@@ -102,6 +102,16 @@ set(CMAKE_CXX_FLAGS_RELEASE
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
+
+option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
+if(OPTIMIZE_SIZE)
+  # -Os: Optimize for size
+  set(CMAKE_CXX_FLAGS_RELEASE "-Os ${CMAKE_CXX_FLAGS_RELEASE}")
+else()
+  # -O2: Moderate opt.
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
+endif()
+
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
 # Option to register quantized ops with quantized kernels. See
@@ -365,7 +375,10 @@ endif()
 # Build pybind
 option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
 if(EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+    # This has already been added if above flag is on
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  endif()
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
@@ -379,8 +392,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     set(PYBIND_LINK_MPS "mpsdelegate")
   endif()
 
-  if(PYBIND_LINK_XNNPACK)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+  if(EXECUTORCH_BUILD_XNNPACK)
+    # set PYBIND_LINK_XNNPACK variable to link with portable lib library
     set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
 
@@ -421,6 +434,7 @@ if(EXECUTORCH_BUILD_PYBIND)
       flatcc
       portable_ops_lib
       util
+      torch
       ${PYBIND_LINK_COREML}
       ${PYBIND_LINK_MPS}
       ${PYBIND_LINK_XNNPACK}

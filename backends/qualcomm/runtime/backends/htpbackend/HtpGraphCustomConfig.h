@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 #pragma once
-
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
 
 #include <memory>
 #include <vector>
@@ -20,8 +20,9 @@ namespace qnn {
 class HtpGraphCustomConfig {
  public:
   explicit HtpGraphCustomConfig(
-      const QnnExecuTorchHtpBackendOptions& htp_options)
-      : htp_options_(htp_options) {}
+      const QnnExecuTorchHtpBackendOptions& htp_options,
+      const QnnContext* context)
+      : htp_options_(htp_options), context_(context) {}
 
   std::vector<QnnGraph_CustomConfig_t> CreateGraphCustomConfig(
       const HtpInfo& qcom_target_soc_info);
@@ -36,6 +37,7 @@ class HtpGraphCustomConfig {
 
   [[maybe_unused]] QnnExecuTorchHtpBackendOptions htp_options_;
   std::vector<std::unique_ptr<QnnHtpGraph_CustomConfig_t>> htp_graph_config_;
+  const QnnContext* context_;
 };
 } // namespace qnn
 } // namespace executor

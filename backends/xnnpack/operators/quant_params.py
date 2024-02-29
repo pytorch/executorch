@@ -131,8 +131,9 @@ class QuantParams:
 
         if quant_node.target in [
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
         ]:
-            return cls._from_dynamic_input_node(q_input)
+            return cls._from_dynamic_input_node(quant_node)
 
         per_channel = quant_node.target in [
             exir_ops.edge.quantized_decomposed.quantize_per_channel.default,

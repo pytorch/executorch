@@ -49,7 +49,7 @@ set_property(TARGET executorch_delegate_ethos_u PROPERTY IMPORTED_LOCATION
 
 add_library(portable_ops_lib STATIC IMPORTED)
 set_property(TARGET portable_ops_lib PROPERTY IMPORTED_LOCATION
-  "${ET_BUILD_DIR_PATH}/examples/arm/libportable_ops_lib.a")
+  "${ET_BUILD_DIR_PATH}/examples/arm/libarm_portable_ops_lib.a")
 
 add_library(portable_kernels STATIC IMPORTED)
 set_property(TARGET portable_kernels PROPERTY IMPORTED_LOCATION
