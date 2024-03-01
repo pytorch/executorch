@@ -40,15 +40,6 @@ Tensor& op_clamp_out(
   return torch::executor::aten::clamp_outf(context, self, min, max, out);
 }
 
-Tensor& op_clamp_tensor_out(
-    const Tensor& self,
-    const optional<Tensor>& min,
-    const optional<Tensor>& max,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::clamp_outf(context, self, min, max, out);
-}
-
 /// Describes a test case, using tensors of the specified DTYPE.
 template <ScalarType DTYPE>
 struct ClampTestCase {
@@ -444,20 +435,4 @@ TEST(OpClampOutTest, DynamicShapeUnbound) {
       tf.zeros({1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
   Tensor ret = op_clamp_out(x, y, z, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
-}
-
-TEST(OpClampTensorOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Byte> tf_in;
-  TensorFactory<ScalarType::Int> tf_min;
-  TensorFactory<ScalarType::Char> tf_max;
-  TensorFactory<ScalarType::Short> tf_out;
-
-  Tensor in = tf_in.make({1, 1}, {3});
-  Tensor min = tf_min.make({1, 3}, {0, 1, 4});
-  Tensor max = tf_max.make({2, 1}, {2, 5});
-  Tensor out = tf_out.zeros({2, 3});
-  Tensor expected = tf_out.make({2, 3}, {2, 2, 2, 3, 3, 4});
-
-  op_clamp_tensor_out(in, min, max, out);
-  EXPECT_TENSOR_EQ(out, expected);
 }
