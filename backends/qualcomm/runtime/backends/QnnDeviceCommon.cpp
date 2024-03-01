@@ -13,12 +13,11 @@ QnnDevice::~QnnDevice() {
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   if (nullptr != handle_) {
-    QNN_EXECUTORCH_LOG(kLogLevelInfo, "[Qnn ExecuTorch] Destroy Qnn device");
+    QNN_EXECUTORCH_LOG_INFO("Destroy Qnn device");
     error = qnn_interface.qnn_device_free(handle_);
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
-          "[Qnn ExecuTorch] Failed to free QNN "
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Failed to free QNN "
           "device_handle. Backend "
           "ID %u, error %d",
           qnn_interface.GetBackendId(),
@@ -44,9 +43,8 @@ Error QnnDevice::Configure() {
       temp_device_config.empty() ? nullptr : temp_device_config.data(),
       &handle_);
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] Failed to create "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Failed to create "
         "device_handle for Backend "
         "ID %u, error=%d",
         qnn_interface.GetBackendId(),
