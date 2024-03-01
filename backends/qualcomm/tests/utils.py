@@ -16,7 +16,10 @@ from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-from executorch.backends.qualcomm.utils.utils import capture_program, SoCModel
+from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+    QcomChipset,
+)
+from executorch.backends.qualcomm.utils.utils import capture_program
 from executorch.examples.qualcomm.scripts.utils import SimpleADB
 
 from executorch.exir.backend.backend_api import to_backend
@@ -30,13 +33,13 @@ class TestQNN(unittest.TestCase):
     host: Literal = ""
     device: Literal = ""
     build_folder: Literal = ""
-    model: SoCModel = None
+    model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
     arch_table = {
-        "SM8650": SoCModel.SM8650,
-        "SM8550": SoCModel.SM8550,
-        "SM8475": SoCModel.SM8475,
-        "SM8450": SoCModel.SM8450,
+        "SM8650": QcomChipset.SM8650,
+        "SM8550": QcomChipset.SM8550,
+        "SM8475": QcomChipset.SM8475,
+        "SM8450": QcomChipset.SM8450,
     }
     error_only = False
     ip = "localhost"

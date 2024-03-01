@@ -55,7 +55,8 @@ flip_out(RuntimeContext& ctx, const Tensor& in, IntArrayRef dims, Tensor& out) {
     const auto d = dims[i] < 0 ? dims[i] + in.dim() : dims[i];
     flip_dim_data[d] = true;
   }
-  ArrayRef<bool> flip_dim(flip_dim_data, in.dim());
+  size_t flip_dim_length = static_cast<size_t>(in.dim()); // NOLINT
+  ArrayRef<bool> flip_dim(flip_dim_data, flip_dim_length);
 
   constexpr auto name = "flip.out";
 
