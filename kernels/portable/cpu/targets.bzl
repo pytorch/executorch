@@ -205,6 +205,7 @@ _ATEN_OPS = (
         name = "op_clamp",
         deps = [
             ":scalar_utils",
+            "//executorch/kernels/portable/cpu/util:broadcast_util",
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/kernels/portable/cpu/util:math_util",
         ],
@@ -259,6 +260,12 @@ _ATEN_OPS = (
         name = "op_detach_copy",
         deps = [
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    ),
+    op_target(
+        name = "op_diagonal_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
         ],
     ),
     op_target(
@@ -322,6 +329,12 @@ _ATEN_OPS = (
             "//executorch/kernels/portable/cpu/util:functional_util",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+    ),
+    op_target(
+        name = "op_flip",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     ),
     op_target(
@@ -603,6 +616,13 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_native_group_norm",
+        deps = [
+            ":vec_ops",
+            "//executorch/kernels/portable/cpu/util:normalization_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_native_layer_norm",
         deps = [
             ":vec_ops",
@@ -733,6 +753,9 @@ _ATEN_OPS = (
         deps = [
             "//executorch/kernels/portable/cpu/util:padding_util",
         ],
+    ),
+    op_target(
+        name = "op_roll",
     ),
     op_target(
         name = "op_round",
@@ -930,6 +953,7 @@ _ATEN_OPS = (
     op_target(
         name = "op_var",
         deps = [
+            ":scalar_utils",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
             "//executorch/kernels/portable/cpu/util:reduce_util",
