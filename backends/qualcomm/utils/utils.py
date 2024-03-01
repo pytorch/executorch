@@ -29,6 +29,9 @@ from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
 from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.passes.recompose_pixel_shuffle import (
+    RecomposePixelShuffle,
+)
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
@@ -61,6 +64,8 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
 ) -> exir.ExirExportedProgram:
+    # TODO: should switch to torch.export.export & custom deomposition
+    #       to reduce maintaining effort.
     exir_exported_program = exir.capture(
         module,
         inputs,
@@ -77,6 +82,7 @@ def capture_program(
     edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
+    RecomposePixelShuffle()(graph_module)
     ConvertToLinear()(graph_module)
     ConvertHardsigmoid()(graph_module)
     ConvertHardswish()(graph_module)
