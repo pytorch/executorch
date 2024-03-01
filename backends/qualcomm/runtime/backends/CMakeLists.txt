@@ -54,9 +54,11 @@ target_sources(qnn_device
     ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevice.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevicePlatformInfoConfig.h
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDeviceCustomConfig.h
     # When offline prepare context cache in x86 host
-    # we have to provide platform infomation to Qnn
+    # we have to provide platform infomation and SocModel to Qnn
     ${HOST_ARCHITECTURE}/HtpDevicePlatformInfoConfig.cpp
+    ${HOST_ARCHITECTURE}/HtpDeviceCustomConfig.cpp
 )
 
 # qnn_context
