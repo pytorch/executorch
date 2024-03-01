@@ -21,9 +21,51 @@ from torch.ao.quantization.fx._decomposed import (
 from torch.library import impl
 
 
+try:
+    # pyre-ignore
+    from fairseq2.nn.embedding import (
+        Embedding as fsEmbedding,
+        StandardEmbedding as fsStandardEmbedding,
+    )
+
+    # pyre-ignore
+    from fairseq2.nn.projection import Linear as fsLinear
+except:
+    print("Could not import fairseq2 modules.")
+    fsEmbedding = nn.Embedding
+    fsStandardEmbedding = nn.Embedding
+    fsLinear = nn.Linear
+
+
 def dynamically_quantize_per_channel(
-    x, quant_min, quant_max, target_dtype, group_size: Optional[int] = None
+    x,
+    quant_min,
+    quant_max,
+    target_dtype,
+    group_size: Optional[int] = None,
+    *,
+    scales_dtype=torch.float16,
+    enable_non_multiple_groups=False,
 ):
+    """
+    Dynamically quantize per channel.  This function is used for quantizing weights,
+    for linear and embedding layers.
+
+    Arguments:
+        x: input tensor,
+        quant_min: minimum value after quantization,
+        quant_max: maximum value after quantization,
+        target_dtype: target data type for weights after quantization,
+        group_size: number of elements of the channel to quantize together
+
+    Keyword arguments:
+        scales_dtype: data type of scale,
+        enable_non_multiple_groups: if True, allow the rowsize to not be a multiple of group size,
+                        with a final group of a size less than group size.
+
+    Assumptions:
+        This function assumes symmetric quantization, axis ==0 and a dense memory format."""
+
     # assumes symmetric quantization
     # assumes axis == 0
     # assumes dense memory format
@@ -31,10 +73,17 @@ def dynamically_quantize_per_channel(
 
     if group_size is None:
         items = x.shape[1]
-    else:
+    elif not enable_non_multiple_groups:
         assert group_size > 0, "group size must be positive"
-        assert (x.shape[1] % group_size) == 0, "group size must be positive"
+        assert (
+            x.shape[1] % group_size
+        ) == 0, f"weights dimension 1 = {x.shape[1]} must be a multiple of group size {group_size}"
         items = group_size
+    else:
+        items = 1  # make pyre happy
+        assert (
+            0 == 1
+        ), "support for non multiple groups is not implemented yet in this function"
 
     # default setup for affine quantization of activations
     eps = torch.finfo(torch.float32).eps
@@ -42,8 +91,8 @@ def dynamically_quantize_per_channel(
     x = x.view(x.shape[0], x.shape[1] // items, items)
     # get min and max
     min_val, max_val = torch.aminmax(x, dim=2)
-    print(f"min_val {min_val}")
-    print(f"max_val {max_val}")
+    # print(f"min_val {min_val}")
+    # print(f"max_val {max_val}")
 
     # calculate scales and zero_points based on min and max
     # reference: https://fburl.com/code/srbiybme
@@ -66,6 +115,8 @@ def dynamically_quantize_per_channel(
     quant = (
         torch.clamp(x_zp, quant_min, quant_max).to(target_dtype).view(x.shape[0], -1)
     )
+
+    scales = scales.to(dtype=scales_dtype)
 
     return quant, scales, zero_points
 
@@ -566,33 +617,59 @@ class WeightOnlyInt8QuantHandler:
             range_max = 127
         else:
             raise ValueError(f"Unsupported bitwidth {self.bitwidth}")
-        # assert self.group_size is None, "Linear does not support group-wise quantization"
 
         for fqn, mod in self.mod.named_modules():
-            print(f"quantize {fqn}...")
-            if isinstance(mod, torch.nn.Linear):
+            # print(f"maybe? quantize {fqn}...{type(mod)}")
+            if isinstance(mod, torch.nn.Linear) or isinstance(mod, fsLinear):
+                # print(f"candidate {fqn}, nodetype {self.node_type}")
                 if (
                     (self.node_type == "*")
-                    or (self.node_type == "output" and fqn == "output")
-                    or (self.node_type == "!output" and fqn != "output")
+                    or (self.node_type == "output" and fqn in ["output", "final_proj"])
+                    or (
+                        self.node_type == "!output"
+                        and fqn not in ["output", "final_proj"]
+                    )
                 ):
-                    print(f"{fqn, mod}")
-                    int8_weight, scales, _ = dynamically_quantize_per_channel(
-                        mod.weight.float(),
+                    print(
+                        f"quantize {self.node_type} {fqn, mod} with groupsize {self.group_size}, bitwidth {self.bitwidth}"
+                    )
+
+                    # print(f"initial weight shape {mod.weight.shape}")
+                    input_weight = mod.weight.float()
+                    input_weight_shape_1 = input_weight.shape[1]
+                    if (self.group_size is not None) and (
+                        input_weight_shape_1 % self.group_size != 0
+                    ):
+                        padding = self.group_size - (
+                            input_weight_shape_1 % self.group_size
+                        )
+                        input_weight = F.pad(input_weight, (0, padding))
+
+                    # print(f"expanded weight shape {input_weight.shape}")
+                    weight, scales, _ = dynamically_quantize_per_channel(
+                        input_weight,
                         range_min,
                         range_max,
                         torch.int8,
                         self.group_size,
+                        scales_dtype=mod.weight.dtype,
                     )
-                    cur_state_dict[f"{fqn}.weight"] = int8_weight
-                    cur_state_dict[f"{fqn}.scales"] = scales.to(
-                        mod.weight.dtype
-                    ).squeeze(dim=-1)
+                    unpadded_weight = weight[:, :input_weight_shape_1]
+
+                    cur_state_dict[f"{fqn}.weight"] = unpadded_weight
+                    # squeeze makes groupsize=rowsize unidimensional
+                    cur_state_dict[f"{fqn}.scales"] = scales.squeeze(dim=-1)
 
         return cur_state_dict
 
     def convert_for_runtime(self) -> nn.Module:
         replace_linear_weight_only_int8_per_channel(self.mod, self.node_type)
+        return self.mod
+
+    def quantized_model(self) -> nn.Module:
+        model_updated_state_dict = self.create_quantized_state_dict()
+        self.convert_for_runtime()
+        self.mod.load_state_dict(model_updated_state_dict)
         return self.mod
 
 
@@ -626,48 +703,6 @@ class WeightOnlyInt8Linear(torch.nn.Module):
 ##### embedding table quantization ######
 
 
-def embedding_quant(
-    weight, *, bitwidth: int = 8, group_size: Optional[int] = None
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Embedding quantization with per-row group scaling
-    """
-    if group_size is None:
-        group_size = weight.size(1)
-
-    if bitwidth == 4:
-        range_min = -8
-        range_max = 7
-    elif bitwidth == 8:
-        range_min = -128
-        range_max = 127
-    else:
-        raise ValueError(f"Unsupported bitwidth {bitwidth}")
-
-    weight_fp16 = weight.to(torch.half)
-    weight_rows = weight_fp16.shape[0]
-    weight_cols = weight_fp16.shape[1]
-    assert weight_cols % group_size == 0, "colums must be a multiple of group size"
-    groups_per_row = weight_cols // group_size
-    weights_int8 = torch.zeros(weight_fp16.shape, dtype=torch.int8)
-    scales_fp16 = torch.empty((weight_rows, groups_per_row), dtype=torch.float16)
-    for r in range(0, weight_cols, group_size):
-        weights_group, scales, _ = dynamically_quantize_per_channel(
-            weight_fp16[:, r : r + group_size],
-            range_min,
-            range_max,
-            torch.int8,
-            group_size,
-        )
-        print(f"scales dims {scales.shape}")
-        print(f"scales_fp16 dims are {scales_fp16.shape}")
-        weights_int8[:, r : r + group_size] = weights_group
-        scales_fp16[:, r // group_size] = scales.squeeze()
-        scales_fp16 = scales_fp16.squeeze()
-
-    return weights_int8, scales_fp16
-
-
 def replace_embedding_weight_only_grouped_int8_per_channel(
     module, bitwidth: int = 8, group_size: Optional[int] = None
 ):
@@ -676,18 +711,19 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
         if isinstance(child, nn.Embedding):
             print(f"{name, child}")
             print(f"weights size: {child.weight.size()}")
-            weight_int8, scales_fp16 = embedding_quant(
-                child.weight, bitwidth=bitwidth, group_size=group_size
-            )
             setattr(
                 module,
                 name,
                 QuantizedGroupEmbedding(
-                    weight_int8, scales_fp16, group_size=group_size
+                    vocab_size=child.weight.shape[0],
+                    embedding_dim=child.weight.shape[1],
+                    group_size=group_size,
                 ),
             )
         else:
-            replace_linear_weight_only_int8_per_channel(child, group_size)
+            replace_embedding_weight_only_grouped_int8_per_channel(
+                child, bitwidth, group_size
+            )
 
 
 class EmbeddingOnlyInt8QuantHandler:
@@ -696,37 +732,98 @@ class EmbeddingOnlyInt8QuantHandler:
         self.group_size = group_size
         self.bitwidth = bitwidth
 
+    @torch.no_grad()
+    def create_quantized_state_dict(self) -> Dict:
+        cur_state_dict = self.mod.state_dict()
+
+        if self.bitwidth == 4:
+            range_min = -8
+            range_max = 7
+        elif self.bitwidth == 8:
+            range_min = -128
+            range_max = 127
+        else:
+            raise ValueError(f"Unsupported bitwidth {self.bitwidth}")
+
+        for fqn, mod in self.mod.named_modules():
+            if (
+                isinstance(mod, nn.Embedding)
+                or isinstance(mod, fsEmbedding)
+                or isinstance(mod, fsStandardEmbedding)
+            ):
+                print("****")
+                print(f"Embedding identified: {fqn, mod}")
+                print(f"weights size: {mod.weight.size()}")
+                # print(f"quantize {fqn}...")
+
+                print(
+                    f"quantize {fqn, mod} with groupsize {self.group_size}, bitwidth {self.bitwidth}"
+                )
+                weight, scales, _ = dynamically_quantize_per_channel(
+                    mod.weight.float(),
+                    range_min,
+                    range_max,
+                    torch.int8,
+                    self.group_size,
+                    scales_dtype=mod.weight.dtype,
+                )
+
+                # Update state dict
+                cur_state_dict[f"{fqn}.weight"] = weight
+                # squeeze makes groupsize=rowsize unidimensional
+                cur_state_dict[f"{fqn}.scales"] = scales.squeeze(dim=-1)
+
+        return cur_state_dict
+
     def convert_for_runtime(self) -> nn.Module:
         replace_embedding_weight_only_grouped_int8_per_channel(
             self.mod, self.bitwidth, self.group_size
         )
         return self.mod
 
+    def quantized_model(self) -> nn.Module:
+        model_updated_state_dict = self.create_quantized_state_dict()
+        self.convert_for_runtime()
+        self.mod.load_state_dict(model_updated_state_dict)
+        return self.mod
+
 
 class QuantizedGroupEmbedding(torch.nn.Module):
     def __init__(
         self,
-        weight_int8: torch.Tensor,
-        scales_fp16: torch.Tensor,
+        vocab_size: int,
+        embedding_dim: int,
         group_size: Optional[int] = None,
         device=None,
         dtype=torch.half,
     ) -> None:
         super().__init__()
+        if group_size is None:
+            group_size = embedding_dim
         self.group_size = group_size
         self.dtype = dtype
-        self.register_buffer("weight_int8", weight_int8)
-        self.register_buffer("scales_fp16", scales_fp16)
+        self.register_buffer(
+            "weight", torch.empty((vocab_size, embedding_dim), dtype=torch.int8)
+        )
+        groups_per_row = (embedding_dim + group_size - 1) // group_size
+        if groups_per_row > 1:
+            self.register_buffer(
+                "scales", torch.ones((vocab_size, groups_per_row), dtype=torch.float16)
+            )
+        else:
+            self.register_buffer(
+                "scales", torch.ones((vocab_size,), dtype=torch.float16)
+            )
 
     @torch.no_grad()
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
         return torch.ops.llama_quantized.embedding_byte.default(
-            self.weight_int8, self.scales_fp16, None, 0, 0, indices
+            self.weight, self.scales, None, 0, 0, indices
         ).to(self.dtype)
 
 
-#        result_weights = self.weight_int8.index_select(0, indices.view(-1))
-#        result_scales = self.scales_fp16.index_select(0, indices.view(-1))
+#        result_weights = self.weight.index_select(0, indices.view(-1))
+#        result_scales = self.scales.index_select(0, indices.view(-1))
 #
 #        r = result_weights.to(dtype=result_scales.dtype) * result_scales
 #        return r.view(indices.size() + (-1,))
