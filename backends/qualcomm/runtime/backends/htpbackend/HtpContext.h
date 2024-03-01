@@ -19,7 +19,7 @@ class HtpContext : public QnnContext {
       QnnBackend* backend,
       QnnDevice* device,
       const QnnExecuTorchContextBinary& qnn_context_blob,
-      const QnnExecuTorchHtpBackendOptions& htp_options)
+      const QnnExecuTorchHtpBackendOptions* htp_options)
       : QnnContext(implementation, backend, device, qnn_context_blob) {}
   ~HtpContext() {}
 

@@ -28,6 +28,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
+        "//executorch/examples/models/llama2/custom_ops:llama_custom_ops_aot_lib",
         "//executorch/examples/models/llama2/ops:quantized_aot_lib",
     ],
 )
