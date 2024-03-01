@@ -13,11 +13,11 @@ namespace executor {
 namespace qnn {
 std::vector<QnnGraph_CustomConfig_t>
 HtpGraphCustomConfig::CreateGraphCustomConfig(
-    const HtpInfo& qcom_target_soc_info) {
+    const SocInfo* qcom_target_soc_info) {
   std::vector<QnnGraph_CustomConfig_t> ret;
   QnnHtpGraph_CustomConfig_t* p_custom_config = nullptr;
 
-  if (!htp_options_.use_conv_hmx) {
+  if (!htp_options_->use_conv_hmx()) {
     p_custom_config = AllocGraphCustomConfig();
     p_custom_config->option =
         QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
@@ -25,7 +25,7 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
     ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
   }
 
-  if (!htp_options_.use_fold_relu) {
+  if (!htp_options_->use_fold_relu()) {
     p_custom_config = AllocGraphCustomConfig();
     p_custom_config->option =
         QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
@@ -33,24 +33,22 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
     ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
   }
 
-  switch (htp_options_.precision) {
-    case kHtpFp16:
+  switch (htp_options_->precision()) {
+    case QnnExecuTorchHtpPrecision::kHtpFp16:
       p_custom_config = AllocGraphCustomConfig();
       p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION;
       p_custom_config->precision = QNN_PRECISION_FLOAT16;
       ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
       break;
-    case kHtpQuantized:
+    case QnnExecuTorchHtpPrecision::kHtpQuantized:
     default:
       break;
   }
 
   float opt_level =
       context_->GetCacheState() == QnnBackendCache::ONLINE_PREPARE ? 1 : 3;
-  QNN_EXECUTORCH_LOG(
-      kLogLevelInfo,
-      "[Qnn ExecuTorch] Running level=%d optimization.",
-      static_cast<int>(opt_level));
+  QNN_EXECUTORCH_LOG_INFO(
+      "Running level=%d optimization.", static_cast<int>(opt_level));
 
   p_custom_config = AllocGraphCustomConfig();
   p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -61,7 +59,8 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
 
   p_custom_config = AllocGraphCustomConfig();
   p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
-  p_custom_config->vtcmSizeInMB = qcom_target_soc_info.m_vtcmSizeinMB;
+  p_custom_config->vtcmSizeInMB =
+      qcom_target_soc_info->htp_info()->vtcm_size_in_mb();
   ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
 
   return ret;
