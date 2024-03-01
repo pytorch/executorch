@@ -9,6 +9,7 @@
 package com.example.executorchllamademo;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.os.Bundle;
 import android.widget.Button;
@@ -27,6 +28,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private TextView mTextViewChat;
   private Button mSendButton;
   private Button mStopButton;
+  private Button mModelButton;
   private LlamaModule mModule = null;
   private String mResult = null;
 
@@ -56,6 +58,41 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     run();
   }
 
+  private void setModel(String modelPath, String tokenizerPath) {
+    try {
+      String model = MainActivity.assetFilePath(getApplicationContext(), modelPath);
+      String tokenizer = MainActivity.assetFilePath(getApplicationContext(), tokenizerPath);
+      mModule = new LlamaModule(model, tokenizer, 0.8f);
+    } catch (IOException e) {
+      finish();
+    }
+  }
+
+  private void modelDialog() {
+    AlertDialog.Builder builder = new AlertDialog.Builder(this);
+    builder.setTitle("Select a Model");
+    builder.setSingleChoiceItems(
+        new String[] {"stories", "language"},
+        -1,
+        new android.content.DialogInterface.OnClickListener() {
+          public void onClick(android.content.DialogInterface dialog, int item) {
+            switch (item) {
+              case 0:
+                setModel("stories110M.pte", "tokenizer.bin");
+                break;
+              case 1:
+                setModel("language.pte", "language.bin");
+                break;
+            }
+            mEditTextMessage.setText("");
+            mTextViewChat.setText("");
+            dialog.dismiss();
+          }
+        });
+    AlertDialog alert = builder.create();
+    alert.show();
+  }
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -65,6 +102,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     mTextViewChat = findViewById(R.id.textViewChat);
     mSendButton = findViewById(R.id.sendButton);
     mStopButton = findViewById(R.id.stopButton);
+    mModelButton = findViewById(R.id.modelButton);
 
     mSendButton.setOnClickListener(
         view -> {
@@ -86,13 +124,13 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
           mModule.stop();
         });
 
-    try {
-      String model = MainActivity.assetFilePath(getApplicationContext(), "model.pte");
-      String tokenizer = MainActivity.assetFilePath(getApplicationContext(), "tokenizer.bin");
-      mModule = new LlamaModule(model, tokenizer, 0.8f);
-    } catch (IOException e) {
-      finish();
-    }
+    mModelButton.setOnClickListener(
+        view -> {
+          mModule.stop();
+          modelDialog();
+        });
+
+    setModel("stories110M.pte", "tokenizer.bin");
   }
 
   @Override
