@@ -33,11 +33,13 @@ class TestAdd(unittest.TestCase):
     class AddConstant(torch.nn.Module):
         def __init__(self, constant):
             super().__init__()
-            self.register_buffer("_constant", constant, persistent=False)
+            self._constant1 = constant
+            self.register_buffer("_constant2", constant, persistent=False)
+            self.register_parameter("_constant3", torch.nn.Parameter(constant))
 
         def forward(self, x):
-            out1 = x + self._constant
-            out2 = x + self._constant + self._constant
+            out1 = x + self._constant1 + torch.ones(1, 1, 1)
+            out2 = x + self._constant2 + self._constant3
             return out1, out2
 
     def _test_add(self, inputs):
@@ -69,9 +71,9 @@ class TestAdd(unittest.TestCase):
         (
             Tester(self.AddConstant(torch.ones(4, 4, 4)), inputs)
             .export()
-            .check_count({"torch.ops.aten.add.Tensor": 3})
+            .check_count({"torch.ops.aten.add.Tensor": 4})
             .to_edge()
-            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 3})
+            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])

@@ -43,6 +43,21 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+
+    runtime.python_library(
+        name = "llama_custom_ops_aot_lib",
+        srcs = [
+            "sdpa_with_kv_cache.py",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            "//caffe2:torch",
+        ],
+    )
+
     runtime.export_file(
         name = "custom_ops.yaml",
         visibility = [
