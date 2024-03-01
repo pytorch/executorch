@@ -1002,6 +1002,12 @@ class Int8DynActInt4WeightQuantHandler:
         )
         return self.mod
 
+    def quantized_model(self) -> nn.Module:
+        model_updated_state_dict = self.create_quantized_state_dict()
+        self.convert_for_runtime()
+        self.mod.load_state_dict(model_updated_state_dict)
+        return self.mod
+
 
 class Int8DynActInt4WeightLinear(torch.nn.Module):
     __constants__ = ["in_features", "out_features"]
