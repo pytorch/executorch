@@ -192,11 +192,8 @@ def quantize(
     elif qmode == "int4":
         model_int4 = Int8DynActInt4WeightQuantHandler(
             model, activation_precision=torch_dtype
-        )
-        model_int4_state_dict = model_int4.create_quantized_state_dict()
-        model_int4 = model_int4.convert_for_runtime()
+        ).quantized_model()
         print("quantized model:", model_int4)
-        model_int4.load_state_dict(model_int4_state_dict)
         return model_int4
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
