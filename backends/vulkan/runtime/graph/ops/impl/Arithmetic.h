@@ -18,13 +18,15 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-void add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
-    const ValueRef out,
-    const float alpha,
-    const arithmetic::OpType optype);
+#define DECLARE_ARITHMETIC_FN(function) \
+  ValueRef function(ComputeGraph& graph, const std::vector<ValueRef>& args);
+
+DECLARE_ARITHMETIC_FN(add);
+DECLARE_ARITHMETIC_FN(sub);
+DECLARE_ARITHMETIC_FN(mul);
+DECLARE_ARITHMETIC_FN(div);
+DECLARE_ARITHMETIC_FN(floor_div);
+DECLARE_ARITHMETIC_FN(pow);
 
 ValueRef add_arithmetic_node(
     ComputeGraph& graph,
@@ -33,6 +35,14 @@ ValueRef add_arithmetic_node(
     const float alpha,
     const arithmetic::OpType optype,
     const int64_t shared_object_idx = -1);
+
+void add_arithmetic_node(
+    ComputeGraph& graph,
+    const ValueRef t1,
+    const ValueRef t2,
+    const ValueRef out,
+    const float alpha,
+    const arithmetic::OpType optype);
 
 class ArithmeticPrepack : public virtual PrepackNode {
  public:
