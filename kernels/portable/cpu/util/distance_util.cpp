@@ -7,7 +7,6 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/distance_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {
@@ -43,6 +42,13 @@ bool check_cdist_args(
       tensors_have_same_size_at_dims(x1, x1.dim() - 1, x2, x2.dim() - 1));
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
       p >= 0, "cdist only supports non-negative p values");
+  if (compute_mode.has_value()) {
+    int64_t mode = compute_mode.value();
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        mode >= 0 && mode <= 2,
+        "possible modes: 0, 1, 2, but was: %" PRId64,
+        mode);
+  }
   return true;
 }
 

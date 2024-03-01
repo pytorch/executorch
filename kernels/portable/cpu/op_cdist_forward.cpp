@@ -42,9 +42,9 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
     out_batch_numel *= i;
   }
 
-  size_t P = x1.size(x1.dim() - 2);
-  size_t R = x2.size(x2.dim() - 2);
-  size_t M = x1.size(x1.dim() - 1);
+  size_t P = static_cast<size_t>(x1.size(x1.dim() - 2)); // NOLINT
+  size_t R = static_cast<size_t>(x2.size(x2.dim() - 2)); // NOLINT
+  size_t M = static_cast<size_t>(x1.size(x1.dim() - 1)); // NOLINT
 
   size_t x1_inner_size = P * M;
   size_t x2_inner_size = R * M;
