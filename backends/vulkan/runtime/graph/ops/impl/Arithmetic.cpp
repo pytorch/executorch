@@ -16,6 +16,39 @@ namespace at {
 namespace native {
 namespace vulkan {
 
+#define DEFINE_ARITHMETIC_FN(function, op_type)                               \
+  ValueRef function(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_arithmetic_node(                                               \
+        graph,                                                                \
+        args[0],                                                              \
+        args[1],                                                              \
+        args[2],                                                              \
+        arithmetic::OpType::op_type,                                          \
+        args[3]);                                                             \
+  }
+
+DEFINE_ARITHMETIC_FN(add, ADD);
+DEFINE_ARITHMETIC_FN(sub, SUB);
+DEFINE_ARITHMETIC_FN(mul, MUL);
+DEFINE_ARITHMETIC_FN(div, DIV);
+DEFINE_ARITHMETIC_FN(floor_div, FLOOR_DIV);
+DEFINE_ARITHMETIC_FN(pow, POW);
+
+ValueRef add_arithmetic_node(
+    ComputeGraph& graph,
+    const ValueRef t1,
+    const ValueRef t2,
+    const float alpha,
+    const arithmetic::OpType optype,
+    const int64_t shared_object_idx) {
+  std::vector<int64_t> t1_sizes = graph.get_val_sizes(t1);
+  api::ScalarType t1_dtype = graph.get_val_dtype(t1);
+
+  ValueRef out = graph.add_tensor(t1_sizes, t1_dtype, shared_object_idx);
+  add_arithmetic_node(graph, t1, t2, out, alpha, optype);
+  return out;
+}
+
 void add_arithmetic_node(
     ComputeGraph& graph,
     const ValueRef t1,
@@ -44,21 +77,6 @@ void add_arithmetic_node(
 
   graph.execute_nodes().emplace_back(
       new ArithmeticNode(arg1, arg2, out, alpha, optype));
-}
-
-ValueRef add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
-    const float alpha,
-    const arithmetic::OpType optype,
-    const int64_t shared_object_idx) {
-  std::vector<int64_t> t1_sizes = graph.get_val_sizes(t1);
-  api::ScalarType t1_dtype = graph.get_val_dtype(t1);
-
-  ValueRef out = graph.add_tensor(t1_sizes, t1_dtype, shared_object_idx);
-  add_arithmetic_node(graph, t1, t2, out, alpha, optype);
-  return out;
 }
 
 ArithmeticPrepack::ArithmeticPrepack(const ValueRef tref, const ValueRef packed)

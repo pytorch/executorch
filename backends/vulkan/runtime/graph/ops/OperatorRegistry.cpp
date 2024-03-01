@@ -8,7 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Functions.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 
 namespace at {
 namespace native {
