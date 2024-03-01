@@ -45,7 +45,7 @@ def dynamically_quantize_per_channel(
     group_size: Optional[int] = None,
     *,
     scales_dtype=torch.float16,
-    enable_non_multiple_groups=False,
+    enable_non_multiple_groups=True,
 ):
     """
     Dynamically quantize per channel.  This function is used for quantizing weights,
@@ -71,19 +71,27 @@ def dynamically_quantize_per_channel(
     # assumes dense memory format
     # TODO(future): relax ^ as needed
 
-    if group_size is None:
-        items = x.shape[1]
+    x_shape_1 = x.shape[1]
+
+    if group_size is None or group_size == 0:
+        items = x_shape_1
     elif not enable_non_multiple_groups:
         assert group_size > 0, "group size must be positive"
         assert (
-            x.shape[1] % group_size
-        ) == 0, f"weights dimension 1 = {x.shape[1]} must be a multiple of group size {group_size}"
+            x_shape_1 % group_size
+        ) == 0, f"weights dimension 1 = {x_shape_1} must be a multiple of group size {group_size}"
         items = group_size
     else:
-        items = 1  # make pyre happy
+        assert group_size > 0, "group size must be positive"
+        print(
+            f"row-size of weight matrix {x_shape_1} is not divisible by group size {group_size}, using nearest neighbor rounding"
+        )
         assert (
-            0 == 1
-        ), "support for non multiple groups is not implemented yet in this function"
+            x_shape_1 % group_size != 0
+        ), f"expected x.shape[1] to not be a multiple of group size {group_size}, but got {x_shape_1}"
+        padding = group_size - (x_shape_1 % group_size)
+        x = F.pad(x, (0, padding))
+        items = group_size
 
     # default setup for affine quantization of activations
     eps = torch.finfo(torch.float32).eps
@@ -117,6 +125,7 @@ def dynamically_quantize_per_channel(
     )
 
     scales = scales.to(dtype=scales_dtype)
+    quant = quant[:, :x_shape_1]
 
     return quant, scales, zero_points
 
