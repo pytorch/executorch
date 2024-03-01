@@ -7,6 +7,7 @@
  */
 
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <cstddef>
 
 namespace torch {
 namespace executor {
@@ -69,7 +70,9 @@ Tensor& roll_out(
     const auto d = dims[i] < 0 ? dims[i] + in.dim() : dims[i];
     dim_shift_array[d] += shifts[i];
   }
-  IntArrayRef dim_shifts(dim_shift_array, in.dim());
+
+  size_t dim_shift_array_length = static_cast<size_t>(in.dim()); // NOLINT
+  IntArrayRef dim_shifts(dim_shift_array, dim_shift_array_length);
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();

@@ -201,7 +201,7 @@ function setup_tosa_reference_model() {
         n=1
     fi
 
-    make -j"$(n)"
+    make -j"${n}"
     cd reference_model
     tosa_bin_path=`pwd`
     echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
@@ -219,7 +219,17 @@ function setup_vela() {
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"
-    pip3 install . --user
+
+    # different command for conda vs venv
+    VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
+    if [ ${VNV} == "venv" ]; then
+	pip install .
+    else
+       # if not venv, we need the site-path where the vela
+       vela_path=$(python -c "import site; print(site.USER_BASE+'/bin')")
+       echo "export PATH=\${PATH}:${vela_path}" >> ${setup_path_script}
+       pip install . --user
+    fi
 }
 
 ########
