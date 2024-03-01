@@ -324,6 +324,11 @@
     - arg_meta: null
       kernel_name: torch::executor::fill_tensor_out
 
+- op: flip.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::flip_out
+
 - op: floor.out
   kernels:
     - arg_meta: null
