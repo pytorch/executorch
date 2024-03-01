@@ -24,8 +24,9 @@ Tensor& my_op_out(const Tensor& a, Tensor& out) {
   return out;
 }
 
-Tensor& set_1_out(Tensor& out) {
-  out.mutable_data_ptr<int32_t>()[0] = 1;
+Tensor& add_1_out(const Tensor& a, Tensor& out) {
+  (void)a;
+  out.mutable_data_ptr<int32_t>()[0] += 1;
   return out;
 }
 
@@ -37,11 +38,28 @@ class MakeATenFunctorFromETFunctorTest : public ::testing::Test {
 };
 
 TEST_F(MakeATenFunctorFromETFunctorTest, Basic) {
-  auto function = wrapper_impl<decltype(&my_op_out), my_op_out>::wrap;
+  auto function = WRAP(my_op_out, 1);
   at::Tensor a = torch::tensor({1.0f});
   at::Tensor b = torch::tensor({2.0f});
   at::Tensor c = function(a, b);
   EXPECT_EQ(c.const_data_ptr<float>()[0], 2.0f);
+}
+
+TORCH_LIBRARY(my_op, m) {
+  m.def("add_1.out", WRAP(add_1_out, 1));
+};
+
+TEST_F(MakeATenFunctorFromETFunctorTest, RegisterWrappedFunction) {
+  auto op = c10::Dispatcher::singleton().findSchema({"my_op::add_1", "out"});
+  EXPECT_TRUE(op.has_value());
+  at::Tensor a =
+      torch::tensor({1}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor b =
+      torch::tensor({2}, torch::TensorOptions().dtype(torch::kInt32));
+  torch::jit::Stack stack = {a, b};
+  op.value().callBoxed(&stack);
+  EXPECT_EQ(stack.size(), 1);
+  EXPECT_EQ(stack[0].toTensor().const_data_ptr<int32_t>()[0], 3);
 }
 
 } // namespace executor
