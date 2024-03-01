@@ -21,21 +21,19 @@ from executorch.examples.qualcomm.scripts.utils import (
 
 
 def create_device_inputs(example_inputs, use_kv_cache):
-    inputs = None
+    inputs = [inp.to(torch.int32) for inp in example_inputs]
     input_list = ""
     if use_kv_cache:
-        inputs = (example_inputs,)
         for i, d in enumerate(inputs[0]):
             if type(d) == list:
                 d = torch.stack(d)
             d.numpy().tofile(f"{args.artifact}/input_0_0.raw")
             input_list = f"input_0_{i}.raw "
     else:
-        inputs = example_inputs
         inputs[0].numpy().tofile(f"{args.artifact}/input_0_0.raw")
         input_list = "input_0_0.raw"
     input_list += "\n"
-    return inputs, input_list
+    return tuple(inputs), input_list
 
 
 if __name__ == "__main__":
@@ -94,7 +92,7 @@ if __name__ == "__main__":
     use_fp16 = False if args.ptq else True
     build_executorch_binary(
         instance.get_eager_model().eval(),
-        instance.get_example_inputs(),
+        inputs,
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,

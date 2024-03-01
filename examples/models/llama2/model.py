@@ -666,7 +666,7 @@ the checkpoint format to avoid generating faulty models.
         else:
             return (
                 torch.tensor(
-                    [[1, 2, 3]], dtype=torch.int32
+                    [[1, 2, 3]], dtype=torch.long
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 
@@ -676,10 +676,10 @@ the checkpoint format to avoid generating faulty models.
         cache_v = torch.zeros(cache_sizes)
         return (
             torch.tensor(
-                [[1]], dtype=torch.int32
+                [[1]], dtype=torch.long
             ),  # tokens, with kv cache our input token length is always just 1 token.
             torch.tensor(
-                0, dtype=torch.int32
+                0, dtype=torch.long
             ),  # start_pos, what token of output are we on.
             cache_k,  # key caches
             cache_v,  # value caches
