@@ -162,6 +162,11 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_stats_out(
     Tensor& mean_out,
     Tensor& invstd_out) {
   (void)ctx;
+  (void)in;
+  (void)weight;
+  (void)bias;
+  (void)momentum;
+  (void)eps;
 
   std::tuple<Tensor&, Tensor&, Tensor&> ret_val(out, mean_out, invstd_out);
 
