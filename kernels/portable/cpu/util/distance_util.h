@@ -45,39 +45,39 @@ void pdist(const Tensor& in, Tensor& out, double p) {
 
 template <typename CTYPE>
 struct L0 {
-  static inline CTYPE map(const CTYPE& diff, const CTYPE& p) {
+  static inline CTYPE map(const CTYPE& diff, const CTYPE&) {
     return diff == 0 ? 0 : 1;
   }
   static inline CTYPE reduce(const CTYPE& agg, const CTYPE& up) {
     return agg + up;
   }
-  static inline CTYPE finish(const CTYPE agg, const CTYPE p) {
+  static inline CTYPE finish(const CTYPE& agg, const CTYPE&) {
     return agg;
   }
 };
 
 template <typename CTYPE>
 struct L1 {
-  static inline CTYPE map(const CTYPE& diff, const CTYPE& p) {
+  static inline CTYPE map(const CTYPE& diff, const CTYPE&) {
     return diff;
   }
   static inline CTYPE reduce(const CTYPE& agg, const CTYPE& up) {
     return agg + up;
   }
-  static inline CTYPE finish(const CTYPE agg, const CTYPE p) {
+  static inline CTYPE finish(const CTYPE& agg, const CTYPE&) {
     return agg;
   }
 };
 
 template <typename CTYPE>
 struct L2 {
-  static inline CTYPE map(const CTYPE& diff, const CTYPE& p) {
+  static inline CTYPE map(const CTYPE& diff, const CTYPE&) {
     return diff * diff;
   }
   static inline CTYPE reduce(const CTYPE& agg, const CTYPE& up) {
     return agg + up;
   }
-  static inline CTYPE finish(const CTYPE agg, const CTYPE p) {
+  static inline CTYPE finish(const CTYPE& agg, const CTYPE&) {
     return std::sqrt(agg);
   }
 };
@@ -90,20 +90,20 @@ struct Lp {
   static inline CTYPE reduce(const CTYPE& agg, const CTYPE& up) {
     return agg + up;
   }
-  static inline CTYPE finish(const CTYPE agg, const CTYPE p) {
+  static inline CTYPE finish(const CTYPE& agg, const CTYPE& p) {
     return std::pow(agg, 1.0 / p);
   }
 };
 
 template <typename CTYPE>
 struct Linf {
-  static inline CTYPE map(const CTYPE& diff, const CTYPE& p) {
+  static inline CTYPE map(const CTYPE& diff, const CTYPE&) {
     return diff;
   }
   static inline CTYPE reduce(const CTYPE& agg, const CTYPE& up) {
     return std::max(agg, up);
   }
-  static inline CTYPE finish(const CTYPE agg, const CTYPE p) {
+  static inline CTYPE finish(const CTYPE& agg, const CTYPE&) {
     return agg;
   }
 };

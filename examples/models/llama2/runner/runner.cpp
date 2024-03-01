@@ -68,6 +68,7 @@ Error Runner::load() {
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
   use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
@@ -198,6 +199,8 @@ Error Runner::generate(
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
+  int k_cache_index = 0;
+  int v_cache_index = 0;
   std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
   std::vector<exec_aten::SizesType> input_shape = {1, 1};
   std::vector<exec_aten::SizesType> pos_shape = {};
@@ -211,6 +214,14 @@ Error Runner::generate(
     // set pos to 0, refill token by token
     pos = 0;
     logits_index = 2;
+    k_cache_index = 0;
+    v_cache_index = 1;
+    // TODO(): Fix this by inspecting graph signature
+    if (use_sdpa_with_kv_cache_) {
+      logits_index = 0;
+      k_cache_index = 1;
+      v_cache_index = 2;
+    }
     // initialize kv cache
     size_t n_bytes = 1;
     for (exec_aten::SizesType shape : kv_cache_shape) {
@@ -219,7 +230,9 @@ Error Runner::generate(
     n_bytes *= torch::executor::elementSize(dtype);
 
     k_data.resize(n_bytes);
+    std::fill(k_data.begin(), k_data.end(), 0);
     v_data.resize(n_bytes);
+    std::fill(v_data.begin(), v_data.end(), 0);
     token_data.resize(1);
   } else {
     // reserve data for tokens, notice the size is still 0.
@@ -346,11 +359,11 @@ Error Runner::generate(
       // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
       memcpy(
           k_data.data(),
-          outputs.at(0).toTensor().const_data_ptr(),
+          outputs.at(k_cache_index).toTensor().const_data_ptr(),
           k_data.size());
       memcpy(
           v_data.data(),
-          outputs.at(1).toTensor().const_data_ptr(),
+          outputs.at(v_cache_index).toTensor().const_data_ptr(),
           v_data.size());
     }
   }

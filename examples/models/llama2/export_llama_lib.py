@@ -187,11 +187,8 @@ def quantize(
         torch_dtype = torch.float16
 
     if qmode == "int8":
-        model_int8 = WeightOnlyInt8QuantHandler(model)
-        model_int8_state_dict = model_int8.create_quantized_state_dict()
-        model_int8 = model_int8.convert_for_runtime()
-        model_int8.load_state_dict(model_int8_state_dict)
-        return model_int8
+        # Add quantization mode options here: group size, bit width, etc.
+        return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "int4":
         model_int4 = Int8DynActInt4WeightQuantHandler(
             model, activation_precision=torch_dtype
@@ -264,6 +261,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=False,
         action="store_true",
         help="Whether or not to export a model using kv cache",
+    )
+    parser.add_argument(
+        "--use_sdpa_with_kv_cache",
+        default=False,
+        action="store_true",
+        help="Whether to use sdpa_with_kv_cache update op when using kv cache",
     )
     parser.add_argument(
         "-p",
@@ -377,7 +380,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         transforms.append(
             lambda model: EmbeddingOnlyInt8QuantHandler(
                 model, bitwidth=bitwidth, group_size=group_size
-            ).convert_for_runtime()
+            ).quantized_model()
         )
 
     # export_to_edge
@@ -407,6 +410,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             checkpoint=checkpoint_path,
             params_path=params_path,
             use_kv_cache=args.use_kv_cache,
+            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
             verbose=args.verbose,
         )

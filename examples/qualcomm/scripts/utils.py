@@ -19,10 +19,12 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
     get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
 )
+from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+    QcomChipset,
+)
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_qnn_executorch_compiler_spec,
-    SoCModel,
 )
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -167,10 +169,10 @@ def build_executorch_binary(
         edge_prog = capture_program(model, inputs)
 
     arch_table = {
-        "SM8650": SoCModel.SM8650,
-        "SM8550": SoCModel.SM8550,
-        "SM8475": SoCModel.SM8475,
-        "SM8450": SoCModel.SM8450,
+        "SM8650": QcomChipset.SM8650,
+        "SM8550": QcomChipset.SM8550,
+        "SM8475": QcomChipset.SM8475,
+        "SM8450": QcomChipset.SM8450,
     }
 
     qnn_partitioner = QnnPartitioner(

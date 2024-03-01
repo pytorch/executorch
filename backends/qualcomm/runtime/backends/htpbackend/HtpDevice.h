@@ -7,13 +7,16 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
+#include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDeviceCustomConfig.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevicePlatformInfoConfig.h>
-
 #include <memory>
 
 #include "HTP/QnnHtpDevice.h"
+
+#define QNN_HTP_DEPRECATED_HTP_ARCH_VERSION_MAJOR 5
+#define QNN_HTP_DEPRECATED_HTP_ARCH_VERSION_MINOR 14
+
 namespace torch {
 namespace executor {
 namespace qnn {
@@ -22,10 +25,15 @@ class HtpDevice : public QnnDevice {
   HtpDevice(
       const QnnImplementation& implementation,
       QnnLogger* logger,
-      const QnnExecuTorchHtpBackendOptions& htp_options)
-      : QnnDevice(implementation, logger), htp_options_(htp_options) {
+      const SocInfo* soc_info,
+      const QnnExecuTorchHtpBackendOptions* htp_options)
+      : QnnDevice(implementation, logger),
+        htp_options_(htp_options),
+        qcom_target_soc_info_(soc_info) {
     htp_device_platform_info_config_ =
         std::make_unique<HtpDevicePlatformInfoConfig>(htp_options);
+    htp_device_custom_config_ =
+        std::make_unique<HtpDeviceCustomConfig>(htp_options);
   }
   ~HtpDevice();
 
@@ -46,7 +54,7 @@ class HtpDevice : public QnnDevice {
   void ReleasePerformanceVote();
 
   inline bool IsPerfModeEnabled() {
-    return htp_options_.performance_mode !=
+    return htp_options_->performance_mode() !=
         QnnExecuTorchHtpPerformanceMode::kHtpDefault;
   }
 
@@ -61,10 +69,9 @@ class HtpDevice : public QnnDevice {
     return ret;
   }
 
-  QnnHtpDevice_CustomConfig_t* AllocDeviceCustomConfig();
   std::unique_ptr<HtpDevicePlatformInfoConfig> htp_device_platform_info_config_;
+  std::unique_ptr<HtpDeviceCustomConfig> htp_device_custom_config_;
 
-  std::vector<std::unique_ptr<QnnHtpDevice_CustomConfig_t>> htp_device_config_;
   std::vector<QnnDevice_Config_t> device_config_;
 
   std::uint32_t powerconfig_client_id_{0};
@@ -81,7 +88,8 @@ class HtpDevice : public QnnDevice {
   std::vector<const QnnHtpPerfInfrastructure_PowerConfig_t*>
       down_vote_power_configs_ptr_;
 
-  QnnExecuTorchHtpBackendOptions htp_options_;
+  const QnnExecuTorchHtpBackendOptions* htp_options_;
+  const SocInfo* qcom_target_soc_info_;
 };
 } // namespace qnn
 } // namespace executor
