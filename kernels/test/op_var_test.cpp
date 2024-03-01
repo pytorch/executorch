@@ -20,7 +20,6 @@
 using namespace ::testing;
 using exec_aten::ArrayRef;
 using exec_aten::optional;
-using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
@@ -34,17 +33,6 @@ Tensor& op_var_out(
   exec_aten::RuntimeContext context{};
   return torch::executor::aten::var_outf(
       context, self, dim, unbiased, keepdim, out);
-}
-
-Tensor& op_var_correction_out(
-    const Tensor& self,
-    optional<ArrayRef<int64_t>> dim,
-    optional<Scalar>& correction,
-    bool keepdim,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::var_outf(
-      context, self, dim, correction, keepdim, out);
 }
 
 template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
@@ -374,17 +362,4 @@ TEST(OpVarOutTest, DynamicShapeUnbound) {
   Tensor ret = op_var_out(
       x, ArrayRef<int64_t>{1}, /*unbiased=*/true, /*keepdim=*/false, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
-}
-
-TEST(OpVarCorrectionOutTest, SmokeTest) {
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor x = tf.make({2, 3}, {4.9, 4.0, 5.6, 3.8, 4.9, 5.6});
-  Tensor expected = tf.make({2}, {0.72693, 0.93032});
-  optional<Scalar> correction(1.23);
-  Tensor out = tf.zeros({2});
-
-  op_var_correction_out(
-      x, ArrayRef<int64_t>{1}, correction, /*keepdim=*/false, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
 }
