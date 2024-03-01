@@ -1,6 +1,7 @@
 import argparse
 
 import torch
+from backends.qualcomm.serialization.qnn_compile_spec_schema import QcomChipset
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import (
     get_default_8bit_qnn_ptq_config,
@@ -9,7 +10,6 @@ from executorch.backends.qualcomm.quantizer.quantizer import (
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
     generate_qnn_executorch_compiler_spec,
-    SoCModel,
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
             is_fp16=False,
-            soc_model=SoCModel.SM8550,
+            soc_model=QcomChipset.SM8550,
             debug=False,
             saver=False,
         )

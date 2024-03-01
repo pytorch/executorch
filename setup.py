@@ -107,9 +107,6 @@ class CMakeBuild(build_ext):
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             f"-DCMAKE_BUILD_TYPE={cfg}",  # not used on MSVC, but no harm
         ]
-        # Build with XNNPACK if EXECUTORCH_BUILD_XNNPACK is on
-        if os.environ.get("EXECUTORCH_BUILD_XNNPACK", None):
-            cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
 
         build_args = []
         # Adding CMake arguments set as environment variable
