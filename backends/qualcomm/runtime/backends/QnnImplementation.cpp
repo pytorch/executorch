@@ -27,8 +27,7 @@ Error QnnImplementation::InitBackend(
   if (saver_initialize != nullptr) {
     error = saver_initialize(saver_config);
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
+      QNN_EXECUTORCH_LOG_ERROR(
           "[Qnn Delegate] QnnSaver Backend Failed to "
           "saver_initialize. Error %d",
           QNN_GET_ERROR_CODE(error));
@@ -58,9 +57,8 @@ Error QnnImplementation::StartBackend(
   void* lib_handle = dlopen(lib_path.c_str(), RTLD_NOW | RTLD_GLOBAL);
 
   if (lib_handle == nullptr) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] Cannot Open QNN library %s, with error: %s",
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Cannot Open QNN library %s, with error: %s",
         lib_path.c_str(),
         dlerror());
     return Error::Internal;
@@ -71,9 +69,8 @@ Error QnnImplementation::StartBackend(
       lib_handle, "QnnInterface_getProviders");
 
   if (get_providers == nullptr) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] QnnImplementation::Load Cannot load symbol "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "QnnImplementation::Load Cannot load symbol "
         "QnnInterface_getProviders : %s",
         dlerror());
     return Error::Internal;
@@ -85,17 +82,15 @@ Error QnnImplementation::StartBackend(
   error = get_providers(&provider_list, &num_providers);
 
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] Qnn Interface failed to get providers. Error %d",
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Qnn Interface failed to get providers. Error %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
   if (num_providers != required_num_providers_) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] Qnn Interface Num Providers is "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Qnn Interface Num Providers is "
         "%d instead of required %d",
         num_providers,
         required_num_providers_);
@@ -114,9 +109,8 @@ Error QnnImplementation::StartBackend(
   // for different QnnBackend instances.
   // So we warning out here.
   if (loaded_backend_.count(backend_id) > 0) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelWarn,
-        "[Qnn ExecuTorch] lib_path %s is loaded, but backend %d "
+    QNN_EXECUTORCH_LOG_WARN(
+        "lib_path %s is loaded, but backend %d "
         "already exists. Overwriting previous loaded backend...",
         lib_path.c_str(),
         backend_id);
@@ -124,16 +118,12 @@ Error QnnImplementation::StartBackend(
   loaded_backend_[backend_id] = provider_list[0];
 
   if (loaded_lib_handle_.count(backend_id) > 0) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelWarn,
-        "[Qnn ExecuTorch] closing %pK...",
-        loaded_lib_handle_[backend_id]);
+    QNN_EXECUTORCH_LOG_WARN("closing %pK...", loaded_lib_handle_[backend_id]);
 
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
     if (dlclose_error != 0) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelWarn,
-          "[Qnn ExecuTorch] Sadly, fail to close %pK with error %s",
+      QNN_EXECUTORCH_LOG_WARN(
+          "Sadly, fail to close %pK with error %s",
           loaded_lib_handle_[backend_id],
           dlerror());
     }
@@ -150,9 +140,8 @@ Error QnnImplementation::StartBackend(
 
     int dlclose_error = dlclose(loaded_lib_handle_[backend_id]);
     if (dlclose_error != 0) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelWarn,
-          "[Qnn ExecuTorch] fail to close %pK after backend-init "
+      QNN_EXECUTORCH_LOG_WARN(
+          "fail to close %pK after backend-init "
           "failure, with error %s",
           loaded_lib_handle_[backend_id],
           dlerror());
@@ -173,11 +162,8 @@ Error QnnImplementation::TerminateAllBackends() {
   for (auto& it : loaded_lib_handle_) {
     int dlclose_error = dlclose(it.second);
     if (dlclose_error != 0) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
-          "[Qnn ExecuTorch] Fail to close QNN backend %d with error %s",
-          it.first,
-          dlerror());
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Fail to close QNN backend %d with error %s", it.first, dlerror());
       ret_status = Error::Internal;
     }
   }
@@ -204,9 +190,8 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
     // really don't expect.
     if (loaded_backend_.count(backend_id) == 0 ||
         loaded_lib_handle_.count(backend_id) == 0) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
-          "[Qnn ExecuTorch] library %s is loaded but "
+      QNN_EXECUTORCH_LOG_ERROR(
+          "library %s is loaded but "
           "loaded backend count=%zu, "
           "loaded lib_handle count=%zu",
           lib_path_.c_str(),
@@ -224,9 +209,8 @@ Error QnnImplementation::Load(const QnnSaver_Config_t** saver_config) {
 
 const QnnInterface& QnnImplementation::GetQnnInterface() const {
   if (!qnn_interface_.IsLoaded()) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelWarn,
-        "[Qnn ExecuTorch] GetQnnInterface, returning a QNN interface "
+    QNN_EXECUTORCH_LOG_WARN(
+        "GetQnnInterface, returning a QNN interface "
         "which is not loaded yet.");
   }
   return qnn_interface_;
