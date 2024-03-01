@@ -609,6 +609,13 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_native_group_norm",
+        deps = [
+            ":vec_ops",
+            "//executorch/kernels/portable/cpu/util:normalization_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_native_layer_norm",
         deps = [
             ":vec_ops",
