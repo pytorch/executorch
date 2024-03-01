@@ -66,8 +66,9 @@ Topics in this section will help you get started with ExecuTorch.
    :hidden:
 
    intro-overview
-   concepts
    intro-how-it-works
+   intro-architecture
+   concepts
 
 .. toctree::
    :glob:
@@ -75,7 +76,6 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Getting Started
    :hidden:
 
-   getting-started-architecture
    getting-started-setup
    runtime-build-and-cross-compilation
 
