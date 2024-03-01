@@ -332,7 +332,7 @@ def _(
     Returns:
         ExportedProgram: The input program, with some portions targeted for delegation.
     """
-    copied_edge_program = copy.deepcopy(edge_program)
+    copied_edge_program = copy.copy(edge_program)  # MKG: deepcopy
     partitioner_result = partitioner_instance(copied_edge_program)
     tagged_exported_program = partitioner_result.tagged_exported_program
 
