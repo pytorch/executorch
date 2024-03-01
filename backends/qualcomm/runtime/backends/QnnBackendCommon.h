@@ -8,7 +8,6 @@
 #pragma once
 
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 
