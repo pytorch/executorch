@@ -17,6 +17,19 @@ Please check `generate_qnn_executorch_compiler_spec()` in
 - Snapdragon 8 Gen 1
 - Snapdragon 8 Gen 1+
 - Snapdragon 8 Gen 2
+- Snapdragon 8 Gen 3
+
+### How to add more supported Chipset
+
+#### Step 1: Check SoC model of snapdragon device
+Get SoC model which would like to be supported from the document of Qualcomm AI Engine Direct SDK.
+
+#### Step 2: Update schema of compiler option and SoC information in serialization
+Add SoC model into QcomChipset enum in [schema](./serialization/schema.fbs) and [qnn_compile_spec_schema](./serialization/qnn_compile_spec_schema.py).
+Insert new SoC information into _soc_info_table in [qnn_compile_spec_schema](./serialization/qnn_compile_spec_schema.py).
+
+#### Step 3: Recompile the .pte file
+Follow [setup](setup.md) to setup environment and build runtime with new schema header.
 
 ### Supported Inference Type
 - Quantized
@@ -41,6 +54,7 @@ backends/qualcomm
 |           ├── aarch64 # Configuration required to run on device. (Device Part).
 |           └── x86_64 # Configuration required to compile graph on host. (AoT Part).
 ├── scripts # Misc supporting scripts, not related to core functionality.
+├── serialization # Contains files related to serializing QNN compiler options and SoC information
 ├── tests # Unit tests and model tests go here.
 └── utils # Miscellaneous utilities.
 
