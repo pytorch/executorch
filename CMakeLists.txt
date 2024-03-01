@@ -125,6 +125,10 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
 
+# Build the vulkan delegate along with the vulkan executor_runner
+option(EXECUTORCH_BUILD_VULKAN
+       "Build the Vulkan delegate and the Vulkan executor_runner" OFF)
+
 option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
@@ -143,6 +147,10 @@ option(EXECUTORCH_BUILD_EXTENSION_MODULE
 # Build the runner_util extension library
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
        "Build the extension/runner_util directory" OFF)
+
+# Build test binaries that rely on googletest
+option(EXECUTORCH_BUILD_GTESTS
+       "Build googletest based test binaries" OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -315,6 +323,11 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
+# Add googletest if any test targets should be built
+if(EXECUTORCH_BUILD_GTESTS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
+endif()
+
 # Add Android JNI subdirectory
 if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
@@ -342,6 +355,10 @@ endif()
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+endif()
+
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
