@@ -3,6 +3,16 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ### Editing this file ###
+#
+# This file should be formatted with
+# ~~~
+# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# ~~~
+# It should also be cmake-lint clean.
+#
+# The targets in this file will be built if EXECUTORCH_BUILD_VULKAN is ON
 
 if(NOT PYTORCH_PATH)
   set(PYTORCH_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch)
@@ -16,6 +26,14 @@ endif()
 
 # Trigger Shader code generation
 set(USE_VULKAN ON)
+set(VULKAN_CODEGEN_CMAKE_PATH ${PYTORCH_PATH}/cmake/VulkanCodegen.cmake)
+if(NOT EXISTS ${VULKAN_CODEGEN_CMAKE_PATH})
+  message(
+    FATAL_ERROR
+      "Cannot perform SPIR-V codegen because " ${VULKAN_CODEGEN_CMAKE_PATH}
+      " does not exist. Please make sure that submodules are initialized"
+      " and updated.")
+endif()
 include(${PYTORCH_PATH}/cmake/VulkanCodegen.cmake)
 
 # Source paths and compile settings
@@ -36,29 +54,29 @@ list(APPEND VULKAN_CXX_FLAGS "-DVOLK_DEFAULT_VISIBILITY")
 
 # vulkan_api_lib
 
-file(GLOB vulkan_api_cpp ${ATEN_VULKAN_PATH}/api/*.cpp)
+file(GLOB VULKAN_API_CPP ${ATEN_VULKAN_PATH}/api/*.cpp)
 
-add_library(vulkan_api_lib STATIC ${vulkan_api_cpp} ${VOLK_PATH}/volk.c)
+add_library(vulkan_api_lib STATIC ${VULKAN_API_CPP} ${VOLK_PATH}/volk.c)
 
-set(vulkan_api_headers)
-list(APPEND vulkan_api_headers ${ATEN_PATH})
-list(APPEND vulkan_api_headers ${VULKAN_HEADERS_PATH})
-list(APPEND vulkan_api_headers ${VOLK_PATH})
-list(APPEND vulkan_api_headers ${VMA_PATH})
+set(VULKAN_API_HEADERS)
+list(APPEND VULKAN_API_HEADERS ${ATEN_PATH})
+list(APPEND VULKAN_API_HEADERS ${VULKAN_HEADERS_PATH})
+list(APPEND VULKAN_API_HEADERS ${VOLK_PATH})
+list(APPEND VULKAN_API_HEADERS ${VMA_PATH})
 
-target_include_directories(vulkan_api_lib PRIVATE ${vulkan_api_headers})
+target_include_directories(vulkan_api_lib PRIVATE ${VULKAN_API_HEADERS})
 
 target_compile_options(vulkan_api_lib PRIVATE ${VULKAN_CXX_FLAGS})
 
 # vulkan_shader_lib
 
-file(GLOB vulkan_impl_cpp ${ATEN_VULKAN_PATH}/impl/*.cpp)
+file(GLOB VULKAN_IMPL_CPP ${ATEN_VULKAN_PATH}/impl/*.cpp)
 
-add_library(vulkan_shader_lib STATIC ${vulkan_impl_cpp} ${vulkan_generated_cpp})
+add_library(vulkan_shader_lib STATIC ${VULKAN_IMPL_CPP} ${vulkan_generated_cpp})
 
-list(APPEND vulkan_api_headers ${CMAKE_BINARY_DIR}/vulkan)
+list(APPEND VULKAN_API_HEADERS ${CMAKE_BINARY_DIR}/vulkan)
 
-target_include_directories(vulkan_shader_lib PRIVATE ${vulkan_api_headers})
+target_include_directories(vulkan_shader_lib PRIVATE ${VULKAN_API_HEADERS})
 
 target_link_libraries(vulkan_shader_lib vulkan_api_lib)
 

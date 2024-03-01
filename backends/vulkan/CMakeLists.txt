@@ -3,6 +3,16 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+#
+# ### Editing this file ###
+#
+# This file should be formatted with
+# ~~~
+# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# ~~~
+# It should also be cmake-lint clean.
+#
+# The targets in this file will be built if EXECUTORCH_BUILD_VULKAN is ON
 
 cmake_minimum_required(VERSION 3.19)
 
@@ -28,7 +38,7 @@ set(PYTORCH_PATH ${EXECUTORCH_ROOT}/third-party/pytorch)
 set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
 include(cmake/ATenVulkan.cmake)
 
-set(common_includes ${vulkan_api_headers} ${EXECUTORCH_ROOT}/..)
+set(COMMON_INCLUDES ${VULKAN_API_HEADERS} ${EXECUTORCH_ROOT}/..)
 
 # vulkan_graph_lib
 
@@ -36,7 +46,7 @@ file(GLOB_RECURSE vulkan_graph_cpp ${RUNTIME_PATH}/graph/*)
 
 add_library(vulkan_graph_lib STATIC ${vulkan_graph_cpp})
 
-target_include_directories(vulkan_graph_lib PRIVATE ${common_includes})
+target_include_directories(vulkan_graph_lib PRIVATE ${COMMON_INCLUDES})
 
 target_link_libraries(vulkan_graph_lib vulkan_shader_lib)
 
@@ -44,27 +54,27 @@ target_compile_options(vulkan_graph_lib PRIVATE ${VULKAN_CXX_FLAGS})
 
 # Generate Files from flatc
 
-set(schema_include_dir ${CMAKE_BINARY_DIR}/schema/include)
+set(SCHEMA_INCLUDE_DIR ${CMAKE_BINARY_DIR}/schema/include)
 
-set(generated_header
-    ${schema_include_dir}/executorch/backends/vulkan/schema_generated.h)
+set(GENERATED_HEADER
+    ${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/schema_generated.h)
 
 add_custom_command(
-  OUTPUT ${generated_header}
+  OUTPUT ${GENERATED_HEADER}
   COMMAND
     ${FLATC_EXECUTABLE} --cpp --cpp-std c++11 --scoped-enums -o
-    "${schema_include_dir}/executorch/backends/vulkan/" ${_vulkan_schema__srcs}
+    "${SCHEMA_INCLUDE_DIR}/executorch/backends/vulkan/" ${_vulkan_schema__srcs}
   WORKING_DIRECTORY ${EXECUTORCH_ROOT}
   COMMENT "Generating vulkan_schema headers"
   VERBATIM)
 
 # vulkan_schema library
 
-add_library(vulkan_schema INTERFACE ${generated_header})
+add_library(vulkan_schema INTERFACE ${GENERATED_HEADER})
 set_target_properties(vulkan_schema PROPERTIES LINKER_LANGUAGE CXX)
 
 target_include_directories(
-  vulkan_schema INTERFACE ${schema_include_dir}
+  vulkan_schema INTERFACE ${SCHEMA_INCLUDE_DIR}
                           ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
 # vulkan_backend_lib
@@ -73,8 +83,8 @@ file(GLOB vulkan_backend_cpp ${RUNTIME_PATH}/*.cpp)
 
 add_library(vulkan_backend ${vulkan_backend_cpp})
 
-target_include_directories(vulkan_backend PRIVATE ${schema_include_dir})
-target_include_directories(vulkan_backend PRIVATE ${common_includes})
+target_include_directories(vulkan_backend PRIVATE ${SCHEMA_INCLUDE_DIR})
+target_include_directories(vulkan_backend PRIVATE ${COMMON_INCLUDES})
 
 target_link_libraries(vulkan_backend PRIVATE vulkan_graph_lib)
 target_link_libraries(vulkan_backend PRIVATE vulkan_schema)
@@ -84,11 +94,11 @@ target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
 
 # Test targets
 
-if(EXECUTORCH_BUILD_VULKAN_TESTS)
+if(EXECUTORCH_BUILD_GTESTS)
   # vulkan_compute_api_test
-  set(test_cpp ${CMAKE_CURRENT_SOURCE_DIR}/test/vulkan_compute_api_test.cpp)
-  add_executable(vulkan_compute_api_test ${test_cpp})
-  target_include_directories(vulkan_compute_api_test PRIVATE ${common_includes})
+  set(TEST_CPP ${CMAKE_CURRENT_SOURCE_DIR}/test/vulkan_compute_api_test.cpp)
+  add_executable(vulkan_compute_api_test ${TEST_CPP})
+  target_include_directories(vulkan_compute_api_test PRIVATE ${COMMON_INCLUDES})
   target_link_libraries(vulkan_compute_api_test vulkan_api_lib)
   target_link_libraries(vulkan_compute_api_test vulkan_graph_lib)
   target_link_libraries(vulkan_compute_api_test gtest_main)
