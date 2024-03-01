@@ -176,6 +176,15 @@ class LlamaEdgeManager:
             logging.info(f"model.to {torch_dtype}")
             self.model = self.model.to(dtype=torch_dtype)
             self.dtype = dtype_override
+
+        # convert kv cache to dtype as well. This should be removed after mutable buffer is supported.
+        # assuming the kv cache are the last 2 tensors in the example inputs
+        if self.use_kv_cache:
+            dtype = torch.float16 if self.dtype == DType.fp16 else torch.float32
+            example_inputs = list(self.example_inputs[:-2]) + [
+                cache.to(dtype) for cache in self.example_inputs[-2:]
+            ]
+            self.example_inputs = tuple(example_inputs)
         return self
 
     def source_transform(
