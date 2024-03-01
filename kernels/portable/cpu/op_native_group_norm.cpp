@@ -25,17 +25,22 @@ void group_norm(
     const Tensor& input,
     const optional<Tensor>& weight,
     const optional<Tensor>& bias,
-    int64_t N,
-    int64_t C,
-    int64_t HxW,
+    int64_t n,
+    int64_t c,
+    int64_t hxw,
     int64_t group,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
-  size_t leading = N * group;
-  size_t D = C / group;
-  int64_t inner_size = D * HxW;
+  size_t N = static_cast<size_t>(n); // NOLINT
+  size_t C = static_cast<size_t>(c); // NOLINT
+  size_t HxW = static_cast<size_t>(hxw); // NOLINT
+  size_t G = static_cast<size_t>(group); // NOLINT
+
+  size_t leading = N * G;
+  size_t D = C / G;
+  size_t inner_size = D * HxW;
 
   if (leading == 0) {
     return;
@@ -85,9 +90,9 @@ void group_norm(
         y[j] = (x[j] - mean_value) * rstd_value;
       }
     } else {
-      const int64_t g = i % group;
+      const size_t g = i % G;
       for (size_t j = 0; j < D; j++) {
-        const int64_t c = g * D + j;
+        const size_t c = g * D + j;
         const CTYPE scale =
             rstd_value * (weight_data == nullptr ? 1.0 : weight_data[c]);
         const CTYPE beta =

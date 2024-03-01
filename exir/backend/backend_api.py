@@ -28,7 +28,7 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.pass_base import ExportPass
-from torch._export.utils import is_buffer, is_param
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
 
 
@@ -161,11 +161,13 @@ def _get_node_list_with_same_tag(
             if node.op == "output":
                 raise RuntimeError(f"output node {node} should not be tagged")
             if node.op == "placeholder":
-                if not is_param(owning_program, node) and not is_buffer(
-                    owning_program, node
+                if (
+                    not is_param(owning_program, node)
+                    and not is_buffer(owning_program, node)
+                    and not is_lifted_tensor_constant(owning_program, node)
                 ):
                     raise RuntimeError(
-                        f"placeholder node for non-params and non-buffer should not be tagged: {node} "
+                        f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                     )
             node_list.append(node)
     return node_list
