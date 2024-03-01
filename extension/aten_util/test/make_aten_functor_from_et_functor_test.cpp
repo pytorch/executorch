@@ -30,6 +30,23 @@ Tensor& add_1_out(const Tensor& a, Tensor& out) {
   return out;
 }
 
+Tensor& quantized_embedding_byte_out(
+    const Tensor& weight,
+    const Tensor& weight_scales,
+    const Tensor& weight_zero_points,
+    int64_t weight_quant_min,
+    int64_t weight_quant_max,
+    const Tensor& indices,
+    Tensor& out) {
+  (void)weight;
+  (void)weight_scales;
+  (void)weight_zero_points;
+  (void)weight_quant_min;
+  (void)indices;
+  out.mutable_data_ptr<int32_t>()[0] -= static_cast<int32_t>(weight_quant_max);
+  return out;
+}
+
 class MakeATenFunctorFromETFunctorTest : public ::testing::Test {
  public:
   void SetUp() override {
@@ -47,6 +64,9 @@ TEST_F(MakeATenFunctorFromETFunctorTest, Basic) {
 
 TORCH_LIBRARY(my_op, m) {
   m.def("add_1.out", WRAP(add_1_out, 1));
+  m.def(
+      "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
+      WRAP(quantized_embedding_byte_out, 6));
 };
 
 TEST_F(MakeATenFunctorFromETFunctorTest, RegisterWrappedFunction) {
@@ -57,6 +77,26 @@ TEST_F(MakeATenFunctorFromETFunctorTest, RegisterWrappedFunction) {
   at::Tensor b =
       torch::tensor({2}, torch::TensorOptions().dtype(torch::kInt32));
   torch::jit::Stack stack = {a, b};
+  op.value().callBoxed(&stack);
+  EXPECT_EQ(stack.size(), 1);
+  EXPECT_EQ(stack[0].toTensor().const_data_ptr<int32_t>()[0], 3);
+}
+
+TEST_F(MakeATenFunctorFromETFunctorTest, TestEmbeddingByte) {
+  auto op =
+      c10::Dispatcher::singleton().findSchema({"my_op::embedding_byte", "out"});
+  EXPECT_TRUE(op.has_value());
+  at::Tensor weight =
+      torch::tensor({1}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor scale =
+      torch::tensor({2}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor zero_point =
+      torch::tensor({2}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor indices =
+      torch::tensor({2}, torch::TensorOptions().dtype(torch::kInt32));
+  at::Tensor out =
+      torch::tensor({4}, torch::TensorOptions().dtype(torch::kInt32));
+  torch::jit::Stack stack = {weight, scale, zero_point, 0, 1, indices, out};
   op.value().callBoxed(&stack);
   EXPECT_EQ(stack.size(), 1);
   EXPECT_EQ(stack[0].toTensor().const_data_ptr<int32_t>()[0], 3);
