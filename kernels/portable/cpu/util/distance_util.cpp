@@ -7,7 +7,6 @@
  */
 
 #include <executorch/kernels/portable/cpu/util/distance_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 
 namespace torch {
 namespace executor {

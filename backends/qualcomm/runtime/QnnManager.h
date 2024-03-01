@@ -12,6 +12,7 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendFactory.h>
+#include <executorch/backends/qualcomm/schema_generated.h>
 #include <executorch/runtime/core/error.h>
 
 #include <memory>
@@ -22,7 +23,9 @@ namespace qnn {
 class QnnManager {
  public:
   // Construct QnnManager
-  explicit QnnManager(const QnnExecuTorchOptions* options);
+  explicit QnnManager(
+      const QnnExecuTorchOptions* options,
+      const QnnExecuTorchContextBinary& qnn_executorch_context_binary);
 
   ~QnnManager();
   Error Init();
@@ -66,7 +69,8 @@ class QnnManager {
   std::string library_path_;
   std::string skel_library_dir_;
   std::string graph_name_;
-  QnnExecuTorchHtpBackendOptions htp_options_;
+  const SocInfo* soc_info_;
+  const QnnExecuTorchHtpBackendOptions* htp_options_;
   QnnExecuTorchLogLevel log_level_;
   QnnExecuTorchContextBinary qnn_context_blob_;
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
