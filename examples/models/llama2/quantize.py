@@ -22,13 +22,13 @@ from torch.library import impl
 
 
 try:
-    # pyre-ignore
+    # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.embedding import (
         Embedding as fsEmbedding,
         StandardEmbedding as fsStandardEmbedding,
     )
 
-    # pyre-ignore
+    # pyre-ignore[21]: Undefined import.
     from fairseq2.nn.projection import Linear as fsLinear
 except:
     print("Could not import fairseq2 modules.")
@@ -645,14 +645,6 @@ class WeightOnlyInt8QuantHandler:
 
                     # print(f"initial weight shape {mod.weight.shape}")
                     input_weight = mod.weight.float()
-                    input_weight_shape_1 = input_weight.shape[1]
-                    if (self.group_size is not None) and (
-                        input_weight_shape_1 % self.group_size != 0
-                    ):
-                        padding = self.group_size - (
-                            input_weight_shape_1 % self.group_size
-                        )
-                        input_weight = F.pad(input_weight, (0, padding))
 
                     # print(f"expanded weight shape {input_weight.shape}")
                     weight, scales, _ = dynamically_quantize_per_channel(
@@ -663,9 +655,8 @@ class WeightOnlyInt8QuantHandler:
                         self.group_size,
                         scales_dtype=mod.weight.dtype,
                     )
-                    unpadded_weight = weight[:, :input_weight_shape_1]
 
-                    cur_state_dict[f"{fqn}.weight"] = unpadded_weight
+                    cur_state_dict[f"{fqn}.weight"] = weight
                     # squeeze makes groupsize=rowsize unidimensional
                     cur_state_dict[f"{fqn}.scales"] = scales.squeeze(dim=-1)
 
