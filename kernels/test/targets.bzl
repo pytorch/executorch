@@ -248,6 +248,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_neg_test", ["aten", "portable", "optimized"])
     _common_op_test("op_nonzero_test", ["aten", "portable"])
     _common_op_test("op_ones_test", ["aten", "portable"])
+    _common_op_test("op_pdist_forward_test", ["aten", "portable"])
     _common_op_test("op_permute_copy_test", ["aten", "portable"])
     _common_op_test("op_pixel_shuffle_test", ["aten", "portable"])
     _common_op_test("op_prod_test", ["aten", "portable"])

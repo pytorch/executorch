@@ -78,6 +78,19 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
+        name = "distance_util",
+        srcs = ["distance_util.cpp"],
+        exported_headers = [
+            "distance_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
         name = "kernel_ops_util",
         srcs = ["kernel_ops_util.cpp"],
         exported_headers = [
