@@ -25,17 +25,17 @@ void group_norm(
     const Tensor& input,
     const optional<Tensor>& weight,
     const optional<Tensor>& bias,
-    int64_t n,
-    int64_t c,
-    int64_t hxw,
+    int64_t sN,
+    int64_t sC,
+    int64_t sHxW,
     int64_t group,
     CTYPE eps,
     Tensor& out,
     Tensor& mean,
     Tensor& rstd) {
-  size_t N = static_cast<size_t>(n); // NOLINT
-  size_t C = static_cast<size_t>(c); // NOLINT
-  size_t HxW = static_cast<size_t>(hxw); // NOLINT
+  size_t N = static_cast<size_t>(sN); // NOLINT
+  size_t C = static_cast<size_t>(sC); // NOLINT
+  size_t HxW = static_cast<size_t>(sHxW); // NOLINT
   size_t G = static_cast<size_t>(group); // NOLINT
 
   size_t leading = N * G;
@@ -92,11 +92,11 @@ void group_norm(
     } else {
       const size_t g = i % G;
       for (size_t j = 0; j < D; j++) {
-        const size_t c = g * D + j;
+        const size_t ch = g * D + j;
         const CTYPE scale =
-            rstd_value * (weight_data == nullptr ? 1.0 : weight_data[c]);
+            rstd_value * (weight_data == nullptr ? 1.0 : weight_data[ch]);
         const CTYPE beta =
-            -scale * mean_value + (bias_data == nullptr ? 0.0 : bias_data[c]);
+            -scale * mean_value + (bias_data == nullptr ? 0.0 : bias_data[ch]);
         x = input_data + (i * D + j) * HxW;
         CTYPE* y = out_data + (i * D + j) * HxW;
         for (size_t k = 0; k < HxW; k++) {
