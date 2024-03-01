@@ -175,7 +175,6 @@ def emit_program(
             values=[],
             operators=[],
             delegates=[],
-            num_values=0,
             operator_cache={},
             delegate_cache={},
             emit_stacktrace=emit_stacktrace,
