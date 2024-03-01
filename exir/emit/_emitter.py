@@ -126,7 +126,6 @@ class _EmitterState:
     values: List[EValue]
     operators: List[Operator]
     delegates: List[BackendDelegate]
-    num_values: int
     operator_cache: Dict[Tuple[str, str], int]
     delegate_cache: Dict[bytes, int]
     emit_stacktrace: bool
@@ -493,11 +492,9 @@ class _Emitter(torch.fx.Interpreter):
         Given an Evalue, adds it to the emitter_state's values table, and returns the AbstractValue
         representing it.
         """
-        ret = self.emitter_state.num_values
         self.emitter_state.values.append(val)
-        self.emitter_state.num_values += 1
         tensor = val.val if isinstance(val.val, Tensor) else None
-        return _AbstractValue(ret, tensor)
+        return _AbstractValue(len(self.emitter_state.values) - 1, tensor)
 
     def _emit_spec(self, spec: ValueSpec) -> _EmitterValue:
         """Given the provided spec constructs the corresponding EValue from it and then emits it."""
