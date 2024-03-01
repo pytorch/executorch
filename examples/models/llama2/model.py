@@ -647,7 +647,7 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = simple_quantizer.convert_for_runtime()
 
         self.model_.load_state_dict(
-            checkpoint, strict=False
+            checkpoint, strict=True
         )  # self.model_ = Transformer(gptconf)
 
     def get_eager_model(self):
