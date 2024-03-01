@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-
 #include <cstdarg>
 #include <cstdio>
 #ifdef __ANDROID__
@@ -20,19 +19,19 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...) {
   va_start(args, format);
   const char* serverity_name;
   switch (log_level) {
-    case kLogLevelVerbose:
+    case QnnExecuTorchLogLevel::kLogLevelVerbose:
       serverity_name = "VERBOSE";
       break;
-    case kLogLevelInfo:
+    case QnnExecuTorchLogLevel::kLogLevelInfo:
       serverity_name = "INFO";
       break;
-    case kLogLevelWarn:
+    case QnnExecuTorchLogLevel::kLogLevelWarn:
       serverity_name = "WARNING";
       break;
-    case kLogLevelError:
+    case QnnExecuTorchLogLevel::kLogLevelError:
       serverity_name = "ERROR";
       break;
-    case kLogLevelDebug:
+    case QnnExecuTorchLogLevel::kLogLevelDebug:
       serverity_name = "DEBUG";
       break;
     default:
@@ -42,24 +41,24 @@ void Log(QnnExecuTorchLogLevel log_level, const char* format, ...) {
 #ifdef __ANDROID__
   int android_severity = ANDROID_LOG_DEBUG;
   switch (log_level) {
-    case kLogLevelInfo:
+    case QnnExecuTorchLogLevel::kLogLevelInfo:
       android_severity = ANDROID_LOG_INFO;
       break;
-    case kLogLevelWarn:
+    case QnnExecuTorchLogLevel::kLogLevelWarn:
       android_severity = ANDROID_LOG_WARN;
       break;
-    case kLogLevelError:
+    case QnnExecuTorchLogLevel::kLogLevelError:
       android_severity = ANDROID_LOG_ERROR;
       break;
-    case kLogLevelVerbose:
-    case kLogLevelDebug:
+    case QnnExecuTorchLogLevel::kLogLevelVerbose:
+    case QnnExecuTorchLogLevel::kLogLevelDebug:
     default:
       android_severity = ANDROID_LOG_DEBUG;
       break;
   }
   __android_log_vprint(android_severity, "[Qnn ExecuTorch]", format, args);
 #endif
-  fprintf(stderr, "[%s]", serverity_name);
+  fprintf(stderr, "[%s] [Qnn ExecuTorch]: ", serverity_name);
   vfprintf(stderr, format, args);
   va_end(args);
   fputc('\n', stderr);
