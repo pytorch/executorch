@@ -24,7 +24,7 @@ from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
 from executorch.backends.xnnpack.serialization.xnnpack_graph_serialize import (
     serialize_xnnpack_binary,
 )
-from executorch.backends.xnnpack.utils.utils import is_param_node
+from executorch.backends.xnnpack.utils.utils import check_or_raise, is_param_node
 
 from executorch.backends.xnnpack.utils.xnnpack_constants import (
     XNN_VALUE_FLAG_EXTERNAL_INPUT,
@@ -63,7 +63,14 @@ def generate_node_to_external_map(
         #
         # Removing parameters/buffers since they will disappear from the signature
         # at runtime
-        if node.op == "placeholder" and not is_param_node(exported_program, node):
+        if (
+            node.op == "placeholder"
+            and not is_param_node(exported_program, node)
+            # Kind of hacky, but will fix after rebase, inputs to the graphs
+            # which are used for dynamic shape (sym_size) are not real inptus
+            and "sym_size" not in node.name
+            and len(node.users) != 0
+        ):
             node_to_external_map[node] = ExternalMeta(
                 external_id=len(node_to_external_map),
                 io_type=XNN_VALUE_FLAG_EXTERNAL_INPUT,
@@ -86,6 +93,7 @@ class XnnpackBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
+
         ep = copy.deepcopy(edge_program)
         # Need to wrap EP here because xnnpack does addmm to linear
         # transforms. This makes resulting graph not aten compliant
@@ -162,6 +170,12 @@ class XnnpackBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in XNNPACK")
+        check_or_raise(
+            xnnpack_graph.num_externs
+            == len(xnnpack_graph.output_ids) + len(xnnpack_graph.input_ids),
+            f"Internal Error: Preprocess found {xnnpack_graph.num_externs} inputs/outputs, "
+            f"but only serialized {xnnpack_graph.output_ids + xnnpack_graph.input_ids} input/output tensors ids",
+        )
         return PreprocessResult(
             processed_bytes=serialize_xnnpack_binary(
                 xnnpack_graph, constant_data_bytes
