@@ -76,6 +76,7 @@ void test_dtype() {
       quant_min,
       quant_max,
       indices,
+      out.scalar_type(),
       out);
 
   // (8 - 1) * 0.5 = 3.5
@@ -139,6 +140,7 @@ TEST(OpQuantizedEmbeddingTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       indices,
+      out.scalar_type(),
       out);
 
   // Do Q DQ embedding
@@ -196,6 +198,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbedding) {
       quant_min,
       quant_max,
       indices,
+      out.scalar_type(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -220,6 +223,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbedding) {
       quant_min,
       quant_max,
       indices,
+      out.scalar_type(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -251,6 +255,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath1) {
           quant_min,
           quant_max,
           indices,
+          out.scalar_type(),
           out),
       "");
 }
@@ -281,6 +286,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath2) {
           quant_min,
           quant_max,
           indices,
+          out.scalar_type(),
           out),
       "");
 }
@@ -310,6 +316,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath3) {
           quant_min,
           quant_max,
           indices,
+          out.scalar_type(),
           out),
       "");
 }
@@ -339,6 +346,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath4) {
           quant_min,
           quant_max,
           indices,
+          out.scalar_type(),
           out),
       "");
 }
@@ -368,6 +376,7 @@ TEST(OpQuantizedEmbeddingTest, TestGroupWiseQuantizedEmbeddingDeath5) {
           quant_min,
           quant_max,
           indices,
+          out.scalar_type(),
           out),
       "");
 }

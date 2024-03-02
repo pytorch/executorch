@@ -31,6 +31,7 @@ void check_embedding_byte_args(
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
@@ -75,8 +76,9 @@ void check_embedding_byte_args(
       static_cast<int8_t>(out.scalar_type()));
 
   ET_CHECK_MSG(
-      weight_scales.scalar_type() == out.scalar_type(),
-      "weight scales scalar type %" PRId8 " does not match out.scalar_type()",
+      weight_scales.scalar_type() == ScalarType::Float ||
+          weight_scales.scalar_type() == ScalarType::Half,
+      "weight_scales.scalar_type() %" PRId8 " is not supported:",
       static_cast<int8_t>(weight_scales.scalar_type()));
 
   if (opt_weight_zero_points.has_value()) {
@@ -116,13 +118,19 @@ void check_embedding_byte_args(
       " is greater than weight quant max: %" PRId64,
       weight_quant_min,
       weight_quant_max);
+
+  if (out_dtype.has_value()) {
+    ET_CHECK_MSG(
+        out.scalar_type() == out_dtype.value(),
+        "output_dtype must match the dtype of the out tensor");
+  }
 }
 
 /**
  * Retrieves the embeddings specified by indices, dequantizes them, and stores
  * them in out
  */
-template <class CTYPE_WEIGHT, class CTYPE_OUT>
+template <typename CTYPE_WEIGHT, typename CTYPE_PARAMS, typename CTYPE_OUT>
 void embedding_byte_per_channel(
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -142,19 +150,19 @@ void embedding_byte_per_channel(
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
   const int64_t* indices_ptr = indices.const_data_ptr<int64_t>();
 
-  const CTYPE_OUT* scales = weight_scales.const_data_ptr<CTYPE_OUT>();
-  const CTYPE_OUT* zero_points = nullptr;
+  const CTYPE_PARAMS* scales = weight_scales.const_data_ptr<CTYPE_PARAMS>();
+  const CTYPE_PARAMS* zero_points = nullptr;
   if (opt_weight_zero_points.has_value()) {
-    zero_points = opt_weight_zero_points.value().const_data_ptr<CTYPE_OUT>();
+    zero_points = opt_weight_zero_points.value().const_data_ptr<CTYPE_PARAMS>();
   }
 
   for (int i = 0; i < indices.numel(); i++) {
     int64_t index = indices_ptr[i];
     // If using groupwise embedding
     int32_t qparams_index = index * num_groups_per_channel;
-    CTYPE_OUT zp = 0.0;
-    const CTYPE_OUT* scale_ptr = scales + qparams_index;
-    const CTYPE_OUT* zero_points_ptr = nullptr;
+    CTYPE_PARAMS zp = 0.0;
+    const CTYPE_PARAMS* scale_ptr = scales + qparams_index;
+    const CTYPE_PARAMS* zero_points_ptr = nullptr;
     if (opt_weight_zero_points.has_value()) {
       zero_points_ptr = zero_points + qparams_index;
     }
@@ -164,7 +172,7 @@ void embedding_byte_per_channel(
 
     for (int j = 0; j < embedding_dim; ++j) {
       int32_t group_id = j / group_size;
-      const CTYPE_OUT scale = scale_ptr[group_id];
+      const CTYPE_PARAMS scale = scale_ptr[group_id];
       if (opt_weight_zero_points.has_value()) {
         zp = zero_points_ptr[group_id];
       }
@@ -219,6 +227,7 @@ Tensor& quantized_embedding_byte_out(
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO (jakeszwe): improve these to account for the size of out in relation
   // to weight and indices accounting for a possible batch dimension
@@ -229,16 +238,20 @@ Tensor& quantized_embedding_byte_out(
       weight_quant_min,
       weight_quant_max,
       indices,
+      out_dtype,
       out);
 
-  ScalarType w_type = weight.scalar_type();
+  ScalarType weight_type = weight.scalar_type();
+  ScalarType params_type = weight_scales.scalar_type();
   ScalarType out_type = out.scalar_type();
 
   constexpr auto name = "quantized_decomposed::embedding_byte.out";
-  ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, name, CTYPE_W, [&]() {
-    ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
-      embedding_byte_per_channel<CTYPE_W, CTYPE_OUT>(
-          weight, weight_scales, opt_weight_zero_points, indices, out);
+  ET_SWITCH_TWO_TYPES(Byte, Char, weight_type, ctx, name, CTYPE_W, [&]() {
+    ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
+      ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
+        embedding_byte_per_channel<CTYPE_W, CTYPE_P, CTYPE_OUT>(
+            weight, weight_scales, opt_weight_zero_points, indices, out);
+      });
     });
   });
 
@@ -253,6 +266,7 @@ Tensor& quantized_embedding_byte_out(
     int64_t weight_quant_min,
     int64_t weight_quant_max,
     const Tensor& indices,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
@@ -265,6 +279,7 @@ Tensor& quantized_embedding_byte_out(
       weight_quant_min,
       weight_quant_max,
       indices,
+      out_dtype,
       out);
 }
 
