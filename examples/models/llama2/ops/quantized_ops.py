@@ -14,12 +14,12 @@ quantized_lib = torch.library.Library(
 )  # to not be confused with torch.ops.quantized.* ops.
 quantized_lib.define(
     "embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
-    "int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor",
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None) -> Tensor",
 )
 
 quantized_lib.define(
     "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
-    "int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
 )
 
 
@@ -31,6 +31,8 @@ def embedding_byte_meta(
     weight_quant_min,
     weight_quant_max,
     indices,
+    *,
+    dtype,
 ):
     assert weight.dtype in [
         torch.int8,
@@ -71,7 +73,7 @@ def embedding_byte_meta(
         weight_quant_max,
         weight.dtype,
     )
-    return torch.ops.aten.embedding.default(weight, indices)
+    return torch.ops.aten.embedding.default(weight, indices).to(dtype)
 
 
 @impl_abstract("llama_quantized::embedding_byte.out")
@@ -82,6 +84,8 @@ def embedding_byte_out_meta(
     weight_quant_min,
     weight_quant_max,
     indices,
+    *,
+    dtype,
     out,
 ):
     return embedding_byte_meta(
@@ -91,4 +95,5 @@ def embedding_byte_out_meta(
         weight_quant_min,
         weight_quant_max,
         indices,
+        dtype=dtype,
     )
