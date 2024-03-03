@@ -94,6 +94,8 @@
 - op: clamp.out
   cpp_no_default_args: ['min']
 
+- op: clamp.Tensor_out
+
 - op: clone.out
 
 - op: constant_pad_nd.out
