@@ -112,9 +112,9 @@ def constant_prop_pass(exported_program: ExportedProgram) -> ExportedProgram:
                     )
                     prop_constant_data.append(prop_constant_node_input_spec)
                     buffers.append(prop_constant_tensor_fqn)
-                    exported_program.state_dict[
-                        prop_constant_tensor_fqn
-                    ] = prop_constant_tensor
+                    exported_program.state_dict[prop_constant_tensor_fqn] = (
+                        prop_constant_tensor
+                    )
                     exported_program.graph_signature.input_specs.append(
                         prop_constant_node_input_spec
                     )

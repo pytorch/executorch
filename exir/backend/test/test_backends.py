@@ -720,7 +720,11 @@ class TestBackends(unittest.TestCase):
         composite_m = CompositeModel(3)
         orig_res = composite_m(*inputs)
 
-        traced = exir.capture(composite_m, inputs, exir.CaptureConfig(),).to_edge(
+        traced = exir.capture(
+            composite_m,
+            inputs,
+            exir.CaptureConfig(),
+        ).to_edge(
             # torch._export.verifier.SpecViolationError: Operator torch._ops.aten.mkldnn_rnn_layer.default is not Aten Canonical.
             exir.EdgeCompileConfig(_check_ir_validity=False)
         )

@@ -835,9 +835,11 @@ class GraphModuleSerializer:
         return [
             ModuleCallEntry(
                 fqn=entry.fqn,
-                signature=self.serialize_module_call_signature(entry.signature)
-                if entry.signature
-                else None,
+                signature=(
+                    self.serialize_module_call_signature(entry.signature)
+                    if entry.signature
+                    else None
+                ),
             )
             for entry in module_call_graph
         ]
@@ -1668,9 +1670,11 @@ class GraphModuleDeserializer:
         return [
             ep.ModuleCallEntry(
                 fqn=entry.fqn,
-                signature=self.deserialize_module_call_signature(entry.signature)
-                if entry.signature
-                else None,
+                signature=(
+                    self.deserialize_module_call_signature(entry.signature)
+                    if entry.signature
+                    else None
+                ),
             )
             for entry in module_call_graph
         ]

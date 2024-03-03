@@ -186,9 +186,9 @@ def emit_program(
         plans.append(emitter.plan())
 
         debug_handle_map[name] = emitter.debug_handle_map
-        method_to_delegate_debug_id_map[
-            name
-        ] = emitter.instr_id_to_delegate_debug_id_map
+        method_to_delegate_debug_id_map[name] = (
+            emitter.instr_id_to_delegate_debug_id_map
+        )
 
     # emit any primitive getters
     if prim_getters is not None:

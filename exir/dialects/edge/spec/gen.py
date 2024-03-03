@@ -432,7 +432,8 @@ def gen_op_yaml(op_name: str) -> Optional[EdgeOpYamlInfo]:
     Arguments:
         op_name: The name of operator. Needs to conform the convention of "<name>.<overload_name>".
                 If no overload name for the operator, needs to use "default" as overload name.
-    Return the yaml info for given operator if generation succeed. Otherwise return None."""
+    Return the yaml info for given operator if generation succeed. Otherwise return None.
+    """
 
     try:
         func_schema: torch._C.FunctionSchema = get_callable(op_name)._schema

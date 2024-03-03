@@ -432,9 +432,11 @@ def capture_multiple(
                     "forward",
                     m.forward,
                     args,
-                    dynamic_shapes["forward"]
-                    if dynamic_shapes and "forward" in dynamic_shapes
-                    else None,
+                    (
+                        dynamic_shapes["forward"]
+                        if dynamic_shapes and "forward" in dynamic_shapes
+                        else None
+                    ),
                 )
             )
         else:
@@ -447,9 +449,11 @@ def capture_multiple(
                         method_name,
                         getattr(m, method_name),
                         method_args,
-                        dynamic_shapes[method_name]
-                        if dynamic_shapes and method_name in dynamic_shapes
-                        else None,
+                        (
+                            dynamic_shapes[method_name]
+                            if dynamic_shapes and method_name in dynamic_shapes
+                            else None
+                        ),
                     )
                 )
         if prim_getters is not None:
