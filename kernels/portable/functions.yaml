@@ -37,6 +37,11 @@
     - arg_meta: null
       kernel_name: torch::executor::_native_batch_norm_legit_no_training_out
 
+- op: _pdist_forward.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_pdist_forward_out
+
 - op: _softmax.out
   kernels:
     - arg_meta: null
