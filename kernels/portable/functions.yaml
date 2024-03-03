@@ -17,6 +17,11 @@
 # See the README.md file in this directory for a description of the syntax used
 # by this file.
 
+- op: _cdist_forward.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_cdist_forward_out
+
 - op: _log_softmax.out
   kernels:
     - arg_meta: null
