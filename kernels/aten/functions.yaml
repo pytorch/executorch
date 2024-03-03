@@ -146,6 +146,8 @@
 
 - op: fill.Tensor_out
 
+- op: flip.out
+
 - op: floor_divide.out
 
 - op: floor.out
