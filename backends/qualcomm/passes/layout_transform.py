@@ -13,6 +13,8 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 from executorch.exir.sym_util import eval_shape
 
+from .utils import dq_ops, q_ops
+
 
 class LayoutTransform(ExportPass):
     """
@@ -50,6 +52,8 @@ class LayoutTransform(ExportPass):
         exir_ops.edge.aten.bmm.default,
         exir_ops.edge.aten.full.default,
         exir_ops.edge.aten.gelu.default,
+        *q_ops,
+        *dq_ops,
         _operator.getitem,
     }
 
@@ -77,6 +81,7 @@ class LayoutTransform(ExportPass):
         super(LayoutTransform, self).__init__()
         self.edge_program = edge_program
         self.insert_permute = insert_permute
+        self.qdq_opset = {*q_ops, *dq_ops}
 
     def mark_as_transformed(self, node: torch.fx.Node) -> None:
         if isinstance(node.meta["val"], (tuple, list)):
@@ -108,6 +113,8 @@ class LayoutTransform(ExportPass):
             # if dimemsion is not kept, we'll have no clue how to do layout transform
             if len(node.args) < 3 or not node.args[2]:
                 return False
+        if node.target in self.qdq_opset:
+            return "requantize" in node.meta
         return node.target in self.layout_agnostic_ops
 
     def is_edge_condition(self, node):

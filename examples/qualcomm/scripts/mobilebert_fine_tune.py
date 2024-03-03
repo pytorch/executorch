@@ -26,9 +26,9 @@ def evaluate(model, data_val):
     predictions, true_vals = [], []
     for data in data_val:
         inputs = {
-            "input_ids": data[0],
-            "attention_mask": data[1],
-            "labels": data[2],
+            "input_ids": data[0].to(torch.long),
+            "attention_mask": data[1].to(torch.long),
+            "labels": data[2].to(torch.long),
         }
         logits = model(**inputs)[1].detach().numpy()
         label_ids = inputs["labels"].numpy()
@@ -58,8 +58,18 @@ def accuracy_per_class(preds, goldens, labels):
 def get_dataset(data_val):
     # prepare input data
     inputs, input_list = [], ""
+    # max_position_embeddings defaults to 512
+    position_ids = torch.arange(512).expand((1, -1)).to(torch.int32)
     for index, data in enumerate(data_val):
-        inputs.append(tuple(data[:2]))
+        data = [d.to(torch.int32) for d in data]
+        # input_ids, attention_mask, token_type_ids, position_ids
+        inputs.append(
+            (
+                *data[:2],
+                torch.zeros(data[0].size(), dtype=torch.int32),
+                position_ids[:, : data[0].shape[1]],
+            )
+        )
         input_text = " ".join(
             [f"input_{index}_{i}.raw" for i in range(len(inputs[-1]))]
         )
