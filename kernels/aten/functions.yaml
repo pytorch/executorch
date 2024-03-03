@@ -290,6 +290,8 @@
 
 - op: replication_pad3d.out
 
+- op: roll.out
+
 - op: round.out
 
 - op: rsqrt.out
