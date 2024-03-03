@@ -90,8 +90,13 @@ class NodeVisitor:
                 {},
             )
 
-        quant_attrs = node.meta["quant_attrs"]
+        quant_attrs = (
+            node.meta["requantize"]["dq_attrs"]
+            if "requantize" in node.meta
+            else node.meta["quant_attrs"]
+        )
         encoding = quant_attrs["encoding"]
+
         quant_config = {}
         if encoding in PER_CHANNEL_ENCODING_MAPPING:
             scales = quant_attrs["scales"]

@@ -49,8 +49,13 @@ class InsertIOQDQ(ExportPass):
         graph_module: torch.fx.GraphModule,
         node: torch.fx.node,
         target: torch.fx.node.Target,
+        quant_attrs: Dict = None,
     ) -> torch.fx.node:
-        quant_attrs = node.meta.get("quant_attrs")
+        # check if there has a specified quant_attrs
+        # if not, use the existent info. from current node
+        if quant_attrs is None:
+            quant_attrs = node.meta.get("quant_attrs")
+
         inserted_node = graph_module.graph.create_node(
             "call_function",
             target,
@@ -69,12 +74,15 @@ class InsertIOQDQ(ExportPass):
         graph_module: torch.fx.GraphModule,
         node: torch.fx.node,
         target: torch.fx.node.Target,
-    ) -> None:
+        quant_attrs: Dict = None,
+    ) -> torch.fx.Node:
         with graph_module.graph.inserting_after(node):
             users = list(node.users.keys())
-            inserted_node = self._insert_node(graph_module, node, target)
+            inserted_node = self._insert_node(graph_module, node, target, quant_attrs)
             for user in users:
                 user.replace_input_with(node, inserted_node)
+
+        return inserted_node
 
     def _insert_dequant_node(
         self,

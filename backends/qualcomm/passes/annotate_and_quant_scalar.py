@@ -98,7 +98,11 @@ class AnnotateAndQuantScalar(ExportPass):
                 q_node = dq_node.args[0]
                 q_node_attrs = get_quant_attrs(graph_module, q_node)
 
-                scalar_node = [n for n in output.args if n != dq_node][0]
+                scalar_nodes = [n for n in output.args if n != dq_node]
+                if len(scalar_nodes) == 0:
+                    continue
+
+                scalar_node = scalar_nodes[0]
                 source_scalar_node = self._get_source_scalar_node(scalar_node)
                 # we'll abandon cast op here, since the constant scalar will
                 # be pre-loaded into QNN context binary
