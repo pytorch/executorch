@@ -191,6 +191,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_cosh_test", ["aten", "portable"])
     _common_op_test("op_cumsum_test", ["aten", "portable"])
     _common_op_test("op_detach_copy_test", ["aten", "portable"])
+    _common_op_test("op_diagonal_copy_test", ["aten", "portable"])
     _common_op_test("op_div_test", ["aten", "portable", "optimized"])
     _common_op_test("op_embedding_test", ["aten", "portable"])
     _common_op_test("op_empty_test", ["aten", "portable"])

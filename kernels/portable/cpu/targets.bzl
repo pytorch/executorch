@@ -256,6 +256,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_diagonal_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+    ),
+    op_target(
         name = "op_div",
         deps = [
             "//executorch/kernels/portable/cpu/util:broadcast_util",
