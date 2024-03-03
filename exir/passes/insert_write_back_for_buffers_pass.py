@@ -72,15 +72,17 @@ def _insert_copy(
 def insert_write_back_for_buffers_pass(ep: ExportedProgram):
     gm: torch.fx.GraphModule = ep.graph_module
     lifted_inputs: List[Optional[str]] = [
-        in_spec.target
-        if in_spec.kind
-        in (
-            InputKind.BUFFER,
-            InputKind.CONSTANT_TENSOR,
-            InputKind.PARAMETER,
-            InputKind.CUSTOM_OBJ,
+        (
+            in_spec.target
+            if in_spec.kind
+            in (
+                InputKind.BUFFER,
+                InputKind.CONSTANT_TENSOR,
+                InputKind.PARAMETER,
+                InputKind.CUSTOM_OBJ,
+            )
+            else None
         )
-        else None
         for in_spec in ep.graph_signature.input_specs
     ]
 

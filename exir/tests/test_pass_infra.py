@@ -36,6 +36,7 @@ class TestPassInfra(unittest.TestCase):
         """
         Test if we register a callable correctly
         """
+
         # Registering w/o specifying pass_name
         @PassRegistry.register()
         def test_pass1(graph_module: torch.fx.GraphModule) -> None:

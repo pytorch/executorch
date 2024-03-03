@@ -28,7 +28,7 @@ class TestExirCommon(unittest.TestCase):
 
         schemas = get_schema_for_operators(op_list)
         pat = re.compile(r"[^\(]+\([^\)]+\) -> ")
-        for (_op_name, schema) in schemas.items():
+        for _op_name, schema in schemas.items():
             self.assertIsNotNone(re.match(pat, schema))
 
     def test_get_out_args(self) -> None:

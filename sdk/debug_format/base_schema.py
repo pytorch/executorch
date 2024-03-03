@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+
 # Base Representation of a generic node within a ModelGraph
 @dataclass
 class Node:
@@ -42,6 +43,7 @@ class OperatorGraph:
 """
 Node SubClasses Types
 """
+
 
 # Representation of a "Value" node within a ModelGraph
 # i.e. Non-Operator Nodes

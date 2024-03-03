@@ -13,6 +13,7 @@ from executorch.exir.backend.canonical_partitioners.duplicate_dequant_node_pass 
 )
 from executorch.exir.pass_manager import PassType
 
+
 ### XNNPACK Configs ###
 def get_xnnpack_edge_compile_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(

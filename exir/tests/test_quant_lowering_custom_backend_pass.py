@@ -975,7 +975,10 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
                 backend_config=get_executorch_backend_config(),
             )
             print("converted:", converted_mod)
-            captured_mod = exir.capture(converted_mod, example_inputs,).to_edge(
+            captured_mod = exir.capture(
+                converted_mod,
+                example_inputs,
+            ).to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
 
