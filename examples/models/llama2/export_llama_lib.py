@@ -191,7 +191,8 @@ def quantize(
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "int4":
         model_int4 = Int8DynActInt4WeightQuantHandler(
-            model, activation_precision=torch_dtype
+            model,
+            precision=torch_dtype,
         ).quantized_model()
         print("quantized model:", model_int4)
         return model_int4
@@ -397,10 +398,6 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"xnnpack_{modelname}"
 
     # TODO: remove this after xnnpack delegation is ready
-    if args.quantization_mode == "int4":
-        raise Exception(
-            "some quantized ops should be lowered to xnnpack, but xnnpack delegate is not ready yet"
-        )
 
     builder = (
         load_llama_model(
