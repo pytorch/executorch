@@ -64,7 +64,8 @@ def dynamically_quantize_per_channel(
                         with a final group of a size less than group size.
 
     Assumptions:
-        This function assumes symmetric quantization, axis ==0 and a dense memory format."""
+        This function assumes symmetric quantization, axis ==0 and a dense memory format.
+    """
 
     # assumes symmetric quantization
     # assumes axis == 0
