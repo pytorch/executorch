@@ -242,6 +242,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_mul_test", ["aten", "portable", "optimized"])
     _common_op_test("op_pow_test", ["aten", "portable"])
     _common_op_test("op_native_batch_norm_test", ["aten", "portable"])
+    _common_op_test("op_native_group_norm_test", ["aten", "portable"])
     _common_op_test("op_native_layer_norm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_ne_test", ["aten", "portable"])
     _common_op_test("op_neg_test", ["aten", "portable", "optimized"])
