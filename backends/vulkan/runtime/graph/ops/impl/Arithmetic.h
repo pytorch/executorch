@@ -29,16 +29,16 @@ DECLARE_OP_FN(pow);
 
 ValueRef add_arithmetic_node(
     ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
+    const ValueRef in1,
+    const ValueRef in2,
     const float alpha,
     const arithmetic::OpType optype,
     const int64_t shared_object_idx = -1);
 
 void add_arithmetic_node(
     ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
+    const ValueRef in1,
+    const ValueRef in2,
     const ValueRef out,
     const float alpha,
     const arithmetic::OpType optype);
@@ -53,8 +53,8 @@ class ArithmeticPrepack : public virtual PrepackNode {
 class ArithmeticNode : public virtual ExecuteNode {
  public:
   explicit ArithmeticNode(
-      const ValueRef t1,
-      const ValueRef t2,
+      const ValueRef in1,
+      const ValueRef in2,
       const ValueRef out,
       const float alpha,
       const arithmetic::OpType optype);
