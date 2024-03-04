@@ -100,7 +100,7 @@ void encode_copy_from_vtensor(
 
 StagingNode::StagingNode(ValueRef from, ValueRef to) : ExecuteNode(from, to) {}
 
-void StagingNode::encode(ComputeGraph* graph) const {
+void StagingNode::encode(ComputeGraph* graph) {
   Value& in_val = graph->get_val(inputs_[0]);
   Value& out_val = graph->get_val(outputs_[0]);
 

@@ -33,20 +33,37 @@ class ExecuteNode {
 
  public:
   ExecuteNode(ValueRef input, ValueRef output)
-      : inputs_{input}, outputs_{output} {}
+      : outputs_{output}, inputs_{input} {}
+
   ExecuteNode(
+      const api::ShaderInfo& shader,
+      const api::utils::uvec3& global_workgroup_size,
+      const api::utils::uvec3& local_workgroup_size,
+      const std::vector<ValueRef>& outputs,
       const std::vector<ValueRef>& inputs,
-      const std::vector<ValueRef>& outputs)
-      : inputs_(inputs), outputs_(outputs) {}
+      const api::UniformParamsBuffer& params)
+      : shader_(shader),
+        global_workgroup_size_(global_workgroup_size),
+        local_workgroup_size_(local_workgroup_size),
+        outputs_(outputs),
+        inputs_(inputs),
+        params_(params) {}
 
   virtual ~ExecuteNode() = default;
 
  protected:
-  std::vector<ValueRef> inputs_;
+  // TODO: Consider making members const after we remove StagingNode.
+  api::ShaderInfo shader_;
+  api::utils::uvec3 global_workgroup_size_;
+  api::utils::uvec3 local_workgroup_size_;
   std::vector<ValueRef> outputs_;
+  std::vector<ValueRef> inputs_;
+  // TODO(T180906086): pass multiple buffers and index with ValueRef.
+  // TODO(T180906457): allow re-computing param buffers.
+  api::UniformParamsBuffer params_;
 
  public:
-  virtual void encode(ComputeGraph* graph) const = 0;
+  virtual void encode(ComputeGraph* graph);
 };
 
 } // namespace vulkan

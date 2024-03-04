@@ -88,7 +88,7 @@ class StagingNode : public virtual ExecuteNode {
  public:
   explicit StagingNode(ValueRef from, ValueRef to);
 
-  void encode(ComputeGraph* graph) const override;
+  void encode(ComputeGraph* graph) override;
 };
 
 } // namespace vulkan

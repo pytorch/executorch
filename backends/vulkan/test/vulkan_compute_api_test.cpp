@@ -10,7 +10,7 @@
 
 #include <ATen/native/vulkan/api/api.h>
 
-#include <ATen/native/vulkan/impl/Arithmetic.h>
+#include <ATen/native/vulkan/impl/Common.h>
 #include <ATen/native/vulkan/impl/Packing.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
@@ -431,8 +431,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
   IOValueRef out = {};
 
-  out.value = add_arithmetic_node(
-      graph, a.value, b.value, 1.0, arithmetic::OpType::ADD);
+  out.value = add_arithmetic_node(graph, a.value, b.value, 1.0, VK_KERNEL(add));
 
   out.staging = graph.set_output_tensor(out.value);
 
@@ -478,9 +477,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
 
-  ValueRef c =
-      add_arithmetic_node(graph, a.value, w1, 1.0, arithmetic::OpType::ADD);
-  ValueRef e = add_arithmetic_node(graph, c, w2, 1.0, arithmetic::OpType::MUL);
+  ValueRef c = add_arithmetic_node(graph, a.value, w1, 1.0, VK_KERNEL(add));
+  ValueRef e = add_arithmetic_node(graph, c, w2, 1.0, VK_KERNEL(mul));
 
   IOValueRef out = {};
   out.value = e;
@@ -536,7 +534,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       a.value,
       b.value,
       1.0,
-      arithmetic::OpType::ADD,
+      VK_KERNEL(add),
       /*shared_object_idx = */ 6);
 
   IOValueRef d = graph.add_input_tensor(
@@ -552,7 +550,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       c,
       d.value,
       1.0,
-      arithmetic::OpType::MUL,
+      VK_KERNEL(mul),
       /*shared_object_idx = */ 4);
 
   IOValueRef out = {};
