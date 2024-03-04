@@ -5,6 +5,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Generates a template `functions.yaml` from a model binary. Ignoring all custom ops
 import argparse
 import os

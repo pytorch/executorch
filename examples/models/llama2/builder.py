@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 # Providing builders for Llama2 models. These builders help user to build Llama2
 # eager models, apply source transformations and quantization and export them to
 # ExecuTorch.

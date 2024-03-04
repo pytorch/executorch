@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 r"""
 Register the functions to return metadata for scratch tensors by attaching the
 get_scratch_metas method to the out varaint op.

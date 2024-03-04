@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from executorch.exir.graph_module import get_control_flow_submodules
 from executorch.exir.pass_base import ExportPass
 from torch.fx import GraphModule

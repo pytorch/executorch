@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 from collections import defaultdict
 from functools import partial
 from typing import Any, Dict, List, Optional, Set, Tuple
