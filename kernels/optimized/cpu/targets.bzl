@@ -13,6 +13,7 @@ _OPTIMIZED_ATEN_OPS = (
         name = "op_bmm",
         deps = [
             "//executorch/kernels/optimized:libblas",
+            "//executorch/extension/parallel:thread_parallel",
         ],
     ),
     op_target(
