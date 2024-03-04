@@ -337,9 +337,9 @@ def _get_binary_op_patterns_and_replacements(
     ]
 
 
-def _get_binary_ops_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_binary_ops_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
 
     # TODO: replace qbinary op with the ops implemented in lean mode
     binary_op_to_qbinary_ops = {
@@ -360,9 +360,9 @@ def _get_binary_ops_patterns_and_replacements() -> List[
     return pattern_and_replacements
 
 
-def _get_reshape_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_reshape_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
     def pattern(
         x,
         arg0,
@@ -413,9 +413,9 @@ def _get_reshape_patterns_and_replacements() -> List[
     ]
 
 
-def _get_slice_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_slice_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
     def pattern(x, dim, start, end, x_scale, x_zero_point, x_qmin, x_qmax):
         x = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
             x, x_scale, x_zero_point, x_qmin, x_qmax, torch.uint8
@@ -439,9 +439,9 @@ def _get_slice_patterns_and_replacements() -> List[
     ]
 
 
-def _get_embedding_ops_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_embedding_ops_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
     def get_pattern_and_replacement():
         @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte")
         def pattern(
@@ -616,9 +616,9 @@ n        return [(pattern, replacement, [])]
 """
 
 
-def get_quant_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def get_quant_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
 
     return copy.copy(
         [

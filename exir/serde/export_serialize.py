@@ -1728,9 +1728,9 @@ class ExportedProgramDeserializer:
             symbol_name_to_range,
             res.names_to_symbols,
         )
-        model_opset_version: Optional[
-            Dict[str, int]
-        ] = serialized_artifact.exported_program.opset_version  # pyre-ignore
+        model_opset_version: Optional[Dict[str, int]] = (
+            serialized_artifact.exported_program.opset_version  # pyre-ignore
+        )
         self._validate_model_opset_version(model_opset_version)
 
         upgrader = GraphModuleOpUpgrader(
