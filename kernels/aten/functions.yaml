@@ -1,6 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # This yaml file contains operators that are defined by the ATen library.
+
+- op: _cdist_forward.out
+
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
 - op: _linalg_det.result
