@@ -662,6 +662,11 @@
     - arg_meta: null
       kernel_name: torch::executor::replication_pad3d_out
 
+- op: roll.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::roll_out
+
 - op: round.out
   kernels:
     - arg_meta: null
