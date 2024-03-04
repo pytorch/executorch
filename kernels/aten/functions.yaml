@@ -9,6 +9,10 @@
 
 - op: _log_softmax.out
 
+- op: _native_batch_norm_legit.out
+
+- op: _native_batch_norm_legit.no_stats_out
+
 - op: _native_batch_norm_legit_no_training.out
 
 - op: _reshape_alias_copy.out
