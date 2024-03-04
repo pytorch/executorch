@@ -68,6 +68,10 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     }
   }
 
+  private void setLocalModel(String modelPath, String tokenizerPath) {
+    mModule = new LlamaModule(modelPath, tokenizerPath, 0.8f);
+  }
+
   private void modelDialog() {
     AlertDialog.Builder builder = new AlertDialog.Builder(this);
     builder.setTitle("Select a Model");
@@ -81,7 +85,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
                 setModel("stories110M.pte", "tokenizer.bin");
                 break;
               case 1:
-                setModel("language.pte", "language.bin");
+                setLocalModel("/data/local/tmp/language.pte", "/data/local/tmp/language.bin");
                 break;
             }
             mEditTextMessage.setText("");
