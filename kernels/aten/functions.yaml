@@ -368,6 +368,8 @@
 
 - op: upsample_nearest2d.vec_out
 
+- op: var.correction_out
+
 - op: var.out
 
 - op: view_copy.out
