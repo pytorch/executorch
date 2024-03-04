@@ -124,16 +124,8 @@ class XNNExecutor {
         outputs.size());
 
     for (int i = 0; i < outputs.size(); i++) {
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-      externals_.emplace_back(xnn_external_value{
-          output_ids_[i],
-          outputs[i]->mutable_data_ptr<float>(),
-          static_cast<size_t>(output_shapes[i].num_dims),
-          output_shapes[i].dim});
-#else
       externals_.emplace_back(xnn_external_value{
           output_ids_[i], outputs[i]->mutable_data_ptr<float>()});
-#endif
     }
 
     return Error::Ok;
