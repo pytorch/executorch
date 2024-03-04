@@ -15,7 +15,9 @@
 
 #if defined(__GNUC__) || defined(__clang__)
 #if defined(__aarch64__)
+#ifndef __ARM_V8_ONLY__
 #define NATIVE_FP16 1
+#endif // __ARM_V8_ONLY__
 #endif // __aarch64__
 #endif // GNUC or clang
 
