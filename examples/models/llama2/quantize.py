@@ -887,9 +887,9 @@ class QuantizedGroupEmbedding(torch.nn.Module):
 
     @torch.no_grad()
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
-        return torch.ops.llama_quantized.embedding_byte.default(
-            self.weight, self.scales, None, 0, 0, indices
-        ).to(self.dtype)
+        return torch.ops.llama_quantized.embedding_byte.dtype(
+            self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
+        )
 
 
 #        result_weights = self.weight.index_select(0, indices.view(-1))
