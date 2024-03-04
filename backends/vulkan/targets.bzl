@@ -53,8 +53,8 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//caffe2:torch_vulkan_api",
             "//caffe2:torch_vulkan_ops",
+            "//caffe2:torch_vulkan_spv",
         ],
         define_static_target = False,
     )
