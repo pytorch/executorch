@@ -20,12 +20,12 @@ using Tensor = exec_aten::Tensor;
 
 namespace {
 
-void check_repeat_args(
+bool check_repeat_args(
     Tensor self,
     exec_aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
   // Ensure the self tensors list is non-empty.
-  ET_CHECK_MSG(
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
       repeats.size() >= self.dim(),
       "Number of dimensions of repeat dims can not be smaller than number of dimensions of tensor");
 
@@ -34,11 +34,11 @@ void check_repeat_args(
   for (auto repeat : repeats) {
     all_non_negative = all_non_negative && (repeat >= 0);
   }
-  ET_CHECK_MSG(
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
       all_non_negative, "Trying to create tensor with negative dimension");
 
   /// Check if out.size() is legal.
-  ET_CHECK_MSG(
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
       out.dim() == repeats.size(),
       "The dimension of out shall equal size of repeats, but now is %zd and %zd",
       out.dim(),
@@ -47,12 +47,12 @@ void check_repeat_args(
   // Right now we only support the tensors whose dimension is no greater than
   // kTensorDimensionLimit. Only check out tensor because the number of
   // dimension of out tensor shall have more than or equal to self tensor
-  ET_CHECK_MSG(
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
       out.dim() <= kTensorDimensionLimit,
       "The dimension of input and output should not be larger than %zd",
       kTensorDimensionLimit);
 
-  ET_CHECK_SAME_DTYPE2(out, self);
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(out, self));
 
   // We pad one to the beginning of self.size() to make its length equal
   // repeats, and called it reformat_self_size. We then make point-to-point mul
@@ -66,13 +66,15 @@ void check_repeat_args(
     reformat_self_size[out.dim() - 1 - i] = self.size(self.dim() - 1 - i);
   }
   for (size_t i = 0; i < repeats.size(); i++) {
-    ET_CHECK_MSG(
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
         reformat_self_size[i] * repeats[i] == out.size(i),
         "Expect out size at dimension %zu is %" PRId64 ", but now is %zd",
         i,
         reformat_self_size[i] * repeats[i],
         out.size(i));
   }
+
+  return true;
 }
 
 // Given the indices to a point in an n-D tensor, and the stride (in bytes)
@@ -163,16 +165,19 @@ void repeat_internal(
 
 // TODO(gasoonjia): dynamic allocate array to support tensor dimension larger
 // than kTensorDimensionLimit.
-Tensor& repeat_tensor(
+Error repeat_tensor(
     const Tensor& self,
     exec_aten::ArrayRef<int64_t> repeats,
     Tensor& out) {
-  // Assert that the args are valid.
-  check_repeat_args(self, repeats, out);
+  // Verify that the args are valid.
+  ET_CHECK_OR_RETURN_ERROR(
+      check_repeat_args(self, repeats, out),
+      InvalidArgument,
+      "Repeat arguments are invalid.");
 
   // Returns out if out.numel == 0, nothing needs to be repeated.
   if (out.numel() == 0) {
-    return out;
+    return Error::Ok;
   }
 
   ssize_t element_size = out.element_size();
@@ -183,7 +188,7 @@ Tensor& repeat_tensor(
     const char* src = self.const_data_ptr<char>();
     char* dest = out.mutable_data_ptr<char>();
     memcpy(dest, src, element_size);
-    return out;
+    return Error::Ok;
   }
 
   // Treats zero-dim self as one-dim tensor with size {1}.
@@ -274,7 +279,7 @@ Tensor& repeat_tensor(
     accum_offset *= out.size(i);
   }
 
-  return out;
+  return Error::Ok;
 }
 
 } // namespace executor
