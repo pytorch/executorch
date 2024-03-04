@@ -82,6 +82,7 @@ class ModelArgs:
     use_sdpa_with_kv_cache_op: bool = (
         False  # Use custom sdpa op that updates kv cache in-place
     )
+    rope_freq_base: float = 10000.0  # The base frequency for RoPE
     # Additional Model Metadata needed at runtime
     bos_idx: int = 1
     eos_idx: int = 3
@@ -108,7 +109,7 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+def precompute_freqs_cis(dim: int, end: int, theta: float):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     freqs = torch.outer(t, freqs).float()  # pyre-ignore
@@ -411,7 +412,9 @@ class Transformer(nn.Module):
         self.use_kv_cache = params.use_kv_cache
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
-            self.params.dim // self.params.n_heads, self.params.max_seq_len
+            params.dim // params.n_heads,
+            params.max_seq_len,
+            params.rope_freq_base,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
         self.register_buffer("freqs_sin", freqs_sin, persistent=False)
