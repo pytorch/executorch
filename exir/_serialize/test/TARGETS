@@ -23,3 +23,13 @@ python_unittest(
         "//executorch/exir/_serialize:lib",
     ],
 )
+
+python_unittest(
+    name = "cord",
+    srcs = [
+        "test_cord.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)

@@ -13,13 +13,14 @@ import re
 from dataclasses import dataclass
 from typing import ClassVar, List, Literal, Optional, Tuple
 
+from executorch.exir._serialize._cord import Cord
+
 from executorch.exir._serialize._dataclass import _DataclassEncoder, _json_to_dataclass
 from executorch.exir._serialize._flatbuffer import (
     _FlatbufferResult,
     _program_flatbuffer_to_json,
     _program_json_to_flatbuffer,
 )
-
 from executorch.exir.schema import (
     BackendDelegateDataReference,
     BackendDelegateInlineData,
@@ -352,69 +353,86 @@ def _extract_constant_segment(
     return bytes(constant_segment_data), constant_segment_offsets
 
 
-def _extract_segments(
-    program: Program,
-    extract_delegate_segments: bool,
-    extract_constant_segment: bool,
-    segment_alignment: int,
-    constant_tensor_alignment: int,
-) -> Tuple[Program, List[bytes]]:
-    """Extracts constant and/or delegate data from a given Program into separate segments.
+def _extract_delegate_cord(program: Program) -> Cord:
+    delegate_cord = Cord()
+    remaining_inline: List[BackendDelegateInlineData] = []
+    inline_indices_seen: set[int] = set()
+    for plan in program.execution_plan:
+        for delegate in plan.delegates:
+            if delegate.processed.location != DataLocation.INLINE:
+                raise ValueError(
+                    "Program must only contain inline delegate data, "
+                    + f"saw {repr(delegate)}"
+                )
+            # TODO(T144120904): Don't extract small blobs into segments;
+            # have a cutoff. Or callers could provide a callback that
+            # returns true/false for a given BackendDelegate, letting them
+            # use their own logic.
+            try:
+                inline: BackendDelegateInlineData = program.backend_delegate_data[
+                    delegate.processed.index
+                ]
+            except IndexError:
+                raise ValueError(
+                    f"Delegate processed index {delegate.processed.index} "
+                    + ">= len(Program.backend_delegate_data) "
+                    + f"{len(program.backend_delegate_data)} "
+                    + f"in {repr(delegate)}"
+                )
+            inline_indices_seen.add(delegate.processed.index)
+            if inline.data:
+                # Move the delegate data out of the program.
+                # segment_index = len(segments)
+                # segments.append(inline.data)
+                delegate_cord.append(inline.data)
+                delegate.processed = BackendDelegateDataReference(
+                    location=DataLocation.SEGMENT,
+                    index=len(delegate_cord),
+                )
+            else:
+                # Not moving into a segment. Keep it inline, but update the
+                # index.
+                new_index = len(remaining_inline)
+                remaining_inline.append(inline)
+                delegate.processed.index = new_index
 
-    Args:
-        program: The Program to extract segments from.
-        extract_delegate_segments: Whether to extract delegate data blobs from the program.
-        extract_constant_segment: Whether to extract constant data from the program.
-        segment_alignment: Alignment in bytes. The starting offset of each
-            segment will be aligned to this value in the output data.
-        constant_tensor_alignment: Alignment in bytes. The starting offset of each tensor
-            in the constant segment will be aligned to this value.
-    Returns:
-        A tuple of (modified program, list of segment data).
-    Raises:
-        ValueError, if the program already contains segments.
-    """
-    if program.segments:
+    # Make sure we visited all entries in backend_delegate_data, so that it's
+    # safe to overwrite it.
+    remaining_indices: set[int] = set(
+        range(len(program.backend_delegate_data))
+    ).difference(inline_indices_seen)
+    if remaining_indices:
         raise ValueError(
-            f"Program already has {len(program.segments)} segments: "
-            + f"{repr(program.segments)}"
+            "Did not handle all elements of backend_delegate_data; "
+            + f"remaining: {remaining_indices}"
         )
 
-    # Don't modify the original program.
-    # TODO(T144120904): Could avoid yet more huge copies with a more shallow
-    # copy, reusing the actual data blobs.
-    program = copy.deepcopy(program)
+    # Preserve any entries that were not moved into segments.
+    program.backend_delegate_data = remaining_inline
 
-    # Segment data to be written to the file following the flatbuffer data.
-    segments: List[bytes] = []
+    return delegate_cord
 
-    if extract_constant_segment:
-        constant_segment_data, constant_segment_offsets = _extract_constant_segment(
-            program.constant_buffer, tensor_alignment=constant_tensor_alignment
-        )
 
-        if constant_segment_data:
-            # Append constant_segment_data to the list of segments if non-empty.
-            segments.append(constant_segment_data)
-            # Append constant_segment offset to the list of DataSegments. Added as the
-            # first segment here, but it's not mandatory that the constant segment be
-            # the first one in the file.
-            program.segments.append(
-                DataSegment(offset=0, size=len(constant_segment_data))
-            )
-
-            # Fill in constant_segment offsets and clear the constant buffer; only one of
-            # constant_segment and constant_buffer should be non-empty.
-            program.constant_segment = SubsegmentOffsets(
-                segment_index=0, offsets=constant_segment_offsets
-            )
-            program.constant_buffer = []
-
-    if extract_delegate_segments:
-        _extract_delegate_segments(
-            program, segments=segments, segment_alignment=segment_alignment
-        )
-    return program, segments
+def _extract_constant_cord(
+    constant_buffer: List[Buffer],
+    tensor_alignment: int,
+) -> Tuple[Cord, List[int]]:
+    constant_cord: Cord = Cord()
+    constant_segment_offsets: List[int] = [0]
+    current_offset: int = 0
+    for i in range(len(constant_buffer)):
+        buffer = constant_buffer[i]
+        if len(buffer.storage) == 0:
+            continue
+        constant_cord.append(buffer.storage)
+        buffer_length = len(buffer.storage)
+        pad_length = _padding_required(buffer_length, tensor_alignment)
+        if i < len(constant_buffer) - 1:
+            constant_cord.append(b"\x00" * pad_length)
+        constant_segment_offsets.append(current_offset)
+        current_offset += buffer_length + pad_length
+    print(f"_program.py: constant_segment_offsets: {constant_segment_offsets}")
+    return constant_cord, constant_segment_offsets
 
 
 def _append_segments(
@@ -508,7 +526,7 @@ def serialize_pte_binary(
     segment_alignment: int = 4096,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
-) -> bytes:
+) -> Cord:
     """Returns the runtime binary representation of the given Program.
 
     Args:
@@ -537,18 +555,49 @@ def serialize_pte_binary(
     if constant_tensor_alignment is None:
         constant_tensor_alignment = 16
 
-    # Segment data to be written to the file following the flatbuffer data.
-    segments: List[bytes] = []
-
     # Extract constant segment and delegate segments, if requested.
-    if extract_constant_segment or extract_delegate_segments:
-        program, segments = _extract_segments(
-            program=program,
-            extract_delegate_segments=extract_delegate_segments,
-            extract_constant_segment=extract_constant_segment,
-            segment_alignment=segment_alignment,
-            constant_tensor_alignment=constant_tensor_alignment,
+    program = copy.deepcopy(program)
+    constant_cord = Cord()
+    delegate_cord = Cord()
+    if extract_constant_segment:
+        print("_program.py: extracting constant segment")
+        constant_cord, constant_segment_offsets = _extract_constant_cord(
+            program.constant_buffer, tensor_alignment=constant_tensor_alignment
         )
+        if len(constant_cord) > 0:
+            print("_program.py: append constant segment to cord")
+            program.segments.append(
+                DataSegment(offset=0, size=constant_cord.get_byte_size())
+            )
+            program.constant_buffer = []
+            program.constant_segment = SubsegmentOffsets(
+                segment_index=0, offsets=constant_segment_offsets
+            )
+    if extract_delegate_segments:
+        print("_program.py: extracting delegate segment")
+        delegate_cord = _extract_delegate_cord(program)
+
+    # Combine the two cords and create segment_offsets
+
+
+    combined_cord = constant_cord
+    for data in delegate_cord:
+        prev_end = (
+            program.segments[-1].offset + program.segments[-1].size
+            if program.segments
+            else 0
+        )
+        program.segments.append(
+            DataSegment(
+                offset=_aligned_size(prev_end, segment_alignment), size=len(data)
+            )
+        )
+
+        padding_length = _padding_required(
+            combined_cord.get_byte_size(), segment_alignment
+        )
+        combined_cord.append(b"\x00" * padding_length)
+        combined_cord.append(data)
 
     # Convert to a standard flatbuffer binary.
     result: _FlatbufferResult = _program_json_to_flatbuffer(
@@ -558,8 +607,13 @@ def serialize_pte_binary(
     )
 
     # If there are no segments present, do not insert the extended header.
-    if not segments:
-        return result.data
+    if len(combined_cord) == 0 or (
+        not extract_constant_segment and not extract_delegate_segments
+    ):
+        print(f"_program.py: returning data")
+        result_ = Cord()
+        result_.append(result.data)
+        return result_
 
     # Size of the header to insert. Its size is padded to the largest
     # force_align value present in the schema.
@@ -572,7 +626,7 @@ def serialize_pte_binary(
     # Offset to the first segment, or zero if there are no segments.
     segment_base_offset: int = (
         _aligned_size(input_size=program_size, alignment=segment_alignment)
-        if segments
+        if len(combined_cord) > 0
         else 0
     )
 
@@ -583,6 +637,7 @@ def serialize_pte_binary(
     header_data = _pad_to(header_data, padded_header_length)
 
     # Insert the header into the flatbuffer data.
+    # Cordify this too.
     program_data: bytes = _insert_flatbuffer_header(
         flatbuffer_data=result.data,
         magic_regex=r"ET[0-9a-zA-Z][0-9a-zA-Z]",
@@ -600,18 +655,19 @@ def serialize_pte_binary(
     assert eh.program_size == program_size
     assert eh.segment_base_offset == segment_base_offset
 
-    if segments:
-        # Add segments to the end of the data, in order, with the appropriate
-        # padding.
-        program_data = _append_segments(
-            program_data=program_data,
-            segments=segments,
-            alignment=segment_alignment,
-            segment_table=program.segments,
-            base_offset=segment_base_offset,
+    program_cord = Cord()
+    program_cord.append(program_data)
+    if len(combined_cord) > 0:
+        padding_length = _padding_required(
+            program_cord.get_byte_size(), segment_alignment
         )
+        print(
+            f"_program.py: padding is {padding_length}, program size: {program_cord.get_byte_size()}, segment_base_offset {segment_base_offset}"
+        )
+        program_cord.append(b"\x00" * padding_length)
+        program_cord.append_cord(combined_cord)
 
-    return program_data
+    return program_cord
 
 
 def _restore_segments(program: Program, segment_data: bytes) -> Program:

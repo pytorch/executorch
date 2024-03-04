@@ -10,6 +10,7 @@
 
 import json
 import logging
+import os
 from enum import Enum
 from json import JSONDecodeError
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -343,4 +344,9 @@ class LlamaEdgeManager:
             output_name (Optional[str]): The name of the .pte file.
         """
         assert output_name, "Need a valid output name"
-        save_pte_program(self.export_program.buffer, output_name, self.output_dir)
+
+        filename = os.path.join(self.output_dir, f"{output_name}.pte")
+        self.export_program.save_to_file(filename)
+        logging.info(f"Saved exported program to {filename}")
+
+        # save_pte_program(self.export_program.buffer, output_name, self.output_dir)

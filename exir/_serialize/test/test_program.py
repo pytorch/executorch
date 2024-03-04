@@ -169,7 +169,7 @@ class TestProgram(unittest.TestCase):
             extract_constant_segment=True,
             segment_alignment=SEGMENT_ALIGNMENT,
             constant_tensor_alignment=constant_tensor_alignment,
-        )
+        ).to_bytes()
 
         # The input Program should not be modified.
         self.assertEqual(program.segments, [])
@@ -395,7 +395,7 @@ class TestProgram(unittest.TestCase):
         deserializing.
         """
         program = get_test_program()
-        pte_data = serialize_pte_binary(program)
+        pte_data = serialize_pte_binary(program).to_bytes()
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -418,7 +418,7 @@ class TestProgram(unittest.TestCase):
         """
         program = get_test_program()
         program.execution_plan[0].non_const_buffer_sizes = [0, 2**48]
-        flatbuffer_from_py = serialize_pte_binary(program)
+        flatbuffer_from_py = serialize_pte_binary(program).to_bytes()
         self.assert_programs_equal(program, deserialize_pte_binary(flatbuffer_from_py))
 
     def test_round_trip_no_segments_and_no_header(self) -> None:
@@ -430,7 +430,7 @@ class TestProgram(unittest.TestCase):
         program = get_test_program()
         pte_data = serialize_pte_binary(
             program, extract_delegate_segments=True, extract_constant_segment=True
-        )
+        ).to_bytes()
         self.assertGreater(len(pte_data), 16)
 
         # File magic should be present at the expected offset.
@@ -478,7 +478,7 @@ class TestProgram(unittest.TestCase):
         # Extract the blobs into segments during serialization.
         pte_data = serialize_pte_binary(
             program, extract_delegate_segments=True, segment_alignment=SEGMENT_ALIGNMENT
-        )
+        ).to_bytes()
 
         # The input Program should not have been modified.
         self.assertEqual(program.segments, [])
@@ -589,7 +589,7 @@ class TestProgram(unittest.TestCase):
         # Extract the blobs into segments should succeeed.
         pte_data = serialize_pte_binary(
             program, extract_delegate_segments=True, segment_alignment=SEGMENT_ALIGNMENT
-        )
+        ).to_bytes()
         self.assertGreater(len(pte_data), 16)
 
         # Add another inline blob that is not pointed to by a delegate.
@@ -603,7 +603,7 @@ class TestProgram(unittest.TestCase):
                 program,
                 extract_delegate_segments=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
-            )
+            ).to_bytes()
 
     def test_constant_segment_tensor_alignment_16(self) -> None:
         self.constant_segment_with_tensor_alignment(16)
@@ -625,7 +625,7 @@ class TestProgram(unittest.TestCase):
                 extract_constant_segment=True,
                 segment_alignment=SEGMENT_ALIGNMENT,
                 constant_tensor_alignment=constant_tensor_alignment,
-            )
+            ).to_bytes()
 
     def test_constant_segment_and_delegate_segment(self) -> None:
         # Create a program with some constant tensor data and delegate data blobs.
@@ -649,7 +649,7 @@ class TestProgram(unittest.TestCase):
             extract_constant_segment=True,
             segment_alignment=SEGMENT_ALIGNMENT,
             constant_tensor_alignment=CONSTANT_TENSOR_ALIGNMENT,
-        )
+        ).to_bytes()
 
         # The input Program should not be modified.
         self.assertEqual(program.segments, [])

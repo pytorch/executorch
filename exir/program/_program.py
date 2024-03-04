@@ -12,6 +12,7 @@ import torch
 import torch._export
 
 from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize._cord import Cord
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
@@ -409,6 +410,7 @@ class ExecutorchProgram:
                 "Need to call prog.to_edge prior to constructing ExecutorchProgram."
             )
         self.exported_program = exir_exported_program.exported_program
+        self._cord: Optional[Cord] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -419,9 +421,9 @@ class ExecutorchProgram:
         self._delegate_alignment: Optional[int] = delegate_alignment
 
     @property
-    def buffer(self) -> bytes:
-        if self._buffer is None:
-            self._buffer = _serialize_pte_binary(
+    def get_serialized_cord(self) -> Cord:
+        if self._cord is None:
+            self._cord = _serialize_pte_binary(
                 program=self.program,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
@@ -429,6 +431,16 @@ class ExecutorchProgram:
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
             )
+        return self._cord
+
+    @property
+    def save_to_file(self, file) -> None:
+        return self.get_serialized_cord.write_to_file(file)
+
+    @property
+    def buffer(self) -> bytes:
+        if self._buffer is None:
+            self._buffer = self.get_serialized_cord.to_bytes()
         return self._buffer
 
     @property
@@ -747,7 +759,7 @@ class MultiMethodExecutorchProgram:
                 segment_alignment=self._segment_alignment,
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
-            )
+            ).to_bytes()
         return self._buffer
 
     @property
@@ -1117,7 +1129,7 @@ class ExecutorchProgramManager:
         )
 
         # Serialize emitter output to a buffer
-        self._buffer: bytes = _serialize_pte_binary(
+        self._cord: Cord = _serialize_pte_binary(
             program=self._emitter_output.program,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
@@ -1182,4 +1194,7 @@ class ExecutorchProgramManager:
         """
         Returns a buffer containing the serialized ExecuTorch binary.
         """
-        return self._buffer
+        return self._cord.to_bytes()
+
+    def save_to_file(self, file) -> None:
+        return self._cord.write_to_file(file)

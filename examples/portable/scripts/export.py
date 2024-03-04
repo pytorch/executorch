@@ -8,6 +8,7 @@
 
 import argparse
 import logging
+import os
 
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 
@@ -71,7 +72,9 @@ def main() -> None:
             dynamic_shapes=dynamic_shapes,
             backend_config=backend_config,
         )
-    save_pte_program(prog.buffer, args.model_name, args.output_dir)
+        filename = os.path.join(args.output_dir, f"{args.model_name}.pte")
+        prog.save_to_file(file=filename)
+        # save_pte_program(prog.buffer, args.model_name, args.output_dir)
 
 
 if __name__ == "__main__":
