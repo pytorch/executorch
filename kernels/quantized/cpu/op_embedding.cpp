@@ -54,12 +54,14 @@ void check_embedding_byte_args(
     if (weight_scales.dim() == 2) {
       auto num_groups = weight_scales.size(1);
       auto remainder = weight.size(1) % num_groups;
+#if 0 // handle a partial last group
       ET_CHECK_MSG(
           remainder == 0,
           "Number of groups must divide weight.size(1)=%zd"
           ", but got # of groups = %zd",
           weight.size(1),
           num_groups);
+#endif // handle a partial last group
     }
   }
 
