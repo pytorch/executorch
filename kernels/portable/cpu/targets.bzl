@@ -651,6 +651,12 @@ _ATEN_OPS = (
         ],
     ),
     op_target(
+        name = "op_pdist_forward",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:distance_util",
+        ],
+    ),
+    op_target(
         name = "op_permute_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
