@@ -118,6 +118,8 @@
 
 - op: detach_copy.out
 
+- op: diagonal_copy.out
+
 - op: div.out
 
 - op: div.Scalar_mode_out
