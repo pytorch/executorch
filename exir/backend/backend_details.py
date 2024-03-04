@@ -21,9 +21,9 @@ def enforcedmethod(func):
 @dataclass
 class PreprocessResult:
     processed_bytes: bytes = bytes()
-    debug_handle_map: Optional[Union[Dict[int, Tuple[int]], Dict[str, Tuple[int]]]] = (
-        None
-    )
+    debug_handle_map: Optional[
+        Union[Dict[int, Tuple[int]], Dict[str, Tuple[int]]]
+    ] = None
 
 
 """

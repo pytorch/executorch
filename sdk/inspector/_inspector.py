@@ -80,9 +80,9 @@ class InstructionEvent:
         and DebugEvents by instruction id and return a list of InstructionEvents
         constructed from collated events (ignoring run_output events)
         """
-        instruction_events: Dict[InstructionEventSignature, InstructionEvent] = (
-            OrderedDict()
-        )
+        instruction_events: Dict[
+            InstructionEventSignature, InstructionEvent
+        ] = OrderedDict()
         for event in run_events:
             # Find the event that was logged
             populated_event: Union[DebugEvent, ProfileEvent] = find_populated_event(
@@ -668,9 +668,9 @@ class EventBlock:
                 continue
 
             # Collate the run_events into InstructionEvents
-            instruction_events: List[InstructionEvent] = (
-                InstructionEvent.gen_from_events(run_events)
-            )
+            instruction_events: List[
+                InstructionEvent
+            ] = InstructionEvent.gen_from_events(run_events)
 
             # Map EventSignatures to the InstructionEvents
             event_signatures: Dict[EventSignature, InstructionEvent] = OrderedDict()
@@ -720,9 +720,9 @@ class EventBlock:
             TIME_SCALE_DICT[source_time_scale] / TIME_SCALE_DICT[target_time_scale]
         )
         for run_signature, grouped_run_instance in run_groups.items():
-            run_group: OrderedDict[EventSignature, List[InstructionEvent]] = (
-                grouped_run_instance.events
-            )
+            run_group: OrderedDict[
+                EventSignature, List[InstructionEvent]
+            ] = grouped_run_instance.events
             run_outputs: ProgramOutput = grouped_run_instance.run_output
 
             # Construct the Events

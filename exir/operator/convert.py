@@ -23,6 +23,7 @@ the following information
 
 """
 
+
 import dataclasses
 import logging
 from typing import Dict, Optional, Tuple
@@ -206,9 +207,9 @@ def set_mapping_for_op(op: OpOverload) -> None:
                 mismatched_out_schema: Optional[FunctionSchema] = next(
                     (s for s in all_schemas if s.kind() == SchemaKind.out), None
                 )
-                _schema_mismatch_map[schema_to_opoverload(func_op_schema)] = (
-                    mismatched_out_schema
-                )
+                _schema_mismatch_map[
+                    schema_to_opoverload(func_op_schema)
+                ] = mismatched_out_schema
 
         # update hte map even if scratch_schema is None to cache the negative
         # case

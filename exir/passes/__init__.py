@@ -483,14 +483,14 @@ base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = Pass
     ]
 ).passes
 
-base_post_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
-    PassManager(
-        passes=[
-            dead_code_elimination_pass,
-            DebugHandleGeneratorPass(),
-        ]
-    ).passes
-)
+base_post_op_replace_passes: List[
+    Callable[[torch.nn.Module], PassResult]
+] = PassManager(
+    passes=[
+        dead_code_elimination_pass,
+        DebugHandleGeneratorPass(),
+    ]
+).passes
 
 
 def propagate_dynamic_shape(

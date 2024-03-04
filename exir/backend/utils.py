@@ -277,9 +277,9 @@ class DelegateMappingBuilder:
 
         # Note that the internal struct has a Set value, while the getter
         # function returns the values as a tuple
-        self._debug_handle_map: Union[Dict[int, Set[int]], Dict[str, Set[int]]] = (
-            defaultdict(set)
-        )
+        self._debug_handle_map: Union[
+            Dict[int, Set[int]], Dict[str, Set[int]]
+        ] = defaultdict(set)
         self._next_index: int = 0
 
     def get_delegate_mapping(

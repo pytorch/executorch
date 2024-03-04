@@ -387,9 +387,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     # to_backend
     partitioners = {}
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
-            XnnpackDynamicallyQuantizedPartitioner()
-        )
+        partitioners[
+            XnnpackDynamicallyQuantizedPartitioner.__name__
+        ] = XnnpackDynamicallyQuantizedPartitioner()
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:

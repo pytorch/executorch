@@ -231,9 +231,9 @@ class TestGenOpList(unittest.TestCase):
         self.assertListEqual(sorted(ops.keys()), ["aten::add.out", "aten::mul.out"])
 
     def test_get_kernel_metadata_from_ops_yaml(self) -> None:
-        metadata: Dict[str, List[str]] = (
-            gen_oplist._get_et_kernel_metadata_from_ops_yaml(self.ops_schema_yaml)
-        )
+        metadata: Dict[
+            str, List[str]
+        ] = gen_oplist._get_et_kernel_metadata_from_ops_yaml(self.ops_schema_yaml)
 
         self.assertEqual(len(metadata), 2)
 
