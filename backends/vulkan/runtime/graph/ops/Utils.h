@@ -30,6 +30,11 @@ void bind_tensor_to_descriptor_set(
     api::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
+void bind_staging_to_descriptor_set(
+    api::StorageBuffer& staging,
+    api::DescriptorSet& descriptor_set,
+    const uint32_t idx);
+
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
     const std::vector<ValueRef>& args,
