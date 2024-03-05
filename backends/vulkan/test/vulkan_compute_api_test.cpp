@@ -162,7 +162,7 @@ class VulkanComputeAPITest : public ::testing::Test {
 //
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
-  // Try to shader from custom shader library
+  // Try to get shader from custom shader library
   const api::ShaderInfo& kernel = VK_KERNEL(test_shader);
 
   EXPECT_TRUE(kernel.kernel_name == "test_shader");
