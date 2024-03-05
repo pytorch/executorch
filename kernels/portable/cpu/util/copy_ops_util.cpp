@@ -869,7 +869,7 @@ void get_diagonal_copy_out_target_size(
     int64_t offset,
     int64_t dim1,
     int64_t dim2,
-    Tensor::SizesType* out_sizes,
+    exec_aten::SizesType* out_sizes,
     size_t* out_ndim) {
   *out_ndim = in.dim() - 1;
 
