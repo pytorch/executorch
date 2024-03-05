@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 namespace at {
