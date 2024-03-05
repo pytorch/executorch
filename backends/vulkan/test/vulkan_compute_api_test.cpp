@@ -13,6 +13,8 @@
 #include <ATen/native/vulkan/impl/Common.h>
 #include <ATen/native/vulkan/impl/Packing.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
