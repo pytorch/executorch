@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import ClassVar, List
 
 # pyre-ignore[21]: Could not find module `executorch.exir._serialize._bindings`.
-import executorch.exir._serialize._bindings as bindings  # @manual=//executorch/exir/_serialize:_bindings
 import pkg_resources
 import torch
 
@@ -22,6 +21,8 @@ from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
     VkGraph,
 )
 from executorch.exir._serialize._dataclass import _DataclassEncoder
+
+from executorch.exir._serialize._flatbuffer import _flatc_compile
 
 
 def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
@@ -35,7 +36,7 @@ def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
         with open(json_path, "wb") as json_file:
             json_file.write(vk_graph_json.encode("ascii"))
         # pyre-ignore
-        bindings.flatc_compile(d, schema_path, json_path)
+        _flatc_compile(d, schema_path, json_path)
         output_path = os.path.join(d, "schema.bin")
         with open(output_path, "rb") as output_file:
             return output_file.read()

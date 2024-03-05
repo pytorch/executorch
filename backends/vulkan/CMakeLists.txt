@@ -32,6 +32,9 @@ if(NOT FLATC_EXECUTABLE)
   set(FLATC_EXECUTABLE flatc)
 endif()
 
+# Include this file to access target_link_options_shared_lib
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
 # ATen Vulkan Libs
 
 set(PYTORCH_PATH ${EXECUTORCH_ROOT}/third-party/pytorch)
@@ -91,6 +94,29 @@ target_link_libraries(vulkan_backend PRIVATE vulkan_schema)
 target_link_libraries(vulkan_backend PRIVATE executorch)
 
 target_compile_options(vulkan_backend PRIVATE ${VULKAN_CXX_FLAGS})
+
+# This is required to ensure that vulkan_backend gets linked with
+# --whole-archive since backends are registered via static variables that would
+# otherwise be discarded
+target_link_options_shared_lib(vulkan_backend)
+
+# Executor Runner
+
+if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
+  set(VULKAN_RUNNER_SRCS ${_executor_runner__srcs})
+  list(TRANSFORM VULKAN_RUNNER_SRCS PREPEND "${EXECUTORCH_ROOT}/")
+  add_executable(vulkan_executor_runner ${VULKAN_RUNNER_SRCS})
+  target_link_libraries(vulkan_executor_runner ${_executor_runner_libs})
+  target_link_libraries(vulkan_executor_runner vulkan_schema)
+  target_link_libraries(vulkan_executor_runner vulkan_backend)
+  target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
+
+  add_library(vulkan_executor_runner_lib STATIC ${VULKAN_RUNNER_SRCS})
+  target_link_libraries(vulkan_executor_runner_lib ${_executor_runner_libs})
+  target_link_libraries(vulkan_executor_runner_lib vulkan_schema)
+  target_link_libraries(vulkan_executor_runner_lib vulkan_backend)
+  target_compile_options(vulkan_executor_runner_lib PUBLIC ${VULKAN_CXX_FLAGS})
+endif()
 
 # Test targets
 
