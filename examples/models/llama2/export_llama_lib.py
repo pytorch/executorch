@@ -426,6 +426,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     if builder.dtype == DType.fp16:
         modelname = f"{modelname}_h"
 
+    if args.use_kv_cache:
+        modelname = f"{modelname}_kv"
+
     builder.save_to_pte(modelname)
     output_file = f"{builder.output_dir}/{modelname}.pte"
 
