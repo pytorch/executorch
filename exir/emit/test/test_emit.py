@@ -215,7 +215,7 @@ class TestEmit(unittest.TestCase):
                 return [((1, 3, 1.2), True, [x + x, x * x])]
 
         ep = torch.export.export(M(), (torch.ones(2, 3),))
-        res = ep(torch.ones(2, 3))
+        res = ep.module()(torch.ones(2, 3))
         self.assertEqual(res[0][0], (1, 3, 1.2))
         program = to_edge(ep).to_executorch().executorch_program
         outputs = program.execution_plan[0].outputs
@@ -235,7 +235,7 @@ class TestEmit(unittest.TestCase):
                 return x + y, x + x, x + y + z
 
         ep = torch.export.export(M(), (torch.ones(2, 3), 2, True))
-        ep(torch.ones(2, 3), 2, True)
+        ep.module()(torch.ones(2, 3), 2, True)
         program = to_edge(ep).to_executorch().executorch_program
         inputs = program.execution_plan[0].inputs
         self.assertEqual(len(inputs), 3)
