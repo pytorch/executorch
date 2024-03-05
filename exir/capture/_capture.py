@@ -240,10 +240,12 @@ def capture(  # noqa: C901
             )
 
         if out_spec is None:
-            out_spec = (
-                graph_module.graph._codegen.pytree_info.out_spec
-                or pytree.tree_flatten(f(*args))[1]
-            )
+            if isinstance(graph_module.graph._codegen, torch.fx.graph._PyTreeCodeGen):
+                out_spec = graph_module.graph._codegen.pytree_info.out_spec
+            elif hasattr(graph_module, "_out_spec"):
+                out_spec = graph_module._out_spec
+            else:
+                out_spec = pytree.tree_flatten(f(*args))[1]
 
         # NOTE (tmanlaibaatar)
         # torchdynamo.export adds extra kwarg into the graph module
