@@ -57,8 +57,8 @@ def embedding_byte_weight_checks(weight, weight_scales, weight_zero_points):
         weight_zero_points is None or weight_zero_points.dtype == weight_scales.dtype
     ), "Expecting weight_zero_points to be None or have same dtype as weight_scales"
     assert (
-        weight_zero_points is None or weight_zero_points.dim() == 1
-    ), f"Expecting weight_zero_points tensor to be None or have dim()==1, but found {weight_zero_points.dim()}"
+        weight_zero_points is None or weight_zero_points.dim() == weight_scales.dim()
+    ), f"Expecting weight_zero_points tensor to be None or have dim() same as weight scales, but found {weight_zero_points.dim()}"
     assert weight_zero_points is None or weight_zero_points.size(0) == weight.size(
         0
     ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and {weight_zero_points.size()}"

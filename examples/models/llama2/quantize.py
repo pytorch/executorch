@@ -76,7 +76,7 @@ def dynamically_quantize_per_channel(
 
     if group_size is None or group_size == 0:
         items = x_shape_1
-    elif not enable_non_multiple_groups:
+    elif (x_shape_1 % group_size == 0) or not enable_non_multiple_groups:
         assert group_size > 0, "group size must be positive"
         assert (
             x_shape_1 % group_size
@@ -128,6 +128,7 @@ def dynamically_quantize_per_channel(
     scales = scales.to(dtype=scales_dtype)
     quant = quant[:, :x_shape_1]
 
+    print(f"quant shape {quant.shape} scales shape {scales.shape}")
     return quant, scales, zero_points
 
 
