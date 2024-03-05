@@ -123,6 +123,7 @@ set(qnn_header_basenames
     HTP/QnnHtpPerfInfrastructure.h
     HTP/QnnHtpProfile.h
     HTP/QnnHtpProperty.h
+    HTP/QnnHtpContext.h
     QnnInterface.h
     QnnLog.h
     QnnMem.h

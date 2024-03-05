@@ -31,7 +31,7 @@ class QnnContext {
   }
 
   virtual ~QnnContext();
-  Error Configure();
+  Error Configure(int spill_fill_size = 0);
 
   Qnn_ContextHandle_t GetHandle() {
     return handle_;
@@ -61,6 +61,7 @@ class QnnContext {
 
  private:
   Qnn_ContextHandle_t handle_;
+  Qnn_ContextHandle_t m_sf_handle;
   const QnnImplementation& implementation_;
   QnnBackend* backend_;
   QnnDevice* device_;
