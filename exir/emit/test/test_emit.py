@@ -19,6 +19,7 @@ import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
@@ -42,6 +43,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.models import Mul
+from executorch.extension.pybindings.aten_lib import _load_for_executorch_from_buffer
 from functorch.experimental import control_flow
 from torch import nn
 
@@ -1393,3 +1395,41 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(exec_plan.inputs), 1)
         self.assertEqual(len(program.constant_buffer), 2)
         self.assertEqual(len(program.constant_buffer[1].storage), 24)
+
+    def test_mutable_buffers(self) -> None:
+        def count_copies(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (
+                    node.target == torch.ops.aten.copy_
+                    or node.target == exir_ops.edge.aten.copy_.default
+                )
+                for node in gm.graph.nodes
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                y = x + self.state
+                self.state.add_(1)
+                return y
+
+        model = to_edge(
+            export(
+                MutableStateModule(),
+                (torch.zeros(1),),
+            )
+        )
+        model = model.to_executorch()
+        model.dump_executorch_program(True)
+        self.assertTrue(
+            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
+            .values[0]
+            .val.allocation_info
+            is not None
+        )
+        executorch_module = _load_for_executorch_from_buffer(model.buffer)
+        self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1))
+        self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1) + 1)
