@@ -23,12 +23,13 @@ namespace torch::executor {
  * described below
  * f: user function applied in parallel to the chunks, signature:
  *   void f(int64_t begin, int64_t end)
+ * Returns true if all work items are processed successfully, false otherwise
  *
  * Warning: parallel_for does NOT copy thread local states from the current
  * thread to the worker threads. Users need to protect the access to captured
  * data if they mutate them in f.
  */
-void parallel_for(
+bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
