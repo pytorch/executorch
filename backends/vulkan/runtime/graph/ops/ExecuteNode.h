@@ -41,13 +41,13 @@ class ExecuteNode {
       const api::utils::uvec3& local_workgroup_size,
       const std::vector<ValueRef>& outputs,
       const std::vector<ValueRef>& inputs,
-      const api::UniformParamsBuffer& params)
+      api::UniformParamsBuffer&& params)
       : shader_(shader),
         global_workgroup_size_(global_workgroup_size),
         local_workgroup_size_(local_workgroup_size),
         outputs_(outputs),
         inputs_(inputs),
-        params_(params) {}
+        params_(std::move(params)) {}
 
   virtual ~ExecuteNode() = default;
 
