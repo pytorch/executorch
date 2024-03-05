@@ -81,7 +81,7 @@ ValueRef ComputeGraph::set_input_tensor(
   if (use_staging) {
     vTensor& tensor = get_val(idx).toTensor();
     ValueRef staging_idx = add_staging(tensor.dtype(), tensor.gpu_numel());
-    execute_nodes_.emplace_back(new StagingNode(staging_idx, idx));
+    add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back(staging_idx);
     return staging_idx;
   }
@@ -95,7 +95,7 @@ ValueRef ComputeGraph::set_output_tensor(
   if (use_staging) {
     vTensor& tensor = get_val(idx).toTensor();
     ValueRef staging_idx = add_staging(tensor.dtype(), tensor.gpu_numel());
-    execute_nodes_.emplace_back(new StagingNode(idx, staging_idx));
+    add_tensor_to_staging_node(*this, idx, staging_idx);
     outputs_.push_back(staging_idx);
     return staging_idx;
   }
