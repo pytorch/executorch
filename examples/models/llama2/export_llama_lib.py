@@ -424,7 +424,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         generate_memory_trace(builder.export_program, "memory_profile.json")
 
     if builder.dtype == DType.fp16:
-        modelname = f"{modelname}_h"
+        modelname = f"{modelname}_fp16"
 
     if args.use_kv_cache:
         modelname = f"{modelname}_kv"
