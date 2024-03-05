@@ -37,6 +37,13 @@ void bind_tensor_to_descriptor_set(
   }
 }
 
+void bind_staging_to_descriptor_set(
+    api::StorageBuffer& staging,
+    api::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  descriptor_set.bind(idx, staging.buffer());
+}
+
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
     const std::vector<ValueRef>& args,
@@ -48,9 +55,10 @@ uint32_t bind_values_to_descriptor_set(
   for (auto& arg : args) {
     Value& val = graph->get_val(arg);
     if (val.isTensor()) {
-      vTensor& tensor = val.toTensor();
       bind_tensor_to_descriptor_set(
-          tensor, pipeline_barrier, accessType, descriptor_set, idx++);
+          val.toTensor(), pipeline_barrier, accessType, descriptor_set, idx++);
+    } else if (val.isStaging()) {
+      bind_staging_to_descriptor_set(val.toStaging(), descriptor_set, idx++);
     } else {
       VK_THROW("Unsupported type: ", val.type());
     }

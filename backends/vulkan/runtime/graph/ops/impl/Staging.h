@@ -12,7 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <string.h>
+#include <cstring>
 
 namespace at {
 namespace native {
@@ -76,20 +76,26 @@ void encode_copy_to_vtensor(
     api::Context* context,
     api::StorageBuffer& staging,
     vTensor& tensor);
-void encode_copy_from_vtensor(
-    api::Context* context,
-    vTensor& tensor,
-    api::StorageBuffer& staging);
 
-/*
- * OpNode that allows copying data into and out of a staging buffer.
- */
-class StagingNode : public virtual ExecuteNode {
- public:
-  explicit StagingNode(ValueRef from, ValueRef to);
+//
+// Functions to initialize ExecuteNode
+//
 
-  void encode(ComputeGraph* graph) override;
-};
+void add_staging_to_tensor_node(
+    ComputeGraph& graph,
+    const ValueRef in_staging,
+    const ValueRef out_tensor);
+void add_tensor_to_staging_node(
+    ComputeGraph& graph,
+    const ValueRef in_tensor,
+    const ValueRef out_staging);
+
+//
+// Functions to get shaders
+//
+
+api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst);
+api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src);
 
 } // namespace vulkan
 } // namespace native
