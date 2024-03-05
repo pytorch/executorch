@@ -40,6 +40,7 @@ def define_common_targets():
     # Set up a specific exported library for scalar_type to avoid circle dependency in ScalarTypeUtil.h
     runtime.cxx_library(
         name = "scalar_type",
+        srcs = ["half.cpp"],
         exported_headers = [
             "bfloat16.h",
             "complex.h",
