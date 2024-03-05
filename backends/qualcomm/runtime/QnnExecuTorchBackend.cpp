@@ -194,13 +194,16 @@ Error QnnExecuTorchBackend::execute(
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
 
-  for (int i = input_tensors.size();
-       i < input_tensors.size() + output_tensors.size();
-       ++i) {
-    output_tensors[i - input_tensors.size()]->FillDataBuffer(
-        args[i]->toTensor().mutable_data_ptr(), false /* copy_data */);
-    output_tensor_structs.push_back(
-        output_tensors[i - input_tensors.size()]->CloneTensorStruct());
+  int output_index = input_tensors.size();
+  for (const auto& output_tensor : output_tensors) {
+    // pos=0 limits the search to the prefix
+    if (output_tensor->GetName().rfind("output_", 0) == 0) {
+      output_tensor->FillDataBuffer(
+          args[output_index]->toTensor().mutable_data_ptr(),
+          false /* copy_data */);
+      output_index++;
+    }
+    output_tensor_structs.push_back(output_tensor->CloneTensorStruct());
   }
 
   ET_CHECK_OR_RETURN_ERROR(

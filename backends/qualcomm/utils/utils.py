@@ -122,6 +122,7 @@ def generate_qnn_executorch_compiler_spec(
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
+    tensor_dump_output_path: str = "",
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -142,6 +143,10 @@ def generate_qnn_executorch_compiler_spec(
         saver: Instead of compiling the model, run QNN Saver. Please check
             documents of Qualcomm AI Engine Direct SDK. This feature is usually
             for debugging purpose.
+        tensor_dump_output_path: If a path is given, Delegate would write
+            outputs of each OP there in runtime. In ALL cases,
+            we don't recommend to set this option. This option exist just
+            for debugging some accuracy issues.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -186,6 +191,9 @@ def generate_qnn_executorch_compiler_spec(
 
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
+
+    if len(tensor_dump_output_path.strip()) != 0:
+        qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
 
     if online_prepare:
         qnn_executorch_options.online_prepare = True

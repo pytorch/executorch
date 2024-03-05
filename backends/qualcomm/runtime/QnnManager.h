@@ -42,6 +42,10 @@ class QnnManager {
 
   bool IsAvailable();
 
+  bool IsTensorDump() {
+    return !tensor_dump_output_path_.empty();
+  }
+
   bool IsOnlinePrepare();
 
   bool IsNodeSupportedByBackend(
@@ -68,6 +72,7 @@ class QnnManager {
   QnnExecuTorchBackendType backend_type_;
   std::string library_path_;
   std::string skel_library_dir_;
+  std::string tensor_dump_output_path_;
   std::string graph_name_;
   const SocInfo* soc_info_;
   const QnnExecuTorchHtpBackendOptions* htp_options_;
