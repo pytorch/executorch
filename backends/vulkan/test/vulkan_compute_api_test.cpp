@@ -10,7 +10,7 @@
 
 #include <ATen/native/vulkan/api/api.h>
 
-#include <ATen/native/vulkan/impl/Arithmetic.h>
+#include <ATen/native/vulkan/impl/Common.h>
 #include <ATen/native/vulkan/impl/Packing.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
@@ -431,8 +431,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
   IOValueRef out = {};
 
-  out.value = add_arithmetic_node(
-      graph, a.value, b.value, 1.0, arithmetic::OpType::ADD);
+  out.value = add_arithmetic_node(graph, a.value, b.value, 1.0, VK_KERNEL(add));
 
   out.staging = graph.set_output_tensor(out.value);
 
@@ -478,9 +477,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
 
-  ValueRef c =
-      add_arithmetic_node(graph, a.value, w1, 1.0, arithmetic::OpType::ADD);
-  ValueRef e = add_arithmetic_node(graph, c, w2, 1.0, arithmetic::OpType::MUL);
+  ValueRef c = add_arithmetic_node(graph, a.value, w1, 1.0, VK_KERNEL(add));
+  ValueRef e = add_arithmetic_node(graph, c, w2, 1.0, VK_KERNEL(mul));
 
   IOValueRef out = {};
   out.value = e;
@@ -528,7 +526,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  // Allocation count will be 2 (1 staging buffer for each input tensor)
+  // Allocation count will be 2:
+  // 1 staging buffer for each input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 2);
 
   ValueRef c = add_arithmetic_node(
@@ -536,7 +535,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       a.value,
       b.value,
       1.0,
-      arithmetic::OpType::ADD,
+      VK_KERNEL(add),
       /*shared_object_idx = */ 6);
 
   IOValueRef d = graph.add_input_tensor(
@@ -544,29 +543,33 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // Allocation count will be 3 (1 staging buffer for each input tensor)
-  EXPECT_TRUE(get_vma_allocation_count() == 3);
+  // Allocation count will be 4, two are new:
+  // 1 uniform buffer for arithmetic shader params
+  // 1 staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 4);
 
   ValueRef e = add_arithmetic_node(
       graph,
       c,
       d.value,
       1.0,
-      arithmetic::OpType::MUL,
+      VK_KERNEL(mul),
       /*shared_object_idx = */ 4);
 
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // Allocation count will be 4 (1 staging buffer for each I/O tensor)
-  EXPECT_TRUE(get_vma_allocation_count() == 4);
+  // Allocation count will be 6, three are new:
+  // 1 uniform buffer for arithmetic shader params
+  // 1 staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 6);
 
   graph.encode_execute();
 
   // Allocation count will be 13:
   // 4 staging buffers for each I/O tensor
-  // 6 uniform buffers to store args for each shader dispatch
+  // 6 uniform buffers to store params for each shader dispatch
   // 3 shared objects to back tensor memory
   EXPECT_TRUE(get_vma_allocation_count() == 13);
 
