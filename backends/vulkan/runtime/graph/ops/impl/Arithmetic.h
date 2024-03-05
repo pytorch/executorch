@@ -50,13 +50,6 @@ struct ArithmeticParams final {
   float alpha;
 };
 
-class ArithmeticPrepack : public virtual PrepackNode {
- public:
-  explicit ArithmeticPrepack(const ValueRef tref, const ValueRef packed);
-
-  void encode(ComputeGraph* graph) const override;
-};
-
 } // namespace vulkan
 } // namespace native
 } // namespace at
