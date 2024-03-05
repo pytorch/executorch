@@ -14,17 +14,18 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
+
 namespace at {
 namespace native {
 namespace vulkan {
 
-void add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
-    const ValueRef out,
-    const float alpha,
-    const arithmetic::OpType optype);
+DECLARE_OP_FN(add);
+DECLARE_OP_FN(sub);
+DECLARE_OP_FN(mul);
+DECLARE_OP_FN(div);
+DECLARE_OP_FN(floor_div);
+DECLARE_OP_FN(pow);
 
 ValueRef add_arithmetic_node(
     ComputeGraph& graph,
@@ -33,6 +34,14 @@ ValueRef add_arithmetic_node(
     const float alpha,
     const arithmetic::OpType optype,
     const int64_t shared_object_idx = -1);
+
+void add_arithmetic_node(
+    ComputeGraph& graph,
+    const ValueRef t1,
+    const ValueRef t2,
+    const ValueRef out,
+    const float alpha,
+    const arithmetic::OpType optype);
 
 class ArithmeticPrepack : public virtual PrepackNode {
  public:
