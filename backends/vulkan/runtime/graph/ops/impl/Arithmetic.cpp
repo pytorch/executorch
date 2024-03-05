@@ -70,7 +70,12 @@ void add_arithmetic_node(
   api::UniformParamsBuffer params(graph.context(), block);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
-      shader, global_size, local_size, {out}, {arg1, arg2}, std::move(params)));
+      shader,
+      global_size,
+      local_size,
+      {{out, api::MemoryAccessType::WRITE},
+       {{arg1, arg2}, api::MemoryAccessType::READ}},
+      std::move(params)));
 }
 
 } // namespace vulkan

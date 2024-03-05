@@ -52,8 +52,8 @@ void add_staging_to_tensor_node(
       shader,
       global_size,
       local_size,
-      {out_tensor},
-      {in_staging},
+      {{out_tensor, api::MemoryAccessType::WRITE},
+       {in_staging, api::MemoryAccessType::READ}},
       std::move(params)));
 }
 
@@ -94,8 +94,8 @@ void add_tensor_to_staging_node(
       shader,
       global_size,
       local_size,
-      {in_tensor},
-      {out_staging},
+      {{in_tensor, api::MemoryAccessType::READ},
+       {out_staging, api::MemoryAccessType::WRITE}},
       std::move(params)));
 }
 

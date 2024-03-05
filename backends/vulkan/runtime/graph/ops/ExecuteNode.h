@@ -23,6 +23,23 @@ namespace vulkan {
 class ComputeGraph;
 
 /*
+ * Represents a group of shader arguments (images and/or buffers), with a common
+ * access permission.
+ */
+struct ArgGroup {
+  ArgGroup(const ValueRef ref, const api::MemoryAccessType access)
+      : refs{ref}, access(access) {}
+
+  ArgGroup(
+      const std::vector<ValueRef>& refs,
+      const api::MemoryAccessType access)
+      : refs(refs), access(access) {}
+
+  const std::vector<ValueRef> refs;
+  const api::MemoryAccessType access;
+};
+
+/*
  * Represents a single execution op in a ML model. In graph mode, ops will be
  * implemented in a derived class that implements encode, which will implement
  * encoding of the shader corresponding to the op into the command buffer of a
@@ -36,14 +53,12 @@ class ExecuteNode final {
       const api::ShaderInfo& shader,
       const api::utils::uvec3& global_workgroup_size,
       const api::utils::uvec3& local_workgroup_size,
-      const std::vector<ValueRef>& outputs,
-      const std::vector<ValueRef>& inputs,
+      const std::vector<ArgGroup>& args,
       api::UniformParamsBuffer&& params)
       : shader_(shader),
         global_workgroup_size_(global_workgroup_size),
         local_workgroup_size_(local_workgroup_size),
-        outputs_(outputs),
-        inputs_(inputs),
+        args_(args),
         params_(std::move(params)) {}
 
   ~ExecuteNode() = default;
@@ -54,8 +69,7 @@ class ExecuteNode final {
   const api::ShaderInfo shader_;
   const api::utils::uvec3 global_workgroup_size_;
   const api::utils::uvec3 local_workgroup_size_;
-  const std::vector<ValueRef> outputs_;
-  const std::vector<ValueRef> inputs_;
+  const std::vector<ArgGroup> args_;
   // TODO(T180906086): pass multiple buffers and index with ValueRef.
   // TODO(T180906457): allow re-computing param buffers.
   api::UniformParamsBuffer params_;
