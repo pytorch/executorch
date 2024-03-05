@@ -46,21 +46,26 @@ void bind_staging_to_descriptor_set(
 
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
-    const std::vector<ValueRef>& args,
+    const std::vector<ArgGroup>& args,
     api::PipelineBarrier& pipeline_barrier,
-    const api::MemoryAccessType accessType,
     api::DescriptorSet& descriptor_set,
     const uint32_t base_idx) {
   uint32_t idx = base_idx;
   for (auto& arg : args) {
-    Value& val = graph->get_val(arg);
-    if (val.isTensor()) {
-      bind_tensor_to_descriptor_set(
-          val.toTensor(), pipeline_barrier, accessType, descriptor_set, idx++);
-    } else if (val.isStaging()) {
-      bind_staging_to_descriptor_set(val.toStaging(), descriptor_set, idx++);
-    } else {
-      VK_THROW("Unsupported type: ", val.type());
+    for (auto& ref : arg.refs) {
+      Value& val = graph->get_val(ref);
+      if (val.isTensor()) {
+        bind_tensor_to_descriptor_set(
+            val.toTensor(),
+            pipeline_barrier,
+            arg.access,
+            descriptor_set,
+            idx++);
+      } else if (val.isStaging()) {
+        bind_staging_to_descriptor_set(val.toStaging(), descriptor_set, idx++);
+      } else {
+        VK_THROW("Unsupported type: ", val.type());
+      }
     }
   }
   return idx;

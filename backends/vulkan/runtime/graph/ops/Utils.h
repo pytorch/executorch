@@ -37,9 +37,8 @@ void bind_staging_to_descriptor_set(
 
 uint32_t bind_values_to_descriptor_set(
     ComputeGraph* graph,
-    const std::vector<ValueRef>& args,
+    const std::vector<ArgGroup>& args,
     api::PipelineBarrier& pipeline_barrier,
-    const api::MemoryAccessType accessType,
     api::DescriptorSet& descriptor_set,
     const uint32_t base_idx);
 

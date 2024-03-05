@@ -27,19 +27,7 @@ void ExecuteNode::encode(ComputeGraph* graph) {
 
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
-      graph,
-      outputs_,
-      pipeline_barrier,
-      api::MemoryAccessType::WRITE,
-      descriptor_set,
-      idx);
-  idx = bind_values_to_descriptor_set(
-      graph,
-      inputs_,
-      pipeline_barrier,
-      api::MemoryAccessType::READ,
-      descriptor_set,
-      idx);
+      graph, args_, pipeline_barrier, descriptor_set, idx);
   descriptor_set.bind(idx, params_.buffer());
 
   context->register_shader_dispatch(
