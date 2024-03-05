@@ -44,18 +44,6 @@ ValueRef add_arithmetic_node(
   return out;
 }
 
-// TODO(T181006464): Move to Utils when we remove ArithmeticPrepack.
-ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
-  if (graph.get_val(v).isTensor()) {
-    return v;
-  } else {
-    TensorRef& tRef = graph.get_val(v).toTensorRef();
-    ValueRef vTen = graph.add_tensor(tRef.sizes, tRef.dtype);
-    graph.prepack_nodes().emplace_back(new ArithmeticPrepack(v, vTen));
-    return vTen;
-  }
-}
-
 void add_arithmetic_node(
     ComputeGraph& graph,
     const ValueRef in1,
@@ -83,23 +71,6 @@ void add_arithmetic_node(
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       shader, global_size, local_size, {out}, {arg1, arg2}, std::move(params)));
-}
-
-ArithmeticPrepack::ArithmeticPrepack(const ValueRef tref, const ValueRef packed)
-    : PrepackNode(tref, packed) {}
-
-void ArithmeticPrepack::encode(ComputeGraph* graph) const {
-  TensorRef tref = graph->get_val(tref_).toTensorRef();
-  vTensor packed = graph->get_val(packed_).toTensor();
-
-  api::StorageBuffer staging(
-      graph->context(), packed.dtype(), packed.gpu_nbytes());
-
-  size_t numel = api::utils::multiply_integers(tref.sizes);
-  size_t nbytes = numel * api::element_size(tref.dtype);
-  copy_ptr_to_staging(tref.data, staging, nbytes);
-
-  encode_copy_to_vtensor(graph->context(), staging, packed);
 }
 
 } // namespace vulkan
