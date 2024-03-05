@@ -161,6 +161,13 @@ class VulkanComputeAPITest : public ::testing::Test {
 // Compute API Tests
 //
 
+TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
+  // Try to shader from custom shader library
+  const api::ShaderInfo& kernel = VK_KERNEL(test_shader);
+
+  EXPECT_TRUE(kernel.kernel_name == "test_shader");
+}
+
 TEST_F(VulkanComputeAPITest, buffer_copy_sanity_check) {
   // Simple test that copies data into a and reads from a
   std::vector<int64_t> sizes = {4, 4, 1};
