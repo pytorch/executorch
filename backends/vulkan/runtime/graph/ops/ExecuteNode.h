@@ -28,13 +28,10 @@ class ComputeGraph;
  * encoding of the shader corresponding to the op into the command buffer of a
  * ComputeGraph.
  */
-class ExecuteNode {
+class ExecuteNode final {
   friend class ComputeGraph;
 
  public:
-  ExecuteNode(ValueRef input, ValueRef output)
-      : outputs_{output}, inputs_{input} {}
-
   ExecuteNode(
       const api::ShaderInfo& shader,
       const api::utils::uvec3& global_workgroup_size,
@@ -49,21 +46,19 @@ class ExecuteNode {
         inputs_(inputs),
         params_(std::move(params)) {}
 
-  virtual ~ExecuteNode() = default;
+  ~ExecuteNode() = default;
+
+  void encode(ComputeGraph* graph);
 
  protected:
-  // TODO: Consider making members const after we remove StagingNode.
-  api::ShaderInfo shader_;
-  api::utils::uvec3 global_workgroup_size_;
-  api::utils::uvec3 local_workgroup_size_;
-  std::vector<ValueRef> outputs_;
-  std::vector<ValueRef> inputs_;
+  const api::ShaderInfo shader_;
+  const api::utils::uvec3 global_workgroup_size_;
+  const api::utils::uvec3 local_workgroup_size_;
+  const std::vector<ValueRef> outputs_;
+  const std::vector<ValueRef> inputs_;
   // TODO(T180906086): pass multiple buffers and index with ValueRef.
   // TODO(T180906457): allow re-computing param buffers.
   api::UniformParamsBuffer params_;
-
- public:
-  virtual void encode(ComputeGraph* graph);
 };
 
 } // namespace vulkan

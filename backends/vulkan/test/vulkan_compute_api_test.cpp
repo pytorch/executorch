@@ -526,9 +526,10 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  // Allocation count will be 2:
+  // Allocation count will be 4:
+  // 1 uniform buffer for each staging shader args
   // 1 staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 2);
+  EXPECT_TRUE(get_vma_allocation_count() == 4);
 
   ValueRef c = add_arithmetic_node(
       graph,
@@ -543,10 +544,11 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // Allocation count will be 4, two are new:
-  // 1 uniform buffer for arithmetic shader params
+  // Allocation count will be 7, three are new:
+  // 1 uniform buffer for arithmetic shader args
+  // 1 uniform buffer for staging shader args
   // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 4);
+  EXPECT_TRUE(get_vma_allocation_count() == 7);
 
   ValueRef e = add_arithmetic_node(
       graph,
@@ -560,14 +562,15 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // Allocation count will be 6, three are new:
-  // 1 uniform buffer for arithmetic shader params
+  // Allocation count will be 10, three are new:
+  // 1 uniform buffer for arithmetic shader
+  // 1 uniform buffer for staging shader
   // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  EXPECT_TRUE(get_vma_allocation_count() == 10);
 
   graph.encode_execute();
 
-  // Allocation count will be 13:
+  // Allocation count will be 13, three shared objects are allocated for total:
   // 4 staging buffers for each I/O tensor
   // 6 uniform buffers to store params for each shader dispatch
   // 3 shared objects to back tensor memory
