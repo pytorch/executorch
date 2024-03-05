@@ -32,7 +32,7 @@ ValueRef add_arithmetic_node(
     const ValueRef in1,
     const ValueRef in2,
     const float alpha,
-    const arithmetic::OpType optype,
+    const api::ShaderInfo& shader,
     const int64_t shared_object_idx = -1);
 
 void add_arithmetic_node(
@@ -41,29 +41,20 @@ void add_arithmetic_node(
     const ValueRef in2,
     const ValueRef out,
     const float alpha,
-    const arithmetic::OpType optype);
+    const api::ShaderInfo& shader);
+
+struct ArithmeticParams final {
+  api::utils::ivec4 outputSizes;
+  api::utils::ivec4 input1Sizes;
+  api::utils::ivec4 input2Sizes;
+  float alpha;
+};
 
 class ArithmeticPrepack : public virtual PrepackNode {
  public:
   explicit ArithmeticPrepack(const ValueRef tref, const ValueRef packed);
 
   void encode(ComputeGraph* graph) const override;
-};
-
-class ArithmeticNode : public virtual ExecuteNode {
- public:
-  explicit ArithmeticNode(
-      const ValueRef in1,
-      const ValueRef in2,
-      const ValueRef out,
-      const float alpha,
-      const arithmetic::OpType optype);
-
-  void encode(ComputeGraph* graph) const override;
-
- private:
-  float alpha_;
-  arithmetic::OpType optype_;
 };
 
 } // namespace vulkan
