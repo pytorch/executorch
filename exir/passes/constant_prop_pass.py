@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# pyre-unsafe
+
 import torch
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch._guards import detect_fake_mode

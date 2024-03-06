@@ -5,6 +5,8 @@
 # Llama 2 is licensed under the LLAMA 2 Community License,
 # Copyright (c) Meta Platforms, Inc. All Rights Reserved.
 
+# pyre-unsafe
+
 # Please refer to README.md in the same folder for more information.
 
 from dataclasses import dataclass
