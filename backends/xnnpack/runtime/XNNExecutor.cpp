@@ -32,15 +32,7 @@ Error XNNExecutor::set_external_input(
     ET_LOG(Error, "Input dim mismatch between tensor and shape struct");
   }
 
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-  externals_.emplace_back(xnn_external_value{
-      id,
-      input->mutable_data_ptr(),
-      static_cast<size_t>(shape->num_dims),
-      shape->dim});
-#else
   externals_.emplace_back(xnn_external_value{id, input->mutable_data_ptr()});
-#endif
   return Error::Ok;
 }
 
