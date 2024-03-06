@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 namespace at {
