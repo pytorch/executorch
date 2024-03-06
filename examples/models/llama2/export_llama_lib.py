@@ -394,10 +394,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
+        # Following changes due to.
+        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
+        #    as well as "qmode int4" which is also dynamic quantizes linear layers.
+        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
+        partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
+            XnnpackDynamicallyQuantizedPartitioner()
+        )
+        # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
-
-    # TODO: remove this after xnnpack delegation is ready
 
     builder = (
         load_llama_model(
