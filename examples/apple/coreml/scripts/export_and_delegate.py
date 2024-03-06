@@ -5,6 +5,8 @@
 import argparse
 import copy
 
+import torch
+
 import pathlib
 import sys
 
@@ -31,11 +33,16 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 )
 
 
-def lower_module_to_coreml(module, compute_units):
-    module = module.eval()
-    edge = exir.capture(module, example_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
+def lower_module_to_coreml(model, compute_units):
+    model = model.eval()
+    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+
+    core_aten_ep = torch.export.export(model, example_inputs)
+    edge = exir.to_edge(
+        core_aten_ep,
+        compile_config=_EDGE_COMPILE_CONFIG,
     )
+
     # All of the subsequent calls on the edge_dialect_graph generated above (such as delegation or
     # to_executorch()) are done in place and the graph is also modified in place. For debugging purposes
     # we would like to keep a copy of the original edge dialect graph and hence we create a deepcopy of
