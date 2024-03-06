@@ -10,6 +10,10 @@
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 
+#ifdef ET_USE_THREADPOOL
+#include <executorch/extension/parallel/thread_parallel.h>
+#endif
+
 // Performs a batch matrix-matrix product of matrices stored in input and mat2.
 
 // input and mat2 must be 3-D tensors each containing the same number of
@@ -87,7 +91,30 @@ void bmm_kernel(const Tensor& self, const Tensor& mat2, Tensor& out) {
   int64_t n = self.size(1);
   int64_t k = self.size(2);
   int64_t m = mat2.size(2);
+#ifdef ET_USE_THREADPOOL
+  torch::executor::parallel_for(
+      0,
+      batch_size,
+      1,
+      [a_data, b_data, c_data, n, k, m](int64_t begin, int64_t end) {
+        for (int64_t i = begin; i < end; ++i) {
+          const CTYPE* a = a_data + i * m * k;
+          const CTYPE* b = b_data + i * k * n;
+          CTYPE* c = c_data + i * m * n;
 
+          // clang-format off
+    ::executorch::cpublas::gemm(
+        TransposeType::NoTranspose, TransposeType::NoTranspose,
+        m, n, k,
+        static_cast<CTYPE>(1),
+        a, m,
+        b, k,
+        static_cast<CTYPE>(0),
+        c, m);
+          }
+
+});
+#else
   for (int i = 0; i < batch_size; ++i) {
     const CTYPE* a = a_data + i * m * k;
     const CTYPE* b = b_data + i * k * n;
@@ -104,6 +131,7 @@ void bmm_kernel(const Tensor& self, const Tensor& mat2, Tensor& out) {
         c, m);
     // clang-format on
   }
+#endif
 }
 
 void resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
