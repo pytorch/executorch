@@ -462,11 +462,11 @@ class _Emitter(torch.fx.Interpreter):
             return EValue(Int(layout_enum(val)))
 
         if isinstance(val, torch.memory_format):
-            if val != torch.contiguous_format:
+            if val != torch.contiguous_format and val != torch.preserve_format:
                 raise InternalError(
                     self._emit_node_specific_error(
                         self.node,
-                        "Non contiguous tensors are not supported in ExecuTorch",
+                        "Only Tensors that have a contiguous or preserve_format memory_format are supported in ExecuTorch",
                     )
                 )
             return EValue(Int(memory_format_enum(val)))

@@ -20,6 +20,7 @@ from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager, to_edge
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
 from executorch.exir.emit import emit_program  # noqa
+from executorch.exir.error import InternalError
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
@@ -835,6 +836,47 @@ class TestEmit(unittest.TestCase):
                 self.assertEqual(single_val.shape_dynamism, merged_val.shape_dynamism)
             else:
                 self.assertEqual(single_val, merged_val)
+
+    def test_emit_memory_format(self) -> None:
+        class SimpleLinear(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                contiguous = x.to(
+                    dtype=torch.float32, memory_format=torch.contiguous_format
+                )
+                preserve = x.to(
+                    dtype=torch.float32, memory_format=torch.preserve_format
+                )
+                return contiguous + preserve
+
+        # Should succeed at exporting model with legal memory format (contiguous, preserve)
+        model = SimpleLinear()
+        inputs = (torch.ones(10, 5),)
+        try:
+            to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+        except:
+            self.fail("Failed to export model with legal memory format")
+
+        class SimpleLinear2(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(dtype=torch.float32, memory_format=torch.channels_last)
+
+        #  Failure Expected when exporting model with illegal memory format (channels_last)
+        model = SimpleLinear2()
+        inputs = (torch.ones(10, 5, 2, 1),)
+        with self.assertRaises(InternalError):
+            to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
 
     def test_emit_multiple_entry_points(self) -> None:
         class SimpleLinear(torch.nn.Module):
