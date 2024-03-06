@@ -98,7 +98,7 @@ class TestBackends(unittest.TestCase):
         self, delegate: LoweredBackendModule, input_len: int
     ) -> None:
         counter = 0
-        for node in delegate._original_module.graph.nodes:
+        for node in delegate.original_module.graph.nodes:
             if node.op == "placeholder":
                 counter += 1
         self.assertEqual(counter, input_len)
@@ -913,7 +913,7 @@ class TestBackends(unittest.TestCase):
         )
         self.assertEqual(len(lowered_backends), 2)
         for backend in lowered_backends:
-            original_program = backend._original_module
+            original_program = backend.original_module
             # check that program has the lowered attributes
             self.assertEqual(len(original_program.state_dict), 1)
             # check backend has one placeholder input one placeholder parameter
