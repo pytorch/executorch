@@ -64,7 +64,8 @@ def dynamically_quantize_per_channel(
                         with a final group of a size less than group size.
 
     Assumptions:
-        This function assumes symmetric quantization, axis ==0 and a dense memory format."""
+        This function assumes symmetric quantization, axis ==0 and a dense memory format.
+    """
 
     # assumes symmetric quantization
     # assumes axis == 0
@@ -829,12 +830,15 @@ def linear_forward_int4(
 
     # TODO: better API
     # weight_int8 = torch.ops.quantized_decomposed.unpack_int4_to_int8(weight_int4packed)
+    n_bit = 4
+    quant_min = -(2 ** (n_bit - 1))
+    quant_max = 2 ** (n_bit - 1) - 1
     w_dq = torch.ops.quantized_decomposed.dequantize_per_channel_group(
         weight_int8,
         scales,
         zeros,
-        -8,
-        7,
+        quant_min,
+        quant_max,
         torch.int8,
         group_size,
         precision,
