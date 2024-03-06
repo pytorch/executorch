@@ -28,6 +28,19 @@ namespace at {
 namespace native {
 namespace vulkan {
 
+// Define valid scalar types that the Value class can accept
+template <typename T>
+struct is_valid_scalar_type : std::false_type {};
+
+template <>
+struct is_valid_scalar_type<int64_t> : std::true_type {};
+
+template <>
+struct is_valid_scalar_type<double> : std::true_type {};
+
+template <>
+struct is_valid_scalar_type<bool> : std::true_type {};
+
 /*
  * This is the core data structure used to execute Vulkan models in graph mode.
  * As opposed to ATen/eager mode where a command buffer is encoded every
@@ -123,6 +136,16 @@ class ComputeGraph final {
       const void* const data);
   ValueRef add_staging(const api::ScalarType dtype, const size_t numel);
 
+  template <typename T>
+  typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+  add_scalar_list(std::vector<T>&& values);
+
+  template <typename T>
+  typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+  add_scalar(T value);
+
+  ValueRef add_string(std::string&& str);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
 
@@ -162,6 +185,22 @@ class ComputeGraph final {
   void encode_execute();
   void execute() const;
 };
+
+template <typename T>
+inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+ComputeGraph::add_scalar_list(std::vector<T>&& values) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(std::move(values));
+  return idx;
+}
+
+template <typename T>
+inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+ComputeGraph::add_scalar(T value) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(value);
+  return idx;
+}
 
 } // namespace vulkan
 } // namespace native

@@ -25,20 +25,12 @@ DECLARE_OP_FN(div);
 DECLARE_OP_FN(floor_div);
 DECLARE_OP_FN(pow);
 
-ValueRef add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef in1,
-    const ValueRef in2,
-    const float alpha,
-    const api::ShaderInfo& shader,
-    const int64_t shared_object_idx = -1);
-
 void add_arithmetic_node(
     ComputeGraph& graph,
     const ValueRef in1,
     const ValueRef in2,
+    const ValueRef alpha,
     const ValueRef out,
-    const float alpha,
     const api::ShaderInfo& shader);
 
 struct ArithmeticParams final {

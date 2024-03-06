@@ -12,6 +12,8 @@
 
 #include <ATen/native/vulkan/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
+
 namespace at {
 namespace native {
 namespace vulkan {
@@ -79,6 +81,20 @@ uint32_t dim_at(const vTensor& v_in) {
  */
 api::utils::uvec3 adaptive_work_group_size(
     const api::utils::uvec3& global_work_group);
+
+template <typename T>
+T extract_scalar(const Value& value) {
+  if (value.isInt()) {
+    return static_cast<T>(value.toInt());
+  }
+  if (value.isDouble()) {
+    return static_cast<T>(value.toDouble());
+  }
+  if (value.isBool()) {
+    return static_cast<T>(value.toBool());
+  }
+  VK_THROW("Cannot extract scalar from Value with type ", value.type());
+}
 
 } // namespace vulkan
 } // namespace native

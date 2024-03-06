@@ -19,11 +19,8 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-using OpFunction = const std::function<at::native::vulkan::ValueRef(
-    at::native::vulkan::ComputeGraph&,
-    const std::vector<at::native::vulkan::ValueRef>&)>; // TODO: Generalize to
-                                                        // support float,
-                                                        // int64_t.
+using OpFunction =
+    const std::function<void(ComputeGraph&, const std::vector<ValueRef>&)>;
 
 bool hasOpsFn(const std::string& name);
 
