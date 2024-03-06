@@ -77,6 +77,12 @@ ValueRef ComputeGraph::add_staging(
   return idx;
 }
 
+ValueRef ComputeGraph::add_string(std::string&& str) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(std::move(str));
+  return idx;
+}
+
 ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
     const bool use_staging) {

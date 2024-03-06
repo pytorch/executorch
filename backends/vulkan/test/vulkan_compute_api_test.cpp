@@ -427,6 +427,60 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
       graph.get_val(name.value).toTensor().gpu_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
+TEST(VulkanComputeGraphTest, test_values_scalars) {
+  GraphConfig config = generate_graph_config();
+  ComputeGraph graph(config);
+
+  ValueRef idx;
+
+  idx = graph.add_scalar<int64_t>(4);
+  EXPECT_TRUE(graph.get_val(idx).toInt() == 4);
+
+  idx = graph.add_scalar<double>(5.5f);
+  EXPECT_TRUE(graph.get_val(idx).toDouble() == 5.5f);
+}
+
+TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
+  GraphConfig config = generate_graph_config();
+  ComputeGraph graph(config);
+
+  ValueRef idx = graph.add_scalar_list<int64_t>({1, 2, 3, 4});
+  std::vector<int64_t>& arr = graph.get_val(idx).toIntList();
+  EXPECT_TRUE(arr.size() == 4);
+  for (int i = 0; i < 4; i++) {
+    EXPECT_TRUE(arr[i] == i + 1);
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
+  GraphConfig config = generate_graph_config();
+  ComputeGraph graph(config);
+
+  ValueRef idx;
+  {
+    std::vector<double> data = {5.0, 4.0, 3.0, 2.0, 1.0};
+    idx = graph.add_scalar_list(std::move(data));
+  }
+  std::vector<double>& arr = graph.get_val(idx).toDoubleList();
+  EXPECT_TRUE(arr.size() == 5);
+  for (int i = 0; i < 5; i++) {
+    EXPECT_TRUE(arr[i] == (5 - i));
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_values_string) {
+  GraphConfig config = generate_graph_config();
+  ComputeGraph graph(config);
+
+  ValueRef idx;
+  {
+    std::string data = "hello, world";
+    idx = graph.add_string(std::move(data));
+  }
+  std::string& stored = graph.get_val(idx).toString();
+  EXPECT_TRUE(stored == "hello, world");
+}
+
 TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config = generate_graph_config();
   ComputeGraph graph(config);
@@ -441,7 +495,10 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
   IOValueRef out = {};
 
-  out.value = add_arithmetic_node(graph, a.value, b.value, 1.0, VK_KERNEL(add));
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  add_arithmetic_node(
+      graph, a.value, b.value, kDummyValueRef, out.value, VK_KERNEL(add));
 
   out.staging = graph.set_output_tensor(out.value);
 
@@ -487,8 +544,11 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
 
-  ValueRef c = add_arithmetic_node(graph, a.value, w1, 1.0, VK_KERNEL(add));
-  ValueRef e = add_arithmetic_node(graph, c, w2, 1.0, VK_KERNEL(mul));
+  ValueRef c = graph.add_tensor(size_big, api::kFloat);
+  ValueRef e = graph.add_tensor(size_big, api::kFloat);
+
+  add_arithmetic_node(graph, a.value, w1, kDummyValueRef, c, VK_KERNEL(add));
+  add_arithmetic_node(graph, c, w2, kDummyValueRef, e, VK_KERNEL(mul));
 
   IOValueRef out = {};
   out.value = e;
@@ -541,13 +601,13 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
   // 1 staging buffer for each input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 4);
 
-  ValueRef c = add_arithmetic_node(
-      graph,
-      a.value,
-      b.value,
-      1.0,
-      VK_KERNEL(add),
+  ValueRef c = graph.add_tensor(
+      size_big,
+      api::kFloat,
       /*shared_object_idx = */ 6);
+
+  add_arithmetic_node(
+      graph, a.value, b.value, kDummyValueRef, c, VK_KERNEL(add));
 
   IOValueRef d = graph.add_input_tensor(
       size_small,
@@ -560,13 +620,12 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
   // 1 staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 7);
 
-  ValueRef e = add_arithmetic_node(
-      graph,
-      c,
-      d.value,
-      1.0,
-      VK_KERNEL(mul),
+  ValueRef e = graph.add_tensor(
+      size_big,
+      api::kFloat,
       /*shared_object_idx = */ 4);
+
+  add_arithmetic_node(graph, c, d.value, kDummyValueRef, e, VK_KERNEL(mul));
 
   IOValueRef out = {};
   out.value = e;
