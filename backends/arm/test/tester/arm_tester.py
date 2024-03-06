@@ -140,6 +140,9 @@ class ArmTester(Tester):
             export_stage.artifact, is_quantized
         )
 
+        self.qp_input = qp_input
+        self.qp_output = qp_output
+
         # Calculate the reference output using the original module or the quant
         # module. self.quantization_scale is used by compare_outputs() to
         # calculate the tolerance
@@ -268,3 +271,89 @@ class ArmTester(Tester):
         """
 
         return module.forward(*inputs)
+
+    def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):  # noqa (C901)
+        try:
+            super().compare_outputs(atol, rtol, qtol)
+        except AssertionError as e:
+            # Capture asertion error and print more info
+            banner = "=" * 40 + "TOSA debug info" + "=" * 40
+            print(banner)
+            path_to_tosa_files = self.tosa_test_util.get_tosa_artifact_path()
+            print(f"{self.qp_input=}")
+            print(f"{self.qp_output=}")
+            print(f"{path_to_tosa_files=}")
+            import os
+
+            torch.save(
+                self.reference_output,
+                os.path.join(path_to_tosa_files, "torch_ref_output.pt"),
+            )
+            print(f"{atol=}, {rtol=}, {qtol=}")
+            analyze_diff(
+                self.reference_output[0], self.stage_output[0], path_to_tosa_files
+            )
+
+            raise e
+
+
+def analyze_diff(reference_output, backend_output, save_fig_path):
+    """
+    This function is used to visualize the difference between the reference
+    output and the output. This is just a debug feature and should not be used
+    in production code.
+    """
+    import os
+
+    from matplotlib import pyplot as plt
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+    ref_output = np.array(reference_output)
+    backend_output = np.array(backend_output)
+    # Make sure we have 4 dims
+    while backend_output.ndim < 4:
+        backend_output = np.reshape(ref_output, (1, *ref_output.shape))
+        ref_output = np.reshape(backend_output, (1, *backend_output.shape))
+
+    batches = ref_output.shape[0]
+    channels = ref_output.shape[1]
+    rows = int(channels // np.sqrt(channels))
+    cols = rows
+    remainder = int(channels % np.floor(np.sqrt(channels)))  # square layout
+    fig = []
+    axs = []
+    for _ in range(batches):
+        f, a = plt.subplots(rows + 1 if remainder > 0 else rows, cols, squeeze=False)
+        fig.append(f)
+        axs.append(a)
+    for batch in range(batches):
+        fig[batch].suptitle(f"Absolute diff per channel for batch {batch}")
+        fig[batch].tight_layout()
+        for row in range(rows):
+            for col in range(cols):
+                im = axs[batch][row][col].set_title(
+                    f"Output channel {row * cols + col}"
+                )
+                err = np.abs(ref_output - backend_output)[batch][row * cols + col]
+                im = axs[batch][row][col].imshow(err, interpolation="nearest")
+                divider = make_axes_locatable(axs[batch][row][col])
+                cax = divider.append_axes("right", size="10%", pad=0.1)
+                cbar = plt.colorbar(im, cax=cax)
+                cbar.set_label("Abs error")
+        for rem in range(remainder):
+            im = axs[batch][rows][rem].set_title(f"Output channel {rows * cols + rem}")
+            err = np.abs(ref_output - backend_output)[batch][rows * cols + rem]
+            im = axs[batch][rows][rem].imshow(err, interpolation="nearest")
+            divider = make_axes_locatable(axs[batch][rows][rem])
+            cax = divider.append_axes("right", size="10%", pad=0.1)
+            cbar = plt.colorbar(im, cax=cax)
+            cbar.set_label("Abs error")
+        if remainder > 0:
+            for col in range(cols - remainder):
+                fig[batch].delaxes(axs[batch][rows][remainder + col])
+
+    # Save diff plot to file
+    for idx, fig in enumerate(plt.get_fignums()):
+        plt.figure(fig)
+        filename = os.path.join(save_fig_path, f"diff_{idx}.png")
+        plt.savefig(filename)
