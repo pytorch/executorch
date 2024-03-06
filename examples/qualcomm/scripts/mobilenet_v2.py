@@ -12,6 +12,7 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
@@ -109,6 +110,7 @@ if __name__ == "__main__":
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
+        quant_dtype=QuantDtype.use_8a8w,
     )
 
     if args.compile_only:

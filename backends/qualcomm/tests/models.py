@@ -232,6 +232,21 @@ class Conv2DSequential(torch.nn.Module):
         return self.second(self.first(x))
 
 
+class Conv2DSingle(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
+
+
 class Conv2dAvgPool2d(torch.nn.Module):
     def __init__(self):
         super().__init__()
