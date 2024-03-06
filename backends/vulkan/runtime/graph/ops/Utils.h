@@ -17,7 +17,7 @@ namespace native {
 namespace vulkan {
 
 #define DECLARE_OP_FN(function) \
-  ValueRef function(ComputeGraph& graph, const std::vector<ValueRef>& args);
+  void function(ComputeGraph& graph, const std::vector<ValueRef>& args);
 
 api::utils::ivec4 get_size_as_ivec4(const vTensor& t);
 
