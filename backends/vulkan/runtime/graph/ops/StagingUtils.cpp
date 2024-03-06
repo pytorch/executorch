@@ -8,9 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
-
-#include <ATen/native/vulkan/impl/Common.h>
 
 namespace at {
 namespace native {

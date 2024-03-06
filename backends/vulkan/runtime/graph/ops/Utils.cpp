@@ -8,6 +8,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+
 namespace at {
 namespace native {
 namespace vulkan {

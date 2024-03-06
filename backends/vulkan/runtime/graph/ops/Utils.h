@@ -10,8 +10,6 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/impl/Common.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace at {
