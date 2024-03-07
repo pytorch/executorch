@@ -346,7 +346,7 @@ def serialize_pte_binary(
     segment_alignment: int = 4096,
     constant_tensor_alignment: Optional[int] = None,
     delegate_alignment: Optional[int] = None,
-) -> bytes:
+) -> Cord:
     """Returns the runtime binary representation of the given Program.
 
     Args:
@@ -429,7 +429,7 @@ def serialize_pte_binary(
 
     # If there are no segments present, do not insert the extended header.
     if len(segments_data) == 0:
-        return result.data
+        return Cord(result.data)
 
     # Size of the header to insert. Its size is padded to the largest
     # force_align value present in the schema.
@@ -482,9 +482,7 @@ def serialize_pte_binary(
             len(pte_data) == segment_base_offset
         ), f"Offset of first segment {len(pte_data)} != segment base offset {segment_base_offset}"
         pte_data.append(segments_data)
-
-    # TODO(lfq): this creates a copy of all the data; once we update existing callsites this will change.
-    return bytes(pte_data)
+    return pte_data
 
 
 def _restore_segments(program: Program, segment_data: bytes) -> Program:

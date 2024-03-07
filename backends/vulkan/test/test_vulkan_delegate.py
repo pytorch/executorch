@@ -71,6 +71,7 @@ class TestBackends(unittest.TestCase):
             VulkanBackend.__name__,
         )
 
+        # TODO(T181494963): update pybinding when we remove buffer cache.
         executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
         # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
         inputs_flattened, _ = tree_flatten(sample_inputs)
