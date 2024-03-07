@@ -21,17 +21,20 @@ import org.pytorch.executorch.LlamaModule;
 public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private EditText mEditTextMessage;
   private Button mSendButton;
-  private Button mStopButton;
   private ImageButton mModelButton;
   private ListView mMessagesView;
   private MessageAdapter mMessageAdapter;
   private LlamaModule mModule = null;
   private Message mResultMessage = null;
 
+  private int mNumTokens = 0;
+  private long mRunStartTime = 0;
+
   @Override
   public void onResult(String result) {
     System.out.println("onResult: " + result);
     mResultMessage.appendText(result);
+    mNumTokens++;
     run();
   }
 
@@ -70,11 +73,38 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
 
     mEditTextMessage = findViewById(R.id.editTextMessage);
     mSendButton = findViewById(R.id.sendButton);
-    mStopButton = findViewById(R.id.stopButton);
     mModelButton = findViewById(R.id.modelButton);
     mMessagesView = findViewById(R.id.messages_view);
     mMessageAdapter = new MessageAdapter(this, R.layout.sent_message);
     mMessagesView.setAdapter(mMessageAdapter);
+    mModelButton.setOnClickListener(
+        view -> {
+          mModule.stop();
+          mMessageAdapter.clear();
+          mMessageAdapter.notifyDataSetChanged();
+          modelDialog();
+        });
+
+    setLocalModel("/data/local/tmp/stories110M.pte", "/data/local/tmp/tokenizer.bin");
+    onModelRunStopped();
+  }
+
+  private void onModelRunStarted() {
+    mSendButton.setText("Stop");
+    mSendButton.setOnClickListener(
+        view -> {
+          mModule.stop();
+        });
+
+    mRunStartTime = System.currentTimeMillis();
+  }
+
+  private void onModelRunStopped() {
+    long runDuration = System.currentTimeMillis() - mRunStartTime;
+    if (mResultMessage != null) {
+      mResultMessage.setTokensPerSecond(1.0f * mNumTokens / (runDuration / 1000.0f));
+    }
+    mSendButton.setText("Generate");
     mSendButton.setOnClickListener(
         view -> {
           String prompt = mEditTextMessage.getText().toString();
@@ -87,26 +117,30 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
               new Runnable() {
                 @Override
                 public void run() {
+                  runOnUiThread(
+                      new Runnable() {
+                        @Override
+                        public void run() {
+                          onModelRunStarted();
+                        }
+                      });
+
                   mModule.generate(prompt, MainActivity.this);
+
+                  runOnUiThread(
+                      new Runnable() {
+                        @Override
+                        public void run() {
+                          onModelRunStopped();
+                        }
+                      });
                 }
               };
           new Thread(runnable).start();
         });
-
-    mStopButton.setOnClickListener(
-        view -> {
-          mModule.stop();
-        });
-
-    mModelButton.setOnClickListener(
-        view -> {
-          mModule.stop();
-          mMessageAdapter.clear();
-          mMessageAdapter.notifyDataSetChanged();
-          modelDialog();
-        });
-
-    setLocalModel("/data/local/tmp/stories110M.pte", "/data/local/tmp/tokenizer.bin");
+    mNumTokens = 0;
+    mRunStartTime = 0;
+    mMessageAdapter.notifyDataSetChanged();
   }
 
   @Override

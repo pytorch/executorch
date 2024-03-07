@@ -28,6 +28,12 @@ public class MessageAdapter extends ArrayAdapter<Message> {
         LayoutInflater.from(getContext()).inflate(layoutIdForListItem, parent, false);
     TextView messageTextView = listItemView.findViewById(R.id.message_text);
     messageTextView.setText(currentMessage.getText());
+
+    if (currentMessage.getTokensPerSecond() > 0) {
+      TextView tokensView = listItemView.findViewById(R.id.tokens_per_second);
+      tokensView.setText("" + currentMessage.getTokensPerSecond() + " t/s");
+    }
+
     return listItemView;
   }
 }
