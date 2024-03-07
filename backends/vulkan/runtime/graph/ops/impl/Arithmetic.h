@@ -18,13 +18,6 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-DECLARE_OP_FN(add);
-DECLARE_OP_FN(sub);
-DECLARE_OP_FN(mul);
-DECLARE_OP_FN(div);
-DECLARE_OP_FN(floor_div);
-DECLARE_OP_FN(pow);
-
 void add_arithmetic_node(
     ComputeGraph& graph,
     const ValueRef in1,

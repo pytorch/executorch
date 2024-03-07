@@ -56,6 +56,10 @@ def define_common_targets():
             "//caffe2:torch_vulkan_spv",
         ],
         define_static_target = False,
+        # Static initialization is used to register operators to the global operator registry,
+        # therefore link_whole must be True to make sure unused symbols are not discarded.
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True`
+        link_whole = True,
     )
 
     runtime.cxx_library(
