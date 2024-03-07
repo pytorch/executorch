@@ -28,10 +28,14 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private LlamaModule mModule = null;
   private Message mResultMessage = null;
 
+  private int mNumTokens = 0;
+  private long mRunStartTime = 0;
+
   @Override
   public void onResult(String result) {
     System.out.println("onResult: " + result);
     mResultMessage.appendText(result);
+    mNumTokens++;
     run();
   }
 
@@ -87,7 +91,23 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
               new Runnable() {
                 @Override
                 public void run() {
+                  runOnUiThread(
+                      new Runnable() {
+                        @Override
+                        public void run() {
+                          onModelRunStarted();
+                        }
+                      });
+
                   mModule.generate(prompt, MainActivity.this);
+
+                  runOnUiThread(
+                      new Runnable() {
+                        @Override
+                        public void run() {
+                          onModelRunStopped();
+                        }
+                      });
                 }
               };
           new Thread(runnable).start();
@@ -107,6 +127,25 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
         });
 
     setLocalModel("/data/local/tmp/stories110M.pte", "/data/local/tmp/tokenizer.bin");
+    onModelRunStopped();
+  }
+
+  private void onModelRunStarted() {
+    mSendButton.setEnabled(false);
+    mStopButton.setEnabled(true);
+    mRunStartTime = System.currentTimeMillis();
+  }
+
+  private void onModelRunStopped() {
+    long runDuration = System.currentTimeMillis() - mRunStartTime;
+    if (mResultMessage != null) {
+      mResultMessage.setTokensPerSecond(1.0f * mNumTokens / (runDuration / 1000.0f));
+    }
+    mSendButton.setEnabled(true);
+    mStopButton.setEnabled(false);
+    mNumTokens = 0;
+    mRunStartTime = 0;
+    mMessageAdapter.notifyDataSetChanged();
   }
 
   @Override
