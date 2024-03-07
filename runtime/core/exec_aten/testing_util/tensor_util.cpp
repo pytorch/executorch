@@ -32,7 +32,9 @@ namespace {
  * T must be a floating point type. Non-floating point data should be compared
  * directly.
  */
-template <typename T>
+template <
+    typename T,
+    typename = std::enable_if_t<std::is_floating_point<T>::value>>
 bool data_is_close(
     const T* a,
     const T* b,
@@ -108,13 +110,6 @@ bool tensors_are_close(
         a.numel(),
         rtol,
         atol);
-  } else if (a.scalar_type() == ScalarType::Half) {
-    return data_is_close<Half>(
-        a.const_data_ptr<Half>(),
-        b.const_data_ptr<Half>(),
-        a.numel(),
-        rtol,
-        atol);
   } else {
     // Non-floating-point types can be compared bitwise.
     return memcmp(a.const_data_ptr(), b.const_data_ptr(), a.nbytes()) == 0;
@@ -152,13 +147,6 @@ bool tensor_data_is_close(
     return data_is_close<double>(
         a.const_data_ptr<double>(),
         b.const_data_ptr<double>(),
-        a.numel(),
-        rtol,
-        atol);
-  } else if (a.scalar_type() == ScalarType::Half) {
-    return data_is_close<Half>(
-        a.const_data_ptr<Half>(),
-        b.const_data_ptr<Half>(),
         a.numel(),
         rtol,
         atol);
