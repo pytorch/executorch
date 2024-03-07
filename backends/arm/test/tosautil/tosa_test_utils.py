@@ -168,9 +168,11 @@ class TosaTestUtils:
                 assert (
                     quant_param.node_name == input_name
                 ), "These quantization params do not match the input tensor name"
+                int8_max = np.iinfo(np.int8).max
+                int8_min = np.iinfo(np.int8).min
                 data_np = (
                     ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
-                    .round()
+                    .clip(int8_min, int8_max)
                     .astype(np.int8)
                 )
             file_path = os.path.join(self.intermediate_path, input_name + ".npy")

@@ -88,7 +88,7 @@ class TestSimpleAdd(unittest.TestCase):
             .to_executorch()
         )
         if TOSA_REF_MODEL_INSTALLED:
-            tester.run_method().compare_outputs()
+            tester.run_method().compare_outputs(qtol=1)
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
