@@ -19,7 +19,6 @@ import pkg_resources
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackPartitioner,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from torch.ao.quantization.quantizer import Quantizer
