@@ -16,6 +16,7 @@ def define_common_targets():
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
+            "//bento",
         ],
         deps = [
             "//caffe2:torch",
