@@ -9,7 +9,9 @@
 package com.example.executorchllamademo;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
@@ -53,6 +55,17 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     Message modelLoadedMessage = new Message(modelInfo, false);
     mMessageAdapter.add(modelLoadedMessage);
     mMessageAdapter.notifyDataSetChanged();
+  }
+
+  private String memoryInfo() {
+    final ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+    ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+    am.getMemoryInfo(memInfo);
+    return "Total RAM: "
+        + Math.floorDiv(memInfo.totalMem, 1000000)
+        + " MB. Available RAM: "
+        + Math.floorDiv(memInfo.availMem, 1000000)
+        + " MB.";
   }
 
   private void modelDialog() {
@@ -113,6 +126,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   }
 
   private void onModelRunStopped() {
+    setTitle(memoryInfo());
     long runDuration = System.currentTimeMillis() - mRunStartTime;
     if (mResultMessage != null) {
       mResultMessage.setTokensPerSecond(1.0f * mNumTokens / (runDuration / 1000.0f));
@@ -163,6 +177,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
           @Override
           public void run() {
             mMessageAdapter.notifyDataSetChanged();
+            setTitle(memoryInfo());
           }
         });
   }
