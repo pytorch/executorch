@@ -681,6 +681,18 @@ std::ostream& operator<<(std::ostream& out, const Half& value);
 
 namespace std {
 
+static inline int isinf(torch::executor::Half value) {
+  return (value.x & 0x7FFF) == 0x7C00;
+}
+
+static inline int isnan(torch::executor::Half value) {
+  return ((value.x & 0x7C00) == 0x7C00) && ((value.x & 0x03ff) != 0);
+}
+
+static inline int isfinite(torch::executor::Half value) {
+  return !(isinf(value) || isnan(value));
+}
+
 template <>
 class numeric_limits<torch::executor::Half> {
  public:
