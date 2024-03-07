@@ -11,6 +11,7 @@ package com.example.executorchllamademo;
 public class Message {
   private String text;
   private boolean isSent;
+  private float tokensPerSecond;
 
   public Message(String text, boolean isSent) {
     this.text = text;
@@ -27,5 +28,13 @@ public class Message {
 
   public boolean getIsSent() {
     return isSent;
+  }
+
+  public void setTokensPerSecond(float tokensPerSecond) {
+    this.tokensPerSecond = tokensPerSecond;
+  }
+
+  public float getTokensPerSecond() {
+    return tokensPerSecond;
   }
 }
