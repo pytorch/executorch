@@ -28,4 +28,15 @@
         android:textSize="18dp"
         android:text="Generated text"
         />
+
+
+    <TextView
+        android:id="@+id/tokens_per_second"
+        android:layout_marginLeft="15dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@+id/message_text"
+        android:paddingBottom="4dp"
+        android:text=""/>
+
 </RelativeLayout>
