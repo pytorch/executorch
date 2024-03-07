@@ -108,39 +108,6 @@ size_t get_vma_allocation_count() {
   return get_vma_stats().total.statistics.allocationCount;
 }
 
-GraphConfig generate_graph_config() {
-  const uint32_t submit_frequency = UINT32_MAX;
-
-  const api::CommandPoolConfig cmd_config{
-      4u, // cmdPoolInitialSize
-      2u, // cmdPoolBatchSize
-  };
-
-  const api::DescriptorPoolConfig descriptor_pool_config{
-      1024u, // descriptorPoolMaxSets
-      1024u, // descriptorUniformBufferCount
-      1024u, // descriptorStorageBufferCount
-      1024u, // descriptorCombinedSamplerCount
-      1024u, // descriptorStorageImageCount
-      32u, // descriptorPileSizes
-  };
-
-  const api::QueryPoolConfig query_pool_config{};
-
-  const api::ContextConfig context_config{
-      submit_frequency, // cmdSubmitFrequency
-      cmd_config, // cmdPoolConfig
-      descriptor_pool_config, // descriptorPoolConfig
-      query_pool_config, // queryPoolConfig
-  };
-
-  const GraphConfig graph_config{
-      context_config,
-  };
-
-  return graph_config;
-}
-
 //
 // Test Wrapper
 //
@@ -428,7 +395,7 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   ValueRef idx;
@@ -441,7 +408,7 @@ TEST(VulkanComputeGraphTest, test_values_scalars) {
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   ValueRef idx = graph.add_scalar_list<int64_t>({1, 2, 3, 4});
@@ -453,7 +420,7 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   ValueRef idx;
@@ -469,7 +436,7 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
 }
 
 TEST(VulkanComputeGraphTest, test_values_string) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   ValueRef idx;
@@ -482,7 +449,7 @@ TEST(VulkanComputeGraphTest, test_values_string) {
 }
 
 TEST(VulkanComputeGraphTest, test_simple_graph) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   std::vector<int64_t> size_big = {4, 4, 4};
@@ -502,6 +469,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
   out.staging = graph.set_output_tensor(out.value);
 
+  graph.prepare();
   graph.encode_execute();
 
   // Run graph
@@ -531,7 +499,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   ValueRef name = graph.add_tensorref(sizes, api::kFloat, data_##name.data());
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   std::vector<int64_t> size_big = {4, 4, 4};
@@ -553,6 +521,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
 
   graph.encode_prepack();
   graph.prepack();
@@ -579,7 +549,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 }
 
 TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
   std::vector<int64_t> size_big = {4, 4, 4};
@@ -637,6 +607,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
   // 1 staging buffer for the input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 10);
 
+  graph.prepare();
   graph.encode_execute();
 
   // Allocation count will be 13, three shared objects are allocated for total:

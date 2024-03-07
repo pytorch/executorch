@@ -62,39 +62,6 @@ api::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   }
 }
 
-GraphConfig generate_config() {
-  const uint32_t submit_frequency = UINT32_MAX;
-
-  const api::CommandPoolConfig cmd_config{
-      4u, // cmdPoolInitialSize
-      2u, // cmdPoolBatchSize
-  };
-
-  const api::DescriptorPoolConfig descriptor_pool_config{
-      1024u, // descriptorPoolMaxSets
-      1024u, // descriptorUniformBufferCount
-      1024u, // descriptorStorageBufferCount
-      1024u, // descriptorCombinedSamplerCount
-      1024u, // descriptorStorageImageCount
-      32u, // descriptorPileSizes
-  };
-
-  const api::QueryPoolConfig query_pool_config{};
-
-  const api::ContextConfig context_config{
-      submit_frequency, // cmdSubmitFrequency
-      cmd_config, // cmdPoolConfig
-      descriptor_pool_config, // descriptorPoolConfig
-      query_pool_config, // queryPoolConfig
-  };
-
-  const GraphConfig graph_config{
-      context_config,
-  };
-
-  return graph_config;
-}
-
 class GraphBuilder {
   ComputeGraph* compute_graph_;
   VkGraphPtr flatbuffer_;
@@ -269,6 +236,8 @@ class VulkanBackend final : public PyTorchBackendInterface {
 
     builder.build_graph();
 
+    compute_graph->prepare();
+
     compute_graph->encode_prepack();
     compute_graph->prepack();
 
@@ -284,7 +253,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
     ComputeGraph* compute_graph = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         context.get_runtime_allocator(), ComputeGraph);
 
-    new (compute_graph) ComputeGraph(generate_config());
+    new (compute_graph) ComputeGraph(GraphConfig());
 
     Error err = compileModel(processed->data(), compute_graph);
 
