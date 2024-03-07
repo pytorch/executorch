@@ -50,16 +50,12 @@ class ExecuteNode final {
 
  public:
   ExecuteNode(
+      ComputeGraph& graph,
       const api::ShaderInfo& shader,
       const api::utils::uvec3& global_workgroup_size,
       const api::utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
-      api::UniformParamsBuffer&& params)
-      : shader_(shader),
-        global_workgroup_size_(global_workgroup_size),
-        local_workgroup_size_(local_workgroup_size),
-        args_(args),
-        params_(std::move(params)) {}
+      api::UniformParamsBuffer&& params);
 
   ~ExecuteNode() = default;
 
