@@ -39,7 +39,20 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath) {
+    long runStartTime = System.currentTimeMillis();
     mModule = new LlamaModule(modelPath, tokenizerPath, 0.8f);
+    long runDuration = System.currentTimeMillis() - runStartTime;
+    String modelInfo =
+        "Model path: "
+            + modelPath
+            + "\nTokenizer path: "
+            + tokenizerPath
+            + "\nModel loaded time: "
+            + runDuration
+            + " ms";
+    Message modelLoadedMessage = new Message(modelInfo, false);
+    mMessageAdapter.add(modelLoadedMessage);
+    mMessageAdapter.notifyDataSetChanged();
   }
 
   private void modelDialog() {
