@@ -60,6 +60,9 @@ class ComputeGraph final {
 
  private:
   GraphConfig config_;
+  api::DescriptorPoolConfig prepack_descriptor_counts_;
+  api::DescriptorPoolConfig execute_descriptor_counts_;
+
   std::unique_ptr<api::Context> context_;
   std::vector<SharedObject> shared_objects_;
   std::vector<Value> values_;
@@ -86,6 +89,10 @@ class ComputeGraph final {
   inline std::vector<ValueRef>& outputs() {
     return outputs_;
   }
+
+  void update_descriptor_counts(
+      const api::ShaderInfo& shader_info,
+      bool execute);
 
   /*
    * Returns the value at a particular reference
@@ -162,6 +169,12 @@ class ComputeGraph final {
   }
 
   SharedObject& get_shared_object(const int64_t idx);
+
+  //
+  // Graph Preparation
+  //
+
+  void prepare();
 
   //
   // Input/Output

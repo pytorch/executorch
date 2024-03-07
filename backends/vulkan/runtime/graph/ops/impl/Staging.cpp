@@ -48,6 +48,7 @@ void add_staging_to_tensor_node(
       graph.context(), create_staging_params(t_out));
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
       shader,
       global_size,
       local_size,
@@ -90,6 +91,7 @@ void add_tensor_to_staging_node(
   }
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
       shader,
       global_size,
       local_size,
@@ -112,7 +114,7 @@ ValueRef prepack(ComputeGraph& graph, const ValueRef vref) {
   api::UniformParamsBuffer params(graph.context(), sp);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
-      shader, global_size, local_size, vref, v, std::move(params)));
+      graph, shader, global_size, local_size, vref, v, std::move(params)));
 
   return v;
 }

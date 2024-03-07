@@ -72,6 +72,7 @@ void add_arithmetic_node(
   api::UniformParamsBuffer params(graph.context(), block);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
       shader,
       global_size,
       local_size,
