@@ -14,31 +14,19 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-bool hasOpsFn(const std::string& name) {
-  return OperatorRegistry::getInstance().hasOpsFn(name);
-}
-
-OpFunction& getOpsFn(const std::string& name) {
-  return OperatorRegistry::getInstance().getOpsFn(name);
-}
-
-OperatorRegistry& OperatorRegistry::getInstance() {
-  static OperatorRegistry instance;
-  return instance;
-}
-
-bool OperatorRegistry::hasOpsFn(const std::string& name) {
+bool OperatorRegistry::has_op(const std::string& name) {
   return OperatorRegistry::kTable.count(name) > 0;
 }
 
-OpFunction& OperatorRegistry::getOpsFn(const std::string& name) {
+OperatorRegistry::OpFunction& OperatorRegistry::get_op_fn(
+    const std::string& name) {
   return OperatorRegistry::kTable.find(name)->second;
 }
 
 // @lint-ignore-every CLANGTIDY modernize-avoid-bind
 // clang-format off
 #define OPERATOR_ENTRY(name, function) \
-  { #name, std::bind(&at::native::vulkan::function, std::placeholders::_1, std::placeholders::_2) }
+  { #name, std::bind(&function, std::placeholders::_1, std::placeholders::_2) }
 // clang-format on
 
 const OperatorRegistry::OpTable OperatorRegistry::kTable = {
@@ -49,6 +37,11 @@ const OperatorRegistry::OpTable OperatorRegistry::kTable = {
     OPERATOR_ENTRY(aten.div.Tensor_mode, floor_div),
     OPERATOR_ENTRY(aten.pow.Tensor_Tensor, pow),
 };
+
+OperatorRegistry& operator_registry() {
+  static OperatorRegistry registry;
+  return registry;
+}
 
 } // namespace vulkan
 } // namespace native
