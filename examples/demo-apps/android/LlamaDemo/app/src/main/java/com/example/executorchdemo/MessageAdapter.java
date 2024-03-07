@@ -22,6 +22,7 @@ public class MessageAdapter extends ArrayAdapter<Message> {
   @Override
   public View getView(int position, View convertView, ViewGroup parent) {
     Message currentMessage = getItem(position);
+
     int layoutIdForListItem =
         currentMessage.getIsSent() ? R.layout.sent_message : R.layout.received_message;
     View listItemView =
