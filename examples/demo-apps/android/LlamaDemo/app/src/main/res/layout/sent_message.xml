@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingVertical="10dp"
+    android:paddingRight="15dp"
+    android:paddingLeft="60dp"
+    android:clipToPadding="false">
+
+    <TextView
+        android:id="@+id/name"
+        android:layout_marginRight="15dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingBottom="4dp"
+        android:layout_alignParentRight="true"
+        android:text="Prompt"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/message_text"
+        android:layout_below="@+id/name"
+        android:layout_alignRight="@+id/name"
+        android:background="@drawable/sent_message"
+        android:textColor="#fff"
+        android:padding="10dp"
+        android:elevation="2dp"
+        android:textSize="18dp"
+        android:layout_alignParentRight="true"
+        android:text="My prompt"
+        />
+
+</RelativeLayout>
