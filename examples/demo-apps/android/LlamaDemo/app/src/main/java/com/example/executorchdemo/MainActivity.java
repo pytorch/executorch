@@ -14,7 +14,8 @@ import android.content.Context;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
+import android.widget.ImageButton;
+import android.widget.ListView;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -25,12 +26,13 @@ import org.pytorch.executorch.LlamaModule;
 
 public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private EditText mEditTextMessage;
-  private TextView mTextViewChat;
   private Button mSendButton;
   private Button mStopButton;
-  private Button mModelButton;
+  private ImageButton mModelButton;
+  private ListView mMessagesView;
+  private MessageAdapter mMessageAdapter;
   private LlamaModule mModule = null;
-  private String mResult = null;
+  private Message mResultMessage = null;
 
   private static String assetFilePath(Context context, String assetName) throws IOException {
     File file = new File(context.getFilesDir(), assetName);
@@ -54,7 +56,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   @Override
   public void onResult(String result) {
     System.out.println("onResult: " + result);
-    mResult = result;
+    mResultMessage.appendText(result);
     run();
   }
 
@@ -89,7 +91,6 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
                 break;
             }
             mEditTextMessage.setText("");
-            mTextViewChat.setText("");
             dialog.dismiss();
           }
         });
@@ -103,16 +104,20 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     setContentView(R.layout.activity_main);
 
     mEditTextMessage = findViewById(R.id.editTextMessage);
-    mTextViewChat = findViewById(R.id.textViewChat);
     mSendButton = findViewById(R.id.sendButton);
     mStopButton = findViewById(R.id.stopButton);
     mModelButton = findViewById(R.id.modelButton);
-
+    mMessagesView = findViewById(R.id.messages_view);
+    mMessageAdapter = new MessageAdapter(this, R.layout.sent_message);
+    mMessagesView.setAdapter(mMessageAdapter);
     mSendButton.setOnClickListener(
         view -> {
           String prompt = mEditTextMessage.getText().toString();
-          mTextViewChat.append(prompt);
+          mMessageAdapter.add(new Message(prompt, true));
+          mMessageAdapter.notifyDataSetChanged();
           mEditTextMessage.setText("");
+          mResultMessage = new Message("", false);
+          mMessageAdapter.add(mResultMessage);
           Runnable runnable =
               new Runnable() {
                 @Override
@@ -131,6 +136,8 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     mModelButton.setOnClickListener(
         view -> {
           mModule.stop();
+          mMessageAdapter.clear();
+          mMessageAdapter.notifyDataSetChanged();
           modelDialog();
         });
 
@@ -143,7 +150,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
         new Runnable() {
           @Override
           public void run() {
-            mTextViewChat.append(mResult);
+            mMessageAdapter.notifyDataSetChanged();
           }
         });
   }
