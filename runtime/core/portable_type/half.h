@@ -674,7 +674,12 @@ inline Half operator/(int64_t a, Half b) {
 /// NOTE: we do not define comparisons directly and instead rely on the implicit
 /// conversion Half to float.
 
-std::ostream& operator<<(std::ostream& out, const Half& value);
+static inline std::ostream& operator<<(
+    std::ostream& out,
+    const torch::executor::Half& value) {
+  out << (float)value;
+  return out;
+}
 
 } // namespace executor
 } // namespace torch
