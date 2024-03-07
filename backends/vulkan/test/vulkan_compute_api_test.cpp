@@ -11,7 +11,6 @@
 #include <ATen/native/vulkan/api/api.h>
 
 #include <ATen/native/vulkan/impl/Arithmetic.h>
-#include <ATen/native/vulkan/impl/Common.h>
 #include <ATen/native/vulkan/impl/Packing.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
