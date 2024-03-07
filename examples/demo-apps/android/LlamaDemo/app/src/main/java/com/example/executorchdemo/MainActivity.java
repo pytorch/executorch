@@ -10,17 +10,11 @@ package com.example.executorchllamademo;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.Context;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ListView;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import org.pytorch.executorch.LlamaCallback;
 import org.pytorch.executorch.LlamaModule;
 
@@ -34,40 +28,11 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private LlamaModule mModule = null;
   private Message mResultMessage = null;
 
-  private static String assetFilePath(Context context, String assetName) throws IOException {
-    File file = new File(context.getFilesDir(), assetName);
-    if (file.exists() && file.length() > 0) {
-      return file.getAbsolutePath();
-    }
-
-    try (InputStream is = context.getAssets().open(assetName)) {
-      try (OutputStream os = new FileOutputStream(file)) {
-        byte[] buffer = new byte[4 * 1024];
-        int read;
-        while ((read = is.read(buffer)) != -1) {
-          os.write(buffer, 0, read);
-        }
-        os.flush();
-      }
-      return file.getAbsolutePath();
-    }
-  }
-
   @Override
   public void onResult(String result) {
     System.out.println("onResult: " + result);
     mResultMessage.appendText(result);
     run();
-  }
-
-  private void setModel(String modelPath, String tokenizerPath) {
-    try {
-      String model = MainActivity.assetFilePath(getApplicationContext(), modelPath);
-      String tokenizer = MainActivity.assetFilePath(getApplicationContext(), tokenizerPath);
-      mModule = new LlamaModule(model, tokenizer, 0.8f);
-    } catch (IOException e) {
-      finish();
-    }
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath) {
@@ -84,7 +49,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
           public void onClick(android.content.DialogInterface dialog, int item) {
             switch (item) {
               case 0:
-                setModel("stories110M.pte", "tokenizer.bin");
+                setLocalModel("/data/local/tmp/stories110M.pte", "/data/local/tmp/tokenizer.bin");
                 break;
               case 1:
                 setLocalModel("/data/local/tmp/language.pte", "/data/local/tmp/language.bin");
@@ -141,7 +106,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
           modelDialog();
         });
 
-    setModel("stories110M.pte", "tokenizer.bin");
+    setLocalModel("/data/local/tmp/stories110M.pte", "/data/local/tmp/tokenizer.bin");
   }
 
   @Override
