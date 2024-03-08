@@ -1,22 +1,19 @@
 //
 // BackendDelegateTests.m
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import <XCTest/XCTest.h>
-
+#import "ETCoreMLTestUtils.h"
 #import <CoreML/CoreML.h>
-
-#import <backend_delegate.h>
-#import <coreml_backend/delegate.h>
-#import <multiarray.h>
-
 #import <ETCoreMLModel.h>
 #import <ETCoreMLStrings.h>
-
-#import "ETCoreMLTestUtils.h"
+#import <XCTest/XCTest.h>
+#import <backend_delegate.h>
+#import <coreml_backend/delegate.h>
+#import <model_logging_options.h>
+#import <multiarray.h>
 
 using namespace executorchcoreml;
 
@@ -200,7 +197,11 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     std::error_code errorCode;
-    XCTAssertTrue(_delegate->execute(handle, toMultiArrays(args), errorCode));
+    XCTAssertTrue(_delegate->execute(handle,
+                                     toMultiArrays(args),
+                                     ModelLoggingOptions(),
+                                     nullptr,
+                                     errorCode));
     for (NSUInteger i = 0; i < output.count; i++) {
         NSNumber *value = [output objectAtIndexedSubscript:i];
         XCTAssertEqual(value.integerValue, z);
@@ -221,7 +222,11 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     std::error_code errorCode;
-    XCTAssertTrue(_delegate->execute(handle, toMultiArrays(args), errorCode));
+    XCTAssertTrue(_delegate->execute(handle, 
+                                     toMultiArrays(args),
+                                     ModelLoggingOptions(),
+                                     nullptr,
+                                     errorCode));
     for (NSUInteger i = 0; i < output.count; i++) {
         NSNumber *value = [output objectAtIndexedSubscript:i];
         XCTAssertEqual(value.integerValue, x * y);

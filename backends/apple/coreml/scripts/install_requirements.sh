@@ -15,17 +15,18 @@ green=`tput setaf 2`
 
 EXECUTORCH_ROOT_PATH=$(realpath "$SCRIPT_DIR_PATH/../../../../")
 COREML_DIR_PATH="$EXECUTORCH_ROOT_PATH/backends/apple/coreml"
+COREMLTOOLS_DIR_PATH="$COREML_DIR_PATH/third-party/coremltools"
+PROTOBUF_FILES_DIR_PATH="$COREMLTOOLS_DIR_PATH/build/mlmodel/format/"
 
 cd "$EXECUTORCH_ROOT_PATH"
 
-# clone and install coremltools
-if [ -d "/tmp/coremltools" ]; then
-    rm -rf "/tmp/coremltools"
-fi
+rm -rf "$COREML_DIR_PATH/third-party"
+mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning coremltools."
-git clone "https://github.com/apple/coremltools.git" /tmp/coremltools
-cd /tmp/coremltools
+git clone "https://github.com/apple/coremltools.git" $COREMLTOOLS_DIR_PATH
+cd $COREMLTOOLS_DIR_PATH
+
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to clone coremltools."
@@ -33,29 +34,24 @@ if [ $STATUS -ne 0 ]; then
 fi
 
 echo "${green}ExecuTorch: Installing coremltools dependencies."
-pip install -r /tmp/coremltools/reqs/build.pip
+pip install -r "$COREMLTOOLS_DIR_PATH/reqs/build.pip"
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install coremltools dependencies."
     exit 1
 fi
 
-mkdir /tmp/coremltools/build
-cmake -S /tmp/coremltools/ -B /tmp/coremltools/build
-cmake --build /tmp/coremltools/build --parallel
+mkdir "$COREMLTOOLS_DIR_PATH/build"
+cmake -S "$COREMLTOOLS_DIR_PATH" -B "$COREMLTOOLS_DIR_PATH/build"
+cmake --build "$COREMLTOOLS_DIR_PATH/build" --parallel
 
 echo "${green}ExecuTorch: Installing coremltools."
-pip install /tmp/coremltools
+pip install "$COREMLTOOLS_DIR_PATH"
 STATUS=$?
 if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install coremltools."
     exit 1
 fi
-
-cd "$EXECUTORCH_ROOT_PATH"
-
-rm -rf "$COREML_DIR_PATH/third-party"
-mkdir "$COREML_DIR_PATH/third-party"
 
 echo "${green}ExecuTorch: Cloning ios-cmake."
 git clone https://github.com/leetal/ios-cmake.git "$COREML_DIR_PATH/third-party/ios-cmake"
@@ -80,3 +76,8 @@ if [ $STATUS -ne 0 ]; then
     echo "${red}ExecuTorch: Failed to install inmemoryfs extension."
     exit 1
 fi
+
+echo "${green}ExecuTorch: Copying protobuf files."
+mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/" 
+cp -rf "$PROTOBUF_FILES_DIR_PATH" "$COREML_DIR_PATH/runtime/sdk/format/" 
+

@@ -1,25 +1,27 @@
 //
 // coreml_backend_delegate.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
-
-#import <coreml_backend/delegate.h>
-
-#import <backend_delegate.h>
-#import <memory>
-#import <unordered_map>
-#import <vector>
-
-#import <objc_safe_cast.h>
-#import <multiarray.h>
 
 #import <ETCoreMLLogging.h>
 #import <ETCoreMLModel.h>
 #import <ETCoreMLStrings.h>
-
+#import <backend_delegate.h>
+#import <coreml_backend/delegate.h>
 #import <executorch/runtime/core/evalue.h>
+#import <memory>
+#import <model_event_logger.h>
+#import <model_logging_options.h>
+#import <multiarray.h>
+#import <objc_safe_cast.h>
+#import <unordered_map>
+#import <vector>
+
+#ifdef ET_EVENT_TRACER_ENABLED
+#import <model_event_logger_impl.h>
+#endif
 
 namespace {
 using namespace torch::executor;
@@ -100,11 +102,23 @@ std::optional<BackendDelegate::Config> parse_config(NSURL *plistURL) {
 }
 
 BackendDelegate::Config get_delegate_config(NSString *config_name) {
-    NSURL *config_url = [[NSBundle mainBundle] URLForResource:config_name withExtension:@"plist"];
+    NSURL *config_url = [NSBundle.mainBundle URLForResource:config_name withExtension:@"plist"];
     config_url = config_url ?: [[NSBundle bundleForClass:ETCoreMLModel.class] URLForResource:config_name withExtension:@"plist"];
     auto config = parse_config(config_url);
     return config.has_value() ? config.value() : BackendDelegate::Config();
 }
+
+ModelLoggingOptions get_logging_options(BackendExecutionContext& context) {
+    ModelLoggingOptions options;
+    auto event_tracer = context.event_tracer();
+    if (event_tracer) {
+        options.log_profiling_info = true;
+        options.log_intermediate_tensors = event_tracer->intermediate_outputs_logging_status();
+    }
+    
+    return options;
+}
+
 } //namespace
 
 namespace torch {
@@ -166,11 +180,21 @@ Error CoreMLBackendDelegate::execute(BackendExecutionContext& context,
         delegate_args.emplace_back(std::move(multi_array.value()));
     }
     
+    auto logging_options = get_logging_options(context);
     std::error_code ec;
-    ET_CHECK_OR_RETURN_ERROR(impl_->execute(handle, delegate_args, ec),
+#ifdef ET_EVENT_TRACER_ENABLED
+    auto event_logger = ModelEventLoggerImpl(context.event_tracer());
+    ET_CHECK_OR_RETURN_ERROR(impl_->execute(handle, delegate_args, logging_options, &event_logger, ec),
                              DelegateInvalidHandle,
                              "%s: Failed to run the model.",
                              ETCoreMLStrings.delegateIdentifier.UTF8String);
+#else
+    ET_CHECK_OR_RETURN_ERROR(impl_->execute(handle, delegate_args, logging_options, nullptr, ec),
+                             DelegateInvalidHandle,
+                             "%s: Failed to run the model.",
+                             ETCoreMLStrings.delegateIdentifier.UTF8String);
+#endif
+    
     return Error::Ok;
 }
 

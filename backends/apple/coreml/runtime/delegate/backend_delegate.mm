@@ -1,20 +1,19 @@
 //
 // backend_delegate.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import "backend_delegate.h"
 
-#import <atomic>
-
-#import <multiarray.h>
-
-#import <ETCoreMLModel.h>
 #import <ETCoreMLAssetManager.h>
+#import <ETCoreMLModel.h>
 #import <ETCoreMLModelManager.h>
 #import <ETCoreMLStrings.h>
+#import <atomic>
+#import <backend_delegate.h>
+#import <model_event_logger.h>
+#import <multiarray.h>
 
 namespace  {
 using namespace executorchcoreml;
@@ -138,15 +137,15 @@ std::string BackendDelegate::ErrorCategory::message(int code) const {
         case ErrorCode::CorruptedModel:
             return "AOT blob has incorrect or missing CoreML model.";
         case ErrorCode::BrokenModel:
-            return "CoreML model doesn't match the input and output specifications";
+            return "CoreML model doesn't match the input and output specifications.";
         case ErrorCode::CompilationFailed:
-            return "CoreML model failed to compile";
+            return "Failed to compile CoreML model.";
         case ErrorCode::ModelSaveFailed:
-            return "Failed to save CoreML model to disk";
+            return "Failed to write CoreML model to disk.";
         case ErrorCode::ModelCacheCreationFailed:
-            return "Failed to create model cache";
+            return "Failed to create model cache.";
         default:
-            return "Unexpected error";
+            return "Unexpected error.";
     }
 }
 
@@ -189,7 +188,11 @@ public:
         return modelHandle;
     }
     
-    bool execute(Handle* handle, const std::vector<MultiArray>& args, std::error_code& ec) const noexcept override {
+    bool execute(Handle* handle,
+                 const std::vector<MultiArray>& args,
+                 const ModelLoggingOptions& logging_options,
+                 ModelEventLogger *event_logger,
+                 std::error_code& ec) const noexcept override {
         NSError *error = nil;
         NSMutableArray<MLMultiArray *> *model_args = [NSMutableArray arrayWithCapacity:args.size()];
         for (const auto& arg : args) {
@@ -200,7 +203,11 @@ public:
             [model_args addObject:multi_array];
         }
         
-        if (![model_manager_ executeModelWithHandle:handle args:model_args error:&error]) {
+        if (![model_manager_ executeModelWithHandle:handle
+                                               args:model_args
+                                    loggingOptions:logging_options
+                                        eventLogger:event_logger
+                                              error:&error]) {
             ec = static_cast<ErrorCode>(error.code);
             return false;
         }
