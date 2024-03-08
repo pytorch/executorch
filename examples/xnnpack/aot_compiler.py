@@ -111,4 +111,4 @@ if __name__ == "__main__":
 
     quant_tag = "q8" if args.quantize else "fp32"
     model_name = f"{args.model_name}_xnnpack_{quant_tag}"
-    save_pte_program(exec_prog.buffer, model_name, args.output_dir)
+    save_pte_program(exec_prog, model_name, args.output_dir)
