@@ -916,8 +916,10 @@ def linear_forward_8da4w(
     x, weight_int8, scales, zeros, out_features, group_size, precision
 ):
     x = per_token_dynamic_quant(x)
-    origin_x_size = x.size()
-    x = x.reshape(-1, origin_x_size[-1])
+    # TODO: verify and remove following reshape code
+    # reshape between ND <-> 2D, can probably be removed since now we are using F.linear
+    # origin_x_size = x.size()
+    # x = x.reshape(-1, origin_x_size[-1])
 
     # TODO: better API
     # weight_int8 = torch.ops.quantized_decomposed.unpack_int4_to_int8(weight_int4packed)
@@ -939,8 +941,8 @@ def linear_forward_8da4w(
     # w_dq = w_dq.to(torch.float16)
     c = torch.nn.functional.linear(x, w_dq)
 
-    new_shape = origin_x_size[:-1] + (out_features,)
-    c = c.reshape(new_shape)
+    # new_shape = origin_x_size[:-1] + (out_features,)
+    # c = c.reshape(new_shape)
 
     return c
 
