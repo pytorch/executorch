@@ -38,6 +38,10 @@ get_filename_component(ETHOS_SDK_PATH ${ETHOS_SDK_PATH} REALPATH)
 # This is the platform target of Corstone-300, that includes ethosu_core_driver
 # and bare-metal bringup libraries. We link against ethosu_target_init which
 # includes all of these dependencies.
+
+# For Corstone-300 FVP builds we put models into the larger DRAM area
+set(MEMORY_MODEL "dram")
+set(MEMORY_ARENA "dram")
 add_subdirectory(${ETHOS_SDK_PATH}/core_platform/targets/corstone-300 target)
 
 # Dependencies from the ExecuTorch build

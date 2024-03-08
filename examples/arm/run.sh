@@ -43,7 +43,7 @@ function generate_pte_file() {
     local delegate=${2}
 
     local model_filename=${model}.pte
-    if [ "${delegate}" = "--delegate" ]; then
+    if [[ "${delegate}" == *"--delegate"* ]]; then
         model_filename=${model}_arm_delegate.pte
     fi
     cd $et_root_dir
@@ -131,8 +131,9 @@ function run_fvp() {
         -C mps3_board.visualisation.disable-visualisation=1 \
         -C mps3_board.telnetterminal0.start_telnet=0        \
         -C mps3_board.uart0.out_file='-'                    \
+        -C mps3_board.uart0.shutdown_on_eot=1               \
         -a "${elf}"                                         \
-        --timelimit 5 || true # seconds
+        --timelimit 30 || true # seconds
     echo "[${FUNCNAME[0]} Simulation complete, $?"
 }
 
@@ -165,8 +166,8 @@ type ${buck2} 2>&1 > /dev/null \
 build_executorch
 
 # the test models run, and whether to delegate
-test_model=( "softmax" "add" "add3" )
-test_delegate=( "" "--delegate" "--delegate" )
+test_model=( "softmax" "add" "add3" "mv2" )
+test_delegate=( "" "--delegate" "--delegate" "--delegate --quantize" )
 
 # loop over running the AoT flow and executing the model on device
 for i in "${!test_model[@]}"; do

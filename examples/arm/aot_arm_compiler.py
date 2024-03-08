@@ -188,7 +188,11 @@ if __name__ == "__main__":
 
     if args.delegate is True:
         edge = edge.to_backend(
-            ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128"))
+            ArmPartitioner(
+                generate_ethosu_compile_spec(
+                    "ethos-u55-128", permute_memory_to_nhwc=True
+                )
+            )
         )
         logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
