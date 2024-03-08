@@ -173,7 +173,7 @@ class GraphBuilder {
     // Parse the operators
     for (OpCallPtr op_call : *(flatbuffer_->chain())) {
       std::string op_name = op_call->name()->str();
-      ET_CHECK_MSG(hasOpsFn(op_name), "Missing operator: %s", op_name.c_str());
+      ET_CHECK_MSG(VK_HAS_OP(op_name), "Missing operator: %s", op_name.c_str());
 
       const std::vector<int> arg_fb_ids(
           op_call->args()->cbegin(), op_call->args()->cend());
@@ -183,7 +183,7 @@ class GraphBuilder {
         args.push_back(get_fb_id_valueref(arg_fb_id));
       }
 
-      auto vkFn = getOpsFn(op_name);
+      auto vkFn = VK_GET_OP_FN(op_name);
       vkFn(*compute_graph_, args);
     }
 
