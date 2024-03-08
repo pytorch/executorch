@@ -21,6 +21,7 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -32,9 +33,11 @@ from .builder import DType, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
+    Int8DynActInt4WeightGPTQQuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
+
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -171,6 +174,16 @@ def quantize(
     model: torch.nn.Module,
     qmode: str,
     activation_dtype: Optional[DType],
+    checkpoint_path: Optional[Path] = None,
+    # following arguments only available when setting int4 quantization.
+    groupsize: int = 128,
+    # following arguments only used for GPTQ
+    calibration_tasks: Optional[list] = None,
+    calibration_limit: int = 1000,
+    calibration_seq_length: int = 100,
+    pad_calibration_inputs: bool = False,
+    percdamp: float = 0.01,
+    blocksize: int = 128,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -185,6 +198,12 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
+    if checkpoint_path is None:
+        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+
+    if calibration_tasks is None:
+        calibration_tasks = ["hellaswag"]
+
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
@@ -195,6 +214,28 @@ def quantize(
         ).quantized_model()
         print("quantized model:", model_int4)
         return model_int4
+    elif qmode == "8da4w-gptq":
+        gptq_quant_handler = Int8DynActInt4WeightGPTQQuantHandler(
+            precision=torch_dtype,
+        )
+        tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        assert tokenizer_path.is_file(), tokenizer_path
+        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
+            model_file=str(tokenizer_path)
+        )
+        model_updated_state_dict = gptq_quant_handler.create_quantized_state_dict(
+            tokenizer,
+            blocksize,
+            percdamp,
+            groupsize,
+            calibration_tasks,
+            calibration_limit,
+            calibration_seq_length,
+            pad_calibration_inputs,
+        )
+        model = gptq_quant_handler.convert_for_runtime(model)
+        model.load_state_dict(model_updated_state_dict)
+        return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 
@@ -242,7 +283,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "int4"],
+        choices=["int8", "int4", "8da4w-gptq"],
         help="type of quantization",
     )
 
