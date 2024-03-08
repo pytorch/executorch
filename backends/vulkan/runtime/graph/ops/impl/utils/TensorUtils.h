@@ -10,26 +10,16 @@
 
 #ifdef USE_VULKAN_API
 
-#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <ATen/native/vulkan/api/api.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
 
-void add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef in1,
-    const ValueRef in2,
-    const ValueRef alpha,
-    const ValueRef out,
-    const api::ShaderInfo& shader);
+api::utils::uvec3 adaptive_work_group_size(
+    const api::utils::uvec3& global_work_group);
 
-struct ArithmeticParams final {
-  api::utils::ivec4 outputSizes;
-  api::utils::ivec4 input1Sizes;
-  api::utils::ivec4 input2Sizes;
-  float alpha;
-};
+api::utils::ivec4 get_size_as_ivec4(const vTensor& t);
 
 } // namespace vulkan
 } // namespace native

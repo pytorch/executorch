@@ -10,8 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 namespace at {
 namespace native {
