@@ -1389,6 +1389,10 @@ class Int8DynActInt4WeightGPTQQuantHandler(GPTQQuantHandler):
 
     def convert_for_runtime(self, model):
         replace_linear_8da4w(
-            model, self.groupsize, self.padding_allowed, torch.int8, self.precision,
+            model,
+            self.groupsize,
+            self.padding_allowed,
+            torch.int8,
+            self.precision,
         )
         return model
