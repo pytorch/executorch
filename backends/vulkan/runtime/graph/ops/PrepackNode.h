@@ -10,9 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 

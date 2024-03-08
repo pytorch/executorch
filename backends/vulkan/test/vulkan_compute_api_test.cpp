@@ -10,13 +10,14 @@
 
 #include <ATen/native/vulkan/api/api.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 using namespace at::native::vulkan;
 
