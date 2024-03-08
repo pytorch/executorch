@@ -917,7 +917,6 @@ def linear_forward_8da4w(
 ):
     x = per_token_dynamic_quant(x)
     # TODO: verify and remove following reshape code
-    # reshape between ND <-> 2D, can probably be removed since now we are using F.linear
     # origin_x_size = x.size()
     # x = x.reshape(-1, origin_x_size[-1])
 
