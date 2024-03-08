@@ -6,14 +6,35 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
+// @lint-ignore-every CLANGTIDY facebook-security-vulnerable-memcpy
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
+
+#include <cstring>
 
 namespace at {
 namespace native {
 namespace vulkan {
+
+template <typename T>
+void memcpy_to_mapping_impl(
+    const void* src,
+    api::MemoryMap& dst_mapping,
+    const size_t nbytes) {
+  T* data_ptr = dst_mapping.template data<T>();
+  memcpy(data_ptr, reinterpret_cast<const T*>(src), nbytes);
+}
+
+template <typename T>
+void memcpy_from_mapping_impl(
+    api::MemoryMap& src_mapping,
+    void* dst,
+    const size_t nbytes) {
+  T* data_ptr = src_mapping.template data<T>();
+  memcpy(reinterpret_cast<T*>(dst), data_ptr, nbytes);
+}
 
 void memcpy_to_mapping(
     const void* src,

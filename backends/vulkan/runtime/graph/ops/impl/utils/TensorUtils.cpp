@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 
 namespace at {
 namespace native {
@@ -27,6 +29,14 @@ api::utils::uvec3 adaptive_work_group_size(
     }
   }
   return local_group_size;
+}
+
+api::utils::ivec4 get_size_as_ivec4(const vTensor& t) {
+  return api::utils::make_ivec4(
+      {dim_at<Dim4D::Width>(t),
+       dim_at<Dim4D::Height>(t),
+       dim_at<Dim4D::Channel>(t),
+       dim_at<Dim4D::Batch>(t)});
 }
 
 } // namespace vulkan

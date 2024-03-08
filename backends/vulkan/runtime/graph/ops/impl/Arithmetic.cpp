@@ -8,10 +8,12 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 namespace at {
 namespace native {
