@@ -1,6 +1,9 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 #
 # This yaml file contains operators that are defined by the ATen library.
+
+- op: _cdist_forward.out
+
 - op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
 
 - op: _linalg_det.result
@@ -9,11 +12,19 @@
 
 - op: _log_softmax.out
 
+- op: _native_batch_norm_legit.out
+
+- op: _native_batch_norm_legit.no_stats_out
+
 - op: _native_batch_norm_legit_no_training.out
+
+- op: _pdist_forward.out
 
 - op: _reshape_alias_copy.out
 
 - op: _softmax.out
+
+- op: copy_
 
 - op: _to_copy.out
 
@@ -94,6 +105,8 @@
 - op: clamp.out
   cpp_no_default_args: ['min']
 
+- op: clamp.Tensor_out
+
 - op: clone.out
 
 - op: constant_pad_nd.out
@@ -113,6 +126,8 @@
 - op: dequantize.self_out
 
 - op: detach_copy.out
+
+- op: diagonal_copy.out
 
 - op: div.out
 
@@ -143,6 +158,8 @@
 - op: fill.Scalar_out
 
 - op: fill.Tensor_out
+
+- op: flip.out
 
 - op: floor_divide.out
 
@@ -240,6 +257,8 @@
 
 - op: native_batch_norm.out
 
+- op: native_group_norm.out
+
 - op: native_layer_norm.out
 
 - op: ne.Scalar_out
@@ -287,6 +306,8 @@
 - op: replication_pad2d.out
 
 - op: replication_pad3d.out
+
+- op: roll.out
 
 - op: round.out
 
@@ -363,6 +384,8 @@
 - op: upsample_nearest2d.out
 
 - op: upsample_nearest2d.vec_out
+
+- op: var.correction_out
 
 - op: var.out
 

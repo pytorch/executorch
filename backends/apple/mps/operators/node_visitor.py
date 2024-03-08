@@ -235,7 +235,6 @@ class NodeVisitor:
     def get_serialized_id(
         self, node: Union[torch.fx.Node, float, int], mps_graph: MPSGraph
     ) -> int:
-
         """
         Map a tensor to a unique id. If the tensor was already mapped, return
         the existent id.

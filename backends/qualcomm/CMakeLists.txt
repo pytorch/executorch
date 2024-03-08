@@ -139,6 +139,7 @@ add_library(qnn_backend STATIC)
 add_library(qnn_factory STATIC)
 add_library(qnn_header INTERFACE)
 add_library(wrappers STATIC)
+add_library(utils STATIC)
 
 #
 # declare dependency
@@ -228,6 +229,7 @@ target_link_libraries(qnn_manager
     qnn_factory
     wrappers
     qnn_schema
+    utils
 )
 target_link_libraries(qnn_executorch_backend
     PRIVATE
@@ -236,6 +238,10 @@ target_link_libraries(qnn_executorch_backend
     qnn_manager
     executorch
     qcir_utils
+)
+target_link_libraries(utils
+    PRIVATE
+    qnn_executorch_logging
 )
 
 #

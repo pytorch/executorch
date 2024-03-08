@@ -9,88 +9,118 @@
 package com.example.executorchllamademo;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.TextView;
+import android.widget.ImageButton;
+import android.widget.ListView;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import org.pytorch.executorch.LlamaCallback;
 import org.pytorch.executorch.LlamaModule;
 
 public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private EditText mEditTextMessage;
-  private TextView mTextViewChat;
   private Button mSendButton;
-  private Button mStopButton;
-  private Button mModelButton;
+  private ImageButton mModelButton;
+  private ListView mMessagesView;
+  private MessageAdapter mMessageAdapter;
   private LlamaModule mModule = null;
-  private String mResult = null;
+  private Message mResultMessage = null;
 
-  private static String assetFilePath(Context context, String assetName) throws IOException {
-    File file = new File(context.getFilesDir(), assetName);
-    if (file.exists() && file.length() > 0) {
-      return file.getAbsolutePath();
-    }
-
-    try (InputStream is = context.getAssets().open(assetName)) {
-      try (OutputStream os = new FileOutputStream(file)) {
-        byte[] buffer = new byte[4 * 1024];
-        int read;
-        while ((read = is.read(buffer)) != -1) {
-          os.write(buffer, 0, read);
-        }
-        os.flush();
-      }
-      return file.getAbsolutePath();
-    }
-  }
+  private int mNumTokens = 0;
+  private long mRunStartTime = 0;
+  private String mModelFilePath = "";
+  private String mTokenizerFilePath = "";
 
   @Override
   public void onResult(String result) {
     System.out.println("onResult: " + result);
-    mResult = result;
+    mResultMessage.appendText(result);
+    mNumTokens++;
     run();
   }
 
-  private void setModel(String modelPath, String tokenizerPath) {
-    try {
-      String model = MainActivity.assetFilePath(getApplicationContext(), modelPath);
-      String tokenizer = MainActivity.assetFilePath(getApplicationContext(), tokenizerPath);
-      mModule = new LlamaModule(model, tokenizer, 0.8f);
-    } catch (IOException e) {
-      finish();
+  private static String[] listLocalFile(String path, String suffix) {
+    File directory = new File(path);
+    if (directory.exists() && directory.isDirectory()) {
+      File[] files = directory.listFiles((dir, name) -> name.toLowerCase().endsWith(suffix));
+      String[] result = new String[files.length];
+      for (int i = 0; i < files.length; i++) {
+        if (files[i].isFile() && files[i].getName().endsWith(suffix)) {
+          result[i] = files[i].getAbsolutePath();
+        }
+      }
+      return result;
     }
+    return null;
+  }
+
+  private void setLocalModel(String modelPath, String tokenizerPath) {
+    long runStartTime = System.currentTimeMillis();
+    mModule = new LlamaModule(modelPath, tokenizerPath, 0.8f);
+    int loadResult = mModule.load();
+    if (loadResult != 0) {
+      AlertDialog.Builder builder = new AlertDialog.Builder(this);
+      builder.setTitle("Load failed: " + loadResult);
+      AlertDialog alert = builder.create();
+      alert.show();
+    }
+
+    long runDuration = System.currentTimeMillis() - runStartTime;
+    String modelInfo =
+        "Model path: "
+            + modelPath
+            + "\nTokenizer path: "
+            + tokenizerPath
+            + "\nModel loaded time: "
+            + runDuration
+            + " ms";
+    Message modelLoadedMessage = new Message(modelInfo, false);
+    mMessageAdapter.add(modelLoadedMessage);
+    mMessageAdapter.notifyDataSetChanged();
+  }
+
+  private String memoryInfo() {
+    final ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+    ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+    am.getMemoryInfo(memInfo);
+    return "Total RAM: "
+        + Math.floorDiv(memInfo.totalMem, 1000000)
+        + " MB. Available RAM: "
+        + Math.floorDiv(memInfo.availMem, 1000000)
+        + " MB.";
   }
 
   private void modelDialog() {
-    AlertDialog.Builder builder = new AlertDialog.Builder(this);
-    builder.setTitle("Select a Model");
-    builder.setSingleChoiceItems(
-        new String[] {"stories", "language"},
+    String[] pteFiles = listLocalFile("/data/local/tmp/llama/", ".pte");
+    String[] binFiles = listLocalFile("/data/local/tmp/llama/", ".bin");
+    AlertDialog.Builder modelPathBuilder = new AlertDialog.Builder(this);
+    modelPathBuilder.setTitle("Select model path");
+    AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
+    tokenizerPathBuilder.setTitle("Select tokenizer path");
+    modelPathBuilder.setSingleChoiceItems(
+        binFiles,
         -1,
-        new android.content.DialogInterface.OnClickListener() {
-          public void onClick(android.content.DialogInterface dialog, int item) {
-            switch (item) {
-              case 0:
-                setModel("stories110M.pte", "tokenizer.bin");
-                break;
-              case 1:
-                setModel("language.pte", "language.bin");
-                break;
-            }
-            mEditTextMessage.setText("");
-            mTextViewChat.setText("");
-            dialog.dismiss();
-          }
+        (dialog, item) -> {
+          mTokenizerFilePath = binFiles[item];
+          mEditTextMessage.setText("");
+          dialog.dismiss();
+          tokenizerPathBuilder.create().show();
         });
-    AlertDialog alert = builder.create();
-    alert.show();
+
+    tokenizerPathBuilder.setSingleChoiceItems(
+        pteFiles,
+        -1,
+        (dialog, item) -> {
+          mModelFilePath = pteFiles[item];
+          setLocalModel(mModelFilePath, mTokenizerFilePath);
+          dialog.dismiss();
+        });
+
+    modelPathBuilder.create().show();
   }
 
   @Override
@@ -99,38 +129,76 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     setContentView(R.layout.activity_main);
 
     mEditTextMessage = findViewById(R.id.editTextMessage);
-    mTextViewChat = findViewById(R.id.textViewChat);
     mSendButton = findViewById(R.id.sendButton);
-    mStopButton = findViewById(R.id.stopButton);
     mModelButton = findViewById(R.id.modelButton);
+    mMessagesView = findViewById(R.id.messages_view);
+    mMessageAdapter = new MessageAdapter(this, R.layout.sent_message);
+    mMessagesView.setAdapter(mMessageAdapter);
+    mModelButton.setOnClickListener(
+        view -> {
+          mModule.stop();
+          mMessageAdapter.clear();
+          mMessageAdapter.notifyDataSetChanged();
+          modelDialog();
+        });
 
+    setLocalModel("/data/local/tmp/llama/stories110M.pte", "/data/local/tmp/llama/tokenizer.bin");
+    onModelRunStopped();
+  }
+
+  private void onModelRunStarted() {
+    mSendButton.setText("Stop");
+    mSendButton.setOnClickListener(
+        view -> {
+          mModule.stop();
+        });
+
+    mRunStartTime = System.currentTimeMillis();
+  }
+
+  private void onModelRunStopped() {
+    setTitle(memoryInfo());
+    long runDuration = System.currentTimeMillis() - mRunStartTime;
+    if (mResultMessage != null) {
+      mResultMessage.setTokensPerSecond(1.0f * mNumTokens / (runDuration / 1000.0f));
+    }
+    mSendButton.setText("Generate");
     mSendButton.setOnClickListener(
         view -> {
           String prompt = mEditTextMessage.getText().toString();
-          mTextViewChat.append(prompt);
+          mMessageAdapter.add(new Message(prompt, true));
+          mMessageAdapter.notifyDataSetChanged();
           mEditTextMessage.setText("");
+          mResultMessage = new Message("", false);
+          mMessageAdapter.add(mResultMessage);
           Runnable runnable =
               new Runnable() {
                 @Override
                 public void run() {
+                  runOnUiThread(
+                      new Runnable() {
+                        @Override
+                        public void run() {
+                          onModelRunStarted();
+                        }
+                      });
+
                   mModule.generate(prompt, MainActivity.this);
+
+                  runOnUiThread(
+                      new Runnable() {
+                        @Override
+                        public void run() {
+                          onModelRunStopped();
+                        }
+                      });
                 }
               };
           new Thread(runnable).start();
         });
-
-    mStopButton.setOnClickListener(
-        view -> {
-          mModule.stop();
-        });
-
-    mModelButton.setOnClickListener(
-        view -> {
-          mModule.stop();
-          modelDialog();
-        });
-
-    setModel("stories110M.pte", "tokenizer.bin");
+    mNumTokens = 0;
+    mRunStartTime = 0;
+    mMessageAdapter.notifyDataSetChanged();
   }
 
   @Override
@@ -139,7 +207,8 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
         new Runnable() {
           @Override
           public void run() {
-            mTextViewChat.append(mResult);
+            mMessageAdapter.notifyDataSetChanged();
+            setTitle(memoryInfo());
           }
         });
   }

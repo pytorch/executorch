@@ -42,9 +42,9 @@ class DecomposeScaledDotProductAttention(ExportPass):
                     # In decomposed module, there are only input tensors for placeholder op.
                     for decomposed_node in decomposed_module.graph.nodes:
                         if decomposed_node.op == "placeholder":
-                            decomposed_node_to_subgraph_node[
-                                decomposed_node
-                            ] = name_to_input_tensor_map[decomposed_node.name]
+                            decomposed_node_to_subgraph_node[decomposed_node] = (
+                                name_to_input_tensor_map[decomposed_node.name]
+                            )
 
                         if decomposed_node.op == "output":
                             last_decomposed_node = decomposed_node.args[0]
@@ -76,9 +76,9 @@ class DecomposeScaledDotProductAttention(ExportPass):
                         subgraph_node.meta["source_fn_stack"] = [
                             (subgraph_node, subgraph_node.target)
                         ]
-                        decomposed_node_to_subgraph_node[
-                            decomposed_node
-                        ] = subgraph_node
+                        decomposed_node_to_subgraph_node[decomposed_node] = (
+                            subgraph_node
+                        )
 
                     graph.erase_node(node)
 

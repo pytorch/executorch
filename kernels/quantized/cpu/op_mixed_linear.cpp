@@ -24,7 +24,8 @@ bool check_quantized_mixed_linear_args(
     Tensor& out) {
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(in, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight, 2));
-  ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(weight_scales, 1));
+  ET_LOG_AND_RETURN_IF_FALSE(
+      tensor_is_rank(weight_scales, 1) || tensor_is_rank(weight_scales, 2));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_rank(out, 2));
 
   ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_size_at_dims(in, 1, weight, 1));

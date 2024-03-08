@@ -53,10 +53,13 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//caffe2:torch_vulkan_api",
-            "//caffe2:torch_vulkan_ops",
+            "//caffe2:torch_vulkan_spv",
         ],
         define_static_target = False,
+        # Static initialization is used to register operators to the global operator registry,
+        # therefore link_whole must be True to make sure unused symbols are not discarded.
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True`
+        link_whole = True,
     )
 
     runtime.cxx_library(
@@ -82,4 +85,6 @@ def define_common_targets():
         # VulkanBackend.cpp needs to compile with executor as whole
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
         link_whole = True,
+        # Define an soname that can be used for dynamic loading in Java, Python, etc.
+        soname = "libvulkan_graph_runtime.$(ext)",
     )

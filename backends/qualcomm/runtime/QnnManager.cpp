@@ -6,10 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
+#include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 namespace torch {
 namespace executor {
 namespace qnn {
@@ -25,6 +27,7 @@ QnnManager::QnnManager(
     : backend_type_(options->backend_type()),
       library_path_(options->library_path()->c_str()),
       skel_library_dir_(options->skel_library_dir()->c_str()),
+      tensor_dump_output_path_(options->tensor_dump_output_path()->c_str()),
       graph_name_(options->graph_name()->c_str()),
       soc_info_(options->soc_info()),
       htp_options_(options->htp_options()),
@@ -41,6 +44,9 @@ QnnManager::QnnManager(
         "library_path: %s", options->library_path()->c_str());
     QNN_EXECUTORCH_LOG_INFO(
         "skel_library_dir: %s", options->skel_library_dir()->c_str());
+    QNN_EXECUTORCH_LOG_INFO(
+        "tensor_dump_output_path: %s",
+        options->tensor_dump_output_path()->c_str());
     QNN_EXECUTORCH_LOG_INFO(
         "log_level: %s", EnumNameQnnExecuTorchLogLevel(options->log_level()));
     QNN_EXECUTORCH_LOG_INFO(
@@ -144,6 +150,9 @@ Error QnnManager::AllocateTensor() {
   for (auto& tensor : output_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
+    if (!tensor_dump_output_path_.empty()) {
+      tensor_wrapper->AllocateDataBuffer();
+    }
     output_tensors_.emplace_back(std::move(tensor_wrapper));
   }
   return Error::Ok;
@@ -153,6 +162,11 @@ Error QnnManager::AllocateTensor(
     std::vector<std::shared_ptr<TensorWrapper>>& inputs,
     std::vector<std::shared_ptr<TensorWrapper>>& outputs) {
   input_tensors_ = std::move(inputs);
+  for (auto& output_tensor : outputs) {
+    if (!tensor_dump_output_path_.empty()) {
+      output_tensor->AllocateDataBuffer();
+    }
+  }
   output_tensors_ = std::move(outputs);
   return Error::Ok;
 }
@@ -169,6 +183,32 @@ Error QnnManager::Execute(
     QNN_EXECUTORCH_LOG_ERROR(
         "qnn_graph_execute failed. Error %d", QNN_GET_ERROR_CODE(error));
     return Error::Internal;
+  }
+
+  if (!tensor_dump_output_path_.empty()) {
+    // TODO: Need to handle the graph which is partitioned.
+    // Maybe we could use graph name.
+    std::string dir = tensor_dump_output_path_ + "/Result/";
+    CreateDirectory(dir);
+    QNN_EXECUTORCH_LOG_INFO("Dump tensor to the path: %s", dir.c_str());
+    for (std::size_t out_idx = 0; out_idx < output_tensor_structs.size();
+         ++out_idx) {
+      const Qnn_Tensor_t& output_tensor = output_tensor_structs[out_idx];
+
+      std::string output_path =
+          dir + QNN_VER_PTR(output_tensor)->name + "_tensor.raw";
+
+      std::ofstream fout(output_path, std::ios::binary);
+      if (fout.fail()) {
+        QNN_EXECUTORCH_LOG_ERROR(
+            "Dump tensor name: %s Failed.", QNN_VER_PTR(output_tensor)->name);
+        return Error::Internal;
+      }
+
+      fout.write(
+          static_cast<const char*>(QNN_VER_PTR(output_tensor)->clientBuf.data),
+          QNN_VER_PTR(output_tensor)->clientBuf.dataSize);
+    }
   }
 
   return Error::Ok;

@@ -32,7 +32,8 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tensor import layout_enum, scalar_type_enum
 from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
-from torch.export.exported_program import ExportedProgram
+from torch.export.exported_program import ExportedProgram, OutputKind
+from torch.utils import _pytree as pytree
 
 
 def _emit_prim_getters(prim_getters: Dict[str, Any]) -> List[ExecutionPlan]:
@@ -122,6 +123,36 @@ class EmitterOutput:
     ]
 
 
+def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
+    gm = exported_program.graph_module
+    output_node = None
+    for node in gm.graph.nodes:
+        if node.op == "output":
+            output_node = node
+    assert output_node is not None
+
+    mutated_outputs: List[Optional[str]] = [
+        out_spec.target if out_spec.kind in (OutputKind.BUFFER_MUTATION,) else None
+        for out_spec in exported_program.graph_signature.output_specs
+    ]
+    outputs = pytree.tree_flatten(output_node.args)[0]
+
+    user_output_nodes = []
+    for return_node, mutated_node_name in zip(outputs, mutated_outputs):
+        if mutated_node_name is None:
+            user_output_nodes.append(return_node)
+            continue
+
+    with gm.graph.inserting_before(output_node):
+        # Only return user outputs
+        new_output = gm.graph.output(tuple(user_output_nodes))
+        new_output.meta = output_node.meta.copy()
+        output_node.replace_all_uses_with(new_output)
+        gm.graph.erase_node(output_node)
+
+    return gm
+
+
 def emit_program(
     methods: Union[ExportedProgram, Dict[str, ExportedProgram]],
     emit_stacktrace: bool = False,
@@ -163,13 +194,6 @@ def emit_program(
 
     # emit each entry point in order according to name.
     for name, exported_program in sorted(methods.items()):
-        if (
-            exported_program.graph_signature.buffers_to_mutate
-        ):  # see if we are mutating any state
-            raise ExportError(
-                ExportErrorType.INVALID_INPUT_TYPE,
-                "Buffers cannot be modified in executorch.",
-            )
         # create empty state
         emitter_state = _EmitterState(
             values=[],
@@ -180,7 +204,11 @@ def emit_program(
             emit_stacktrace=emit_stacktrace,
         )
 
-        emitter = _TopLevelEmitter(name, exported_program, program_state, emitter_state)
+        gm = _remove_non_user_outputs(exported_program)
+
+        emitter = _TopLevelEmitter(
+            name, exported_program, gm, program_state, emitter_state
+        )
 
         emitter.run()
         plans.append(emitter.plan())

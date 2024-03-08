@@ -30,7 +30,8 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def("Compile", &PyQnnManager::Compile)
       .def("Destroy", &PyQnnManager::Destroy)
-      .def("IsAvailable", &PyQnnManager::IsAvailable);
+      .def("IsAvailable", &PyQnnManager::IsAvailable)
+      .def("IsTensorDump", &PyQnnManager::IsTensorDump);
 }
 } // namespace qnn
 } // namespace executor

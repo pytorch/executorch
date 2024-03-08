@@ -114,3 +114,4 @@ class QnnExecuTorchOptions:
     htp_options: QnnExecuTorchHtpBackendOptions = QnnExecuTorchHtpBackendOptions()
     soc_info: SocInfo = SocInfo()
     online_prepare: bool = False
+    tensor_dump_output_path: str = ""

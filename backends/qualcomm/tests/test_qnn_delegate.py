@@ -44,6 +44,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
         )
 
     def test_qnn_backend_arange(self):
@@ -373,6 +374,7 @@ class TestQNNFloatingPointModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -464,6 +466,7 @@ class TestQNNQuantizedOperator(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
         )
 
     def test_qnn_backend_arange(self):
@@ -840,6 +843,7 @@ class TestQNNQuantizedModel(TestQNN):
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
