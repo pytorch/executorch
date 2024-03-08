@@ -215,14 +215,14 @@ class TestEmit(unittest.TestCase):
     def test_constant_output(self):
         class M(torch.nn.Module):
             def forward(self, x):
-                return [((1, 3, 1.2), True, [x + x, x * x])]
+                return [((1, 3, 1.2), True, [x + x, x * x], None)]
 
         ep = torch.export.export(M(), (torch.ones(2, 3),))
         res = ep.module()(torch.ones(2, 3))
         self.assertEqual(res[0][0], (1, 3, 1.2))
         program = to_edge(ep).to_executorch().executorch_program
         outputs = program.execution_plan[0].outputs
-        self.assertEqual(len(outputs), 6)
+        self.assertEqual(len(outputs), 7)
         self.assertEqual(program.execution_plan[0].values[outputs[0]].val.int_val, 1)
         self.assertEqual(program.execution_plan[0].values[outputs[1]].val.int_val, 3)
         self.assertEqual(
@@ -231,6 +231,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             program.execution_plan[0].values[outputs[3]].val.bool_val, True
         )
+        self.assertIsInstance(program.execution_plan[0].values[outputs[6]].val, Null)
 
     def test_int_list_input(self):
         class M(torch.nn.Module):
