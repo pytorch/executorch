@@ -127,7 +127,8 @@ class BundledProgram:
                 )
             )
 
-        program_bytes: bytes = _serialize_pte_binary(program)
+        # TODO(T181463742): avoid calling bytes(..) which may incur large copies.
+        program_bytes: bytes = bytes(_serialize_pte_binary(program))
         self._bundled_program_in_schema = bp_schema.BundledProgram(
             version=BUNDLED_PROGRAM_SCHEMA_VERSION,
             method_test_suites=bundled_method_test_suites,
