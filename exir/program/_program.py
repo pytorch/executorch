@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import io
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
@@ -437,7 +438,8 @@ class ExecutorchProgram:
         """Returns the serialized ExecuTorch binary as a byte string.
 
         Note that the call to `buffer` may allocate a very large amount of
-        contiguous memory, depending on the model size.
+        contiguous memory, depending on the model size. If writing to a file,
+        use `write_to_file` which won't incur additional copies.
         """
         # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
         # amounts of memory longer than necessary.
@@ -477,6 +479,14 @@ class ExecutorchProgram:
 
     def dump_exported_program(self) -> ExportedProgram:
         return self.exported_program
+
+    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
+        """
+        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
+        `buffer`, as it writes to file without copying into a contiguous block of memory first,
+        reducing the peak memory usage.
+        """
+        self._get_pte_data().write_to_file(open_file)
 
 
 def _get_aten_to_edge_passes(config: EdgeCompileConfig):
@@ -769,7 +779,8 @@ class MultiMethodExecutorchProgram:
         """Returns the serialized ExecuTorch binary as a byte string.
 
         Note that the call to `buffer` may allocate a very large amount of
-        contiguous memory, depending on the model size.
+        contiguous memory, depending on the model size. If writing to a file,
+        use `write_to_file` which won't incur additional copies.
         """
         # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
         # amounts of memory longer than necessary.
@@ -799,6 +810,14 @@ class MultiMethodExecutorchProgram:
 
     def get_multi_method_graph_module(self) -> "MultiMethodExirExportedProgram":
         return self._executorch_dialect_ir_program
+
+    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
+        """
+        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
+        `buffer`, as it writes to file without copying into a contiguous block of memory first,
+        reducing the peak memory usage.
+        """
+        self._get_pte_data().write_to_file(open_file)
 
 
 # TODO(T152006915): Merge this into to_executorch and then delete it.
@@ -1210,10 +1229,19 @@ class ExecutorchProgramManager:
         """Returns the serialized ExecuTorch binary as a byte string.
 
         Note that the call to `buffer` may allocate a very large amount of
-        contiguous memory, depending on the model size.
+        contiguous memory, depending on the model size. If writing to a file,
+        use `write_to_file` which won't incur additional copies.
         """
         # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
         # amounts of memory longer than necessary.
         if self._buffer is None:
             self._buffer = bytes(self._pte_data)
         return self._buffer
+
+    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
+        """
+        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
+        `buffer`, as it writes to file without copying into a contiguous block of memory first,
+        reducing the peak memory usage.
+        """
+        self._pte_data.write_to_file(open_file)
