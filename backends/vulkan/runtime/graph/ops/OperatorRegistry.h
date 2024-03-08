@@ -20,6 +20,16 @@
 #define VK_GET_OP_FN(name) \
   ::at::native::vulkan::operator_registry().get_op_fn(name)
 
+#define VK_REGISTER_OP(name, function)                   \
+  ::at::native::vulkan::operator_registry().register_op( \
+      #name,                                             \
+      std::bind(&function, std::placeholders::_1, std::placeholders::_2))
+
+#define REGISTER_OPERATORS                              \
+  static void register_ops();                           \
+  static const OperatorRegisterInit reg(&register_ops); \
+  static void register_ops()
+
 namespace at {
 namespace native {
 namespace vulkan {
@@ -35,7 +45,7 @@ class OperatorRegistry final {
       const std::function<void(ComputeGraph&, const std::vector<ValueRef>&)>;
   using OpTable = std::unordered_map<std::string, OpFunction>;
 
-  static const OpTable kTable;
+  OpTable table_;
 
  public:
   /*
@@ -47,6 +57,20 @@ class OperatorRegistry final {
    * Given an operator name, return the Vulkan delegate function
    */
   OpFunction& get_op_fn(const std::string& name);
+
+  /*
+   * Register a function to a given operator name
+   */
+  void register_op(const std::string& name, OpFunction& fn);
+};
+
+class OperatorRegisterInit final {
+  using InitFn = void();
+
+ public:
+  explicit OperatorRegisterInit(InitFn* init_fn) {
+    init_fn();
+  }
 };
 
 // The Vulkan operator registry is global. It is retrieved using this function,

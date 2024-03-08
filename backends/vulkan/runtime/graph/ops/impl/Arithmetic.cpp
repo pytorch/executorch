@@ -9,6 +9,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
@@ -79,6 +80,15 @@ void add_arithmetic_node(
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
       std::move(params)));
+}
+
+REGISTER_OPERATORS {
+  VK_REGISTER_OP(aten.add.Tensor, add);
+  VK_REGISTER_OP(aten.sub.Tensor, sub);
+  VK_REGISTER_OP(aten.mul.Tensor, mul);
+  VK_REGISTER_OP(aten.div.Tensor, div);
+  VK_REGISTER_OP(aten.div.Tensor_mode, floor_div);
+  VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
 }
 
 } // namespace vulkan

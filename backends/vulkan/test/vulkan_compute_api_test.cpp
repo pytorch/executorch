@@ -11,6 +11,8 @@
 #include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
@@ -585,8 +587,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
   out.value = graph.add_tensor(size_big, api::kFloat);
 
-  add_arithmetic_node(
-      graph, a.value, b.value, kDummyValueRef, out.value, VK_KERNEL(add));
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
 
   out.staging = graph.set_output_tensor(out.value);
 
@@ -636,8 +638,11 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   ValueRef c = graph.add_tensor(size_big, api::kFloat);
   ValueRef e = graph.add_tensor(size_big, api::kFloat);
 
-  add_arithmetic_node(graph, a.value, w1, kDummyValueRef, c, VK_KERNEL(add));
-  add_arithmetic_node(graph, c, w2, kDummyValueRef, e, VK_KERNEL(mul));
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, w1, kDummyValueRef, c});
+
+  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
+  mulFn(graph, {c, w2, e});
 
   IOValueRef out = {};
   out.value = e;
@@ -697,8 +702,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 6);
 
-  add_arithmetic_node(
-      graph, a.value, b.value, kDummyValueRef, c, VK_KERNEL(add));
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
   IOValueRef d = graph.add_input_tensor(
       size_small,
@@ -716,7 +721,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  add_arithmetic_node(graph, c, d.value, kDummyValueRef, e, VK_KERNEL(mul));
+  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
+  mulFn(graph, {c, d.value, e});
 
   IOValueRef out = {};
   out.value = e;
