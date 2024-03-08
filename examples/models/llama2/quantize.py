@@ -1144,7 +1144,8 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         input = input.to(self.precision)
-        input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
+        # padding is removed for perf
+        # input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
         return linear_forward_8da4w(
             input,
             self.weight,
@@ -1387,6 +1388,6 @@ class Int8DynActInt4WeightGPTQQuantHandler(GPTQQuantHandler):
 
     def convert_for_runtime(self, model):
         replace_linear_8da4w(
-            model, self.groupsize, self.inner_k_tiles, self.padding_allowed
+            model, self.groupsize, self.padding_allowed, torch.int8, self.precision,
         )
         return model
