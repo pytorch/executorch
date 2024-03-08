@@ -35,6 +35,9 @@ struct StagingParams final {
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
 
+// Expose for the Vulkan Compute API tests.
+StagingParams create_staging_params(const vTensor& t);
+
 } // namespace vulkan
 } // namespace native
 } // namespace at
