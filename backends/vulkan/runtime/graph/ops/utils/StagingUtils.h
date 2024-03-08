@@ -12,48 +12,9 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <cstring>
-
 namespace at {
 namespace native {
 namespace vulkan {
-
-//
-// Functions to memcpy data into staging buffer
-//
-
-void memcpy_to_mapping(
-    const void* src,
-    api::MemoryMap& dst_mapping,
-    const size_t nbytes,
-    const api::ScalarType dtype);
-void memcpy_from_mapping(
-    const api::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes,
-    const api::ScalarType dtype);
-
-//
-// Utility functions for memcpy
-//
-
-template <typename T>
-void memcpy_to_mapping_impl(
-    const void* src,
-    api::MemoryMap& dst_mapping,
-    const size_t nbytes) {
-  T* data_ptr = dst_mapping.template data<T>();
-  memcpy(data_ptr, reinterpret_cast<const T*>(src), nbytes);
-}
-
-template <typename T>
-void memcpy_from_mapping_impl(
-    api::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes) {
-  T* data_ptr = src_mapping.template data<T>();
-  memcpy(reinterpret_cast<T*>(dst), data_ptr, nbytes);
-}
 
 //
 // Functions to copy data into and out of a staging buffer
