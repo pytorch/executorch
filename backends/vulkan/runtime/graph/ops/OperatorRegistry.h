@@ -15,41 +15,43 @@
 #include <functional>
 #include <unordered_map>
 
+#define VK_HAS_OP(name) ::at::native::vulkan::operator_registry().has_op(name)
+
+#define VK_GET_OP_FN(name) \
+  ::at::native::vulkan::operator_registry().get_op_fn(name)
+
 namespace at {
 namespace native {
 namespace vulkan {
 
-using OpFunction =
-    const std::function<void(ComputeGraph&, const std::vector<ValueRef>&)>;
-
-bool hasOpsFn(const std::string& name);
-
-OpFunction& getOpsFn(const std::string& name);
-
-// The Vulkan operator registry is a simplified version of
-// fbcode/executorch/runtime/kernel/operator_registry.h
-// that uses the C++ Standard Library.
-class OperatorRegistry {
- public:
-  static OperatorRegistry& getInstance();
-
-  bool hasOpsFn(const std::string& name);
-  OpFunction& getOpsFn(const std::string& name);
-
-  OperatorRegistry(const OperatorRegistry&) = delete;
-  OperatorRegistry(OperatorRegistry&&) = delete;
-  OperatorRegistry& operator=(const OperatorRegistry&) = delete;
-  OperatorRegistry& operator=(OperatorRegistry&&) = delete;
-
- private:
-  // TODO: Input string corresponds to target_name. We may need to pass kwargs.
+/*
+ * The Vulkan operator registry maps ATen operator names to their Vulkan
+ * delegate function implementation. It is a simplified version of
+ * executorch/runtime/kernel/operator_registry.h that uses the C++ Standard
+ * Library.
+ */
+class OperatorRegistry final {
+  using OpFunction =
+      const std::function<void(ComputeGraph&, const std::vector<ValueRef>&)>;
   using OpTable = std::unordered_map<std::string, OpFunction>;
-  // @lint-ignore CLANGTIDY facebook-hte-NonPodStaticDeclaration
+
   static const OpTable kTable;
 
-  OperatorRegistry() = default;
-  ~OperatorRegistry() = default;
+ public:
+  /*
+   * Check if the registry has an operator registered under the given name
+   */
+  bool has_op(const std::string& name);
+
+  /*
+   * Given an operator name, return the Vulkan delegate function
+   */
+  OpFunction& get_op_fn(const std::string& name);
 };
+
+// The Vulkan operator registry is global. It is retrieved using this function,
+// where it is declared as a static local variable.
+OperatorRegistry& operator_registry();
 
 } // namespace vulkan
 } // namespace native
