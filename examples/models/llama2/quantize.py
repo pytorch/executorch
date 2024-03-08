@@ -613,6 +613,25 @@ def unpack_int4_to_int8(int8_data: torch.Tensor) -> torch.Tensor:
     return torch.stack([first_elements, second_elements], dim=-1).view(up_size(shape))
 
 
+def per_token_dynamic_quant(input: torch.Tensor) -> torch.Tensor:
+    orig_dtype = input.dtype
+    (
+        scales,
+        zero_points,
+    ) = torch.ops.quantized_decomposed.choose_qparams_per_token(input, torch.int8)
+
+    # TODO: get these from torch.int8
+    quant_min = -128
+    quant_max = 127
+    input = torch.ops.quantized_decomposed.quantize_per_token(
+        input, scales, zero_points, quant_min, quant_max, torch.int8
+    )
+    input = torch.ops.quantized_decomposed.dequantize_per_token(
+        input, scales, zero_points, quant_min, quant_max, torch.int8, orig_dtype
+    )
+    return input
+
+
 class QuantHandler:
     def __init__(self, mod):
         self.mod = mod
@@ -893,9 +912,12 @@ def prepare_int4_weight_and_scales_and_zeros(weight, group_size, precision):
     return weight_int8, scales, zeros
 
 
-def linear_forward_int4(
+def linear_forward_8da4w(
     x, weight_int8, scales, zeros, out_features, group_size, precision
 ):
+    x = per_token_dynamic_quant(x)
+    origin_x_size = x.size()
+    x = x.reshape(-1, origin_x_size[-1])
 
     # TODO: better API
     # weight_int8 = torch.ops.quantized_decomposed.unpack_int4_to_int8(weight_int4packed)
@@ -916,6 +938,9 @@ def linear_forward_int4(
     # x = x.to(torch.float16)
     # w_dq = w_dq.to(torch.float16)
     c = torch.nn.functional.linear(x, w_dq)
+
+    new_shape = origin_x_size[:-1] + (out_features,)
+    c = c.reshape(new_shape)
 
     return c
 
@@ -1119,39 +1144,249 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         input = input.to(self.precision)
-        # Change this to pad if needed later
-        # else this op will always show up
-        # input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
-
-        (
-            scales,
-            zero_points,
-        ) = torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric(
-            input, torch.int8
-        )
-
-        # TODO: get these from torch.int8
-        quant_min = -128
-        quant_max = 127
-        input = torch.ops.quantized_decomposed.quantize_per_token(
-            input, scales, zero_points, quant_min, quant_max, torch.int8
-        )
-        input = torch.ops.quantized_decomposed.dequantize_per_token(
-            input,
-            scales,
-            zero_points,
-            quant_min,
-            quant_max,
-            torch.int8,
-            self.precision,
-        )
-
-        return linear_forward_int4(
+        input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
+        return linear_forward_8da4w(
             input,
             self.weight,
             self.scales,
             self.zeros,
             self.out_features,
-            self.group_size,
+            self.groupsize,
             self.precision,
         )
+
+
+#### GPTQ ########
+
+try:
+    from GPTQ import (  # pyre-ignore[21]
+        evaluate,
+        GenericGPTQRunner,
+        get_task_dict,
+        InputRecorder,
+        lm_eval,
+        MultiInput,
+    )
+
+except:
+    pass
+
+
+class GPTQQuantHandler(QuantHandler):
+    """
+    This class implements a GPTQ QuantHandler that can be used to apply GPTQ to a model in concert with the GenericGPTQRunner class.
+    Unlike the base QuantHandler class, the user does not need to implement the create_quantized_state_dict, instead they have to reimplement
+    __init__ such that it defines the functions for the quantization mode. User is expected to reimplement convert_for_runtime.
+
+    The following functions (which must be defined in __init__) are used to define the quantization mode for both GPTQ and
+    create_quantized_state_dict. Here is a description of each function.
+
+    get_qparams_func:
+        A function that calculates the quantization qparams for an input tensor.
+        Args:
+            weight: A 2d weight tensor with non-integer dtype.
+        Returns:
+            qparams: it can have any format but will need to be handled by the other defined functions below.
+
+    quantize_func:
+        A function that applies quantization to an input tensor. It should be noted
+        that this function needs to be able to handle quantizing the entire weight tensor, a single group,
+        or a single column.
+        Args:
+            weight: A 2d weight tensor with non-integer dtype.
+            qparams: the output from get_qparams_func
+        Returns:
+            quantized_weight: A 2d quantized weight tensor (generally with an integer dtype)
+
+
+    dequantize_func:
+        A function that dequantizes an input quantized weight tensor. It should be noted
+        that this function needs to be able to handle dequantizing the entire weight tensor, a single group,
+        or a single column.
+        Args:
+            quantized_weight: A 2d quantized weight tensor (generally with an integer dtype)
+            qparams: the output from get_qparams_func
+        Returns:
+            weight: A 2d weight tensor with non-integer dtype.
+
+    combine_qparams_list_func:
+        A function that combines several qparams into one qparam.
+        Args:
+            qparams_list: a list of qparams objects, each obtained by calling get_qparams_func
+            on a single group from a weight tensor
+        Returns:
+            qparams: an object of the same format as the qparams above.
+
+    skip_layer_func:
+        A function that determines which linear layers should be skipped during GPTQ
+        Args:
+            weight: A 2d weight tensor with non-integer dtype.
+        Returns:
+            skip: boolean indicating whether layer should be skipped
+
+    make_names_and_values_dict_func:
+        A function that prepares the qparams and quantized_weight and creates a dictionary indicating how they
+        should be inserted into the state_dict. Generally any packing of the weight and qparams should be done here.
+        Args:
+            quantized_weight: A 2d quantized weight tensor (generally with an integer dtype)
+            qparams: the output from get_qparams_func
+        Returns:
+            names_and_values_dict: a dictionary mapping the name of the parameters of the quantized module to the
+            corresponding quantized weights and qparams.
+    """
+
+    def __init__(self):
+        assert self.mod is not None
+        assert self.get_qparams_func is not None
+        assert self.quantize_func is not None
+        assert self.dequantize_func is not None
+        assert self.combine_qparams_list_func is not None
+        assert self.make_names_and_values_dict_func is not None
+
+    @staticmethod
+    def get_inputs(
+        model,
+        tokenizer,
+        calibration_tasks,
+        calibration_limit,
+        calibration_seq_length,
+        pad_calibration_inputs,
+    ) -> "MultiInput":  # pyre-ignore[11]
+        input_recorder = InputRecorder(
+            model,
+            tokenizer,
+            calibration_seq_length,
+            pad_calibration_inputs,
+        )
+
+        try:
+            lm_eval.tasks.initialize_tasks()
+        except:
+            pass
+        task_dict = get_task_dict(calibration_tasks)
+        print("Obtaining GPTQ calibration inputs on: ", calibration_tasks)
+
+        evaluate(
+            input_recorder,
+            task_dict,
+            limit=calibration_limit,
+        )
+        inputs = input_recorder.get_recorded_inputs()
+        assert inputs is not None, (
+            f"No inputs were collected, use a task other than {calibration_tasks}, "
+            + "use option pad_calibration_inputs, or decrease calibration_sequence_length (currently "
+            + f"{calibration_seq_length})"
+        )
+        print(f"Obtained {len(inputs[0].values)} calibration samples")
+        return inputs
+
+    @torch.no_grad()
+    def create_quantized_state_dict(
+        self,
+        tokenizer,
+        blocksize,
+        percdamp,
+        groupsize,
+        calibration_tasks,
+        calibration_limit,
+        calibration_seq_length,
+        pad_calibration_inputs,
+    ) -> Dict:
+        inputs = GPTQQuantHandler.get_inputs(
+            self.mod,
+            tokenizer,
+            calibration_tasks,
+            calibration_limit,
+            calibration_seq_length,
+            pad_calibration_inputs,
+        )
+        print("Tracing model for GPTQ")
+        GPTQ_runner = GenericGPTQRunner(
+            self.mod,
+            inputs,
+            blocksize,
+            percdamp,
+            groupsize,
+        ).configure_quantization_mode(
+            self.get_qparams_func,  # pyre-ignore[16]
+            self.quantize_func,  # pyre-ignore[16]
+            self.dequantize_func,  # pyre-ignore[16]
+            self.combine_qparams_list_func,  # pyre-ignore[16]
+            self.make_names_and_values_dict_func,  # pyre-ignore[16]
+            self.skip_layer_func,  # pyre-ignore[16]
+        )
+
+        print("Applying GPTQ to weights")
+        GPTQ_runner.run()
+        return GPTQ_runner.get_quantized_state_dict()
+
+    def convert_for_runtime(self) -> "nn.Module":
+        pass
+
+
+class Int8DynActInt4WeightGPTQQuantHandler(GPTQQuantHandler):
+    def __init__(
+        self,
+        groupsize=128,
+        inner_k_tiles=8,
+        padding_allowed=True,
+        precision=torch.float32,
+    ):
+
+        self.groupsize = groupsize
+        self.inner_k_tiles = inner_k_tiles
+        self.padding_allowed = padding_allowed
+        self.precision = precision
+        self.dyn_quant_func = lambda x: per_token_dynamic_quant(x)
+        n_bit = 4
+        self.get_qparams_func = lambda w: get_group_qparams_symmetric(
+            w, n_bit, groupsize, self.precision
+        )
+        quant_min = -(2 ** (n_bit - 1))
+        quant_max = 2 ** (n_bit - 1) - 1
+        self.quantize_func = lambda w, qparams: torch.ops.quantized_decomposed.quantize_per_channel_group(
+            w, qparams[0], qparams[1], quant_min, quant_max, torch.int8, groupsize
+        )
+        self.dequantize_func = lambda q, qparams: torch.ops.quantized_decomposed.dequantize_per_channel_group(
+            q,
+            qparams[0],
+            qparams[1],
+            quant_min,
+            quant_max,
+            torch.int8,
+            groupsize,
+            self.precision,
+        )
+        self.combine_qparams_list_func = lambda qparams_list: [
+            torch.cat(x, dim=1) for x in zip(*qparams_list)
+        ]
+        # skip unless padding_allowed=True or its correctly sized
+        self.skip_layer_func = lambda linear_weight: not (
+            _check_linear_int4_k(linear_weight.shape[-1], groupsize, inner_k_tiles)
+            or padding_allowed
+        )
+
+        # we need to do the padding here, both for q and the qparams if necessary
+        def make_names_and_values_dict_func(q, qparams):
+            k = q.shape[1]
+            new_k = _calc_padded_size_linear_int4(k, groupsize, inner_k_tiles)
+            # how much we need to pad the weight
+            delta_k = new_k - q.shape[1]
+            final_q = F.pad(q, pad=(0, delta_k))
+            scales_and_zeros = pack_scales_and_zeros(*qparams, precision=self.precision)
+            # how many new groups we need for padded weight
+            delta_groups = new_k // groupsize - scales_and_zeros.shape[0]
+            # TODO: split scales and zero_points
+            final_s_and_z = F.pad(
+                scales_and_zeros, pad=(0, 0, 0, 0, 0, delta_groups), value=1
+            )
+            return {"weight": final_q, "scales_and_zeros": final_s_and_z}
+
+        self.make_names_and_values_dict_func = make_names_and_values_dict_func
+        super().__init__()
+
+    def convert_for_runtime(self, model):
+        replace_linear_8da4w(
+            model, self.groupsize, self.inner_k_tiles, self.padding_allowed
+        )
+        return model
