@@ -25,6 +25,7 @@
 @implementation ExecuTorchLog {
   NSHashTable<id<ExecuTorchLogSink>> *_sinks;
   dispatch_queue_t _queue;
+  NSMutableArray<NSDictionary *> *_buffer;
 }
 
 + (instancetype)sharedLog {
@@ -35,6 +36,7 @@
     sharedLog->_sinks = [NSHashTable weakObjectsHashTable];
     sharedLog->_queue = dispatch_queue_create("org.pytorch.executorch.log",
                                               DISPATCH_QUEUE_SERIAL);
+    sharedLog->_buffer = [NSMutableArray new];
   });
   return sharedLog;
 }
@@ -42,6 +44,13 @@
 - (void)addSink:(id<ExecuTorchLogSink>)sink {
   dispatch_async(_queue, ^{
     [self->_sinks addObject:sink];
+    for (NSDictionary *log in self->_buffer) {
+      [sink logWithLevel:(ExecuTorchLogLevel)[log[@"level"] integerValue]
+               timestamp:[log[@"timestamp"] doubleValue]
+                filename:log[@"filename"] ?: @""
+                    line:[log[@"line"] unsignedIntegerValue]
+                 message:log[@"message"] ?: @""];
+    }
   });
 }
 
@@ -61,6 +70,16 @@
   NSHashTable<id<ExecuTorchLogSink>> __block *sinks;
   dispatch_sync(_queue, ^{
     sinks = [self->_sinks copy];
+    if (self->_buffer.count >= 100) {
+      [self->_buffer removeObjectAtIndex:0];
+    }
+    [self->_buffer addObject:@{
+      @"level" : @(level),
+      @"timestamp" : @(timestamp),
+      @"filename" : filename,
+      @"line" : @(line),
+      @"message" : message
+    }];
   });
   for (id<ExecuTorchLogSink> sink in sinks) {
     [sink logWithLevel:level
