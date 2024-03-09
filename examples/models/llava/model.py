@@ -76,10 +76,12 @@ model = llava_model.get_eager_model()
 inputs = llava_model.get_example_inputs()
 print(torch.__version__)
 
-features = model(*inputs)
+# features = model(*inputs)
 
-m = capture_pre_autograd_graph(model, inputs)
-edge_manager = export_to_edge(m, inputs)
+with torch.no_grad():
+    m = capture_pre_autograd_graph(model, inputs)
+    edge_manager = export_to_edge(m, inputs).to_executorch()
+    print(edge_manager.exported_program().graph)
 
 
 # image_file = "https://llava-vl.github.io/static/images/view.jpg"
