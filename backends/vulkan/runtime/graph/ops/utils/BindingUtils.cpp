@@ -6,21 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
-
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
-
-api::utils::ivec4 get_size_as_ivec4(const vTensor& t) {
-  return api::utils::make_ivec4(
-      {dim_at<Dim4D::Width>(t),
-       dim_at<Dim4D::Height>(t),
-       dim_at<Dim4D::Channel>(t),
-       dim_at<Dim4D::Batch>(t)});
-}
 
 void bind_tensor_to_descriptor_set(
     vTensor& tensor,

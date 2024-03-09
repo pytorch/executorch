@@ -16,22 +16,15 @@ from llava.eval.run_llava import eval_model, load_images, process_images
 
 from torch._export import capture_pre_autograd_graph
 from examples.models.model_base import EagerModelBase
+from examples.portable.utils import export_to_edge
 
 
 class EncoderModel(nn.Module):
-    def __init__(self, llava_model, image_processor):
+    def __init__(self, llava_model):
         super().__init__()
         self.model_ = llava_model
-        self.image_processor_ = image_processor
 
-    def forward(self, images):
-        # image_sizes = [x.size for x in images]
-        images_tensor = process_images(
-            images,
-            self.image_processor_,
-            self.model_.config
-        ).to(self.model_.device, dtype=torch.float32)
-
+    def forward(self, images_tensor):
         features = self.model_.get_model().get_vision_tower()(images_tensor)
         features = self.model_.get_model().mm_projector(features)
         return features
@@ -47,22 +40,20 @@ class LlavaModel(EagerModelBase):
         self.dtype = torch.float32
 
     def get_eager_model(self):
-
-        # if self.dtype:
-        #     # convert to the type of the provided checkpoint
-        #     # input and output are torch.long, so signature unchanged
-        #     self.model_.to(self.dtype)
-        # else:
-        #     # int8 quantization code has some bf16,
-        #     # switch all to FP32
-        #     self.model_.to(torch.float32)
-        model = EncoderModel(self.model_, self.image_processor_)
+        model = EncoderModel(self.model_)
         return model
 
 
     def get_example_inputs(self):
         image_file = "https://llava-vl.github.io/static/images/view.jpg"
-        return load_images([image_file])
+        images = load_images([image_file])
+        images_tensor = process_images(
+            images,
+            self.image_processor_,
+            self.model_.config
+        ).to(self.model_.device, dtype=torch.float32)
+        return (images_tensor,)
+
 
     def get_example_inputs_kvcache(self):
         cache_sizes = self.model_.get_cache_sizes()
@@ -83,10 +74,30 @@ model_path = "liuhaotian/llava-v1.5-7b"
 llava_model = LlavaModel(model_path)
 model = llava_model.get_eager_model()
 inputs = llava_model.get_example_inputs()
+print(torch.__version__)
 
-
-features = model(inputs)
+features = model(*inputs)
 
 m = capture_pre_autograd_graph(model, inputs)
+edge_manager = export_to_edge(m, inputs)
 
 
+# image_file = "https://llava-vl.github.io/static/images/view.jpg"
+# prompt = "What are the things I should be cautious about when I visit here?"
+# args = type('Args', (), {
+#     "model_path": model_path,
+#     "model_base": None,
+#     "model_name": get_model_name_from_path(model_path),
+#     "query": prompt,
+#     "conv_mode": None,
+#     "image_file": image_file,
+#     "sep": ",",
+#     "temperature": 0,
+#     "top_p": None,
+#     "num_beams": 1,
+#     "max_new_tokens": 512
+# })()
+#
+# # vision_tower = build_vision_tower(args, )
+#
+# eval_model(args)

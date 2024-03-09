@@ -10,9 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
@@ -33,18 +31,13 @@ class PrepackNode final {
 
  public:
   PrepackNode(
+      ComputeGraph& graph,
       const api::ShaderInfo& shader,
       const api::utils::uvec3& global_workgroup_size,
       const api::utils::uvec3& local_workgroup_size,
       const ValueRef tref,
       const ValueRef packed,
-      api::UniformParamsBuffer&& params)
-      : shader_(shader),
-        global_workgroup_size_(global_workgroup_size),
-        local_workgroup_size_(local_workgroup_size),
-        tref_(tref),
-        packed_(packed),
-        params_(std::move(params)) {}
+      api::UniformParamsBuffer&& params);
 
   ~PrepackNode() = default;
 

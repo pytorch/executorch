@@ -141,12 +141,15 @@ class LoweredBackendModule(torch.nn.Module):
         """
         Returns a buffer containing the serialized ExecuTorch binary.
         """
-        out = _serialize_pte_binary(
-            program=self.program(),
-            extract_delegate_segments=extract_delegate_segments,
-            segment_alignment=segment_alignment,
-            constant_tensor_alignment=constant_tensor_alignment,
-            delegate_alignment=delegate_alignment,
+        # TODO(T181463742): avoid calling bytes(..) which incurs large copies.
+        out = bytes(
+            _serialize_pte_binary(
+                program=self.program(),
+                extract_delegate_segments=extract_delegate_segments,
+                segment_alignment=segment_alignment,
+                constant_tensor_alignment=constant_tensor_alignment,
+                delegate_alignment=delegate_alignment,
+            )
         )
         return out
 

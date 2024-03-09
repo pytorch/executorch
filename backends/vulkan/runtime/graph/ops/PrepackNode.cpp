@@ -10,12 +10,29 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
+
+PrepackNode::PrepackNode(
+    ComputeGraph& graph,
+    const api::ShaderInfo& shader,
+    const api::utils::uvec3& global_workgroup_size,
+    const api::utils::uvec3& local_workgroup_size,
+    const ValueRef tref,
+    const ValueRef packed,
+    api::UniformParamsBuffer&& params)
+    : shader_(shader),
+      global_workgroup_size_(global_workgroup_size),
+      local_workgroup_size_(local_workgroup_size),
+      tref_(tref),
+      packed_(packed),
+      params_(std::move(params)) {
+  graph.update_descriptor_counts(shader, /*execute = */ false);
+}
 
 void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();

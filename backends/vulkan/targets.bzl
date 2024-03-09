@@ -56,6 +56,12 @@ def define_common_targets():
             "//caffe2:torch_vulkan_spv",
         ],
         define_static_target = False,
+        # Static initialization is used to register operators to the global operator registry,
+        # therefore link_whole must be True to make sure unused symbols are not discarded.
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True`
+        link_whole = True,
+        # Define an soname that can be used for dynamic loading in Java, Python, etc.
+        soname = "libvulkan_graph_runtime.$(ext)",
     )
 
     runtime.cxx_library(
