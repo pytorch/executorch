@@ -10,6 +10,7 @@
 
 #import <os/log.h>
 
+#import <executorch/runtime/platform/log.h>
 #import <executorch/runtime/platform/platform.h>
 
 @interface ExecuTorchLog ()
@@ -23,9 +24,11 @@
 @end
 
 @implementation ExecuTorchLog {
+#ifdef ET_LOG_ENABLED
   NSHashTable<id<ExecuTorchLogSink>> *_sinks;
   dispatch_queue_t _queue;
   NSMutableArray<NSDictionary *> *_buffer;
+#endif
 }
 
 + (instancetype)sharedLog {
@@ -33,15 +36,18 @@
   static dispatch_once_t onceToken;
   dispatch_once(&onceToken, ^{
     sharedLog = [self new];
+#if ET_LOG_ENABLED
     sharedLog->_sinks = [NSHashTable weakObjectsHashTable];
     sharedLog->_queue = dispatch_queue_create("org.pytorch.executorch.log",
                                               DISPATCH_QUEUE_SERIAL);
     sharedLog->_buffer = [NSMutableArray new];
+#endif
   });
   return sharedLog;
 }
 
 - (void)addSink:(id<ExecuTorchLogSink>)sink {
+#if ET_LOG_ENABLED
   dispatch_async(_queue, ^{
     [self->_sinks addObject:sink];
     for (NSDictionary *log in self->_buffer) {
@@ -52,12 +58,19 @@
                  message:log[@"message"] ?: @""];
     }
   });
+#else
+  (void)sink;
+#endif
 }
 
 - (void)removeSink:(id<ExecuTorchLogSink>)sink {
+#if ET_LOG_ENABLED
   dispatch_async(_queue, ^{
     [self->_sinks removeObject:sink];
   });
+#else
+  (void)sink;
+#endif
 }
 
 #pragma mark - Private
@@ -67,6 +80,7 @@
             filename:(NSString *)filename
                 line:(NSUInteger)line
              message:(NSString *)message {
+#if ET_LOG_ENABLED
   NSHashTable<id<ExecuTorchLogSink>> __block *sinks;
   dispatch_sync(_queue, ^{
     sinks = [self->_sinks copy];
@@ -88,6 +102,13 @@
                   line:line
                message:message];
   }
+#else
+  (void)level;
+  (void)timestamp;
+  (void)filename;
+  (void)line;
+  (void)message;
+#endif
 }
 
 @end
@@ -99,6 +120,7 @@ void et_pal_emit_log_message(et_timestamp_t timestamp,
                              size_t line,
                              const char *__nonnull message,
                              __ET_UNUSED size_t length) {
+#if ET_LOG_ENABLED
   NSTimeInterval timeInterval = timestamp / 1000000000.0;
   NSUInteger totalSeconds = (NSUInteger)timeInterval;
   NSUInteger hours = (totalSeconds / 3600) % 24;
@@ -141,4 +163,13 @@ void et_pal_emit_log_message(et_timestamp_t timestamp,
           filename:[NSString stringWithUTF8String:filename]
               line:(NSUInteger)line
            message:[NSString stringWithUTF8String:message]];
+#else
+  (void)timestamp;
+  (void)level;
+  (void)filename;
+  (void)function;
+  (void)line;
+  (void)message;
+  (void)length;
+#endif
 }
