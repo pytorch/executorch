@@ -16,11 +16,6 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-#define DECLARE_OP_FN(function) \
-  ValueRef function(ComputeGraph& graph, const std::vector<ValueRef>& args);
-
-api::utils::ivec4 get_size_as_ivec4(const vTensor& t);
-
 void bind_tensor_to_descriptor_set(
     vTensor& tensor,
     api::PipelineBarrier& pipeline_barrier,
