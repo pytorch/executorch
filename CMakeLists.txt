@@ -340,6 +340,10 @@ if(EXECUTORCH_BUILD_SDK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
+endif()
+
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
 endif()
