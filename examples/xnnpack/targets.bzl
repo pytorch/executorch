@@ -56,7 +56,7 @@ def define_common_targets():
         deps = [
             "//executorch/examples/portable/executor_runner:executor_runner_lib",
             "//executorch/backends/xnnpack:xnnpack_backend",
-            "//executorch/kernels/portable:generated_lib_all_ops",
+            "//executorch/kernels/portable:generated_lib",
         ],
         define_static_target = True,
         **get_oss_build_kwargs()
