@@ -22,7 +22,7 @@ MPS=OFF
 PORTABLE=OFF
 XNNPACK=OFF
 HEADERS_PATH="include"
-EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
+EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
@@ -115,6 +115,7 @@ cmake_build() {
         -DBUCK2="$BUCK2" \
         -DPYTHON_EXECUTABLE="$PYTHON" \
         -DFLATC_EXECUTABLE="$FLATC" \
+        -DEXECUTORCH_BUILD_EXTENSION_APPLE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
@@ -138,6 +139,8 @@ mkdir -p "$HEADERS_PATH"
 "$SOURCE_ROOT_DIR"/build/print_exported_headers.py --buck2="$BUCK2" --targets \
   //extension/module: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
+
+cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"{*.h,*.modulemap} "$HEADERS_PATH"
 
 echo "Creating frameworks"
 
