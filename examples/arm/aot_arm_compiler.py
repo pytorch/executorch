@@ -146,4 +146,4 @@ if __name__ == "__main__":
     model_name = f"{args.model_name}" + (
         "_arm_delegate" if args.delegate is True else ""
     )
-    save_pte_program(exec_prog.buffer, model_name)
+    save_pte_program(exec_prog, model_name)
