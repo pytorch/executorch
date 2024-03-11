@@ -1,5 +1,5 @@
 //
-// Stream.hpp
+// reversed_memory_stream.hpp
 //
 // Copyright © 2024 Apple Inc. All rights reserved.
 //

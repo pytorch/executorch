@@ -149,7 +149,7 @@ CoreMLBackendDelegate::init(BackendInitContext& context,
     ET_CHECK_OR_RETURN_ERROR(handle != nullptr,
                              InvalidProgram,
                              "%s: Failed to init the model.", ETCoreMLStrings.delegateIdentifier.UTF8String);
-    
+    processed->Free();
     return handle;
 }
 

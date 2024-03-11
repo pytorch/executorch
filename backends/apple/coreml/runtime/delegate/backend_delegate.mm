@@ -63,7 +63,7 @@ MLMultiArrayDataType get_data_type(MultiArray::DataType dataType) {
             return MLMultiArrayDataTypeFloat32;
         }
         case MultiArray::DataType::Double: {
-            return MLMultiArrayDataTypeFloat64;
+            return MLMultiArrayDataTypeDouble;
         }
         case MultiArray::DataType::Int: {
             return MLMultiArrayDataTypeInt32;

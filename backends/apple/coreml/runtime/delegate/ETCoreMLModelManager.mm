@@ -395,7 +395,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     using namespace inmemoryfs;
     
     auto buffer = MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
-    std::unique_ptr<InMemoryFileSystem> inMemoryFS = inmemoryfs::make(buffer);
+    std::unique_ptr<InMemoryFileSystem> inMemoryFS = inmemoryfs::make_from_buffer(std::move(buffer));
     if (!inMemoryFS) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,
