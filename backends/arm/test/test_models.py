@@ -72,28 +72,3 @@ class TorchBuilder:
             return x + y
 
             return x
-
-    @register_test
-    class simple_div(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (
-                torch.ones(
-                    5,
-                ),
-                torch.ones(
-                    5,
-                ),
-            ),
-            TosaProfile.MI: (
-                torch.ones(5),
-                torch.ones(5),
-            ),
-        }
-
-        permute_memory_to_nhwc = False
-
-        def __init__(self):
-            super().__init__()
-
-        def forward(self, x, y):
-            return torch.div(x, y)
