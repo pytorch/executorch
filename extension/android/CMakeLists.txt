@@ -18,7 +18,7 @@ add_subdirectory(
         ${EXECUTORCH_ROOT}/examples/third-party/fbjni
         ${CMAKE_CURRENT_BINARY_DIR}/third-party/fbjni)
 
-if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
+if(CMAKE_TOOLCHAIN_ANDROID)
     add_library(executorch_jni SHARED jni/jni_layer.cpp)
     target_link_libraries(executorch_jni extension_data_loader
         extension_module xnn_executor_runner_lib fbjni)
@@ -26,4 +26,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*ios\.toolchain\.cmake$")
         target_link_libraries(executorch_jni qnn_executorch_backend)
     endif()
     target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
+
+    add_library(executorch_llama_jni SHARED jni/jni_layer_llama.cpp)
+    target_link_libraries(executorch_llama_jni fbjni llama_runner portable_ops_lib)
+    target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
 endif()
