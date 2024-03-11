@@ -43,7 +43,7 @@ class ThreadPool final {
    * creating of threadpool with requested size and use such a threadpool with backend
    * delegates, custom ops or optimized lib.
   */
-  bool _reset_threadpool(uint32_t num_threads);
+  bool _unsafe_reset_threadpool(uint32_t num_threads);
 
   // Run, in parallel, function fn(task_id) over task_id in range [0, range).
   // This function is blocking.  All input is processed by the time it returns.
