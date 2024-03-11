@@ -20,6 +20,29 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
+namespace {
+
+// Move to generic util as this is applicable to all binary ops
+bool can_use_optimized_path(
+    const Tensor& a,
+    const Tensor& b,
+    const Tensor& out) {
+  ScalarType a_type = a.scalar_type();
+  ScalarType b_type = b.scalar_type();
+  ScalarType out_type = out.scalar_type();
+
+  bool can_use_optimized_path = true;
+  can_use_optimized_path =
+      can_use_optimized_path && ((a_type == b_type) && (a_type == out_type));
+  can_use_optimized_path = can_use_optimized_path &&
+      (a_type != ScalarType::Half && b_type != ScalarType::Half);
+  can_use_optimized_path = can_use_optimized_path &&
+      (a.sizes().equals(b.sizes()) ||
+       (a.numel() == b.numel() && a.numel() == out.numel()));
+  return can_use_optimized_path;
+}
+} // namespace
+
 Tensor& opt_mul_out(
     RuntimeContext& ctx,
     const Tensor& a,
@@ -31,8 +54,7 @@ Tensor& opt_mul_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  if (a_type == b_type && a_type == out_type && a.sizes().equals(b.sizes()) &&
-      a_type != ScalarType::Half) {
+  if (can_use_optimized_path(a, b, out)) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
     ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
