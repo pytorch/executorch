@@ -345,6 +345,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
     )
+
+    parser.add_argument(
+        "-n",
+        "--output_name",
+        default=None,
+        help="Override the output filename of the saved pte model file.",
+    )
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
@@ -469,6 +477,12 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"{modelname}_h"
 
     builder.save_to_pte(modelname)
+
+    if args.output_name:
+        modelname = args.output_name
+        if modelname[-4:] == ".pte":
+            modelname = modelname[:-4]
+
     output_file = f"{builder.output_dir}/{modelname}.pte"
 
     return output_file
