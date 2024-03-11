@@ -236,7 +236,7 @@ TEST(TensorUtilTest, IsDefaultDimOrderTest) {
     std::vector<exec_aten::DimOrderType> dim_order(i);
     std::iota(dim_order.begin(), dim_order.end(), 0);
 
-    EXPECT_TRUE(torch::executor::is_default_dim_order(
+    EXPECT_TRUE(torch::executor::is_contiguous_dim_order(
         dim_order.data(), dim_order.size()));
 
     // As a bonus, check that is_channels_last returns false
@@ -252,7 +252,7 @@ TEST(TensorUtilTest, IsDefaultDimOrderFailCasesTest) {
     std::iota(dim_order.begin(), dim_order.end(), 0);
     std::swap(dim_order[0], dim_order[1]);
 
-    EXPECT_FALSE(torch::executor::is_default_dim_order(
+    EXPECT_FALSE(torch::executor::is_contiguous_dim_order(
         dim_order.data(), dim_order.size()));
   }
 
@@ -263,7 +263,7 @@ TEST(TensorUtilTest, IsDefaultDimOrderFailCasesTest) {
       dim_order[d] = (d + 1) % i;
     }
 
-    EXPECT_FALSE(torch::executor::is_default_dim_order(
+    EXPECT_FALSE(torch::executor::is_contiguous_dim_order(
         dim_order.data(), dim_order.size()));
   }
 }
@@ -276,8 +276,8 @@ TEST(TensorUtilTest, IsChannelsLastDimOrderTest) {
   EXPECT_TRUE(torch::executor::is_channels_last_dim_order(dim_order_5d, 5));
 
   // As a bonus, check that is_default returns false
-  EXPECT_FALSE(torch::executor::is_default_dim_order(dim_order_4d, 4));
-  EXPECT_FALSE(torch::executor::is_default_dim_order(dim_order_5d, 5));
+  EXPECT_FALSE(torch::executor::is_contiguous_dim_order(dim_order_4d, 4));
+  EXPECT_FALSE(torch::executor::is_contiguous_dim_order(dim_order_5d, 5));
 }
 
 TEST(TensorUtilTest, IsChannelsLastDimOrderFailCasesTest) {

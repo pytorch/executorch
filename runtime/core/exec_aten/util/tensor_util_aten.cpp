@@ -59,7 +59,7 @@ inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
       get_dim_order(t, dim_order, t.dim()) == Error::Ok,
       "Failed to retrieve dim order from tensor!");
 
-  bool ret_val = is_default_dim_order(dim_order, t.dim()) ||
+  bool ret_val = is_contiguous_dim_order(dim_order, t.dim()) ||
       is_channels_last_dim_order(dim_order, t.dim());
 
   if (!ret_val) {

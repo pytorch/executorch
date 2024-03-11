@@ -66,10 +66,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> _native_batch_norm_legit_no_training_out(
       InvalidArgument,
       ret_val);
 
-  // For now, only support the default dim order
+  // For now, only support the contiguous dim order
   ET_KERNEL_CHECK(
       ctx,
-      is_default_dim_order(in.dim_order().data(), in.dim_order().size()),
+      is_contiguous_dim_order(in.dim_order().data(), in.dim_order().size()),
       InvalidArgument,
       ret_val);
 
