@@ -88,6 +88,7 @@ runtime.python_library(
         "//executorch/exir:lib",
         "//executorch/util:memory_profiler",
         "//executorch/util:python_profiler",
+        "//executorch/sdk/inspector:inspector",
         # one definition has to be included in the user of the libarary
         # depending on what library the client wants to use
         # "//executorch/extension/pybindings:aten_lib",

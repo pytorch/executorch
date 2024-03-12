@@ -7,6 +7,7 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
+import copy
 import logging
 import shlex
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
@@ -357,6 +359,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
 
+    parser.add_argument(
+        "--generate_etrecord",
+        action="store_true",
+        required=False,
+        default=False,
+    )
+
     return parser
 
 
@@ -452,7 +461,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
 
-    builder = (
+    builder_exported_to_edge = (
         load_llama_model(
             checkpoint=checkpoint_path,
             params_path=params_path,
@@ -466,9 +475,22 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         .source_transform(transforms)
         .to_dtype(dtype_override)
         .export_to_edge(quantizers)
-        .to_backend(partitioners)
-        .to_executorch()
     )
+
+    if args.generate_etrecord and not builder_exported_to_edge.edge_manager:
+        raise ValueError("Unable to generate etrecord due to missing edge manager.")
+
+    edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
+    builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+
+    # Generate ETRecord
+    if args.generate_etrecord and edge_manager_copy:
+        logging.info("Generating etrecord.bin")
+        generate_etrecord(
+            etrecord_path="etrecord.bin",
+            edge_dialect_program=edge_manager_copy,
+            executorch_program=builder.export_program,
+        )
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
