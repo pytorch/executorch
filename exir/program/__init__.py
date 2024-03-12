@@ -13,9 +13,6 @@ from executorch.exir.program._program import (
     ExecutorchProgram,
     ExecutorchProgramManager,
     ExirExportedProgram,
-    multi_method_program_to_executorch,
-    MultiMethodExecutorchProgram,
-    MultiMethodExirExportedProgram,
     to_edge,
 )
 
@@ -25,9 +22,6 @@ __all__ = [
     "_to_edge",
     "to_edge",
     "edge_to_executorch_passes",
-    "MultiMethodExirExportedProgram",
-    "MultiMethodExecutorchProgram",
-    "multi_method_program_to_executorch",
     "EdgeProgramManager",
     "ExecutorchProgramManager",
 ]
