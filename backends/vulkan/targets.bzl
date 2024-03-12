@@ -37,6 +37,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         srcs = [
             ":{}[{}.cpp]".format(genrule_name, name),
         ],
+        define_static_target = False,
         # Static initialization is used to register shaders to the global shader registry,
         # therefore link_whole must be True to make sure unused symbols are not discarded.
         # @lint-ignore BUCKLINT: Avoid `link_whole=True`
