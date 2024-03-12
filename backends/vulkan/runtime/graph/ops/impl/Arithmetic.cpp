@@ -72,7 +72,6 @@ void add_arithmetic_node(
       get_size_as_ivec4(t_in2),
       alpha_val,
   };
-  api::UniformParamsBuffer params(graph.context(), block);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
@@ -81,7 +80,7 @@ void add_arithmetic_node(
       local_size,
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
-      std::move(params)));
+      {graph.create_params_buffer(block)}));
 }
 
 REGISTER_OPERATORS {
