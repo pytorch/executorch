@@ -1,23 +1,22 @@
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
-load("@fbsource//tools/build_defs:glob_defs.bzl", "subdir_glob")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def get_glsl_image_format():
-    if native.read_config("pt", "vulkan_full_precision", "0") == "0":
-        return "rgba16f"
-    return "rgba32f"
-
-def vulkan_spv_shader_lib(name, spv_filegroup):
+def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
     gen_aten_vulkan_spv_target = "//caffe2/tools:gen_aten_vulkan_spv_bin"
     glslc_path = "//caffe2/fb/vulkan/dotslash:glslc"
-    if is_fbcode():
+    if is_fbcode:
         gen_aten_vulkan_spv_target = "//caffe2:gen_vulkan_spv_bin"
         glslc_path = "//caffe2/fb/vulkan/tools:glslc"
 
+    glsl_paths = []
+
+    # TODO(ssjia): remove the need for subpath once subdir_glob is enabled in OSS
+    for target, subpath in spv_filegroups.items():
+        glsl_paths.append("$(location {})/{}".format(target, subpath))
+
     genrule_cmd = [
         "$(exe {})".format(gen_aten_vulkan_spv_target),
-        "--glsl-paths $(location {})".format(spv_filegroup),
-        "--output-path $OUT --env FLOAT_IMAGE_FORMAT={}".format(get_glsl_image_format()),
+        "--glsl-paths {}".format(" ".join(glsl_paths)),
+        "--output-path $OUT",
         "--glslc-path=$(exe {})".format(glslc_path),
         "--tmp-dir-path=$OUT",
     ]
@@ -49,7 +48,7 @@ def vulkan_spv_shader_lib(name, spv_filegroup):
         ],
     )
 
-def define_common_targets():
+def define_common_targets(is_fbcode = False):
     runtime.genrule(
         name = "gen_vk_delegate_schema",
         srcs = [
@@ -89,14 +88,17 @@ def define_common_targets():
 
     runtime.filegroup(
         name = "vulkan_graph_runtime_shaders",
-        srcs = subdir_glob([
-            ("runtime/graph/ops/glsl", "*"),
+        srcs = native.glob([
+            "runtime/graph/ops/glsl/*",
         ]),
     )
 
     vulkan_spv_shader_lib(
         name = "vulkan_graph_runtime_shaderlib",
-        spv_filegroup = ":vulkan_graph_runtime_shaders",
+        spv_filegroups = {
+            ":vulkan_graph_runtime_shaders": "runtime/graph/ops/glsl",
+        },
+        is_fbcode = is_fbcode,
     )
 
     runtime.cxx_library(
