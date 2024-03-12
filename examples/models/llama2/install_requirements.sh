@@ -7,6 +7,4 @@
 
 # Install snakeviz for cProfile flamegraph
 # Install sentencepiece for llama tokenizer
-# Install lm-eval for accuracy evaluation (v0.4+)
 pip install snakeviz sentencepiece
-pip install lm-eval
