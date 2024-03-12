@@ -66,18 +66,19 @@ __ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
   // Create xnn_externals_value from evalue args
   xnn_status status;
   for (uint32_t i = 0; i < externals_.size(); ++i) {
-    ET_CHECK_OR_RETURN_ERROR(
-        args[i]->isTensor(),
-        InvalidArgument,
-        "Expected argument to delegate at index %u to be a Tensor, but got %" PRIu32,
-        i,
-        static_cast<uint32_t>(args[i]->tag));
     if (i < input_ids_.size()) {
       externals_[i].id = input_ids_[i];
     } else {
       externals_[i].id = output_ids_[i - input_ids_.size()];
     }
     uint32_t ext_id = externals_[i].id;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        args[ext_id]->isTensor(),
+        InvalidArgument,
+        "Expected argument to delegate at index %u to be a Tensor, but got %" PRIu32,
+        i,
+        static_cast<uint32_t>(args[ext_id]->tag));
 
     Tensor* tensor = &args[ext_id]->toTensor();
     externals_[i].data = tensor->mutable_data_ptr<float>();
