@@ -172,6 +172,6 @@ class TestPartitioner(unittest.TestCase):
 
         with self.assertRaisesRegex(
             RuntimeError,
-            "placeholder node for non-params and non-buffer should not be tagged",
+            "placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged",
         ):
             _ = edge.to_backend(PartitionerTagInput())

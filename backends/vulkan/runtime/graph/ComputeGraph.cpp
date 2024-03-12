@@ -138,7 +138,7 @@ ValueRef ComputeGraph::set_input_tensor(
     inputs_.push_back({idx, staging_idx});
     return staging_idx;
   }
-  inputs_.push_back({idx, -1});
+  inputs_.push_back({idx, kDummyValueRef});
   return idx;
 }
 
@@ -152,7 +152,7 @@ ValueRef ComputeGraph::set_output_tensor(
     outputs_.push_back({idx, staging_idx});
     return staging_idx;
   }
-  outputs_.push_back({idx, -1});
+  outputs_.push_back({idx, kDummyValueRef});
   return idx;
 }
 

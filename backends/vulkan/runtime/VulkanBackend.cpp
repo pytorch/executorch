@@ -219,7 +219,7 @@ bool maybe_resize_input(
     if (in_tensor.sizes()[i] != et_tensor.sizes()[i]) {
       should_resize = true;
     }
-    new_sizes[i] = et_tensor.sizes()[i];
+    new_sizes.at(i) = et_tensor.sizes()[i];
   }
 
   if (should_resize) {
@@ -235,7 +235,7 @@ bool maybe_resize_input(
   return should_resize;
 }
 
-void resize_output(
+void maybe_resize_output(
     ComputeGraph* graph,
     const size_t output_i,
     exec_aten::Tensor& et_tensor) {
@@ -353,7 +353,7 @@ class VulkanBackend final : public PyTorchBackendInterface {
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
-      resize_output(compute_graph, i, args[num_inputs + i]->toTensor());
+      maybe_resize_output(compute_graph, i, args[num_inputs + i]->toTensor());
       // args holds inputs directly followed by outputs, so the i'th output
       // for compute_graph corresponds to the (i + num_inputs)'th arg
       compute_graph->copy_from_staging(

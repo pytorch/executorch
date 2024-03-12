@@ -58,9 +58,9 @@ class ExecuteNode final {
       const api::utils::uvec3& global_workgroup_size,
       const api::utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
-      std::vector<std::shared_ptr<api::UniformParamsBuffer>> params,
-      const std::vector<ValueRef>& extra_args = {},
-      const ResizeFunction& resize_fn = nullptr);
+      const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+      const ResizeFunction& resize_fn = nullptr,
+      const std::vector<ValueRef>& resize_args = {});
 
   ~ExecuteNode() = default;
 
@@ -68,7 +68,7 @@ class ExecuteNode final {
 
   inline void trigger_resize(ComputeGraph* graph) {
     if (resize_fn_ != nullptr) {
-      resize_fn_(graph, args_, extra_args_);
+      resize_fn_(graph, args_, resize_args_);
     }
   }
 
@@ -79,8 +79,8 @@ class ExecuteNode final {
   const std::vector<ArgGroup> args_;
   // TODO(T180906457): allow re-computing param buffers.
   std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
-  const std::vector<ValueRef> extra_args_;
   const ResizeFunction resize_fn_;
+  const std::vector<ValueRef> resize_args_;
 };
 
 } // namespace vulkan

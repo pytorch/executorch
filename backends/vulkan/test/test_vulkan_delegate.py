@@ -110,12 +110,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         add_module = AddModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(add_module, model_inputs)
+        self.lower_module_and_test_output(add_module, sample_inputs)
 
     def test_vulkan_backend_internal_data(self):
         class InternalDataModule(torch.nn.Module):
@@ -131,12 +131,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         internal_data_module = InternalDataModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(internal_data_module, model_inputs)
+        self.lower_module_and_test_output(internal_data_module, sample_inputs)
 
     def test_vulkan_backend_sub(self):
         class SubModule(torch.nn.Module):
@@ -150,12 +150,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         sub_module = SubModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(sub_module, model_inputs)
+        self.lower_module_and_test_output(sub_module, sample_inputs)
 
     def test_vulkan_backend_mul(self):
         class MulModule(torch.nn.Module):
@@ -169,12 +169,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         mul_module = MulModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(mul_module, model_inputs)
+        self.lower_module_and_test_output(mul_module, sample_inputs)
 
     def test_vulkan_backend_div(self):
         class DivModule(torch.nn.Module):
@@ -188,12 +188,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         div_module = DivModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(div_module, model_inputs)
+        self.lower_module_and_test_output(div_module, sample_inputs)
 
     def test_vulkan_backend_arithmetic(self):
         class ArithmeticModule(torch.nn.Module):
@@ -209,12 +209,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         arithmetic_module = ArithmeticModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(arithmetic_module, model_inputs)
+        self.lower_module_and_test_output(arithmetic_module, sample_inputs)
 
     def test_vulkan_backend_floor_div(self):
         class FloorDivModule(torch.nn.Module):
@@ -226,14 +226,14 @@ class TestBackends(unittest.TestCase):
                 return z
 
         floor_div_module = FloorDivModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32) * 10.0,
             torch.rand(size=(2, 3), dtype=torch.float32) + 1.0,
         )
 
         # absolute tolerance is 1 because of flooring
         self.lower_module_and_test_output(
-            floor_div_module, model_inputs, atol=1.0 + 1e-03
+            floor_div_module, sample_inputs, atol=1.0 + 1e-03
         )
 
     def test_vulkan_backend_pow(self):
@@ -246,12 +246,12 @@ class TestBackends(unittest.TestCase):
                 return z
 
         pow_module = PowModule()
-        model_inputs = (
+        sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
         )
 
-        self.lower_module_and_test_output(pow_module, model_inputs)
+        self.lower_module_and_test_output(pow_module, sample_inputs)
 
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
@@ -265,9 +265,9 @@ class TestBackends(unittest.TestCase):
                 return self.linear(x + self.offset_1) - self.offset_2
 
         model = SimpleModel()
-        model_inputs = (torch.rand(size=(2, 10), dtype=torch.float32),)
+        sample_inputs = (torch.rand(size=(2, 10), dtype=torch.float32),)
 
-        self.lower_module_and_test_output(model, model_inputs)
+        self.lower_module_and_test_output(model, sample_inputs)
 
     def test_vulkan_backend_partial_dynamic_shapes(self):
         class SimpleModel(torch.nn.Module):
@@ -288,8 +288,8 @@ class TestBackends(unittest.TestCase):
                 return (out1 + self.buffer_1 + out2) * self.buffer_2
 
         model = SimpleModel()
-        model_inputs = (torch.randn(32, 64), torch.randn(32, 128))
-        batch = Dim("batch", max=124)
+        sample_inputs = (torch.randn(32, 64), torch.randn(32, 128))
+        batch = Dim("batch", max=32)
         dynamic_shapes = {"x1": {0: batch}, "x2": {0: batch}}
 
         test_inputs = [
@@ -301,5 +301,5 @@ class TestBackends(unittest.TestCase):
         ]
 
         self.lower_module_and_test_output(
-            model, model_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
+            model, sample_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
         )

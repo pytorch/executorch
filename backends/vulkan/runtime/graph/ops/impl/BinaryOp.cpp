@@ -19,14 +19,11 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-std::string get_arithmetic_shader_name(const std::string& op_name) {
-  return "arithmetic_" + op_name;
-}
-
-void resize_arithmetic_node(
+void resize_binary_op_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
+  (void)extra_args;
   vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
   vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
   vTensor& other = graph->get_val(args[1].refs[1]).toTensor();
@@ -34,8 +31,9 @@ void resize_arithmetic_node(
   std::vector<int64_t> new_out_sizes(
       std::max(self.sizes().size(), other.sizes().size()));
 
+  // Match the sizes in reverse because sizes are in NCHW order
   for (int i = -1; i >= -new_out_sizes.size(); --i) {
-    new_out_sizes[new_out_sizes.size() + i] = std::max(
+    new_out_sizes.at(new_out_sizes.size() + i) = std::max(
         api::utils::val_at(i, self.sizes()),
         api::utils::val_at(i, other.sizes()));
   }
@@ -43,7 +41,7 @@ void resize_arithmetic_node(
   out.virtual_resize(new_out_sizes);
 }
 
-void add_arithmetic_node(
+void add_binary_op_node(
     ComputeGraph& graph,
     const ValueRef in1,
     const ValueRef in2,
@@ -85,39 +83,38 @@ void add_arithmetic_node(
        t_in2.gpu_sizes_ubo(),
        graph.create_params_buffer(alpha_val)},
       // Resizing
-      {alpha},
-      resize_arithmetic_node));
+      resize_binary_op_node));
 }
 
-#define DEFINE_ARITHMETIC_WITH_ALPHA_FN(function, shader)                 \
-  void function(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    return add_arithmetic_node(                                           \
-        graph, args[0], args[1], args[2], args[3], #shader);              \
+#define DEFINE_BINARY_OP_WITH_ALPHA_FN(op_name)                          \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_binary_op_node(                                           \
+        graph, args[0], args[1], args[2], args[3], #op_name);            \
   }
 
-#define DEFINE_ARITHMETIC_FN(function, shader)                            \
-  void function(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
-    return add_arithmetic_node(                                           \
-        graph, args[0], args[1], kDummyValueRef, args[2], #shader);       \
+#define DEFINE_BINARY_OP_FN(op_name)                                     \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_binary_op_node(                                           \
+        graph, args[0], args[1], kDummyValueRef, args[2], #op_name);     \
   }
 
-DEFINE_ARITHMETIC_WITH_ALPHA_FN(add, add);
-DEFINE_ARITHMETIC_WITH_ALPHA_FN(sub, sub);
+DEFINE_BINARY_OP_WITH_ALPHA_FN(add);
+DEFINE_BINARY_OP_WITH_ALPHA_FN(sub);
 
 // Floor div does not have an alpha, but a string argument (which is unused) is
 // passed in at the same location as the alpha argument in other op.
-DEFINE_ARITHMETIC_WITH_ALPHA_FN(floor_div, floor_divide);
+DEFINE_BINARY_OP_WITH_ALPHA_FN(floor_divide);
 
-DEFINE_ARITHMETIC_FN(mul, mul);
-DEFINE_ARITHMETIC_FN(div, div);
-DEFINE_ARITHMETIC_FN(pow, pow);
+DEFINE_BINARY_OP_FN(mul);
+DEFINE_BINARY_OP_FN(div);
+DEFINE_BINARY_OP_FN(pow);
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.add.Tensor, add);
   VK_REGISTER_OP(aten.sub.Tensor, sub);
   VK_REGISTER_OP(aten.mul.Tensor, mul);
   VK_REGISTER_OP(aten.div.Tensor, div);
-  VK_REGISTER_OP(aten.div.Tensor_mode, floor_div);
+  VK_REGISTER_OP(aten.div.Tensor_mode, floor_divide);
   VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
 }
 
