@@ -130,7 +130,9 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
       "the Nth argument type has to be the same as the return type.");
 
   static ReturnType wrap(typename type_map<Args>::type... args) {
-    // stuff
+    // The wrapped function that takes ATen argument types, convert them into
+    // ExecuTorch equivalent, call `f` then return the result converted back to
+    // ATen.
     TupleArgsType args_tuple = std::forward_as_tuple(args...);
     TupleConvertsType converts = std::forward_as_tuple(
         type_convert<typename type_map<Args>::type, Args>(args)...);
@@ -162,6 +164,9 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   }
 };
 
+// Wrapper macro for out variant function. N is the index of the out tensor.
+// We need N to know how to preserve the semantics of modifying out tensor and
+// return the reference without allocating a new memory buffer for out tensor.
 #define _WRAP_2(func, N) \
   wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
 #define _WRAP_1(func) wrapper_impl<decltype(&func), func>::wrap

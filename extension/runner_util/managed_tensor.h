@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
@@ -13,9 +14,6 @@
 #include <executorch/runtime/core/portable_type/tensor.h>
 #endif
 #pragma once
-
-#include <memory>
-#include <vector>
 
 namespace torch {
 namespace executor {
