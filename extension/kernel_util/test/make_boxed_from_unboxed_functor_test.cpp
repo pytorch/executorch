@@ -7,7 +7,6 @@
  */
 
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
-#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
