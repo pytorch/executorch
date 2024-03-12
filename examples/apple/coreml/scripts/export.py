@@ -8,6 +8,7 @@ import copy
 import pathlib
 import sys
 
+import torch
 import executorch.exir as exir
 
 from executorch.backends.apple.coreml.compiler import CoreMLBackend
@@ -15,6 +16,10 @@ from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.sdk.etrecord import generate_etrecord
+
+from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+    CoreMLPartitioner,
+)
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -29,6 +34,37 @@ _CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=False)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
+
+compute_units = ["cpu_only", "cpu_and_gpu", "cpu_and_ane", "all"]
+
+
+def parse_args() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "-m",
+        "--model_name",
+        required=True,
+        help=f"Provide model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
+    )
+
+    parser.add_argument(
+        "-c",
+        "--compute_units",
+        required=False,
+        default="all",
+        help=f"Provide compute units. Valid ones: {compute_units}",
+    )
+    parser.add_argument("--use_partitioner", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
+    parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
+
+    args = parser.parse_args()
+    return args
+
+
+def partition_module_to_coreml(module):
+    module = module.eval()
 
 
 def lower_module_to_coreml(module, compute_units):
@@ -81,30 +117,8 @@ def save_processed_bytes(processed_bytes, model_name, compute_units):
     return
 
 
-compute_units = ["cpu_only", "cpu_and_gpu", "cpu_and_ane", "all"]
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-m",
-        "--model_name",
-        required=True,
-        help=f"Provide model name. Valid ones: {list(MODEL_NAME_TO_MODEL.keys())}",
-    )
-
-    parser.add_argument(
-        "-c",
-        "--compute_units",
-        required=False,
-        default="all",
-        help=f"Provide compute units. Valid ones: {compute_units}",
-    )
-
-    parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
-
-    parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
-
-    args = parser.parse_args()
+    args = parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
         raise RuntimeError(
@@ -122,15 +136,22 @@ if __name__ == "__main__":
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
-    lowered_module, edge_copy = lower_module_to_coreml(
-        model,
-        args.compute_units,
-    )
-
-    exec_program = export_lowered_module_to_executorch_program(
-        lowered_module,
-        example_inputs,
-    )
+    if args.use_partitioner:
+        model.eval()
+        exir_program_aten = torch.export.export(model, example_inputs)
+        edge_program_manager = exir.to_edge(exir_program_aten)
+        edge_copy = copy.deepcopy(edge_program_manager)
+        delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
+        exec_program = delegated_program_manager.to_executorch()
+    else:
+        lowered_module, edge_copy = lower_module_to_coreml(
+            model,
+            args.compute_units,
+        )
+        exec_program = export_lowered_module_to_executorch_program(
+            lowered_module,
+            example_inputs,
+        )
 
     save_executorch_program(exec_program, args.model_name, args.compute_units)
     generate_etrecord(f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program)
