@@ -10,21 +10,16 @@
 
 #ifdef USE_VULKAN_API
 
-#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+#include <ATen/native/vulkan/api/api.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
 
-void add_copy_node(ComputeGraph& graph, const ValueRef from, const ValueRef to);
-ValueRef add_copy_node(ComputeGraph& graph, const ValueRef from);
+api::utils::uvec3 adaptive_work_group_size(
+    const api::utils::uvec3& global_work_group);
 
-class CopyNode : public virtual ExecuteNode {
- public:
-  explicit CopyNode(const ValueRef from, const ValueRef to);
-
-  void encode(ComputeGraph* graph) const override;
-};
+api::utils::ivec4 get_size_as_ivec4(const vTensor& t);
 
 } // namespace vulkan
 } // namespace native

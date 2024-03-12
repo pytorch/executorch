@@ -10,8 +10,6 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/impl/Arithmetic.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 namespace at {
@@ -20,41 +18,17 @@ namespace vulkan {
 
 void add_arithmetic_node(
     ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
+    const ValueRef in1,
+    const ValueRef in2,
+    const ValueRef alpha,
     const ValueRef out,
-    const float alpha,
-    const arithmetic::OpType optype);
+    const api::ShaderInfo& shader);
 
-ValueRef add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
-    const float alpha,
-    const arithmetic::OpType optype,
-    const int64_t shared_object_idx = -1);
-
-class ArithmeticPrepack : public virtual PrepackNode {
- public:
-  explicit ArithmeticPrepack(const ValueRef tref, const ValueRef packed);
-
-  void encode(ComputeGraph* graph) const override;
-};
-
-class ArithmeticNode : public virtual ExecuteNode {
- public:
-  explicit ArithmeticNode(
-      const ValueRef t1,
-      const ValueRef t2,
-      const ValueRef out,
-      const float alpha,
-      const arithmetic::OpType optype);
-
-  void encode(ComputeGraph* graph) const override;
-
- private:
-  float alpha_;
-  arithmetic::OpType optype_;
+struct ArithmeticParams final {
+  api::utils::ivec4 outputSizes;
+  api::utils::ivec4 input1Sizes;
+  api::utils::ivec4 input2Sizes;
+  float alpha;
 };
 
 } // namespace vulkan

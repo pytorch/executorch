@@ -845,5 +845,59 @@ bool get_view_copy_target_size(
   return true;
 }
 
+bool check_diagonal_copy_args(
+    const Tensor& in,
+    int64_t dim1,
+    int64_t dim2,
+    Tensor& out) {
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 2));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim1));
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_dim(in, dim2));
+  if (dim1 < 0) {
+    dim1 += nonzero_dim(in);
+  }
+  if (dim2 < 0) {
+    dim2 += nonzero_dim(in);
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(dim1 != dim2);
+  return true;
+}
+
+void get_diagonal_copy_out_target_size(
+    const Tensor& in,
+    int64_t offset,
+    int64_t dim1,
+    int64_t dim2,
+    exec_aten::SizesType* out_sizes,
+    size_t* out_ndim) {
+  *out_ndim = in.dim() - 1;
+
+  if (dim1 < 0) {
+    dim1 += nonzero_dim(in);
+  }
+  if (dim2 < 0) {
+    dim2 += nonzero_dim(in);
+  }
+
+  size_t diagonal_size = 0;
+  if (offset >= 0) {
+    diagonal_size = std::min<size_t>(in.size(dim1), in.size(dim2) - offset);
+  } else {
+    diagonal_size = std::min<size_t>(in.size(dim1) + offset, in.size(dim2));
+  }
+  diagonal_size = std::max<size_t>(diagonal_size, 0);
+
+  size_t shift = 0;
+  for (size_t d = 0; d < in.dim(); ++d) {
+    if (d == dim1 || d == dim2) {
+      shift++;
+    } else {
+      out_sizes[d - shift] = in.size(d);
+    }
+  }
+  out_sizes[in.dim() - 2] = diagonal_size;
+}
+
 } // namespace executor
 } // namespace torch

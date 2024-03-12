@@ -249,6 +249,7 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     # it's retraced after running to_out_variant with the first trace.
     memory.alloc,
     executorch_call_delegate,
+    torch.ops.aten.copy_.default,
 }
 to_out_var_skiplist.update(_EXECUTORCH_SYM_OPS)
 
@@ -483,14 +484,14 @@ base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = Pass
     ]
 ).passes
 
-base_post_op_replace_passes: List[
-    Callable[[torch.nn.Module], PassResult]
-] = PassManager(
-    passes=[
-        dead_code_elimination_pass,
-        DebugHandleGeneratorPass(),
-    ]
-).passes
+base_post_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = (
+    PassManager(
+        passes=[
+            dead_code_elimination_pass,
+            DebugHandleGeneratorPass(),
+        ]
+    ).passes
+)
 
 
 def propagate_dynamic_shape(

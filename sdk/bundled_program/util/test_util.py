@@ -251,9 +251,9 @@ class StatefulWrapperModule(torch.nn.Module):
         return self.fn(*args, **kwargs)
 
 
-def get_common_executorch_program() -> Tuple[
-    ExecutorchProgramManager, List[MethodTestSuite]
-]:
+def get_common_executorch_program() -> (
+    Tuple[ExecutorchProgramManager, List[MethodTestSuite]]
+):
     """Helper function to generate a sample BundledProgram with its config."""
     eager_model = SampleModel()
     # Trace to FX Graph.

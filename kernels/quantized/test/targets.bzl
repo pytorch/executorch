@@ -31,3 +31,9 @@ def define_common_targets():
         "//executorch/kernels/portable:generated_lib_headers",
         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
     ])
+    op_test("op_mixed_linear_test", kernel_name = "quantized", deps = [
+        "//executorch/kernels/quantized/cpu:op_mixed_linear",
+        "//executorch/kernels/quantized:generated_lib_headers",
+        "//executorch/kernels/portable:generated_lib_headers",
+        "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    ])

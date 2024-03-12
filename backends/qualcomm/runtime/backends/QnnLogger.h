@@ -7,8 +7,8 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
+#include <executorch/backends/qualcomm/schema_generated.h>
 namespace torch {
 namespace executor {
 namespace qnn {

@@ -98,7 +98,7 @@ endif()
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-O2 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -125,6 +125,10 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
 option(EXECUTORCH_BUILD_XNNPACK
        "Build xnn_executor_runner which depends on XNNPACK" OFF)
 
+# Build the vulkan delegate along with the vulkan executor_runner
+option(EXECUTORCH_BUILD_VULKAN
+       "Build the Vulkan delegate and the Vulkan executor_runner" OFF)
+
 option(EXECUTORCH_BUILD_SDK
        "Build the ExecuTorch SDK library and the SDK example runner.")
 
@@ -143,6 +147,10 @@ option(EXECUTORCH_BUILD_EXTENSION_MODULE
 # Build the runner_util extension library
 option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
        "Build the extension/runner_util directory" OFF)
+
+# Build test binaries that rely on googletest
+option(EXECUTORCH_BUILD_GTESTS
+       "Build googletest based test binaries" OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -315,7 +323,12 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-# Add Android JNI subdirectory
+# Add googletest if any test targets should be built
+if(EXECUTORCH_BUILD_GTESTS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
+endif()
+
+option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
@@ -325,6 +338,10 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -344,56 +361,53 @@ if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
 
-# Build Arm Baremetal backend
 option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
+option(EXECUTORCH_BUILD_MPS "Build the MPS Backend" OFF)
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
 endif()
 
-# Build CoreML backend
-option(EXECUTORCH_BUILD_COREML "Build the backends/apple/coreml directory" OFF)
+option(EXECUTORCH_BUILD_COREML "Build the Core ML Backend" OFF)
 if(EXECUTORCH_BUILD_COREML)
-  # CoreML delegate library can only be built with iOS toolchain
-  if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS\.)|(ios\.toolchain\.)cmake$")
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
-  else()
-    message(
-      FATAL_ERROR "executorch: Building CoreML delegate requires iOS toolchain")
-  endif()
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
 endif()
 
-# Build pybind
-option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
+option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 if(EXECUTORCH_BUILD_PYBIND)
-  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
-    # This has already been added if above flag is on
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
-  endif()
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
-  if(PYBIND_LINK_COREML)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
+  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  endif()
+
+  if(NOT EXECUTORCH_BUILD_SDK)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  endif()
+
+  if(EXECUTORCH_BUILD_COREML)
     set(PYBIND_LINK_COREML "coremldelegate")
   endif()
 
-  if(PYBIND_LINK_MPS)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
+  if(EXECUTORCH_BUILD_MPS)
     set(PYBIND_LINK_MPS "mpsdelegate")
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    # set PYBIND_LINK_XNNPACK variable to link with portable lib library
     set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
 
@@ -443,5 +457,6 @@ if(EXECUTORCH_BUILD_PYBIND)
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)
 endif()
+
 # Print all summary
 executorch_print_configuration_summary()

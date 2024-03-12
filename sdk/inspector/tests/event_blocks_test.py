@@ -199,9 +199,11 @@ class TestEventBlock(unittest.TestCase):
                     instruction_id,
                     (0, time),
                     delegate_debug_id,
-                    delegate_debug_metadatas[index]
-                    if delegate_debug_id is not None
-                    else None,
+                    (
+                        delegate_debug_metadatas[index]
+                        if delegate_debug_id is not None
+                        else None
+                    ),
                 )
                 for index, time in enumerate(durations)
             ]
@@ -226,9 +228,9 @@ class TestEventBlock(unittest.TestCase):
                 ),
                 delegate_debug_identifier=delegate_debug_id,
                 is_delegated_op=is_delegated,
-                _delegate_debug_metadatas=delegate_debug_metadatas
-                if is_delegated
-                else [],
+                _delegate_debug_metadatas=(
+                    delegate_debug_metadatas if is_delegated else []
+                ),
                 _instruction_id=event_signature.instruction_id,
             )
             self.assertEqual(event, expected_event)

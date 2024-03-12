@@ -11,6 +11,7 @@ import executorch.exir.passes.executorch_prim_ops_registry  # noqa: F401
 
 import torch
 
+
 # This class tests whether we can generate correct code to register the prim ops into PyTorch runtime.
 class TestCustomOps(unittest.TestCase):
     def setUp(self) -> None:

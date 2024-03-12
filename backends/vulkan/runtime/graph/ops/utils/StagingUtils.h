@@ -16,15 +16,25 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-#define DEFINE_OP_FN(name) \
-  ValueRef name(ComputeGraph& graph, const std::vector<ValueRef>& args);
+//
+// Functions to copy data into and out of a staging buffer
+//
 
-DEFINE_OP_FN(add);
-DEFINE_OP_FN(sub);
-DEFINE_OP_FN(mul);
-DEFINE_OP_FN(div);
-DEFINE_OP_FN(floor_div);
-DEFINE_OP_FN(pow);
+void copy_ptr_to_staging(
+    const void* src,
+    api::StorageBuffer& staging,
+    const size_t nbytes);
+void copy_staging_to_ptr(
+    api::StorageBuffer& staging,
+    void* dst,
+    const size_t nbytes);
+
+//
+// Functions to get shaders
+//
+
+api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst);
+api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src);
 
 } // namespace vulkan
 } // namespace native
