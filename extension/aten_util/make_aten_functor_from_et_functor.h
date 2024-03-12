@@ -48,7 +48,7 @@ template <typename F, typename T, typename Enable = void>
 struct type_convert final {
  public:
   F val;
-  type_convert(F value) : val(value) {}
+  explicit type_convert(F value) : val(value) {}
   T call() {
     return static_cast<T>(val);
   }
@@ -74,7 +74,7 @@ struct type_convert<
   std::unique_ptr<ManagedTensor> managed_tensor;
   torch::executor::Tensor converted;
   std::vector<exec_aten::SizesType> sizes;
-  type_convert(ATensor value)
+  explicit type_convert(ATensor value)
       : val(value), converted(torch::executor::Tensor(nullptr)) {
     for (auto size : val.sizes()) {
       sizes.push_back(size);
@@ -96,7 +96,7 @@ struct type_convert<torch::executor::Tensor&, at::Tensor&> final {
   torch::executor::Tensor& val;
   at::Tensor converted;
   std::vector<int64_t> sizes;
-  type_convert(torch::executor::Tensor& value) : val(value) {
+  explicit type_convert(torch::executor::Tensor& value) : val(value) {
     for (auto size : val.sizes()) {
       sizes.push_back(size);
     }

@@ -7,13 +7,11 @@
  */
 
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
-#include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
 #include <torch/library.h>
-#include <torch/torch.h>
 
 namespace torch {
 namespace executor {
