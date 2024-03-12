@@ -17,7 +17,7 @@ from torch import nn
 
 
 class RMSNorm(torch.nn.Module):
-    def __init__(self, dim: int, eps: float = 1e-6):
+    def __init__(self, dim: int, eps: float = 1e-6, dtype = torch.float32):
         """
         Initialize the RMSNorm normalization layer.
 
@@ -32,7 +32,7 @@ class RMSNorm(torch.nn.Module):
         """
         super().__init__()
         self.eps = eps
-        self.weight = nn.Parameter(torch.ones(dim))
+        self.weight = nn.Parameter(torch.ones(dim, dtype=dtype))
 
     def _norm(self, x):
         """
@@ -88,6 +88,7 @@ class ModelArgs:
     eos_idx: int = 3
     bos_count: int = -1  # i.e., a single EOS is used as BOS
     eos_count: int = 2
+    dtype: torch.dtype = torch.float32
 
     def __post_init__(self):
         if self.n_kv_heads is None:
@@ -160,10 +161,10 @@ class Attention(nn.Module):
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
         # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
-        self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
-        self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
-        self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
+        self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False, dtype=args.dtype)
+        self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False, dtype=args.dtype)
+        self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False, dtype=args.dtype)
+        self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False, dtype=args.dtype)
 
         self.use_sdpa_with_kv_cache_op = args.use_sdpa_with_kv_cache_op
         self.layer_id = layer_id
@@ -307,9 +308,9 @@ class FeedForward(nn.Module):
             hidden_dim = int(2 * hidden_dim / 3)
             hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
-        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        self.w1 = nn.Linear(dim, hidden_dim, bias=False, dtype=args.dtype)
+        self.w2 = nn.Linear(hidden_dim, dim, bias=False, dtype=args.dtype)
+        self.w3 = nn.Linear(dim, hidden_dim, bias=False, dtype=args.dtype)
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -328,9 +329,9 @@ class ConditionalFeedForward(nn.Module):
             hidden_dim = int(2 * hidden_dim / 3)
             hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
 
-        self.w1 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
-        self.w2 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
-        self.w3 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim))
+        self.w1 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim, dtype=args.dtype))
+        self.w2 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim, dtype=args.dtype))
+        self.w3 = nn.Parameter(torch.randn(args.num_experts, hidden_dim, self.dim, dtype=args.dtype))
         self.num_experts = args.num_experts
 
     def forward(self, x: torch.Tensor, expert_indices: torch.Tensor) -> torch.Tensor:
@@ -346,7 +347,7 @@ class ConditionalFeedForward(nn.Module):
 class MOEFeedForward(nn.Module):
     def __init__(self, config) -> None:
         super().__init__()
-        self.gate = nn.Linear(config.dim, config.num_experts, bias=False)
+        self.gate = nn.Linear(config.dim, config.num_experts, bias=False, dtype=config.dtype)
         self.cond_ffn = ConditionalFeedForward(config)
         self.dim = config.dim
 
@@ -373,8 +374,8 @@ class TransformerBlock(nn.Module):
             self.block_sparse_moe = MOEFeedForward(args)
         else:
             self.feed_forward = FeedForward(args)
-        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
-        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
+        self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps, dtype=args.dtype)
+        self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps, dtype=args.dtype)
 
     def forward(
         self, x, freqs_cos, freqs_sin, start_pos=None, cache_k=None, cache_v=None
@@ -407,8 +408,8 @@ class Transformer(nn.Module):
         self.layers = torch.nn.ModuleList()
         for layer_id in range(params.n_layers):
             self.layers.append(TransformerBlock(layer_id, params))
-        self.norm = RMSNorm(params.dim, eps=params.norm_eps)
-        self.output = nn.Linear(params.dim, params.vocab_size, bias=False)
+        self.norm = RMSNorm(params.dim, eps=params.norm_eps, dtype=params.dtype)
+        self.output = nn.Linear(params.dim, params.vocab_size, bias=False, dtype=params.dtype)
         self.use_kv_cache = params.use_kv_cache
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
