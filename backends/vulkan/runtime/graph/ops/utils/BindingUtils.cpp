@@ -6,21 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
-
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
-
-api::utils::ivec4 get_size_as_ivec4(const vTensor& t) {
-  return api::utils::make_ivec4(
-      {dim_at<Dim4D::Width>(t),
-       dim_at<Dim4D::Height>(t),
-       dim_at<Dim4D::Channel>(t),
-       dim_at<Dim4D::Batch>(t)});
-}
 
 void bind_tensor_to_descriptor_set(
     vTensor& tensor,
@@ -37,13 +27,6 @@ void bind_tensor_to_descriptor_set(
         tensor.image(pipeline_barrier, api::PipelineStage::COMPUTE, accessType);
     descriptor_set.bind(idx, image);
   }
-}
-
-void bind_staging_to_descriptor_set(
-    api::StorageBuffer& staging,
-    api::DescriptorSet& descriptor_set,
-    const uint32_t idx) {
-  descriptor_set.bind(idx, staging.buffer());
 }
 
 uint32_t bind_values_to_descriptor_set(
@@ -71,6 +54,24 @@ uint32_t bind_values_to_descriptor_set(
     }
   }
   return idx;
+}
+
+uint32_t bind_params_to_descriptor_set(
+    std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+    api::DescriptorSet& descriptor_set,
+    const uint32_t base_idx) {
+  uint32_t idx = base_idx;
+  for (auto& param : params) {
+    descriptor_set.bind(idx++, param->buffer());
+  }
+  return idx;
+}
+
+void bind_staging_to_descriptor_set(
+    api::StorageBuffer& staging,
+    api::DescriptorSet& descriptor_set,
+    const uint32_t idx) {
+  descriptor_set.bind(idx, staging.buffer());
 }
 
 } // namespace vulkan

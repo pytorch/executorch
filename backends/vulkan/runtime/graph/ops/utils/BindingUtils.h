@@ -16,17 +16,14 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-api::utils::ivec4 get_size_as_ivec4(const vTensor& t);
+//
+// For objects in the graph
+//
 
 void bind_tensor_to_descriptor_set(
     vTensor& tensor,
     api::PipelineBarrier& pipeline_barrier,
     const api::MemoryAccessType accessType,
-    api::DescriptorSet& descriptor_set,
-    const uint32_t idx);
-
-void bind_staging_to_descriptor_set(
-    api::StorageBuffer& staging,
     api::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
@@ -36,6 +33,20 @@ uint32_t bind_values_to_descriptor_set(
     api::PipelineBarrier& pipeline_barrier,
     api::DescriptorSet& descriptor_set,
     const uint32_t base_idx);
+
+//
+// For objects NOT in the graph
+//
+
+uint32_t bind_params_to_descriptor_set(
+    std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+    api::DescriptorSet& descriptor_set,
+    const uint32_t base_idx);
+
+void bind_staging_to_descriptor_set(
+    api::StorageBuffer& staging,
+    api::DescriptorSet& descriptor_set,
+    const uint32_t idx);
 
 } // namespace vulkan
 } // namespace native

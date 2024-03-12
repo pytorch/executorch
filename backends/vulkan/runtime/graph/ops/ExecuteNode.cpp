@@ -10,7 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
 namespace at {
 namespace native {
@@ -22,12 +22,12 @@ ExecuteNode::ExecuteNode(
     const api::utils::uvec3& global_workgroup_size,
     const api::utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
-    api::UniformParamsBuffer&& params)
+    const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params)
     : shader_(shader),
       global_workgroup_size_(global_workgroup_size),
       local_workgroup_size_(local_workgroup_size),
       args_(args),
-      params_(std::move(params)) {
+      params_(params) {
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 
@@ -43,7 +43,7 @@ void ExecuteNode::encode(ComputeGraph* graph) {
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
       graph, args_, pipeline_barrier, descriptor_set, idx);
-  descriptor_set.bind(idx, params_.buffer());
+  bind_params_to_descriptor_set(params_, descriptor_set, idx);
 
   context->register_shader_dispatch(
       descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);

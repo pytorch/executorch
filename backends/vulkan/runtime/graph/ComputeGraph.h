@@ -12,9 +12,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
@@ -155,6 +153,12 @@ class ComputeGraph final {
 
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
+
+  template <typename Block>
+  inline std::shared_ptr<api::UniformParamsBuffer> create_params_buffer(
+      const Block& data) {
+    return std::make_shared<api::UniformParamsBuffer>(context_.get(), data);
+  }
 
   /*
    * Convenience function to add an input tensor along with its staging buffer

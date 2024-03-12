@@ -10,9 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
@@ -55,7 +53,7 @@ class ExecuteNode final {
       const api::utils::uvec3& global_workgroup_size,
       const api::utils::uvec3& local_workgroup_size,
       const std::vector<ArgGroup>& args,
-      api::UniformParamsBuffer&& params);
+      const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params);
 
   ~ExecuteNode() = default;
 
@@ -66,9 +64,8 @@ class ExecuteNode final {
   const api::utils::uvec3 global_workgroup_size_;
   const api::utils::uvec3 local_workgroup_size_;
   const std::vector<ArgGroup> args_;
-  // TODO(T180906086): pass multiple buffers and index with ValueRef.
   // TODO(T180906457): allow re-computing param buffers.
-  api::UniformParamsBuffer params_;
+  std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
 };
 
 } // namespace vulkan

@@ -12,8 +12,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
-
 namespace at {
 namespace native {
 namespace vulkan {

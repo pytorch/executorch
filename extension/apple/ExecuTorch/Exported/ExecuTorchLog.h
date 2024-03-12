@@ -59,14 +59,14 @@ NS_SWIFT_NAME(Log)
  *
  * @param sink The log sink to add.
  */
-- (void)addSink:(id<ExecuTorchLogSink>)sink;
+- (void)addSink:(id<ExecuTorchLogSink>)sink NS_SWIFT_NAME(add(sink:));
 
 /**
  * Removes a previously added log sink.
  *
  * @param sink The log sink to remove.
  */
-- (void)removeSink:(id<ExecuTorchLogSink>)sink;
+- (void)removeSink:(id<ExecuTorchLogSink>)sink NS_SWIFT_NAME(remove(sink:));
 
 + (instancetype)new NS_UNAVAILABLE;
 - (instancetype)init NS_UNAVAILABLE;

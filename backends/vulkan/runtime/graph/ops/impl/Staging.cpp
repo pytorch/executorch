@@ -8,9 +8,10 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/OpUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/StagingUtils.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/Utils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 namespace at {
 namespace native {
@@ -44,9 +45,6 @@ void add_staging_to_tensor_node(
   api::utils::uvec3 global_size = t_out.extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  api::UniformParamsBuffer params(
-      graph.context(), create_staging_params(t_out));
-
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
       shader,
@@ -54,7 +52,7 @@ void add_staging_to_tensor_node(
       local_size,
       {{out_tensor, api::MemoryAccessType::WRITE},
        {in_staging, api::MemoryAccessType::READ}},
-      std::move(params)));
+      {graph.create_params_buffer(create_staging_params(t_out))}));
 }
 
 void add_tensor_to_staging_node(
@@ -70,7 +68,6 @@ void add_tensor_to_staging_node(
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   StagingParams sp = create_staging_params(t_in);
-  api::UniformParamsBuffer params(graph.context(), sp);
 
   // TODO(T181194784): These are workgroup sizes for special cases. Refactor the
   // calculation of workgroup sizes to a standalone function. We should use
@@ -97,7 +94,7 @@ void add_tensor_to_staging_node(
       local_size,
       {{in_tensor, api::MemoryAccessType::READ},
        {out_staging, api::MemoryAccessType::WRITE}},
-      std::move(params)));
+      {graph.create_params_buffer(sp)}));
 }
 
 ValueRef prepack(ComputeGraph& graph, const ValueRef vref) {
@@ -111,10 +108,15 @@ ValueRef prepack(ComputeGraph& graph, const ValueRef vref) {
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   StagingParams sp = create_staging_params(t);
-  api::UniformParamsBuffer params(graph.context(), sp);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
-      graph, shader, global_size, local_size, vref, v, std::move(params)));
+      graph,
+      shader,
+      global_size,
+      local_size,
+      vref,
+      v,
+      {graph.create_params_buffer(sp)}));
 
   return v;
 }
