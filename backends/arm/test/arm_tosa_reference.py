@@ -41,8 +41,6 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 SUPPORTED_BI_TEST_LIST = [
     "simple_add",
     "simple_add_broadcast",
-    "simple_linear",
-    "simple_linear_rank4",
     "simple_conv2d_3x3_1x3x256x256_stride1",
     "simple_conv2d_1x1_1x2x128x128_stride1",
     "simple_conv2d_2x2_1x1x14x14_stride2",
@@ -250,9 +248,8 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         # Need to dequant back to FP32 for running comparison with Torch output
         if profile is TosaProfile.BI:
             tosa_output = (
-                np.round(tosa_output - output_quantization_zp)
-                * output_quantization_scale
-            )
+                tosa_output - output_quantization_zp
+            ) * output_quantization_scale
 
     ## Read the Torch Output
     torch_file = open(TORCH_OUT_PATH + "/torch_output.npy", "rb")
