@@ -22,6 +22,8 @@ from executorch.exir.backend.backend_details import (
 
 from executorch.exir.passes import MemoryPlanningPass, SpecPropPass
 
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
+
 from executorch.exir.program._program import _copy_module
 from torch import dtype, float32
 
@@ -46,6 +48,7 @@ class VulkanBackend(BackendDetails):
     ) -> PreprocessResult:
         passes = [
             SpecPropPass(),
+            ConstraintBasedSymShapeEvalPass(),
             MemoryPlanningPass("greedy"),
         ]
 

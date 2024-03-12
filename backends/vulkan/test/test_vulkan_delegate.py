@@ -14,7 +14,7 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir import EdgeProgramManager, to_edge
-from torch.export import export, ExportedProgram
+from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -54,13 +54,17 @@ class TestBackends(unittest.TestCase):
         sample_inputs: Tuple[torch.Tensor],
         atol=1e-03,
         rtol=1e-01,
+        dynamic_shapes=None,
+        test_inputs=None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-        program: ExportedProgram = export(model, sample_inputs)
+        program: ExportedProgram = export(
+            model, sample_inputs, dynamic_shapes=dynamic_shapes
+        )
         edge_program: EdgeProgramManager = to_edge(program)
         edge_program = edge_program.to_backend(VulkanPartitioner())
 
@@ -79,6 +83,19 @@ class TestBackends(unittest.TestCase):
         ref_output = model(*sample_inputs)
 
         self.assert_outputs_equal(model_output, ref_output, atol=atol, rtol=rtol)
+
+        if test_inputs is not None:
+            for test_input in test_inputs:
+                # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
+                test_inputs_flattened, _ = tree_flatten(test_input)
+                model_output = executorch_module.run_method(
+                    "forward", tuple(test_inputs_flattened)
+                )
+                ref_output = model(*test_input)
+
+                self.assert_outputs_equal(
+                    model_output, ref_output, atol=atol, rtol=rtol
+                )
 
     def test_vulkan_backend_add(self):
         # This test is the simplest test by manually lowering some submodules, we can use paritioner for auto detecting lowerable parts
@@ -251,3 +268,38 @@ class TestBackends(unittest.TestCase):
         model_inputs = (torch.rand(size=(2, 10), dtype=torch.float32),)
 
         self.lower_module_and_test_output(model, model_inputs)
+
+    def test_vulkan_backend_partial_dynamic_shapes(self):
+        class SimpleModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.branch1 = torch.nn.Sequential(
+                    torch.nn.Linear(64, 64), torch.nn.ReLU()
+                )
+                self.branch2 = torch.nn.Sequential(
+                    torch.nn.Linear(128, 64), torch.nn.ReLU()
+                )
+                self.buffer_1 = torch.ones((1, 64)) * 0.5
+                self.buffer_2 = torch.ones((1, 64)) * 1.4
+
+            def forward(self, x1, x2):
+                out1 = self.branch1(x1)
+                out2 = self.branch2(x2)
+                return (out1 + self.buffer_1 + out2) * self.buffer_2
+
+        model = SimpleModel()
+        model_inputs = (torch.randn(32, 64), torch.randn(32, 128))
+        batch = Dim("batch", max=124)
+        dynamic_shapes = {"x1": {0: batch}, "x2": {0: batch}}
+
+        test_inputs = [
+            (torch.randn(15, 64), torch.randn(15, 128)),
+            (torch.randn(6, 64), torch.randn(6, 128)),
+            (torch.randn(30, 64), torch.randn(30, 128)),
+            (torch.randn(20, 64), torch.randn(20, 128)),
+            (torch.randn(19, 64), torch.randn(19, 128)),
+        ]
+
+        self.lower_module_and_test_output(
+            model, model_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
+        )

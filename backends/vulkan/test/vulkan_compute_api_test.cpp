@@ -695,3 +695,83 @@ TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
     }
   }
 }
+
+TEST(VulkanComputeGraphTest, test_resize) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {12, 64, 64};
+  std::vector<int64_t> size_small = {12, 64, 64};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(
+      size_big,
+      api::kFloat,
+      /*shared_object_idx = */ 2);
+  IOValueRef b = graph.add_input_tensor(
+      size_small,
+      api::kFloat,
+      /*shared_object_idx = */ 4);
+
+  ValueRef c = graph.add_tensor(
+      size_big,
+      api::kFloat,
+      /*shared_object_idx = */ 6);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
+
+  IOValueRef d = graph.add_input_tensor(
+      size_small,
+      api::kFloat,
+      /*shared_object_idx = */ 2);
+
+  ValueRef e = graph.add_tensor(
+      size_big,
+      api::kFloat,
+      /*shared_object_idx = */ 4);
+
+  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
+  mulFn(graph, {c, d.value, e});
+
+  IOValueRef out = {};
+  out.value = e;
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  std::vector<std::vector<int64_t>> new_sizes_list = {
+      {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
+
+  for (auto& new_sizes : new_sizes_list) {
+    graph.resize_input(0, new_sizes);
+    graph.resize_input(1, new_sizes);
+    graph.resize_input(2, new_sizes);
+    graph.propagate_resize();
+
+    float val_a = new_sizes[1] + 6.0f;
+    float val_b = new_sizes[2] + 2.5f;
+    float val_d = new_sizes[0] + 4.0f;
+    float val_out = (val_a + val_b) * val_d;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+    fill_vtensor(graph, d, val_d);
+
+    // Execute graph
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    int i = 0;
+    for (const auto& val : data_out) {
+      ASSERT_TRUE(val == val_out);
+      ++i;
+    }
+  }
+}

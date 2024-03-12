@@ -23,6 +23,26 @@ std::string get_arithmetic_shader_name(const std::string& op_name) {
   return "arithmetic_" + op_name;
 }
 
+void resize_arithmetic_node(
+    ComputeGraph* graph,
+    const std::vector<ArgGroup>& args,
+    const std::vector<ValueRef>& extra_args) {
+  vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
+  vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
+  vTensor& other = graph->get_val(args[1].refs[1]).toTensor();
+
+  std::vector<int64_t> new_out_sizes(
+      std::max(self.sizes().size(), other.sizes().size()));
+
+  for (int i = -1; i >= -new_out_sizes.size(); --i) {
+    new_out_sizes[new_out_sizes.size() + i] = std::max(
+        api::utils::val_at(i, self.sizes()),
+        api::utils::val_at(i, other.sizes()));
+  }
+
+  out.virtual_resize(new_out_sizes);
+}
+
 void add_arithmetic_node(
     ComputeGraph& graph,
     const ValueRef in1,
@@ -56,12 +76,17 @@ void add_arithmetic_node(
       VK_KERNEL_FROM_STR(kernel_name.str()),
       global_size,
       local_size,
+      // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE},
        {{arg1, arg2}, api::MemoryAccessType::READ}},
+      // Shader params buffers
       {t_out.gpu_sizes_ubo(),
        t_in1.gpu_sizes_ubo(),
        t_in2.gpu_sizes_ubo(),
-       graph.create_params_buffer(alpha_val)}));
+       graph.create_params_buffer(alpha_val)},
+      // Resizing
+      {alpha},
+      resize_arithmetic_node));
 }
 
 #define DEFINE_ARITHMETIC_WITH_ALPHA_FN(function, shader)                 \
