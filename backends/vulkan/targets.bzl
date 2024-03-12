@@ -1,4 +1,53 @@
+load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_fbcode")
+load("@fbsource//tools/build_defs:glob_defs.bzl", "subdir_glob")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+def get_glsl_image_format():
+    if native.read_config("pt", "vulkan_full_precision", "0") == "0":
+        return "rgba16f"
+    return "rgba32f"
+
+def vulkan_spv_shader_lib(name, spv_filegroup):
+    gen_aten_vulkan_spv_target = "//caffe2/tools:gen_aten_vulkan_spv_bin"
+    glslc_path = "//caffe2/fb/vulkan/dotslash:glslc"
+    if is_fbcode():
+        gen_aten_vulkan_spv_target = "//caffe2:gen_vulkan_spv_bin"
+        glslc_path = "//caffe2/fb/vulkan/tools:glslc"
+
+    genrule_cmd = [
+        "$(exe {})".format(gen_aten_vulkan_spv_target),
+        "--glsl-paths $(location {})".format(spv_filegroup),
+        "--output-path $OUT --env FLOAT_IMAGE_FORMAT={}".format(get_glsl_image_format()),
+        "--glslc-path=$(exe {})".format(glslc_path),
+        "--tmp-dir-path=$OUT",
+    ]
+
+    genrule_name = "gen_{}_cpp".format(name)
+    runtime.genrule(
+        name = genrule_name,
+        outs = {
+            "{}.cpp".format(name): ["spv.cpp"],
+        },
+        cmd = " ".join(genrule_cmd),
+        default_outs = ["."],
+        labels = ["uses_dotslash"],
+    )
+
+    runtime.cxx_library(
+        name = name,
+        srcs = [
+            ":{}[{}.cpp]".format(genrule_name, name),
+        ],
+        # Static initialization is used to register shaders to the global shader registry,
+        # therefore link_whole must be True to make sure unused symbols are not discarded.
+        # @lint-ignore BUCKLINT: Avoid `link_whole=True`
+        link_whole = True,
+        # Define a soname that can be used for dynamic loading in Java, Python, etc.
+        soname = "lib{}.$(ext)".format(name),
+        exported_deps = [
+            "//caffe2:torch_vulkan_api",
+        ],
+    )
 
 def define_common_targets():
     runtime.genrule(
@@ -38,6 +87,18 @@ def define_common_targets():
         ],
     )
 
+    runtime.filegroup(
+        name = "vulkan_graph_runtime_shaders",
+        srcs = subdir_glob([
+            ("runtime/graph/ops/glsl", "*"),
+        ]),
+    )
+
+    vulkan_spv_shader_lib(
+        name = "vulkan_graph_runtime_shaderlib",
+        spv_filegroup = ":vulkan_graph_runtime_shaders",
+    )
+
     runtime.cxx_library(
         name = "vulkan_graph_runtime",
         srcs = native.glob([
@@ -53,7 +114,7 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
         exported_deps = [
-            "//caffe2:torch_vulkan_spv",
+            ":vulkan_graph_runtime_shaderlib",
         ],
         define_static_target = False,
         # Static initialization is used to register operators to the global operator registry,

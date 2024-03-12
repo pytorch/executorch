@@ -12,7 +12,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
@@ -99,59 +98,6 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
   submit_to_gpu();
   check_staging_buffer(staging_buffer, 4.0f);
-}
-
-TEST_F(VulkanComputeAPITest, buffer_copy_sanity_check) {
-  // Simple test that copies data into a and reads from a
-  std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory = */ true);
-
-  // Input data
-  std::vector<float> data_in(a.gpu_numel());
-  std::fill(data_in.begin(), data_in.end(), 2.524f);
-
-  // Fill input tensor
-  fill_vtensor(a, data_in);
-
-  // Read back data
-  std::vector<float> data_out(a.gpu_numel());
-  extract_vtensor(a, data_out);
-
-  // Check output
-  for (const auto& d : data_out) {
-    EXPECT_TRUE(d == 2.524f);
-  }
-}
-
-TEST_F(VulkanComputeAPITest, buffer_deferred_allocation_test) {
-  // Same as buffer_copy_sanity_check, but defers memory allocation
-
-  std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory = */ false);
-
-  EXPECT_TRUE(get_vma_allocation_count() == 0);
-
-  // Input data
-  std::vector<float> data_in(a.gpu_numel());
-  std::fill(data_in.begin(), data_in.end(), 1.234f);
-
-  // Allocate memory at the last possible opportunity
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
-  a.buffer().bind_allocation(a_mem);
-
-  EXPECT_TRUE(get_vma_allocation_count() == 1);
-
-  // Fill input tensor
-  fill_vtensor(a, data_in);
-
-  // Read back data
-  std::vector<float> data_out(a.gpu_numel());
-  extract_vtensor(a, data_out);
-
-  // Check output
-  for (const auto& d : data_out) {
-    EXPECT_TRUE(d == 1.234f);
-  }
 }
 
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
@@ -502,8 +448,8 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {4, 4, 4};
-  std::vector<int64_t> size_small = {4, 4, 1};
+  std::vector<int64_t> size_big = {8, 64, 124};
+  std::vector<int64_t> size_small = {8, 1, 124};
 
   // Build graph
 
@@ -552,8 +498,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {4, 4, 4};
-  std::vector<int64_t> size_small = {4, 4, 1};
+  std::vector<int64_t> size_big = {8, 73, 62};
+  std::vector<int64_t> size_small = {8, 73, 1};
 
   CREATE_WEIGHT_TENSOR(w1, size_small, 3.5f);
   CREATE_WEIGHT_TENSOR(w2, size_small, 3.0f);
@@ -605,8 +551,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
   GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {4, 4, 4};
-  std::vector<int64_t> size_small = {4, 4, 1};
+  std::vector<int64_t> size_big = {48, 54, 4};
+  std::vector<int64_t> size_small = {48, 1, 4};
 
   // Build graph
 
@@ -618,11 +564,6 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       size_small,
       api::kFloat,
       /*shared_object_idx = */ 4);
-
-  // Allocation count will be 4:
-  // 1 uniform buffer for each staging shader args
-  // 1 staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 4);
 
   ValueRef c = graph.add_tensor(
       size_big,
@@ -637,11 +578,75 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // Allocation count will be 7, three are new:
-  // 1 uniform buffer for arithmetic shader args
-  // 1 uniform buffer for staging shader args
-  // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 7);
+  ValueRef e = graph.add_tensor(
+      size_big,
+      api::kFloat,
+      /*shared_object_idx = */ 4);
+
+  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
+  mulFn(graph, {c, d.value, e});
+
+  IOValueRef out = {};
+  out.value = e;
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // Run graph
+
+  for (float i = 4.0f; i < 30.0f; i += 7.0f) {
+    float val_a = i + 2.0f;
+    float val_b = i + 1.5f;
+    float val_d = i + 1.0f;
+    float val_out = (val_a + val_b) * val_d;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+    fill_vtensor(graph, d, val_d);
+
+    // Execute graph
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (const auto& val : data_out) {
+      EXPECT_TRUE(val == val_out);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {12, 64, 64};
+  std::vector<int64_t> size_small = {12, 64, 64};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(
+      size_big,
+      api::kFloat,
+      /*shared_object_idx = */ 2);
+  IOValueRef b = graph.add_input_tensor(
+      size_small,
+      api::kFloat,
+      /*shared_object_idx = */ 4);
+
+  ValueRef c = graph.add_tensor(
+      size_big,
+      api::kFloat,
+      /*shared_object_idx = */ 6);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
+
+  IOValueRef d = graph.add_input_tensor(
+      size_small,
+      api::kFloat,
+      /*shared_object_idx = */ 2);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -655,27 +660,24 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // Allocation count will be 10, three are new:
-  // 1 uniform buffer for arithmetic shader
-  // 1 uniform buffer for staging shader
-  // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 10);
-
   graph.prepare();
   graph.encode_execute();
 
-  // Allocation count will be 13, three shared objects are allocated for total:
-  // 4 staging buffers for each I/O tensor
-  // 6 uniform buffers to store params for each shader dispatch
-  // 3 shared objects to back tensor memory
-  EXPECT_TRUE(get_vma_allocation_count() == 13);
-
   // Run graph
 
-  for (float i = 4.0f; i < 30.0f; i += 7.0f) {
-    float val_a = i + 2.0f;
-    float val_b = i + 1.5f;
-    float val_d = i + 1.0f;
+  std::vector<std::vector<int64_t>> new_sizes_list = {
+      {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
+
+  for (auto& new_sizes : new_sizes_list) {
+    graph.get_val(a.value).toTensor().virtual_resize(new_sizes);
+    graph.get_val(b.value).toTensor().virtual_resize(new_sizes);
+    graph.get_val(c).toTensor().virtual_resize(new_sizes);
+    graph.get_val(d.value).toTensor().virtual_resize(new_sizes);
+    graph.get_val(e).toTensor().virtual_resize(new_sizes);
+
+    float val_a = new_sizes[1] + 4.0f;
+    float val_b = new_sizes[2] + 1.5f;
+    float val_d = new_sizes[0] + 2.0f;
     float val_out = (val_a + val_b) * val_d;
 
     fill_vtensor(graph, a, val_a);

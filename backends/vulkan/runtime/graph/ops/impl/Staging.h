@@ -22,21 +22,13 @@ void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
     const ValueRef out_tensor);
+
 void add_tensor_to_staging_node(
     ComputeGraph& graph,
     const ValueRef in_tensor,
     const ValueRef out_staging);
 
-struct StagingParams final {
-  api::utils::ivec3 extents;
-  int32_t plane_size;
-  api::utils::ivec2 channel_info;
-};
-
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
-
-// Expose for the Vulkan Compute API tests.
-StagingParams create_staging_params(const vTensor& t);
 
 } // namespace vulkan
 } // namespace native
