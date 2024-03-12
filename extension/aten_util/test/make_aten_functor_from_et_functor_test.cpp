@@ -8,6 +8,7 @@
 
 #include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
@@ -55,7 +56,7 @@ class MakeATenFunctorFromETFunctorTest : public ::testing::Test {
 };
 
 TEST_F(MakeATenFunctorFromETFunctorTest, Basic) {
-  auto function = WRAP(my_op_out, 1);
+  auto function = WRAP_TO_ATEN(my_op_out, 1);
   at::Tensor a = torch::tensor({1.0f});
   at::Tensor b = torch::tensor({2.0f});
   at::Tensor c = function(a, b);
@@ -63,10 +64,10 @@ TEST_F(MakeATenFunctorFromETFunctorTest, Basic) {
 }
 
 TORCH_LIBRARY(my_op, m) {
-  m.def("add_1.out", WRAP(add_1_out, 1));
+  m.def("add_1.out", WRAP_TO_ATEN(add_1_out, 1));
   m.def(
       "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor weight_zero_points, int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
-      WRAP(quantized_embedding_byte_out, 6));
+      WRAP_TO_ATEN(quantized_embedding_byte_out, 6));
 };
 
 TEST_F(MakeATenFunctorFromETFunctorTest, RegisterWrappedFunction) {

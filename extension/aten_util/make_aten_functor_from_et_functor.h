@@ -167,7 +167,7 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
 #define _WRAP_1(func) wrapper_impl<decltype(&func), func>::wrap
 
 #define GET_MACRO(_1, _2, NAME, ...) NAME
-#define WRAP(...) GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)
+#define WRAP_TO_ATEN(...) GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)
 
 } // namespace executor
 } // namespace torch

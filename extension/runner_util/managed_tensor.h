@@ -5,15 +5,15 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#pragma once
+
 
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #else
-#include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 #endif
+#pragma once
 
 #include <memory>
 #include <vector>
