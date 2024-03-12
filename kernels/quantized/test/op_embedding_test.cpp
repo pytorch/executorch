@@ -20,6 +20,7 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
+using exec_aten::optional;
 using exec_aten::RuntimeContext;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
@@ -149,6 +150,7 @@ TEST(OpQuantizedEmbeddingTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
+      optional<ScalarType>(),
       weight);
 
   embedding_out(
