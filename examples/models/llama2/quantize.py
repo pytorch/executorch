@@ -916,8 +916,9 @@ def linear_forward_8da4w(
     x, weight_int8, scales, zeros, out_features, group_size, precision
 ):
     x = per_token_dynamic_quant(x)
-    origin_x_size = x.size()
-    x = x.reshape(-1, origin_x_size[-1])
+    # TODO: verify and remove following reshape code
+    # origin_x_size = x.size()
+    # x = x.reshape(-1, origin_x_size[-1])
 
     # TODO: better API
     # weight_int8 = torch.ops.quantized_decomposed.unpack_int4_to_int8(weight_int4packed)
@@ -939,8 +940,8 @@ def linear_forward_8da4w(
     # w_dq = w_dq.to(torch.float16)
     c = torch.nn.functional.linear(x, w_dq)
 
-    new_shape = origin_x_size[:-1] + (out_features,)
-    c = c.reshape(new_shape)
+    # new_shape = origin_x_size[:-1] + (out_features,)
+    # c = c.reshape(new_shape)
 
     return c
 
@@ -1144,7 +1145,8 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         input = input.to(self.precision)
-        input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
+        # padding is removed for perf
+        # input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
         return linear_forward_8da4w(
             input,
             self.weight,
@@ -1387,6 +1389,10 @@ class Int8DynActInt4WeightGPTQQuantHandler(GPTQQuantHandler):
 
     def convert_for_runtime(self, model):
         replace_linear_8da4w(
-            model, self.groupsize, self.inner_k_tiles, self.padding_allowed
+            model,
+            self.groupsize,
+            self.padding_allowed,
+            torch.int8,
+            self.precision,
         )
         return model
