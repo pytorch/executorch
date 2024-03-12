@@ -248,9 +248,8 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
         # Need to dequant back to FP32 for running comparison with Torch output
         if profile is TosaProfile.BI:
             tosa_output = (
-                (tosa_output - output_quantization_zp)
-                * output_quantization_scale
-            )
+                tosa_output - output_quantization_zp
+            ) * output_quantization_scale
 
     ## Read the Torch Output
     torch_file = open(TORCH_OUT_PATH + "/torch_output.npy", "rb")

@@ -31,30 +31,84 @@ seed = 42
 torch.manual_seed(seed)
 test_data_suite = [
     # (test_name, test_data, out_features)
-    ("model_linear_rank1_zeros", torch.zeros(10, 10), 10,),
-    ("model_linear_rank1_ones", torch.ones(10, 10), 10,),
-    ("model_linear_rank1_negative_ones", torch.ones(10, 10) * (-1), 10,),
-    ("model_linear_rank1_rand", torch.rand(10, 10), 10,),
-    ("model_linear_rank1_negative_large_rand", torch.rand(10, 10) * (-100), 10,),
-    ("model_linear_rank1_large_randn", torch.randn(10, 10) * 100, 10,),
-    ("model_linear_rank4_zeros", torch.zeros(5, 10, 25, 20), 30,),
-    ("model_linear_rank4_ones", torch.ones(5, 10, 25, 20), 30,),
-    ("model_linear_rank4_negative_ones", torch.ones(5, 10, 25, 20) * (-1), 30,),
-    ("model_linear_rank4_rand", torch.rand(5, 10, 25, 20), 30,),
-    ("model_linear_rank4_negative_large_rand", torch.rand(5, 10, 25, 20) * (-100), 30,),
-    ("model_linear_rank4_large_randn", torch.randn(5, 10, 25, 20) * 100, 30,),
+    (
+        "model_linear_rank1_zeros",
+        torch.zeros(10, 10),
+        10,
+    ),
+    (
+        "model_linear_rank1_ones",
+        torch.ones(10, 10),
+        10,
+    ),
+    (
+        "model_linear_rank1_negative_ones",
+        torch.ones(10, 10) * (-1),
+        10,
+    ),
+    (
+        "model_linear_rank1_rand",
+        torch.rand(10, 10),
+        10,
+    ),
+    (
+        "model_linear_rank1_negative_large_rand",
+        torch.rand(10, 10) * (-100),
+        10,
+    ),
+    (
+        "model_linear_rank1_large_randn",
+        torch.randn(10, 10) * 100,
+        10,
+    ),
+    (
+        "model_linear_rank4_zeros",
+        torch.zeros(5, 10, 25, 20),
+        30,
+    ),
+    (
+        "model_linear_rank4_ones",
+        torch.ones(5, 10, 25, 20),
+        30,
+    ),
+    (
+        "model_linear_rank4_negative_ones",
+        torch.ones(5, 10, 25, 20) * (-1),
+        30,
+    ),
+    (
+        "model_linear_rank4_rand",
+        torch.rand(5, 10, 25, 20),
+        30,
+    ),
+    (
+        "model_linear_rank4_negative_large_rand",
+        torch.rand(5, 10, 25, 20) * (-100),
+        30,
+    ),
+    (
+        "model_linear_rank4_large_randn",
+        torch.randn(5, 10, 25, 20) * 100,
+        30,
+    ),
 ]
+
 
 class TestLinear(unittest.TestCase):
     class Linear(torch.nn.Module):
-        def __init__(self,
-                    in_features: int,
-                    out_features: int = 3,
-                    bias: bool = True,):
+        def __init__(
+            self,
+            in_features: int,
+            out_features: int = 3,
+            bias: bool = True,
+        ):
             super().__init__()
-            self.fc = torch.nn.Linear(in_features=in_features,
-                                    out_features=out_features,
-                                    bias=bias,)
+            self.fc = torch.nn.Linear(
+                in_features=in_features,
+                out_features=out_features,
+                bias=bias,
+            )
+
         def forward(self, x):
             return self.fc(x)
 
@@ -62,10 +116,11 @@ class TestLinear(unittest.TestCase):
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         tester = (
-            ArmTester(module,
-               inputs=test_data,
-               profile=TosaProfile.MI,
-               backend=ArmBackendSelector.TOSA,
+            ArmTester(
+                module,
+                inputs=test_data,
+                profile=TosaProfile.MI,
+                backend=ArmBackendSelector.TOSA,
             )
             .export()
             .check_count({"torch.ops.aten.addmm.default": 1})
@@ -86,10 +141,11 @@ class TestLinear(unittest.TestCase):
         self, module: torch.nn.Module, test_data: Tuple[torch.Tensor]
     ):
         tester = (
-            ArmTester(module,
-               inputs=test_data,
-               profile=TosaProfile.BI,
-               backend=ArmBackendSelector.TOSA,
+            ArmTester(
+                module,
+                inputs=test_data,
+                profile=TosaProfile.BI,
+                backend=ArmBackendSelector.TOSA,
             )
             .quantize()
             .export()
@@ -128,35 +184,49 @@ class TestLinear(unittest.TestCase):
         )
 
     @parameterized.expand(test_data_suite)
-    def test_linear_tosa_MI(self,
-                            test_name: str,
-                            test_data: torch.Tensor,
-                            out_features: int,):
+    def test_linear_tosa_MI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        out_features: int,
+    ):
         in_features = test_data.shape[-1]
         test_data = (test_data,)
-        self._test_linear_tosa_MI_pipeline(self.Linear(in_features=in_features,
-                                                       out_features=out_features,),
-                                                        test_data,)
+        self._test_linear_tosa_MI_pipeline(
+            self.Linear(
+                in_features=in_features,
+                out_features=out_features,
+            ),
+            test_data,
+        )
 
     @parameterized.expand(test_data_suite)
-    def test_linear_tosa_BI(self,
-                            test_name: str,
-                            test_data: torch.Tensor,
-                            out_features: int,):
+    def test_linear_tosa_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        out_features: int,
+    ):
         in_features = test_data.shape[-1]
         test_data = (test_data,)
-        self._test_linear_tosa_BI_pipeline(self.Linear(in_features=in_features,
-                                                       out_features=out_features),
-                                                       test_data)
+        self._test_linear_tosa_BI_pipeline(
+            self.Linear(in_features=in_features, out_features=out_features), test_data
+        )
 
     @parameterized.expand(test_data_suite)
     @unittest.skip("This does not work as of now")
-    def test_linear_tosa_u55_BI(self,
-                                test_name: str,
-                                test_data: torch.Tensor,
-                                out_features: int,):
+    def test_linear_tosa_u55_BI(
+        self,
+        test_name: str,
+        test_data: torch.Tensor,
+        out_features: int,
+    ):
         in_features = test_data.shape[-1]
         test_data = (test_data,)
-        self._test_linear_tosa_u55_BI_pipeline(self.Linear(in_features=in_features,
-                                                           out_features=out_features,),
-                                                           test_data)
+        self._test_linear_tosa_u55_BI_pipeline(
+            self.Linear(
+                in_features=in_features,
+                out_features=out_features,
+            ),
+            test_data,
+        )

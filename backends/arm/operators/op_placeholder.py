@@ -41,9 +41,7 @@ def process_placeholder(
             int8_max = np.iinfo(np.int8).max
             int8_min = np.iinfo(np.int8).min
             parameter_values_quantized = (
-                (
-                    (parameter_values / weight_node_scale.number) + weight_node_zp.number
-                )
+                ((parameter_values / weight_node_scale.number) + weight_node_zp.number)
                 .round()
                 .clip(int8_min, int8_max)
                 .astype(np.int8)
@@ -70,8 +68,10 @@ def process_placeholder(
             weight_node_scale, weight_node_zp = get_quant_node_args(weight_node)
 
             bias_values_quantized = (
-                parameter_values / (input_node_scale * weight_node_scale)
-            ).round().astype(np.int32)
+                (parameter_values / (input_node_scale * weight_node_scale))
+                .round()
+                .astype(np.int32)
+            )
 
             tosa_graph.addConst(
                 inputs[0].shape,
@@ -94,9 +94,7 @@ def process_placeholder(
 
             bias_scales = input_node_scale * weight_node_scale
             parameter_values_quantized = (
-                (parameter_values / bias_scales)
-                .round()
-                .astype(np.int32)
+                (parameter_values / bias_scales).round().astype(np.int32)
             )
 
             tosa_graph.addConst(
