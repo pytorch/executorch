@@ -4,6 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from typing import Optional
+
 import torch
 from torch.library import impl, impl_abstract
 
@@ -62,19 +64,17 @@ def embedding_byte_weight_checks(weight, weight_scales, weight_zero_points):
     assert weight_zero_points is None or weight_zero_points.size(0) == weight.size(
         0
     ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and {weight_zero_points.size()}"
-    if not weight_zero_points:
-        weight_zero_points = torch.zeros(weight.size(0))
 
 
 @impl(quantized_lib, "embedding_byte", "CompositeExplicitAutograd")
-def embedding_byte_meta(
-    weight,
-    weight_scales,
-    weight_zero_points,
-    weight_quant_min,
-    weight_quant_max,
-    indices,
-):
+def embedding_byte(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+) -> torch.Tensor:
     embedding_byte_weight_checks(weight, weight_scales, weight_zero_points)
     weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
         weight,
@@ -90,15 +90,15 @@ def embedding_byte_meta(
 
 @impl_abstract("llama_quantized::embedding_byte.out")
 def embedding_byte_out_meta(
-    weight,
-    weight_scales,
-    weight_zero_points,
-    weight_quant_min,
-    weight_quant_max,
-    indices,
-    out,
-):
-    return embedding_byte_meta(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return embedding_byte(
         weight,
         weight_scales,
         weight_zero_points,
@@ -109,16 +109,16 @@ def embedding_byte_out_meta(
 
 
 @impl(quantized_lib, "embedding_byte.dtype", "CompositeExplicitAutograd")
-def embedding_byte_dtype_meta(
-    weight,
-    weight_scales,
-    weight_zero_points,
-    weight_quant_min,
-    weight_quant_max,
-    indices,
+def embedding_byte_dtype(
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
     *,
-    dtype,
-):
+    dtype: Optional[torch.dtype] = None,
+) -> torch.Tensor:
     embedding_byte_weight_checks(weight, weight_scales, weight_zero_points)
     weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
         weight,
@@ -134,17 +134,17 @@ def embedding_byte_dtype_meta(
 
 @impl_abstract("llama_quantized::embedding_byte.dtype_out")
 def embedding_byte_dtype_out_meta(
-    weight,
-    weight_scales,
-    weight_zero_points,
-    weight_quant_min,
-    weight_quant_max,
-    indices,
+    weight: torch.Tensor,
+    weight_scales: torch.Tensor,
+    weight_zero_points: Optional[torch.Tensor],
+    weight_quant_min: int,
+    weight_quant_max: int,
+    indices: torch.Tensor,
     *,
-    dtype,
-    out,
-):
-    return embedding_byte_dtype_meta(
+    dtype: Optional[torch.dtype] = None,
+    out: torch.Tensor,
+) -> torch.Tensor:
+    return embedding_byte_dtype(
         weight,
         weight_scales,
         weight_zero_points,
