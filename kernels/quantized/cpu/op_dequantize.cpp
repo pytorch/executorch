@@ -33,6 +33,7 @@ void check_dequantize_per_tensor_args(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType>& out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
@@ -47,10 +48,11 @@ void check_dequantize_per_tensor_args(
       "input.scalar_type() %" PRId8 " is not matching dtype argumenta:",
       static_cast<int8_t>(input.scalar_type()));
 
-  ET_CHECK_MSG(
-      out.scalar_type() == ScalarType::Float,
-      "out.scalar_type() %" PRId8 " is not supported:",
-      static_cast<int8_t>(out.scalar_type()));
+  if (out_dtype.has_value()) {
+    ET_CHECK_MSG(
+        out.scalar_type() == out_dtype.value(),
+        "output_dtype must match the dtype of the out tensor");
+  }
 
   ET_CHECK_MSG(
       quant_min <= quant_max,
@@ -77,13 +79,15 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
       "Failed to resize out Tensor in dequantize_per_tensor_out");
 
-  check_dequantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  check_dequantize_per_tensor_args(
+      input, quant_min, quant_max, dtype, out_dtype, out);
 
   // calculate the dequantized output, cast scale to float to match fbgemm
   // behavior
@@ -128,6 +132,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
@@ -153,6 +158,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
       quant_min,
       quant_max,
       dtype,
+      out_dtype,
       out);
   return out;
 }
@@ -165,6 +171,7 @@ Tensor& dequantize_per_channel_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   torch::executor::Error err = resize_tensor(out, input.sizes());
 
@@ -205,7 +212,8 @@ Tensor& dequantize_per_channel_out(
       ssize_t(zero_point.numel()),
       ssize_t(input.size(axis)));
 
-  check_dequantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  check_dequantize_per_tensor_args(
+      input, quant_min, quant_max, dtype, out_dtype, out);
 
   // a list contains all dimensions except axis
   int64_t dims[input.dim() - 1];
@@ -281,10 +289,19 @@ Tensor& dequantize_per_channel_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   (void)context;
   return dequantize_per_channel_out(
-      input, scale, zero_point, axis, quant_min, quant_max, dtype, out);
+      input,
+      scale,
+      zero_point,
+      axis,
+      quant_min,
+      quant_max,
+      dtype,
+      out_dtype,
+      out);
 }
 
 Tensor& dequantize_per_tensor_out(
@@ -295,12 +312,13 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   (void)context;
   return dequantize_per_tensor_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out);
+      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
 }
 
 Tensor& dequantize_per_tensor_tensor_args_out(
@@ -311,12 +329,13 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   (void)context;
   return dequantize_per_tensor_tensor_args_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out);
+      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
 }
 
 } // namespace native
