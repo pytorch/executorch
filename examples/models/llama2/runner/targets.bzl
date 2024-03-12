@@ -29,6 +29,7 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
+                "//executorch/backends/vulkan:vulkan_backend_lib",
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
                 "//executorch/examples/models/llama2/tokenizer:tokenizer",
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
