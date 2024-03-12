@@ -55,3 +55,6 @@
 [submodule "backends/vulkan/third-party/Vulkan-Headers"]
 	path = backends/vulkan/third-party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "examples/third-party/llama.cpp"]
+	path = examples/third-party/llama.cpp
+	url = https://github.com/ggerganov/llama.cpp.git
