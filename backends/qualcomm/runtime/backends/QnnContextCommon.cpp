@@ -7,6 +7,7 @@
  */
 
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
+#include "HTP/QnnHtpContext.h"
 namespace torch {
 namespace executor {
 namespace qnn {
@@ -28,16 +29,34 @@ QnnContext::~QnnContext() {
   }
 }
 
-Error QnnContext::Configure() {
+Error QnnContext::Configure(int spill_fill_size) {
   // create qnn context
   const QnnInterface& qnn_interface = implementation_.GetQnnInterface();
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
-
   std::vector<const QnnContext_Config_t*> temp_context_config;
   ET_CHECK_OR_RETURN_ERROR(
       MakeConfig(temp_context_config) == Error::Ok,
       Internal,
       "Fail to make context config.");
+
+  if (spill_fill_size > 0) {
+    QnnHtpContext_CustomConfig_t context_config;
+    QnnHtpContext_GroupRegistration_t group_config{nullptr};
+    if (m_sf_handle == nullptr) {
+      group_config.firstGroupHandle = nullptr;
+    } else {
+      group_config.firstGroupHandle = m_sf_handle;
+    }
+    group_config.maxSpillFillBuffer = spill_fill_size;
+    context_config.groupRegistration = group_config;
+
+    QnnContext_Config_t** context_config_ptr{nullptr};
+    uint32_t num_context = 1;
+    context_config_ptr[0] = (QnnContext_Config_t*) malloc(num_context * sizeof(QnnContext_Config_t*));
+    context_config_ptr[0]->option = QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    context_config_ptr[0]->customConfig = reinterpret_cast<QnnContext_CustomConfig_t>(&context_config);
+    temp_context_config.push_back(context_config_ptr[0]);
+  }
 
   if (cache_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     const QnnExecuTorchContextBinary& qnn_context_blob =
@@ -77,6 +96,9 @@ Error QnnContext::Configure() {
   } else {
     QNN_EXECUTORCH_LOG_ERROR("QNN context cache is invalid.");
     return Error::Internal;
+  }
+  if (spill_fill_size > 0 && m_sf_handle == nullptr) {
+     m_sf_handle = handle_;
   }
   return Error::Ok;
 }
