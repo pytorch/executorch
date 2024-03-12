@@ -84,7 +84,11 @@ say "Installing MPS Backend Requirements"
 
 say "Installing Python Bindings"
 
-EXECUTORCH_BUILD_PYBIND=ON CMAKE_ARGS="-DPYBIND_LINK_COREML=ON -DPYBIND_LINK_MPS=ON -DPYBIND_LINK_XNNPACK=ON -DBUCK2=$(pwd)/$BUCK2" pip install . --no-build-isolation
+EXECUTORCH_BUILD_PYBIND=ON \
+BUCK="$(pwd)/$BUCK2" \
+CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
+CMAKE_BUILD_PARALLEL_LEVEL=9 \
+pip install . --no-build-isolation -v
 
 say "Exporting Models"
 
@@ -103,7 +107,7 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
 
 say "Building Frameworks"
 
-./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --Release --coreml --mps --xnnpack
+./build/build_apple_frameworks.sh --buck2="$(realpath $BUCK2)" --coreml --mps --portable --xnnpack
 mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"

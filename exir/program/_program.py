@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
+import io
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
@@ -12,6 +13,7 @@ import torch
 import torch._export
 
 from executorch.exir._serialize import _serialize_pte_binary
+from executorch.exir._serialize._cord import Cord
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
@@ -409,6 +411,7 @@ class ExecutorchProgram:
                 "Need to call prog.to_edge prior to constructing ExecutorchProgram."
             )
         self.exported_program = exir_exported_program.exported_program
+        self._pte_data: Optional[Cord] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -418,10 +421,9 @@ class ExecutorchProgram:
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
 
-    @property
-    def buffer(self) -> bytes:
-        if self._buffer is None:
-            self._buffer = _serialize_pte_binary(
+    def _get_pte_data(self) -> Cord:
+        if self._pte_data is None:
+            self._pte_data = _serialize_pte_binary(
                 program=self.program,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
@@ -429,6 +431,20 @@ class ExecutorchProgram:
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
             )
+        return self._pte_data
+
+    @property
+    def buffer(self) -> bytes:
+        """Returns the serialized ExecuTorch binary as a byte string.
+
+        Note that the call to `buffer` may allocate a very large amount of
+        contiguous memory, depending on the model size. If writing to a file,
+        use `write_to_file` which won't incur additional copies.
+        """
+        # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
+        # amounts of memory longer than necessary.
+        if self._buffer is None:
+            self._buffer = bytes(self._get_pte_data())
         return self._buffer
 
     @property
@@ -463,6 +479,14 @@ class ExecutorchProgram:
 
     def dump_exported_program(self) -> ExportedProgram:
         return self.exported_program
+
+    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
+        """
+        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
+        `buffer`, as it writes to file without copying into a contiguous block of memory first,
+        reducing the peak memory usage.
+        """
+        self._get_pte_data().write_to_file(open_file)
 
 
 def _get_aten_to_edge_passes(config: EdgeCompileConfig):
@@ -720,6 +744,7 @@ class MultiMethodExecutorchProgram:
         delegate_alignment: Optional[int] = None,
         prim_getters: Optional[Dict[str, Any]] = None,
     ) -> None:
+        self._pte_data: Optional[Cord] = None
         self._buffer: Optional[bytes] = None
         temp: Dict[str, ExportedProgram] = {}
         for name, prog in executorch_dialect_program.methods().items():
@@ -737,10 +762,9 @@ class MultiMethodExecutorchProgram:
         self._delegate_alignment: Optional[int] = delegate_alignment
         self._prim_getter_cache = prim_getters
 
-    @property
-    def buffer(self) -> bytes:
-        if self._buffer is None:
-            self._buffer = _serialize_pte_binary(
+    def _get_pte_data(self) -> Cord:
+        if self._pte_data is None:
+            self._pte_data = _serialize_pte_binary(
                 program=self._emitter_output.program,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
@@ -748,6 +772,20 @@ class MultiMethodExecutorchProgram:
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
             )
+        return self._pte_data
+
+    @property
+    def buffer(self) -> bytes:
+        """Returns the serialized ExecuTorch binary as a byte string.
+
+        Note that the call to `buffer` may allocate a very large amount of
+        contiguous memory, depending on the model size. If writing to a file,
+        use `write_to_file` which won't incur additional copies.
+        """
+        # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
+        # amounts of memory longer than necessary.
+        if self._buffer is None:
+            self._buffer = bytes(self._get_pte_data())
         return self._buffer
 
     @property
@@ -772,6 +810,14 @@ class MultiMethodExecutorchProgram:
 
     def get_multi_method_graph_module(self) -> "MultiMethodExirExportedProgram":
         return self._executorch_dialect_ir_program
+
+    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
+        """
+        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
+        `buffer`, as it writes to file without copying into a contiguous block of memory first,
+        reducing the peak memory usage.
+        """
+        self._get_pte_data().write_to_file(open_file)
 
 
 # TODO(T152006915): Merge this into to_executorch and then delete it.
@@ -1116,8 +1162,8 @@ class ExecutorchProgramManager:
             self._config_methods,
         )
 
-        # Serialize emitter output to a buffer
-        self._buffer: bytes = _serialize_pte_binary(
+        # Serialize emitter output, ready to be written to a file.
+        self._pte_data: Cord = _serialize_pte_binary(
             program=self._emitter_output.program,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
@@ -1125,6 +1171,7 @@ class ExecutorchProgramManager:
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,
         )
+        self._buffer: Optional[bytes] = None
 
     @property
     def methods(self) -> Set[str]:
@@ -1179,7 +1226,22 @@ class ExecutorchProgramManager:
 
     @property
     def buffer(self) -> bytes:
+        """Returns the serialized ExecuTorch binary as a byte string.
+
+        Note that the call to `buffer` may allocate a very large amount of
+        contiguous memory, depending on the model size. If writing to a file,
+        use `write_to_file` which won't incur additional copies.
         """
-        Returns a buffer containing the serialized ExecuTorch binary.
-        """
+        # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
+        # amounts of memory longer than necessary.
+        if self._buffer is None:
+            self._buffer = bytes(self._pte_data)
         return self._buffer
+
+    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
+        """
+        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
+        `buffer`, as it writes to file without copying into a contiguous block of memory first,
+        reducing the peak memory usage.
+        """
+        self._pte_data.write_to_file(open_file)

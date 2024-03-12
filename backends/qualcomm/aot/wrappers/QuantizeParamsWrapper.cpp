@@ -34,9 +34,8 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
         quantization.scaleOffsetEncoding.scale,
         quantization.scaleOffsetEncoding.offset);
   } else {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] Unknown the encoding of quantization: %d",
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Unknown the encoding of quantization: %d",
         quantization.quantizationEncoding);
   }
 

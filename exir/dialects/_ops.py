@@ -72,7 +72,6 @@ def bind_pattern_to_op(library: Library, schema_or_name: str):
 
 
 class _OpNamespace(types.ModuleType):
-
     """
     EXIR Dialect op namespace object. Contains ops and overloads registered into PyTorch dispatcher.
     """

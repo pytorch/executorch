@@ -4,12 +4,8 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import enum
-import sys
-
 from typing import List, Tuple
 
-import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 import executorch.exir as exir
 
 import torch
@@ -31,17 +27,29 @@ from executorch.backends.qualcomm.passes.convert_interpolate_with_upsample2d imp
 from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.fold_qdq import FoldQDQ
 from executorch.backends.qualcomm.passes.i64_to_i32 import I64toI32
+from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
+from executorch.backends.qualcomm.passes.recompose_pixel_shuffle import (
+    RecomposePixelShuffle,
+)
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
+from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+    _soc_info_table,
+    QcomChipset,
+    QnnExecuTorchBackendType,
+    QnnExecuTorchHtpPdSession,
+    QnnExecuTorchHtpPerformanceMode,
+    QnnExecuTorchHtpPrecision,
+    QnnExecuTorchLogLevel,
+    QnnExecuTorchOptions,
+)
+from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
+    convert_to_flatbuffer,
+)
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.fx import passes
 
-
-class SoCModel(enum.Enum):
-    SM8450 = 1
-    SM8475 = 2
-    SM8550 = 3
-    SM8650 = 4
+QNN_COMPILE_SPEC = "qnn_compile_spec"
 
 
 def qnn_capture_config():
@@ -56,6 +64,8 @@ def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
 ) -> exir.ExirExportedProgram:
+    # TODO: should switch to torch.export.export & custom deomposition
+    #       to reduce maintaining effort.
     exir_exported_program = exir.capture(
         module,
         inputs,
@@ -72,6 +82,7 @@ def capture_program(
     edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
+    RecomposePixelShuffle()(graph_module)
     ConvertToLinear()(graph_module)
     ConvertHardsigmoid()(graph_module)
     ConvertHardswish()(graph_module)
@@ -82,6 +93,7 @@ def capture_program(
     AnnotateAndQuantScalar(edge_program)(graph_module)
     AnnotateDecomposed(edge_program)(graph_module)
     FoldQDQ()(graph_module)
+    InsertRequantize(edge_program)(graph_module)
     LayoutTransform(edge_program)(graph_module)
     return ex_prog
 
@@ -94,54 +106,23 @@ def draw_graph(title, path, graph_module: torch.fx.GraphModule):
 
 def generate_qnn_executorch_option(
     compiler_specs: List[CompileSpec],
-) -> PyQnnManager.QnnExecuTorchHtpBackendOptions:
-    option = PyQnnManager.QnnExecuTorchOptionsDefault()
-    option.graph_name = "executorch"
-    option.htp_options.pd_session = (
-        PyQnnManager.QnnExecuTorchHtpPdSession.kHtpUnsignedPd
-    )
-    option.htp_options.use_conv_hmx = True
-    option.htp_options.use_fold_relu = True
+) -> bytes:
     for compiler_spec in compiler_specs:
-        if compiler_spec.key == "backend_type":
-            option.backend_type = PyQnnManager.QnnExecuTorchBackendType(
-                int.from_bytes(compiler_spec.value, sys.byteorder)
-            )
-        elif compiler_spec.key == "htp_precision":
-            option.htp_options.precision = PyQnnManager.QnnExecuTorchHtpPrecision(
-                int.from_bytes(compiler_spec.value, sys.byteorder)
-            )
-        elif compiler_spec.key == "log_level":
-            option.log_level = PyQnnManager.QnnExecuTorchLogLevel(
-                int.from_bytes(compiler_spec.value, sys.byteorder)
-            )
-        elif compiler_spec.key == "online_prepare":
-            option.online_prepare = bool.from_bytes(compiler_spec.value, sys.byteorder)
-        elif compiler_spec.key == "library_path":
-            option.library_path = compiler_spec.value.decode("utf-8")
-        elif compiler_spec.key == "htp_performance_mode":
-            option.htp_options.performance_mode = (
-                PyQnnManager.QnnExecuTorchHtpPerformanceMode(
-                    int.from_bytes(compiler_spec.value, sys.byteorder)
-                )
-            )
-        elif compiler_spec.key == "htp_soc_model":
-            option.htp_options.soc_model = PyQnnManager.QcomChipset(
-                int.from_bytes(compiler_spec.value, sys.byteorder)
-            )
+        if compiler_spec.key == QNN_COMPILE_SPEC:
+            qnn_compile_spec_buffer = compiler_spec.value
         else:
             raise ValueError(f"unknown compiler spec key value: {compiler_spec.key}")
-
-    return option
+    return qnn_compile_spec_buffer
 
 
 # TODO: refactor this for supporting other backends
 def generate_qnn_executorch_compiler_spec(
     is_fp16: bool,
-    soc_model: SoCModel,
+    soc_model: QcomChipset,
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
+    tensor_dump_output_path: str = "",
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -151,75 +132,71 @@ def generate_qnn_executorch_compiler_spec(
             Note that not all SoC support QNN HTP fp16. Only premium tier SoC
             like Snapdragon 8 Gen 1 or newer can support HTP fp16.
         soc_model: The SoC you plan to run the compiled model. Please check
-            SocModel in for supported SoC.
+            QcomChipset for supported SoC.
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
+            SM8650(Snapdragon 8 Gen 3)
         online_prepare: Compose QNN graph on device if set to True
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
         saver: Instead of compiling the model, run QNN Saver. Please check
             documents of Qualcomm AI Engine Direct SDK. This feature is usually
             for debugging purpose.
+        tensor_dump_output_path: If a path is given, Delegate would write
+            outputs of each OP there in runtime. In ALL cases,
+            we don't recommend to set this option. This option exist just
+            for debugging some accuracy issues.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
 
     Raises:
-        ValueError: The value SoCModel is currently not supported.
+        ValueError: The value QcomChipset is currently not supported.
     """
-
-    supported_soc_models = {
-        SoCModel.SM8450: PyQnnManager.QcomChipset.SM8450,
-        SoCModel.SM8475: PyQnnManager.QcomChipset.SM8475,
-        SoCModel.SM8550: PyQnnManager.QcomChipset.SM8550,
-        SoCModel.SM8650: PyQnnManager.QcomChipset.SM8650,
-    }
-    backend_type = CompileSpec(
-        "backend_type", bytes([PyQnnManager.QnnExecuTorchBackendType.kHtpBackend])
+    qnn_executorch_options = QnnExecuTorchOptions()
+    qnn_executorch_options.backend_type = QnnExecuTorchBackendType.kHtpBackend
+    qnn_executorch_options.graph_name = "executorch"
+    qnn_executorch_options.htp_options.pd_session = (
+        QnnExecuTorchHtpPdSession.kHtpUnsignedPd
     )
+    qnn_executorch_options.htp_options.use_conv_hmx = True
+    qnn_executorch_options.htp_options.use_fold_relu = True
 
     if is_fp16:
-        htp_precision = CompileSpec(
-            "htp_precision", bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpFp16])
+        qnn_executorch_options.htp_options.precision = (
+            QnnExecuTorchHtpPrecision.kHtpFp16
         )
     else:
-        htp_precision = CompileSpec(
-            "htp_precision",
-            bytes([PyQnnManager.QnnExecuTorchHtpPrecision.kHtpQuantized]),
+        qnn_executorch_options.htp_options.precision = (
+            QnnExecuTorchHtpPrecision.kHtpQuantized
         )
 
     if debug:
-        log_level = CompileSpec(
-            "log_level", bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelDebug])
-        )
+        qnn_executorch_options.log_level = QnnExecuTorchLogLevel.kLogLevelDebug
     else:
-        log_level = CompileSpec(
-            "log_level", bytes([PyQnnManager.QnnExecuTorchLogLevel.kLogLevelWarn])
-        )
+        qnn_executorch_options.log_level = QnnExecuTorchLogLevel.kLogLevelWarn
 
     # This actually is not an option which can affect the compiled blob.
     # But we don't have other place to pass this option at execution stage.
-    htp_performance_mode = CompileSpec(
-        "htp_performance_mode",
-        bytes([PyQnnManager.QnnExecuTorchHtpPerformanceMode.kHtpBurst]),
+    qnn_executorch_options.htp_options.performance_mode = (
+        QnnExecuTorchHtpPerformanceMode.kHtpBurst
     )
 
-    compiler_spec = [backend_type, htp_precision, log_level, htp_performance_mode]
-
-    if soc_model not in supported_soc_models:
+    _supported_soc_models = {soc_model.value for soc_model in QcomChipset}
+    if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
     else:
-        compiler_spec.append(
-            CompileSpec("htp_soc_model", bytes([supported_soc_models[soc_model]]))
-        )
+        qnn_executorch_options.soc_info = _soc_info_table[soc_model]
 
     if saver:
-        library_path = CompileSpec(
-            "library_path", bytes("libQnnSaver.so", encoding="utf-8")
-        )
-        compiler_spec.append(library_path)
+        qnn_executorch_options.library_path = "libQnnSaver.so"
 
-    compiler_spec.append(CompileSpec("online_prepare", bytes([online_prepare])))
+    if len(tensor_dump_output_path.strip()) != 0:
+        qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
 
-    return compiler_spec
+    if online_prepare:
+        qnn_executorch_options.online_prepare = True
+    return [
+        CompileSpec(QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options))
+    ]

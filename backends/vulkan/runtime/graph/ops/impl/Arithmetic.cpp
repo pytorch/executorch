@@ -8,91 +8,88 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
 
-#include <ATen/native/vulkan/impl/Common.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/ScalarUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
 
+#define DEFINE_ARITHMETIC_WITH_ALPHA_FN(function, shader)                 \
+  void function(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_arithmetic_node(                                           \
+        graph, args[0], args[1], args[2], args[3], VK_KERNEL(shader));    \
+  }
+
+#define DEFINE_ARITHMETIC_FN(function, shader)                                \
+  void function(ComputeGraph& graph, const std::vector<ValueRef>& args) {     \
+    return add_arithmetic_node(                                               \
+        graph, args[0], args[1], kDummyValueRef, args[2], VK_KERNEL(shader)); \
+  }
+
+DEFINE_ARITHMETIC_WITH_ALPHA_FN(add, add);
+DEFINE_ARITHMETIC_WITH_ALPHA_FN(sub, sub);
+
+// Floor div does not have an alpha, but a string argument (which is unused) is
+// passed in at the same location as the alpha argument in other op.
+DEFINE_ARITHMETIC_WITH_ALPHA_FN(floor_div, floor_divide);
+
+DEFINE_ARITHMETIC_FN(mul, mul);
+DEFINE_ARITHMETIC_FN(div, div);
+DEFINE_ARITHMETIC_FN(pow, pow);
+
 void add_arithmetic_node(
     ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
+    const ValueRef in1,
+    const ValueRef in2,
+    const ValueRef alpha,
     const ValueRef out,
-    const float alpha,
-    const arithmetic::OpType optype) {
-  // Prepacking first arg (if needed)
-  ValueRef arg1 = t1;
-  if (graph.get_val(t1).isTensorRef()) {
-    TensorRef& t1_asref = graph.get_val(t1).toTensorRef();
-    ValueRef t1_vten = graph.add_tensor(t1_asref.sizes, t1_asref.dtype);
-    graph.prepack_nodes().emplace_back(new ArithmeticPrepack(t1, t1_vten));
-    arg1 = t1_vten;
+    const api::ShaderInfo& shader) {
+  ValueRef arg1 = prepack_if_tensor_ref(graph, in1);
+  ValueRef arg2 = prepack_if_tensor_ref(graph, in2);
+
+  vTensor& t_in1 = graph.get_val(arg1).toTensor();
+  vTensor& t_in2 = graph.get_val(arg2).toTensor();
+  vTensor& t_out = graph.get_val(out).toTensor();
+
+  api::utils::uvec3 global_size = t_out.extents();
+  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+
+  float alpha_val = 1.0f;
+  // String is checked since floor_div passes in an unused string argument in
+  // place of alpha
+  if (is_valid(alpha) && !graph.get_val(alpha).isString()) {
+    alpha_val = extract_scalar<float>(graph.get_val(alpha));
   }
-  VK_CHECK_COND(graph.get_val(arg1).isTensor());
-  // Prepacking second arg (if needed)
-  ValueRef arg2 = t2;
-  if (graph.get_val(t2).isTensorRef()) {
-    TensorRef& t2_asref = graph.get_val(t2).toTensorRef();
-    ValueRef t2_vten = graph.add_tensor(t2_asref.sizes, t2_asref.dtype);
-    graph.prepack_nodes().emplace_back(new ArithmeticPrepack(t2, t2_vten));
-    arg2 = t2_vten;
-  }
-  VK_CHECK_COND(graph.get_val(arg2).isTensor());
 
-  graph.execute_nodes().emplace_back(
-      new ArithmeticNode(arg1, arg2, out, alpha, optype));
+  ArithmeticParams block{
+      get_size_as_ivec4(t_out),
+      get_size_as_ivec4(t_in1),
+      get_size_as_ivec4(t_in2),
+      alpha_val,
+  };
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      shader,
+      global_size,
+      local_size,
+      {{out, api::MemoryAccessType::WRITE},
+       {{arg1, arg2}, api::MemoryAccessType::READ}},
+      {graph.create_params_buffer(block)}));
 }
 
-ValueRef add_arithmetic_node(
-    ComputeGraph& graph,
-    const ValueRef t1,
-    const ValueRef t2,
-    const float alpha,
-    const arithmetic::OpType optype,
-    const int64_t shared_object_idx) {
-  std::vector<int64_t> t1_sizes = graph.get_val_sizes(t1);
-  api::ScalarType t1_dtype = graph.get_val_dtype(t1);
-
-  ValueRef out = graph.add_tensor(t1_sizes, t1_dtype, shared_object_idx);
-  add_arithmetic_node(graph, t1, t2, out, alpha, optype);
-  return out;
-}
-
-ArithmeticPrepack::ArithmeticPrepack(const ValueRef tref, const ValueRef packed)
-    : PrepackNode(tref, packed) {}
-
-void ArithmeticPrepack::encode(ComputeGraph* graph) const {
-  TensorRef tref = graph->get_val(tref_).toTensorRef();
-  vTensor packed = graph->get_val(packed_).toTensor();
-
-  api::StorageBuffer staging(
-      graph->context(), packed.dtype(), packed.gpu_nbytes());
-
-  size_t numel = api::utils::multiply_integers(tref.sizes);
-  size_t nbytes = numel * api::element_size(tref.dtype);
-  copy_ptr_to_staging(tref.data, staging, nbytes);
-
-  encode_copy_to_vtensor(graph->context(), staging, packed);
-}
-
-ArithmeticNode::ArithmeticNode(
-    const ValueRef t1,
-    const ValueRef t2,
-    const ValueRef out,
-    const float alpha,
-    const arithmetic::OpType optype)
-    : ExecuteNode({t1, t2}, {out}), alpha_(alpha), optype_(optype) {}
-
-void ArithmeticNode::encode(ComputeGraph* graph) const {
-  vTensor& in1 = graph->get_val(inputs_[0]).toTensor();
-  vTensor& in2 = graph->get_val(inputs_[1]).toTensor();
-  vTensor& out = graph->get_val(outputs_[0]).toTensor();
-
-  api::ShaderInfo kernel = arithmetic::get_shader(optype_);
-  arithmetic::record_op(graph->context(), kernel, in1, in2, out, alpha_);
+REGISTER_OPERATORS {
+  VK_REGISTER_OP(aten.add.Tensor, add);
+  VK_REGISTER_OP(aten.sub.Tensor, sub);
+  VK_REGISTER_OP(aten.mul.Tensor, mul);
+  VK_REGISTER_OP(aten.div.Tensor, div);
+  VK_REGISTER_OP(aten.div.Tensor_mode, floor_div);
+  VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
 }
 
 } // namespace vulkan
