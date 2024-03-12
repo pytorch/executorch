@@ -34,8 +34,8 @@ class TestCoreMLQuantizer:
                 "global_config": {
                     "quantization_scheme": QuantizationScheme.symmetric,
                     "milestones": [0, 0, 10, 10],
-                    "activation_dtype": torch.quint8,
-                    "weight_dtype": torch.qint8,
+                    "activation_dtype": torch.uint8,
+                    "weight_dtype": torch.int8,
                     "weight_per_channel": True,
                 }
             }
