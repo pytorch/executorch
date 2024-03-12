@@ -10,130 +10,34 @@
 #include <executorch/backends/qualcomm/aot/wrappers/TensorWrapper.h>
 #include <executorch/backends/qualcomm/runtime/QnnExecuTorchBackend.h>
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
+#include <executorch/backends/qualcomm/schema_generated.h>
 
-#include <array>
 #include <string>
-#include <unordered_set>
 namespace torch {
 namespace executor {
-//  ================== Util function defs ===========================
-enum QnnExecuTorchOptionsTypes {
-  kUndefinedOption = 0,
-  kBackendType,
-  kLibraryPath,
-  kSkelLibraryDir,
-  kLogLevel,
-  kOnlinePrepare,
-  kHtpSocModel,
-  kHtpPerformanceMode,
-  kHtpPrecision,
-  kHtpPdSession,
-  kHtpUseConvHmx,
-  kHtpUseFoldRelu,
-  kNumOptions
-};
-
-constexpr std::array<std::pair<const char*, int>, kNumOptions - 1>
-    kOptionsMap // NOLINT(cert-err58-cpp)
-    = {{
-        {"backend_type", kBackendType},
-        {"library_path", kLibraryPath},
-        {"skel_library_dir", kSkelLibraryDir},
-        {"log_level", kLogLevel},
-        {"online_prepare", kOnlinePrepare},
-        {"htp_soc_model", kHtpSocModel},
-        {"htp_performance_mode", kHtpPerformanceMode},
-        {"htp_precision", kHtpPrecision},
-        {"htp_pd_session", kHtpPdSession},
-        {"htp_use_conv_hmx", kHtpUseConvHmx},
-        {"htp_use_fold_relu", kHtpUseFoldRelu},
-    }};
-
-template <std::size_t SIZE>
-int FindOptionInMap(
-    const char* option,
-    const std::array<std::pair<const char*, int>, SIZE> map) {
-  for (size_t i = 0; i < map.size(); ++i) {
-    if (std::strcmp(option, (map.at(i)).first) == 0) {
-      return (map.at(i)).second;
-    }
-  }
-  return kUndefinedOption;
-}
-
 // ========== Public method implementations =========================
 using namespace qnn;
+using namespace qnn_delegate;
+constexpr const char* QNN_COMPILE_SPEC = "qnn_compile_spec";
 
 Result<DelegateHandle*> QnnExecuTorchBackend::init(
     BackendInitContext& context,
     FreeableBuffer* processed,
     ArrayRef<CompileSpec> compile_specs) const {
-  QnnExecuTorchOptions options = QnnExecuTorchOptionsDefault();
-
   // covert SizedBuffer to qnn ExecuTorch option
-  options.qnn_context_blob.buffer = const_cast<void*>(processed->data());
-  options.qnn_context_blob.nbytes = processed->size();
+  QnnExecuTorchContextBinary qnn_context_blob;
+  const qnn_delegate::QnnExecuTorchOptions* qnn_executorch_options;
+
+  qnn_context_blob.buffer = const_cast<void*>(processed->data());
+  qnn_context_blob.nbytes = processed->size();
 
   // covert CompileSpec to qnn ExecuTorch option
   for (auto& compile_spec : compile_specs) {
-    auto type = static_cast<QnnExecuTorchOptionsTypes>(
-        FindOptionInMap(compile_spec.key, kOptionsMap));
-
-    switch (type) {
-      case kBackendType:
-        options.backend_type = *static_cast<const QnnExecuTorchBackendType*>(
-            compile_spec.value.buffer);
-        break;
-      case kLogLevel:
-        options.log_level = *static_cast<const QnnExecuTorchLogLevel*>(
-            compile_spec.value.buffer);
-        break;
-      case kOnlinePrepare:
-        options.online_prepare =
-            *static_cast<const bool*>(compile_spec.value.buffer);
-        break;
-      case kLibraryPath:
-        options.library_path =
-            static_cast<const char*>(compile_spec.value.buffer);
-        break;
-      case kSkelLibraryDir:
-        options.skel_library_dir =
-            static_cast<const char*>(compile_spec.value.buffer);
-        break;
-      case kHtpSocModel:
-        options.htp_options.soc_model =
-            *static_cast<const QcomChipset*>(compile_spec.value.buffer);
-        break;
-      case kHtpPerformanceMode:
-        options.htp_options.performance_mode =
-            *static_cast<const QnnExecuTorchHtpPerformanceMode*>(
-                compile_spec.value.buffer);
-        break;
-      case kHtpUseConvHmx:
-        options.htp_options.use_conv_hmx =
-            *static_cast<const bool*>(compile_spec.value.buffer);
-        break;
-      case kHtpUseFoldRelu:
-        options.htp_options.use_fold_relu =
-            *static_cast<const bool*>(compile_spec.value.buffer);
-        break;
-      case kHtpPrecision:
-        options.htp_options.precision =
-            *static_cast<const QnnExecuTorchHtpPrecision*>(
-                compile_spec.value.buffer);
-        break;
-      case kHtpPdSession:
-        options.htp_options.pd_session =
-            *static_cast<const QnnExecuTorchHtpPdSession*>(
-                compile_spec.value.buffer);
-        break;
-      case kUndefinedOption:
-      default:
-        QNN_EXECUTORCH_LOG(
-            kLogLevelWarn,
-            "[Qnn ExecuTorch]: unknown argument: %s",
-            compile_spec.key);
-    }
+    if (std::strcmp(compile_spec.key, QNN_COMPILE_SPEC) == 0)
+      qnn_executorch_options =
+          GetQnnExecuTorchOptions(compile_spec.value.buffer);
+    else
+      QNN_EXECUTORCH_LOG_WARN("unknown argument: %s", compile_spec.key);
   }
   // Create QnnManager
   MemoryAllocator* runtime_allocator = context.get_runtime_allocator();
@@ -142,7 +46,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 
   // NOTE: Since we use placement new and since this type is not trivially
   // destructible, we must call the destructor manually in destroy().
-  new (qnn_manager) QnnManager(&options);
+  new (qnn_manager) QnnManager(qnn_executorch_options, qnn_context_blob);
 
   ET_CHECK_OR_RETURN_ERROR(
       qnn_manager->Init() == Error::Ok,
@@ -150,7 +54,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
       "Fail to initialize Qnn Manager");
 
   if (qnn_manager->IsOnlinePrepare()) {
-    auto graph = qcir::GetGraph(options.qnn_context_blob.buffer);
+    auto graph = qcir::GetGraph(qnn_context_blob.buffer);
     // qcir tensors to TensorWrapper
     std::vector<std::shared_ptr<TensorWrapper>> tensors, graph_inputs,
         graph_outputs;
@@ -243,10 +147,8 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
               op->AddScalarParam(name, dtype, *tensor->data()->Data());
               break;
             default:
-              QNN_EXECUTORCH_LOG(
-                  kLogLevelError,
-                  "[Qnn ExecuTorch] Invalid scalar type: %s",
-                  tensor->name()->c_str());
+              QNN_EXECUTORCH_LOG_ERROR(
+                  "Invalid scalar type: %s", tensor->name()->c_str());
               break;
           }
         }
@@ -292,13 +194,16 @@ Error QnnExecuTorchBackend::execute(
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
 
-  for (int i = input_tensors.size();
-       i < input_tensors.size() + output_tensors.size();
-       ++i) {
-    output_tensors[i - input_tensors.size()]->FillDataBuffer(
-        args[i]->toTensor().mutable_data_ptr(), false /* copy_data */);
-    output_tensor_structs.push_back(
-        output_tensors[i - input_tensors.size()]->CloneTensorStruct());
+  int output_index = input_tensors.size();
+  for (const auto& output_tensor : output_tensors) {
+    // pos=0 limits the search to the prefix
+    if (output_tensor->GetName().rfind("output_", 0) == 0) {
+      output_tensor->FillDataBuffer(
+          args[output_index]->toTensor().mutable_data_ptr(),
+          false /* copy_data */);
+      output_index++;
+    }
+    output_tensor_structs.push_back(output_tensor->CloneTensorStruct());
   }
 
   ET_CHECK_OR_RETURN_ERROR(

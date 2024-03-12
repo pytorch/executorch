@@ -319,7 +319,7 @@ def gen_test_cases(suite_name: str, op_name: str, test_cases, test_f=False):
 
     generated_cases = []
 
-    for (test_name, *inputs, expected_result, shape_dynamism) in test_cases:
+    for test_name, *inputs, expected_result, shape_dynamism in test_cases:
         out_dynamic_shape_fn = out_dynamic_shape_fn_map[shape_dynamism]
         input_code = [argument_to_cpp_code(i) for i in inputs]
         input_lines = [

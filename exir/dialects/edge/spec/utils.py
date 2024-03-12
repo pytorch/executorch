@@ -171,7 +171,8 @@ def gen_index_pairs_to_types_mapping(
     type_alias: Dict[Tuple[str], int], type_constraint: List[List[int]]
 ) -> Dict[Tuple[int], List[str]]:
     """Generate mapping from index pairs to types. For example, given type_constraint [0, 0], [1, 1]
-    type_alias ('Double',): 0, ('Int',): 1, output will be {(0, 1): ['Double', 'Int', 'Double', 'Int']}."""
+    type_alias ('Double',): 0, ('Int',): 1, output will be {(0, 1): ['Double', 'Int', 'Double', 'Int']}.
+    """
 
     def gen(x: List[int]):
         """Generate all possible pairs of elements in the list."""

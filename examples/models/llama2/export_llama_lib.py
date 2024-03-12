@@ -19,9 +19,9 @@ import pkg_resources
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackPartitioner,
 )
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -33,9 +33,11 @@ from .builder import DType, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
+    Int8DynActInt4WeightGPTQQuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
+
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -172,6 +174,16 @@ def quantize(
     model: torch.nn.Module,
     qmode: str,
     activation_dtype: Optional[DType],
+    checkpoint_path: Optional[Path] = None,
+    # following arguments only available when setting int4 quantization.
+    groupsize: int = 128,
+    # following arguments only used for GPTQ
+    calibration_tasks: Optional[list] = None,
+    calibration_limit: int = 1000,
+    calibration_seq_length: int = 100,
+    pad_calibration_inputs: bool = False,
+    percdamp: float = 0.01,
+    blocksize: int = 128,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -186,21 +198,44 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
+    if checkpoint_path is None:
+        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+
+    if calibration_tasks is None:
+        calibration_tasks = ["hellaswag"]
+
     if qmode == "int8":
-        model_int8 = WeightOnlyInt8QuantHandler(model)
-        model_int8_state_dict = model_int8.create_quantized_state_dict()
-        model_int8 = model_int8.convert_for_runtime()
-        model_int8.load_state_dict(model_int8_state_dict)
-        return model_int8
+        # Add quantization mode options here: group size, bit width, etc.
+        return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "int4":
         model_int4 = Int8DynActInt4WeightQuantHandler(
-            model, activation_precision=torch_dtype
-        )
-        model_int4_state_dict = model_int4.create_quantized_state_dict()
-        model_int4 = model_int4.convert_for_runtime()
+            model,
+            precision=torch_dtype,
+        ).quantized_model()
         print("quantized model:", model_int4)
-        model_int4.load_state_dict(model_int4_state_dict)
         return model_int4
+    elif qmode == "8da4w-gptq":
+        gptq_quant_handler = Int8DynActInt4WeightGPTQQuantHandler(
+            precision=torch_dtype,
+        )
+        tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        assert tokenizer_path.is_file(), tokenizer_path
+        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
+            model_file=str(tokenizer_path)
+        )
+        model_updated_state_dict = gptq_quant_handler.create_quantized_state_dict(
+            tokenizer,
+            blocksize,
+            percdamp,
+            groupsize,
+            calibration_tasks,
+            calibration_limit,
+            calibration_seq_length,
+            pad_calibration_inputs,
+        )
+        model = gptq_quant_handler.convert_for_runtime(model)
+        model.load_state_dict(model_updated_state_dict)
+        return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 
@@ -248,7 +283,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "int4"],
+        choices=["int8", "int4", "8da4w-gptq"],
         help="type of quantization",
     )
 
@@ -310,6 +345,14 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
     )
+
+    parser.add_argument(
+        "-n",
+        "--output_name",
+        default=None,
+        help="Override the output filename of the saved pte model file.",
+    )
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
@@ -383,7 +426,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         transforms.append(
             lambda model: EmbeddingOnlyInt8QuantHandler(
                 model, bitwidth=bitwidth, group_size=group_size
-            ).convert_for_runtime()
+            ).quantized_model()
         )
 
     # export_to_edge
@@ -393,20 +436,21 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     # to_backend
     partitioners = {}
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioners[
-            XnnpackDynamicallyQuantizedPartitioner.__name__
-        ] = XnnpackDynamicallyQuantizedPartitioner()
+        partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
+            XnnpackDynamicallyQuantizedPartitioner()
+        )
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
-        modelname = f"xnnpack_{modelname}"
-
-    # TODO: remove this after xnnpack delegation is ready
-    if args.quantization_mode == "int4":
-        raise Exception(
-            "some quantized ops should be lowered to xnnpack, but xnnpack delegate is not ready yet"
+        # Following changes due to.
+        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
+        #    as well as "qmode int4" which is also dynamic quantizes linear layers.
+        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
+        partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
+            XnnpackDynamicallyQuantizedPartitioner()
         )
+        # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
+        modelname = f"xnnpack_{modelname}"
 
     builder = (
         load_llama_model(
@@ -433,6 +477,12 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"{modelname}_h"
 
     builder.save_to_pte(modelname)
+
+    if args.output_name:
+        modelname = args.output_name
+        if modelname[-4:] == ".pte":
+            modelname = modelname[:-4]
+
     output_file = f"{builder.output_dir}/{modelname}.pte"
 
     return output_file

@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnSysImplementation.h>
 
 #include <string>

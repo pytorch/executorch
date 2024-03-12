@@ -18,6 +18,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.h>
+#include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <memory>
 namespace torch {
@@ -56,10 +57,12 @@ class QnnBackendFactory {
   std::unique_ptr<BackendConfigParameters> Create(
       const QnnImplementation& implementation,
       QnnLogger* logger,
+      const QnnExecuTorchLogLevel& log_level,
       const QnnExecuTorchContextBinary& qnn_context_blob,
       const QnnExecuTorchBackendType& backend_type,
       const std::string& graph_name,
-      const QnnExecuTorchHtpBackendOptions& htp_options);
+      const SocInfo* soc_info,
+      const QnnExecuTorchHtpBackendOptions* htp_options);
 };
 } // namespace qnn
 } // namespace executor

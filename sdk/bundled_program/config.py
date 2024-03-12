@@ -48,7 +48,8 @@ DataContainer: TypeAlias = Union[list, tuple, dict]
 
 class MethodTestCase:
     """Test case with inputs and expected outputs
-    The expected_outputs are optional and only required if the user wants to verify model outputs after execution."""
+    The expected_outputs are optional and only required if the user wants to verify model outputs after execution.
+    """
 
     def __init__(
         self,

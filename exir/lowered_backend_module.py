@@ -58,7 +58,7 @@ class LoweredBackendModule(torch.nn.Module):
     _compile_specs: List[
         CompileSpec
     ]  # A list of backend-specific objects with static metadata to configure the "compilation" process.
-    _original_module: ExportedProgram  # The original EXIR module
+    _original_exported_program: ExportedProgram  # The original EXIR module
 
     def __init__(
         self,
@@ -68,7 +68,7 @@ class LoweredBackendModule(torch.nn.Module):
         compile_specs: List[CompileSpec],
     ) -> None:
         super().__init__()
-        self._original_module = edge_program
+        self._original_exported_program = edge_program
         self._backend_id = backend_id
         self._processed_bytes = processed_bytes
         self._compile_specs = compile_specs
@@ -77,14 +77,20 @@ class LoweredBackendModule(torch.nn.Module):
     def __deepcopy__(self, memo: Optional[Dict[int, Any]]) -> "LoweredBackendModule":
         # Copy exported program
         copied_program = ExportedProgram(
-            root=copy.deepcopy(self._original_module.graph_module),
-            graph=copy.deepcopy(self._original_module.graph),
-            graph_signature=copy.deepcopy(self._original_module.graph_signature),
-            state_dict=self._original_module.state_dict,
-            range_constraints=copy.deepcopy(self._original_module.range_constraints),
-            module_call_graph=copy.deepcopy(self._original_module.module_call_graph),
-            verifier=copy.deepcopy(self._original_module.verifier),
-            constants=self._original_module.constants,
+            root=copy.deepcopy(self._original_exported_program.graph_module),
+            graph=copy.deepcopy(self._original_exported_program.graph),
+            graph_signature=copy.deepcopy(
+                self._original_exported_program.graph_signature
+            ),
+            state_dict=self._original_exported_program.state_dict,
+            range_constraints=copy.deepcopy(
+                self._original_exported_program.range_constraints
+            ),
+            module_call_graph=copy.deepcopy(
+                self._original_exported_program.module_call_graph
+            ),
+            verifier=copy.deepcopy(self._original_exported_program.verifier),
+            constants=self._original_exported_program.constants,
         )
 
         res = LoweredBackendModule(
@@ -122,7 +128,7 @@ class LoweredBackendModule(torch.nn.Module):
         """
         Returns the original EXIR module
         """
-        return self._original_module
+        return self._original_exported_program
 
     # TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api
     def buffer(
@@ -135,12 +141,15 @@ class LoweredBackendModule(torch.nn.Module):
         """
         Returns a buffer containing the serialized ExecuTorch binary.
         """
-        out = _serialize_pte_binary(
-            program=self.program(),
-            extract_delegate_segments=extract_delegate_segments,
-            segment_alignment=segment_alignment,
-            constant_tensor_alignment=constant_tensor_alignment,
-            delegate_alignment=delegate_alignment,
+        # TODO(T181463742): avoid calling bytes(..) which incurs large copies.
+        out = bytes(
+            _serialize_pte_binary(
+                program=self.program(),
+                extract_delegate_segments=extract_delegate_segments,
+                segment_alignment=segment_alignment,
+                constant_tensor_alignment=constant_tensor_alignment,
+                delegate_alignment=delegate_alignment,
+            )
         )
         return out
 
@@ -185,7 +194,7 @@ class LoweredBackendModule(torch.nn.Module):
         # We'll remove all call_function nodes, insert an call_delegate node, inserting getitems nodes to get the result for call_delegate node
         # and return the list of getitems as the output
 
-        lowered_exported_program = copy.deepcopy(self.original_module)
+        lowered_exported_program = copy.deepcopy(self._original_exported_program)
 
         # The real input nodes are the ones not buffer or parameter
         all_input_nodes = [
@@ -237,7 +246,9 @@ class LoweredBackendModule(torch.nn.Module):
         # Get the output list. Since the output node is a tuple of list, like ([aten_mul_tensor, aten_add_tensor],)
         # We add some handling logic to get the list `[aten_mul_tensor, aten_add_tensor]` properly
         original_output_nodes = [
-            node for node in self.original_module.graph.nodes if node.op == "output"
+            node
+            for node in self._original_exported_program.graph.nodes
+            if node.op == "output"
         ][0].args[0]
 
         delegate_node.meta["spec"] = tuple(

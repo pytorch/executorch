@@ -12,6 +12,7 @@ from executorch.backends.xnnpack.utils.utils import is_param_node
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import PassResult
 
+
 # TODO(T151254305) use subgraph_rewriter
 class ChannelsLastTaggedReshapePass(XNNPACKPass):
     """

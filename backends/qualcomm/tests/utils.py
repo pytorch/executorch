@@ -15,8 +15,14 @@ import torch
 from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
-from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
-from executorch.backends.qualcomm.utils.utils import capture_program, SoCModel
+from executorch.backends.qualcomm.quantizer.quantizer import (
+    get_default_16bit_qnn_ptq_config,
+    QnnQuantizer,
+)
+from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+    QcomChipset,
+)
+from executorch.backends.qualcomm.utils.utils import capture_program
 from executorch.examples.qualcomm.scripts.utils import SimpleADB
 
 from executorch.exir.backend.backend_api import to_backend
@@ -30,13 +36,13 @@ class TestQNN(unittest.TestCase):
     host: Literal = ""
     device: Literal = ""
     build_folder: Literal = ""
-    model: SoCModel = None
+    model: QcomChipset = None
     compiler_specs: List[CompileSpec] = None
     arch_table = {
-        "SM8650": SoCModel.SM8650,
-        "SM8550": SoCModel.SM8550,
-        "SM8475": SoCModel.SM8475,
-        "SM8450": SoCModel.SM8450,
+        "SM8650": QcomChipset.SM8650,
+        "SM8550": QcomChipset.SM8550,
+        "SM8475": QcomChipset.SM8475,
+        "SM8450": QcomChipset.SM8450,
     }
     error_only = False
     ip = "localhost"
@@ -164,12 +170,17 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
         custom_quant_annotations: Tuple[Callable] = (),
+        use_16bit_quant: Optional[bool] = False,
     ) -> torch.fx.GraphModule:
         m = torch._export.capture_pre_autograd_graph(module, inputs)
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
         quantizer.set_per_channel_quant(is_conv_per_channel)
+
+        if use_16bit_quant:
+            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+            quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)

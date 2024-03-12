@@ -31,6 +31,11 @@ quantized_decomposed_lib.define(
 )
 
 quantized_decomposed_lib.define(
+    "embedding_byte.dtype(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None) -> Tensor",
+)
+
+quantized_decomposed_lib.define(
     "mixed_mm(Tensor input, Tensor weight, Tensor weight_scales, Tensor? weight_zero_points) -> Tensor",
 )
 
@@ -337,9 +342,9 @@ def _get_binary_op_patterns_and_replacements(
     ]
 
 
-def _get_binary_ops_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_binary_ops_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
 
     # TODO: replace qbinary op with the ops implemented in lean mode
     binary_op_to_qbinary_ops = {
@@ -360,9 +365,9 @@ def _get_binary_ops_patterns_and_replacements() -> List[
     return pattern_and_replacements
 
 
-def _get_reshape_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_reshape_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
     def pattern(
         x,
         arg0,
@@ -413,9 +418,9 @@ def _get_reshape_patterns_and_replacements() -> List[
     ]
 
 
-def _get_slice_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_slice_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
     def pattern(x, dim, start, end, x_scale, x_zero_point, x_qmin, x_qmax):
         x = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
             x, x_scale, x_zero_point, x_qmin, x_qmax, torch.uint8
@@ -439,9 +444,9 @@ def _get_slice_patterns_and_replacements() -> List[
     ]
 
 
-def _get_embedding_ops_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def _get_embedding_ops_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
     def get_pattern_and_replacement():
         @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte")
         def pattern(
@@ -523,6 +528,48 @@ def _get_embedding_ops_patterns_and_replacements() -> List[
             )
             return out
 
+        @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte.dtype")
+        def pattern_with_dtype(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indicies,
+            dtype,
+        ):
+            weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+                weight,
+                weight_scales,
+                weight_zero_points,
+                0,
+                weight_quant_min,
+                weight_quant_max,
+                torch.uint8,
+            )
+            out = torch.ops.aten.embedding.default(weight, indicies).to(dtype)
+            return out
+
+        def replacement_with_dtype(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indicies,
+            dtype,
+        ):
+            out = torch.ops.quantized_decomposed.embedding_byte.dtype(
+                weight,
+                weight_scales,
+                weight_zero_points,
+                weight_quant_min,
+                weight_quant_max,
+                indicies,
+                dtype=dtype,
+            )
+            return out
+
         return [
             (
                 _trace_and_lower_to_edge_ops(pattern),
@@ -532,6 +579,11 @@ def _get_embedding_ops_patterns_and_replacements() -> List[
             (
                 _trace_and_lower_to_edge_ops(pattern_with_padding_idx),
                 _trace_and_lower_to_edge_ops(replacement_with_padding_idx),
+                [],
+            ),
+            (
+                _trace_and_lower_to_edge_ops(pattern_with_dtype),
+                _trace_and_lower_to_edge_ops(replacement_with_dtype),
                 [],
             ),
         ]
@@ -569,9 +621,9 @@ n        return [(pattern, replacement, [])]
 """
 
 
-def get_quant_patterns_and_replacements() -> List[
-    Tuple[Callable, Callable, List[Callable]]
-]:
+def get_quant_patterns_and_replacements() -> (
+    List[Tuple[Callable, Callable, List[Callable]]]
+):
 
     return copy.copy(
         [

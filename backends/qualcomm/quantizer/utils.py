@@ -104,7 +104,7 @@ def annotate_single_in_single_out(
     input_qspec_map[input_act] = quantization_config.input_activation
 
     node_tensor = node.meta.get("val")
-    if torch.is_tensor(node_tensor) and node_tensor.dtype == torch.int64:
+    if torch.is_tensor(node_tensor) and node_tensor.dtype != torch.float32:
         return
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
@@ -354,6 +354,20 @@ def annotate_transpose(node: Node, quantization_config: QuantizationConfig) -> N
     annotate_in_out_obs_sharing_op(node, quantization_config)
     if not _is_annotated([node]):
         annotate_single_in_single_out(node, quantization_config)
+
+
+@register_annotator([torch.ops.aten.embedding.default])
+def annotate_embedding(node: Node, quantization_config: QuantizationConfig) -> None:
+    weight = node.args[0]
+
+    input_qspec_map = {}
+    input_qspec_map[weight] = quantization_config.input_activation
+
+    node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
+        input_qspec_map=input_qspec_map,
+        output_qspec=SharedQuantizationSpec((weight, node)),
+        _annotated=True,
+    )
 
 
 @register_annotator([torch.ops.aten.expand.default])

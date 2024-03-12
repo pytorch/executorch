@@ -128,9 +128,11 @@ class ArmBackend(BackendDetails):
                 # Add output to TOSA graph
                 tosa_graph.currRegion.currBasicBlock.addTensor(
                     output.name,
-                    inputs[0].shape
-                    if is_permute_node_before_addmm(node)
-                    else output.shape,
+                    (
+                        inputs[0].shape
+                        if is_permute_node_before_addmm(node)
+                        else output.shape
+                    ),
                     ts.DType.INT8 if is_quant_node(node) else output.dtype,
                 )
 

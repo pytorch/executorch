@@ -107,9 +107,6 @@ class CMakeBuild(build_ext):
             f"-DPYTHON_EXECUTABLE={sys.executable}",
             f"-DCMAKE_BUILD_TYPE={cfg}",  # not used on MSVC, but no harm
         ]
-        # Build with XNNPACK if EXECUTORCH_BUILD_XNNPACK is on
-        if os.environ.get("EXECUTORCH_BUILD_XNNPACK", None):
-            cmake_args.append("-DEXECUTORCH_BUILD_XNNPACK=ON")
 
         build_args = []
         # Adding CMake arguments set as environment variable
@@ -239,7 +236,10 @@ if os.environ.get("EXECUTORCH_BUILD_PYBIND", None):
 setup(
     package_dir={
         "executorch/backends": "backends",
-        "executorch/examples": "examples",
+        # TODO(mnachin T180504136): Do not put examples/models
+        # into core pip packages. Refactor out the necessary utils
+        # or core models files into a separate package.
+        "executorch/examples/models": "examples/models",
         "executorch/exir": "exir",
         "executorch/extension": "extension",
         "executorch/schema": "schema",

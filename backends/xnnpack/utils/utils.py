@@ -26,6 +26,7 @@ from torch._export.utils import (
     is_param,
 )
 
+
 ### XNNPACK Capture ###
 def capture_graph_for_xnnpack(
     module: torch.nn.Module,

@@ -435,6 +435,7 @@ class SharedObject:
     last_used_index attribute. The shared object will be available for nodes
     with index greater than last_used_index.
     """
+
     # index of the shared object in the list of shared objects, used as a unique id
     idx: int
     # offset in the memory buffer
