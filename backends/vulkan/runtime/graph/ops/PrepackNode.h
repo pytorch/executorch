@@ -37,7 +37,7 @@ class PrepackNode final {
       const api::utils::uvec3& local_workgroup_size,
       const ValueRef tref,
       const ValueRef packed,
-      api::UniformParamsBuffer&& params);
+      const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params);
 
   ~PrepackNode() = default;
 
@@ -49,9 +49,8 @@ class PrepackNode final {
   const api::utils::uvec3 local_workgroup_size_;
   const ValueRef tref_;
   const ValueRef packed_;
-  // TODO(T180906086): pass multiple buffers and index with ValueRef.
   // TODO(T180906457): allow re-computing param buffers.
-  api::UniformParamsBuffer params_;
+  std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
 };
 
 } // namespace vulkan
