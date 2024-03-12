@@ -12,8 +12,6 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
-
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
@@ -547,77 +545,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   }
 }
 
-TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
-  GraphConfig config;
-  ComputeGraph graph(config);
-
-  std::vector<int64_t> size_big = {48, 54, 4};
-  std::vector<int64_t> size_small = {48, 1, 4};
-
-  // Build graph
-
-  IOValueRef a = graph.add_input_tensor(
-      size_big,
-      api::kFloat,
-      /*shared_object_idx = */ 2);
-  IOValueRef b = graph.add_input_tensor(
-      size_small,
-      api::kFloat,
-      /*shared_object_idx = */ 4);
-
-  ValueRef c = graph.add_tensor(
-      size_big,
-      api::kFloat,
-      /*shared_object_idx = */ 6);
-
-  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
-  addFn(graph, {a.value, b.value, kDummyValueRef, c});
-
-  IOValueRef d = graph.add_input_tensor(
-      size_small,
-      api::kFloat,
-      /*shared_object_idx = */ 2);
-
-  ValueRef e = graph.add_tensor(
-      size_big,
-      api::kFloat,
-      /*shared_object_idx = */ 4);
-
-  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
-  mulFn(graph, {c, d.value, e});
-
-  IOValueRef out = {};
-  out.value = e;
-  out.staging = graph.set_output_tensor(out.value);
-
-  graph.prepare();
-  graph.encode_execute();
-
-  // Run graph
-
-  for (float i = 4.0f; i < 30.0f; i += 7.0f) {
-    float val_a = i + 2.0f;
-    float val_b = i + 1.5f;
-    float val_d = i + 1.0f;
-    float val_out = (val_a + val_b) * val_d;
-
-    fill_vtensor(graph, a, val_a);
-    fill_vtensor(graph, b, val_b);
-    fill_vtensor(graph, d, val_d);
-
-    // Execute graph
-    graph.execute();
-
-    EXTRACT_TENSOR(out);
-
-    // Sanity check that the values are correct
-    for (const auto& val : data_out) {
-      EXPECT_TRUE(val == val_out);
-    }
-  }
-}
-
-TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
+TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -635,6 +563,11 @@ TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
+  // Allocation count will be 6:
+  // 4: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for each staging shader
+  // 2: staging buffer for each input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 6);
+
   ValueRef c = graph.add_tensor(
       size_big,
       api::kFloat,
@@ -648,6 +581,12 @@ TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
+  // Allocation count will be 11, 5 are new:
+  // 2: out.gpu_sizes_ubo(), alpha UBO for arithmetic shader
+  // 2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() uniform buffer for staging shader
+  // 1: staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 11);
+
   ValueRef e = graph.add_tensor(
       size_big,
       api::kFloat,
@@ -660,8 +599,18 @@ TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
+  // Allocation count will be 15, 4 are new:
+  // 1: alpha UBO for arithmetic shader
+  // 2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for staging shader
+  // 1 staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 15);
+
   graph.prepare();
   graph.encode_execute();
+
+  // Allocation count will be 18, 3 are new:
+  // 3: shared memory allocations for tensors
+  EXPECT_TRUE(get_vma_allocation_count() == 18);
 
   // Run graph
 
@@ -694,64 +643,18 @@ TEST(VulkanComputeGraphTest, test_manual_virtual_resize) {
       EXPECT_TRUE(val == val_out);
     }
   }
-}
 
-TEST(VulkanComputeGraphTest, test_resize) {
-  GraphConfig config;
-  ComputeGraph graph(config);
-
-  std::vector<int64_t> size_big = {12, 64, 64};
-  std::vector<int64_t> size_small = {12, 64, 64};
-
-  // Build graph
-
-  IOValueRef a = graph.add_input_tensor(
-      size_big,
-      api::kFloat,
-      /*shared_object_idx = */ 2);
-  IOValueRef b = graph.add_input_tensor(
-      size_small,
-      api::kFloat,
-      /*shared_object_idx = */ 4);
-
-  ValueRef c = graph.add_tensor(
-      size_big,
-      api::kFloat,
-      /*shared_object_idx = */ 6);
-
-  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
-  addFn(graph, {a.value, b.value, kDummyValueRef, c});
-
-  IOValueRef d = graph.add_input_tensor(
-      size_small,
-      api::kFloat,
-      /*shared_object_idx = */ 2);
-
-  ValueRef e = graph.add_tensor(
-      size_big,
-      api::kFloat,
-      /*shared_object_idx = */ 4);
-
-  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
-  mulFn(graph, {c, d.value, e});
-
-  IOValueRef out = {};
-  out.value = e;
-  out.staging = graph.set_output_tensor(out.value);
-
-  graph.prepare();
-  graph.encode_execute();
-
-  // Run graph
-
-  std::vector<std::vector<int64_t>> new_sizes_list = {
+  std::vector<std::vector<int64_t>> new_sizes_list_2 = {
       {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
 
-  for (auto& new_sizes : new_sizes_list) {
+  for (auto& new_sizes : new_sizes_list_2) {
     graph.resize_input(0, new_sizes);
     graph.resize_input(1, new_sizes);
     graph.resize_input(2, new_sizes);
     graph.propagate_resize();
+
+    // Check output shape
+    EXPECT_TRUE(graph.get_val(out.value).toTensor().sizes() == new_sizes);
 
     float val_a = new_sizes[1] + 6.0f;
     float val_b = new_sizes[2] + 2.5f;
