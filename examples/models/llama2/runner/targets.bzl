@@ -29,7 +29,6 @@ def define_common_targets():
             ],
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
-                "//executorch/backends/vulkan:vulkan_backend_lib",
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
                 "//executorch/examples/models/llama2/tokenizer:tokenizer",
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
@@ -37,7 +36,11 @@ def define_common_targets():
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-            ] + (_get_operator_lib(aten)),
+            ] + (_get_operator_lib(aten)) + ([
+                # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
+                # Therefore enable it explicitly for now to avoid failing tests
+                "//executorch/backends/vulkan:vulkan_backend_lib",
+            ] if native.read_config("llama", "use_vulkan", "0") == "1" else []),
             external_deps = [
                 "libtorch",
             ] if aten else [],
