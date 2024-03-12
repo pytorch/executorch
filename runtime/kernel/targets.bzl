@@ -11,12 +11,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "operator_registry",
         srcs = ["operator_registry.cpp"],
-        exported_headers = [
-            "operator_registry.h",
-            "make_boxed_from_unboxed_functor.h",
-            "meta_programming.h",
-            "type_list.h",
-        ],
+        exported_headers = ["operator_registry.h"],
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
@@ -31,12 +26,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
         srcs = ["operator_registry.cpp"],
-        exported_headers = [
-            "operator_registry.h",
-            "make_boxed_from_unboxed_functor.h",
-            "meta_programming.h",
-            "type_list.h",
-        ],
+        exported_headers = ["operator_registry.h"],
         visibility = [
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",

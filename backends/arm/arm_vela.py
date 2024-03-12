@@ -12,6 +12,7 @@ from typing import List
 
 import numpy as np
 
+
 # Pack either input or output tensor block, compose the related arrays into
 # per-io structs to simplify runtime use.
 def vela_bin_pack_io(prefix, data):

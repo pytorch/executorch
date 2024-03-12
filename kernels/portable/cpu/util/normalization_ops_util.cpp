@@ -120,5 +120,45 @@ void get_layer_norm_out_target_size(
   }
 }
 
+bool check_group_norm_args(
+    const Tensor& in,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
+    int64_t N,
+    int64_t C,
+    int64_t HxW,
+    int64_t group,
+    Tensor& out,
+    Tensor& mean_out,
+    Tensor& rstd_out) {
+  ET_LOG_AND_RETURN_IF_FALSE(in.size(0) == N);
+  ET_LOG_AND_RETURN_IF_FALSE(in.size(1) == C);
+  ET_LOG_AND_RETURN_IF_FALSE(in.numel() == N * C * HxW);
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      group > 0, "Expected number of groups to be greater than 0");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      C % group == 0,
+      "Expected number of channels in input to be divisible by number of groups");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      !weight.has_value() ||
+          (weight.value().dim() == 1 && weight.value().size(0) == C),
+      "Expected weight to be a vector of size equal to the number of channels in input");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      !bias.has_value() ||
+          (bias.value().dim() == 1 && bias.value().size(0) == C),
+      "Expected bias to be a vector of size equal to the number of channels in input");
+
+  if (weight.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, weight.value()));
+  }
+  if (bias.has_value()) {
+    ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, bias.value()));
+  }
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, mean_out));
+  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(in, rstd_out));
+  return true;
+}
+
 } // namespace executor
 } // namespace torch

@@ -10,6 +10,16 @@ def _select_pal(dict_):
         fail("Missing key for executorch.pal_default value '{}' in dict '{}'".format(pal_default, dict_))
     return dict_[pal_default]
 
+def logging_enabled():
+    return native.read_config("executorch", "enable_et_log", "true") == "true"
+
+def get_logging_flags():
+    if logging_enabled():
+        # On by default.
+        return []
+    else:
+        return ["-DET_LOG_ENABLED=0"]
+
 def profiling_enabled():
     return native.read_config("executorch", "prof_enabled", "false") == "true"
 
@@ -57,9 +67,6 @@ def define_common_targets():
         force_static = True,
     )
 
-    # Enable or disable ET_LOGs
-    enable_et_log = native.read_config("executorch", "enable_et_log", None)
-
     # Interfaces for executorch users
     runtime.cxx_library(
         name = "platform",
@@ -77,7 +84,7 @@ def define_common_targets():
             "profiler.cpp",
             "runtime.cpp",
         ],
-        exported_preprocessor_flags = get_profiling_flags() + (["-DET_LOG_ENABLED=0"] if enable_et_log else []),
+        exported_preprocessor_flags = get_profiling_flags() + get_logging_flags(),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",
             ":compiler",

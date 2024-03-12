@@ -26,6 +26,7 @@ logging.basicConfig(level=logging.INFO, format=FORMAT)
 #       quantization step in our example. This will take the models
 #       from examples/models/ and quantize then export to delegate.
 
+
 # Two simple models
 class AddModule(torch.nn.Module):
     def __init__(self):
