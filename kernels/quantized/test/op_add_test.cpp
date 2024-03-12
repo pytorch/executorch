@@ -20,6 +20,7 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
+using exec_aten::optional;
 using exec_aten::RuntimeContext;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
@@ -190,6 +191,8 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
   Tensor qinput2 = tfo.zeros({3, 5});
   Tensor qoutput = tfo.zeros({3, 5});
 
+  optional<ScalarType> out_dtype = optional<ScalarType>();
+
   RuntimeContext context{};
   // q -> qadd -> dq
   // 3.5 / 0.5 + 1 = 8
@@ -235,6 +238,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
+      out_dtype,
       reference_op_output);
 
   // now get results for q -> dq -> fp add -> q -> dq
@@ -245,6 +249,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
+      out_dtype,
       dq_input1);
 
   dequantize_per_tensor_out(
@@ -254,6 +259,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
+      out_dtype,
       dq_input2);
 
   add_out(context, dq_input1, dq_input2, 1.0, fp_output);
@@ -274,6 +280,7 @@ TEST(OpQuantizeAddTest, ConsitencyWithReferencePattern) {
       quant_min,
       quant_max,
       ScalarType::Byte,
+      out_dtype,
       reference_pattern_output);
 
   Tensor expected = tf.full({3, 5}, 7.0);
