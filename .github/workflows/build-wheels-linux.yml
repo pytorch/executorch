@@ -25,6 +25,8 @@ jobs:
       os: linux
       test-infra-repository: pytorch/test-infra
       test-infra-ref: main
+      with-cuda: disabled
+      with-rocm: disabled
 
   build:
     needs: generate-matrix
