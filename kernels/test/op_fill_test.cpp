@@ -21,59 +21,60 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor&
-op_fill_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::fill_outf(context, self, other, out);
-}
-
-Tensor&
-op_fill_tensor_out(const Tensor& self, const Tensor& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::fill_outf(context, self, other, out);
-}
-
-template <ScalarType DTYPE>
-void test_fill_scalar_out(std::vector<int32_t>&& sizes) {
-  TensorFactory<DTYPE> tf;
-
-  // Before: `out` consists of 0s.
-  Tensor self = tf.zeros(sizes);
-  Tensor out = tf.zeros(sizes);
-
-  // After: `out` consists of 1s.
-  Scalar other = 1;
-  if (DTYPE == ScalarType::Bool) {
-    other = false;
-  }
-  op_fill_scalar_out(self, other, out);
-
-  Tensor exp_out = tf.full(sizes, 1);
-  if (DTYPE == ScalarType::Bool) {
-    exp_out = tf.full(sizes, false);
+class OpFillTest : public OperatorTest {
+ protected:
+  Tensor&
+  op_fill_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
+    return torch::executor::aten::fill_outf(context_, self, other, out);
   }
 
-  // Check `out` matches expected output.
-  EXPECT_TENSOR_EQ(out, exp_out);
-}
+  Tensor&
+  op_fill_tensor_out(const Tensor& self, const Tensor& other, Tensor& out) {
+    return torch::executor::aten::fill_outf(context_, self, other, out);
+  }
 
-template <ScalarType DTYPE>
-void test_fill_tensor_out(std::vector<int32_t>&& sizes) {
-  TensorFactory<DTYPE> tf;
+  template <ScalarType DTYPE>
+  void test_fill_scalar_out(std::vector<int32_t>&& sizes) {
+    TensorFactory<DTYPE> tf;
 
-  // Before: `out` consists of 0s.
-  Tensor self = tf.zeros(sizes);
-  Tensor out = tf.zeros(sizes);
+    // Before: `out` consists of 0s.
+    Tensor self = tf.zeros(sizes);
+    Tensor out = tf.zeros(sizes);
 
-  // After: `out` consists of 1s.
-  Tensor other = tf.ones({});
-  op_fill_tensor_out(self, other, out);
+    // After: `out` consists of 1s.
+    Scalar other = 1;
+    if (DTYPE == ScalarType::Bool) {
+      other = false;
+    }
+    op_fill_scalar_out(self, other, out);
 
-  Tensor exp_out = tf.full(sizes, 1);
+    Tensor exp_out = tf.full(sizes, 1);
+    if (DTYPE == ScalarType::Bool) {
+      exp_out = tf.full(sizes, false);
+    }
 
-  // Check `out` matches expected output.
-  EXPECT_TENSOR_EQ(out, exp_out);
-}
+    // Check `out` matches expected output.
+    EXPECT_TENSOR_EQ(out, exp_out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_fill_tensor_out(std::vector<int32_t>&& sizes) {
+    TensorFactory<DTYPE> tf;
+
+    // Before: `out` consists of 0s.
+    Tensor self = tf.zeros(sizes);
+    Tensor out = tf.zeros(sizes);
+
+    // After: `out` consists of 1s.
+    Tensor other = tf.ones({});
+    op_fill_tensor_out(self, other, out);
+
+    Tensor exp_out = tf.full(sizes, 1);
+
+    // Check `out` matches expected output.
+    EXPECT_TENSOR_EQ(out, exp_out);
+  }
+};
 
 // A macro for defining tests for both scalar and tensor variants of
 // `fill_out`. Here the `self` and `out` tensors will be created according
@@ -87,7 +88,7 @@ void test_fill_tensor_out(std::vector<int32_t>&& sizes) {
 
 // Create input support tests for scalar variant.
 #define GENERATE_SCALAR_INPUT_SUPPORT_TEST(_, DTYPE) \
-  TEST(OpFillTest, DTYPE##ScalarInputSupport) {      \
+  TEST_F(OpFillTest, DTYPE##ScalarInputSupport) {    \
     TEST_FILL_OUT(test_fill_scalar_out, DTYPE);      \
   }
 
@@ -95,13 +96,13 @@ ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_SCALAR_INPUT_SUPPORT_TEST)
 
 // Create input support tests for tensor variant.
 #define GENERATE_TENSOR_INPUT_SUPPORT_TEST(_, DTYPE) \
-  TEST(OpFillTest, DTYPE##TensorInputSupport) {      \
+  TEST_F(OpFillTest, DTYPE##TensorInputSupport) {    \
     TEST_FILL_OUT(test_fill_tensor_out, DTYPE);      \
   }
 
 ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_TENSOR_INPUT_SUPPORT_TEST)
 
-TEST(OpFillTest, MismatchedOtherPropertiesDies) {
+TEST_F(OpFillTest, MismatchedOtherPropertiesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // `self` and `out` have different shapes but same dtype.
@@ -124,12 +125,12 @@ TEST(OpFillTest, MismatchedOtherPropertiesDies) {
   EXPECT_EQ(other3.numel(), 9);
 
   // Assert `other` tensors with incompatible properties fails.
-  ET_EXPECT_KERNEL_FAILURE(op_fill_tensor_out(self, other1, out));
-  ET_EXPECT_KERNEL_FAILURE(op_fill_tensor_out(self, other2, out));
-  ET_EXPECT_KERNEL_FAILURE(op_fill_tensor_out(self, other3, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_fill_tensor_out(self, other1, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_fill_tensor_out(self, other2, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_fill_tensor_out(self, other3, out));
 }
 
-TEST(OpFillTest, MismatchedOutputShapesDies) {
+TEST_F(OpFillTest, MismatchedOutputShapesDies) {
   // Skip ATen test since it supports `self` and `out` having different shapes.
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
@@ -142,10 +143,10 @@ TEST(OpFillTest, MismatchedOutputShapesDies) {
   Tensor out = tf.zeros({2, 2});
 
   // Assert `out` can't be filled due to incompatible shapes.
-  ET_EXPECT_KERNEL_FAILURE(op_fill_scalar_out(self, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(self, 0, out));
 }
 
-TEST(OpFillTest, MismatchedOutputDtypeDies) {
+TEST_F(OpFillTest, MismatchedOutputDtypeDies) {
   TensorFactory<ScalarType::Byte> tf_byte;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -154,5 +155,5 @@ TEST(OpFillTest, MismatchedOutputDtypeDies) {
   Tensor out = tf_float.ones({2, 2});
 
   // Assert `out` can't be filled due to incompatible dtype.
-  ET_EXPECT_KERNEL_FAILURE(op_fill_scalar_out(self, 0.0, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_fill_scalar_out(self, 0.0, out));
 }
