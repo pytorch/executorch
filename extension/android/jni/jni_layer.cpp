@@ -275,6 +275,10 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return execute_method(methodName->toStdString(), jinputs);
   }
 
+  jint load_method(facebook::jni::alias_ref<jstring> methodName) {
+    return static_cast<jint>(module_->load_method(methodName->toStdString()));
+  }
+
   facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute_method(
       std::string method,
       facebook::jni::alias_ref<
@@ -343,6 +347,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         makeNativeMethod("initHybrid", ExecuTorchJni::initHybrid),
         makeNativeMethod("forward", ExecuTorchJni::forward),
         makeNativeMethod("execute", ExecuTorchJni::execute),
+        makeNativeMethod("loadMethod", ExecuTorchJni::load_method),
     });
   }
 };
