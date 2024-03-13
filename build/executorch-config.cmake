@@ -53,12 +53,7 @@ foreach(lib ${lib_list})
         message("${lib} library is not found.
             If needed rebuild with the proper options in CMakeLists.txt")
     else()
-        if("${lib}" STREQUAL "extension_module" AND (NOT CMAKE_TOOLCHAIN_IOS))
-            add_library(${lib} SHARED IMPORTED)
-        else()
-            # Building a share library on iOS requires code signing, so it's
-            # easier to keep all libs as static when CMAKE_TOOLCHAIN_IOS is
-            # used
+        if("${lib}" STREQUAL "extension_module") 
             add_library(${lib} STATIC IMPORTED)
         endif()
         set_target_properties(

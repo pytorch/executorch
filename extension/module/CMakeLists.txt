@@ -17,16 +17,9 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 list(TRANSFORM _extension_module__srcs PREPEND "${EXECUTORCH_ROOT}/")
-if(CMAKE_TOOLCHAIN_IOS)
-  # Building a share library on iOS requires code signing
-  add_library(extension_module STATIC ${_extension_module__srcs})
-else()
-  add_library(extension_module SHARED ${_extension_module__srcs})
-endif()
+add_library(extension_module STATIC ${_extension_module__srcs})
 target_link_libraries(extension_module PRIVATE executorch)
 target_include_directories(extension_module PUBLIC ${EXECUTORCH_ROOT}/..)
-target_compile_options(extension_module PUBLIC -Wno-deprecated-declarations
-                                               -fPIC)
 
 # Install libraries
 install(
