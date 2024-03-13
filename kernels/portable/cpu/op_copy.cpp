@@ -29,12 +29,12 @@ Tensor& copy_out(
     Tensor& out) {
   (void)ctx;
   // Right now we only support blocking data transfer
-  ET_KERNEL_CHECK(ctx, non_blocking == false, InvalidArgument, non_blocking);
+  ET_KERNEL_CHECK(ctx, non_blocking == false, InvalidArgument, out);
 
   ET_KERNEL_CHECK(ctx, tensors_have_same_dtype(in, out), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
-      ctx, tensor_is_broadcastable_to(src, in), InvalidArgument, src);
+      ctx, tensor_is_broadcastable_to(src, in), InvalidArgument, out);
 
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
