@@ -45,7 +45,7 @@ pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
 
-pip install torchao
+pip install torchao-nightly
 
 # Install ExecuTorch after dependencies are installed.
 pip install . --no-build-isolation
