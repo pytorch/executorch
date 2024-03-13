@@ -700,8 +700,7 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
 
   int n = 100;
 
-  for (int i=0; i<n;i ++ ){
-
+  for (int i = 0; i < n; i++) {
     addFn(graph, {c, b.value, kDummyValueRef, a.value});
 
     addFn(graph, {a.value, b.value, kDummyValueRef, c});
