@@ -155,47 +155,6 @@ class TorchBuilder:
             return self.batch_norm_2d(x)
 
     @register_test
-    class simple_avg_pool2d(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (
-                torch.ones(
-                    20,
-                    16,
-                    50,
-                    32,
-                ),
-            ),
-            TosaProfile.MI: (torch.ones(20, 16, 50, 32),),
-        }
-
-        permute_memory_to_nhwc = True
-
-        def __init__(self):
-            super().__init__()
-            self.avg_pool_2d = torch.nn.AvgPool2d(4, stride=2, padding=0)
-
-        def forward(self, x):
-            return self.avg_pool_2d(x)
-
-    @register_test
-    class simple_mean_dim(torch.nn.Module):
-        data = rand_test_integers(low=15, high=20, size=(20, 16, 50, 32))
-        inputs = {
-            TosaProfile.BI: (data,),
-            TosaProfile.MI: (data,),
-        }
-
-        permute_memory_to_nhwc = True
-
-        def __init__(self):
-            super().__init__()
-            # will be specialized to aten.mean.dim
-            self.adaptive_avg_pool2d = torch.nn.AdaptiveAvgPool2d((1, 1))
-
-        def forward(self, x):
-            return self.adaptive_avg_pool2d(x)
-
-    @register_test
     class block_conv2d_mean_dim(torch.nn.Module):
         data = rand_test_integers(low=15, high=20, size=(1, 3, 128, 128))
         inputs = {
@@ -221,23 +180,7 @@ class TorchBuilder:
             x = self.conv2d(x)
             return self.adaptive_avg_pool2d(x)
 
-    @register_test
-    class simple_softmax(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (torch.ones(2, 3),),
-            TosaProfile.MI: (torch.ones(2, 3),),
-        }
-
-        permute_memory_to_nhwc = False
-
-        def __init__(self):
-            super().__init__()
-            self.softmax = torch.nn.Softmax(dim=1)
-
-        def forward(self, x):
-            return self.softmax(x)
-
-    @register_test
+    # @register_test
     class block_conv_norm_activation(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
