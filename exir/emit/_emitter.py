@@ -206,6 +206,8 @@ class _Emitter(torch.fx.Interpreter):
         binding_output_values: Optional[List[_AbstractValue]] = None,
     ) -> None:
         super().__init__(graph_module)
+        # Ensure emitter takes a valid graph before emitting.
+        graph_module.graph.lint()
         self.emitter_state = emitter_state
         self.program_state = program_state
         self.outputs: List[int] = []
