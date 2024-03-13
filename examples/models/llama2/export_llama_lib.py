@@ -499,13 +499,20 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     if builder.dtype == DType.fp16:
         modelname = f"{modelname}_h"
 
-    builder.save_to_pte(modelname)
-
     if args.output_name:
         modelname = args.output_name
-        if modelname[-4:] == ".pte":
+        if modelname.endswith(".pte"):
+            output_file = modelname
             modelname = modelname[:-4]
+            print(f"modelname: {modelname}")
+            print(f"output_file: {output_file}")
+        else:
+            output_file = f"{builder.output_dir}/{modelname}.pte"
+            print(f"modelname: {modelname}")
+            print(f"output_file: {output_file}")
+    else:
+        output_file = f"{builder.output_dir}/{modelname}.pte"
 
-    output_file = f"{builder.output_dir}/{modelname}.pte"
+    builder.save_to_pte(output_file)
 
     return output_file
