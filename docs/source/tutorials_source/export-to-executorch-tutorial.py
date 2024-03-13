@@ -291,6 +291,7 @@ class Encode(torch.nn.Module):
     def forward(self, x):
         return torch.nn.functional.linear(x, torch.randn(5, 10))
 
+
 class Decode(torch.nn.Module):
     def forward(self, x):
         return torch.nn.functional.linear(x, torch.randn(10, 5))
@@ -520,6 +521,7 @@ print(delegated_program.graph_module.lowered_module_1.original_module)
 #
 # Alternatively, a more cohesive API to lower parts of a module is to directly
 # call ``to_backend`` on it:
+
 
 class Foo(torch.nn.Module):
     def forward(self, a, x, b):
