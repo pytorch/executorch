@@ -360,6 +360,26 @@ inline bool isFloatingType(exec_aten::ScalarType t) {
       t == exec_aten::ScalarType::Half || t == exec_aten::ScalarType::BFloat16);
 }
 
+inline bool isRealType(exec_aten::ScalarType t) {
+  return (
+      t == exec_aten::ScalarType::Byte || t == exec_aten::ScalarType::Char ||
+      t == exec_aten::ScalarType::Short || t == exec_aten::ScalarType::Int ||
+      t == exec_aten::ScalarType::Long || t == exec_aten::ScalarType::Float ||
+      t == exec_aten::ScalarType::Double);
+}
+
+inline bool isRealHType(exec_aten::ScalarType t) {
+  return (
+      t == exec_aten::ScalarType::Byte || t == exec_aten::ScalarType::Char ||
+      t == exec_aten::ScalarType::Short || t == exec_aten::ScalarType::Int ||
+      t == exec_aten::ScalarType::Long || t == exec_aten::ScalarType::Float ||
+      t == exec_aten::ScalarType::Double || t == exec_aten::ScalarType::Half);
+}
+
+inline bool isRealHBType(exec_aten::ScalarType t) {
+  return (isRealHType(t) || t == exec_aten::ScalarType::Bool);
+}
+
 inline bool isComplexType(exec_aten::ScalarType t) {
   return (
       t == exec_aten::ScalarType::ComplexHalf ||
