@@ -35,9 +35,21 @@ class VkGraphBuilder:
 
     @staticmethod
     def get_vk_datatype(torch_dtype: torch.dtype) -> vk_graph_schema.VkDataType:
-        # TODO(T182302927): Support more dtypes including float16, int(32|64).
-        if torch_dtype == torch.float32:
-            return vk_graph_schema.VkDataType.fp32
+        if torch_dtype == torch.bool:
+            return vk_graph_schema.VkDataType.BOOL
+        elif torch_dtype == torch.uint8:
+            return vk_graph_schema.VkDataType.UINT8
+        elif torch_dtype == torch.int8:
+            return vk_graph_schema.VkDataType.INT8
+        elif torch_dtype == torch.int32:
+            return vk_graph_schema.VkDataType.INT32
+        elif torch_dtype == torch.float16:
+            return vk_graph_schema.VkDataType.FLOAT16
+        elif torch_dtype == torch.float32:
+            return vk_graph_schema.VkDataType.FLOAT32
+        # Narrowing conversion for index tensor produced by max_poolNd_with_indices.
+        elif torch_dtype == torch.int64:
+            return vk_graph_schema.VkDataType.INT32
         else:
             raise AssertionError(f"Invalid dtype for vulkan_preprocess ({torch_dtype})")
 

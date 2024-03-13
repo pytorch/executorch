@@ -57,9 +57,18 @@ const uint8_t* getConstantDataPtr(
 
 api::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   switch (vk_datatype) {
-    case (vkgraph::VkDataType::fp32): {
+    case vkgraph::VkDataType::BOOL:
+      return api::kBool;
+    case vkgraph::VkDataType::UINT8:
+      return api::kByte;
+    case vkgraph::VkDataType::INT8:
+      return api::kChar;
+    case vkgraph::VkDataType::INT32:
+      return api::kInt;
+    case vkgraph::VkDataType::FLOAT16:
+      return api::kHalf;
+    case vkgraph::VkDataType::FLOAT32:
       return api::kFloat;
-    }
   }
 }
 
