@@ -23,19 +23,52 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_slice_copy_tensor_out(
-    const Tensor& self,
-    int64_t dim,
-    optional<int64_t> start,
-    optional<int64_t> end,
-    int64_t step,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::slice_copy_outf(
-      context, self, dim, start, end, step, out);
-}
+class OpSliceCopyTensorOutTest : public OperatorTest {
+ protected:
+  Tensor& op_slice_copy_tensor_out(
+      const Tensor& self,
+      int64_t dim,
+      optional<int64_t> start,
+      optional<int64_t> end,
+      int64_t step,
+      Tensor& out) {
+    return torch::executor::aten::slice_copy_outf(
+        context_, self, dim, start, end, step, out);
+  }
 
-TEST(OpSliceCopyTensorOutTest, LegalDimSupported) {
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    // clang-format off
+    Tensor input = tf.make(
+      /*sizes=*/{3, 4},
+      /*data=*/{
+        1,   2,   3,   4, // [0, :]
+        5,   6,   7,   8, // [1, :]
+        9,  10,  11,  12, // [2, :]
+      });
+  
+    // op_slice_copy_tensor_out(input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
+    // The result should equal to input[0:2:1, :]
+    Tensor expect_ret = tf.make(
+      /*sizes=*/{2, 4},
+      /*data=*/{
+        1,   2,   3,   4, // [0, :]
+        5,   6,   7,   8, // [1, :]
+      });
+    // clang-format on
+
+    Tensor out = tf.zeros({2, 4});
+    Tensor ret = op_slice_copy_tensor_out(
+        input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out);
+
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(ret, expect_ret);
+  }
+};
+
+TEST_F(OpSliceCopyTensorOutTest, LegalDimSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -116,7 +149,7 @@ TEST(OpSliceCopyTensorOutTest, LegalDimSupported) {
   }
 }
 
-TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
+TEST_F(OpSliceCopyTensorOutTest, AllStartValsSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -217,7 +250,7 @@ TEST(OpSliceCopyTensorOutTest, AllStartValsSupported) {
   }
 }
 
-TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
+TEST_F(OpSliceCopyTensorOutTest, AllEndValsSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -314,7 +347,7 @@ TEST(OpSliceCopyTensorOutTest, AllEndValsSupported) {
   }
 }
 
-TEST(OpSliceCopyTensorOutTest, LegalStepsSupported) {
+TEST_F(OpSliceCopyTensorOutTest, LegalStepsSupported) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -394,38 +427,7 @@ TEST(OpSliceCopyTensorOutTest, LegalStepsSupported) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  // clang-format off
-  Tensor input = tf.make(
-    /*sizes=*/{3, 4},
-    /*data=*/{
-      1,   2,   3,   4, // [0, :]
-      5,   6,   7,   8, // [1, :]
-      9,  10,  11,  12, // [2, :]
-    });
-
-  // op_slice_copy_tensor_out(input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out),
-  // The result should equal to input[0:2:1, :]
-  Tensor expect_ret = tf.make(
-    /*sizes=*/{2, 4},
-    /*data=*/{
-      1,   2,   3,   4, // [0, :]
-      5,   6,   7,   8, // [1, :]
-    });
-  // clang-format on
-
-  Tensor out = tf.zeros({2, 4});
-  Tensor ret = op_slice_copy_tensor_out(
-      input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out);
-
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(ret, expect_ret);
-}
-
-TEST(OpSliceCopyTensorOutTest, AllDtypesSupported) {
+TEST_F(OpSliceCopyTensorOutTest, AllDtypesSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -437,7 +439,7 @@ TEST(OpSliceCopyTensorOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST(OpSliceCopyTensorOutTest, EmptyInputSupported) {
+TEST_F(OpSliceCopyTensorOutTest, EmptyInputSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({1, 0, 1});
@@ -456,20 +458,24 @@ TEST(OpSliceCopyTensorOutTest, EmptyInputSupported) {
   }
 }
 
-TEST(OpSliceCopyTensorOutTest, EmptySizeInputDies) {
+TEST_F(OpSliceCopyTensorOutTest, EmptySizeInputDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({});
   Tensor out = tf.ones({});
 
   // The operation shall die whatever the end is.
-  ET_EXPECT_KERNEL_FAILURE(op_slice_copy_tensor_out(
-      input, /*dim=*/0, /*start=*/0, /*end=*/0, /*step=*/1, out));
-  ET_EXPECT_KERNEL_FAILURE(op_slice_copy_tensor_out(
-      input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_slice_copy_tensor_out(
+          input, /*dim=*/0, /*start=*/0, /*end=*/0, /*step=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_slice_copy_tensor_out(
+          input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
-TEST(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
+TEST_F(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({1, 1, 1});
@@ -478,12 +484,14 @@ TEST(OpSliceCopyTensorOutTest, NonPostiveStepsDies) {
   // Some invalid step values.
   const std::vector<int64_t> invalid_steps = {-2, -1, 0};
   for (int64_t step : invalid_steps) {
-    ET_EXPECT_KERNEL_FAILURE(op_slice_copy_tensor_out(
-        input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/step, out));
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        op_slice_copy_tensor_out(
+            input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/step, out));
   }
 }
 
-TEST(OpSliceCopyTensorOutTest, DimOutOfBoundDies) {
+TEST_F(OpSliceCopyTensorOutTest, DimOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.ones({1, 1, 1});
@@ -492,12 +500,14 @@ TEST(OpSliceCopyTensorOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (int64_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(op_slice_copy_tensor_out(
-        input, dim, /*start=*/0, /*end=*/1, /*step=*/1, out));
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        op_slice_copy_tensor_out(
+            input, dim, /*start=*/0, /*end=*/1, /*step=*/1, out));
   }
 }
 
-TEST(OpSliceCopyTensorOutTest, MismatchedDtypesDies) {
+TEST_F(OpSliceCopyTensorOutTest, MismatchedDtypesDies) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   Tensor input = tf_int.zeros({1, 2, 2});
@@ -505,11 +515,13 @@ TEST(OpSliceCopyTensorOutTest, MismatchedDtypesDies) {
   // Size is compatible to the output, but a mismatched dtype.
   Tensor out = tf_float.ones({1, 2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(op_slice_copy_tensor_out(
-      input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_slice_copy_tensor_out(
+          input, /*dim=*/0, /*start=*/0, /*end=*/1, /*step=*/1, out));
 }
 
-TEST(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
+TEST_F(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -520,11 +532,13 @@ TEST(OpSliceCopyTensorOutTest, OutSizeMismatchDimDies) {
   // Should be {2, 4, 7, 5}
   Tensor out = tf.zeros({2, 4, 7});
 
-  ET_EXPECT_KERNEL_FAILURE(op_slice_copy_tensor_out(
-      input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_slice_copy_tensor_out(
+          input, /*dim=*/0, /*start=*/0, /*end=*/2, /*step=*/1, out));
 }
 
-TEST(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
+TEST_F(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -543,7 +557,7 @@ TEST(OpSliceCopyTensorOutTest, DefaultStartValSupported) {
   EXPECT_TENSOR_EQ(ret_default_start, expected);
 }
 
-TEST(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
+TEST_F(OpSliceCopyTensorOutTest, DefaultEndValSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor input = tf.zeros({2, 4, 7, 5});
@@ -573,7 +587,7 @@ opt_extra_params = "1, 1, 5, 2,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{2, 2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -615,7 +629,7 @@ TEST(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -660,7 +674,7 @@ TEST(OpSliceCopyTensorOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpSliceCopyTensorOutTest, DynamicShapeUnbound) {
+TEST_F(OpSliceCopyTensorOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
