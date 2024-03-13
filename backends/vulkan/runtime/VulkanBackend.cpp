@@ -16,6 +16,7 @@
 #include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/compiler.h>
 #include <executorch/runtime/platform/profiler.h>
 
@@ -195,6 +196,68 @@ class GraphBuilder {
   }
 };
 
+//
+// Execution tools
+//
+
+bool maybe_resize_input(
+    ComputeGraph* graph,
+    const size_t input_i,
+    exec_aten::Tensor& et_tensor) {
+  ValueRef in_tensor_ref = graph->inputs()[input_i].value;
+  vTensor& in_tensor = graph->get_val(in_tensor_ref).toTensor();
+
+  ET_CHECK_MSG(
+      et_tensor.dim() == in_tensor.sizes().size(),
+      "Cannot resize input tensor: old ndim %zu does not match new ndim %zu",
+      static_cast<size_t>(in_tensor.sizes().size()),
+      static_cast<size_t>(et_tensor.dim()));
+
+  bool should_resize = false;
+  std::vector<int64_t> new_sizes(et_tensor.dim());
+  for (size_t i = 0; i < et_tensor.dim(); i++) {
+    if (in_tensor.sizes()[i] != et_tensor.sizes()[i]) {
+      should_resize = true;
+    }
+    new_sizes.at(i) = et_tensor.sizes()[i];
+  }
+
+  if (should_resize) {
+    graph->resize_input(input_i, new_sizes);
+  }
+
+  ET_CHECK_MSG(
+      in_tensor.numel() == et_tensor.numel(),
+      "Vulkan tensor numel %zu does not match ET tensor numel %zu",
+      static_cast<size_t>(in_tensor.numel()),
+      static_cast<size_t>(et_tensor.numel()));
+
+  return should_resize;
+}
+
+void maybe_resize_output(
+    ComputeGraph* graph,
+    const size_t output_i,
+    exec_aten::Tensor& et_tensor) {
+  ValueRef out_tensor_ref = graph->outputs()[output_i].value;
+  vTensor& out_tensor = graph->get_val(out_tensor_ref).toTensor();
+
+  exec_aten::SizesType new_output_size[kTensorDimensionLimit];
+  size_t ndim = out_tensor.sizes().size();
+  for (int i = 0; i < ndim; ++i) {
+    new_output_size[i] = out_tensor.sizes()[i];
+  }
+
+  exec_aten::ArrayRef<exec_aten::SizesType> output_size{new_output_size, ndim};
+  Error err = resize_tensor(et_tensor, output_size);
+
+  ET_CHECK_MSG(err == Error::Ok, "Failed to resize output tensor.");
+}
+
+//
+// VulkanBackend class
+//
+
 class VulkanBackend final : public PyTorchBackendInterface {
  public:
   ~VulkanBackend() override = default;
@@ -273,20 +336,28 @@ class VulkanBackend final : public PyTorchBackendInterface {
     ComputeGraph* compute_graph = static_cast<ComputeGraph*>(handle);
 
     const size_t num_inputs = compute_graph->inputs().size();
+    bool should_propagate_resize = false;
     for (size_t i = 0; i < num_inputs; i++) {
+      bool was_resized =
+          maybe_resize_input(compute_graph, i, args[i]->toTensor());
+      should_propagate_resize = should_propagate_resize || was_resized;
       compute_graph->copy_into_staging(
-          compute_graph->inputs()[i],
+          compute_graph->inputs()[i].staging,
           args[i]->toTensor().const_data_ptr(),
           args[i]->toTensor().numel());
     }
 
+    if (should_propagate_resize) {
+      compute_graph->propagate_resize();
+    }
     compute_graph->execute();
 
     for (size_t i = 0; i < compute_graph->outputs().size(); i++) {
+      maybe_resize_output(compute_graph, i, args[num_inputs + i]->toTensor());
       // args holds inputs directly followed by outputs, so the i'th output
       // for compute_graph corresponds to the (i + num_inputs)'th arg
       compute_graph->copy_from_staging(
-          compute_graph->outputs()[i],
+          compute_graph->outputs()[i].staging,
           args[num_inputs + i]->toTensor().mutable_data_ptr(),
           args[num_inputs + i]->toTensor().numel());
     }
