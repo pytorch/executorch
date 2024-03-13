@@ -659,13 +659,13 @@ Tensor& flash_attention_kernel_out(
       ctx,
       validate_flash_attention_args(query, key, value, attn_mask),
       InvalidArgument,
-      false);
+      output);
 
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(output, query.sizes()) == Error::Ok,
       InvalidArgument,
-      false);
+      output);
 
   auto q_seq_len = query.size(2);
 
@@ -749,7 +749,7 @@ Tensor& sdpa_with_kv_cache_out(
       validate_cache_params(
           key_cache, value_cache, layer_id, start_pos, seq_len),
       InvalidArgument,
-      false);
+      output);
 
   ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
 
@@ -820,7 +820,7 @@ Tensor& sdpa_with_kv_cache_out(
       ctx,
       resize_tensor(output, q_projected.sizes()) == Error::Ok,
       InvalidArgument,
-      false);
+      output);
 
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for

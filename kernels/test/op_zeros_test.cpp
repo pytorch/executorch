@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -21,25 +22,27 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_zeros_out(IntArrayRef size, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::zeros_outf(context, size, out);
-}
+class OpZerosOutTest : public OperatorTest {
+ protected:
+  Tensor& op_zeros_out(IntArrayRef size, Tensor& out) {
+    return torch::executor::aten::zeros_outf(context_, size, out);
+  }
 
-template <ScalarType DTYPE>
-void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
-  TensorFactory<DTYPE> tf;
-  std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
-  auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
-  Tensor out = tf.ones(size_int32_t);
+  template <ScalarType DTYPE>
+  void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
+    TensorFactory<DTYPE> tf;
+    std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
+    auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
+    Tensor out = tf.ones(size_int32_t);
 
-  op_zeros_out(aref, out);
+    op_zeros_out(aref, out);
 
-  EXPECT_TENSOR_EQ(out, tf.zeros(size_int32_t));
-}
+    EXPECT_TENSOR_EQ(out, tf.zeros(size_int32_t));
+  }
+};
 
 #define GENERATE_TEST(_, DTYPE)                   \
-  TEST(OpZerosOutKernelTest, DTYPE##Tensors) {    \
+  TEST_F(OpZerosOutTest, DTYPE##Tensors) {        \
     test_zeros_out<ScalarType::DTYPE>({2, 3, 4}); \
     test_zeros_out<ScalarType::DTYPE>({2, 0, 4}); \
     test_zeros_out<ScalarType::DTYPE>({});        \
@@ -47,7 +50,7 @@ void test_zeros_out(std::vector<int32_t>&& size_int32_t) {
 
 ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_TEST)
 
-TEST(OpZerosOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpZerosOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
   Tensor expected = tf.zeros({3, 2});
 
@@ -59,7 +62,7 @@ TEST(OpZerosOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpZerosOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpZerosOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
   Tensor expected = tf.zeros({3, 2});
 
@@ -71,7 +74,7 @@ TEST(OpZerosOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpZerosOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpZerosOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
