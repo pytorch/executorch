@@ -3,7 +3,7 @@ load(":targets.bzl", "define_common_targets")
 
 oncall("executorch")
 
-define_common_targets()
+define_common_targets(is_fbcode = True)
 
 runtime.python_library(
     name = "vulkan_preprocess",
