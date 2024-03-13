@@ -1,23 +1,24 @@
 import argparse
+import logging
 import os
 import sys
 import traceback
 
+import torch
 from examples.portable.utils import export_to_edge
-from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
-    XnnpackDynamicallyQuantizedPartitioner,
-)
-from executorch.exir.capture import EdgeCompileConfig
+from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from torch.nn.attention import SDPBackend
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 HF_LLM_MODLE_REPOS = [
     # architecture: llama
-    ("mistralai/Mixtral-8x7B-v0.1",),
+    ("mistralai/Mixtral-8x7B-v0.1", "GOOD"),
     ("mistralai/Mistral-7B-v0.1",),
     ("bofenghuang/vigogne-2-7b-chat",),
-    ("hfl/chinese-llama-2-7b",),
-    ("hfl/chinese-alpaca-2-7b",),
+    ("hfl/chinese-llama-2-7b", "GOOD"),
+    ("hfl/chinese-alpaca-2-7b", "GOOD"),
     ("TheBloke/koala-7B-HF",),
     # architecture: falcon
     ("tiiuae/falcon-7b",),
@@ -39,7 +40,7 @@ HF_LLM_MODLE_REPOS = [
     ("baichuan-inc/Baichuan2-7B-Base",),
     ("baichuan-inc/Baichuan-7B", "GOOD"),
     # architecture: rwkv
-    ("RWKV/rwkv-5-world-1b5",),
+    ("RWKV/rwkv-5-world-1b5", "GOOD"),
     # architecture: starcoder
     ("bigcode/starcoder", "GOOD"),
     ("bigcode/starcoder2-3b",),  # Not avialable in 4.38.2
@@ -54,7 +55,7 @@ HF_LLM_MODLE_REPOS = [
     ("stabilityai/stablelm-2-1_6b", "GOOD"),
     # architecture: qwen
     ("Qwen/Qwen-7B-Chat",),
-    ("Qwen/Qwen1.5-7B-Chat",),
+    ("Qwen/Qwen1.5-7B-Chat", "GOOD"),
     # architecture: phi2
     ("microsoft/phi-2", "GOOD"),
     ("microsoft/phi-1_5", "GOOD"),
@@ -64,14 +65,14 @@ HF_LLM_MODLE_REPOS = [
     # architecture: internlm2
     ("internlm/internlm2-7b", "GOOD"),
     # architecture: minicpm
-    ("openbmb/MiniCPM-2B-sft-bf16",),
+    ("openbmb/MiniCPM-2B-sft-bf16", "GOOD"),
     # architecture: gemma
     ("google/gemma-2b",),
     ("google/gemma-7b",),
     # unknown
     ("microsoft/biogpt", "GOOD"),
-    ("deepseek-ai/deepseek-llm-7b-chat",),
-    ("01-ai/Yi-6B",),
+    ("deepseek-ai/deepseek-llm-7b-chat", "GOOD"),
+    ("01-ai/Yi-6B", "GOOD"),
     ("BAAI/Aquila-7B", "GOOD"),
     ("BAAI/Aquila2-7B", "GOOD"),
     ("THUDM/chatglm3-6b",),
@@ -105,7 +106,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if not os.path.exists(args.output_dir):
-        print(f"Error: Output directory '{args.output_dir}' does not exist.")
+        logging.error(f"Error: Output directory '{args.output_dir}' does not exist.")
         return sys.exit(1)
 
     hf_model_repos = (
@@ -119,15 +120,15 @@ def main() -> None:
     for repo_config in hf_model_repos:
         hf_model_repo, status = repo_config[:2] + ("",) * (2 - len(repo_config))
         if args.skip_good and status == "GOOD":
-            print(f"Skip model '{hf_model_repo}'.")
+            logging.info(f"Skip model '{hf_model_repo}'.")
             result_summary[hf_model_repo] = "SKIPPED"
             continue
 
         model_name = hf_model_repo.split("/")[-1].lower()
         try:
-            print("\n\n#######################################################")
-            print(f"Load model '{hf_model_repo}' from Hugginface.")
-            print("#######################################################")
+            logging.info("\n\n#######################################################")
+            logging.info(f"Load model '{hf_model_repo}' from Hugginface.")
+            logging.info("#######################################################")
             model = AutoModelForCausalLM.from_pretrained(
                 hf_model_repo, trust_remote_code=True
             ).to(device)
@@ -139,26 +140,29 @@ def main() -> None:
                 tokenizer([prompt], return_tensors="pt").to(device)["input_ids"],
             )
 
-            edge_m = export_to_edge(
-                model,
-                model_inputs,
-                edge_compile_config=EdgeCompileConfig(
-                    _check_ir_validity=False,
-                ),
-            )
-            print(f"Exported '{hf_model_repo}' successfully.")
+            with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+                edge_m = export_to_edge(
+                    model,
+                    model_inputs,
+                    edge_compile_config=EdgeCompileConfig(
+                        _check_ir_validity=False,
+                    ),
+                )
+                logging.info(f"Exported '{hf_model_repo}' successfully.")
 
             if args.to_et_w_xnn:
                 partitioners = {}
-                partitioners[
-                    XnnpackDynamicallyQuantizedPartitioner.__name__
-                ] = XnnpackDynamicallyQuantizedPartitioner()
-                prog = edge_m.to_backend(partitioners).to_executorch()
-                print(f"Lowered graph:\n{prog.exported_program().graph}")
+                partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
+                prog = edge_m.to_backend(partitioners).to_executorch(
+                    ExecutorchBackendConfig(
+                        extract_constant_segment=True, extract_delegate_segments=True
+                    )
+                )
+                logging.info(f"Lowered graph:\n{prog.exported_program().graph}")
                 filename = os.path.join(args.output_dir, f"xnnpack_{model_name}.pte")
                 with open(filename, "wb") as f:
-                    f.write(prog.buffer)
-                    print(f"Saved exported program to {filename}")
+                    prog.write_to_file(f)
+                    logging.info(f"Saved exported program to {filename}")
 
             result_summary[hf_model_repo] = "GOOD"
 
@@ -166,12 +170,12 @@ def main() -> None:
             filename = os.path.join(args.output_dir, f"err_{model_name}.txt")
             with open(filename, "w") as f:
                 traceback.print_exc(file=f)
-            print(
+            logging.info(
                 f"Failed to export '{hf_model_repo}'.\nRecorded stack trace to {filename}"
             )
             result_summary[hf_model_repo] = "ERROR"
 
-    print(f"Export summary: \n{result_summary}.")
+    logging.info(f"Export summary: \n{result_summary}.")
 
 
 if __name__ == "__main__":
