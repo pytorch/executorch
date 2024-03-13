@@ -125,6 +125,20 @@ class GraphBuilder {
     ref_mapping_[fb_id] = ref;
   }
 
+  template <typename T>
+  typename std::enable_if<is_valid_scalar_type<T>::value, void>::type
+  add_scalar_list_to_graph(const uint32_t fb_id, std::vector<T>&& value) {
+    ValueRef ref = compute_graph_->add_scalar_list(std::move(value));
+    ref_mapping_[fb_id] = ref;
+  }
+
+  void add_value_list_to_graph(
+      const uint32_t fb_id,
+      std::vector<ValueRef>&& value) {
+    ValueRef ref = compute_graph_->add_value_list(std::move(value));
+    ref_mapping_[fb_id] = ref;
+  }
+
   void add_string_to_graph(const uint32_t fb_id, VkValuePtr value) {
     const auto fb_str = value->value_as_String()->string_val();
     std::string string(fb_str->cbegin(), fb_str->cend());
@@ -149,6 +163,34 @@ class GraphBuilder {
         break;
       case vkgraph::GraphTypes::VkTensor:
         add_tensor_to_graph(fb_id, value->value_as_VkTensor());
+        break;
+      case vkgraph::GraphTypes::IntList:
+        add_scalar_list_to_graph(
+            fb_id,
+            std::vector<int64_t>(
+                value->value_as_IntList()->items()->cbegin(),
+                value->value_as_IntList()->items()->cend()));
+        break;
+      case vkgraph::GraphTypes::DoubleList:
+        add_scalar_list_to_graph(
+            fb_id,
+            std::vector<double>(
+                value->value_as_DoubleList()->items()->cbegin(),
+                value->value_as_DoubleList()->items()->cend()));
+        break;
+      case vkgraph::GraphTypes::BoolList:
+        add_scalar_list_to_graph(
+            fb_id,
+            std::vector<bool>(
+                value->value_as_BoolList()->items()->cbegin(),
+                value->value_as_BoolList()->items()->cend()));
+        break;
+      case vkgraph::GraphTypes::ValueList:
+        add_value_list_to_graph(
+            fb_id,
+            std::vector<ValueRef>(
+                value->value_as_ValueList()->items()->cbegin(),
+                value->value_as_ValueList()->items()->cend()));
         break;
       case vkgraph::GraphTypes::String:
         add_string_to_graph(fb_id, value);

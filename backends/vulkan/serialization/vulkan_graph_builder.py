@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Union
+from typing import cast, List, Optional, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
@@ -15,8 +15,8 @@ from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch.export import ExportedProgram
 from torch.fx import Node
 
-_ScalarType = Union[int, bool, float]
-_Argument = Union[Node, int, bool, float, str]
+_ScalarType = Union[bool, int, float]
+_Argument = Union[Node, List[Node], _ScalarType, List[_ScalarType], str]
 
 
 class VkGraphBuilder:
@@ -150,14 +150,46 @@ class VkGraphBuilder:
                 "Creating values for nodes with collection types is not supported yet."
             )
 
+    def create_value_list_value(self, arg: List[Node]) -> int:
+        self.values.append(
+            vk_graph_schema.VkValue(
+                vk_graph_schema.ValueList(
+                    items=[self.get_or_create_value_for(e) for e in arg]
+                )
+            )
+        )
+        return len(self.values) - 1
+
     def create_scalar_value(self, scalar: _ScalarType) -> int:
         new_id = len(self.values)
-        if isinstance(scalar, int):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
-        if isinstance(scalar, float):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
         if isinstance(scalar, bool):
             self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Bool(scalar)))
+        elif isinstance(scalar, int):
+            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
+        elif isinstance(scalar, float):
+            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
+        return new_id
+
+    def create_scalar_list_value(self, arg: List[_ScalarType]) -> int:
+        new_id = len(self.values)
+        if isinstance(arg[0], bool):
+            self.values.append(
+                vk_graph_schema.VkValue(
+                    vk_graph_schema.BoolList(items=[cast(bool, e) for e in arg])
+                )
+            )
+        elif isinstance(arg[0], int):
+            self.values.append(
+                vk_graph_schema.VkValue(
+                    vk_graph_schema.IntList(items=[cast(int, e) for e in arg])
+                )
+            )
+        elif isinstance(arg[0], float):
+            self.values.append(
+                vk_graph_schema.VkValue(
+                    vk_graph_schema.DoubleList(items=[cast(float, e) for e in arg])
+                )
+            )
         return new_id
 
     def create_string_value(self, string: str) -> int:
@@ -174,8 +206,14 @@ class VkGraphBuilder:
                 return self.node_to_value_ids[arg]
             # Return id for a newly created value
             return self.create_tensor_values(arg)
-        elif isinstance(arg, (int, float, bool)):
+        elif isinstance(arg, list) and isinstance(arg[0], Node):
+            # pyre-ignore[6]
+            return self.create_value_list_value(arg)
+        elif isinstance(arg, _ScalarType):
             return self.create_scalar_value(arg)
+        elif isinstance(arg, list) and isinstance(arg[0], _ScalarType):
+            # pyre-ignore[6]
+            return self.create_scalar_list_value(arg)
         elif isinstance(arg, str):
             return self.create_string_value(arg)
         else:

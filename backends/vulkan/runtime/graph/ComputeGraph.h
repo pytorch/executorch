@@ -143,11 +143,13 @@ class ComputeGraph final {
 
   template <typename T>
   typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-  add_scalar_list(std::vector<T>&& values);
+  add_scalar(T value);
 
   template <typename T>
   typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-  add_scalar(T value);
+  add_scalar_list(std::vector<T>&& value);
+
+  ValueRef add_value_list(std::vector<ValueRef>&& value);
 
   ValueRef add_string(std::string&& str);
 
@@ -212,17 +214,17 @@ class ComputeGraph final {
 
 template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-ComputeGraph::add_scalar_list(std::vector<T>&& values) {
+ComputeGraph::add_scalar(T value) {
   ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(std::move(values));
+  values_.emplace_back(value);
   return idx;
 }
 
 template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-ComputeGraph::add_scalar(T value) {
+ComputeGraph::add_scalar_list(std::vector<T>&& value) {
   ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(value);
+  values_.emplace_back(std::move(value));
   return idx;
 }
 
