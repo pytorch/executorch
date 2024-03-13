@@ -51,13 +51,13 @@ void scatter_add_helper(
 } // namespace
 
 Tensor& scatter_add_out(
-    RuntimeContext& ctx,
+    RuntimeContext& context,
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  (void)ctx;
+  (void)context;
 
   ET_KERNEL_CHECK(
       context,
