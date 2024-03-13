@@ -21,58 +21,83 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_masked_fill_scalar_out(
-    const Tensor& self,
-    const Tensor& mask,
-    const Scalar& value,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::masked_fill_outf(
-      context, self, mask, value, out);
-}
-// Common testing for masked fill of integer Tensor.
-template <ScalarType DTYPE>
-void test_integer_masked_fill_scalar_out() {
-  TensorFactory<DTYPE> tf;
-  TensorFactory<ScalarType::Bool> tf_bool;
+class OpMaskedFillTest : public OperatorTest {
+ protected:
+  Tensor& op_masked_fill_scalar_out(
+      const Tensor& self,
+      const Tensor& mask,
+      const Scalar& value,
+      Tensor& out) {
+    return torch::executor::aten::masked_fill_outf(
+        context_, self, mask, value, out);
+  }
 
-  const std::vector<int32_t> sizes = {2, 2};
+  // Common testing for masked fill of integer Tensor.
+  template <ScalarType DTYPE>
+  void test_integer_masked_fill_scalar_out() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Bool> tf_bool;
 
-  // Destination for the masked_fill.
-  Tensor out = tf.zeros(sizes);
+    const std::vector<int32_t> sizes = {2, 2};
 
-  // Masked fill half of the tensor.
-  op_masked_fill_scalar_out(
-      tf.make(sizes, /*data=*/{23, 29, 31, 37}),
-      tf_bool.make(sizes, /*data=*/{false, true, true, false}),
-      /*value=*/71,
-      out);
+    // Destination for the masked_fill.
+    Tensor out = tf.zeros(sizes);
 
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{23, 71, 71, 37}));
-}
+    // Masked fill half of the tensor.
+    op_masked_fill_scalar_out(
+        tf.make(sizes, /*data=*/{23, 29, 31, 37}),
+        tf_bool.make(sizes, /*data=*/{false, true, true, false}),
+        /*value=*/71,
+        out);
 
-TEST(OpMaskedFillTest, ByteTensors) {
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{23, 71, 71, 37}));
+  }
+
+  // Common testing for masked fill of floating point Tensor.
+  template <ScalarType DTYPE>
+  void test_floating_point_masked_fill_scalar_out() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Bool> tf_bool;
+
+    const std::vector<int32_t> sizes = {2, 2};
+
+    // Destination for the masked_fill.
+    Tensor out = tf.zeros(sizes);
+
+    // Masked fill half of the tensor.
+    op_masked_fill_scalar_out(
+        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
+        tf_bool.make(sizes, /*data=*/{true, false, false, true}),
+        /*value=*/3.3,
+        out);
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{3.3, 2.2, 4.4, 3.3}));
+  }
+};
+
+TEST_F(OpMaskedFillTest, ByteTensors) {
   test_integer_masked_fill_scalar_out<ScalarType::Byte>();
 }
 
-TEST(OpMaskedFillTest, CharTensors) {
+TEST_F(OpMaskedFillTest, CharTensors) {
   test_integer_masked_fill_scalar_out<ScalarType::Char>();
 }
 
-TEST(OpMaskedFillTest, ShortTensors) {
+TEST_F(OpMaskedFillTest, ShortTensors) {
   test_integer_masked_fill_scalar_out<ScalarType::Short>();
 }
 
-TEST(OpMaskedFillTest, IntTensors) {
+TEST_F(OpMaskedFillTest, IntTensors) {
   test_integer_masked_fill_scalar_out<ScalarType::Int>();
 }
 
-TEST(OpMaskedFillTest, LongTensors) {
+TEST_F(OpMaskedFillTest, LongTensors) {
   test_integer_masked_fill_scalar_out<ScalarType::Long>();
 }
 
-TEST(OpMaskedFillTest, IntTensorFloatAlphaDies) {
+TEST_F(OpMaskedFillTest, IntTensorFloatAlphaDies) {
   // add_out() doesn't handle floating alpha for intergal inputs
   TensorFactory<ScalarType::Int> tf;
 
@@ -83,41 +108,21 @@ TEST(OpMaskedFillTest, IntTensorFloatAlphaDies) {
 
   // Elementwise add operation on two integral tensor with floating alpha
   // should cause an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(op_masked_fill_scalar_out(
-      tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_masked_fill_scalar_out(
+          tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
-// Common testing for masked fill of floating point Tensor.
-template <ScalarType DTYPE>
-void test_floating_point_masked_fill_scalar_out() {
-  TensorFactory<DTYPE> tf;
-  TensorFactory<ScalarType::Bool> tf_bool;
-
-  const std::vector<int32_t> sizes = {2, 2};
-
-  // Destination for the masked_fill.
-  Tensor out = tf.zeros(sizes);
-
-  // Masked fill half of the tensor.
-  op_masked_fill_scalar_out(
-      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
-      tf_bool.make(sizes, /*data=*/{true, false, false, true}),
-      /*value=*/3.3,
-      out);
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{3.3, 2.2, 4.4, 3.3}));
-}
-
-TEST(OpMaskedFillTest, FloatTensors) {
+TEST_F(OpMaskedFillTest, FloatTensors) {
   test_floating_point_masked_fill_scalar_out<ScalarType::Float>();
 }
 
-TEST(OpMaskedFillTest, DoubleTensors) {
+TEST_F(OpMaskedFillTest, DoubleTensors) {
   test_floating_point_masked_fill_scalar_out<ScalarType::Double>();
 }
 
-TEST(OpMaskedFillTest, BoolTensors) {
+TEST_F(OpMaskedFillTest, BoolTensors) {
   TensorFactory<ScalarType::Bool> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -135,7 +140,7 @@ TEST(OpMaskedFillTest, BoolTensors) {
 }
 
 // The input tensor and value may not have different dtypes.
-TEST(OpMaskedFillTest, MismatchedInputAndValueDtypesDies) {
+TEST_F(OpMaskedFillTest, MismatchedInputAndValueDtypesDies) {
   TensorFactory<ScalarType::Byte> tf_byte;
   TensorFactory<ScalarType::Char> tf_char;
 
@@ -151,12 +156,12 @@ TEST(OpMaskedFillTest, MismatchedInputAndValueDtypesDies) {
   // Filling tensor with mismatched scalar should cause an assertion and kill
   // the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      op_masked_fill_scalar_out(self, mask, /*value=*/1.3, out));
+      context_, op_masked_fill_scalar_out(self, mask, /*value=*/1.3, out));
 }
 
 // The output tensor may not have a dtype different from the inputs even if it
 // has the same shape.
-TEST(OpMaskedFillTest, MismatchedOutputDtypeDies) {
+TEST_F(OpMaskedFillTest, MismatchedOutputDtypeDies) {
   // Two different dtypes. This test uses two types with the same size to
   // demonstrate that the ScalarType itself matters, not the size of the
   // tensor elements.
@@ -176,10 +181,10 @@ TEST(OpMaskedFillTest, MismatchedOutputDtypeDies) {
   // Filling the tensor into a mismatched output should cause an assertion and
   // kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      op_masked_fill_scalar_out(self, mask, /*fill=*/0, out));
+      context_, op_masked_fill_scalar_out(self, mask, /*fill=*/0, out));
 }
 // The mask tensor type must be bool, even if shapes are the same
-TEST(OpMaskedFillTest, MismatchedMaskDtypeDies) {
+TEST_F(OpMaskedFillTest, MismatchedMaskDtypeDies) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -194,11 +199,11 @@ TEST(OpMaskedFillTest, MismatchedMaskDtypeDies) {
   // Filling the tensor using non boolean mask should cause an assertion and
   // kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      op_masked_fill_scalar_out(self, mask, /*fill=*/0, out));
+      context_, op_masked_fill_scalar_out(self, mask, /*fill=*/0, out));
 }
 
 // Mismatched shape tests.
-TEST(OpMaskedFillTest, MismatchedInputShapesDies) {
+TEST_F(OpMaskedFillTest, MismatchedInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -212,10 +217,10 @@ TEST(OpMaskedFillTest, MismatchedInputShapesDies) {
   // Masked fill with mismatch input and mask shapes should cause an assertion
   // and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      op_masked_fill_scalar_out(self, mask, /*value=*/0, out));
+      context_, op_masked_fill_scalar_out(self, mask, /*value=*/0, out));
 }
 
-TEST(OpMaskedFillTest, BroadcastTest) {
+TEST_F(OpMaskedFillTest, BroadcastTest) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -237,7 +242,7 @@ TEST(OpMaskedFillTest, BroadcastTest) {
   EXPECT_TENSOR_CLOSE(out, tf.make({2, 2}, /*data=*/{3, 2, 3, 8}));
 }
 
-TEST(OpMaskedFillTest, MismatchedOutputShapesDies) {
+TEST_F(OpMaskedFillTest, MismatchedOutputShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
   }
@@ -255,10 +260,11 @@ TEST(OpMaskedFillTest, MismatchedOutputShapesDies) {
 
   // Mask filling the tensor into a mismatched output should cause an assertion
   // and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(op_masked_fill_scalar_out(a, b, /*value=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_masked_fill_scalar_out(a, b, /*value=*/0, out));
 }
 
-TEST(OpMaskedFillTest, BroadcastDimSizeIsOneAB) {
+TEST_F(OpMaskedFillTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> bool_tf;
 
@@ -285,7 +291,7 @@ TEST(OpMaskedFillTest, BroadcastDimSizeIsOneAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMaskedFillTest, BroadcastDimSizeMissingAB) {
+TEST_F(OpMaskedFillTest, BroadcastDimSizeMissingAB) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> bool_tf;
 
@@ -312,7 +318,7 @@ TEST(OpMaskedFillTest, BroadcastDimSizeMissingAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMaskedFillTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpMaskedFillTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> bool_tf;
 
@@ -340,7 +346,7 @@ TEST(OpMaskedFillTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMaskedFillTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpMaskedFillTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> bool_tf;
 
@@ -368,7 +374,7 @@ TEST(OpMaskedFillTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMaskedFillTest, DynamicShapeUnbound) {
+TEST_F(OpMaskedFillTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> bool_tf;
@@ -397,7 +403,7 @@ TEST(OpMaskedFillTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMaskedFillTest, BroadcastDimSizeIsOneBA) {
+TEST_F(OpMaskedFillTest, BroadcastDimSizeIsOneBA) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tf_bool;
 
@@ -425,7 +431,7 @@ TEST(OpMaskedFillTest, BroadcastDimSizeIsOneBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMaskedFillTest, BroadcastDimSizeMissingBA) {
+TEST_F(OpMaskedFillTest, BroadcastDimSizeMissingBA) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tf_bool;
 
