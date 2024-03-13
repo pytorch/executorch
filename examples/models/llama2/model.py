@@ -70,7 +70,7 @@ class Llama2Model(EagerModelBase):
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
         # flake8: noqa: TOR102
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
         fairseq2_checkpoint = kwargs.get("fairseq2", False)
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
@@ -130,7 +130,11 @@ the checkpoint format to avoid generating faulty models.
             for key, weights in checkpoint.items():
                 print(f"{key} : {weights.numel()} : {weights.size()}")
             print("============= /weights ================")
-        self.model_ = Transformer(model_args)
+
+        # Within the device="meta" context, tensors that are created do not carry data.
+        # They possess all other metadata a tensor carries such as size, stride, requires_grad.
+        with torch.device("meta"):
+            self.model_ = Transformer(model_args)
 
         if "int8" in str(checkpoint_path):
             print("Using int8 weight-only quantization!")
@@ -142,11 +146,16 @@ the checkpoint format to avoid generating faulty models.
             print("Using int4 weight-only quantization!")
             from .quantize import Int8DynActInt4WeightQuantHandler
 
-            simple_quantizer = INt8dynactint4weightquanthandler(self.model_)
+            simple_quantizer = Int8DynActInt4WeightQuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
 
+        # assign=True: load params/buffers by assignment instead of performing an in-place copy.
+        # Because we are using device="meta", tensors do not have memory associated with them
+        # and an in-place copy is a no-op. Use assign=True in load_state_dict for this scenario.
         self.model_.load_state_dict(
-            checkpoint, strict=False
+            checkpoint,
+            strict=False,
+            assign=True,
         )  # self.model_ = Transformer(gptconf)
 
     def get_eager_model(self):
