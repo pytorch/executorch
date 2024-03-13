@@ -1,0 +1,61 @@
+[submodule "third-party/prelude"]
+	path = third-party/prelude
+	url = https://github.com/facebook/buck2-prelude.git
+[submodule "third-party/flatbuffers"]
+	path = third-party/flatbuffers
+	url = https://github.com/google/flatbuffers.git
+[submodule "third-party/pytorch"]
+	path = third-party/pytorch
+	url = https://github.com/pytorch/pytorch.git
+[submodule "third-party/gflags"]
+	path = third-party/gflags
+	url = https://github.com/gflags/gflags.git
+[submodule "third-party/googletest"]
+	path = third-party/googletest
+	url = https://github.com/google/googletest.git
+[submodule "third-party/pybind11"]
+	path = third-party/pybind11
+	url = https://github.com/pybind/pybind11.git
+[submodule "backends/xnnpack/third-party/pthreadpool"]
+	path = backends/xnnpack/third-party/pthreadpool
+	url = https://github.com/Maratyszcza/pthreadpool.git
+[submodule "backends/xnnpack/third-party/cpuinfo"]
+	path = backends/xnnpack/third-party/cpuinfo
+	url = https://github.com/pytorch/cpuinfo.git
+[submodule "backends/xnnpack/third-party/FP16"]
+	path = backends/xnnpack/third-party/FP16
+	url = https://github.com/Maratyszcza/FP16.git
+[submodule "backends/xnnpack/third-party/FXdiv"]
+	path = backends/xnnpack/third-party/FXdiv
+	url = https://github.com/Maratyszcza/FXdiv.git
+[submodule "backends/xnnpack/third-party/XNNPACK"]
+	path = backends/xnnpack/third-party/XNNPACK
+	url = https://github.com/google/XNNPACK.git
+[submodule "backends/arm/third-party/serialization_lib"]
+	path = backends/arm/third-party/serialization_lib
+	url = https://review.mlplatform.org/tosa/serialization_lib
+[submodule "third-party/flatcc"]
+	path = third-party/flatcc
+	url = https://github.com/dvidelabs/flatcc.git
+[submodule "examples/third-party/llama"]
+	path = examples/third-party/llama
+	url = https://github.com/facebookresearch/llama.git
+[submodule "examples/third-party/fbjni"]
+	path = examples/third-party/fbjni
+	url = https://github.com/facebookincubator/fbjni.git
+[submodule "backends/arm/third-party/ethos-u-core-driver"]
+	path = backends/arm/third-party/ethos-u-core-driver
+	url = https://review.mlplatform.org/ml/ethos-u/ethos-u-core-driver
+[submodule "backends/vulkan/third-party/VulkanMemoryAllocator"]
+	path = backends/vulkan/third-party/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "backends/vulkan/third-party/volk"]
+	path = backends/vulkan/third-party/volk
+	url = https://github.com/zeux/volk
+[submodule "backends/vulkan/third-party/Vulkan-Headers"]
+	path = backends/vulkan/third-party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "third-party/lm-evaluation-harness"]
+	path = third-party/lm-evaluation-harness
+	url = https://github.com/EleutherAI/lm-evaluation-harness
+	branch = v0.4.1

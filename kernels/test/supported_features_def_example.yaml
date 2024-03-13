@@ -1,0 +1,11 @@
+# A sample supported_features_def.yaml; used for testing and as an example
+
+- namespace: global
+  is_aten: false
+  output_resize: false
+
+- namespace: op_gelu
+  dtype_double: true
+
+- namespace: op_log_softmax
+  dtype_double: true

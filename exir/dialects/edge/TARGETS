@@ -1,0 +1,29 @@
+load("@fbcode_macros//build_defs:export_files.bzl", "export_file")
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "_ops.py",
+    ],
+    resources = {
+        ":edge_yaml": "edge.yaml",
+    },
+    deps = [
+        "fbsource//third-party/pypi/ruamel-yaml:ruamel-yaml",
+        "fbsource//third-party/pypi/setuptools:setuptools",
+        "//caffe2:torch",
+        "//caffe2/torchgen:torchgen",
+        "//executorch/exir/dialects/edge/dtype:lib",
+        "//executorch/exir/dialects/edge/op:lib",
+        "//executorch/exir/dialects/edge/spec:lib",
+    ],
+)
+
+export_file(
+    name = "edge_yaml",
+    src = "edge.yaml",
+    visibility = ["//executorch/..."],
+)

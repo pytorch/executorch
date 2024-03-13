@@ -1,0 +1,45 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        ":capture",
+        ":config",
+    ],
+)
+
+python_library(
+    name = "capture",
+    srcs = [
+        "_capture.py",
+    ],
+    deps = [
+        ":config",
+        "//caffe2:torch",
+        "//executorch/exir:error",
+        "//executorch/exir:tracer",
+        "//executorch/exir/program:lib",
+        "//executorch/exir/program:program",
+        "//executorch/exir/verification:verifier",
+    ],
+)
+
+python_library(
+    name = "config",
+    srcs = [
+        "_config.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:dynamic_shape",
+        "//executorch/exir:pass_manager",
+        "//executorch/exir:tracer",
+        "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:sym_shape_eval_pass",
+    ],
+)

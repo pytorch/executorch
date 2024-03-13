@@ -1,0 +1,878 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains operators that are also defined by the ATen library.
+# For lean mode:
+#   - Codegen'd target `executorch_generated_lib` will be reading all the information
+#     from this file, including operator schema and kernel metadata.
+#   - Selective build target `codegen:executorch_defined_ops` now is selecting all the
+#     operators in this file, by dumping all the op names into `selected_operators.yaml`.
+#
+# For ATen mode:
+#   - Codegen'd tagret `executorch_generated_lib` will read information from
+#     `native_functions.yaml` in ATen library, for both operator schema and kernel metadat.
+#   - Selective build will also look for operator names listed in this file and use them to
+#     filter the entries in `native_functions.yaml`. Kernel metadata defined in this yaml
+#     will be ignored.
+#
+# See the README.md file in this directory for a description of the syntax used
+# by this file.
+
+- op: _cdist_forward.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_cdist_forward_out
+
+- op: _log_softmax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log_softmax_out
+
+- op: _native_batch_norm_legit.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_native_batch_norm_legit_out
+
+- op: _native_batch_norm_legit.no_stats_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_native_batch_norm_legit_no_stats_out
+
+- op: _native_batch_norm_legit_no_training.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_native_batch_norm_legit_no_training_out
+
+- op: _pdist_forward.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::_pdist_forward_out
+
+- op: _softmax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::softmax_out
+
+- op: _to_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::to_copy_out
+
+- op: abs.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::abs_out
+
+- op: acos.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::acos_out
+
+- op: acosh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::acosh_out
+
+- op: add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_out
+
+- op: add.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::add_scalar_out
+
+- op: addmm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::addmm_out
+
+- op: alias_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::alias_copy_out
+
+- op: amax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::amax_out
+
+- op: amin.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::amin_out
+
+- op: any.all_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_all_out
+
+- op: any.dims_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_dims_out
+
+- op: any.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::any_out
+
+- op: arange.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::arange_out
+
+- op: arange.start_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::arange_start_out
+
+- op: argmax.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::argmax_out
+
+- op: argmin.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::argmin_out
+
+- op: as_strided_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::as_strided_copy_out
+
+- op: asin.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::asin_out
+
+- op: asinh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::asinh_out
+
+- op: atan.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atan_out
+
+- op: atan2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atan2_out
+
+- op: atanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::atanh_out
+
+- op: avg_pool2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::avg_pool2d_out
+
+- op: bitwise_and.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_and_Scalar_out
+
+- op: bitwise_and.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_and_Tensor_out
+
+- op: bitwise_not.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_not_out
+
+- op: bitwise_or.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_or_Scalar_out
+
+- op: bitwise_or.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_or_Tensor_out
+
+- op: bitwise_xor.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_xor_Scalar_out
+
+- op: bitwise_xor.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bitwise_xor_Tensor_out
+
+- op: bmm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::bmm_out
+
+- op: cat.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cat_out
+
+- op: ceil.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ceil_out
+
+- op: clamp.out
+  cpp_no_default_args: ['min']
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::clamp_out
+
+- op: clamp.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::clamp_tensor_out
+
+- op: clone.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::clone_out
+
+- op: constant_pad_nd.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::constant_pad_nd_out
+
+- op: convolution.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::convolution_out
+
+- op: copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::copy_out
+
+- op: cos.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cos_out
+
+- op: cosh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cosh_out
+
+- op: cumsum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::cumsum_out
+
+- op: detach_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::detach_copy_out
+
+- op: diagonal_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::diagonal_copy_out
+
+- op: div.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_out
+
+- op: div.Scalar_mode_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_scalar_mode_out
+
+- op: div.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_scalar_out
+
+- op: div.out_mode
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::div_out_mode
+
+
+- op: embedding.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::embedding_out
+
+- op: empty.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::empty_out
+
+- op: eq.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::eq_scalar_out
+
+- op: eq.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::eq_tensor_out
+
+- op: erf.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::erf_out
+
+- op: exp.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::exp_out
+
+- op: expand_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expand_copy_out
+
+- op: expm1.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::expm1_out
+
+- op: fill.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fill_scalar_out
+
+- op: fill.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fill_tensor_out
+
+- op: flip.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::flip_out
+
+- op: floor.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::floor_out
+
+- op: floor_divide.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::floor_divide_out
+
+- op: fmod.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fmod_Tensor_out
+
+- op: fmod.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::fmod_Scalar_out
+
+- op: full.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::full_out
+
+# TODO: Investigate why empty dispatch is required for building:
+# buck2 build //executorch/kernels/portable:generated_lib
+- op: full_like.out
+  dispatch: {}
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::full_like_out
+
+- op: ge.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ge_scalar_out
+
+- op: ge.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ge_tensor_out
+
+- op: gelu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gelu_out
+
+- op: glu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::glu_out
+
+- op: gt.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gt_scalar_out
+
+- op: gt.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::gt_tensor_out
+
+- op: hardtanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::hardtanh_out
+
+- op: index.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_Tensor_out
+
+- op: index_put.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_put_out
+
+- op: index_select.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::index_select_out
+
+- op: isinf.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::isinf_out
+
+- op: isnan.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::isnan_out
+
+- op: le.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::le_scalar_out
+
+- op: le.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::le_tensor_out
+
+- op: leaky_relu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::leaky_relu_out
+
+- op: lift_fresh_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::lift_fresh_copy_out
+
+- op: log.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log_out
+
+- op: log10.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log10_out
+
+- op: log1p.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log1p_out
+
+- op: log2.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::log2_out
+
+- op: logical_and.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_and_out
+
+- op: logical_not.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_not_out
+
+- op: logical_or.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_or_out
+
+- op: logical_xor.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logical_xor_out
+
+- op: logit.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::logit_out
+
+- op: lt.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::lt_scalar_out
+
+- op: lt.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::lt_tensor_out
+
+- op: masked_fill.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::masked_fill_scalar_out
+
+- op: max.dim_max
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_out
+
+- op: maximum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::maximum_out
+
+- op: max_pool2d_with_indices.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::max_pool2d_with_indices_out
+
+- op: mean.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mean_dim_out
+
+- op: min.dim_min
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::min_out
+
+- op: minimum.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::minimum_out
+
+- op: mm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mm_out
+
+- op: mul.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mul_out
+
+- op: mul.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::mul_scalar_out
+
+- op: native_group_norm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_group_norm_out
+
+- op: native_layer_norm.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::native_layer_norm_out
+
+- op: ne.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ne_scalar_out
+
+- op: ne.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ne_tensor_out
+
+- op: neg.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::neg_out
+
+- op: nonzero.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::nonzero_out
+
+- op: ones.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::ones_out
+
+- op: permute_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::permute_copy_out
+
+- op: pixel_shuffle.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pixel_shuffle_out
+
+- op: pow.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pow_Scalar_out
+
+- op: pow.Tensor_Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pow_Tensor_Scalar_out
+
+- op: pow.Tensor_Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::pow_Tensor_Tensor_out
+
+- op: prod.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::prod_int_out
+
+- op: prod.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::prod_out
+
+- op: reciprocal.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reciprocal_out
+
+- op: relu.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::relu_out
+
+- op: remainder.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::remainder_Tensor_out
+
+- op: remainder.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::remainder_Scalar_out
+
+- op: repeat.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::repeat_out
+
+- op: reflection_pad1d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reflection_pad1d_out
+
+- op: reflection_pad2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reflection_pad2d_out
+
+- op: reflection_pad3d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::reflection_pad3d_out
+
+- op: replication_pad1d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad1d_out
+
+- op: replication_pad2d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad2d_out
+
+- op: replication_pad3d.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::replication_pad3d_out
+
+- op: roll.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::roll_out
+
+- op: round.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::round_out
+
+- op: rsqrt.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rsqrt_out
+
+- op: rsub.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::rsub_scalar_out
+
+- op: scalar_tensor.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scalar_tensor_out
+
+- op: scatter_add.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::scatter_add_out
+
+- op: select_copy.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::select_copy_int_out
+
+- op: select_scatter.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::select_scatter_out
+
+- op: sigmoid.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sigmoid_out
+
+- op: sign.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sign_out
+
+- op: sin.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sin_out
+
+- op: sinh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sinh_out
+
+- op: slice_copy.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::slice_copy_Tensor_out
+
+- op: slice_scatter.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::slice_scatter_out
+
+- op: split_copy.Tensor_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::split_copy_Tensor_out
+
+- op: split_with_sizes_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::split_with_sizes_copy_out
+
+- op: sqrt.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sqrt_out
+
+- op: squeeze_copy.dim_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::squeeze_copy_dim_out
+
+- op: squeeze_copy.dims_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::squeeze_copy_dims_out
+
+- op: stack.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::stack_out
+
+- op: sub.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sub_out
+
+- op: sub.Scalar_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sub_scalar_out
+
+- op: sum.IntList_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::sum_dim_out
+
+- op: t_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::t_copy_out
+
+- op: tan.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tan_out
+
+- op: tanh.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tanh_out
+
+- op: transpose_copy.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::transpose_copy_int_out
+
+- op: tril.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::tril_out
+
+- op: trunc.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::trunc_out
+
+- op: unbind_copy.int_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::unbind_copy_int_out
+
+- op: unsqueeze_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::unsqueeze_copy_out
+
+- op: var.correction_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::var_correction_out
+
+- op: var.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::var_out
+
+- op: view_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_copy_out
+
+- op: where.self_out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::where_out
+
+- op: zeros.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::zeros_out

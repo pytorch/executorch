@@ -1,0 +1,642 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		C94BC6492AD5EB400067A63B /* coreml_backend_delegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */; };
+		C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560922AABF992005F8126 /* CoreML.framework */; };
+		C94D50DA2ABD7B6600AF47FD /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C965608D2AABF72A005F8126 /* libexecutorch.a */; };
+		C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF062A9FD16F001CC178 /* database.cpp */; };
+		C94D50E72ABDF80D00AF47FD /* sqlite_error.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF092A9FD16F001CC178 /* sqlite_error.cpp */; };
+		C94D50E82ABDF81100AF47FD /* key_value_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF052A9FD16E001CC178 /* key_value_store.cpp */; };
+		C94D50EA2ABDF81400AF47FD /* statement.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF072A9FD16F001CC178 /* statement.cpp */; };
+		C94D50ED2ABDF81900AF47FD /* inmemory_filesystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C95266452A7E06760016283E /* inmemory_filesystem.cpp */; };
+		C94D50EE2ABDF81B00AF47FD /* memory_buffer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C95266472A7E06760016283E /* memory_buffer.cpp */; };
+		C94D50F02ABDF81F00AF47FD /* memory_stream.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C95266412A7E06760016283E /* memory_stream.cpp */; };
+		C94D50F22ABDF82200AF47FD /* reversed_memory_stream.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C95266422A7E06760016283E /* reversed_memory_stream.cpp */; };
+		C94D50F42ABDF82500AF47FD /* asset.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFBC2AA84FC6001CC178 /* asset.mm */; };
+		C94D50F62ABDF82900AF47FD /* backend_delegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = C952664F2A7F818A0016283E /* backend_delegate.mm */; };
+		C94D50FA2ABDF83200AF47FD /* multiarray.mm in Sources */ = {isa = PBXBuildFile; fileRef = C96560B12AAF7CC2005F8126 /* multiarray.mm */; };
+		C94D50FC2ABDF83500AF47FD /* ETCoreMLAsset.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFB62AA183BC001CC178 /* ETCoreMLAsset.mm */; };
+		C94D50FE2ABDF83800AF47FD /* ETCoreMLModel.mm in Sources */ = {isa = PBXBuildFile; fileRef = C95266362A7E06460016283E /* ETCoreMLModel.mm */; };
+		C94D51002ABDF83C00AF47FD /* ETCoreMLAssetManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */; };
+		C94D51022ABDF83E00AF47FD /* ETCoreMLModelManager.mm in Sources */ = {isa = PBXBuildFile; fileRef = C95266372A7E06460016283E /* ETCoreMLModelManager.mm */; };
+		C94D51042ABDF84100AF47FD /* ETCoreMLStrings.mm in Sources */ = {isa = PBXBuildFile; fileRef = C952665E2A8012400016283E /* ETCoreMLStrings.mm */; };
+		C94D51062ABDF84400AF47FD /* ETCoreMLLogging.mm in Sources */ = {isa = PBXBuildFile; fileRef = C95266392A7E06460016283E /* ETCoreMLLogging.mm */; };
+		C94D51082ABDF84800AF47FD /* MLModel_Prewarm.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFC32AA9109F001CC178 /* MLModel_Prewarm.mm */; };
+		C94D510A2ABDF84B00AF47FD /* MLMultiArray_Copy.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9670FFA2A82F0C800E7D441 /* MLMultiArray_Copy.mm */; };
+		C94D510C2ABDF84F00AF47FD /* serde_json.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFB02AA123E9001CC178 /* serde_json.mm */; };
+		C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560942AABFDCE005F8126 /* libsqlite3.tbd */; };
+		C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560902AABF982005F8126 /* Accelerate.framework */; };
+		C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */ = {isa = PBXBuildFile; fileRef = C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */; };
+		C97716D52AF41B2E00FC0DAC /* json_key_value_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */; };
+		C97716DA2AF44CFA00FC0DAC /* json_util.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C97716D82AF44CFA00FC0DAC /* json_util.cpp */; };
+		C97716DD2AF44E7B00FC0DAC /* objc_json_serde.mm in Sources */ = {isa = PBXBuildFile; fileRef = C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */; };
+		C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C98551982AD2542D009143F9 /* mv3_coreml_all.pte */; };
+		C985519F2AD2542D009143F9 /* mul_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C98551992AD2542D009143F9 /* mul_coreml_all.bin */; };
+		C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C985519A2AD2542D009143F9 /* add_coreml_all.bin */; };
+		C98551A12AD2542D009143F9 /* mv3_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */; };
+		C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C985519C2AD2542D009143F9 /* mul_coreml_all.pte */; };
+		C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C985519D2AD2542D009143F9 /* add_coreml_all.pte */; };
+		C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7862AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm */; };
+		C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */; };
+		C9E7D7912AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7892AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm */; };
+		C9E7D7922AB3F9BF00CCAE5D /* DatabaseTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78A2AB3F9BF00CCAE5D /* DatabaseTests.mm */; };
+		C9E7D7932AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78B2AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm */; };
+		C9E7D7942AB3F9BF00CCAE5D /* BackendDelegateTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78C2AB3F9BF00CCAE5D /* BackendDelegateTests.mm */; };
+		C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */; };
+		C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */; };
+		C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C96560EC2AB24D62005F8126 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 16;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = coreml_backend_delegate.mm; path = ../delegate/coreml_backend_delegate.mm; sourceTree = "<group>"; };
+		C95266352A7E06460016283E /* ETCoreMLModelManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelManager.h; path = ../delegate/ETCoreMLModelManager.h; sourceTree = "<group>"; };
+		C95266362A7E06460016283E /* ETCoreMLModel.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModel.mm; path = ../delegate/ETCoreMLModel.mm; sourceTree = "<group>"; };
+		C95266372A7E06460016283E /* ETCoreMLModelManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelManager.mm; path = ../delegate/ETCoreMLModelManager.mm; sourceTree = "<group>"; };
+		C95266382A7E06460016283E /* ETCoreMLLogging.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLLogging.h; path = ../delegate/ETCoreMLLogging.h; sourceTree = "<group>"; };
+		C95266392A7E06460016283E /* ETCoreMLLogging.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLLogging.mm; path = ../delegate/ETCoreMLLogging.mm; sourceTree = "<group>"; };
+		C952663A2A7E06460016283E /* ETCoreMLModel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModel.h; path = ../delegate/ETCoreMLModel.h; sourceTree = "<group>"; };
+		C95266402A7E06760016283E /* memory_buffer.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = memory_buffer.hpp; path = ../inmemoryfs/memory_buffer.hpp; sourceTree = "<group>"; };
+		C95266412A7E06760016283E /* memory_stream.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = memory_stream.cpp; path = ../inmemoryfs/memory_stream.cpp; sourceTree = "<group>"; };
+		C95266422A7E06760016283E /* reversed_memory_stream.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = reversed_memory_stream.cpp; path = ../inmemoryfs/reversed_memory_stream.cpp; sourceTree = "<group>"; };
+		C95266432A7E06760016283E /* memory_stream.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = memory_stream.hpp; path = ../inmemoryfs/memory_stream.hpp; sourceTree = "<group>"; };
+		C95266442A7E06760016283E /* inmemory_filesystem.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem.hpp; path = ../inmemoryfs/inmemory_filesystem.hpp; sourceTree = "<group>"; };
+		C95266452A7E06760016283E /* inmemory_filesystem.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = inmemory_filesystem.cpp; path = ../inmemoryfs/inmemory_filesystem.cpp; sourceTree = "<group>"; };
+		C95266462A7E06760016283E /* reversed_memory_stream.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = reversed_memory_stream.hpp; path = ../inmemoryfs/reversed_memory_stream.hpp; sourceTree = "<group>"; };
+		C95266472A7E06760016283E /* memory_buffer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = memory_buffer.cpp; path = ../inmemoryfs/memory_buffer.cpp; sourceTree = "<group>"; };
+		C952664F2A7F818A0016283E /* backend_delegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = backend_delegate.mm; path = ../delegate/backend_delegate.mm; sourceTree = "<group>"; };
+		C95266502A7F818A0016283E /* backend_delegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = backend_delegate.h; path = ../delegate/backend_delegate.h; sourceTree = "<group>"; };
+		C952665D2A8012400016283E /* ETCoreMLStrings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLStrings.h; path = ../delegate/ETCoreMLStrings.h; sourceTree = "<group>"; };
+		C952665E2A8012400016283E /* ETCoreMLStrings.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLStrings.mm; path = ../delegate/ETCoreMLStrings.mm; sourceTree = "<group>"; };
+		C96560792AABD1DF005F8126 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
+		C965607B2AABD1E5005F8126 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
+		C965607D2AABD1EA005F8126 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/usr/lib/libsqlite3.tbd; sourceTree = DEVELOPER_DIR; };
+		C965608D2AABF72A005F8126 /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = ../libraries/libexecutorch.a; sourceTree = "<group>"; };
+		C96560902AABF982005F8126 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
+		C96560922AABF992005F8126 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
+		C96560942AABFDCE005F8126 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/usr/lib/libsqlite3.tbd; sourceTree = DEVELOPER_DIR; };
+		C96560A32AAC0DCF005F8126 /* executorchcoreml_tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = executorchcoreml_tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C96560B12AAF7CC2005F8126 /* multiarray.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = multiarray.mm; path = ../delegate/multiarray.mm; sourceTree = "<group>"; };
+		C96560B22AAF9EA7005F8126 /* inmemory_filesystem_py.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = inmemory_filesystem_py.cpp; path = ../inmemoryfs/inmemory_filesystem_py.cpp; sourceTree = "<group>"; };
+		C9670FF92A82F0C800E7D441 /* MLMultiArray_Copy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MLMultiArray_Copy.h; path = ../delegate/MLMultiArray_Copy.h; sourceTree = "<group>"; };
+		C9670FFA2A82F0C800E7D441 /* MLMultiArray_Copy.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = MLMultiArray_Copy.mm; path = ../delegate/MLMultiArray_Copy.mm; sourceTree = "<group>"; };
+		C97716A82AE857C900FC0DAC /* inmemory_filesystem_metadata.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem_metadata.hpp; path = ../inmemoryfs/inmemory_filesystem_metadata.hpp; sourceTree = "<group>"; };
+		C97716AA2AE85D4700FC0DAC /* inmemory_filesystem_metadata_keys.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem_metadata_keys.hpp; path = ../inmemoryfs/inmemory_filesystem_metadata_keys.hpp; sourceTree = "<group>"; };
+		C97716B02AE9BBBA00FC0DAC /* inmemory_filesystem_utils.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = inmemory_filesystem_utils.cpp; path = ../inmemoryfs/inmemory_filesystem_utils.cpp; sourceTree = "<group>"; };
+		C97716B12AE9BBBA00FC0DAC /* inmemory_filesystem_utils.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = inmemory_filesystem_utils.hpp; path = ../inmemoryfs/inmemory_filesystem_utils.hpp; sourceTree = "<group>"; };
+		C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = inmemory_filesystem_utils.mm; path = ../inmemoryfs/inmemory_filesystem_utils.mm; sourceTree = "<group>"; };
+		C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = json_key_value_store.cpp; path = ../kvstore/json_key_value_store.cpp; sourceTree = "<group>"; };
+		C97716D82AF44CFA00FC0DAC /* json_util.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = json_util.cpp; path = ../util/json_util.cpp; sourceTree = "<group>"; };
+		C97716D92AF44CFA00FC0DAC /* json_util.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = json_util.hpp; path = ../util/json_util.hpp; sourceTree = "<group>"; };
+		C97716DB2AF44D9A00FC0DAC /* objc_json_serde.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = objc_json_serde.h; path = ../util/objc_json_serde.h; sourceTree = "<group>"; };
+		C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = objc_json_serde.mm; path = ../util/objc_json_serde.mm; sourceTree = "<group>"; };
+		C97716DE2AF44FC400FC0DAC /* objc_safe_cast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = objc_safe_cast.h; path = ../util/objc_safe_cast.h; sourceTree = "<group>"; };
+		C98551982AD2542D009143F9 /* mv3_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mv3_coreml_all.pte; path = ../test/models/mv3_coreml_all.pte; sourceTree = "<group>"; };
+		C98551992AD2542D009143F9 /* mul_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mul_coreml_all.bin; path = ../test/models/mul_coreml_all.bin; sourceTree = "<group>"; };
+		C985519A2AD2542D009143F9 /* add_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = add_coreml_all.bin; path = ../test/models/add_coreml_all.bin; sourceTree = "<group>"; };
+		C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mv3_coreml_all.bin; path = ../test/models/mv3_coreml_all.bin; sourceTree = "<group>"; };
+		C985519C2AD2542D009143F9 /* mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mul_coreml_all.pte; path = ../test/models/mul_coreml_all.pte; sourceTree = "<group>"; };
+		C985519D2AD2542D009143F9 /* add_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_coreml_all.pte; path = ../test/models/add_coreml_all.pte; sourceTree = "<group>"; };
+		C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetManager.mm; path = ../delegate/ETCoreMLAssetManager.mm; sourceTree = "<group>"; };
+		C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAssetManager.h; path = ../delegate/ETCoreMLAssetManager.h; sourceTree = "<group>"; };
+		C9D3DF002A9FD16E001CC178 /* statement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = statement.hpp; path = ../kvstore/statement.hpp; sourceTree = "<group>"; };
+		C9D3DF012A9FD16E001CC178 /* types.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = types.hpp; path = ../kvstore/types.hpp; sourceTree = "<group>"; };
+		C9D3DF022A9FD16E001CC178 /* sqlite_error.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = sqlite_error.hpp; path = ../kvstore/sqlite_error.hpp; sourceTree = "<group>"; };
+		C9D3DF032A9FD16E001CC178 /* database.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = database.hpp; path = ../kvstore/database.hpp; sourceTree = "<group>"; };
+		C9D3DF042A9FD16E001CC178 /* json_key_value_store.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = json_key_value_store.hpp; path = ../kvstore/json_key_value_store.hpp; sourceTree = "<group>"; };
+		C9D3DF052A9FD16E001CC178 /* key_value_store.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = key_value_store.cpp; path = ../kvstore/key_value_store.cpp; sourceTree = "<group>"; };
+		C9D3DF062A9FD16F001CC178 /* database.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = database.cpp; path = ../kvstore/database.cpp; sourceTree = "<group>"; };
+		C9D3DF072A9FD16F001CC178 /* statement.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = statement.cpp; path = ../kvstore/statement.cpp; sourceTree = "<group>"; };
+		C9D3DF082A9FD16F001CC178 /* key_value_store.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = key_value_store.hpp; path = ../kvstore/key_value_store.hpp; sourceTree = "<group>"; };
+		C9D3DF092A9FD16F001CC178 /* sqlite_error.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = sqlite_error.cpp; path = ../kvstore/sqlite_error.cpp; sourceTree = "<group>"; };
+		C9D3DF812A9FF394001CC178 /* multiarray.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = multiarray.h; path = ../delegate/multiarray.h; sourceTree = "<group>"; };
+		C9D3DFAF2AA12097001CC178 /* asset.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = asset.h; path = ../delegate/asset.h; sourceTree = "<group>"; };
+		C9D3DFB02AA123E9001CC178 /* serde_json.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = serde_json.mm; path = ../delegate/serde_json.mm; sourceTree = "<group>"; };
+		C9D3DFB12AA123E9001CC178 /* serde_json.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = serde_json.h; path = ../delegate/serde_json.h; sourceTree = "<group>"; };
+		C9D3DFB22AA12683001CC178 /* metadata.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = metadata.h; path = ../delegate/metadata.h; sourceTree = "<group>"; };
+		C9D3DFB52AA183BC001CC178 /* ETCoreMLAsset.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAsset.h; path = ../delegate/ETCoreMLAsset.h; sourceTree = "<group>"; };
+		C9D3DFB62AA183BC001CC178 /* ETCoreMLAsset.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAsset.mm; path = ../delegate/ETCoreMLAsset.mm; sourceTree = "<group>"; };
+		C9D3DFBC2AA84FC6001CC178 /* asset.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = asset.mm; path = ../delegate/asset.mm; sourceTree = "<group>"; };
+		C9D3DFC22AA9109F001CC178 /* MLModel_Prewarm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MLModel_Prewarm.h; path = ../delegate/MLModel_Prewarm.h; sourceTree = "<group>"; };
+		C9D3DFC32AA9109F001CC178 /* MLModel_Prewarm.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = MLModel_Prewarm.mm; path = ../delegate/MLModel_Prewarm.mm; sourceTree = "<group>"; };
+		C9E7D7862AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLTestUtils.mm; path = ../test/ETCoreMLTestUtils.mm; sourceTree = "<group>"; };
+		C9E7D7872AB3F9BF00CCAE5D /* ETCoreMLTestUtils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLTestUtils.h; path = ../test/ETCoreMLTestUtils.h; sourceTree = "<group>"; };
+		C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = InMemoryFileSystemTests.mm; path = ../test/InMemoryFileSystemTests.mm; sourceTree = "<group>"; };
+		C9E7D7892AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetTests.mm; path = ../test/ETCoreMLAssetTests.mm; sourceTree = "<group>"; };
+		C9E7D78A2AB3F9BF00CCAE5D /* DatabaseTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = DatabaseTests.mm; path = ../test/DatabaseTests.mm; sourceTree = "<group>"; };
+		C9E7D78B2AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetManagerTests.mm; path = ../test/ETCoreMLAssetManagerTests.mm; sourceTree = "<group>"; };
+		C9E7D78C2AB3F9BF00CCAE5D /* BackendDelegateTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = BackendDelegateTests.mm; path = ../test/BackendDelegateTests.mm; sourceTree = "<group>"; };
+		C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelManagerTests.mm; path = ../test/ETCoreMLModelManagerTests.mm; sourceTree = "<group>"; };
+		C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = KeyValueStoreTests.mm; path = ../test/KeyValueStoreTests.mm; sourceTree = "<group>"; };
+		C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = CoreMLBackendDelegateTests.mm; path = ../test/CoreMLBackendDelegateTests.mm; sourceTree = "<group>"; };
+		C9E7D7A92AB5081600CCAE5D /* libgflags_nothreads.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libgflags_nothreads.a; path = ../libraries/libgflags_nothreads.a; sourceTree = "<group>"; };
+		C9E7D7AB2AB55AC100CCAE5D /* com.apple.executorchcoreml_config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = com.apple.executorchcoreml_config.plist; path = ../delegate/com.apple.executorchcoreml_config.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C96560A02AAC0DCF005F8126 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */,
+				C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */,
+				C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */,
+				C94D50DA2ABD7B6600AF47FD /* libexecutorch.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C95266222A7E05FB0016283E = {
+			isa = PBXGroup;
+			children = (
+				C97716D72AF44BCA00FC0DAC /* util */,
+				C9E7D7AE2AB6C0C000CCAE5D /* models */,
+				C9E7D7852AB3F99A00CCAE5D /* test */,
+				C9D3DEFF2A9FD150001CC178 /* kvstore */,
+				C952663F2A7E065F0016283E /* inmemoryfs */,
+				C952663E2A7E06510016283E /* delegate */,
+				C952662C2A7E05FB0016283E /* Products */,
+				C952664C2A7E06B50016283E /* Frameworks */,
+				C965609E2AAC0C17005F8126 /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		C952662C2A7E05FB0016283E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				C96560A32AAC0DCF005F8126 /* executorchcoreml_tests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		C952663E2A7E06510016283E /* delegate */ = {
+			isa = PBXGroup;
+			children = (
+				C9E7D7AB2AB55AC100CCAE5D /* com.apple.executorchcoreml_config.plist */,
+				C9D3DFAF2AA12097001CC178 /* asset.h */,
+				C9D3DFBC2AA84FC6001CC178 /* asset.mm */,
+				C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */,
+				C95266502A7F818A0016283E /* backend_delegate.h */,
+				C952664F2A7F818A0016283E /* backend_delegate.mm */,
+				C9D3DF812A9FF394001CC178 /* multiarray.h */,
+				C96560B12AAF7CC2005F8126 /* multiarray.mm */,
+				C9D3DFB22AA12683001CC178 /* metadata.h */,
+				C9D3DFB52AA183BC001CC178 /* ETCoreMLAsset.h */,
+				C9D3DFB62AA183BC001CC178 /* ETCoreMLAsset.mm */,
+				C952663A2A7E06460016283E /* ETCoreMLModel.h */,
+				C95266362A7E06460016283E /* ETCoreMLModel.mm */,
+				C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */,
+				C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */,
+				C95266352A7E06460016283E /* ETCoreMLModelManager.h */,
+				C95266372A7E06460016283E /* ETCoreMLModelManager.mm */,
+				C952665D2A8012400016283E /* ETCoreMLStrings.h */,
+				C952665E2A8012400016283E /* ETCoreMLStrings.mm */,
+				C95266382A7E06460016283E /* ETCoreMLLogging.h */,
+				C95266392A7E06460016283E /* ETCoreMLLogging.mm */,
+				C9D3DFC22AA9109F001CC178 /* MLModel_Prewarm.h */,
+				C9D3DFC32AA9109F001CC178 /* MLModel_Prewarm.mm */,
+				C9670FF92A82F0C800E7D441 /* MLMultiArray_Copy.h */,
+				C9670FFA2A82F0C800E7D441 /* MLMultiArray_Copy.mm */,
+				C9D3DFB12AA123E9001CC178 /* serde_json.h */,
+				C9D3DFB02AA123E9001CC178 /* serde_json.mm */,
+			);
+			name = delegate;
+			sourceTree = "<group>";
+		};
+		C952663F2A7E065F0016283E /* inmemoryfs */ = {
+			isa = PBXGroup;
+			children = (
+				C95266442A7E06760016283E /* inmemory_filesystem.hpp */,
+				C95266452A7E06760016283E /* inmemory_filesystem.cpp */,
+				C97716B12AE9BBBA00FC0DAC /* inmemory_filesystem_utils.hpp */,
+				C97716B02AE9BBBA00FC0DAC /* inmemory_filesystem_utils.cpp */,
+				C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */,
+				C96560B22AAF9EA7005F8126 /* inmemory_filesystem_py.cpp */,
+				C95266402A7E06760016283E /* memory_buffer.hpp */,
+				C95266472A7E06760016283E /* memory_buffer.cpp */,
+				C95266432A7E06760016283E /* memory_stream.hpp */,
+				C95266412A7E06760016283E /* memory_stream.cpp */,
+				C95266462A7E06760016283E /* reversed_memory_stream.hpp */,
+				C95266422A7E06760016283E /* reversed_memory_stream.cpp */,
+				C97716A82AE857C900FC0DAC /* inmemory_filesystem_metadata.hpp */,
+				C97716AA2AE85D4700FC0DAC /* inmemory_filesystem_metadata_keys.hpp */,
+			);
+			name = inmemoryfs;
+			sourceTree = "<group>";
+		};
+		C952664C2A7E06B50016283E /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C9E7D7A92AB5081600CCAE5D /* libgflags_nothreads.a */,
+				C965607D2AABD1EA005F8126 /* libsqlite3.tbd */,
+				C965607B2AABD1E5005F8126 /* CoreML.framework */,
+				C96560792AABD1DF005F8126 /* Accelerate.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		C965609E2AAC0C17005F8126 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				C96560942AABFDCE005F8126 /* libsqlite3.tbd */,
+				C96560922AABF992005F8126 /* CoreML.framework */,
+				C96560902AABF982005F8126 /* Accelerate.framework */,
+				C965608D2AABF72A005F8126 /* libexecutorch.a */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		C97716D72AF44BCA00FC0DAC /* util */ = {
+			isa = PBXGroup;
+			children = (
+				C97716D92AF44CFA00FC0DAC /* json_util.hpp */,
+				C97716D82AF44CFA00FC0DAC /* json_util.cpp */,
+				C97716DB2AF44D9A00FC0DAC /* objc_json_serde.h */,
+				C97716DC2AF44E7B00FC0DAC /* objc_json_serde.mm */,
+				C97716DE2AF44FC400FC0DAC /* objc_safe_cast.h */,
+			);
+			name = util;
+			sourceTree = "<group>";
+		};
+		C9D3DEFF2A9FD150001CC178 /* kvstore */ = {
+			isa = PBXGroup;
+			children = (
+				C9D3DF062A9FD16F001CC178 /* database.cpp */,
+				C9D3DF032A9FD16E001CC178 /* database.hpp */,
+				C9D3DF092A9FD16F001CC178 /* sqlite_error.cpp */,
+				C9D3DF022A9FD16E001CC178 /* sqlite_error.hpp */,
+				C9D3DF042A9FD16E001CC178 /* json_key_value_store.hpp */,
+				C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */,
+				C9D3DF082A9FD16F001CC178 /* key_value_store.hpp */,
+				C9D3DF052A9FD16E001CC178 /* key_value_store.cpp */,
+				C9D3DF002A9FD16E001CC178 /* statement.hpp */,
+				C9D3DF072A9FD16F001CC178 /* statement.cpp */,
+				C9D3DF012A9FD16E001CC178 /* types.hpp */,
+			);
+			name = kvstore;
+			sourceTree = "<group>";
+		};
+		C9E7D7852AB3F99A00CCAE5D /* test */ = {
+			isa = PBXGroup;
+			children = (
+				C9E7D78C2AB3F9BF00CCAE5D /* BackendDelegateTests.mm */,
+				C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */,
+				C9E7D78A2AB3F9BF00CCAE5D /* DatabaseTests.mm */,
+				C9E7D78B2AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm */,
+				C9E7D7892AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm */,
+				C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */,
+				C9E7D7872AB3F9BF00CCAE5D /* ETCoreMLTestUtils.h */,
+				C9E7D7862AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm */,
+				C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */,
+				C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */,
+			);
+			name = test;
+			sourceTree = "<group>";
+		};
+		C9E7D7AE2AB6C0C000CCAE5D /* models */ = {
+			isa = PBXGroup;
+			children = (
+				C985519A2AD2542D009143F9 /* add_coreml_all.bin */,
+				C985519D2AD2542D009143F9 /* add_coreml_all.pte */,
+				C98551992AD2542D009143F9 /* mul_coreml_all.bin */,
+				C985519C2AD2542D009143F9 /* mul_coreml_all.pte */,
+				C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */,
+				C98551982AD2542D009143F9 /* mv3_coreml_all.pte */,
+			);
+			name = models;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		C96560A22AAC0DCF005F8126 /* executorchcoreml_tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C96560AA2AAC0DCF005F8126 /* Build configuration list for PBXNativeTarget "executorchcoreml_tests" */;
+			buildPhases = (
+				C965609F2AAC0DCF005F8126 /* Sources */,
+				C96560A02AAC0DCF005F8126 /* Frameworks */,
+				C96560A12AAC0DCF005F8126 /* Resources */,
+				C96560EC2AB24D62005F8126 /* CopyFiles */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = executorchcoreml_tests;
+			productName = ETCoreMLDelegateTests;
+			productReference = C96560A32AAC0DCF005F8126 /* executorchcoreml_tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C95266232A7E05FB0016283E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					C96560A22AAC0DCF005F8126 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = C95266262A7E05FB0016283E /* Build configuration list for PBXProject "executorchcoreml" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C95266222A7E05FB0016283E;
+			productRefGroup = C952662C2A7E05FB0016283E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C96560A22AAC0DCF005F8126 /* executorchcoreml_tests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C96560A12AAC0DCF005F8126 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C98551A12AD2542D009143F9 /* mv3_coreml_all.bin in Resources */,
+				C985519F2AD2542D009143F9 /* mul_coreml_all.bin in Resources */,
+				C985519E2AD2542D009143F9 /* mv3_coreml_all.pte in Resources */,
+				C98551A02AD2542D009143F9 /* add_coreml_all.bin in Resources */,
+				C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */,
+				C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		C965609F2AAC0DCF005F8126 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C94D50E72ABDF80D00AF47FD /* sqlite_error.cpp in Sources */,
+				C94D50FC2ABDF83500AF47FD /* ETCoreMLAsset.mm in Sources */,
+				C94D51062ABDF84400AF47FD /* ETCoreMLLogging.mm in Sources */,
+				C97716D52AF41B2E00FC0DAC /* json_key_value_store.cpp in Sources */,
+				C94D50F22ABDF82200AF47FD /* reversed_memory_stream.cpp in Sources */,
+				C94D51022ABDF83E00AF47FD /* ETCoreMLModelManager.mm in Sources */,
+				C94D50F42ABDF82500AF47FD /* asset.mm in Sources */,
+				C97716DA2AF44CFA00FC0DAC /* json_util.cpp in Sources */,
+				C94D51042ABDF84100AF47FD /* ETCoreMLStrings.mm in Sources */,
+				C9E7D7932AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm in Sources */,
+				C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */,
+				C9E7D7922AB3F9BF00CCAE5D /* DatabaseTests.mm in Sources */,
+				C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */,
+				C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */,
+				C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */,
+				C97716DD2AF44E7B00FC0DAC /* objc_json_serde.mm in Sources */,
+				C94D51082ABDF84800AF47FD /* MLModel_Prewarm.mm in Sources */,
+				C94D50F02ABDF81F00AF47FD /* memory_stream.cpp in Sources */,
+				C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */,
+				C94BC6492AD5EB400067A63B /* coreml_backend_delegate.mm in Sources */,
+				C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */,
+				C94D51002ABDF83C00AF47FD /* ETCoreMLAssetManager.mm in Sources */,
+				C94D50EE2ABDF81B00AF47FD /* memory_buffer.cpp in Sources */,
+				C94D50FE2ABDF83800AF47FD /* ETCoreMLModel.mm in Sources */,
+				C94D510A2ABDF84B00AF47FD /* MLMultiArray_Copy.mm in Sources */,
+				C94D510C2ABDF84F00AF47FD /* serde_json.mm in Sources */,
+				C9E7D7912AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm in Sources */,
+				C94D50E82ABDF81100AF47FD /* key_value_store.cpp in Sources */,
+				C9E7D7942AB3F9BF00CCAE5D /* BackendDelegateTests.mm in Sources */,
+				C94D50F62ABDF82900AF47FD /* backend_delegate.mm in Sources */,
+				C94D50EA2ABDF81400AF47FD /* statement.cpp in Sources */,
+				C94D50ED2ABDF81900AF47FD /* inmemory_filesystem.cpp in Sources */,
+				C94D50FA2ABDF83200AF47FD /* multiarray.mm in Sources */,
+				C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		C95266302A7E05FB0016283E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = "../../cmake-ios-out/build/**";
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		C95266312A7E05FB0016283E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LIBRARY_SEARCH_PATHS = "../../cmake-ios-out/build/**";
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		C96560AB2AAC0DCF005F8126 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../delegate",
+					"$(SRCROOT)/../kvstore",
+					"$(SRCROOT)/../inmemoryfs",
+					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../util",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = "-all_load";
+				PRODUCT_BUNDLE_IDENTIFIER = apple.executorchcoreml.com;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		C96560AC2AAC0DCF005F8126 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Manual;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/../delegate",
+					"$(SRCROOT)/../kvstore",
+					"$(SRCROOT)/../inmemoryfs",
+					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../util",
+					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MARKETING_VERSION = 1.0;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_LDFLAGS = "-all_load";
+				PRODUCT_BUNDLE_IDENTIFIER = apple.executorchcoreml.com;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C95266262A7E05FB0016283E /* Build configuration list for PBXProject "executorchcoreml" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C95266302A7E05FB0016283E /* Debug */,
+				C95266312A7E05FB0016283E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C96560AA2AAC0DCF005F8126 /* Build configuration list for PBXNativeTarget "executorchcoreml_tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C96560AB2AAC0DCF005F8126 /* Debug */,
+				C96560AC2AAC0DCF005F8126 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C95266232A7E05FB0016283E /* Project object */;
+}

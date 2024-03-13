@@ -1,0 +1,19 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "_ops.py",
+    ],
+    resources = {
+        "//executorch/exir/dialects/edge:edge_yaml": "edge.yaml",
+    },
+    deps = [
+        "//caffe2:torch",
+        "//caffe2/torchgen:torchgen",
+        "//executorch/exir/dialects/backend:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)

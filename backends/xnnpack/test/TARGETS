@@ -1,0 +1,88 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_test(
+    name = "test_xnnpack_passes",
+    srcs = glob([
+        "passes/*.py",
+    ]) + [
+        "test_xnnpack_utils_classes.py",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/passes:xnnpack_passes",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/backends/xnnpack/utils:xnnpack_utils",
+        "//executorch/exir:lib",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+        "//executorch/exir/dialects:lib",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_ops",
+    srcs = glob([
+        "ops/*.py",
+    ]) + [
+        "test_xnnpack_utils.py",
+    ],
+    deps = [
+        "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/sdk:lib",
+        "//executorch/sdk/bundled_program:config",
+        "//executorch/sdk/bundled_program/serialize:lib",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_models",
+    srcs = glob([
+        "models/*.py",
+    ]),
+    tags = ["long_running"],
+    deps = [
+        "fbsource//third-party/pypi/timm:timm",
+        "fbsource//third-party/pypi/torchsr:torchsr",  # @manual
+        "fbsource//third-party/pypi/transformers:transformers",  # @manual
+        "//executorch/backends/xnnpack/test/tester:tester",
+        "//executorch/examples/models/llama2:llama2_model",
+        "//pytorch/audio/src:torchaudio_core",
+        "//pytorch/vision:torchvision",  # @manual
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)
+
+runtime.python_test(
+    name = "test_xnnpack_serialization",
+    srcs = glob([
+        "serialization/*.py",
+    ]),
+    deps = [
+        "//executorch/backends/xnnpack:xnnpack_preprocess",
+    ],
+)
+
+runtime.python_test(
+    name = "test_custom_convert_qc4w_op",
+    srcs = ["ops/test_custom_convert_to_qc4w.py"],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/xnnpack/operators:convert_to_qc4w",
+    ],
+    external_deps = [
+        "libtorch",
+    ],
+)

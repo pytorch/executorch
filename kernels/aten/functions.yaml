@@ -1,0 +1,398 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains operators that are defined by the ATen library.
+
+- op: _cdist_forward.out
+
+- op: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams.out
+
+- op: _linalg_det.result
+
+- op: _linalg_svd.U
+
+- op: _log_softmax.out
+
+- op: _native_batch_norm_legit.out
+
+- op: _native_batch_norm_legit.no_stats_out
+
+- op: _native_batch_norm_legit_no_training.out
+
+- op: _pdist_forward.out
+
+- op: _reshape_alias_copy.out
+
+- op: _softmax.out
+
+- op: copy_
+
+- op: _to_copy.out
+
+- op: _unique2.out
+
+- op: _upsample_bilinear2d_aa.out
+
+- op: abs.out
+
+- op: acos.out
+
+- op: acosh.out
+
+- op: add.out
+
+- op: add.Scalar_out
+
+- op: addmm.out
+
+- op: alias_copy.out
+
+- op: amax.out
+
+- op: amin.out
+
+- op: any.all_out
+
+- op: any.dims_out
+
+- op: any.out
+
+- op: arange.out
+
+- op: arange.start_out
+
+- op: argmax.out
+
+- op: argmin.out
+
+- op: as_strided_copy.out
+
+- op: asin.out
+
+- op: asinh.out
+
+- op: atan.out
+
+- op: atan2.out
+
+- op: atanh.out
+
+- op: avg_pool2d.out
+
+- op: baddbmm.out
+
+- op: bitwise_and.Tensor_out
+
+- op: bitwise_and.Scalar_out
+
+- op: bitwise_or.Tensor_out
+
+- op: bitwise_or.Scalar_out
+
+- op: bitwise_not.out
+
+- op: bitwise_xor.Tensor_out
+
+- op: bitwise_xor.Scalar_out
+
+- op: bmm.out
+
+- op: cat.out
+
+- op: ceil.out
+
+- op: clamp_min.out
+
+- op: clamp.out
+  cpp_no_default_args: ['min']
+
+- op: clamp.Tensor_out
+
+- op: clone.out
+
+- op: constant_pad_nd.out
+
+- op: conv1d.out
+
+- op: convolution.out
+
+- op: copy.out
+
+- op: cos.out
+
+- op: cosh.out
+
+- op: cumsum.out
+
+- op: dequantize.self_out
+
+- op: detach_copy.out
+
+- op: diagonal_copy.out
+
+- op: div.out
+
+- op: div.Scalar_mode_out
+
+- op: div.Scalar_out
+
+- op: div.out_mode
+
+- op: embedding.out
+
+- op: empty.out
+
+- op: eq.Scalar_out
+
+- op: eq.Tensor_out
+
+- op: erf.out
+
+- op: exp.out
+
+- op: expand_copy.out
+
+- op: expm1.out
+
+- op: eye.out
+
+- op: fill.Scalar_out
+
+- op: fill.Tensor_out
+
+- op: flip.out
+
+- op: floor_divide.out
+
+- op: floor.out
+
+- op: fmod.Tensor_out
+
+- op: fmod.Scalar_out
+
+- op: full_like.out
+
+- op: full.out
+
+- op: ge.Scalar_out
+
+- op: ge.Tensor_out
+
+- op: gelu.out
+
+- op: glu.out
+
+- op: grid_sampler_2d.out
+
+- op: gt.Scalar_out
+
+- op: gt.Tensor_out
+
+- op: hardtanh.out
+
+- op: index_put.out
+
+- op: index_select.out
+
+- op: index.Tensor_out
+
+- op: isinf.out
+
+- op: isnan.out
+
+- op: le.Scalar_out
+
+- op: le.Tensor_out
+
+- op: leaky_relu.out
+
+- op: lift_fresh_copy.out
+
+- op: linalg_inv_ex.inverse
+
+- op: linalg_vector_norm.out
+
+- op: log.out
+
+- op: log10.out
+
+- op: log1p.out
+
+- op: log2.out
+
+- op: logical_and.out
+
+- op: logical_not.out
+
+- op: logical_or.out
+
+- op: logical_xor.out
+
+- op: logit.out
+
+- op: lt.Scalar_out
+
+- op: lt.Tensor_out
+
+- op: masked_fill.Scalar_out
+
+- op: max_pool2d_with_indices.out
+
+- op: max.dim_max
+
+- op: max.unary_out
+
+- op: maximum.out
+
+- op: mean.out
+
+- op: min.dim_min
+
+- op: minimum.out
+
+- op: mm.out
+
+- op: mul.out
+
+- op: mul.Scalar_out
+
+- op: native_batch_norm.out
+
+- op: native_group_norm.out
+
+- op: native_layer_norm.out
+
+- op: ne.Scalar_out
+
+- op: ne.Tensor_out
+
+- op: neg.out
+
+- op: nonzero.out
+
+- op: ones.out
+
+- op: permute_copy.out
+
+- op: pixel_shuffle.out
+
+- op: pow.Scalar_out
+
+- op: pow.Tensor_Tensor_out
+
+- op: pow.Tensor_Scalar_out
+
+- op: prod.int_out
+
+- op: prod.out
+
+- op: reciprocal.out
+
+- op: relu.out
+
+- op: remainder.Tensor_out
+
+- op: remainder.Scalar_out
+
+- op: repeat.out
+
+- op: reflection_pad1d.out
+
+- op: reflection_pad2d.out
+
+- op: reflection_pad3d.out
+
+- op: replication_pad1d.out
+
+- op: replication_pad2d.out
+
+- op: replication_pad3d.out
+
+- op: roll.out
+
+- op: round.out
+
+- op: rsqrt.out
+
+- op: rsub.Scalar_out
+
+- op: scalar_tensor.out
+
+- op: scatter_add.out
+
+- op: select_copy.int_out
+
+- op: select_scatter.out
+
+- op: sigmoid.out
+
+- op: sign.out
+
+- op: sin.out
+
+- op: sinh.out
+
+- op: slice_copy.Tensor_out
+
+- op: slice_scatter.out
+
+- op: softplus.out
+
+- op: sort.values
+
+- op: split_copy.Tensor_out
+
+- op: split_with_sizes_copy.out
+
+- op: sqrt.out
+
+- op: squeeze_copy.dim_out
+
+- op: squeeze_copy.dims_out
+
+- op: squeeze_copy.out
+
+- op: stack.out
+
+- op: sub.out
+
+- op: sub.Scalar_out
+
+- op: sum.IntList_out
+
+- op: t_copy.out
+
+- op: tan.out
+
+- op: tanh.out
+
+- op: topk.values
+
+- op: transpose_copy.int_out
+
+- op: tril.out
+
+- op: trunc.out
+
+- op: unbind_copy.int_out
+
+- op: unsafe_split.Tensor_out
+
+- op: unsqueeze_copy.dim_out
+
+- op: unsqueeze_copy.out
+
+- op: upsample_nearest2d.out
+
+- op: upsample_nearest2d.vec_out
+
+- op: var.correction_out
+
+- op: var.out
+
+- op: view_copy.out
+
+- op: where.self_out
+
+- op: zeros_like.out
+
+- op: zeros.out

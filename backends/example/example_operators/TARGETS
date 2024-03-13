@@ -1,0 +1,22 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "example_operators_lib",
+    srcs = [
+        "adaptive_avg_pool2d.py",
+        "add.py",
+        "conv2d.py",
+        "conv_relu.py",
+        "dropout.py",
+        "flatten.py",
+        "linear.py",
+        "op_base.py",
+        "ops.py",
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)

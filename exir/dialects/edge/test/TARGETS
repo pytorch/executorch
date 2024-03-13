@@ -1,0 +1,32 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "test_edge_yaml",
+    srcs = [
+        "test_edge_yaml.py",
+    ],
+    resources = {
+        "//executorch/exir/dialects/edge:edge_yaml": "edge.yaml",
+    },
+    tags = ["long_running"],
+    deps = [
+        "fbsource//third-party/pypi/expecttest:expecttest",  # @manual
+        "//caffe2:torch",
+        "//executorch/exir/dialects/edge/dtype:lib",
+        "//executorch/exir/dialects/edge/spec:lib",
+    ],
+)
+
+python_unittest(
+    name = "test_edge_ops",
+    srcs = [
+        "test_edge_ops.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)

@@ -1,0 +1,35 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "program",
+    srcs = [
+        "test_program.py",
+    ],
+    deps = [
+        "//executorch/exir:schema",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/exir/tests:lib",
+    ],
+)
+
+python_unittest(
+    name = "flatbuffer",
+    srcs = [
+        "test_flatbuffer.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)
+
+python_unittest(
+    name = "cord",
+    srcs = [
+        "test_cord.py",
+    ],
+    deps = [
+        "//executorch/exir/_serialize:lib",
+    ],
+)

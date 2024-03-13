@@ -1,0 +1,38 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "__init__.py",
+    ],
+    deps = [
+        ":emit",
+    ],
+)
+
+python_library(
+    name = "emit",
+    srcs = [
+        "_emit_program.py",
+        "_emitter.py",
+    ],
+    deps = [
+        "fbsource//third-party/pypi/typing-extensions:typing-extensions",
+        "//caffe2:torch",
+        "//executorch/exir:delegate",
+        "//executorch/exir:error",
+        "//executorch/exir:memory",
+        "//executorch/exir:print_program",
+        "//executorch/exir:schema",
+        "//executorch/exir:tensor",
+        "//executorch/exir:types",
+        "//executorch/exir:version",
+        "//executorch/exir/dialects/backend:lib",
+        "//executorch/exir/dialects/edge:lib",
+        "//executorch/exir/operator:convert",
+        "//executorch/exir/passes:prim_ops_py_registry",
+        "//executorch/extension/pytree:pylib",
+    ],
+)

@@ -1,0 +1,5 @@
+- namespace: op_gelu
+  dtype_double: false
+
+- namespace: op_log_softmax
+  dtype_double: false

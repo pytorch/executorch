@@ -1,0 +1,37 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+#
+# This yaml file contains all operators that are not defined by the ATen
+# library.
+#
+# See the README.md file in this directory for a description of the syntax used
+# by this file.
+
+# This custom version of allclose is necessary because the native allclose's
+# (in native_functions.yaml) signature conflicts with the current function
+# signature requirements of Executorch. Specifically, the native returns a scalar
+# (bool), but Executorch requires that operators return either void or a tensor.
+# To get around this, the below op expects an out tensor which is expected to be
+# a single-element bool. The result of the allclose operation is written to that
+# tensor. Otherwise, this operator's semantics are the same as the native version.
+# TODO(T126667800) Remove dummy_param once custom namespaces are supported in the
+# portable op library.
+- func: allclose.out(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::allclose_out
+
+# The argument dummy_param is used solely to disambiguate this op from the native
+# allclose(). Otherwise, code calling this op is identical to the native op:
+# out = torch.ops.aten.allclose(a, b). The out variant pass attempts to convert
+# this call to the nonexistent native allclose.out and fails.
+# TODO(T126667800) Remove dummy_param once custom namespaces are supported in the
+# portable op library.
+- func: allclose.Tensor(Tensor self, Tensor other, float rtol=1e-05, float atol=1e-08, bool equal_nan=False, bool dummy_param=False) -> Tensor
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::allclose_tensor
+
+- func: linear.scratch_example(Tensor input, Tensor weight, Tensor? bias=None, *, Tensor(a!) out, Tensor(b!) _scratch_tensor) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::linear_scratch_example

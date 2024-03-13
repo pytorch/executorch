@@ -1,0 +1,23 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+
+oncall("executorch")
+
+# Ideally this should be a python_unittest but we cannot do that as
+# we have to run this python test with a buck config flag which is
+# -c executorch.prof_enabled=true. So we instead define this as a
+# binary and run this on diffs via a Skycastle job.
+
+python_binary(
+    # @autodeps-skip
+    name = "test_profiler_e2e",
+    srcs = [
+        "test_profiler_e2e.py",
+    ],
+    main_function = "executorch.profiler.test.test_profiler_e2e.main",
+    deps = [
+        "//executorch/exir:lib",
+        "//executorch/exir/_serialize:lib",
+        "//executorch/extension/pybindings:portable_lib",
+        "//executorch/profiler/fb:parse_profiler_library",
+    ],
+)

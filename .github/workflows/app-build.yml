@@ -1,0 +1,44 @@
+name: Build ExecuTorch demo apps
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+  pull_request:
+    paths:
+      - .ci/docker/**
+      - .github/workflows/app-build.yml
+      - install_requirements.sh
+      - backends/apple/**
+      - build/build_apple_frameworks.sh
+      - build/test_ios_ci.sh
+      - examples/demo-apps/**
+      - extension/module/**
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}-${{ github.event_name == 'workflow_dispatch' }}-${{ github.event_name == 'schedule' }}
+  cancel-in-progress: true
+
+jobs:
+  test-demo-ios:
+    name: test-demo-ios
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    with:
+      runner: macos-latest-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        WORKSPACE=$(pwd)
+        pushd "${WORKSPACE}/pytorch/executorch"
+        BUILD_TOOL=cmake
+
+        bash .ci/scripts/setup-conda.sh
+        # Setup MacOS dependencies as there is no Docker support on MacOS atm
+        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        # Build and test iOS Demo App
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash build/test_ios_ci.sh
+        popd

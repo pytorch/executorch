@@ -1,0 +1,5 @@
+load(":targets.bzl", "define_common_targets")
+
+oncall("ai_infra_mobile_platform")
+
+define_common_targets()

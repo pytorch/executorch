@@ -1,0 +1,16 @@
+load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
+
+oncall("executorch")
+
+python_unittest(
+    name = "test_backend_ops",
+    srcs = [
+        "test_backend_ops.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects:lib",
+        "//executorch/exir/dialects/backend:lib",
+        "//executorch/exir/dialects/edge:lib",
+    ],
+)

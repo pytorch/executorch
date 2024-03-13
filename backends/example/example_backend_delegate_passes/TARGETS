@@ -1,0 +1,18 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "merge_to_dim_pass.py",
+        "permute_memory_formats_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/example/example_operators:example_operators_lib",
+        "//executorch/exir:dim_order_utils",
+        "//executorch/exir:pass_base",
+        "//executorch/exir/dialects:lib",
+    ],
+)

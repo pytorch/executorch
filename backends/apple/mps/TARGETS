@@ -1,0 +1,13 @@
+#
+#  Copyright (c) 2023 Apple Inc. All rights reserved.
+#  Provided subject to the LICENSE file in the top level directory.
+#
+
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain fbcode-only targets.
+
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()

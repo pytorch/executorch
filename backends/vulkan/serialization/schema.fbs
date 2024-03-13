@@ -1,0 +1,104 @@
+// Copyright (c) Meta Platforms, Inc. and affiliates.
+
+namespace vkgraph;
+
+// Update after any BC breaking changes.
+file_identifier "VK00";
+
+table OperatorCall {
+  name:string;
+  args:[int];
+}
+
+enum VkDataType : short {
+  // IEEE754 single-precision floating-point.
+  fp32 = 0,
+}
+
+table VkTensor {
+  // Type of the tensor elements.
+  datatype:VkDataType;
+  // Shape dimensions.
+  dims:[uint];
+  // Index to the program's constant data. Negative indicates tensor is non-constant.
+  constant_id:int;
+  // Index to the shared memory object. Negative indicates the tensor doesn't share memory.
+  mem_obj_id:int;
+}
+
+table Null {}
+
+table Int {
+  int_val:long;
+}
+
+table Bool {
+  bool_val:bool;
+}
+
+table Double {
+  double_val:double;
+}
+
+table String {
+  string_val:string;
+}
+
+table IntList {
+  items:[long];
+}
+
+table DoubleList {
+  items:[double];
+}
+
+table BoolList {
+  items:[bool];
+}
+
+table ValueList {
+  items:[int];
+}
+
+union GraphTypes {
+  Null,
+  Int,
+  Double,
+  Bool,
+  VkTensor,
+  IntList,
+  DoubleList,
+  BoolList,
+  ValueList,
+  String,
+}
+
+table VkValue {
+  value:GraphTypes;
+}
+
+// Abstraction to represent a region of bytes in a raw data buffer. Useful for referencing raw data
+// serialized outside of the flatbuffer.
+table VkBytes {
+  offset:ulong;
+  length:ulong;
+}
+
+table VkGraph {
+  // Schema version.
+  version:string;
+
+  // Objects
+  chain:[OperatorCall];
+  values:[VkValue];
+
+  // Indices
+  input_ids:[uint];
+  output_ids:[uint];
+
+  // Raw Objects (e.g. weight tensors and custom shaders)
+  constants:[VkBytes];
+  shaders:[VkBytes];
+}
+
+root_type VkGraph;

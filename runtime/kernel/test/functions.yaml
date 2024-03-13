@@ -1,0 +1,13 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+
+- func: add.out(Tensor self, Tensor other, *, Scalar alpha=1, Tensor(a!) out) -> Tensor(a!)
+  type_alias:
+    T0: [Double]
+  dim_order_alias:
+    D0: [0, 1, 2, 3]
+  kernels:
+    - arg_meta:
+        self: [T0, D0]
+        other: [T0 , D0]
+        out: [T0, D0]
+      kernel_name: torch::executor::add_out

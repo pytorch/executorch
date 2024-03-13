@@ -1,0 +1,324 @@
+load("@fbsource//xplat/executorch/build/runtime_wrapper.bzl", "runtime")
+load(":flatcc_defs.bzl", "define_flatcc_targets")
+load(":gflags.bzl", "define_gflags")
+load(":glob_defs.bzl", "subdir_glob")
+load(":gtest_defs.bzl", "define_gtest_targets")
+load(":prebuilt_python_defs.bzl", "add_prebuilt_python_library_targets")
+load("@prelude//rules.bzl", "prebuilt_cxx_library")
+
+define_gflags()
+
+define_gtest_targets()
+
+prebuilt_python_library_defs = {
+    "prettytable": {
+        "additional_deps": [":wcwidth"],
+        "out": "prettytable-3.8.0-py3-none-any.whl",
+        "sha1": "22a8347abd5a72e4ea8d5f5bb2956d956148e6fa",
+        "url": "https://files.pythonhosted.org/packages/25/1e/4c284713b092ec384fad4399452f43f6446ad9aabc9c0b3c3c0920cc53b6/prettytable-3.8.0-py3-none-any.whl",
+    },
+    "pyyaml": {
+        "out": "pyyaml.whl",
+        "sha1": "11aa9c5fe2d890b6a73212beadc7c8a4265ebc39",
+        "url": "https://files.pythonhosted.org/packages/12/fc/a4d5a7554e0067677823f7265cb3ae22aed8a238560b5133b58cda252dad/PyYAML-6.0-cp39-cp39-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_12_x86_64.manylinux2010_x86_64.whl",
+    },
+    "typing-extensions": {
+        "out": "typing_extensions-4.2.0-py3-none-any.whl",
+        "sha1": "ff0849420e94f425818bff5d0f25e3cdfaba8601",
+        "url": "https://files.pythonhosted.org/packages/75/e1/932e06004039dd670c9d5e1df0cd606bf46e29a28e65d5bb28e894ea29c9/typing_extensions-4.2.0-py3-none-any.whl",
+    },
+    "wcwidth": {
+        "out": "wcwidth-0.1.5-py2.py3-none-any.whl",
+        "sha1": "f132a6fdff56d1d8bf572f00ef6985a327784bbd",
+        "url": "https://files.pythonhosted.org/packages/8b/30/f46badba94cedcd5ceb5918a7c5a34f3a1b9e902e045b7d8d39c1db3d99a/wcwidth-0.1.5-py2.py3-none-any.whl",
+    },
+}
+
+add_prebuilt_python_library_targets(prebuilt_python_library_defs)
+
+runtime.python_library(
+    name = "torchgen",
+    srcs = subdir_glob(
+        [
+            ("pytorch/torchgen", "**/*.py"),
+        ],
+    ),
+    base_module = "torchgen",
+    visibility = ["PUBLIC"],
+    deps = [
+        "//third-party:pyyaml",
+        "//third-party:typing-extensions",
+    ],
+    _is_external_target = True,
+)
+
+runtime.python_binary(
+    name = "gen",
+    main_module = "torchgen.gen",
+    visibility = [
+        "PUBLIC",
+    ],
+    deps = [
+        ":torchgen",
+    ],
+    _is_external_target = True,
+)
+
+runtime.python_binary(
+    name = "gen_executorch",
+    main_module = "torchgen.gen_executorch",
+    visibility = [
+        "PUBLIC",
+    ],
+    deps = [
+        ":torchgen",
+    ],
+    _is_external_target = True,
+)
+
+runtime.filegroup(
+    name = "aten_src_path",
+    srcs = subdir_glob([
+        ("pytorch", "aten/src/ATen/templates/*"),
+        ("pytorch", "aten/src/ATen/native/native_functions.yaml"),
+        ("pytorch", "aten/src/ATen/native/tags.yaml"),
+    ]),
+    visibility = [
+        "PUBLIC",
+    ],
+    _is_external_target = True,
+)
+
+runtime.python_library(
+    name = "gen_selected_mobile_ops_header",
+    srcs = subdir_glob([
+        ("pytorch/tools", "lite_interpreter/gen_selected_mobile_ops_header.py"),
+    ]),
+    base_module = "tools",
+    _is_external_target = True,
+)
+
+runtime.python_library(
+    name = "gen_oplist_lib",
+    srcs = subdir_glob([
+        ("pytorch/tools/code_analyzer", "gen_oplist.py"),
+        ("pytorch/tools/code_analyzer", "gen_op_registration_allowlist.py"),
+    ]),
+    base_module = "tools.code_analyzer",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":gen_selected_mobile_ops_header",
+        ":torchgen",
+        ":pyyaml",
+    ],
+    _is_external_target = True,
+)
+
+runtime.cxx_library(
+    name = "flatbuffers-api",
+    public_include_directories = ["flatbuffers/include"],
+    raw_headers = [
+        "flatbuffers/include/flatbuffers/base.h",
+        "flatbuffers/include/flatbuffers/flatbuffers.h",
+        "flatbuffers/include/flatbuffers/stl_emulation.h",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+)
+
+define_flatcc_targets()
+
+runtime.cxx_library(
+    name = "flatc_library",
+    srcs = [
+        "flatbuffers/src/code_generators.cpp",
+        "flatbuffers/src/flatc.cpp",
+        "flatbuffers/src/idl_gen_fbs.cpp",
+        "flatbuffers/src/idl_gen_text.cpp",
+        "flatbuffers/src/idl_parser.cpp",
+        "flatbuffers/src/reflection.cpp",
+        "flatbuffers/src/util.cpp",
+    ],
+    public_include_directories = [
+        "flatbuffers/grpc",
+        "flatbuffers/include",
+    ],
+    raw_headers = [
+        "flatbuffers/include/flatbuffers/flatc.h",
+        "flatbuffers/include/flatbuffers/base.h",
+        "flatbuffers/include/flatbuffers/flatbuffers.h",
+        "flatbuffers/include/flatbuffers/stl_emulation.h",
+        "flatbuffers/include/flatbuffers/code_generators.h",
+        "flatbuffers/include/flatbuffers/flexbuffers.h",
+        "flatbuffers/include/flatbuffers/hash.h",
+        "flatbuffers/include/flatbuffers/idl.h",
+        "flatbuffers/include/flatbuffers/minireflect.h",
+        "flatbuffers/include/flatbuffers/reflection.h",
+        "flatbuffers/include/flatbuffers/reflection_generated.h",
+        "flatbuffers/include/flatbuffers/util.h",
+    ],
+    link_style = "static",
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+)
+
+runtime.cxx_binary(
+    name = "flatc",
+    srcs = [
+        "flatbuffers/grpc/src/compiler/cpp_generator.cc",
+        "flatbuffers/grpc/src/compiler/go_generator.cc",
+        "flatbuffers/grpc/src/compiler/java_generator.cc",
+        "flatbuffers/grpc/src/compiler/python_generator.cc",
+        "flatbuffers/grpc/src/compiler/swift_generator.cc",
+        "flatbuffers/grpc/src/compiler/ts_generator.cc",
+        "flatbuffers/src/annotated_binary_text_gen.cpp",
+        "flatbuffers/src/bfbs_gen_lua.cpp",
+        "flatbuffers/src/bfbs_gen_nim.cpp",
+        "flatbuffers/src/binary_annotator.cpp",
+        "flatbuffers/src/code_generators.cpp",
+        "flatbuffers/src/file_binary_writer.cpp",
+        "flatbuffers/src/file_name_saving_file_manager.cpp",
+        "flatbuffers/src/file_writer.cpp",
+        "flatbuffers/src/flatc.cpp",
+        "flatbuffers/src/flatc_main.cpp",
+        "flatbuffers/src/idl_gen_binary.cpp",
+        "flatbuffers/src/idl_gen_cpp.cpp",
+        "flatbuffers/src/idl_gen_csharp.cpp",
+        "flatbuffers/src/idl_gen_dart.cpp",
+        "flatbuffers/src/idl_gen_fbs.cpp",
+        "flatbuffers/src/idl_gen_go.cpp",
+        "flatbuffers/src/idl_gen_grpc.cpp",
+        "flatbuffers/src/idl_gen_java.cpp",
+        "flatbuffers/src/idl_gen_json_schema.cpp",
+        "flatbuffers/src/idl_gen_kotlin.cpp",
+        "flatbuffers/src/idl_gen_lobster.cpp",
+        "flatbuffers/src/idl_gen_php.cpp",
+        "flatbuffers/src/idl_gen_python.cpp",
+        "flatbuffers/src/idl_gen_rust.cpp",
+        "flatbuffers/src/idl_gen_swift.cpp",
+        "flatbuffers/src/idl_gen_text.cpp",
+        "flatbuffers/src/idl_gen_ts.cpp",
+        "flatbuffers/src/idl_parser.cpp",
+        "flatbuffers/src/reflection.cpp",
+        "flatbuffers/src/util.cpp",
+    ],
+    include_directories = [
+        "flatbuffers/grpc",
+        "flatbuffers/include",
+    ],
+    raw_headers = [
+        "flatbuffers/grpc/src/compiler/cpp_generator.h",
+        "flatbuffers/grpc/src/compiler/go_generator.h",
+        "flatbuffers/grpc/src/compiler/java_generator.h",
+        "flatbuffers/grpc/src/compiler/python_generator.h",
+        "flatbuffers/grpc/src/compiler/schema_interface.h",
+        "flatbuffers/grpc/src/compiler/swift_generator.h",
+        "flatbuffers/grpc/src/compiler/ts_generator.h",
+    ],
+    visibility = ["PUBLIC"],
+    deps = [":flatc_library"],
+    link_style = "static",
+    _is_external_target = True,
+)
+
+runtime.genrule(
+    name = "libpython_gen",
+    outs = {
+        "include": ["include"],
+    },
+    srcs = ["link_python.sh"],
+    bash = select({
+        "ovr_config//os:macos": "bash $SRCS $OUT libpython.dylib",
+        "DEFAULT": "bash $SRCS $OUT libpython.so",
+    }),
+)
+
+runtime.cxx_library(
+    name = "pybind11",
+    public_include_directories = [
+        "pybind11/include",
+    ],
+    exported_preprocessor_flags = [
+        "-I$(location :libpython_gen[include])",  # include header directories
+    ],
+    exported_linker_flags = ["-Xlinker", "-undefined", "-Xlinker", "dynamic_lookup"],
+    raw_headers = glob(["pybind11/include/**/*.h"]),
+    visibility = ["PUBLIC"],
+    _is_external_target = True,
+)
+
+runtime.genrule(
+    name = "libtorch_gen",
+    outs = select({
+        "ovr_config//os:macos": {
+            "libtorch": ["libtorch.dylib"],
+            "libc10": ["libc10.dylib"],
+            "libtorch_cpu": ["libtorch_cpu.dylib"],
+            "libtorch_python": ["libtorch_python.dylib"],
+            "include": ["include"],
+        },
+        "DEFAULT": {
+            "libtorch": ["libtorch.so"],
+            "libc10": ["libc10.so"],
+            "libtorch_cpu": ["libtorch_cpu.so"],
+            "libtorch_python": ["libtorch_python.so"],
+            "include": ["include"],
+        },
+    }),
+    default_outs = ["."],
+    srcs = ["link_torch.sh"],
+    bash = select({
+        "ovr_config//os:macos": "bash $SRCS -f torch/lib/libtorch.dylib,torch/lib/libtorch_cpu.dylib,torch/lib/libtorch_python.dylib,torch/lib/libc10.dylib,torch/include -o ${OUT}",
+        "DEFAULT": "bash $SRCS -f torch/lib/libtorch.so,torch/lib/libtorch_cpu.so,torch/lib/libtorch_python.so,torch/lib/libc10.so,torch/lib/libgomp-a34b3233.so.1,torch/include -o ${OUT}",
+    }),
+)
+
+prebuilt_cxx_library(
+    name = "libc10",
+    shared_lib = ":libtorch_gen[libc10]",
+)
+
+prebuilt_cxx_library(
+    name = "libtorch_cpu",
+    shared_lib = ":libtorch_gen[libtorch_cpu]",
+)
+
+prebuilt_cxx_library(
+    name = "libtorch",
+    shared_lib = ":libtorch_gen[libtorch]",
+    exported_preprocessor_flags = [
+        "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
+        "-I$(location :libtorch_gen[include])",  # include header directories
+        "-I$(location :libtorch_gen[include])/torch/csrc/api/include",  # include header directories
+    ],
+    exported_linker_flags = select({
+        "ovr_config//os:macos": ["-Xlinker", "-rpath", "$(location :libtorch_gen)", "-Xlinker"],
+        "DEFAULT": ["-Wl,-rpath,$(location :libtorch_gen)"],  # define rpath to locate shared library
+    }),
+    exported_headers = [":libtorch_gen[include]"],
+    exported_deps = select({
+        "ovr_config//os:macos": [":libc10", ":libtorch_cpu"],
+        "DEFAULT": [":libc10", ":libtorch_cpu"],
+    }),
+    visibility = ["PUBLIC"],
+)
+
+prebuilt_cxx_library(
+    name = "libtorch_python",
+    shared_lib = ":libtorch_gen[libtorch_python]",
+    exported_preprocessor_flags = [
+        "-D_GLIBCXX_USE_CXX11_ABI=0",  # `libtorch` is built without CXX11_ABI so any target depends on it need to use the same build config.
+        "-I$(location :libtorch_gen[include])",  # include header directories
+        "-I$(location :libtorch_gen[include])/torch/csrc/api/include",  # include header directories
+    ],
+    exported_linker_flags = select({
+        "ovr_config//os:macos": ["-ldl", "-framework", "CoreFoundation"], # python3-config --cflags
+        "DEFAULT": [],  # define rpath to locate shared library
+    }),
+    exported_headers = [":libtorch_gen[include]"],
+    exported_deps = [
+        ":libtorch",
+    ],
+    visibility = ["PUBLIC"],
+)

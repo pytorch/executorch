@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "executorch"
+version = "0.1.0"
+# Python dependencies required for development
+dependencies=[
+  "expecttest",
+  "flatbuffers",
+  "hypothesis",
+  "numpy",
+  "packaging",
+  "pandas",
+  "parameterized",
+  "pytest",
+  "pytest-xdist",
+  "pyyaml",
+  "ruamel.yaml",
+  "sympy",
+  "tabulate",
+  "tomli",
+  "zstd",
+]
+
+[tool.setuptools.package-data]
+"*" = ["*.fbs", "*.yaml"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["*.pyc"]
+
+[tool.usort]
+first_party_detection = false

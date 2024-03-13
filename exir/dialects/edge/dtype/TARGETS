@@ -1,0 +1,17 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("ai_infra_mobile_platform")
+
+python_library(
+    name = "lib",
+    srcs = [
+        "runner.py",
+        "supported.py",
+        "utils.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/dialects/edge/arg:lib",
+        "//executorch/exir/dialects/edge/op:lib",
+    ],
+)

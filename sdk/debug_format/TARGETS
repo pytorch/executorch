@@ -1,0 +1,24 @@
+load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
+
+oncall("executorch")
+
+python_library(
+    name = "base_schema",
+    srcs = [
+        "base_schema.py",
+    ],
+    deps = [
+    ],
+)
+
+python_library(
+    name = "et_schema",
+    srcs = [
+        "et_schema.py",
+    ],
+    deps = [
+        ":base_schema",
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)

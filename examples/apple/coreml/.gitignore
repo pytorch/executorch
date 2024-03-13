@@ -1,0 +1,19 @@
+# Mac OS X
+*.DS_Store
+
+cmake-out/
+
+
+# Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+project.xcworkspace/
+xcuserdata
+
+executor_runner/include/
+executor_runner/libraries/
+
+xcode-build/

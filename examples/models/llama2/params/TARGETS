@@ -1,0 +1,12 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.filegroup(
+    name = "params",
+    srcs = [
+        "demo_config.json",
+        "demo_rand_params.pth",
+    ],
+    visibility = ["//executorch/examples/..."],
+)

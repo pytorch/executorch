@@ -1,0 +1,25 @@
+# Any targets that should be shared between fbcode and xplat must be defined in
+# targets.bzl. This file can contain xplat-only targets.
+
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+define_common_targets()
+
+runtime.python_library(
+    name = "memory_profiler",
+    srcs = [
+        "activation_memory_profiler.py",
+    ],
+    _is_external_target = True,
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
