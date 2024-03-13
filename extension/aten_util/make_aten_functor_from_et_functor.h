@@ -18,7 +18,6 @@
 #error "This header requires C++17"
 #endif
 #include <ATen/native/Resize.h>
-#include <executorch/extension/kernel_util/meta_programming.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 #include <executorch/runtime/core/evalue.h>
 #include <torch/torch.h>
