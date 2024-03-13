@@ -22,7 +22,12 @@ class OperatorCall:
 
 
 class VkDataType(IntEnum):
-    fp32 = 0
+    BOOL = 0
+    UINT8 = 1
+    INT8 = 2
+    INT32 = 3
+    FLOAT16 = 4
+    FLOAT32 = 5
 
 
 @dataclass
