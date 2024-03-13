@@ -51,7 +51,12 @@ Tensor& opt_div_out(
   if (a_type == b_type && a_type == out_type && a.sizes().equals(b.sizes())) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
-    ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+    ET_KERNEL_CHECK_MSG(
+        ctx,
+        error == Error::Ok,
+        InvalidArgument,
+        out,
+        "Failed to resize output tensor.");
 
     ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, "div.out", CTYPE, [&]() {
       using Vec = executorch::vec::Vectorized<CTYPE>;
@@ -64,7 +69,7 @@ Tensor& opt_div_out(
     });
   } else {
     ScalarType common_type = get_compute_type(a_type, b_type);
-    ET_CHECK(canCast(common_type, out_type));
+    ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
 
     ET_KERNEL_CHECK(
         ctx,
