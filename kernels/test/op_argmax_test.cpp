@@ -22,16 +22,18 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_argmax_out(
-    const Tensor& in,
-    optional<int64_t> dim,
-    bool keepdim,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::argmax_outf(context, in, dim, keepdim, out);
-}
+class OpArgmaxTest : public OperatorTest {
+ protected:
+  Tensor& op_argmax_out(
+      const Tensor& in,
+      optional<int64_t> dim,
+      bool keepdim,
+      Tensor& out) {
+    return torch::executor::aten::argmax_outf(context_, in, dim, keepdim, out);
+  }
+};
 
-TEST(OpArgmaxTest, SanityCheckLong) {
+TEST_F(OpArgmaxTest, SanityCheckLong) {
   TensorFactory<ScalarType::Long> tf;
 
   // clang-format off
@@ -56,7 +58,7 @@ TEST(OpArgmaxTest, SanityCheckLong) {
   // clang-format on
 }
 
-TEST(OpArgmaxTest, SanityCheckShort) {
+TEST_F(OpArgmaxTest, SanityCheckShort) {
   TensorFactory<ScalarType::Long> tfl;
   TensorFactory<ScalarType::Short> tfs;
 
@@ -82,7 +84,7 @@ TEST(OpArgmaxTest, SanityCheckShort) {
   // clang-format on
 }
 
-TEST(OpArgmaxTest, SanityCheckNullDim) {
+TEST_F(OpArgmaxTest, SanityCheckNullDim) {
   TensorFactory<ScalarType::Long> tf;
 
   // clang-format off
