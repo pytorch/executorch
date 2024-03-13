@@ -191,12 +191,13 @@ void ComputeGraph::prepare() {
           prepack_descriptor_counts_.field) * \
       config_.descriptorPoolSafetyFactor))
 
+  uint32_t max_sets = MERGE_FIELD(descriptorPoolMaxSets);
   api::DescriptorPoolConfig config{
-      MERGE_FIELD(descriptorPoolMaxSets),
-      MERGE_FIELD(descriptorUniformBufferCount),
-      MERGE_FIELD(descriptorStorageBufferCount),
-      MERGE_FIELD(descriptorCombinedSamplerCount),
-      MERGE_FIELD(descriptorStorageImageCount),
+      max_sets,
+      std::max(MERGE_FIELD(descriptorUniformBufferCount), max_sets),
+      std::max(MERGE_FIELD(descriptorStorageBufferCount), max_sets),
+      std::max(MERGE_FIELD(descriptorCombinedSamplerCount), max_sets),
+      std::max(MERGE_FIELD(descriptorStorageImageCount), max_sets),
       1u,
   };
 
