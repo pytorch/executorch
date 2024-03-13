@@ -67,7 +67,14 @@ Tensor& opt_exp_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   // Resize for dynamic shape
   auto error = resize_tensor(out, in.sizes());
-  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      error == Error::Ok,
+      InvalidArgument,
+      out,
+      "Failed to resize output tensor.");
+
+  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
 
   ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, "exp.out", CTYPE_IN, [&] {
     ET_SWITCH_FLOATH_TYPES(out.scalar_type(), ctx, "exp.out", CTYPE_OUT, [&] {
