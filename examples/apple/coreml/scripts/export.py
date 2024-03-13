@@ -8,18 +8,19 @@ import copy
 import pathlib
 import sys
 
-import torch
 import executorch.exir as exir
 
-from executorch.backends.apple.coreml.compiler import CoreMLBackend
+import torch
 
-from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.compile_spec_schema import CompileSpec
-from executorch.sdk.etrecord import generate_etrecord
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
 
 from executorch.backends.apple.coreml.partition.coreml_partitioner import (
     CoreMLPartitioner,
 )
+
+from executorch.exir.backend.backend_api import to_backend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.sdk.etrecord import generate_etrecord
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
