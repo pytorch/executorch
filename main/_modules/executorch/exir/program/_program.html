@@ -427,6 +427,7 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 <span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">import</span> <span class="nn">io</span>
 <span class="kn">import</span> <span class="nn">logging</span>
 <span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
 
@@ -434,6 +435,7 @@
 <span class="kn">import</span> <span class="nn">torch._export</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir._serialize</span> <span class="kn">import</span> <span class="n">_serialize_pte_binary</span>
+<span class="kn">from</span> <span class="nn">executorch.exir._serialize._cord</span> <span class="kn">import</span> <span class="n">Cord</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.capture._config</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">ExecutorchBackendConfig</span>
@@ -831,6 +833,7 @@
                 <span class="s2">&quot;Need to call prog.to_edge prior to constructing ExecutorchProgram.&quot;</span>
             <span class="p">)</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span> <span class="o">=</span> <span class="n">exir_exported_program</span><span class="o">.</span><span class="n">exported_program</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Cord</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EmitterOutput</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">emit_stacktrace</span>
@@ -840,10 +843,9 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor_alignment</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_alignment</span>
 
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
+    <span class="k">def</span> <span class="nf">_get_pte_data</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Cord</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
                 <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
                 <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">,</span>
                 <span class="n">extract_constant_segment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_constant_segment</span><span class="p">,</span>
@@ -851,6 +853,20 @@
                 <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">,</span>
                 <span class="n">delegate_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the serialized ExecuTorch binary as a byte string.</span>
+
+<span class="sd">        Note that the call to `buffer` may allocate a very large amount of</span>
+<span class="sd">        contiguous memory, depending on the model size. If writing to a file,</span>
+<span class="sd">        use `write_to_file` which won&#39;t incur additional copies.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># TODO(T181494963): update pybinding to remove buffer cache, which can consume large</span>
+        <span class="c1"># amounts of memory longer than necessary.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">())</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
 
     <span class="nd">@property</span>
@@ -885,6 +901,14 @@
 
     <span class="k">def</span> <span class="nf">dump_exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span>
+
+    <span class="k">def</span> <span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over</span>
+<span class="sd">        `buffer`, as it writes to file without copying into a contiguous block of memory first,</span>
+<span class="sd">        reducing the peak memory usage.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_get_pte_data</span><span class="p">()</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span>
 
 
 <span class="k">def</span> <span class="nf">_get_aten_to_edge_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">EdgeCompileConfig</span><span class="p">):</span>
@@ -984,245 +1008,6 @@
         <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span>
     <span class="p">]</span>
     <span class="k">return</span> <span class="n">passes</span>
-
-
-<span class="c1"># MultiMethodExirExportedProgram represents an exported program that contains</span>
-<span class="c1"># multiple methods, all as valid entry points to the program.</span>
-<span class="c1">#</span>
-<span class="c1"># Internally, each method is represented as a separate ExirExportedProgram.</span>
-<span class="c1"># Methods (fx.GraphModule&#39;s) do not share anything with each other to</span>
-<span class="c1"># ensure that each is self-contained. This is important because transformation</span>
-<span class="c1"># passes can be local and do not need to concern themselves about other methods</span>
-<span class="c1"># that exists on the same MultiMethodExirExportedProgram.</span>
-<span class="c1">#</span>
-<span class="c1"># TODO(T152006915): Merge this into ExirExportedProgram and then delete it.</span>
-<span class="nd">@compatibility</span><span class="p">(</span><span class="n">is_backward_compatible</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">MultiMethodExirExportedProgram</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">progs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
-        <span class="n">getters</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">):</span>
-        <span class="c1"># TODO(ycao): Support merging use case where user started by creating</span>
-        <span class="c1"># an empty MultiMethodExirExportedProgram and then start adding more</span>
-        <span class="c1"># graph modules to it.</span>
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="nb">len</span><span class="p">(</span><span class="n">progs</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span>
-        <span class="p">),</span> <span class="s2">&quot;Expected at least 1 graph module in MultiMethodExirExportedProgram&quot;</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span> <span class="o">=</span> <span class="n">progs</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_prim_getter</span> <span class="o">=</span> <span class="n">getters</span>
-
-    <span class="c1"># Get the default method, which is either the only method contained</span>
-    <span class="c1"># in this MultiMethodExirExportedProgram or the method named `forward`.</span>
-    <span class="k">def</span> <span class="nf">_get_default_program</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">return</span> <span class="nb">next</span><span class="p">(</span><span class="nb">iter</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="o">.</span><span class="n">values</span><span class="p">()))</span>
-        <span class="k">elif</span> <span class="s2">&quot;forward&quot;</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="p">[</span><span class="s2">&quot;forward&quot;</span><span class="p">]</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">None</span>
-
-    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="c1"># TODO(ycao): Implement.</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="c1"># TODO(ycao): Implement.</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">find_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExirExportedProgram</span><span class="p">]:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">merge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="s2">&quot;MultiMethodExirExportedProgram&quot;</span><span class="p">):</span>
-        <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="n">other</span><span class="o">.</span><span class="n">methods</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="k">assert</span> <span class="p">(</span>
-                <span class="n">method_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span>
-            <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;There already is a method named </span><span class="si">{</span><span class="n">method_name</span><span class="si">}</span><span class="s2"> in this program&quot;</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
-
-    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">passes</span><span class="p">:</span> <span class="n">PassType</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;MultiMethodExirExportedProgram&quot;</span><span class="p">:</span>
-        <span class="n">method_name_to_transformed_program</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">method_name</span><span class="p">:</span> <span class="n">prog</span><span class="o">.</span><span class="n">transform</span><span class="p">(</span><span class="o">*</span><span class="n">passes</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">prog</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="p">}</span>
-        <span class="k">return</span> <span class="n">MultiMethodExirExportedProgram</span><span class="p">(</span><span class="n">method_name_to_transformed_program</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">]:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_program</span>
-
-    <span class="k">def</span> <span class="nf">prim_getters</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_method_to_prim_getter</span>
-
-    <span class="k">def</span> <span class="fm">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Val</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Val</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Val</span><span class="p">:</span>
-        <span class="n">prog</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_default_program</span><span class="p">()</span>
-
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">prog</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">),</span> <span class="s2">&quot;&quot;&quot;MultiMethodExirExportedProgram can not be called directly unless &quot;</span>
-<span class="s2">        &quot;it only contains a single method or it contains a `forward` method. &quot;</span>
-<span class="s2">        &quot;Please look up one of its methods first via &quot;</span>
-<span class="s2">        &quot;`MultiMethodExirExportedProgram.find_method(method_name)`.&quot;&quot;&quot;</span>
-
-        <span class="k">return</span> <span class="n">prog</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
-
-    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-        <span class="c1"># TODO(ycao): Implement.</span>
-        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="fm">__str__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-        <span class="c1"># TODO(ycao): Implement a real one.</span>
-        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__str__</span><span class="p">()</span>
-
-    <span class="k">def</span> <span class="nf">access_property_of_default_method</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">property_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="n">default_program</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_default_program</span><span class="p">()</span>
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">default_program</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;&quot;&quot;Exported program contains more than one methods and none of them &quot;</span>
-<span class="s2">        &quot;is named `forward`, it is impossible to identify the default method. &quot;</span>
-<span class="s2">        &quot;please look up one of its methods first via `find_method(method_name)` &quot;</span>
-<span class="s2">        &quot;to access property: </span><span class="si">{</span><span class="n">property_name</span><span class="si">}</span><span class="s2">.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">default_program</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">property_name</span><span class="p">)</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">graph</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">access_property_of_default_method</span><span class="p">(</span><span class="s2">&quot;graph&quot;</span><span class="p">)</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">code</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">access_property_of_default_method</span><span class="p">(</span><span class="s2">&quot;code&quot;</span><span class="p">)</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">module</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="n">default_prog</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_get_default_program</span><span class="p">()</span>
-        <span class="k">assert</span> <span class="p">(</span>
-            <span class="n">default_prog</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-        <span class="p">),</span> <span class="s2">&quot;&quot;&quot;Exported program contains more than&quot;</span>
-<span class="s2">        &quot; one methods and none of them is named `forward`,&quot;</span>
-<span class="s2">        &quot; it is impossible to identify the default method &quot;</span>
-<span class="s2">        &quot;to fetch GraphModule for.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="n">default_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
-
-    <span class="c1"># TODO(ycao): Implement custom __reduce__ to account for lost of</span>
-    <span class="c1"># meta[&#39;val&#39;]</span>
-
-    <span class="c1"># TODO(ycao): Change this to a composable function.</span>
-    <span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;MultiMethodExirExportedProgram&quot;</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">config</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">config</span> <span class="o">=</span> <span class="n">EdgeCompileConfig</span><span class="p">()</span>
-        <span class="n">method_name_to_edge_prog</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="n">method_name</span><span class="p">:</span> <span class="n">prog</span><span class="o">.</span><span class="n">to_edge</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-            <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">prog</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">methods</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
-        <span class="p">}</span>
-        <span class="k">return</span> <span class="n">MultiMethodExirExportedProgram</span><span class="p">(</span>
-            <span class="n">method_name_to_edge_prog</span><span class="p">,</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">prim_getters</span><span class="p">(),</span>
-        <span class="p">)</span>
-
-    <span class="c1"># TODO(ycao): Change this to a composable function.</span>
-    <span class="k">def</span> <span class="nf">to_executorch</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;MultiMethodExecutorchProgram&quot;</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">multi_method_program_to_executorch</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span>
-
-
-<span class="c1"># TODO(T152006915): Merge this into ExecutorchProgram and then delete it.</span>
-<span class="nd">@compatibility</span><span class="p">(</span><span class="n">is_backward_compatible</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">MultiMethodExecutorchProgram</span><span class="p">:</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-        <span class="n">executorch_dialect_program</span><span class="p">:</span> <span class="s2">&quot;MultiMethodExirExportedProgram&quot;</span><span class="p">,</span>
-        <span class="n">emit_stacktrace</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
-        <span class="n">extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
-        <span class="n">extract_constant_segment</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
-        <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">prim_getters</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-        <span class="n">temp</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">prog</span> <span class="ow">in</span> <span class="n">executorch_dialect_program</span><span class="o">.</span><span class="n">methods</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">temp</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">prog</span><span class="o">.</span><span class="n">exported_program</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span> <span class="n">EmitterOutput</span> <span class="o">=</span> <span class="n">emit_program</span><span class="p">(</span>
-            <span class="n">temp</span><span class="p">,</span>
-            <span class="n">emit_stacktrace</span><span class="p">,</span>
-            <span class="n">executorch_dialect_program</span><span class="o">.</span><span class="n">prim_getters</span><span class="p">(),</span>
-        <span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_executorch_dialect_ir_program</span> <span class="o">=</span> <span class="n">executorch_dialect_program</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">extract_delegate_segments</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_extract_constant_segment</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="n">extract_constant_segment</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">segment_alignment</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor_alignment</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">delegate_alignment</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_prim_getter_cache</span> <span class="o">=</span> <span class="n">prim_getters</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
-                <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
-                <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_delegate_segments</span><span class="p">,</span>
-                <span class="n">extract_constant_segment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_extract_constant_segment</span><span class="p">,</span>
-                <span class="n">segment_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_segment_alignment</span><span class="p">,</span>
-                <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_constant_tensor_alignment</span><span class="p">,</span>
-                <span class="n">delegate_alignment</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_delegate_alignment</span><span class="p">,</span>
-            <span class="p">)</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">program</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Program</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">debug_handle_map</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">debug_handle_map</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">delegate_map</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">_DelegateDebugIdentifierMap</span><span class="p">]]]]:</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="p">:</span>
-            <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">method_to_delegate_debug_id_map</span>
-        <span class="k">return</span> <span class="p">{}</span>
-
-    <span class="c1"># TODO(ycao): This doesn&#39;t make sense any more, remove/change later.</span>
-    <span class="k">def</span> <span class="nf">dump_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">fx</span><span class="o">.</span><span class="n">GraphModule</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_multi_method_graph_module</span><span class="p">()</span><span class="o">.</span><span class="n">module</span>
-
-    <span class="k">def</span> <span class="nf">get_multi_method_graph_module</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;MultiMethodExirExportedProgram&quot;</span><span class="p">:</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_executorch_dialect_ir_program</span>
-
-
-<span class="c1"># TODO(T152006915): Merge this into to_executorch and then delete it.</span>
-<span class="k">def</span> <span class="nf">multi_method_program_to_executorch</span><span class="p">(</span>
-    <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
-    <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">:</span>
-    <span class="n">config</span> <span class="o">=</span> <span class="n">config</span> <span class="ow">or</span> <span class="n">ExecutorchBackendConfig</span><span class="p">()</span>
-    <span class="n">passes</span> <span class="o">=</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-    <span class="n">res</span> <span class="o">=</span> <span class="p">{}</span>
-    <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">prog</span> <span class="ow">in</span> <span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">_method_to_program</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">new_prog</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">prog</span><span class="p">)</span>
-        <span class="n">gm</span> <span class="o">=</span> <span class="n">prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span>
-        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">passes</span><span class="p">:</span>
-            <span class="n">gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
-            <span class="k">assert</span> <span class="n">gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="n">gm</span> <span class="o">=</span> <span class="n">gm_res</span><span class="o">.</span><span class="n">graph_module</span>
-        <span class="n">_copy_module</span><span class="p">(</span><span class="n">new_prog</span><span class="o">.</span><span class="n">exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">gm</span><span class="p">)</span>
-        <span class="n">res</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span> <span class="o">=</span> <span class="n">new_prog</span>
-    <span class="k">return</span> <span class="n">MultiMethodExecutorchProgram</span><span class="p">(</span>
-        <span class="n">executorch_dialect_program</span><span class="o">=</span><span class="n">MultiMethodExirExportedProgram</span><span class="p">(</span><span class="n">res</span><span class="p">),</span>
-        <span class="n">emit_stacktrace</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">emit_stacktrace</span><span class="p">,</span>
-        <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">extract_delegate_segments</span><span class="p">,</span>
-        <span class="n">extract_constant_segment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">extract_constant_segment</span><span class="p">,</span>
-        <span class="n">segment_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">segment_alignment</span><span class="p">,</span>
-        <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
-        <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">delegate_alignment</span><span class="p">,</span>
-        <span class="n">prim_getters</span><span class="o">=</span><span class="n">edge_dialect_program</span><span class="o">.</span><span class="n">prim_getters</span><span class="p">(),</span>
-    <span class="p">)</span>
 
 
 <div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.to_edge">[docs]</a><span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
@@ -1538,8 +1323,8 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">,</span>
         <span class="p">)</span>
 
-        <span class="c1"># Serialize emitter output to a buffer</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
+        <span class="c1"># Serialize emitter output, ready to be written to a file.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">:</span> <span class="n">Cord</span> <span class="o">=</span> <span class="n">_serialize_pte_binary</span><span class="p">(</span>
             <span class="n">program</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_emitter_output</span><span class="o">.</span><span class="n">program</span><span class="p">,</span>
             <span class="n">extract_delegate_segments</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">extract_delegate_segments</span><span class="p">,</span>
             <span class="n">extract_constant_segment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">extract_constant_segment</span><span class="p">,</span>
@@ -1547,6 +1332,7 @@
             <span class="n">constant_tensor_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">constant_tensor_alignment</span><span class="p">,</span>
             <span class="n">delegate_alignment</span><span class="o">=</span><span class="n">backend_config</span><span class="o">.</span><span class="n">delegate_alignment</span><span class="p">,</span>
         <span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bytes</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">methods</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
@@ -1601,10 +1387,25 @@
 
     <span class="nd">@property</span>
     <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bytes</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Returns a buffer containing the serialized ExecuTorch binary.</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the serialized ExecuTorch binary as a byte string.</span>
+
+<span class="sd">        Note that the call to `buffer` may allocate a very large amount of</span>
+<span class="sd">        contiguous memory, depending on the model size. If writing to a file,</span>
+<span class="sd">        use `write_to_file` which won&#39;t incur additional copies.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span></div>
+        <span class="c1"># TODO(T181494963): update pybinding to remove buffer cache, which can consume large</span>
+        <span class="c1"># amounts of memory longer than necessary.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_buffer</span>
+
+    <span class="k">def</span> <span class="nf">write_to_file</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">open_file</span><span class="p">:</span> <span class="n">io</span><span class="o">.</span><span class="n">BufferedIOBase</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over</span>
+<span class="sd">        `buffer`, as it writes to file without copying into a contiguous block of memory first,</span>
+<span class="sd">        reducing the peak memory usage.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_pte_data</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">open_file</span><span class="p">)</span></div>
 </pre></div>
 
              </article>

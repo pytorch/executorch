@@ -557,7 +557,10 @@ to a buffer.</p>
 <dl class="py property">
 <dt class="sig sig-object py" id="exir.ExecutorchProgramManager.buffer">
 <em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">buffer</span></span><a class="headerlink" href="#exir.ExecutorchProgramManager.buffer" title="Permalink to this definition">¶</a></dt>
-<dd><p>Returns a buffer containing the serialized ExecuTorch binary.</p>
+<dd><p>Returns the serialized ExecuTorch binary as a byte string.</p>
+<p>Note that the call to <cite>buffer</cite> may allocate a very large amount of
+contiguous memory, depending on the model size. If writing to a file,
+use <cite>write_to_file</cite> which won’t incur additional copies.</p>
 </dd></dl>
 
 <dl class="py property">

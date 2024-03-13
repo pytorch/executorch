@@ -440,8 +440,6 @@
     <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
     <span class="n">ExirExportedProgram</span><span class="p">,</span>
     <span class="n">ExportedProgram</span><span class="p">,</span>
-    <span class="n">MultiMethodExecutorchProgram</span><span class="p">,</span>
-    <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.emit._emitter</span> <span class="kn">import</span> <span class="n">_DelegateDebugIdentifierMap</span>
 
@@ -488,30 +486,16 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_handle_multi_method_exported_program</span><span class="p">(</span>
-    <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span>
-    <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-    <span class="n">multi_method</span><span class="p">:</span> <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
-<span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">for</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">ep</span> <span class="ow">in</span> <span class="n">multi_method</span><span class="o">.</span><span class="n">methods</span><span class="p">()</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-        <span class="n">_handle_exported_program</span><span class="p">(</span>
-            <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">method_name</span><span class="p">,</span> <span class="n">ep</span><span class="o">.</span><span class="n">exported_program</span>
-        <span class="p">)</span>
-
-
 <span class="k">def</span> <span class="nf">_handle_export_module</span><span class="p">(</span>
     <span class="n">etrecord_zip</span><span class="p">:</span> <span class="n">ZipFile</span><span class="p">,</span>
     <span class="n">export_module</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
-        <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
         <span class="n">ExirExportedProgram</span><span class="p">,</span>
         <span class="n">EdgeProgramManager</span><span class="p">,</span>
         <span class="n">ExportedProgram</span><span class="p">,</span>
     <span class="p">],</span>
     <span class="n">module_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">MultiMethodExirExportedProgram</span><span class="p">):</span>
-        <span class="n">_handle_multi_method_exported_program</span><span class="p">(</span><span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="n">export_module</span><span class="p">)</span>
-    <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">export_module</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">):</span>
         <span class="n">_handle_exported_program</span><span class="p">(</span>
             <span class="n">etrecord_zip</span><span class="p">,</span> <span class="n">module_name</span><span class="p">,</span> <span class="s2">&quot;forward&quot;</span><span class="p">,</span> <span class="n">export_module</span><span class="o">.</span><span class="n">exported_program</span>
         <span class="p">)</span>
@@ -573,7 +557,6 @@
     <span class="n">edge_dialect_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExirExportedProgram</span><span class="p">],</span>
     <span class="n">executorch_program</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span>
         <span class="n">ExecutorchProgram</span><span class="p">,</span>
-        <span class="n">MultiMethodExecutorchProgram</span><span class="p">,</span>
         <span class="n">ExecutorchProgramManager</span><span class="p">,</span>
         <span class="n">BundledProgram</span><span class="p">,</span>
     <span class="p">],</span>
@@ -582,7 +565,6 @@
             <span class="nb">str</span><span class="p">,</span>
             <span class="n">Union</span><span class="p">[</span>
                 <span class="n">ExportedProgram</span><span class="p">,</span>
-                <span class="n">MultiMethodExirExportedProgram</span><span class="p">,</span>
                 <span class="n">ExirExportedProgram</span><span class="p">,</span>
                 <span class="n">EdgeProgramManager</span><span class="p">,</span>
             <span class="p">],</span>
