@@ -21,32 +21,49 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_lt_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::lt_outf(context, self, other, out);
-}
+class OpLtScalarOutTest : public OperatorTest {
+ protected:
+  Tensor& op_lt_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
+    return torch::executor::aten::lt_outf(context_, self, other, out);
+  }
 
-Tensor& op_lt_tensor_out(const Tensor& self, const Tensor& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::lt_outf(context, self, other, out);
-}
+  template <ScalarType DTYPE_IN, ScalarType DTYPE_OUT>
+  void test_lt_scalar_out() {
+    TensorFactory<DTYPE_IN> tf;
+    TensorFactory<DTYPE_OUT> tf_out;
 
-template <ScalarType DTYPE_IN, ScalarType DTYPE_OUT>
-void test_lt_scalar_out() {
-  TensorFactory<DTYPE_IN> tf;
-  TensorFactory<DTYPE_OUT> tf_out;
+    const std::vector<int32_t> sizes = {2, 2};
+    Tensor out = tf_out.ones(sizes);
+    Scalar other = 2;
 
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor out = tf_out.ones(sizes);
-  Scalar other = 2;
+    // Valid input should give the expected output
+    op_lt_scalar_out(tf.make(sizes, /*data=*/{3, 1, 2, 4}), other, out);
+    EXPECT_TENSOR_EQ(
+        out, tf_out.make(sizes, /*data=*/{false, true, false, false}));
+  }
+};
 
-  // Valid input should give the expected output
-  op_lt_scalar_out(tf.make(sizes, /*data=*/{3, 1, 2, 4}), other, out);
-  EXPECT_TENSOR_EQ(
-      out, tf_out.make(sizes, /*data=*/{false, true, false, false}));
-}
+class OpLtTensorOutTest : public OperatorTest {
+ protected:
+  Tensor&
+  op_lt_tensor_out(const Tensor& self, const Tensor& other, Tensor& out) {
+    return torch::executor::aten::lt_outf(context_, self, other, out);
+  }
 
-TEST(OpLtScalarOutKernelTest, AllRealInputBoolOutputSupport) {
+  template <ScalarType DTYPE_IN, ScalarType DTYPE_OUT>
+  void test_dtype() {
+    TensorFactory<DTYPE_IN> tf_input;
+    TensorFactory<DTYPE_OUT> tf_out;
+    Tensor a = tf_input.make(/*sizes=*/{2, 2}, /*data=*/{2, 3, 2, 4});
+    Tensor b = tf_input.make({2, 2}, {1, 4, 2, 3});
+    Tensor out = tf_out.zeros({2, 2});
+
+    op_lt_tensor_out(a, b, out);
+    EXPECT_TENSOR_EQ(out, tf_out.make({2, 2}, {false, true, false, false}));
+  }
+};
+
+TEST_F(OpLtScalarOutTest, AllRealInputBoolOutputSupport) {
 #define TEST_ENTRY(ctype_in, dtype_in, ctype_out, dtype_out) \
   test_lt_scalar_out<ScalarType::dtype_in, ScalarType::dtype_out>();
 
@@ -60,7 +77,7 @@ TEST(OpLtScalarOutKernelTest, AllRealInputBoolOutputSupport) {
 #undef TEST_ENTRY
 }
 
-TEST(OpLtScalarOutKernelTest, BoolInputDtype) {
+TEST_F(OpLtScalarOutTest, BoolInputDtype) {
   TensorFactory<ScalarType::Bool> tf_bool;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -74,7 +91,7 @@ TEST(OpLtScalarOutKernelTest, BoolInputDtype) {
 }
 
 // Mismatched shape tests.
-TEST(OpLtScalarOutKernelTest, MismatchedInOutShapesDies) {
+TEST_F(OpLtScalarOutTest, MismatchedInOutShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -85,10 +102,10 @@ TEST(OpLtScalarOutKernelTest, MismatchedInOutShapesDies) {
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
   Scalar other = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(op_lt_scalar_out(a, other, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_lt_scalar_out(a, other, out));
 }
 
-TEST(OpLtScalarOutKernelTest, DynamicOutShapeTest) {
+TEST_F(OpLtScalarOutTest, DynamicOutShapeTest) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -103,19 +120,7 @@ TEST(OpLtScalarOutKernelTest, DynamicOutShapeTest) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, false}));
 }
 
-template <ScalarType DTYPE_IN, ScalarType DTYPE_OUT>
-void test_dtype() {
-  TensorFactory<DTYPE_IN> tf_input;
-  TensorFactory<DTYPE_OUT> tf_out;
-  Tensor a = tf_input.make(/*sizes=*/{2, 2}, /*data=*/{2, 3, 2, 4});
-  Tensor b = tf_input.make({2, 2}, {1, 4, 2, 3});
-  Tensor out = tf_out.zeros({2, 2});
-
-  op_lt_tensor_out(a, b, out);
-  EXPECT_TENSOR_EQ(out, tf_out.make({2, 2}, {false, true, false, false}));
-}
-
-TEST(OpLtTensorOutKernelTest, AllDtypesSupported) {
+TEST_F(OpLtTensorOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype_in, dtype_in, ctype_out, dtype_out) \
   test_dtype<ScalarType::dtype_in, ScalarType::dtype_out>();
 
@@ -129,7 +134,7 @@ TEST(OpLtTensorOutKernelTest, AllDtypesSupported) {
 #undef TEST_ENTRY
 }
 
-TEST(OpLtTensorOutKernelTest, MismatchedInShapesDies) {
+TEST_F(OpLtTensorOutTest, MismatchedInShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -140,10 +145,10 @@ TEST(OpLtTensorOutKernelTest, MismatchedInShapesDies) {
   Tensor b = tf_int.ones(/*sizes=*/{2, 2});
   Tensor out = tf_bool.ones(/*sizes=*/{4});
 
-  ET_EXPECT_KERNEL_FAILURE(op_lt_tensor_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_lt_tensor_out(a, b, out));
 }
 
-TEST(OpLtTensorOutKernelTest, MismatchedInOutShapesDies) {
+TEST_F(OpLtTensorOutTest, MismatchedInOutShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -154,10 +159,10 @@ TEST(OpLtTensorOutKernelTest, MismatchedInOutShapesDies) {
   Tensor b = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(op_lt_tensor_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_lt_tensor_out(a, b, out));
 }
 
-TEST(OpLtTensorOutKernelTest, DynamicOutShapeTest) {
+TEST_F(OpLtTensorOutTest, DynamicOutShapeTest) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor a = tf.make(/*sizes=*/{2, 2}, /*data=*/{2, 3, 2, 4});
