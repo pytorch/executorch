@@ -20,29 +20,29 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor&
-op_pow_scalar_out(const Scalar& self, const Tensor& exponent, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::pow_outf(context, self, exponent, out);
-}
+class OpPowTest : public OperatorTest {
+ protected:
+  Tensor&
+  op_pow_scalar_out(const Scalar& self, const Tensor& exponent, Tensor& out) {
+    return torch::executor::aten::pow_outf(context_, self, exponent, out);
+  }
 
-Tensor& op_pow_tensor_scalar_out(
-    const Tensor& self,
-    const Scalar& exponent,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::pow_outf(context, self, exponent, out);
-}
+  Tensor& op_pow_tensor_scalar_out(
+      const Tensor& self,
+      const Scalar& exponent,
+      Tensor& out) {
+    return torch::executor::aten::pow_outf(context_, self, exponent, out);
+  }
 
-Tensor& op_pow_tensor_tensor_out(
-    const Tensor& self,
-    const Tensor& exponent,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::pow_outf(context, self, exponent, out);
-}
+  Tensor& op_pow_tensor_tensor_out(
+      const Tensor& self,
+      const Tensor& exponent,
+      Tensor& out) {
+    return torch::executor::aten::pow_outf(context_, self, exponent, out);
+  }
+};
 
-TEST(OpPowTest, TensorTensorSanityCheck) {
+TEST_F(OpPowTest, TensorTensorSanityCheck) {
   TensorFactory<ScalarType::Byte> tf;
   Tensor self = tf.make({2, 2}, {2, 2, 2, 2});
   Tensor exp = tf.make({2, 1}, {4, 4});
@@ -54,7 +54,7 @@ TEST(OpPowTest, TensorTensorSanityCheck) {
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
 }
 
-TEST(OpPowTest, TensorTensorSanityCheck2) {
+TEST_F(OpPowTest, TensorTensorSanityCheck2) {
   TensorFactory<ScalarType::Float> tf1;
   TensorFactory<ScalarType::Int> tf2;
   TensorFactory<ScalarType::Double> tf3;
@@ -69,7 +69,7 @@ TEST(OpPowTest, TensorTensorSanityCheck2) {
   EXPECT_TENSOR_EQ(out, tf3.make({2, 2}, {4, 9, 16, 25}));
 }
 
-TEST(OpPowTest, TensorTensorHalfSupport) {
+TEST_F(OpPowTest, TensorTensorHalfSupport) {
   TensorFactory<ScalarType::Half> tf;
 
   Tensor self = tf.make({2, 2}, {2.0, 3.0, 4.0, 5.0});
@@ -82,7 +82,7 @@ TEST(OpPowTest, TensorTensorHalfSupport) {
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {8.0, 27.0, 16.0, 25.0}));
 }
 
-TEST(OpPowTest, TensorScalarSanityCheck) {
+TEST_F(OpPowTest, TensorScalarSanityCheck) {
   TensorFactory<ScalarType::Byte> tf;
   Tensor self = tf.make({2, 2}, {2, 2, 2, 2});
   Tensor out = tf.make({2, 2}, {16, 16, 16, 16});
@@ -93,7 +93,7 @@ TEST(OpPowTest, TensorScalarSanityCheck) {
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
 }
 
-TEST(OpPowTest, TensorScalarHalfSupport) {
+TEST_F(OpPowTest, TensorScalarHalfSupport) {
   TensorFactory<ScalarType::Half> tf;
   Tensor self = tf.make({2, 2}, {2.0, 2.0, 2.0, 2.0});
   Tensor out = tf.zeros({2, 2});
@@ -104,7 +104,7 @@ TEST(OpPowTest, TensorScalarHalfSupport) {
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16.0, 16.0, 16.0, 16.0}));
 }
 
-TEST(OpPowTest, ScalarSanityCheck) {
+TEST_F(OpPowTest, ScalarSanityCheck) {
   TensorFactory<ScalarType::Byte> tf;
   Tensor exp = tf.make({2, 2}, {2, 2, 2, 2});
   Tensor out = tf.make({2, 2}, {16, 16, 16, 16});
@@ -115,7 +115,7 @@ TEST(OpPowTest, ScalarSanityCheck) {
   EXPECT_TENSOR_EQ(out, tf.make({2, 2}, {16, 16, 16, 16}));
 }
 
-TEST(OpPowTest, ScalarHalfSupport) {
+TEST_F(OpPowTest, ScalarHalfSupport) {
   TensorFactory<ScalarType::Half> tf;
   Tensor exp = tf.make({2, 2}, {2, 2, 2, 2});
   Tensor out = tf.zeros({2, 2});
