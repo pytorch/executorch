@@ -20,17 +20,19 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_hardtanh_out(
-    const Tensor& self,
-    const Scalar& min_val,
-    const Scalar& max_val,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::hardtanh_outf(
-      context, self, min_val, max_val, out);
-}
+class OpHardTanhTest : public OperatorTest {
+ protected:
+  Tensor& op_hardtanh_out(
+      const Tensor& self,
+      const Scalar& min_val,
+      const Scalar& max_val,
+      Tensor& out) {
+    return torch::executor::aten::hardtanh_outf(
+        context_, self, min_val, max_val, out);
+  }
+};
 
-TEST(OpHardTanhTest, SanityCheck) {
+TEST_F(OpHardTanhTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
   Tensor in = tf.ones({2, 2});
   Tensor out = tf.zeros({2, 2});
