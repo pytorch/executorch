@@ -1,4 +1,5 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load(":log.bzl", "get_et_logging_flags")
 
 def _select_pal(dict_):
     """Returns an element of `dict_` based on the value of the
@@ -9,16 +10,6 @@ def _select_pal(dict_):
     if not pal_default in dict_:
         fail("Missing key for executorch.pal_default value '{}' in dict '{}'".format(pal_default, dict_))
     return dict_[pal_default]
-
-def logging_enabled():
-    return native.read_config("executorch", "enable_et_log", "true") == "true"
-
-def get_logging_flags():
-    if logging_enabled():
-        # On by default.
-        return []
-    else:
-        return ["-DET_LOG_ENABLED=0"]
 
 def profiling_enabled():
     return native.read_config("executorch", "prof_enabled", "false") == "true"
@@ -84,7 +75,7 @@ def define_common_targets():
             "profiler.cpp",
             "runtime.cpp",
         ],
-        exported_preprocessor_flags = get_profiling_flags() + get_logging_flags(),
+        exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",
             ":compiler",
