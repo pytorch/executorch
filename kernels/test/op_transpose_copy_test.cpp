@@ -21,17 +21,19 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_transpose_copy_int_out(
-    const Tensor& self,
-    int64_t dim0,
-    int64_t dim1,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::transpose_copy_outf(
-      context, self, dim0, dim1, out);
-}
+class OpTransposeIntCopyTest : public OperatorTest {
+ protected:
+  Tensor& op_transpose_copy_int_out(
+      const Tensor& self,
+      int64_t dim0,
+      int64_t dim1,
+      Tensor& out) {
+    return torch::executor::aten::transpose_copy_outf(
+        context_, self, dim0, dim1, out);
+  }
+};
 
-TEST(OpTransposeIntCopyKernelTest, TwoDTranspose) {
+TEST_F(OpTransposeIntCopyTest, TwoDTranspose) {
   TensorFactory<ScalarType::Int> tf;
 
   // clang-format off
@@ -56,7 +58,7 @@ TEST(OpTransposeIntCopyKernelTest, TwoDTranspose) {
   // clang-format on
 }
 
-TEST(OpTransposeIntCopyKernelTest, TwoDNegativeIndices) {
+TEST_F(OpTransposeIntCopyTest, TwoDNegativeIndices) {
   TensorFactory<ScalarType::Int> tf;
 
   // clang-format off
@@ -81,7 +83,7 @@ TEST(OpTransposeIntCopyKernelTest, TwoDNegativeIndices) {
   // clang-format on
 }
 
-TEST(OpTransposeIntCopyKernelTest, TransposeNoDatachange) {
+TEST_F(OpTransposeIntCopyTest, TransposeNoDatachange) {
   TensorFactory<ScalarType::Int> tf;
 
   // clang-format off
@@ -111,7 +113,7 @@ TEST(OpTransposeIntCopyKernelTest, TransposeNoDatachange) {
   // clang-format on
 }
 
-TEST(OpTransposeIntCopyKernelTest, ThreeDTranspose) {
+TEST_F(OpTransposeIntCopyTest, ThreeDTranspose) {
   TensorFactory<ScalarType::Int> tf;
 
   // clang-format off
@@ -145,17 +147,17 @@ TEST(OpTransposeIntCopyKernelTest, ThreeDTranspose) {
 }
 
 // transpose an out of bounds dim
-TEST(OpTransposeIntCopyKernelTest, OutOfBoundDimDies) {
+TEST_F(OpTransposeIntCopyTest, OutOfBoundDimDies) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.ones(/*sizes=*/{2, 3});
   Tensor out = tf.ones(/*sizes=*/{3, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(op_transpose_copy_int_out(a, 0, -3, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_transpose_copy_int_out(a, 0, -3, out));
 }
 
 // transpose a 3d tensor into a 2d one
-TEST(OpTransposeIntCopyKernelTest, MismatchedDimDies) {
+TEST_F(OpTransposeIntCopyTest, MismatchedDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
   }
@@ -164,7 +166,7 @@ TEST(OpTransposeIntCopyKernelTest, MismatchedDimDies) {
   Tensor a = tf.ones(/*sizes=*/{4, 2, 3});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(op_transpose_copy_int_out(a, 0, 1, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_transpose_copy_int_out(a, 0, 1, out));
 }
 
 /* %python
@@ -177,7 +179,7 @@ opt_extra_params = "0, 2,"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpTransposeIntCopyKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpTransposeIntCopyTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{3, 2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -193,7 +195,7 @@ TEST(OpTransposeIntCopyKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpTransposeIntCopyKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpTransposeIntCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -212,7 +214,7 @@ TEST(OpTransposeIntCopyKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpTransposeIntCopyKernelTest, DynamicShapeUnbound) {
+TEST_F(OpTransposeIntCopyTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
