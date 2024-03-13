@@ -68,8 +68,8 @@ class ComputeGraph final {
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
 
-  std::vector<ValueRef> inputs_;
-  std::vector<ValueRef> outputs_;
+  std::vector<IOValueRef> inputs_;
+  std::vector<IOValueRef> outputs_;
 
  public:
   //
@@ -80,11 +80,11 @@ class ComputeGraph final {
     return context_.get();
   }
 
-  inline std::vector<ValueRef>& inputs() {
+  inline std::vector<IOValueRef>& inputs() {
     return inputs_;
   }
 
-  inline std::vector<ValueRef>& outputs() {
+  inline std::vector<IOValueRef>& outputs() {
     return outputs_;
   }
 
@@ -201,6 +201,13 @@ class ComputeGraph final {
 
   void encode_execute();
   void execute() const;
+
+  //
+  // Dynamic Shape support
+  //
+
+  void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+  void propagate_resize();
 };
 
 template <typename T>

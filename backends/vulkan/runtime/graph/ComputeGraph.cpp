@@ -135,10 +135,10 @@ ValueRef ComputeGraph::set_input_tensor(
     vTensor& tensor = get_val(idx).toTensor();
     ValueRef staging_idx = add_staging(tensor.dtype(), tensor.gpu_numel());
     add_staging_to_tensor_node(*this, staging_idx, idx);
-    inputs_.push_back(staging_idx);
+    inputs_.push_back({idx, staging_idx});
     return staging_idx;
   }
-  inputs_.push_back(idx);
+  inputs_.push_back({idx, kDummyValueRef});
   return idx;
 }
 
@@ -149,10 +149,10 @@ ValueRef ComputeGraph::set_output_tensor(
     vTensor& tensor = get_val(idx).toTensor();
     ValueRef staging_idx = add_staging(tensor.dtype(), tensor.gpu_numel());
     add_tensor_to_staging_node(*this, idx, staging_idx);
-    outputs_.push_back(staging_idx);
+    outputs_.push_back({idx, staging_idx});
     return staging_idx;
   }
-  outputs_.push_back(idx);
+  outputs_.push_back({idx, kDummyValueRef});
   return idx;
 }
 
@@ -239,6 +239,19 @@ void ComputeGraph::execute() const {
   api::VulkanFence fence = context_->fences().get_fence();
   context_->submit_cmd_to_gpu(fence.get_submit_handle());
   fence.wait();
+}
+
+void ComputeGraph::resize_input(
+    const int64_t idx,
+    const std::vector<int64_t>& new_sizes) {
+  IOValueRef io_val = inputs_.at(idx);
+  get_val(io_val.value).toTensor().virtual_resize(new_sizes);
+}
+
+void ComputeGraph::propagate_resize() {
+  for (std::unique_ptr<ExecuteNode>& node : execute_nodes_) {
+    node->trigger_resize(this);
+  }
 }
 
 } // namespace vulkan

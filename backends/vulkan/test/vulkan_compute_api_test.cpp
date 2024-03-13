@@ -545,7 +545,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   }
 }
 
-TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_manual_resize) {
+TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   GraphConfig config;
   ComputeGraph graph(config);
 
@@ -641,6 +641,40 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_manual_resize) {
     // Sanity check that the values are correct
     for (const auto& val : data_out) {
       EXPECT_TRUE(val == val_out);
+    }
+  }
+
+  std::vector<std::vector<int64_t>> new_sizes_list_2 = {
+      {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
+
+  for (auto& new_sizes : new_sizes_list_2) {
+    graph.resize_input(0, new_sizes);
+    graph.resize_input(1, new_sizes);
+    graph.resize_input(2, new_sizes);
+    graph.propagate_resize();
+
+    // Check output shape
+    EXPECT_TRUE(graph.get_val(out.value).toTensor().sizes() == new_sizes);
+
+    float val_a = new_sizes[1] + 6.0f;
+    float val_b = new_sizes[2] + 2.5f;
+    float val_d = new_sizes[0] + 4.0f;
+    float val_out = (val_a + val_b) * val_d;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+    fill_vtensor(graph, d, val_d);
+
+    // Execute graph
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    int i = 0;
+    for (const auto& val : data_out) {
+      ASSERT_TRUE(val == val_out);
+      ++i;
     }
   }
 }

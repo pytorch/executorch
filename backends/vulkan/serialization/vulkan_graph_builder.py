@@ -218,13 +218,14 @@ class VkGraphBuilder:
         self.create_tensor_values(node)
 
     def process_output_node(self, node: Node) -> None:
-        if node.all_input_nodes[0] not in self.node_to_value_ids:
-            raise AssertionError(
-                "Cannot find input to output node in node_to_value_ids. This means the "
-                "output node is being serialized before its corresponding internal node "
-                "which is not allowed."
-            )
-        self.output_ids.append(self.node_to_value_ids[node.all_input_nodes[0]])
+        for out_node in node.all_input_nodes:
+            if out_node not in self.node_to_value_ids:
+                raise AssertionError(
+                    "Cannot find input to output node in node_to_value_ids. This means "
+                    "the output node is being serialized before its corresponding "
+                    "internal node which is not allowed."
+                )
+            self.output_ids.append(self.node_to_value_ids[out_node])
 
     def process_node(self, node: Node) -> None:
         if node.op == "placeholder":

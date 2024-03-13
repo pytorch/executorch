@@ -22,12 +22,16 @@ ExecuteNode::ExecuteNode(
     const api::utils::uvec3& global_workgroup_size,
     const api::utils::uvec3& local_workgroup_size,
     const std::vector<ArgGroup>& args,
-    const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params)
+    const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params,
+    const ResizeFunction& resize_fn,
+    const std::vector<ValueRef>& resize_args)
     : shader_(shader),
       global_workgroup_size_(global_workgroup_size),
       local_workgroup_size_(local_workgroup_size),
       args_(args),
-      params_(params) {
+      params_(params),
+      resize_fn_(resize_fn),
+      resize_args_(resize_args) {
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 

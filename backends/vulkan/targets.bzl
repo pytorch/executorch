@@ -146,6 +146,7 @@ def define_common_targets(is_fbcode = False):
             ":vk_delegate_schema",
             ":vulkan_graph_runtime",
             "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
         define_static_target = False,
         # VulkanBackend.cpp needs to compile with executor as whole
