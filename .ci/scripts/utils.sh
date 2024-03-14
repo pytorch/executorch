@@ -19,7 +19,7 @@ install_executorch() {
   which pip
   # Install executorch, this assumes that Executorch is checked out in the
   # current directory
-  pip install . --no-build-isolation
+  pip install . --no-build-isolation -v
   # Just print out the list of packages for debugging
   pip list
 }
