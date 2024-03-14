@@ -36,7 +36,7 @@ cd executorch
 python3 -m examples.portable.scripts.export -h
 
 # Generates ./add_coreml_all.pte file if successful.
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add
+python3 -m examples.apple.coreml.scripts.export --model_name add
 ```
 
 4. Once we have the **Core ML** delegated model binary (pte) file, then let's run it with the **ExecuTorch** runtime using the `coreml_executor_runner`.
@@ -52,7 +52,7 @@ cd executorch
 ```
 
 ## Frequently encountered errors and resolution.
-- The `examples.apple.coreml.scripts.export_and_delegate` could fail if the model is not supported by the **Core ML** backend. The following models from the examples models list (` python3 -m examples.portable.scripts.export -h`)are currently supported by the **Core ML** backend.
+- The `examples.apple.coreml.scripts.export` could fail if the model is not supported by the **Core ML** backend. The following models from the examples models list (` python3 -m examples.portable.scripts.export -h`)are currently supported by the **Core ML** backend.
 
 ```
 add

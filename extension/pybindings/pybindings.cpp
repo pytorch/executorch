@@ -461,13 +461,13 @@ struct PyModule final {
         input_tensors.emplace_back(
             type,
             dim,
-            input_sizes[i].data(),
+            input_sizes.back().data(),
             nullptr,
-            input_dim_order[i].data(),
-            input_strides[i].data());
+            input_dim_order.back().data(),
+            input_strides.back().data());
 
         torch::executor::Tensor temp =
-            torch::executor::Tensor(&input_tensors[i]);
+            torch::executor::Tensor(&input_tensors.back());
         torch::util::alias_etensor_to_attensor(at_tensor, temp);
         EValue evalue(temp);
 #endif

@@ -95,7 +95,7 @@ Tensor& index_Tensor_out(
           bool success = true;
           std::tie(in_ix, success) =
               get_in_ix(in, indices, out, out_ix, start, xdim, dim_map, ix_map);
-          ET_KERNEL_CHECK(ctx, success, InvalidArgument, out);
+          ET_KERNEL_CHECK(ctx, success, InvalidArgument, );
           out_data[out_ix] = in_data[in_ix];
         }
       });

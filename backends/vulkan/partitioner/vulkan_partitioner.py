@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import operator
 from typing import final, List, Optional
 
 import torch
@@ -30,6 +31,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.pow.Tensor_Tensor,
+            operator.getitem,
         ]
         return supported
 

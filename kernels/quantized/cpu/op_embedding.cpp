@@ -41,26 +41,21 @@ void check_embedding_byte_args(
       "weight_scales must be 1D or 2D but got() %zd dims",
       weight_scales.dim());
 
-  auto weight_scales_size = weight_scales.size(0);
-
   ET_CHECK_MSG(
-      weight_scales_size == weight.size(0),
+      weight_scales.size(0) == weight.size(0),
       "Number of scales must be == weight.size(0)=%zd"
       ", but got %zd",
-      weight_scales_size,
+      weight_scales.size(0),
       weight.size(0));
 
-  if (weight_scales_size >= weight.size(0)) {
-    if (weight_scales.dim() == 2) {
-      auto num_groups = weight_scales.size(1);
-      auto remainder = weight.size(1) % num_groups;
-      ET_CHECK_MSG(
-          remainder == 0,
-          "Number of groups must divide weight.size(1)=%zd"
-          ", but got # of groups = %zd",
-          weight.size(1),
-          num_groups);
-    }
+  if (weight_scales.dim() == 2) {
+    auto num_groups = weight_scales.size(1);
+    ET_CHECK_MSG(
+        weight.size(1) % num_groups == 0,
+        "Number of groups must divide weight.size(1)=%zd"
+        ", but got # of groups = %zd",
+        weight.size(1),
+        num_groups);
   }
 
   ET_CHECK_MSG(
