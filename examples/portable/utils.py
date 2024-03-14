@@ -16,14 +16,14 @@ from executorch.exir import EdgeProgramManager, ExecutorchProgramManager, to_edg
 from executorch.exir.tracer import Value
 from torch._export import capture_pre_autograd_graph
 from torch.export import export, ExportedProgram
-
+from torch.nn.attention import SDPBackend
 
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=True,
 )
 
 
-def _to_core_aten(
+def _to_aten(
     model: Union[torch.fx.GraphModule, torch.nn.Module],
     example_inputs: Tuple[Value, ...],
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
@@ -36,14 +36,15 @@ def _to_core_aten(
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
-    core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
-    if verbose:
-        logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
-    return core_aten_ep
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
+        if verbose:
+            logging.info(f"ATen graph:\n{aten_ep.graph}")
+        return aten_ep
 
 
-def _core_aten_to_edge(
-    core_aten_exir_ep: ExportedProgram,
+def _aten_to_edge(
+    aten_exir_ep: ExportedProgram,
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=None,
     verbose=True,
@@ -53,12 +54,12 @@ def _core_aten_to_edge(
             _check_ir_validity=False,  # quant ops currently break ir verification
         )
     edge_manager: EdgeProgramManager = to_edge(
-        core_aten_exir_ep,
+        aten_exir_ep,
         constant_methods=edge_constant_methods,
         compile_config=edge_compile_config,
     )
     if verbose:
-        logging.info(f"Exported graph:\n{edge_manager.exported_program().graph}")
+        logging.info(f"Edge graph:\n{edge_manager.exported_program().graph}")
     return edge_manager
 
 
@@ -70,9 +71,9 @@ def export_to_edge(
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     verbose=True,
 ) -> EdgeProgramManager:
-    core_aten_ep = _to_core_aten(model, example_inputs, dynamic_shapes, verbose=verbose)
-    return _core_aten_to_edge(
-        core_aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
+    aten_ep = _to_aten(model, example_inputs, dynamic_shapes, verbose=verbose)
+    return _aten_to_edge(
+        aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
     )
 
 
@@ -83,18 +84,19 @@ def export_to_exec_prog(
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     backend_config=None,
+    verbose=True,
 ) -> ExecutorchProgramManager:
     m = model.eval()
     # pre-autograd export. eventually this will become torch.export
     m = capture_pre_autograd_graph(m, example_inputs)
 
-    core_aten_ep = _to_core_aten(m, example_inputs, dynamic_shapes)
+    aten_ep = _to_aten(m, example_inputs, dynamic_shapes)
 
-    edge_m = _core_aten_to_edge(
-        core_aten_ep, edge_constant_methods, edge_compile_config
-    )
+    edge_m = _aten_to_edge(aten_ep, edge_constant_methods, edge_compile_config)
 
     exec_prog = edge_m.to_executorch(backend_config)
+    if verbose:
+        logging.inf(f"Lowered graph:\n{exec_prog.exported_program().graph}")
     return exec_prog
 
 
