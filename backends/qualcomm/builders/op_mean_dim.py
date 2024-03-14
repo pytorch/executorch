@@ -17,7 +17,7 @@ from .qnn_constants import OpReduceMean, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class MeanDim(NodeVisitor):
-    target = "aten.mean.dim"
+    target = ["aten.mean.dim"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

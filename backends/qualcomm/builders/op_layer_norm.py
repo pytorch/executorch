@@ -18,7 +18,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class LayerNormVisitor(NodeVisitor):
-    target = "aten.native_layer_norm.default"
+    target = ["aten.native_layer_norm.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
