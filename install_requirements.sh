@@ -17,6 +17,30 @@ then
   PYTHON_EXECUTABLE=python3
 fi
 
+# Parse options.
+EXECUTORCH_BUILD_PYBIND=OFF
+CMAKE_ARGS=""
+
+for arg in "$@"; do
+  case $arg in
+    --pybind)
+      EXECUTORCH_BUILD_PYBIND=ON
+      ;;
+    coreml|mps|xnnpack)
+      if [[ "$EXECUTORCH_BUILD_PYBIND" == "ON" ]]; then
+        CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_BUILD_${arg^^}=ON"
+      else
+        echo "Error: $arg must follow --pybind"
+        exit 1
+      fi
+      ;;
+    *)
+      echo "Error: Unknown option $arg"
+      exit 1
+      ;;
+  esac
+done
+
 # Install pytorch dependencies
 #
 # Note:
@@ -46,7 +70,10 @@ TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
 
 # Install ExecuTorch after dependencies are installed.
-pip install . --no-build-isolation
+EXECUTORCH_BUILD_PYBIND="$EXECUTORCH_BUILD_PYBIND" \
+CMAKE_ARGS="$CMAKE_ARGS" \
+CMAKE_BUILD_PARALLEL_LEVEL=9 \
+pip install . --no-build-isolation -v
 
 # Install flatc dependency
 bash build/install_flatc.sh
