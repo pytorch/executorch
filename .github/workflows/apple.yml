@@ -58,7 +58,7 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      upload-artifact: executorch.zip
+      upload-artifact: executorch-frameworks-ios
       timeout: 90
       script: |
         WORKSPACE=$(pwd)
@@ -90,3 +90,30 @@ jobs:
         zip -r "${RUNNER_TEMP}/artifacts/${OUTPUT}.zip" "${OUTPUT}"
 
         popd
+
+  upload-frameworks-ios:
+    runs-on: ubuntu-22.04
+    needs: build-frameworks-ios
+    timeout-minutes: 30
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-ios
+          aws-region: us-east-1
+      - name: Download the artifact
+        uses: actions/download-artifact@v3
+        with:
+          # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
+          name: executorch-frameworks-ios
+          path: ${{ runner.temp }}/frameworks-ios/
+      - run: make deploy
