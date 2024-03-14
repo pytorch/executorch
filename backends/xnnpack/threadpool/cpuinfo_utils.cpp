@@ -48,6 +48,31 @@ std::vector<uint32_t>* get_static_cpu_midr_vector() {
   return &cpu_midrs;
 }
 
+uint32_t _get_model_specific_num_cores() {
+  // Not sure how reliable this is but going with it for now.
+  const std::string kImageVersionPath = "/sys/devices/soc0/image_version";
+  ET_LOG(Info, "Reading file %s", kImageVersionPath.c_str());
+  std::fstream image_version_file(kImageVersionPath, std::ios_base::in);
+  uint32_t tmp{0};
+  if (image_version_file.is_open()) {
+    std::string x;
+    std::getline(image_version_file, x);
+    // Hardcoding some rules for now
+    if (x.find("S911") != std::string::npos) {
+      // Samsung S23 has:
+      // 1x3.36 GHz Cortex-X3
+      // 2x2.8 GHz Cortex-A715
+      // 2x2.8 GHz Cortex-A710
+      // 3x2.0 GHz Cortex-A510
+      // And we have balanced execution with 4 cores.
+      return 4;
+    }
+  } else {
+    ET_LOG(Info, "Failed to open midr file %s", kImageVersionPath.c_str());
+    return 0;
+  }
+}
+
 bool populate_available_cpu_mids() {
   std::vector<uint32_t>* cpu_midrs = get_static_cpu_midr_vector();
   uint32_t num_possible_cores = cpuinfo_get_processors_count();
@@ -103,6 +128,15 @@ uint32_t _get_num_performant_cores() {
 
 uint32_t get_num_performant_cores() {
   ET_CHECK_MSG(cpuinfo_initialize(), "cpuinfo cannot be initialized.");
+  // First try and see if we have number of cores profiled for this specific
+  // device
+  uint32_t model_specific_num_cores = _get_model_specific_num_cores();
+  if (model_specific_num_cores > 0) {
+    return model_specific_num_cores;
+  }
+
+  // Else looks at either the # of litte cores if found
+  // Or parse the midr in "Something seems wrong" section.
   const uint32_t uarch_count = cpuinfo_get_uarchs_count();
   uint32_t num_possible_cores = cpuinfo_get_processors_count();
   uint32_t num_non_performant_core = 0;

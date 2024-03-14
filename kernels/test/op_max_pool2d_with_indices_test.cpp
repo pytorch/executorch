@@ -17,30 +17,32 @@
 
 using namespace ::testing;
 
-::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&>
-op_max_pool2d_with_indices_out(
-    const exec_aten::Tensor& self,
-    exec_aten::ArrayRef<int64_t> kernel_size,
-    exec_aten::ArrayRef<int64_t> stride,
-    exec_aten::ArrayRef<int64_t> padding,
-    exec_aten::ArrayRef<int64_t> dilation,
-    bool ceil_mode,
-    exec_aten::Tensor& out,
-    exec_aten::Tensor& indices) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::max_pool2d_with_indices_outf(
-      context,
-      self,
-      kernel_size,
-      stride,
-      padding,
-      dilation,
-      ceil_mode,
-      out,
-      indices);
-}
+class OpMaxPool2DWithIndicesOutTest : public OperatorTest {
+ protected:
+  ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&>
+  op_max_pool2d_with_indices_out(
+      const exec_aten::Tensor& self,
+      exec_aten::ArrayRef<int64_t> kernel_size,
+      exec_aten::ArrayRef<int64_t> stride,
+      exec_aten::ArrayRef<int64_t> padding,
+      exec_aten::ArrayRef<int64_t> dilation,
+      bool ceil_mode,
+      exec_aten::Tensor& out,
+      exec_aten::Tensor& indices) {
+    return torch::executor::aten::max_pool2d_with_indices_outf(
+        context_,
+        self,
+        kernel_size,
+        stride,
+        padding,
+        dilation,
+        ceil_mode,
+        out,
+        indices);
+  }
+};
 
-TEST(OpMaxPool2DWithIndicesOutTest, SanityTest4D) {
+TEST_F(OpMaxPool2DWithIndicesOutTest, SanityTest4D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
 
@@ -107,7 +109,7 @@ TEST(OpMaxPool2DWithIndicesOutTest, SanityTest4D) {
   EXPECT_TENSOR_CLOSE(indices, indices_expected);
 }
 
-TEST(OpMaxPool2DWithIndicesOutTest, SanityTest4D_2) {
+TEST_F(OpMaxPool2DWithIndicesOutTest, SanityTest4D_2) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
 
@@ -210,7 +212,7 @@ TEST(OpMaxPool2DWithIndicesOutTest, SanityTest4D_2) {
   EXPECT_TENSOR_CLOSE(indices, indices_expected);
 }
 
-TEST(OpMaxPool2DWithIndicesOutTest, SanityTest3D) {
+TEST_F(OpMaxPool2DWithIndicesOutTest, SanityTest3D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Long> tfLong;
 

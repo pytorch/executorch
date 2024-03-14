@@ -21,34 +21,53 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_eq_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::eq_outf(context, self, other, out);
-}
+class OpEqScalarOutTest : public OperatorTest {
+ protected:
+  Tensor& op_eq_scalar_out(const Tensor& self, Scalar& other, Tensor& out) {
+    return torch::executor::aten::eq_outf(context_, self, other, out);
+  }
 
-// Common testing for eq operator
-template <ScalarType DTYPE>
-void test_eq_scalar_out() {
-  TensorFactory<DTYPE> tf;
-  TensorFactory<ScalarType::Bool> tf_out;
+  // Common testing for eq operator
+  template <ScalarType DTYPE>
+  void test_eq_scalar_out() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<ScalarType::Bool> tf_out;
 
-  const std::vector<int32_t> sizes = {2, 2};
-  // Destination for the eq
-  Tensor out = tf_out.ones(sizes);
-  Scalar other = 3;
+    const std::vector<int32_t> sizes = {2, 2};
+    // Destination for the eq
+    Tensor out = tf_out.ones(sizes);
+    Scalar other = 3;
 
-  // Valid input should give the expected output
-  op_eq_scalar_out(tf.make(sizes, /*data=*/{2, 3, 3, 3}), other, out);
-  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{false, true, true, true}));
-}
+    // Valid input should give the expected output
+    op_eq_scalar_out(tf.make(sizes, /*data=*/{2, 3, 3, 3}), other, out);
+    EXPECT_TENSOR_EQ(
+        out, tf_out.make(sizes, /*data=*/{false, true, true, true}));
+  }
 
-TEST(OpEqScalarOutKernelTest, AllRealInputBoolOutputSupport) {
+  // Handle all output dtypes.
+  template <ScalarType OUTPUT_DTYPE>
+  void test_eq_all_output_dtypes() {
+    TensorFactory<ScalarType::Float> tf_float;
+    TensorFactory<OUTPUT_DTYPE> tf_out;
+
+    const std::vector<int32_t> sizes = {2, 5};
+
+    Tensor in = tf_float.ones(sizes);
+    Tensor out = tf_out.zeros(sizes);
+    Scalar other = 1;
+
+    op_eq_scalar_out(in, other, out);
+    EXPECT_TENSOR_EQ(out, tf_out.ones(sizes));
+  }
+};
+
+TEST_F(OpEqScalarOutTest, AllRealInputBoolOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_eq_scalar_out<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpEqScalarOutKernelTest, BoolInputDtype) {
+TEST_F(OpEqScalarOutTest, BoolInputDtype) {
   TensorFactory<ScalarType::Bool> tf_bool;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -62,7 +81,7 @@ TEST(OpEqScalarOutKernelTest, BoolInputDtype) {
 }
 
 // Mismatched shape tests.
-TEST(OpEqScalarOutKernelTest, MismatchedShapesDies) {
+TEST_F(OpEqScalarOutTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -73,26 +92,10 @@ TEST(OpEqScalarOutKernelTest, MismatchedShapesDies) {
   Tensor out = tf_bool.ones(/*sizes=*/{2, 2});
   Scalar other = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(op_eq_scalar_out(a, other, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_eq_scalar_out(a, other, out));
 }
 
-// Handle all output dtypes.
-template <ScalarType OUTPUT_DTYPE>
-void test_eq_all_output_dtypes() {
-  TensorFactory<ScalarType::Float> tf_float;
-  TensorFactory<OUTPUT_DTYPE> tf_out;
-
-  const std::vector<int32_t> sizes = {2, 5};
-
-  Tensor in = tf_float.ones(sizes);
-  Tensor out = tf_out.zeros(sizes);
-  Scalar other = 1;
-
-  op_eq_scalar_out(in, other, out);
-  EXPECT_TENSOR_EQ(out, tf_out.ones(sizes));
-}
-
-TEST(OpEqScalarOutKernelTest, AllRealOutputDTypes) {
+TEST_F(OpEqScalarOutTest, AllRealOutputDTypes) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle non-bool output dtype";
   }
@@ -115,7 +118,7 @@ dtype = "ScalarType::Int"
 out_dtype = "ScalarType::Bool"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpEqScalarOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpEqScalarOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op_out_dtype) */
@@ -135,7 +138,7 @@ TEST(OpEqScalarOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpEqScalarOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpEqScalarOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   /* %python
   out_args = "{10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op_out_dtype) */
@@ -155,7 +158,7 @@ TEST(OpEqScalarOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpEqScalarOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpEqScalarOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
