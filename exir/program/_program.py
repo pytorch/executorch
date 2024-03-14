@@ -364,6 +364,15 @@ class ExirExportedProgram:
             new_gm_res = p(new_gm)
             assert new_gm_res is not None
             new_gm = new_gm_res.graph_module
+
+        # This is tech debt on tech debt. memory planning pass inherits from some pass infra for GMs.
+        # This isnt enough info now so i cant use call I have to use some new function 'run'.
+        # Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.
+        # After exir.capture is gone I will clean up the memory planning infra to be consistent.
+        # Frankly all of exir has big code quality issues because of the migrations that need to be addressed.
+        new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+        assert new_gm_res is not None
+        new_gm = new_gm_res.graph_module
         new_prog = ExirExportedProgram(
             copy.deepcopy(self.exported_program), self.after_to_edge_passes
         )
@@ -583,7 +592,6 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         RemoveGraphAssertsPass(),
         config.sym_shape_eval_pass,
         config.to_out_var_pass,
-        config.memory_planning_pass,
     ]
     return passes
 
@@ -824,7 +832,7 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
-            gm, _ = insert_write_back_for_buffers_pass(program)
+            gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config):
                 new_gm_res = p(new_gm)
@@ -844,6 +852,14 @@ class EdgeProgramManager:
                     p.update_placeholder_tensor_specs(program, new_gm)
 
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
+            if hasattr(config.memory_planning_pass, "run"):
+                new_gm_res = config.memory_planning_pass.run(  # pyre-ignore[16]
+                    new_gm, new_signature
+                )
+            else:
+                new_gm_res = config.memory_planning_pass(new_gm)  # pyre-ignore[19]
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program

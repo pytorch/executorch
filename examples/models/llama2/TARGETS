@@ -87,6 +87,7 @@ runtime.python_library(
         "//executorch/examples/models:models",
         "//executorch/examples/portable:utils",
         "//executorch/exir:lib",
+        "//executorch/sdk/etrecord:etrecord",
         "//executorch/util:memory_profiler",
         "//executorch/util:python_profiler",
         # one definition has to be included in the user of the libarary

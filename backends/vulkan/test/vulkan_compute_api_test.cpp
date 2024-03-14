@@ -671,10 +671,63 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    int i = 0;
     for (const auto& val : data_out) {
       ASSERT_TRUE(val == val_out);
-      ++i;
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_large_graph) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  int64_t input_w = 256;
+  int64_t input_h = 256;
+  int64_t input_c = 8;
+
+  std::vector<int64_t> size_big = {input_c, input_h, input_w};
+  std::vector<int64_t> size_small = {input_c, input_h, 1};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat, 2);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat, 4);
+
+  ValueRef c = graph.add_tensor(size_big, api::kFloat, 6);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
+
+  int n = 100;
+
+  for (int i = 0; i < n; i++) {
+    addFn(graph, {c, b.value, kDummyValueRef, a.value});
+
+    addFn(graph, {a.value, b.value, kDummyValueRef, c});
+  }
+
+  IOValueRef out = {};
+  out.value = c;
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  for (int i = 0; i < 10; i++) {
+    float val_a = 1.0f;
+    float val_b = 2.0f;
+
+    float val_e = val_a + val_b * (2 * n + 1);
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    for (const auto& val : data_out) {
+      EXPECT_TRUE(val == val_e);
     }
   }
 }

@@ -59,7 +59,7 @@ xcode-select --install
 cd executorch
 
 # Generates ./mv3_coreml_all.pte file.
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name mv3
+python3 -m examples.apple.coreml.scripts.export --model_name mv3
 ```
 
 - Core ML backend uses [coremltools](https://apple.github.io/coremltools/docs-guides/source/overview-coremltools.html) to lower [Edge dialect](ir-exir.md#edge-dialect) to Core ML format and then bundles it in the `.pte` file.

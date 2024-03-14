@@ -18,4 +18,11 @@ interface INativePeer {
 
   /** Run an arbitrary method on the module */
   EValue[] execute(String methodName, EValue... inputs);
+
+  /**
+   * Load a method on this module.
+   *
+   * @return the Error code if there was an error loading the method
+   */
+  int loadMethod(String methodName);
 }
