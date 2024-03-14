@@ -67,4 +67,4 @@ jobs:
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build Android demo app
-        ${CONDA_RUN} bash build/test_android_ci.sh
+        bash build/test_android_ci.sh
