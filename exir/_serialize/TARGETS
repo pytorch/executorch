@@ -29,7 +29,6 @@ runtime.python_library(
     name = "lib",
     srcs = [
         "__init__.py",
-        "_cord.py",
         "_dataclass.py",
         "_flatbuffer.py",
         "_program.py",
@@ -61,6 +60,5 @@ runtime.python_library(
     ],
     deps = [
         "//executorch/exir:schema",
-        "//executorch/exir:tensor",
     ],
 )

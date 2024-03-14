@@ -34,7 +34,7 @@ void unbind_copy_int_out(
   }
 
   ET_KERNEL_CHECK(
-      ctx, check_unbind_copy_args(input, dim, out), InvalidArgument, );
+      ctx, check_unbind_copy_args(input, dim, out), InvalidArgument, out);
 
   if (input.numel() == 0) {
     return;

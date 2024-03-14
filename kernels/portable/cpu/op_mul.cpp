@@ -24,8 +24,6 @@ mul_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
-
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type, /*half_to_float*/ true);
@@ -70,8 +68,6 @@ Tensor& mul_scalar_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
-
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

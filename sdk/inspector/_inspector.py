@@ -354,10 +354,6 @@ class Event:
         Returns:
             A dict with the Event data
         """
-
-        def truncated_list(long_list: List[str]) -> str:
-            return f"['{long_list[0]}', '{long_list[1]}' ... '{long_list[-1]}'] ({len(long_list)} total)"
-
         return {
             "event_name": self.name,
             "raw": [self.perf_data.raw if self.perf_data else None],
@@ -367,13 +363,7 @@ class Event:
             "avg" + _units: self.perf_data.avg if self.perf_data else None,
             "min" + _units: self.perf_data.min if self.perf_data else None,
             "max" + _units: self.perf_data.max if self.perf_data else None,
-            "op_types": [
-                (
-                    self.op_types
-                    if len(self.op_types) < 5
-                    else truncated_list(self.op_types)
-                )
-            ],
+            "op_types": [self.op_types],
             "delegate_debug_identifier": self.delegate_debug_identifier,
             "stack_traces": [self.stack_traces],
             "module_hierarchy": [self.module_hierarchy],
@@ -1049,8 +1039,6 @@ class Inspector:
             filtered_column_df = filtered_column_df[
                 ~filtered_column_df["event_name"].str.contains(filter_name)
             ]
-        filtered_column_df.reset_index(drop=True, inplace=True)
-
         try:
             from IPython import get_ipython
             from IPython.display import display

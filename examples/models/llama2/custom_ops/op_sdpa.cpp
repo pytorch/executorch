@@ -177,8 +177,7 @@ inline void fill_stub(scalar_t* data, scalar_t val, int64_t size) {
   for (; d < size - (size % Vec::size()); d += Vec::size()) {
     data_vec.store(data + d);
   }
-#if !defined(_MSC_VER) && !defined(COMPILING_FOR_MIN_SIZE) && \
-    !defined(__ANDROID__)
+#if !defined(_MSC_VER) && !defined(COMPILING_FOR_MIN_SIZE)
 #pragma unroll
 #endif
   for (; d < size; d++) {
@@ -250,7 +249,7 @@ void cpu_flash_attention(
     ET_CHECK_MSG(
         attn_mask.value().size(1) == kvSize,
         "attn_mask shape mismatch"
-        "attn_mask.size(1)=%zd kvSize=%" PRId64,
+        "attn_mask.size(1)=%ld kvSize=%" PRId64,
         attn_mask.value().size(1),
         kvSize);
   }
@@ -579,7 +578,7 @@ bool validate_cache_params(
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
-      "key cache size: %zd",
+      "key cache size: %ld",
       start_pos,
       seq_length,
       k_cache.size(2));
@@ -589,7 +588,7 @@ bool validate_cache_params(
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
-      "value cache size: %zd",
+      "value cache size: %ld",
       start_pos,
       seq_length,
       v_cache.size(2));
@@ -660,13 +659,13 @@ Tensor& flash_attention_kernel_out(
       ctx,
       validate_flash_attention_args(query, key, value, attn_mask),
       InvalidArgument,
-      output);
+      false);
 
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(output, query.sizes()) == Error::Ok,
       InvalidArgument,
-      output);
+      false);
 
   auto q_seq_len = query.size(2);
 
@@ -750,7 +749,7 @@ Tensor& sdpa_with_kv_cache_out(
       validate_cache_params(
           key_cache, value_cache, layer_id, start_pos, seq_len),
       InvalidArgument,
-      output);
+      false);
 
   ET_CHECK_MSG(q_projected.dim() == 4, "query must be a 4D tensor");
 
@@ -821,7 +820,7 @@ Tensor& sdpa_with_kv_cache_out(
       ctx,
       resize_tensor(output, q_projected.sizes()) == Error::Ok,
       InvalidArgument,
-      output);
+      false);
 
   // TODO(task): replace the template param selection logic
   // with whatever apprpriately makes more sense for

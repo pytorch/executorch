@@ -12,7 +12,7 @@ Please refer to fbcode/caffe2/executorch/backends/vulkan/serialization/schema/sc
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List, Union
+from typing import List
 
 
 @dataclass
@@ -34,67 +34,13 @@ class VkTensor:
 
 
 @dataclass
-class Null:
+class VkScalar:
     pass
 
 
 @dataclass
-class Int:
-    int_val: int
-
-
-@dataclass
-class Bool:
-    bool_val: bool
-
-
-@dataclass
-class Double:
-    double_val: float
-
-
-@dataclass
-class IntList:
-    items: List[int]
-
-
-@dataclass
-class DoubleList:
-    items: List[float]
-
-
-@dataclass
-class BoolList:
-    items: List[bool]
-
-
-@dataclass
-class ValueList:
-    items: List[int]
-
-
-@dataclass
-class String:
-    string_val: str
-
-
-GraphTypes = Union[
-    Null,
-    Int,
-    Double,
-    Bool,
-    VkTensor,
-    IntList,
-    BoolList,
-    DoubleList,
-    ValueList,
-    String,
-]
-
-
-@dataclass
 class VkValue:
-    value: "GraphTypes"
+    value: VkTensor
 
 
 @dataclass

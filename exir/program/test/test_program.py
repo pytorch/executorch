@@ -30,16 +30,6 @@ from torch.export import export, ExportedProgram
 
 from torch.library import impl, Library
 
-
-class WrapperModule(torch.nn.Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, *args, **kwargs):
-        return self.fn(*args, **kwargs)
-
-
 lib = Library("test_op", "DEF")
 
 # Fake a operator for testing.
@@ -384,7 +374,7 @@ class TestProgramManagers(unittest.TestCase):
             two,
         )
         if not isinstance(callable, torch.nn.Module):
-            callable = WrapperModule(callable)
+            callable = torch.export.WrapperModule(callable)
 
         exported_foo = export(callable, inputs)
         _ = to_edge(exported_foo, compile_config=edge_compile_config)

@@ -90,4 +90,4 @@ if __name__ == "__main__":
     logging.info(f"Final exported graph:\n{exec_prog.exported_program().graph}")
 
     # Save the program as XtensaDemoModel.pte
-    save_pte_program(exec_prog, "XtensaDemoModel")
+    save_pte_program(exec_prog.buffer, "XtensaDemoModel")

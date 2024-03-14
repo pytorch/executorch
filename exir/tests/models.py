@@ -13,10 +13,8 @@ import executorch.exir as exir
 
 import torch  # noqa: F401
 import torch.nn as nn
-from executorch.exir import to_edge
 from executorch.exir.lowered_backend_module import LoweredBackendModule
 from torch import Tensor
-from torch.export import export
 
 # TODO: add one more test for data dependent op plus repeat
 
@@ -150,14 +148,13 @@ class CompositeDelegateModule(torch.nn.Module):
                 return (torch.randn(1, 3), torch.randn(1, 3))
 
         delegated_m = DelegateAdd()
-        edge_ir_m = to_edge(
-            export(
-                delegated_m,
-                delegated_m.get_random_inputs(),
-            )
-        )
+        edge_ir_m = exir.capture(
+            delegated_m,
+            delegated_m.get_random_inputs(),
+            exir.CaptureConfig(),
+        ).to_edge()
         lowered_module = LoweredBackendModule(
-            edge_program=edge_ir_m.exported_program(),
+            edge_program=edge_ir_m.exported_program,
             backend_id="backend_demo",
             processed_bytes=bytes("basic_module_add", encoding="utf8"),
             compile_specs=[],

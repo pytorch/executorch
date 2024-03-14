@@ -40,7 +40,4 @@ public class LlamaModule {
 
   @DoNotStrip
   public native void stop();
-
-  @DoNotStrip
-  public native int load();
 }

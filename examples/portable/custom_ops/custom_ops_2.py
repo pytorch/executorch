@@ -32,7 +32,7 @@ def main():
         (input,),
         edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
     )
-    save_pte_program(prog, model_name)
+    save_pte_program(prog.buffer, model_name)
 
 
 if __name__ == "__main__":

@@ -20,60 +20,58 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpMinimumOutTest : public OperatorTest {
- protected:
-  Tensor& op_minimum_out(const Tensor& self, const Tensor& other, Tensor& out) {
-    return torch::executor::aten::minimum_outf(context_, self, other, out);
-  }
+Tensor& op_minimum_out(const Tensor& self, const Tensor& other, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::minimum_outf(context, self, other, out);
+}
 
-  // Common testing for minimum operator
-  template <ScalarType DTYPE>
-  void test_minimum_out_same_size() {
-    TensorFactory<DTYPE> tf;
-    const std::vector<int32_t> sizes = {2, 2};
+// Common testing for minimum operator
+template <ScalarType DTYPE>
+void test_minimum_out_same_size() {
+  TensorFactory<DTYPE> tf;
+  const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the minimum operator.
-    Tensor out = tf.zeros(sizes);
+  // Destination for the minimum operator.
+  Tensor out = tf.zeros(sizes);
 
-    op_minimum_out(
-        tf.make(sizes, /*data=*/{1, 2, 4, 8}),
-        tf.make(sizes, /*data=*/{3, 0, 4, 9}),
-        out);
+  op_minimum_out(
+      tf.make(sizes, /*data=*/{1, 2, 4, 8}),
+      tf.make(sizes, /*data=*/{3, 0, 4, 9}),
+      out);
 
-    // Check that it matches to the expected output.
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{1, 0, 4, 8}));
-  }
-};
+  // Check that it matches to the expected output.
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{1, 0, 4, 8}));
+}
 
-TEST_F(OpMinimumOutTest, ByteTensors) {
+TEST(OpMinimumOutKernelTest, ByteTensors) {
   test_minimum_out_same_size<ScalarType::Byte>();
 }
 
-TEST_F(OpMinimumOutTest, CharTensors) {
+TEST(OpMinimumOutKernelTest, CharTensors) {
   test_minimum_out_same_size<ScalarType::Char>();
 }
 
-TEST_F(OpMinimumOutTest, ShortTensors) {
+TEST(OpMinimumOutKernelTest, ShortTensors) {
   test_minimum_out_same_size<ScalarType::Short>();
 }
 
-TEST_F(OpMinimumOutTest, IntTensors) {
+TEST(OpMinimumOutKernelTest, IntTensors) {
   test_minimum_out_same_size<ScalarType::Int>();
 }
 
-TEST_F(OpMinimumOutTest, LongTensors) {
+TEST(OpMinimumOutKernelTest, LongTensors) {
   test_minimum_out_same_size<ScalarType::Long>();
 }
 
-TEST_F(OpMinimumOutTest, FloatTensors) {
+TEST(OpMinimumOutKernelTest, FloatTensors) {
   test_minimum_out_same_size<ScalarType::Float>();
 }
 
-TEST_F(OpMinimumOutTest, DoubleTensors) {
+TEST(OpMinimumOutKernelTest, DoubleTensors) {
   test_minimum_out_same_size<ScalarType::Double>();
 }
 
-TEST_F(OpMinimumOutTest, BothScalarTensors) {
+TEST(OpMinimumOutKernelTest, BothScalarTensors) {
   // Checks the case when both cases are scalar.
   TensorFactory<ScalarType::Float> tf;
   const std::vector<int32_t> sizes = {1, 1};
@@ -82,7 +80,7 @@ TEST_F(OpMinimumOutTest, BothScalarTensors) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1.2}));
 }
 
-TEST_F(OpMinimumOutTest, LeftScalarTensor) {
+TEST(OpMinimumOutKernelTest, LeftScalarTensor) {
   // Checks the case where one of the tensor is a singleton tensor.
 
   TensorFactory<ScalarType::Float> tf;
@@ -103,25 +101,25 @@ TEST_F(OpMinimumOutTest, LeftScalarTensor) {
   EXPECT_TENSOR_EQ(out2, tf.make(sizes_2, {1.0, -1.0, 0.0, 1.0}));
 }
 
-TEST_F(OpMinimumOutTest, MismatchedInputShapesDies) {
+TEST(OpMinimumOutKernelTest, MismatchedInputShapesDies) {
   // First and second argument have different shape
   TensorFactory<ScalarType::Float> tf;
   Tensor out = tf.zeros({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
+      op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
 }
 
-TEST_F(OpMinimumOutTest, MismatchedOutputShapesDies) {
+TEST(OpMinimumOutKernelTest, MismatchedOutputShapesDies) {
   // First and second argument have same shape, but output has different shape.
   TensorFactory<ScalarType::Float> tf;
   Tensor out = tf.zeros({3, 3});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
+      op_minimum_out(tf.ones({2, 2}), tf.ones({3, 3}), out));
 }
 
-TEST_F(OpMinimumOutTest, MismatchedOutputShapeWithSingletonDies) {
+TEST(OpMinimumOutKernelTest, MismatchedOutputShapeWithSingletonDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
   }
@@ -130,7 +128,7 @@ TEST_F(OpMinimumOutTest, MismatchedOutputShapeWithSingletonDies) {
   Tensor out = tf.zeros({4, 4});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_minimum_out(tf.ones({1, 1}), tf.ones({3, 3}), out));
+      op_minimum_out(tf.ones({1, 1}), tf.ones({3, 3}), out));
 }
 
 /* %python
@@ -143,7 +141,7 @@ op = "op_minimum_out"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST_F(OpMinimumOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpMinimumOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(binary_op) */
@@ -181,7 +179,7 @@ TEST_F(OpMinimumOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpMinimumOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpMinimumOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -222,7 +220,7 @@ TEST_F(OpMinimumOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpMinimumOutTest, DynamicShapeUnbound) {
+TEST(OpMinimumOutKernelTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

@@ -15,7 +15,11 @@ import executorch.sdk.bundled_program.schema as bp_schema
 import torch
 import torch.fx
 
-from executorch.exir import ExecutorchProgram, ExecutorchProgramManager
+from executorch.exir import (
+    ExecutorchProgram,
+    ExecutorchProgramManager,
+    MultiMethodExecutorchProgram,
+)
 from executorch.exir._serialize import _serialize_pte_binary
 from executorch.exir.tensor import get_scalar_type, scalar_type_enum, TensorSpec
 from executorch.sdk.bundled_program.config import ConfigValue, MethodTestSuite
@@ -45,6 +49,7 @@ class BundledProgram:
         self,
         executorch_program: Union[
             ExecutorchProgram,
+            MultiMethodExecutorchProgram,
             ExecutorchProgramManager,
         ],
         method_test_suites: Sequence[MethodTestSuite],
@@ -122,8 +127,7 @@ class BundledProgram:
                 )
             )
 
-        # TODO(T181463742): avoid calling bytes(..) which may incur large copies.
-        program_bytes: bytes = bytes(_serialize_pte_binary(program))
+        program_bytes: bytes = _serialize_pte_binary(program)
         self._bundled_program_in_schema = bp_schema.BundledProgram(
             version=BUNDLED_PROGRAM_SCHEMA_VERSION,
             method_test_suites=bundled_method_test_suites,
@@ -221,6 +225,7 @@ class BundledProgram:
         self,
         executorch_program: Union[
             ExecutorchProgram,
+            MultiMethodExecutorchProgram,
             ExecutorchProgramManager,
         ],
         method_test_suites: Sequence[MethodTestSuite],
@@ -361,12 +366,18 @@ class BundledProgram:
         self,
         executorch_program: Union[
             ExecutorchProgram,
+            MultiMethodExecutorchProgram,
             ExecutorchProgramManager,
         ],
     ):
         if isinstance(executorch_program, ExecutorchProgramManager):
             program = executorch_program.executorch_program
-        else:
-            assert isinstance(executorch_program, ExecutorchProgram)
+        elif isinstance(executorch_program, ExecutorchProgram):
             program = executorch_program.program
+        else:
+            assert isinstance(
+                executorch_program, MultiMethodExecutorchProgram
+            ), f"executorch_program should be in type ExecutorchProgram, MultiMethodExecutorchProgram or ExecutorchProgramManager, but got {type(executorch_program)}"
+            program = executorch_program.program
+
         return program

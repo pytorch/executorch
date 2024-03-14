@@ -10,7 +10,7 @@ def define_common_targets():
     runtime.cxx_library(
         name = "aten_bridge",
         srcs = ["aten_bridge.cpp"],
-        exported_headers = ["aten_bridge.h", "make_aten_functor_from_et_functor.h"],
+        exported_headers = ["aten_bridge.h"],
         compiler_flags = [
             "-frtti",
             "-fno-omit-frame-pointer",
@@ -25,10 +25,8 @@ def define_common_targets():
             "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
-        exported_deps = [
-            "//executorch/extension/kernel_util:kernel_util",
+        deps = [
             "//executorch/runtime/core:core",
-            "//executorch/runtime/core:evalue",
             "//executorch/runtime/core/exec_aten:lib",
         ],
         external_deps = [

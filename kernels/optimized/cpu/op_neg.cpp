@@ -19,12 +19,7 @@ Tensor& opt_neg_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   // Resize for dynamic shape
   auto error = resize_tensor(out, in.sizes());
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      error == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, "neg.out", CTYPE, [&] {
     using Vec = executorch::vec::Vectorized<CTYPE>;

@@ -32,12 +32,7 @@ Tensor& unsqueeze_copy_out(
   // are not needed
   if (dim < 0) {
     dim += out.dim();
-    ET_KERNEL_CHECK(ctx, dim >= 0, InvalidArgument, out);
   }
-
-  ET_KERNEL_CHECK(ctx, self.dim() + 1 == out.dim(), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, dim <= self.dim(), InvalidArgument, out);
-
   for (size_t i = 0; i < out.dim(); ++i) {
     if (i < dim) {
       expected_output_size[i] = self.size(i);

@@ -4,9 +4,9 @@ def _get_operator_lib(aten = False):
     if aten:
         return ["//executorch/kernels/portable:generated_lib_aten"]
     elif runtime.is_oss:
-        return ["//executorch/kernels/portable:generated_lib"]
+        return ["//executorch/kernels/portable:generated_lib_all_ops"]
     else:
-        return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops", "//executorch/examples/models/llama2/ops:generated_lib"]
+        return ["//executorch/kernels/portable:generated_lib_all_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops"]
 
 def define_common_targets():
     for aten in (True, False):

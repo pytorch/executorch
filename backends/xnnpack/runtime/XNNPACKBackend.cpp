@@ -60,20 +60,84 @@ class XnnpackBackend final : public PyTorchBackendInterface {
       EValue** args) const override {
     auto executor = static_cast<xnnpack::delegate::XNNExecutor*>(handle);
 
-    // Prepare Inputs/Outputs and Propagate Input Shapes
-    Error err = executor->prepare_args(args);
+    // TODO merge these two in a single struct?
+    std::vector<Tensor*> input_pointers;
+    std::vector<Tensor*> output_pointers;
+    std::vector<xnnpack::delegate::XNNShape> input_shapes;
+    std::vector<xnnpack::delegate::XNNShape> output_shapes;
+
+    ET_CHECK_OR_RETURN_ERROR(
+        executor->get_args_size() ==
+            executor->getNumInputs() + executor->getNumOutputs(),
+        Internal,
+        "External id and expected delegate args mismatch");
+
+    // Intialize XNNShapes for both inputs and outputs.
+    // That will allow us to gradually build up shape inference support for
+    // xnnpack ops without breaking existing models when we always try to resize
+    // delegate output tensor(s).
+    input_shapes.resize(executor->getNumInputs());
+    output_shapes.resize(executor->getNumOutputs());
+
+    for (int i = 0; i < executor->get_args_size(); i++) {
+      int index = executor->get_arg_index(i);
+
+      if (!args[index]->isTensor()) {
+        ET_LOG(Error, "Expected argument to be a tensor");
+      }
+
+      Tensor* tensor = &args[index]->toTensor();
+      size_t num_dims = tensor->dim();
+      struct xnnpack::delegate::XNNShape* shape = nullptr;
+
+      if (i < executor->getNumInputs()) {
+        input_pointers.push_back(tensor);
+        shape = &input_shapes[i];
+      } else {
+        output_pointers.push_back(tensor);
+        shape = &output_shapes[i - executor->getNumInputs()];
+      }
+
+      shape->num_dims = num_dims;
+      for (int d = 0; d < num_dims; ++d) {
+        shape->dim[d] = tensor->size(d);
+      }
+    }
+
+    Error err = executor->set_inputs(
+        input_pointers, output_pointers, input_shapes, output_shapes);
+
     if (err != Error::Ok) {
       return err;
     }
 
     err = executor->forward(context);
 
-    if (err != Error::Ok) {
-      return err;
+    // Resize output tensors - should be a no-op for static models
+    for (int i = 0; i < executor->getNumOutputs(); i++) {
+      err = executor->resizeOutput(output_pointers[i], &output_shapes[i]);
+      if (err != Error::Ok) {
+        return err;
+      }
     }
 
-    // Resize outputs and recast pointers if necessary
-    err = executor->resize_outputs(args);
+    for (int i = executor->getNumInputs();
+         i < executor->getNumInputs() + executor->getNumOutputs();
+         i++) {
+      if (args[i]->isTensor()) {
+        exec_aten::Tensor output_tensor = args[i]->toTensor();
+        if (output_tensor.scalar_type() == ScalarType::Long) {
+          // Output datatype is int64. However, XNNPACK doesn't support
+          // int64. This means that the data was put into this tensor
+          // by XNNPACK as int32 and needs to be copied to int64 form
+          int64_t* data_64 = output_tensor.mutable_data_ptr<int64_t>();
+          const int32_t* data_32 = output_tensor.const_data_ptr<int32_t>();
+          for (int j = output_tensor.numel() - 1; j >= 0; j--) {
+            data_64[j] = data_32[j];
+          }
+        }
+      }
+    }
 
     return err;
   }

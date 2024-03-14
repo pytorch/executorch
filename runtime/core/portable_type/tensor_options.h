@@ -14,21 +14,17 @@ namespace torch {
 namespace executor {
 
 /**
- * Tensor data memory formats supported by ExecuTorch. This concept only exists
- * for compatibility with ATen; use dim_order to describe non-contiguous
- * layouts.
+ * Tensor data memory format. This concept only exists for compatibility
+ * with ATen.
  */
 enum class MemoryFormat : int8_t {
   /**
-   * Row-major contiguous data.
+   * Row-major contiguous data format.
+   *
+   * This is the only format supported by ExecuTorch. Use dim orders to
+   * describe other layouts.
    */
-  Contiguous = 0,
-  /**
-   * Output tensor format should remain the same as the input tensor format.
-   * E.g. if the input tensor is in channels_last format, operator output
-   * should be in channels_last format.
-   */
-  Preserve = 1,
+  Contiguous,
 };
 
 /**
@@ -43,7 +39,7 @@ enum class Layout : int8_t {
    *
    * This is the only layout supported by ExecuTorch.
    */
-  Strided = 0,
+  Strided,
 };
 } // namespace executor
 } // namespace torch

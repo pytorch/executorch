@@ -12,11 +12,11 @@ plugins {
 }
 
 android {
-  namespace = "com.example.executorchllamademo"
+  namespace = "com.example.executorchdemo"
   compileSdk = 34
 
   defaultConfig {
-    applicationId = "com.example.executorchllamademo"
+    applicationId = "com.example.executorchdemo"
     minSdk = 24
     targetSdk = 33
     versionCode = 1

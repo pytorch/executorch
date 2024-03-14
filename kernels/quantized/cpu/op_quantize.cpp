@@ -153,7 +153,6 @@ Tensor& quantize_per_tensor_out(
 }
 
 Tensor& quantize_per_tensor_tensor_args_out(
-    RuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
     const Tensor& zero_point,
@@ -161,14 +160,6 @@ Tensor& quantize_per_tensor_tensor_args_out(
     int64_t quant_max,
     ScalarType dtype,
     Tensor& out) {
-  // Temporary change to allow not fatal failure for now to unblock some
-  // expected failure tests that are dying instead of failure. Will revisit
-  // after ET_KERNEL_CHECK is fully implemented and properly allows non fatal
-  // failures.
-  if (scale.scalar_type() != ScalarType::Double) {
-    context.fail(torch::executor::Error::InvalidArgument);
-    return out;
-  }
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
       "Expected scale to be Double tensor received: %" PRId8,
@@ -197,23 +188,9 @@ Tensor& quantize_per_tensor_tensor_args_out(
   return out;
 }
 
-Tensor& quantize_per_tensor_tensor_args_out(
-    const Tensor& input,
-    const Tensor& scale,
-    const Tensor& zero_point,
-    int64_t quant_min,
-    int64_t quant_max,
-    ScalarType dtype,
-    Tensor& out) {
-  auto context = torch::executor::RuntimeContext();
-  auto& res = quantize_per_tensor_tensor_args_out(
-      context, input, scale, zero_point, quant_min, quant_max, dtype, out);
-  ET_CHECK(context.failure_state() == Error::Ok);
-  return res;
-}
-
 Tensor& quantize_per_tensor_out(
     RuntimeContext& context,
+
     const Tensor& input,
     double scale,
     int64_t zero_point,
@@ -225,6 +202,22 @@ Tensor& quantize_per_tensor_out(
   // wrapper
   (void)context;
   return quantize_per_tensor_out(
+      input, scale, zero_point, quant_min, quant_max, dtype, out);
+}
+
+Tensor& quantize_per_tensor_tensor_args_out(
+    RuntimeContext& context,
+    const Tensor& input,
+    const Tensor& scale,
+    const Tensor& zero_point,
+    int64_t quant_min,
+    int64_t quant_max,
+    ScalarType dtype,
+    Tensor& out) {
+  // TODO(larryliu): Add a context arg to the real op function and remove this
+  // wrapper
+  (void)context;
+  return quantize_per_tensor_tensor_args_out(
       input, scale, zero_point, quant_min, quant_max, dtype, out);
 }
 

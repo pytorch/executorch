@@ -27,7 +27,6 @@ def define_common_targets():
         ],
         exported_headers = ["repeat_util.h"],
         deps = [
-            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],

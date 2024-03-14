@@ -189,7 +189,7 @@ public class MainActivity extends Activity implements Runnable {
     final float[] inputs = inputTensor.getDataAsFloatArray();
 
     final long startTime = SystemClock.elapsedRealtime();
-    Tensor outputTensor = mModule.forward(EValue.from(inputTensor))[0].toTensor();
+    Tensor outputTensor = mModule.forward(EValue.from(inputTensor)).toTensor();
     final long inferenceTime = SystemClock.elapsedRealtime() - startTime;
     Log.d("ImageSegmentation", "inference time (ms): " + inferenceTime);
 

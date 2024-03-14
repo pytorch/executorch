@@ -31,7 +31,7 @@ filters = [
 buck_targets = [
   # //kernels/portable:operators would be more appropriate, but buck2 doesn't
   # think it has any "inputs" since its srcs list is empty.
-  "//kernels/portable:generated_lib",
+  "//kernels/portable:generated_lib_all_ops",
 ]
 filters = [
   ".cpp$",

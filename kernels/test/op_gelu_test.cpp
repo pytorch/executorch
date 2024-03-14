@@ -22,55 +22,52 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-class OpGeluTest : public OperatorTest {
- protected:
-  Tensor&
-  op_gelu_out(const Tensor& self, string_view approximate, Tensor& out) {
-    return torch::executor::aten::gelu_outf(context_, self, approximate, out);
-  }
+Tensor& op_gelu_out(const Tensor& self, string_view approximate, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::gelu_outf(context, self, approximate, out);
+}
 
-  // Common testing for gelu on two floating point Tensors.
-  template <ScalarType DTYPE>
-  void test_gelu_execution() {
-    TensorFactory<DTYPE> tf;
+// Common testing for gelu on two floating point Tensors.
+template <ScalarType DTYPE>
+void test_gelu_execution() {
+  TensorFactory<DTYPE> tf;
 
-    const std::vector<int32_t> sizes = {3, 2};
+  const std::vector<int32_t> sizes = {3, 2};
 
-    Tensor in = tf.make(
-        sizes, /*data=*/{-0.4775, 0.2948, -0.3984, 1.8690, -0.4048, -0.4848});
+  Tensor in = tf.make(
+      sizes, /*data=*/{-0.4775, 0.2948, -0.3984, 1.8690, -0.4048, -0.4848});
 
-    // Destination for the gelu.
-    Tensor out = tf.zeros(sizes);
+  // Destination for the gelu.
+  Tensor out = tf.zeros(sizes);
 
-    // Run full gelu.
-    op_gelu_out(in, "none", out);
+  // Run full gelu.
+  op_gelu_out(in, "none", out);
 
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf.make(
-            sizes,
-            /*data=*/
-            {-0.15113, 0.181575, -0.137515, 1.81141, -0.13877, -0.152183}));
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf.make(
+          sizes,
+          /*data=*/
+          {-0.15113, 0.181575, -0.137515, 1.81141, -0.13877, -0.152183}));
 
-    // Run tanh gelu appx.
-    op_gelu_out(in, "tanh", out);
+  // Run tanh gelu appx.
+  op_gelu_out(in, "tanh", out);
 
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf.make(
-            sizes,
-            /*data=*/
-            {-0.151145, 0.181573, -0.137522, 1.8114, -0.138778, -0.152199}));
-  }
-};
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf.make(
+          sizes,
+          /*data=*/
+          {-0.151145, 0.181573, -0.137522, 1.8114, -0.138778, -0.152199}));
+}
 
-TEST_F(OpGeluTest, FloatTensors) {
+TEST(OpGeluKernelTest, FloatTensors) {
   test_gelu_execution<ScalarType::Float>();
 }
 
-TEST_F(OpGeluTest, DoubleTensors) {
+TEST(OpGeluKernelTest, DoubleTensors) {
   if (!SupportedFeatures::get()->op_gelu_dtype_double) {
     GTEST_SKIP();
   }
@@ -78,7 +75,7 @@ TEST_F(OpGeluTest, DoubleTensors) {
   test_gelu_execution<ScalarType::Double>();
 }
 
-TEST_F(OpGeluTest, UnhandledDtypeDies) {
+TEST(OpGeluKernelTest, UnhandledDtypeDies) {
   // gelu() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;
 
@@ -89,12 +86,12 @@ TEST_F(OpGeluTest, UnhandledDtypeDies) {
   // Destination for the gelu.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_gelu_out(a, "none", out));
+  ET_EXPECT_KERNEL_FAILURE(op_gelu_out(a, "none", out));
 }
 
 // The output tensor may not have a dtype different from the inputs even if it
 // has the same shape.
-TEST_F(OpGeluTest, MismatchedOutputDtypeDies) {
+TEST(OpGeluKernelTest, MismatchedOutputDtypeDies) {
   // Two different dtypes. This test uses two types with the same size to
   // demonstrate that the ScalarType itself matters, not the size of the
   // tensor elements.
@@ -110,10 +107,10 @@ TEST_F(OpGeluTest, MismatchedOutputDtypeDies) {
 
   // Running Gelu on an input into an output of a different dtype should kill
   // the program
-  ET_EXPECT_KERNEL_FAILURE(context_, op_gelu_out(a, "none", out));
+  ET_EXPECT_KERNEL_FAILURE(op_gelu_out(a, "none", out));
 }
 
-TEST_F(OpGeluTest, InvalidAppxStringDies) {
+TEST(OpGeluKernelTest, InvalidAppxStringDies) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.ones(/*sizes=*/{4});
@@ -122,10 +119,10 @@ TEST_F(OpGeluTest, InvalidAppxStringDies) {
   Tensor out = tf.zeros(/*sizes=*/{4});
 
   // Running Gelu with an invalid appx method should kill the program.
-  ET_EXPECT_KERNEL_FAILURE(context_, op_gelu_out(a, "foo", out));
+  ET_EXPECT_KERNEL_FAILURE(op_gelu_out(a, "foo", out));
 }
 
-TEST_F(OpGeluTest, SimpleGeneratedCase) {
+TEST(OpGeluKernelTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -179,7 +176,7 @@ TEST_F(OpGeluTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpGeluKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -205,7 +202,7 @@ TEST_F(OpGeluTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpGeluKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -232,7 +229,7 @@ TEST_F(OpGeluTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpGeluTest, DynamicShapeUnbound) {
+TEST(OpGeluKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 

@@ -10,7 +10,6 @@
 #include <executorch/kernels/optimized/vec/vec.h>
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
 #include <executorch/kernels/portable/cpu/util/broadcast_util.h>
-#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
 
@@ -33,23 +32,15 @@ Tensor& opt_sub_out(
   ScalarType b_type = b.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realh_type(out), InvalidArgument, out);
-
   if (a_type == b_type && a_type == out_type && a.sizes().equals(b.sizes()) &&
       a_type != ScalarType::Half) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        error == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
+    ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
     ET_SWITCH_REAL_TYPES(out_type, ctx, "sub.out", CTYPE, [&]() {
       CTYPE alpha_val;
-      ET_KERNEL_CHECK(
-          ctx, utils::extract_scalar(alpha, &alpha_val), InvalidArgument, );
+      ET_EXTRACT_SCALAR(alpha, alpha_val);
 
       using Vec = executorch::vec::Vectorized<CTYPE>;
       executorch::vec::map2<CTYPE>(
@@ -62,7 +53,7 @@ Tensor& opt_sub_out(
   } else {
     ScalarType common_type =
         promoteTypes(a_type, b_type, /*half_to_float*/ true);
-    ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+    ET_CHECK(canCast(common_type, out_type));
 
     ET_KERNEL_CHECK(
         ctx,
@@ -75,10 +66,7 @@ Tensor& opt_sub_out(
         ET_SWITCH_REAL_TYPES(common_type, ctx, "sub.out", CTYPE_IN, [&]() {
           ET_SWITCH_REALH_TYPES(out_type, ctx, "sub.out", CTYPE_OUT, [&]() {
             CTYPE_IN alpha_val;
-            ET_KERNEL_CHECK(
-                ctx,
-                utils::extract_scalar(alpha, &alpha_val),
-                InvalidArgument, );
+            ET_EXTRACT_SCALAR(alpha, alpha_val);
 
             apply_binary_elementwise_fn<CTYPE_A, CTYPE_B, CTYPE_OUT>(
                 [alpha_val](const CTYPE_A val_a, const CTYPE_B val_b) {

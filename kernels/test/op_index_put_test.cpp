@@ -25,211 +25,57 @@ using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
 
-class OpIndexPutOutTest : public OperatorTest {
- protected:
-  Tensor& op_index_put_out(
-      const Tensor& input,
-      OptTensorArrayRef indices,
-      const Tensor& values,
-      const bool accumulate,
-      Tensor& out) {
+Tensor& op_index_put_out(
+    const Tensor& input,
+    OptTensorArrayRef indices,
+    const Tensor& values,
+    const bool accumulate,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
 #ifdef USE_ATEN_LIB
-    c10::List<c10::optional<at::Tensor>> indices_list(indices);
-    return torch::executor::aten::index_put_outf(
-        context_, input, indices_list, values, accumulate, out);
+  c10::List<c10::optional<at::Tensor>> indices_list(indices);
+  return torch::executor::aten::index_put_outf(
+      context, input, indices_list, values, accumulate, out);
 #else
-    return torch::executor::aten::index_put_outf(
-        context_, input, indices, values, accumulate, out);
+  return torch::executor::aten::index_put_outf(
+      context, input, indices, values, accumulate, out);
 #endif
-  }
+}
 
-  template <
-      exec_aten::ScalarType INPUT_DTYPE,
-      exec_aten::ScalarType INDICES_DTYPE>
-  void test_dtype() {
-    TensorFactory<INPUT_DTYPE> tf;
-    TensorFactory<INDICES_DTYPE> tfl;
-    TensorFactory<ScalarType::Bool> tfb;
+namespace {
 
-    // clang-format off
-    Tensor x = tf.make(
-        {3, 2, 4},
-        {
-          // [0, :, :]
-          1, 1, 1, 1, // [0, 0, :]
-          0, 0, 0, 0, // [0, 1, :]
+// Run the test by putting values into the selected elements
+void run_test_cases(
+    const Tensor& x,
+    OptTensorArrayRef indices,
+    const Tensor& values,
+    const Tensor& expected,
+    const Tensor& expected_accum) {
+  // Generated out tensor sharing same size and dtype with expected tensor
+  TensorFactory<ScalarType::Double> tf;
 
-          // [1, :, :]
-          1, 1, 1, 1, // [1, 0, :]
-          0, 0, 0, 0, // [1, 1, :]
+  const std::vector<int32_t> out_size(
+      expected.sizes().begin(), expected.sizes().end());
+  Tensor out = tf.ones(out_size);
 
-          // [2, :, :]
-          1, 1, 1, 1, // [2, 0, :]
-          0, 0, 0, 0, // [2, 1, :]
-        });
-    // clang-format on
+  Tensor ret = op_index_put_out(x, indices, values, /*accumulate=*/false, out);
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(ret, expected);
 
-    // First, index_put to make everything equal to 1
+  Tensor out_accum = tf.ones(out_size);
+  Tensor ret_accum =
+      op_index_put_out(x, indices, values, /*accumulate=*/true, out_accum);
+  EXPECT_TENSOR_EQ(out_accum, ret_accum);
+  EXPECT_TENSOR_EQ(ret_accum, expected_accum);
+}
 
-    // indices [0, 1, :], [1, 1, :], [2, 1, :]
-    optional<Tensor> indices[] = {
-        optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
-        optional<Tensor>(tfl.make({1, 3}, {1, 1, 1})),
-    };
-    // bool representation of the same index list
-    optional<Tensor> indices_bool[] = {
-        optional<Tensor>(tfb.make({3}, {true, true, true})),
-        optional<Tensor>(tfb.make({2}, {false, true})),
-    };
-
-    Tensor values = tf.ones({3, 4});
-
-    std::vector<int32_t> out_size{3, 2, 4};
-
-    Tensor out = tf.zeros(out_size);
-    Tensor ret =
-        op_index_put_out(x, indices, values, /*accumulate=*/false, out);
-
-    EXPECT_TENSOR_EQ(ret, out);
-    EXPECT_TENSOR_EQ(ret, tf.ones(out_size));
-
-    // Repeat the test with bool indices
-    Tensor out_with_bool = tf.zeros(out_size);
-    Tensor ret_with_bool = op_index_put_out(
-        x, indices_bool, values, /*accumulate=*/false, out_with_bool);
-
-    EXPECT_TENSOR_EQ(ret_with_bool, out_with_bool);
-    EXPECT_TENSOR_EQ(ret_with_bool, tf.ones(out_size));
-
-    // Then, index_put to make everything equal to 0
-
-    // indices [0, 1, :], [1, 0, :], [2, 0, :]
-    optional<Tensor> indices_alt[] = {
-        optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
-        optional<Tensor>(tfl.make({1, 3}, {0, 0, 0})),
-    };
-    // bool representation of the same index list
-    optional<Tensor> indices_alt_bool[] = {
-        optional<Tensor>(tfb.make({3}, {true, true, true})),
-        optional<Tensor>(tfb.make({2}, {true, false})),
-    };
-
-    Tensor values_alt = tf.zeros({3, 4});
-
-    Tensor out_alt = tf.ones(out_size);
-    Tensor ret_alt = op_index_put_out(
-        x, indices_alt, values_alt, /*accumulate=*/false, out_alt);
-
-    EXPECT_TENSOR_EQ(ret_alt, out_alt);
-    EXPECT_TENSOR_EQ(ret_alt, tf.zeros(out_size));
-
-    // Repeat the test with bool indices
-    Tensor out_alt_with_bool = tf.ones(out_size);
-    Tensor ret_alt_with_bool = op_index_put_out(
-        x,
-        indices_alt_bool,
-        values_alt,
-        /*accumulate=*/false,
-        out_alt_with_bool);
-
-    EXPECT_TENSOR_EQ(ret_alt_with_bool, out_alt_with_bool);
-    EXPECT_TENSOR_EQ(ret_alt_with_bool, tf.zeros(out_size));
-  }
-
-  /* %python
-  import torch
-  torch.manual_seed(0)
-  input = torch.rand(2, 3, 4)
-  indices = [torch.tensor([1]), torch.tensor([0]), torch.tensor([1, 2])]
-  values = torch.rand(2)
-  accumulate = False
-  expected = input.index_put(indices, values, accumulate=accumulate)
-
-  index_put_template = f"""
-    {declare_tensor_factory("ScalarType::Float", "tf")}
-    {declare_tensor_factory("ScalarType::Long", "tf_indices")}
-
-    {declare_tensor_make_t("input", "tf")}
-    {declare_optional_tensor_list_make_t("indices", "tf_indices")}
-    {declare_tensor_make_t("values", "tf")}
-    {declare_tensor_make_t("expected", "tf")}
-    {declare_tensor_zeros("out_shape, dynamism", "tf", "out")}
-
-    op_index_put_out(input, indices, values, $accumulate$, out);
-    EXPECT_TENSOR_EQ(out, expected);"""
-  */
-  void test_dynamic_shape(
-      const std::vector<int32_t>& out_shape,
-      enum torch::executor::TensorShapeDynamism dynamism) {
-    /* %python
-    %rewrite(index_put_template) */
-
-    TensorFactory<ScalarType::Float> tf;
-    TensorFactory<ScalarType::Long> tf_indices;
-
-    Tensor input = tf.make(
-        {2, 3, 4},
-        {0.49625658988952637,  0.7682217955589294,  0.08847743272781372,
-         0.13203048706054688,  0.30742281675338745, 0.6340786814689636,
-         0.4900934100151062,   0.8964447379112244,  0.455627977848053,
-         0.6323062777519226,   0.3488934636116028,  0.40171730518341064,
-         0.022325754165649414, 0.16885894536972046, 0.2938884496688843,
-         0.518521785736084,    0.6976675987243652,  0.800011396408081,
-         0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
-         0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
-    optional<Tensor> indices[] = {
-        optional<Tensor>(tf_indices.make({1}, {1})),
-        optional<Tensor>(tf_indices.make({1}, {0})),
-        optional<Tensor>(tf_indices.make({2}, {1, 2}))};
-    Tensor values = tf.make({2}, {0.41940832138061523, 0.5529070496559143});
-    Tensor expected = tf.make(
-        {2, 3, 4},
-        {0.49625658988952637,  0.7682217955589294,  0.08847743272781372,
-         0.13203048706054688,  0.30742281675338745, 0.6340786814689636,
-         0.4900934100151062,   0.8964447379112244,  0.455627977848053,
-         0.6323062777519226,   0.3488934636116028,  0.40171730518341064,
-         0.022325754165649414, 0.41940832138061523, 0.5529070496559143,
-         0.518521785736084,    0.6976675987243652,  0.800011396408081,
-         0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
-         0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
-    Tensor out = tf.zeros(out_shape, dynamism);
-
-    op_index_put_out(input, indices, values, false, out);
-    EXPECT_TENSOR_EQ(out, expected);
-  }
-
-  // Run the test by putting values into the selected elements
-  void run_test_cases(
-      const Tensor& x,
-      OptTensorArrayRef indices,
-      const Tensor& values,
-      const Tensor& expected,
-      const Tensor& expected_accum) {
-    // Generated out tensor sharing same size and dtype with expected tensor
-    TensorFactory<ScalarType::Double> tf;
-
-    const std::vector<int32_t> out_size(
-        expected.sizes().begin(), expected.sizes().end());
-    Tensor out = tf.ones(out_size);
-
-    Tensor ret =
-        op_index_put_out(x, indices, values, /*accumulate=*/false, out);
-    EXPECT_TENSOR_EQ(out, ret);
-    EXPECT_TENSOR_EQ(ret, expected);
-
-    Tensor out_accum = tf.ones(out_size);
-    Tensor ret_accum =
-        op_index_put_out(x, indices, values, /*accumulate=*/true, out_accum);
-    EXPECT_TENSOR_EQ(out_accum, ret_accum);
-    EXPECT_TENSOR_EQ(ret_accum, expected_accum);
-  }
-};
+} // namespace
 
 //
 // Correctness Tests
 //
 
-TEST_F(OpIndexPutOutTest, IndexPutMask) {
+TEST(OpIndexPutOutTest, IndexPutMask) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Bool> tfb;
   // clang-format off
@@ -306,7 +152,7 @@ TEST_F(OpIndexPutOutTest, IndexPutMask) {
   run_test_cases(x, {indices}, values, expected, expected_accum);
 }
 
-TEST_F(OpIndexPutOutTest, IndexPutMaskBroadcast) {
+TEST(OpIndexPutOutTest, IndexPutMaskBroadcast) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Bool> tfb;
   // clang-format off
@@ -387,7 +233,7 @@ TEST_F(OpIndexPutOutTest, IndexPutMaskBroadcast) {
   run_test_cases(x, {indices}, values, expected, expected_accum);
 }
 
-TEST_F(OpIndexPutOutTest, PutFrontDimAllIndexes) {
+TEST(OpIndexPutOutTest, PutFrontDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Int> tfi;
   TensorFactory<ScalarType::Long> tfl;
@@ -483,7 +329,7 @@ TEST_F(OpIndexPutOutTest, PutFrontDimAllIndexes) {
   run_test_cases(x, indices_mixed, values, expected, expected_accum);
 }
 
-TEST_F(OpIndexPutOutTest, PutTwoValuesAtSameIndex) {
+TEST(OpIndexPutOutTest, PutTwoValuesAtSameIndex) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -550,7 +396,7 @@ TEST_F(OpIndexPutOutTest, PutTwoValuesAtSameIndex) {
   run_test_cases(x, /*indices=*/indices, values, expected, expected_accum);
 }
 
-TEST_F(OpIndexPutOutTest, IndicesFewerThanInputDimSupported) {
+TEST(OpIndexPutOutTest, IndicesFewerThanInputDimSupported) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Int> tfi;
   TensorFactory<ScalarType::Long> tfl;
@@ -629,7 +475,7 @@ TEST_F(OpIndexPutOutTest, IndicesFewerThanInputDimSupported) {
   run_test_cases(x, indices_mixed, values, expected, expected_accum);
 }
 
-TEST_F(OpIndexPutOutTest, IndicesFewerThanInputDimSupportedSameValue) {
+TEST(OpIndexPutOutTest, IndicesFewerThanInputDimSupportedSameValue) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -703,7 +549,95 @@ TEST_F(OpIndexPutOutTest, IndicesFewerThanInputDimSupportedSameValue) {
 /**
  * Generic test for integral index lists
  */
-TEST_F(OpIndexPutOutTest, AllDtypesSupportedForInput) {
+template <
+    exec_aten::ScalarType INPUT_DTYPE,
+    exec_aten::ScalarType INDICES_DTYPE>
+void test_dtype() {
+  TensorFactory<INPUT_DTYPE> tf;
+  TensorFactory<INDICES_DTYPE> tfl;
+  TensorFactory<ScalarType::Bool> tfb;
+
+  // clang-format off
+  Tensor x = tf.make(
+      {3, 2, 4},
+      {
+        // [0, :, :]
+        1, 1, 1, 1, // [0, 0, :]
+        0, 0, 0, 0, // [0, 1, :]
+
+        // [1, :, :]
+        1, 1, 1, 1, // [1, 0, :]
+        0, 0, 0, 0, // [1, 1, :]
+
+        // [2, :, :]
+        1, 1, 1, 1, // [2, 0, :]
+        0, 0, 0, 0, // [2, 1, :]
+      });
+  // clang-format on
+
+  // First, index_put to make everything equal to 1
+
+  // indices [0, 1, :], [1, 1, :], [2, 1, :]
+  optional<Tensor> indices[] = {
+      optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
+      optional<Tensor>(tfl.make({1, 3}, {1, 1, 1})),
+  };
+  // bool representation of the same index list
+  optional<Tensor> indices_bool[] = {
+      optional<Tensor>(tfb.make({3}, {true, true, true})),
+      optional<Tensor>(tfb.make({2}, {false, true})),
+  };
+
+  Tensor values = tf.ones({3, 4});
+
+  std::vector<int32_t> out_size{3, 2, 4};
+
+  Tensor out = tf.zeros(out_size);
+  Tensor ret = op_index_put_out(x, indices, values, /*accumulate=*/false, out);
+
+  EXPECT_TENSOR_EQ(ret, out);
+  EXPECT_TENSOR_EQ(ret, tf.ones(out_size));
+
+  // Repeat the test with bool indices
+  Tensor out_with_bool = tf.zeros(out_size);
+  Tensor ret_with_bool = op_index_put_out(
+      x, indices_bool, values, /*accumulate=*/false, out_with_bool);
+
+  EXPECT_TENSOR_EQ(ret_with_bool, out_with_bool);
+  EXPECT_TENSOR_EQ(ret_with_bool, tf.ones(out_size));
+
+  // Then, index_put to make everything equal to 0
+
+  // indices [0, 1, :], [1, 0, :], [2, 0, :]
+  optional<Tensor> indices_alt[] = {
+      optional<Tensor>(tfl.make({1, 3}, {0, 1, 2})),
+      optional<Tensor>(tfl.make({1, 3}, {0, 0, 0})),
+  };
+  // bool representation of the same index list
+  optional<Tensor> indices_alt_bool[] = {
+      optional<Tensor>(tfb.make({3}, {true, true, true})),
+      optional<Tensor>(tfb.make({2}, {true, false})),
+  };
+
+  Tensor values_alt = tf.zeros({3, 4});
+
+  Tensor out_alt = tf.ones(out_size);
+  Tensor ret_alt = op_index_put_out(
+      x, indices_alt, values_alt, /*accumulate=*/false, out_alt);
+
+  EXPECT_TENSOR_EQ(ret_alt, out_alt);
+  EXPECT_TENSOR_EQ(ret_alt, tf.zeros(out_size));
+
+  // Repeat the test with bool indices
+  Tensor out_alt_with_bool = tf.ones(out_size);
+  Tensor ret_alt_with_bool = op_index_put_out(
+      x, indices_alt_bool, values_alt, /*accumulate=*/false, out_alt_with_bool);
+
+  EXPECT_TENSOR_EQ(ret_alt_with_bool, out_alt_with_bool);
+  EXPECT_TENSOR_EQ(ret_alt_with_bool, tf.zeros(out_size));
+}
+
+TEST(OpIndexPutOutTest, AllDtypesSupportedForInput) {
 #define TEST_ENTRY(ctype, dtype) \
   test_dtype<ScalarType::dtype, ScalarType::Long>();
 
@@ -712,7 +646,7 @@ TEST_F(OpIndexPutOutTest, AllDtypesSupportedForInput) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpIndexPutOutTest, AllDtypesSupportedForIndicesList) {
+TEST(OpIndexPutOutTest, AllDtypesSupportedForIndicesList) {
   test_dtype<ScalarType::Float, ScalarType::Long>();
   test_dtype<ScalarType::Float, ScalarType::Int>();
 }
@@ -721,7 +655,7 @@ TEST_F(OpIndexPutOutTest, AllDtypesSupportedForIndicesList) {
 // Death Tests
 //
 
-TEST_F(OpIndexPutOutTest, IndexOutOfBoundDies) {
+TEST(OpIndexPutOutTest, IndexOutOfBoundDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -737,13 +671,12 @@ TEST_F(OpIndexPutOutTest, IndexOutOfBoundDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, NegativeIndexOutOfBoundDies) {
+TEST(OpIndexPutOutTest, NegativeIndexOutOfBoundDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -759,13 +692,12 @@ TEST_F(OpIndexPutOutTest, NegativeIndexOutOfBoundDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, TooManyBooleanIndexCountDies) {
+TEST(OpIndexPutOutTest, TooManyBooleanIndexCountDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -781,13 +713,12 @@ TEST_F(OpIndexPutOutTest, TooManyBooleanIndexCountDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, TooFewBooleanIndexCountDies) {
+TEST(OpIndexPutOutTest, TooFewBooleanIndexCountDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -804,13 +735,12 @@ TEST_F(OpIndexPutOutTest, TooFewBooleanIndexCountDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, MismatchedIndexMaskDies) {
+TEST(OpIndexPutOutTest, MismatchedIndexMaskDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -827,13 +757,12 @@ TEST_F(OpIndexPutOutTest, MismatchedIndexMaskDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, MismatchedOutputDtypesDies) {
+TEST(OpIndexPutOutTest, MismatchedOutputDtypesDies) {
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Double> tf_double;
   TensorFactory<ScalarType::Long> tf_long;
@@ -852,13 +781,12 @@ TEST_F(OpIndexPutOutTest, MismatchedOutputDtypesDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, MismatchedValuesDtypesDies) {
+TEST(OpIndexPutOutTest, MismatchedValuesDtypesDies) {
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Double> tf_double;
   TensorFactory<ScalarType::Long> tf_long;
@@ -877,13 +805,12 @@ TEST_F(OpIndexPutOutTest, MismatchedValuesDtypesDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, ValuesSizeMismatchDimDies) {
+TEST(OpIndexPutOutTest, ValuesSizeMismatchDimDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -900,13 +827,12 @@ TEST_F(OpIndexPutOutTest, ValuesSizeMismatchDimDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
       op_index_put_out(
           x, /*indices=*/{index}, values, /*accumulate=*/false, out),
       "");
 }
 
-TEST_F(OpIndexPutOutTest, InvalidIndicesDtypeDies) {
+TEST(OpIndexPutOutTest, InvalidIndicesDtypeDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Float> tff;
 
@@ -927,12 +853,10 @@ TEST_F(OpIndexPutOutTest, InvalidIndicesDtypeDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
-      op_index_put_out(x, indices, values, /*accumulate=*/false, out),
-      "");
+      op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
 }
 
-TEST_F(OpIndexPutOutTest, InvalidIndicesShapesDies) {
+TEST(OpIndexPutOutTest, InvalidIndicesShapesDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -953,12 +877,10 @@ TEST_F(OpIndexPutOutTest, InvalidIndicesShapesDies) {
   // clang-format on
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      context_,
-      op_index_put_out(x, indices, values, /*accumulate=*/false, out),
-      "");
+      op_index_put_out(x, indices, values, /*accumulate=*/false, out), "");
 }
 
-TEST_F(OpIndexPutOutTest, NonLinearIndices) {
+TEST(OpIndexPutOutTest, NonLinearIndices) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -991,12 +913,75 @@ TEST_F(OpIndexPutOutTest, NonLinearIndices) {
 // Dynamic Shape Tests
 //
 
-TEST_F(OpIndexPutOutTest, DynamicShapeUpperBoundSameAsExpected) {
+/* %python
+import torch
+torch.manual_seed(0)
+input = torch.rand(2, 3, 4)
+indices = [torch.tensor([1]), torch.tensor([0]), torch.tensor([1, 2])]
+values = torch.rand(2)
+accumulate = False
+expected = input.index_put(indices, values, accumulate=accumulate)
+
+index_put_template = f"""
+  {declare_tensor_factory("ScalarType::Float", "tf")}
+  {declare_tensor_factory("ScalarType::Long", "tf_indices")}
+
+  {declare_tensor_make_t("input", "tf")}
+  {declare_optional_tensor_list_make_t("indices", "tf_indices")}
+  {declare_tensor_make_t("values", "tf")}
+  {declare_tensor_make_t("expected", "tf")}
+  {declare_tensor_zeros("out_shape, dynamism", "tf", "out")}
+
+  op_index_put_out(input, indices, values, $accumulate$, out);
+  EXPECT_TENSOR_EQ(out, expected);"""
+*/
+
+void test_dynamic_shape(
+    const std::vector<int32_t>& out_shape,
+    enum torch::executor::TensorShapeDynamism dynamism) {
+  /* %python
+  %rewrite(index_put_template) */
+
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_indices;
+
+  Tensor input = tf.make(
+      {2, 3, 4},
+      {0.49625658988952637,  0.7682217955589294,  0.08847743272781372,
+       0.13203048706054688,  0.30742281675338745, 0.6340786814689636,
+       0.4900934100151062,   0.8964447379112244,  0.455627977848053,
+       0.6323062777519226,   0.3488934636116028,  0.40171730518341064,
+       0.022325754165649414, 0.16885894536972046, 0.2938884496688843,
+       0.518521785736084,    0.6976675987243652,  0.800011396408081,
+       0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
+       0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
+  optional<Tensor> indices[] = {
+      optional<Tensor>(tf_indices.make({1}, {1})),
+      optional<Tensor>(tf_indices.make({1}, {0})),
+      optional<Tensor>(tf_indices.make({2}, {1, 2}))};
+  Tensor values = tf.make({2}, {0.41940832138061523, 0.5529070496559143});
+  Tensor expected = tf.make(
+      {2, 3, 4},
+      {0.49625658988952637,  0.7682217955589294,  0.08847743272781372,
+       0.13203048706054688,  0.30742281675338745, 0.6340786814689636,
+       0.4900934100151062,   0.8964447379112244,  0.455627977848053,
+       0.6323062777519226,   0.3488934636116028,  0.40171730518341064,
+       0.022325754165649414, 0.41940832138061523, 0.5529070496559143,
+       0.518521785736084,    0.6976675987243652,  0.800011396408081,
+       0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
+       0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
+  Tensor out = tf.zeros(out_shape, dynamism);
+
+  op_index_put_out(input, indices, values, false, out);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpIndexPutOutTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(
       {2, 3, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpIndexPutOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpIndexPutOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -1004,7 +989,7 @@ TEST_F(OpIndexPutOutTest, DynamicShapeUpperBoundLargerThanExpected) {
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpIndexPutOutTest, DynamicShapeUnbound) {
+TEST(OpIndexPutOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

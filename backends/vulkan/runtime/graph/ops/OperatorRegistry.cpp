@@ -8,27 +8,47 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
+
 namespace at {
 namespace native {
 namespace vulkan {
 
-bool OperatorRegistry::has_op(const std::string& name) {
-  return table_.count(name) > 0;
+bool hasOpsFn(const std::string& name) {
+  return OperatorRegistry::getInstance().hasOpsFn(name);
 }
 
-OperatorRegistry::OpFunction& OperatorRegistry::get_op_fn(
-    const std::string& name) {
-  return table_.find(name)->second;
+OpFunction& getOpsFn(const std::string& name) {
+  return OperatorRegistry::getInstance().getOpsFn(name);
 }
 
-void OperatorRegistry::register_op(const std::string& name, OpFunction& fn) {
-  table_.insert(std::make_pair(name, fn));
+OperatorRegistry& OperatorRegistry::getInstance() {
+  static OperatorRegistry instance;
+  return instance;
 }
 
-OperatorRegistry& operator_registry() {
-  static OperatorRegistry registry;
-  return registry;
+bool OperatorRegistry::hasOpsFn(const std::string& name) {
+  return OperatorRegistry::kTable.count(name) > 0;
 }
+
+OpFunction& OperatorRegistry::getOpsFn(const std::string& name) {
+  return OperatorRegistry::kTable.find(name)->second;
+}
+
+// @lint-ignore-every CLANGTIDY modernize-avoid-bind
+// clang-format off
+#define OPERATOR_ENTRY(name, function) \
+  { #name, std::bind(&at::native::vulkan::function, std::placeholders::_1, std::placeholders::_2) }
+// clang-format on
+
+const OperatorRegistry::OpTable OperatorRegistry::kTable = {
+    OPERATOR_ENTRY(aten.add.Tensor, add),
+    OPERATOR_ENTRY(aten.sub.Tensor, sub),
+    OPERATOR_ENTRY(aten.mul.Tensor, mul),
+    OPERATOR_ENTRY(aten.div.Tensor, div),
+    OPERATOR_ENTRY(aten.div.Tensor_mode, floor_div),
+    OPERATOR_ENTRY(aten.pow.Tensor_Tensor, pow),
+};
 
 } // namespace vulkan
 } // namespace native

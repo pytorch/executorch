@@ -260,14 +260,14 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         torch::executor::Module::MlockConfig::NoMlock);
   }
 
-  facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> forward(
+  facebook::jni::local_ref<JEValue> forward(
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
           jinputs) {
     return execute_method("forward", jinputs);
   }
 
-  facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute(
+  facebook::jni::local_ref<JEValue> execute(
       facebook::jni::alias_ref<jstring> methodName,
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
@@ -275,7 +275,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
     return execute_method(methodName->toStdString(), jinputs);
   }
 
-  facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> execute_method(
+  facebook::jni::local_ref<JEValue> execute_method(
       std::string method,
       facebook::jni::alias_ref<
           facebook::jni::JArrayClass<JEValue::javaobject>::javaobject>
@@ -327,15 +327,7 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
         static_cast<error_code_t>(result.error()));
     ET_LOG(Info, "Model executed successfully.");
 
-    facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
-        facebook::jni::JArrayClass<JEValue>::newArray(result.get().size());
-
-    for (int i = 0; i < result.get().size(); i++) {
-      auto jevalue = JEValue::newJEValueFromEValue(result.get()[i]);
-      jresult->setElement(i, *jevalue);
-    }
-
-    return jresult;
+    return JEValue::newJEValueFromEValue(result.get()[0]);
   }
 
   static void registerNatives() {

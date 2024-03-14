@@ -36,7 +36,7 @@ def define_common_targets():
         name = "size_test_all_ops",
         srcs = SIZE_TEST_SOURCES,
         deps = SIZE_TEST_DEPS + [
-            "//executorch/kernels/portable:generated_lib",
+            "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/runtime/executor/test:test_backend_compiler_lib",
         ],
         define_static_target = True,
@@ -57,7 +57,7 @@ def define_common_targets():
         srcs = ["multi_runner.cpp"],
         deps = [
             "//executorch/runtime/core:core",
-            "//executorch/kernels/portable:generated_lib",
+            "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/runtime/executor:program",
             "//executorch/runtime/executor/test:managed_memory_manager",
             "//executorch/extension/data_loader:buffer_data_loader",
@@ -75,7 +75,7 @@ def define_common_targets():
         name = "relocatable_runner",
         srcs = ["relocatable_runner.cpp"],
         deps = [
-            "//executorch/kernels/portable:generated_lib",
+            "//executorch/kernels/portable:generated_lib_all_ops",
             "//executorch/runtime/executor:program",
             "//executorch/configurations:executor_cpu_optimized",
             "//executorch/extension/data_loader:buffer_data_loader",

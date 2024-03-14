@@ -148,10 +148,10 @@ inline void logf(
  */
 #define ET_LOG(_level, _format, ...)                                          \
   ({                                                                          \
-    const auto _log_level = torch::executor::LogLevel::_level;                \
+    et_timestamp_t _timestamp = torch::executor::internal::getLogTimestamp(); \
+    auto _log_level = torch::executor::LogLevel::_level;                      \
     if (static_cast<uint32_t>(_log_level) >=                                  \
         static_cast<uint32_t>(torch::executor::LogLevel::ET_MIN_LOG_LEVEL)) { \
-      const auto _timestamp = torch::executor::internal::getLogTimestamp();   \
       torch::executor::internal::logf(                                        \
           _log_level,                                                         \
           _timestamp,                                                         \

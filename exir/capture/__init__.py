@@ -10,6 +10,7 @@ from executorch.exir.capture._capture import (
     _capture_legacy_do_not_use,
     CallSpec,
     capture,
+    capture_multiple,
 )
 
 from executorch.exir.capture._config import (
@@ -22,6 +23,7 @@ __all__ = [
     "CallSpec",
     "capture",
     "_capture_legacy_do_not_use",
+    "capture_multiple",
     "CaptureConfig",
     "EdgeCompileConfig",
     "ExecutorchBackendConfig",

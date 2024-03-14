@@ -74,4 +74,4 @@ if __name__ == "__main__":
     executorch_program = delegated_program.to_executorch(
         config=ExecutorchBackendConfig(extract_constant_segment=False)
     )
-    save_pte_program(executorch_program, args.model_name)
+    save_pte_program(executorch_program.buffer, args.model_name)

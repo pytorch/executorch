@@ -23,21 +23,12 @@ namespace vulkan {
  */
 enum class TypeTag : uint32_t {
   NONE,
-  // Scalar types
-  INT,
-  DOUBLE,
-  BOOL,
-  // Tensor and tensor adjacent types
   TENSOR,
   STAGING,
   TENSORREF,
-  // Scalar lists
-  INTLIST,
-  DOUBLELIST,
-  BOOLLIST,
-  // Special Type
-  VALUELIST,
-  STRING,
+  INT,
+  DOUBLE,
+  BOOL,
 };
 
 std::ostream& operator<<(std::ostream& out, const TypeTag& tag);

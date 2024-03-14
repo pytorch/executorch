@@ -20,19 +20,18 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpwiseBitwiseAndTest : public OperatorTest {
- protected:
-  Tensor& op_bitwise_and_scalar_out(
-      const Tensor& self,
-      const Scalar& other,
-      Tensor& out) {
-    return torch::executor::aten::bitwise_and_outf(context_, self, other, out);
-  }
+Tensor& op_bitwise_and_scalar_out(
+    const Tensor& self,
+    const Scalar& other,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::bitwise_and_outf(context, self, other, out);
+}
 
-  Tensor& op_bitwise_and_tensor_out(
-      const Tensor& self,
-      const Tensor& other,
-      Tensor& out) {
-    return torch::executor::aten::bitwise_and_outf(context_, self, other, out);
-  }
-};
+Tensor& op_bitwise_and_tensor_out(
+    const Tensor& self,
+    const Tensor& other,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::bitwise_and_outf(context, self, other, out);
+}

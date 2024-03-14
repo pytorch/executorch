@@ -25,7 +25,7 @@ def define_common_targets():
                 "//executorch/runtime/executor:program",
                 "//executorch/extension/evalue_util:print_evalue",
                 "//executorch/extension/data_loader:file_data_loader",
-                "//executorch/kernels/portable:generated_lib",
+                "//executorch/kernels/portable:generated_lib_all_ops",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/sdk/etdump:etdump_flatcc",
                 "//executorch/extension/data_loader:buffer_data_loader",

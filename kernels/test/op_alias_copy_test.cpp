@@ -17,11 +17,9 @@
 
 using namespace ::testing;
 
-class OpAliasCopyTest : public OperatorTest {
- protected:
-  exec_aten::Tensor& op_alias_copy_out(
-      const exec_aten::Tensor& self,
-      exec_aten::Tensor& out) {
-    return torch::executor::aten::alias_copy_outf(context_, self, out);
-  }
-};
+exec_aten::Tensor& op_alias_copy_out(
+    const exec_aten::Tensor& self,
+    exec_aten::Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::alias_copy_outf(context, self, out);
+}

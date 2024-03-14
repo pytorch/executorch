@@ -251,7 +251,7 @@ std::ostream& operator<<(std::ostream& os, const Tensor& t) {
     break;
 
   switch (t.scalar_type()) {
-    ET_FORALL_REAL_TYPES_AND2(Half, Bool, PRINT_CASE)
+    ET_FORALL_REAL_TYPES_AND(Bool, PRINT_CASE)
     default:
       ET_CHECK_MSG(
           false,

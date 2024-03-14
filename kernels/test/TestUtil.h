@@ -13,9 +13,6 @@
 
 #pragma once
 
-#include <executorch/runtime/core/error.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
-#include <executorch/runtime/platform/runtime.h>
 #include <executorch/test/utils/DeathTest.h>
 #include <gtest/gtest.h>
 
@@ -24,62 +21,16 @@
  * Ensure the kernel will fail when `_statement` is executed.
  * @param _statement Statement to execute.
  */
-#define ET_EXPECT_KERNEL_FAILURE(_context, _statement) \
-  EXPECT_ANY_THROW(_statement)
+#define ET_EXPECT_KERNEL_FAILURE(_statement) EXPECT_ANY_THROW(_statement)
 
-#define ET_EXPECT_KERNEL_FAILURE_WITH_MSG(_context, _statement, _matcher) \
+#define ET_EXPECT_KERNEL_FAILURE_WITH_MSG(_statement, _matcher) \
   EXPECT_ANY_THROW(_statement)
 
 #else
 
-#define ET_EXPECT_KERNEL_FAILURE(_context, _statement)              \
-  do {                                                              \
-    _statement;                                                     \
-    expect_failure();                                               \
-    if ((_context).failure_state() == torch::executor::Error::Ok) { \
-      ET_LOG(Error, "Expected kernel failure but found success.");  \
-      ADD_FAILURE();                                                \
-    }                                                               \
-  } while (false)
+#define ET_EXPECT_KERNEL_FAILURE(_statement) ET_EXPECT_DEATH(_statement, "")
 
-#define ET_EXPECT_KERNEL_FAILURE_WITH_MSG(_context, _statement, _msg) \
-  do {                                                                \
-    _statement;                                                       \
-    expect_failure();                                                 \
-    if ((_context).failure_state() == torch::executor::Error::Ok) {   \
-      ET_LOG(Error, "Expected kernel failure but found success.");    \
-      ADD_FAILURE();                                                  \
-    }                                                                 \
-  } while (false)
+#define ET_EXPECT_KERNEL_FAILURE_WITH_MSG(_statement, _matcher) \
+  ET_EXPECT_DEATH(_statement, _matcher)
 
 #endif // USE_ATEN_LIB
-
-/*
- * Common test fixture for kernel / operator-level tests. Provides
- * a runtime context object and verifies failure state post-execution.
- */
-class OperatorTest : public ::testing::Test {
- public:
-  OperatorTest() : expect_failure_(false) {}
-
-  void SetUp() override {
-    torch::executor::runtime_init();
-  }
-
-  void TearDown() override {
-    // Validate error state.
-    if (!expect_failure_) {
-      EXPECT_EQ(context_.failure_state(), torch::executor::Error::Ok);
-    } else {
-      EXPECT_NE(context_.failure_state(), torch::executor::Error::Ok);
-    }
-  }
-
-  void expect_failure() {
-    expect_failure_ = true;
-  }
-
- protected:
-  exec_aten::RuntimeContext context_;
-  bool expect_failure_;
-};

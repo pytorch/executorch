@@ -21,14 +21,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpTCopyTest : public OperatorTest {
- protected:
-  Tensor& op_t_copy_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::t_copy_outf(context_, self, out);
-  }
-};
+Tensor& op_t_copy_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::t_copy_outf(context, self, out);
+}
 
-TEST_F(OpTCopyTest, 1DTranspose) {
+TEST(OpTCopyKernelTest, 1DTranspose) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor t_in = tf.make({4}, {1, 2, 3, 4});
@@ -38,7 +36,7 @@ TEST_F(OpTCopyTest, 1DTranspose) {
   EXPECT_TENSOR_EQ(t_in, t_out);
 }
 
-TEST_F(OpTCopyTest, 1DTransposeMismatchShapeDie) {
+TEST(OpTCopyKernelTest, 1DTransposeMismatchShapeDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -47,10 +45,10 @@ TEST_F(OpTCopyTest, 1DTransposeMismatchShapeDie) {
   Tensor t_in = tf.make({4}, {1, 2, 3, 4});
   Tensor t_out = tf.make({2}, {0, 0});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_t_copy_out(t_in, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_t_copy_out(t_in, t_out));
 }
 
-TEST_F(OpTCopyTest, 2DTranspose) {
+TEST(OpTCopyKernelTest, 2DTranspose) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor t_in = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
@@ -61,7 +59,7 @@ TEST_F(OpTCopyTest, 2DTranspose) {
   EXPECT_TENSOR_EQ(t_out, t_expected);
 }
 
-TEST_F(OpTCopyTest, 2DTransposeMismatchShapeDie) {
+TEST(OpTCopyKernelTest, 2DTransposeMismatchShapeDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -70,16 +68,16 @@ TEST_F(OpTCopyTest, 2DTransposeMismatchShapeDie) {
   Tensor t_in = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
   Tensor t_out = tf.make({2, 2}, {0, 0, 0, 0});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_t_copy_out(t_in, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_t_copy_out(t_in, t_out));
 }
 
-TEST_F(OpTCopyTest, 3DTransposeDie) {
+TEST(OpTCopyKernelTest, 3DTransposeDie) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor t_in = tf.make({2, 3, 1}, {1, 2, 3, 4, 5, 6});
   Tensor t_out = tf.make({3, 2, 1}, {0, 0, 0, 0, 0, 0});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_t_copy_out(t_in, t_out));
+  ET_EXPECT_KERNEL_FAILURE(op_t_copy_out(t_in, t_out));
 }
 
 /* %python
@@ -91,7 +89,7 @@ op = "op_t_copy_out"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST_F(OpTCopyTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpTCopyKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -121,7 +119,7 @@ TEST_F(OpTCopyTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpTCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpTCopyKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -154,7 +152,7 @@ TEST_F(OpTCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpTCopyTest, DynamicShapeUnbound) {
+TEST(OpTCopyKernelTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

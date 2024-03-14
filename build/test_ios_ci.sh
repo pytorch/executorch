@@ -64,7 +64,7 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
 
 say "Building Frameworks"
 
-./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --coreml --mps --portable --xnnpack
+./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --coreml --mps --xnnpack
 mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"

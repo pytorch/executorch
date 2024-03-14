@@ -28,51 +28,47 @@ using Tensor = exec_aten::Tensor;
 
 namespace {
 
-// Verifies that the parameters are valid.
-bool check_bmm_out_args(const Tensor& self, const Tensor& mat2, Tensor& out) {
+// Asserts that the parameters are valid.
+void check_bmm_out_args(const Tensor& self, const Tensor& mat2, Tensor& out) {
   // Ensure dimensions is 3 for all input and out
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_MSG(
       self.dim() == mat2.dim(),
       "self.dim() %zd != mat2.dim() %zd",
       self.dim(),
       mat2.dim());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_MSG(
       self.dim() == out.dim(),
       "self.dim() %zd != out.dim() %zd",
       self.dim(),
       out.dim());
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      self.dim() == 3, "self.dim() %zd != 3", self.dim());
+  ET_CHECK_MSG(self.dim() == 3, "self.dim() %zd != 3", self.dim());
   // Ensure batch larger than or equals to 0
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      self.size(0) >= 0, "self.size(0) %zd < 0", self.size(0));
+  ET_CHECK_MSG(self.size(0) >= 0, "self.size(0) %zd < 0", self.size(0));
   // Ensure batches are the same
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_MSG(
       self.size(0) == mat2.size(0),
       "self.size(0) %zd != mat2.size(0) %zd",
       self.size(0),
       mat2.size(0));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_MSG(
       self.size(0) == out.size(0),
       "self.size(0) %zd != out.size(0) %zd",
       self.size(0),
       out.size(0));
   // Ensure the out size is compatible with input tensors
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_MSG(
       mat2.size(2) == out.size(2),
       "mat2.size(2) %zd != out.size(2) %zd",
       mat2.size(2),
       out.size(2));
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_CHECK_MSG(
       self.size(1) == out.size(1),
       "self.size(1) %zd != out.size(1) %zd",
       self.size(1),
       out.size(1));
 
   // Ensure that all tensors share a dtype
-  ET_LOG_AND_RETURN_IF_FALSE(tensors_have_same_dtype(self, mat2, out));
-
-  return true;
+  ET_CHECK_SAME_DTYPE3(self, mat2, out);
 }
 
 template <typename CTYPE>
@@ -110,7 +106,7 @@ void bmm_kernel(const Tensor& self, const Tensor& mat2, Tensor& out) {
   }
 }
 
-Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
+void resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
   exec_aten::SizesType expected_output_size[kTensorDimensionLimit];
 
   const size_t m_dim = self.dim() - 2;
@@ -120,18 +116,16 @@ Error resize_out_tensor(const Tensor& self, const Tensor& mat2, Tensor& out) {
     expected_output_size[i] = self.size(i);
   }
 
-  if (m_dim >= self.dim() || n_dim >= mat2.dim()) {
-    ET_LOG(Error, "Incompatible matrix multiply dimensions.");
-    return Error::InvalidArgument;
-  }
-
   expected_output_size[m_dim] = self.size(m_dim);
   expected_output_size[n_dim] = mat2.size(n_dim);
 
   ArrayRef<exec_aten::SizesType> output_size{
       expected_output_size, static_cast<size_t>(out.dim())};
 
-  return resize_tensor(out, output_size);
+  torch::executor::Error err = resize_tensor(out, output_size);
+  ET_CHECK_MSG(
+      err == torch::executor::Error::Ok,
+      "Failed to resize out Tensor in bmm_out");
 }
 } // namespace
 
@@ -142,14 +136,8 @@ Tensor& opt_bmm_out(
     const Tensor& mat2,
     Tensor& out) {
   (void)context;
-
-  ET_KERNEL_CHECK(
-      context,
-      resize_out_tensor(self, mat2, out) == Error::Ok,
-      InvalidArgument,
-      out);
-  ET_KERNEL_CHECK(
-      context, check_bmm_out_args(self, mat2, out), InvalidArgument, out);
+  resize_out_tensor(self, mat2, out);
+  check_bmm_out_args(self, mat2, out);
 
 #define BMM_TENSOR(ctype, dtype)        \
   case ScalarType::dtype:               \

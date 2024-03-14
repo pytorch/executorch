@@ -17,18 +17,18 @@ namespace executor {
 namespace native {
 namespace {
 
-bool calculate_output_size(
+void calculate_output_size(
     const exec_aten::ArrayRef<exec_aten::SizesType>& self_sizes,
     const exec_aten::ArrayRef<int64_t>& repeats,
     Tensor::SizesType* out_sizes_ptr) {
-  ET_LOG_AND_RETURN_IF_FALSE(repeats.size() < kTensorDimensionLimit);
-
-  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+  ET_KERNEL_CHECK_MSG(
+      ctx,
       repeats.size() >= self_sizes.size(),
+      InvalidArgument,
+      ,
       "Repeats vector size is %zu must be >= self_sizes %zu.",
       repeats.size(),
       self_sizes.size());
-
   int32_t i = 0;
   for (; i < (repeats.size() - self_sizes.size()); ++i) {
     out_sizes_ptr[i] = static_cast<exec_aten::SizesType>(repeats[i]);
@@ -39,8 +39,6 @@ bool calculate_output_size(
         static_cast<exec_aten::SizesType>(repeats[i]) * self_sizes[j];
     j++;
   }
-
-  return true;
 }
 
 } // namespace
@@ -55,12 +53,7 @@ Tensor& repeat_out(
     Tensor& out) {
   (void)ctx;
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
-
-  ET_KERNEL_CHECK(
-      ctx,
-      calculate_output_size(self.sizes(), repeats, expected_output_size),
-      InvalidArgument,
-      out);
+  calculate_output_size(self.sizes(), repeats, expected_output_size);
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
@@ -70,13 +63,7 @@ Tensor& repeat_out(
       out,
       "Failed to resize output tensor.");
 
-  ET_KERNEL_CHECK(
-      ctx,
-      repeat_tensor(self, repeats, out) == Error::Ok,
-      InvalidArgument,
-      out);
-
-  return out;
+  return repeat_tensor(self, repeats, out);
 }
 
 } // namespace native

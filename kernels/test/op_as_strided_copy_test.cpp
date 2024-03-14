@@ -25,180 +25,166 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpAsStridedCopyOutTest : public OperatorTest {
- protected:
-  Tensor& op_as_strided_copy_out(
-      const Tensor& self,
-      ArrayRef<int64_t> size,
-      ArrayRef<int64_t> stride,
-      optional<int64_t> storage_offset,
-      Tensor& out) {
-    return torch::executor::aten::as_strided_copy_outf(
-        context_, self, size, stride, storage_offset, out);
-  }
+Tensor& op_as_strided_copy_out(
+    const Tensor& self,
+    ArrayRef<int64_t> size,
+    ArrayRef<int64_t> stride,
+    optional<int64_t> storage_offset,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::as_strided_copy_outf(
+      context, self, size, stride, storage_offset, out);
+}
 
-  // Common testing for eq operator
-  template <ScalarType DTYPE>
-  void test_detach_copy_out() {
-    TensorFactory<DTYPE> tf;
-    const std::vector<int32_t> in_sizes = {3, 3};
-    const std::vector<int32_t> out_sizes = {2, 2, 2};
+// Common testing for eq operator
+template <ScalarType DTYPE>
+void test_detach_copy_out() {
+  TensorFactory<DTYPE> tf;
+  const std::vector<int32_t> in_sizes = {3, 3};
+  const std::vector<int32_t> out_sizes = {2, 2, 2};
 
-    Tensor in = tf.make(in_sizes, {1, 2, 3, 4, 5, 6, 7, 8, 9});
-    Tensor out = tf.zeros(out_sizes);
+  Tensor in = tf.make(in_sizes, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+  Tensor out = tf.zeros(out_sizes);
 
-    // Valid input should give the expected output
-    optional<int64_t> storage_offset;
-    int64_t sizes[3] = {2, 2, 2};
-    int64_t stride[3] = {1, 2, 3};
-    op_as_strided_copy_out(
-        /*self=*/in,
-        /*size=*/ArrayRef<int64_t>{sizes, 3},
-        /*stride=*/ArrayRef<int64_t>{stride, 3},
-        storage_offset,
-        out);
-    EXPECT_TENSOR_EQ(out, tf.make(out_sizes, {1, 4, 3, 6, 2, 5, 4, 7}));
+  // Valid input should give the expected output
+  optional<int64_t> storage_offset;
+  int64_t sizes[3] = {2, 2, 2};
+  int64_t stride[3] = {1, 2, 3};
+  op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out);
+  EXPECT_TENSOR_EQ(out, tf.make(out_sizes, {1, 4, 3, 6, 2, 5, 4, 7}));
 
-    // With storage offset
-    op_as_strided_copy_out(
-        /*self=*/in,
-        /*size=*/ArrayRef<int64_t>{sizes, 3},
-        /*stride=*/ArrayRef<int64_t>{stride, 3},
-        /*storage_offset=*/2,
-        out);
-    EXPECT_TENSOR_EQ(out, tf.make(out_sizes, {3, 6, 5, 8, 4, 7, 6, 9}));
-  }
+  // With storage offset
+  op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      /*storage_offset=*/2,
+      out);
+  EXPECT_TENSOR_EQ(out, tf.make(out_sizes, {3, 6, 5, 8, 4, 7, 6, 9}));
+}
 
-  template <>
-  void test_detach_copy_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-    const std::vector<int32_t> in_sizes = {3, 3};
-    const std::vector<int32_t> out_sizes = {2, 2, 2};
-    Tensor in = tf.make(
-        in_sizes, {false, true, false, true, false, true, false, true, false});
-    Tensor out = tf.zeros(out_sizes);
+template <>
+void test_detach_copy_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+  const std::vector<int32_t> in_sizes = {3, 3};
+  const std::vector<int32_t> out_sizes = {2, 2, 2};
+  Tensor in = tf.make(
+      in_sizes, {false, true, false, true, false, true, false, true, false});
+  Tensor out = tf.zeros(out_sizes);
 
-    // Valid input should give the expected output
-    optional<int64_t> storage_offset = 2;
-    int64_t sizes[3] = {2, 2, 2};
-    int64_t stride[3] = {1, 2, 3};
-    op_as_strided_copy_out(
-        /*self=*/in,
-        /*size=*/ArrayRef<int64_t>{sizes, 3},
-        /*stride=*/ArrayRef<int64_t>{stride, 3},
-        storage_offset,
-        out);
-    EXPECT_TENSOR_EQ(
-        out,
-        tf.make(
-            out_sizes, {false, true, false, true, true, false, true, false}));
-  }
+  // Valid input should give the expected output
+  optional<int64_t> storage_offset = 2;
+  int64_t sizes[3] = {2, 2, 2};
+  int64_t stride[3] = {1, 2, 3};
+  op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out);
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(out_sizes, {false, true, false, true, true, false, true, false}));
+}
 
-  template <>
-  void test_detach_copy_out<ScalarType::Float>() {
-    TensorFactory<ScalarType::Float> tf;
-    const std::vector<int32_t> in_sizes = {3, 3};
-    const std::vector<int32_t> out_sizes = {2, 2, 2};
+template <>
+void test_detach_copy_out<ScalarType::Float>() {
+  TensorFactory<ScalarType::Float> tf;
+  const std::vector<int32_t> in_sizes = {3, 3};
+  const std::vector<int32_t> out_sizes = {2, 2, 2};
 
-    Tensor in = tf.make(
-        in_sizes,
-        {3.14, 2.33, 42, INFINITY, -INFINITY, NAN, -3.14, -2.33, -42});
-    Tensor out = tf.zeros(out_sizes);
+  Tensor in = tf.make(
+      in_sizes, {3.14, 2.33, 42, INFINITY, -INFINITY, NAN, -3.14, -2.33, -42});
+  Tensor out = tf.zeros(out_sizes);
 
-    // Valid input should give the expected output
-    optional<int64_t> storage_offset = 2;
-    int64_t sizes[3] = {2, 2, 2};
-    int64_t stride[3] = {1, 2, 3};
-    op_as_strided_copy_out(
-        /*self=*/in,
-        /*size=*/ArrayRef<int64_t>{sizes, 3},
-        /*stride=*/ArrayRef<int64_t>{stride, 3},
-        storage_offset,
-        out);
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf.make(
-            out_sizes,
-            {42.0, NAN, -INFINITY, 2.33, INFINITY, -3.14, NAN, -42.0}));
-  }
+  // Valid input should give the expected output
+  optional<int64_t> storage_offset = 2;
+  int64_t sizes[3] = {2, 2, 2};
+  int64_t stride[3] = {1, 2, 3};
+  op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf.make(
+          out_sizes,
+          {42.0, NAN, -INFINITY, 2.33, INFINITY, -3.14, NAN, -42.0}));
+}
 
-  template <ScalarType DTYPE>
-  void test_as_strided_copy_out_invalid_parameters() {
-    TensorFactory<DTYPE> tf;
-
-    const std::vector<int32_t> in_sizes = {3, 3};
-    const std::vector<int32_t> out_sizes = {2, 2, 2};
-
-    Tensor in = tf.ones(in_sizes);
-    Tensor out = tf.zeros(out_sizes);
-    optional<int64_t> storage_offset;
-    int64_t sizes[3] = {2, 2, 2};
-    int64_t stride[3] = {1, 2, 3};
-
-    // Mismatch strides and shape should die
-    int64_t stride_short[2] = {1, 2};
-    ET_EXPECT_KERNEL_FAILURE(
-        context_,
-        op_as_strided_copy_out(
-            /*self=*/in,
-            /*size=*/ArrayRef<int64_t>{sizes, 3},
-            /*stride=*/ArrayRef<int64_t>{stride_short, 2},
-            storage_offset,
-            out));
-
-    // Negative strides should die
-    int64_t stride_negative[3] = {1, 2, -1};
-    ET_EXPECT_KERNEL_FAILURE(
-        context_,
-        op_as_strided_copy_out(
-            /*self=*/in,
-            /*size=*/ArrayRef<int64_t>{sizes, 3},
-            /*stride=*/ArrayRef<int64_t>{stride_negative, 3},
-            storage_offset,
-            out));
-
-    // Mismatch output tensor shape and size should die
-    int64_t size_invalid[3] = {2, 2, 1};
-    ET_EXPECT_KERNEL_FAILURE(
-        context_,
-        op_as_strided_copy_out(
-            /*self=*/in,
-            /*size=*/ArrayRef<int64_t>{size_invalid, 3},
-            /*stride=*/ArrayRef<int64_t>{stride, 3},
-            storage_offset,
-            out));
-
-    // Invalid storage offset should die
-    storage_offset = -1;
-    ET_EXPECT_KERNEL_FAILURE(
-        context_,
-        op_as_strided_copy_out(
-            /*self=*/in,
-            /*size=*/ArrayRef<int64_t>{sizes, 3},
-            /*stride=*/ArrayRef<int64_t>{stride, 3},
-            storage_offset,
-            out));
-
-    // Out of bound storage access of `in` should die
-    storage_offset = 3;
-    ET_EXPECT_KERNEL_FAILURE(
-        context_,
-        op_as_strided_copy_out(
-            /*self=*/in,
-            /*size=*/ArrayRef<int64_t>{sizes, 3},
-            /*stride=*/ArrayRef<int64_t>{stride, 3},
-            storage_offset,
-            out));
-  }
-};
-
-TEST_F(OpAsStridedCopyOutTest, AllScalarInputOutputSupport) {
+TEST(OpAsStridedCopyOutKernelTest, AllScalarInputOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_detach_copy_out<ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAsStridedCopyOutTest, InvalidParametersDies) {
+template <ScalarType DTYPE>
+void test_as_strided_copy_out_invalid_parameters() {
+  TensorFactory<DTYPE> tf;
+
+  const std::vector<int32_t> in_sizes = {3, 3};
+  const std::vector<int32_t> out_sizes = {2, 2, 2};
+
+  Tensor in = tf.ones(in_sizes);
+  Tensor out = tf.zeros(out_sizes);
+  optional<int64_t> storage_offset;
+  int64_t sizes[3] = {2, 2, 2};
+  int64_t stride[3] = {1, 2, 3};
+
+  // Mismatch strides and shape should die
+  int64_t stride_short[2] = {1, 2};
+  ET_EXPECT_KERNEL_FAILURE(op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride_short, 2},
+      storage_offset,
+      out));
+
+  // Negative strides should die
+  int64_t stride_negative[3] = {1, 2, -1};
+  ET_EXPECT_KERNEL_FAILURE(op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride_negative, 3},
+      storage_offset,
+      out));
+
+  // Mismatch output tensor shape and size should die
+  int64_t size_invalid[3] = {2, 2, 1};
+  ET_EXPECT_KERNEL_FAILURE(op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{size_invalid, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out));
+
+  // Invalid storage offset should die
+  storage_offset = -1;
+  ET_EXPECT_KERNEL_FAILURE(op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out));
+
+  // Out of bound storage access of `in` should die
+  storage_offset = 3;
+  ET_EXPECT_KERNEL_FAILURE(op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out));
+}
+
+TEST(OpAsStridedCopyOutKernelTest, InvalidParametersDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle invalid parameter";
   }
@@ -208,7 +194,7 @@ TEST_F(OpAsStridedCopyOutTest, InvalidParametersDies) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAsStridedCopyOutTest, MismatchedInputDtypesDies) {
+TEST(OpAsStridedCopyOutKernelTest, MismatchedInputDtypesDies) {
   TensorFactory<ScalarType::Byte> tf_byte;
   TensorFactory<ScalarType::Char> tf_char;
   const std::vector<int32_t> in_sizes = {3, 3};
@@ -220,14 +206,12 @@ TEST_F(OpAsStridedCopyOutTest, MismatchedInputDtypesDies) {
   int64_t sizes[3] = {2, 2, 2};
   int64_t stride[3] = {1, 2, 3};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_as_strided_copy_out(
-          /*self=*/in,
-          /*size=*/ArrayRef<int64_t>{sizes, 3},
-          /*stride=*/ArrayRef<int64_t>{stride, 3},
-          storage_offset,
-          out));
+  ET_EXPECT_KERNEL_FAILURE(op_as_strided_copy_out(
+      /*self=*/in,
+      /*size=*/ArrayRef<int64_t>{sizes, 3},
+      /*stride=*/ArrayRef<int64_t>{stride, 3},
+      storage_offset,
+      out));
 }
 
 /* %python
@@ -245,7 +229,7 @@ opt_extra_params = "size, stride, storage_offset,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST_F(OpAsStridedCopyOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpAsStridedCopyOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{2, 2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -286,7 +270,7 @@ TEST_F(OpAsStridedCopyOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpAsStridedCopyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpAsStridedCopyOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   /* %python
   out_args = "{5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -327,7 +311,7 @@ TEST_F(OpAsStridedCopyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpAsStridedCopyOutTest, DynamicShapeUnbound) {
+TEST(OpAsStridedCopyOutKernelTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }

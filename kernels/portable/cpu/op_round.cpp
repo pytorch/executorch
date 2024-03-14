@@ -43,7 +43,6 @@ Tensor& round_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_KERNEL_CHECK(
       ctx, tensors_have_same_shape_and_dtype(in, out), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
 
   auto in_scalar_type = in.scalar_type();
 

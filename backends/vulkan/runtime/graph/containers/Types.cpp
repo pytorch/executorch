@@ -12,25 +12,20 @@ namespace at {
 namespace native {
 namespace vulkan {
 
-#define PRINT_CASE(name) \
-  case TypeTag::name:    \
-    out << #name;        \
-    break;
-
 std::ostream& operator<<(std::ostream& out, const TypeTag& tag) {
   switch (tag) {
-    PRINT_CASE(NONE)
-    PRINT_CASE(INT)
-    PRINT_CASE(DOUBLE)
-    PRINT_CASE(BOOL)
-    PRINT_CASE(TENSOR)
-    PRINT_CASE(STAGING)
-    PRINT_CASE(TENSORREF)
-    PRINT_CASE(INTLIST)
-    PRINT_CASE(DOUBLELIST)
-    PRINT_CASE(BOOLLIST)
-    PRINT_CASE(VALUELIST)
-    PRINT_CASE(STRING)
+    case TypeTag::NONE:
+      out << "NONE";
+      break;
+    case TypeTag::TENSOR:
+      out << "TENSOR";
+      break;
+    case TypeTag::STAGING:
+      out << "STAGING";
+      break;
+    default:
+      out << "UNKNOWN";
+      break;
   }
   return out;
 }

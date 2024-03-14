@@ -20,14 +20,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpRsqrtTest : public OperatorTest {
- protected:
-  Tensor& op_rsqrt_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::rsqrt_outf(context_, self, out);
-  }
-};
+Tensor& op_rsqrt_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::rsqrt_outf(context, self, out);
+}
 
-TEST_F(OpRsqrtTest, SanityCheck) {
+TEST(OpRsqrtTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
@@ -42,7 +40,7 @@ TEST_F(OpRsqrtTest, SanityCheck) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST_F(OpRsqrtTest, HandleBoolInput) {
+TEST(OpRsqrtTest, HandleBoolInput) {
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -55,7 +53,7 @@ TEST_F(OpRsqrtTest, HandleBoolInput) {
   EXPECT_TENSOR_CLOSE(op_rsqrt_out(a, out), res);
 }
 
-TEST_F(OpRsqrtTest, HandleHalfInput) {
+TEST(OpRsqrtTest, HandleHalfInput) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }

@@ -24,78 +24,37 @@ using exec_aten::Tensor;
 using exec_aten::TensorList;
 using torch::executor::testing::TensorFactory;
 
-class OpStackOutTest : public OperatorTest {
- protected:
-  Tensor& op_stack_out(TensorList tensors, int64_t dim, Tensor& out) {
-    return torch::executor::aten::stack_outf(context_, tensors, dim, out);
-  }
+namespace {
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
-  void test_dtype() {
-    TensorFactory<DTYPE> tf;
+Tensor& op_stack_out(TensorList tensors, int64_t dim, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::stack_outf(context, tensors, dim, out);
+}
 
-    // Will be stackd along out.dim(1). Use different input values so we can see
-    // where each output value came from.
-    Tensor x = tf.ones({3, 4});
-    Tensor y = tf.zeros({3, 4});
-    std::vector<Tensor> inputs = {x, y};
+// Running stacking experiments along given dim.
+void run_stack_tests(
+    const std::vector<Tensor>& inputs,
+    int64_t dim,
+    const Tensor& expected) {
+  ArrayRef<Tensor> inputs_array(inputs.data(), inputs.size());
 
-    Tensor out = tf.ones({3, 2, 4});
-    op_stack_out(
-        ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+  TensorFactory<ScalarType::Double> tf;
+  const std::vector<int32_t> out_size(
+      expected.sizes().begin(), expected.sizes().end());
+  Tensor out = tf.zeros(out_size);
 
-    // The two tensors x and y  are stacked along the 1st dimension with the
-    // order [x, y], so the x and y should be equal to expected[:, 0, :] and
-    // expected[:, 1, :] e.g. expected[i, 0, j] = x[i, j] and expected[i, 1, j]
-    // = y[i, j] for any i in [-x.size(0), x.size(0)-1] and j in [-x.size(1),
-    // x.size(1)-1]
-    // clang-format off
-    Tensor expected = tf.make(
-        {3, 2, 4},
-        {
-          // all ones below are from x,
-          // and all zeros are from y.
-          // [0, :, :]
-          1, 1, 1, 1, // [0, 0, :]
-          0, 0, 0, 0, // [0, 1, :]
+  // Should always return the provided out Tensor.
+  Tensor ret = op_stack_out(inputs_array, dim, out);
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, expected);
 
-          // [1, :, :]
-          1, 1, 1, 1, // [1, 0, :]
-          0, 0, 0, 0, // [1, 1, :]
+  ret = op_stack_out(inputs_array, /*dim=*/dim - out.dim(), out);
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(out, expected);
+}
+} // namespace
 
-          // [2, :, :]
-          1, 1, 1, 1, // [2, 0, :]
-          0, 0, 0, 0, // [2, 1, :]
-        });
-    // clang-format on
-
-    EXPECT_TENSOR_EQ(out, expected);
-  }
-
-  // Running stacking experiments along given dim.
-  void run_stack_tests(
-      const std::vector<Tensor>& inputs,
-      int64_t dim,
-      const Tensor& expected) {
-    ArrayRef<Tensor> inputs_array(inputs.data(), inputs.size());
-
-    TensorFactory<ScalarType::Double> tf;
-    const std::vector<int32_t> out_size(
-        expected.sizes().begin(), expected.sizes().end());
-    Tensor out = tf.zeros(out_size);
-
-    // Should always return the provided out Tensor.
-    Tensor ret = op_stack_out(inputs_array, dim, out);
-    EXPECT_TENSOR_EQ(out, ret);
-    EXPECT_TENSOR_EQ(out, expected);
-
-    ret = op_stack_out(inputs_array, /*dim=*/dim - out.dim(), out);
-    EXPECT_TENSOR_EQ(out, ret);
-    EXPECT_TENSOR_EQ(out, expected);
-  }
-};
-
-TEST_F(OpStackOutTest, InsertFront) {
+TEST(OpStackOutTest, InsertFront) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -149,7 +108,7 @@ TEST_F(OpStackOutTest, InsertFront) {
   run_stack_tests(inputs, /*dim=*/0, expected);
 }
 
-TEST_F(OpStackOutTest, InsertMiddle) {
+TEST(OpStackOutTest, InsertMiddle) {
   TensorFactory<ScalarType::Double> tf;
 
   // Two tensors with same size. Stack them on multiple dimensions
@@ -206,7 +165,7 @@ TEST_F(OpStackOutTest, InsertMiddle) {
   run_stack_tests(inputs, /*dim=*/1, expected);
 }
 
-TEST_F(OpStackOutTest, InsertEnd) {
+TEST(OpStackOutTest, InsertEnd) {
   TensorFactory<ScalarType::Double> tf;
 
   // Two tensors with same size. Stack them on multiple dimensions
@@ -274,7 +233,47 @@ TEST_F(OpStackOutTest, InsertEnd) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-TEST_F(OpStackOutTest, AllDtypesSupported) {
+template <class CTYPE, exec_aten::ScalarType DTYPE>
+void test_dtype() {
+  TensorFactory<DTYPE> tf;
+
+  // Will be stackd along out.dim(1). Use different input values so we can see
+  // where each output value came from.
+  Tensor x = tf.ones({3, 4});
+  Tensor y = tf.zeros({3, 4});
+  std::vector<Tensor> inputs = {x, y};
+
+  Tensor out = tf.ones({3, 2, 4});
+  op_stack_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+
+  // The two tensors x and y  are stacked along the 1st dimension with the order
+  // [x, y], so the x and y should be equal to expected[:, 0, :] and expected[:,
+  // 1, :] e.g. expected[i, 0, j] = x[i, j] and expected[i, 1, j] = y[i, j] for
+  // any i in [-x.size(0), x.size(0)-1] and j in [-x.size(1), x.size(1)-1]
+  // clang-format off
+  Tensor expected = tf.make(
+      {3, 2, 4},
+      {
+        // all ones below are from x,
+        // and all zeros are from y.
+        // [0, :, :]
+        1, 1, 1, 1, // [0, 0, :]
+        0, 0, 0, 0, // [0, 1, :]
+
+        // [1, :, :]
+        1, 1, 1, 1, // [1, 0, :]
+        0, 0, 0, 0, // [1, 1, :]
+
+        // [2, :, :]
+        1, 1, 1, 1, // [2, 0, :]
+        0, 0, 0, 0, // [2, 1, :]
+      });
+  // clang-format on
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpStackOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -283,7 +282,7 @@ TEST_F(OpStackOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST_F(OpStackOutTest, NoInputTensorsWithEmptyOutTensorFails) {
+TEST(OpStackOutTest, NoInputTensorsWithEmptyOutTensorFails) {
   TensorFactory<ScalarType::Int> tf;
 
   // Make an empty out tensor and demonstrate that it's empty.
@@ -291,11 +290,10 @@ TEST_F(OpStackOutTest, NoInputTensorsWithEmptyOutTensorFails) {
   EXPECT_EQ(out.numel(), 0);
 
   // Pass an empty list of input tensors.
-  ET_EXPECT_KERNEL_FAILURE(
-      context_, op_stack_out(ArrayRef<Tensor>(), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(ArrayRef<Tensor>(), /*dim=*/0, out));
 }
 
-TEST_F(OpStackOutTest, AllEmptyInputTensors) {
+TEST(OpStackOutTest, AllEmptyInputTensors) {
   TensorFactory<ScalarType::Int> tf;
 
   // Using empty tensors as input.
@@ -316,7 +314,7 @@ TEST_F(OpStackOutTest, AllEmptyInputTensors) {
   // empty_out is still a empty array
 }
 
-TEST_F(OpStackOutTest, DimOutOfBoundDies) {
+TEST(OpStackOutTest, DimOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Stack a single tensor with size [1, 1]. The size of output would always be
@@ -329,11 +327,11 @@ TEST_F(OpStackOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (int64_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(context_, op_stack_out(inputs, dim, out));
+    ET_EXPECT_KERNEL_FAILURE(op_stack_out(inputs, dim, out));
   }
 }
 
-TEST_F(OpStackOutTest, MismatchedDtypesDies) {
+TEST(OpStackOutTest, MismatchedDtypesDies) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   Tensor out = tf_int.zeros({1, 2, 2});
@@ -341,13 +339,11 @@ TEST_F(OpStackOutTest, MismatchedDtypesDies) {
   // Size is compatible to the output, but a mismatched dtype.
   std::vector<Tensor> inputs = {tf_float.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_stack_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
-TEST_F(OpStackOutTest, OutMatchNumelWithExtraDimAtEndDies) {
+TEST(OpStackOutTest, OutMatchNumelWithExtraDimAtEndDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -358,13 +354,11 @@ TEST_F(OpStackOutTest, OutMatchNumelWithExtraDimAtEndDies) {
   // should always one greater than input.dim())
   std::vector<Tensor> inputs = {tf.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_stack_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
-TEST_F(OpStackOutTest, OutMatchNumelLackDimAtFrontDies) {
+TEST(OpStackOutTest, OutMatchNumelLackDimAtFrontDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -375,13 +369,11 @@ TEST_F(OpStackOutTest, OutMatchNumelLackDimAtFrontDies) {
   // should always one greater than input.dim())
   std::vector<Tensor> inputs = {tf.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_stack_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
-TEST_F(OpStackOutTest, OutRegularMismatchDimDies) {
+TEST(OpStackOutTest, OutRegularMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -395,10 +387,8 @@ TEST_F(OpStackOutTest, OutRegularMismatchDimDies) {
       tf.ones({2, 3}),
   };
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_stack_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_stack_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
 /* %python
@@ -414,7 +404,7 @@ opt_extra_params = "0,"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST_F(OpStackOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpStackOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{4, 2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op_tensor_list_in) */
@@ -436,7 +426,7 @@ TEST_F(OpStackOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpStackOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpStackOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -461,7 +451,7 @@ TEST_F(OpStackOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpStackOutTest, DynamicShapeUnbound) {
+TEST(OpStackOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

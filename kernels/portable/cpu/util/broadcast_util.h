@@ -97,7 +97,7 @@ __ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
  * @param[out] out_dim The dimension of the broadcasted target
  * tensor
  */
-__ET_NODISCARD Error get_broadcast_target_size(
+[[nodiscard]] Error get_broadcast_target_size(
     const exec_aten::ArrayRef<Tensor::SizesType> a_size,
     const exec_aten::ArrayRef<Tensor::SizesType> b_size,
     Tensor::SizesType* out_sizes,
@@ -115,7 +115,7 @@ __ET_NODISCARD Error get_broadcast_target_size(
  * @param[out] out_dim The dimension of the broadcasted target
  * tensor
  */
-__ET_NODISCARD Error get_broadcast_target_size(
+[[nodiscard]] Error get_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     Tensor::SizesType* out_sizes,
@@ -130,7 +130,7 @@ __ET_NODISCARD Error get_broadcast_target_size(
  * @param[in] b The second tensor going to be broadcasted.
  * @param[out] out The output tensor that will be resized.
  */
-__ET_NODISCARD inline Error
+[[nodiscard]] inline Error
 resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
   Tensor::SizesType expected_output_size[kTensorDimensionLimit];
   size_t expected_output_dim = 0;
@@ -156,7 +156,7 @@ resize_to_broadcast_target_size(const Tensor& a, const Tensor& b, Tensor& out) {
  * @param[in] c The third tensor going to be broadcasted.
  * @param[out] out The output tensor that will be resized.
  */
-__ET_NODISCARD inline Error resize_to_broadcast_target_size(
+[[nodiscard]] inline Error resize_to_broadcast_target_size(
     const Tensor& a,
     const Tensor& b,
     const Tensor& c,

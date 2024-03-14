@@ -98,7 +98,7 @@ endif()
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-O2 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -338,10 +338,6 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_APPLE)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)

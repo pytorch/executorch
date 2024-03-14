@@ -64,12 +64,9 @@ runtime.python_binary(
 runtime.python_library(
     name = "export_library",
     srcs = [
-        "GPTQ.py",
         "builder.py",
         "export_llama.py",
         "export_llama_lib.py",
-        "model.py",
-        "quantize.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
@@ -86,7 +83,6 @@ runtime.python_library(
         "//executorch/examples/models:models",
         "//executorch/examples/portable:utils",
         "//executorch/exir:lib",
-        "//executorch/sdk/etrecord:etrecord",
         "//executorch/util:memory_profiler",
         "//executorch/util:python_profiler",
         # one definition has to be included in the user of the libarary
@@ -94,6 +90,5 @@ runtime.python_library(
         # "//executorch/extension/pybindings:aten_lib",
         # "//executorch/extension/pybindings:portable_lib",
         # "//executorch/extension/pybindings:portable_lib_plus_custom",
-        "fbsource//third-party/pypi/sentencepiece:sentencepiece",
     ],
 )

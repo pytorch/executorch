@@ -21,102 +21,86 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpLogitOutTest : public OperatorTest {
- protected:
-  Tensor& op_logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
-    return torch::executor::aten::logit_outf(context_, self, eps, out);
-  }
+Tensor& op_logit_out(const Tensor& self, optional<double> eps, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::logit_outf(context, self, eps, out);
+}
 
-  // Common testing for logit operator
-  template <ScalarType DTYPE, ScalarType OUTPUT_DTYPE>
-  void test_integer_logit_out() {
-    TensorFactory<DTYPE> tf;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
+// Common testing for logit operator
+template <ScalarType DTYPE, ScalarType OUTPUT_DTYPE>
+void test_integer_logit_out() {
+  TensorFactory<DTYPE> tf;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
 
-    const std::vector<int32_t> sizes = {2, 2};
+  const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the logit operator.
-    Tensor out = tf_out.zeros(sizes);
+  // Destination for the logit operator.
+  Tensor out = tf_out.zeros(sizes);
 
-    op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out);
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(sizes, /*data=*/{INFINITY, INFINITY, INFINITY, INFINITY}));
-  }
+  op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0, out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make(sizes, /*data=*/{INFINITY, INFINITY, INFINITY, INFINITY}));
+}
 
-  template <>
-  void test_integer_logit_out<ScalarType::Float, ScalarType::Float>() {
-    TensorFactory<ScalarType::Float> tf;
-    TensorFactory<ScalarType::Float> tf_out;
+template <>
+void test_integer_logit_out<ScalarType::Float, ScalarType::Float>() {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Float> tf_out;
 
-    const std::vector<int32_t> sizes = {2, 2};
+  const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the logit operator.
-    Tensor out = tf_out.zeros(sizes);
+  // Destination for the logit operator.
+  Tensor out = tf_out.zeros(sizes);
 
-    // Check that it matches (or close to) the expected output.
-    op_logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(
-            sizes, /*data=*/{-2.197224, -1.386294, -0.405465, 1.3862943}));
-  }
+  // Check that it matches (or close to) the expected output.
+  op_logit_out(tf.make(sizes, /*data=*/{.1, .2, .4, .8}), 0, out);
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make(
+          sizes, /*data=*/{-2.197224, -1.386294, -0.405465, 1.3862943}));
+}
 
-  // Common testing for logit operator
-  template <ScalarType DTYPE, ScalarType OUTPUT_DTYPE>
-  void test_integer_logit_out_eps_set() {
-    TensorFactory<DTYPE> tf;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
+// Common testing for logit operator
+template <ScalarType DTYPE, ScalarType OUTPUT_DTYPE>
+void test_integer_logit_out_eps_set() {
+  TensorFactory<DTYPE> tf;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
 
-    const std::vector<int32_t> sizes = {2, 2};
+  const std::vector<int32_t> sizes = {2, 2};
 
-    // Destination for the logit operator.
-    Tensor out = tf_out.zeros(sizes);
+  // Destination for the logit operator.
+  Tensor out = tf_out.zeros(sizes);
 
-    op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0.1, out);
+  op_logit_out(tf.make(sizes, /*data=*/{1, 2, 4, 8}), 0.1, out);
 
-    // Check that it matches (or close to) the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(sizes, /*data=*/{2.197224, 2.197224, 2.197224, 2.197224}));
-  }
+  // Check that it matches (or close to) the expected output.
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make(sizes, /*data=*/{2.197224, 2.197224, 2.197224, 2.197224}));
+}
 
-  // Unhandled output dtypes.
-  template <ScalarType OUTPUT_DTYPE>
-  void test_logit_invalid_output_dtype_dies() {
-    TensorFactory<ScalarType::Float> tf;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 5};
-
-    Tensor in = tf.ones(sizes);
-    Tensor out = tf_out.zeros(sizes);
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_logit_out(in, 0, out));
-  }
-};
-
-TEST_F(OpLogitOutTest, AllRealInputFloatOutputSupport) {
+TEST(OpLogitOutKernelTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogitOutTest, AllRealInputDoubleOutputSupport) {
+TEST(OpLogitOutKernelTest, AllRealInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
-TEST_F(OpLogitOutTest, AllRealInputFloatOutputSupportEpsSet) {
+TEST(OpLogitOutKernelTest, AllRealInputFloatOutputSupportEpsSet) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out_eps_set<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogitOutTest, AllRealInputDoubleOutputSupportEpsSet) {
+TEST(OpLogitOutKernelTest, AllRealInputDoubleOutputSupportEpsSet) {
 #define TEST_ENTRY(ctype, dtype) \
   test_integer_logit_out_eps_set<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
@@ -124,7 +108,7 @@ TEST_F(OpLogitOutTest, AllRealInputDoubleOutputSupportEpsSet) {
 }
 
 // Mismatched shape tests.
-TEST_F(OpLogitOutTest, MismatchedShapesDies) {
+TEST(OpLogitOutKernelTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -134,17 +118,31 @@ TEST_F(OpLogitOutTest, MismatchedShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf_out.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_logit_out(a, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(a, 0, out));
 }
 
-TEST_F(OpLogitOutTest, AllNonFloatOutputDTypeDies) {
+// Unhandled output dtypes.
+template <ScalarType OUTPUT_DTYPE>
+void test_logit_invalid_output_dtype_dies() {
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 5};
+
+  Tensor in = tf.ones(sizes);
+  Tensor out = tf_out.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_logit_out(in, 0, out));
+}
+
+TEST(OpLogitOutKernelTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_logit_invalid_output_dtype_dies<ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogitOutTest, SimpleGeneratedCase) {
+TEST(OpLogitOutKernelTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -198,7 +196,7 @@ TEST_F(OpLogitOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogitOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpLogitOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -224,7 +222,7 @@ TEST_F(OpLogitOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogitOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpLogitOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -250,7 +248,7 @@ TEST_F(OpLogitOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogitOutTest, DynamicShapeUnbound) {
+TEST(OpLogitOutKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

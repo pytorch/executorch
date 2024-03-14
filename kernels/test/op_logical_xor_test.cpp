@@ -19,10 +19,8 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpLogicalXorTest : public OperatorTest {
- protected:
-  Tensor&
-  op_logical_xor_out(const Tensor& self, const Tensor& other, Tensor& out) {
-    return torch::executor::aten::logical_xor_outf(context_, self, other, out);
-  }
-};
+Tensor&
+op_logical_xor_out(const Tensor& self, const Tensor& other, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::logical_xor_outf(context, self, other, out);
+}

@@ -28,7 +28,6 @@ namespace {
 
 template <typename CTYPE>
 void embedding_kernel(
-    RuntimeContext& ctx,
     const Tensor& weight,
     const Tensor& indices,
     Tensor& out) {
@@ -39,20 +38,14 @@ void embedding_kernel(
   ssize_t weight_height = weight.size(0);
   for (int i = 0; i < indices.numel(); i++) {
     // Ensure index is larger than 0 and smaller than weight.size(0)
-    ET_KERNEL_CHECK_MSG(
-        ctx,
+    ET_CHECK_MSG(
         indices_ptr[i] < weight_height,
-        InvalidArgument,
-        ,
         "indices_ptr[%d] %ld >= weight.size(0) %zd",
         i,
         static_cast<long>(indices_ptr[i]),
         weight_height);
-    ET_KERNEL_CHECK_MSG(
-        ctx,
+    ET_CHECK_MSG(
         indices_ptr[i] >= 0,
-        InvalidArgument,
-        ,
         "indices_ptr[%d] %ld < 0",
         i,
         static_cast<long>(indices_ptr[i]));
@@ -108,7 +101,7 @@ Tensor& embedding_out(
 
   ET_SWITCH_TWO_TYPES(
       Long, Int, ix_type, ctx, "op_embedding.out", CTYPE, [&]() {
-        embedding_kernel<CTYPE>(ctx, weight, indices, out);
+        embedding_kernel<CTYPE>(weight, indices, out);
       });
 
   return out;

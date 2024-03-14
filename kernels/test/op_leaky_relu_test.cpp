@@ -20,18 +20,14 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpLeakyReluTest : public OperatorTest {
- protected:
-  Tensor& op_leaky_relu_out(
-      const Tensor& in,
-      const Scalar& negative_slope,
-      Tensor& out) {
-    return torch::executor::aten::leaky_relu_outf(
-        context_, in, negative_slope, out);
-  }
-};
+Tensor&
+op_leaky_relu_out(const Tensor& in, const Scalar& negative_slope, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::leaky_relu_outf(
+      context, in, negative_slope, out);
+}
 
-TEST_F(OpLeakyReluTest, SanityCheck) {
+TEST(OpLeakyReluTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
   Tensor in = tf.ones({2, 2});
   Tensor out = tf.zeros({2, 2});

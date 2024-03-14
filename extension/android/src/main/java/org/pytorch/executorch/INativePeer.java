@@ -14,8 +14,8 @@ interface INativePeer {
   void resetNative();
 
   /** Run a "forward" call with the given inputs */
-  EValue[] forward(EValue... inputs);
+  EValue forward(EValue... inputs);
 
   /** Run an arbitrary method on the module */
-  EValue[] execute(String methodName, EValue... inputs);
+  EValue execute(String methodName, EValue... inputs);
 }

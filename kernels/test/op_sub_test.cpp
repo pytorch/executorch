@@ -22,119 +22,115 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-class OpSubOutTest : public OperatorTest {
- protected:
-  Tensor& op_sub_out(
-      const Tensor& self,
-      const Tensor& other,
-      const Scalar& alpha,
-      Tensor& out) {
-    return torch::executor::aten::sub_outf(context_, self, other, alpha, out);
+Tensor& op_sub_out(
+    const Tensor& self,
+    const Tensor& other,
+    const Scalar& alpha,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::sub_outf(context, self, other, alpha, out);
+}
+
+Tensor& op_sub_scalar_out(
+    const Tensor& self,
+    const Scalar& other,
+    const Scalar& alpha,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::sub_outf(context, self, other, alpha, out);
+}
+
+template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
+void test_sub() {
+  TensorFactory<DTYPE_A> tf_a;
+  TensorFactory<DTYPE_B> tf_b;
+  TensorFactory<DTYPE_OUT> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Destination for the sum.
+  Tensor out = tf_out.zeros(sizes);
+
+  // sub two tensors.
+  op_sub_out(
+      tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
+      tf_b.ones(sizes),
+      /*alpha=*/1,
+      out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{0, 1, 3, 7}));
+}
+
+template <ScalarType DTYPE_A, ScalarType DTYPE_B>
+void test_sub_enumerate_out_types() {
+  test_sub<DTYPE_A, DTYPE_B, ScalarType::Half>();
+  test_sub<DTYPE_A, DTYPE_B, ScalarType::Float>();
+  test_sub<DTYPE_A, DTYPE_B, ScalarType::Double>();
+  // Integral out type is only allowed if both inputs are integral types
+  if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
+    test_sub<DTYPE_A, DTYPE_B, ScalarType::Int>();
+    test_sub<DTYPE_A, DTYPE_B, ScalarType::Long>();
   }
+}
 
-  template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
-  void test_sub() {
-    TensorFactory<DTYPE_A> tf_a;
-    TensorFactory<DTYPE_B> tf_b;
-    TensorFactory<DTYPE_OUT> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 2};
-
-    // Destination for the sum.
-    Tensor out = tf_out.zeros(sizes);
-
-    // sub two tensors.
-    op_sub_out(
-        tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
-        tf_b.ones(sizes),
-        /*alpha=*/1,
-        out);
-
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{0, 1, 3, 7}));
-  }
-
-  template <ScalarType DTYPE_A, ScalarType DTYPE_B>
-  void test_sub_enumerate_out_types() {
-    test_sub<DTYPE_A, DTYPE_B, ScalarType::Half>();
-    test_sub<DTYPE_A, DTYPE_B, ScalarType::Float>();
-    test_sub<DTYPE_A, DTYPE_B, ScalarType::Double>();
-    // Integral out type is only allowed if both inputs are integral types
-    if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
-      test_sub<DTYPE_A, DTYPE_B, ScalarType::Int>();
-      test_sub<DTYPE_A, DTYPE_B, ScalarType::Long>();
-    }
-  }
-
-  template <ScalarType DTYPE_A>
-  void test_sub_enumerate_b_types() {
+template <ScalarType DTYPE_A>
+void test_sub_enumerate_b_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_sub_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
-  }
+}
 
-  // Common testing for substraction between two floating point Tensors.
-  template <ScalarType DTYPE>
-  void test_floating_point_sub_out() {
-    TensorFactory<DTYPE> tf;
-
-    const std::vector<int32_t> sizes = {2, 2};
-
-    // Destination for the subtraction.
-    Tensor out = tf.zeros(sizes);
-
-    // Performs substraction on two tensors.
-    op_sub_out(
-        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
-        tf.ones(sizes),
-        /*alpha=*/1,
-        out);
-
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.1, 1.2, 3.4, 7.8}));
-  }
-
-  void test_sub_enumerate_a_types() {
+void test_sub_enumerate_a_types() {
 #define ENUMERATE_TEST_ENTRY(ctype, dtype) \
   test_sub_enumerate_b_types<ScalarType::dtype>();
 
-    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+  ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
 
 #undef ENUMERATE_TEST_ENTRY
-  }
-};
-
-class OpSubScalarOutTest : public OperatorTest {
- protected:
-  Tensor& op_sub_scalar_out(
-      const Tensor& self,
-      const Scalar& other,
-      const Scalar& alpha,
-      Tensor& out) {
-    return torch::executor::aten::sub_outf(context_, self, other, alpha, out);
-  }
-};
+}
 
 /**
  * Uses the function templates above to test all valid combinations of inputs
  * and output dtypes
  */
-TEST_F(OpSubOutTest, AllRealDtypesSupported) {
+TEST(OpSubOutKernelTest, AllRealDtypesSupported) {
   test_sub_enumerate_a_types();
 }
 
-TEST_F(OpSubOutTest, FloatTensors) {
+// Common testing for substraction between two floating point Tensors.
+template <ScalarType DTYPE>
+void test_floating_point_sub_out() {
+  TensorFactory<DTYPE> tf;
+
+  const std::vector<int32_t> sizes = {2, 2};
+
+  // Destination for the subtraction.
+  Tensor out = tf.zeros(sizes);
+
+  // Performs substraction on two tensors.
+  op_sub_out(
+      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
+      tf.ones(sizes),
+      /*alpha=*/1,
+      out);
+
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.1, 1.2, 3.4, 7.8}));
+}
+
+TEST(OpSubOutKernelTest, FloatTensors) {
   test_floating_point_sub_out<ScalarType::Float>();
 }
 
-TEST_F(OpSubOutTest, DoubleTensors) {
+TEST(OpSubOutKernelTest, DoubleTensors) {
   test_floating_point_sub_out<ScalarType::Double>();
 }
 
-TEST_F(OpSubOutTest, BroadcastSupported) {
+TEST(OpSubOutKernelTest, BroadcastSupported) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({2, 1, 2, 1}, {7, 8, 9, 10});
@@ -152,7 +148,7 @@ TEST_F(OpSubOutTest, BroadcastSupported) {
   EXPECT_TENSOR_EQ(out, ref);
 }
 
-TEST_F(OpSubOutTest, BroadcastSupported2) {
+TEST(OpSubOutKernelTest, BroadcastSupported2) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({3, 2, 1}, {2, 3, 4, 5, 6, 7});
@@ -168,7 +164,7 @@ TEST_F(OpSubOutTest, BroadcastSupported2) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-TEST_F(OpSubOutTest, BroadcastScalarSupported1) {
+TEST(OpSubOutKernelTest, BroadcastScalarSupported1) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({2, 1, 3}, {2, 3, 4, 5, 6, 7});
@@ -184,7 +180,7 @@ TEST_F(OpSubOutTest, BroadcastScalarSupported1) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
+TEST(OpSubOutKernelTest, BroadcastScalarSupported2) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({1, 1, 1}, {8});
@@ -204,7 +200,7 @@ TEST_F(OpSubOutTest, BroadcastScalarSupported2) {
 // Death Tests
 //
 
-TEST_F(OpSubOutTest, IntTensorFloatAlphaDies) {
+TEST(OpSubOutKernelTest, IntTensorFloatAlphaDies) {
   // op_sub_out() doesn't handle floating alpha for intergal inputs
   TensorFactory<ScalarType::Int> tf;
 
@@ -216,10 +212,10 @@ TEST_F(OpSubOutTest, IntTensorFloatAlphaDies) {
   // Subtraction operation on two integral tensor with floating alpha
   // should cause an assertion and kill the test process.
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_sub_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
+      op_sub_out(tf.ones(sizes), tf.ones(sizes), /*alpha=*/.7, out));
 }
 
-TEST_F(OpSubOutTest, BoolInputTensorsFail) {
+TEST(OpSubOutKernelTest, BoolInputTensorsFail) {
   TensorFactory<ScalarType::Bool> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -229,10 +225,10 @@ TEST_F(OpSubOutTest, BoolInputTensorsFail) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpSubOutTest, IntOutputWithFloatInputDies) {
+TEST(OpSubOutKernelTest, IntOutputWithFloatInputDies) {
   TensorFactory<ScalarType::Int> tfi;
   TensorFactory<ScalarType::Float> tff;
 
@@ -245,10 +241,10 @@ TEST_F(OpSubOutTest, IntOutputWithFloatInputDies) {
   // Destination for the sum.
   Tensor out = tfi.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpSubOutTest, BoolOutputWithIntegralInput) {
+TEST(OpSubOutKernelTest, BoolOutputWithIntegralInput) {
   // add_out() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;
   TensorFactory<ScalarType::Int> tfi;
@@ -262,10 +258,10 @@ TEST_F(OpSubOutTest, BoolOutputWithIntegralInput) {
   // Destination for the sum.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/1, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/1, out));
 }
 
-TEST_F(OpSubOutTest, MismatchedInputShapesDies) {
+TEST(OpSubOutKernelTest, MismatchedInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Subtrahend and minuend with different shapes.
@@ -277,10 +273,10 @@ TEST_F(OpSubOutTest, MismatchedInputShapesDies) {
 
   // Performing substraction on two mismatched tensors should cause an assertion
   // and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/0, out));
 }
 
-TEST_F(OpSubOutTest, MismatchedOutputShapesDies) {
+TEST(OpSubOutKernelTest, MismatchedOutputShapesDies) {
   if (SupportedFeatures::get()->output_resize) {
     GTEST_SKIP()
         << "The current kernel supports implicitly resizing output tensor";
@@ -299,10 +295,10 @@ TEST_F(OpSubOutTest, MismatchedOutputShapesDies) {
 
   // Performing substraction two tensors into a mismatched output should cause
   // an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(context_, op_sub_out(a, b, /*alpha=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_sub_out(a, b, /*alpha=*/0, out));
 }
 
-TEST_F(OpSubOutTest, BroadcastDimSizeIsOneAB) {
+TEST(OpSubOutKernelTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -328,7 +324,7 @@ TEST_F(OpSubOutTest, BroadcastDimSizeIsOneAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubOutTest, BroadcastDimSizeMissingAB) {
+TEST(OpSubOutKernelTest, BroadcastDimSizeMissingAB) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -354,7 +350,7 @@ TEST_F(OpSubOutTest, BroadcastDimSizeMissingAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubOutTest, BroadcastDimSizeIsOneBA) {
+TEST(OpSubOutKernelTest, BroadcastDimSizeIsOneBA) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.22279858589172363, 0.3636378049850464});
@@ -380,7 +376,7 @@ TEST_F(OpSubOutTest, BroadcastDimSizeIsOneBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubOutTest, BroadcastDimSizeMissingBA) {
+TEST(OpSubOutKernelTest, BroadcastDimSizeMissingBA) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.22279858589172363, 0.3636378049850464});
@@ -406,7 +402,7 @@ TEST_F(OpSubOutTest, BroadcastDimSizeMissingBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpSubOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -440,7 +436,7 @@ TEST_F(OpSubOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpSubOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -474,7 +470,7 @@ TEST_F(OpSubOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubOutTest, DynamicShapeUnbound) {
+TEST(OpSubOutKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -509,7 +505,7 @@ TEST_F(OpSubOutTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpSubScalarOutTest, SanityCheck) {
+TEST(OpSubScalarOutKernelTest, SanityCheck) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -523,7 +519,7 @@ TEST_F(OpSubScalarOutTest, SanityCheck) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.25, 1.25, 3.25, 7.25}));
 }
 
-TEST_F(OpSubScalarOutTest, OptimizedSanityCheck) {
+TEST(OpSubScalarOutKernelTest, OptimizedSanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {2, 2};

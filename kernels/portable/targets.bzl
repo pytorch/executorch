@@ -103,6 +103,15 @@ def define_common_targets():
     )
 
     executorch_generated_lib(
+        name = "generated_lib_all_ops",
+        deps = [
+            ":executorch_all_ops",
+            "//executorch/kernels/portable:operators",
+        ],
+        **generated_lib_common_args
+    )
+
+    executorch_generated_lib(
         name = "generated_lib_aten",
         deps = [
             ":executorch_aten_ops",

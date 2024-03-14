@@ -36,7 +36,8 @@ void split_with_sizes_copy_out(
   ET_KERNEL_CHECK(
       ctx,
       check_split_with_sizes_copy_args(in, split_sizes, dim, out),
-      InvalidArgument, );
+      InvalidArgument,
+      out);
 
   // If out is empty, then nothing needs to be done after checking the args.
   // Valid args implies that in.size(dim) == 0 and split_sizes is also empty.
@@ -57,7 +58,8 @@ void split_with_sizes_copy_out(
         ctx,
         tensor_is_broadcastable_to(
             {target_out_sizes, target_out_ndim}, out[i].sizes()),
-        InvalidArgument, );
+        InvalidArgument,
+        out);
   }
 
   const size_t leading_dims = getLeadingDims(in, dim);

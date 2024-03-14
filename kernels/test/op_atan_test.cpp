@@ -21,49 +21,12 @@ using exec_aten::Tensor;
 using exec_aten::TensorShapeDynamism;
 using torch::executor::testing::TensorFactory;
 
-class OpAtanOutTest : public OperatorTest {
- protected:
-  Tensor& op_atan_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::atan_outf(context_, self, out);
-  }
+Tensor& op_atan_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::atan_outf(context, self, out);
+}
 
-  // Common testing for atan operator and all kinds of supported input types
-  template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
-  void test_floating_point_atan_out(
-      const std::vector<int32_t>& out_shape = {1, 6},
-      TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    TensorFactory<IN_DTYPE> tf_in;
-    TensorFactory<OUT_DTYPE> tf_out;
-
-    // Destination for the atan operator.
-    Tensor out = tf_out.zeros(out_shape, dynamism);
-
-    // clang-format off
-    op_atan_out(tf_in.make({1, 6}, { 0, 1, 3, 5, 10, 100 }), out);
-  
-    // Check that it matches (or close to) the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make({1, 6}, { 0.000000, 0.785398, 1.249046, 1.373401, 1.471128, 1.560797 }));
-    // clang-format on
-  }
-
-  // Unhandled output dtypes.
-  template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
-  void test_atan_invalid_output_dtype_dies() {
-    TensorFactory<INPUT_DTYPE> tf;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 5};
-
-    Tensor in = tf.ones(sizes);
-    Tensor out = tf_out.zeros(sizes);
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_atan_out(in, out));
-  }
-};
-
-TEST_F(OpAtanOutTest, HandleBoolInput) {
+TEST(OpAtanOutKernelTest, HandleBoolInput) {
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -76,7 +39,28 @@ TEST_F(OpAtanOutTest, HandleBoolInput) {
   EXPECT_TENSOR_CLOSE(op_atan_out(a, out), res);
 }
 
-TEST_F(OpAtanOutTest, AllRealInputHalfOutputStaticDynamismSupport) {
+// Common testing for atan operator and all kinds of supported input types
+template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
+void test_floating_point_atan_out(
+    const std::vector<int32_t>& out_shape = {1, 6},
+    TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
+  TensorFactory<IN_DTYPE> tf_in;
+  TensorFactory<OUT_DTYPE> tf_out;
+
+  // Destination for the atan operator.
+  Tensor out = tf_out.zeros(out_shape, dynamism);
+
+  // clang-format off
+  op_atan_out(tf_in.make({1, 6}, { 0, 1, 3, 5, 10, 100 }), out);
+
+  // Check that it matches (or close to) the expected output.
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make({1, 6}, { 0.000000, 0.785398, 1.249046, 1.373401, 1.471128, 1.560797 }));
+  // clang-format on
+}
+
+TEST(OpAtanOutKernelTest, AllRealInputHalfOutputStaticDynamismSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -86,21 +70,21 @@ TEST_F(OpAtanOutTest, AllRealInputHalfOutputStaticDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputFloatOutputStaticDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputFloatOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_atan_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputDoubleOutputStaticDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputDoubleOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_atan_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputHalfOutputBoundDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputHalfOutputBoundDynamismSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -111,7 +95,7 @@ TEST_F(OpAtanOutTest, AllRealInputHalfOutputBoundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputFloatOutputBoundDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputFloatOutputBoundDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype)                                      \
   test_floating_point_atan_out<ScalarType::dtype, ScalarType::Float>( \
       {10, 10}, TensorShapeDynamism::DYNAMIC_BOUND);
@@ -119,7 +103,7 @@ TEST_F(OpAtanOutTest, AllRealInputFloatOutputBoundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputDoubleOutputBoundDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputDoubleOutputBoundDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype)                                       \
   test_floating_point_atan_out<ScalarType::dtype, ScalarType::Double>( \
       {10, 10}, TensorShapeDynamism::DYNAMIC_BOUND);
@@ -127,7 +111,7 @@ TEST_F(OpAtanOutTest, AllRealInputDoubleOutputBoundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputFloatOutputUnboundDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputFloatOutputUnboundDynamismSupport) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
@@ -138,7 +122,7 @@ TEST_F(OpAtanOutTest, AllRealInputFloatOutputUnboundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllRealInputDoubleOutputUnboundDynamismSupport) {
+TEST(OpAtanOutKernelTest, AllRealInputDoubleOutputUnboundDynamismSupport) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
@@ -149,7 +133,21 @@ TEST_F(OpAtanOutTest, AllRealInputDoubleOutputUnboundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAtanOutTest, AllNonFloatOutputDTypeDies) {
+// Unhandled output dtypes.
+template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
+void test_atan_invalid_output_dtype_dies() {
+  TensorFactory<INPUT_DTYPE> tf;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 5};
+
+  Tensor in = tf.ones(sizes);
+  Tensor out = tf_out.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_atan_out(in, out));
+}
+
+TEST(OpAtanOutKernelTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_atan_invalid_output_dtype_dies<ScalarType::Float, ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
@@ -157,7 +155,7 @@ TEST_F(OpAtanOutTest, AllNonFloatOutputDTypeDies) {
 }
 
 // Mismatched shape tests.
-TEST_F(OpAtanOutTest, MismatchedInputShapesDies) {
+TEST(OpAtanOutKernelTest, MismatchedInputShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched input shapes";
   }
@@ -166,5 +164,5 @@ TEST_F(OpAtanOutTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_atan_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_atan_out(a, out));
 }

@@ -197,6 +197,7 @@ Error Runner::generate(
   int next; // will store the next token in the sequence
   int64_t pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
+  int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
   int k_cache_index = 0;
   int v_cache_index = 0;
@@ -339,8 +340,13 @@ Error Runner::generate(
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && next == eos_id_) {
-      ET_LOG(Info, "Reached to the end of generation");
-      break;
+      eos_counter++;
+      if (eos_counter == n_eos_) {
+        ET_LOG(Info, "Reached to the end of generation");
+        break;
+      }
+    } else {
+      eos_counter = 0;
     }
 
     token = next;

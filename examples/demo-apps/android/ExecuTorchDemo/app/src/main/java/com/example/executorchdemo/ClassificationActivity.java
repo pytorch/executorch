@@ -71,7 +71,7 @@ public class ClassificationActivity extends Activity implements Runnable {
             TensorImageUtils.TORCHVISION_NORM_STD_RGB);
 
     // running the model
-    final Tensor outputTensor = module.forward(EValue.from(inputTensor))[0].toTensor();
+    final Tensor outputTensor = module.forward(EValue.from(inputTensor)).toTensor();
 
     // getting tensor content as java array of floats
     final float[] scores = outputTensor.getDataAsFloatArray();

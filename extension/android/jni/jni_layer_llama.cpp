@@ -84,16 +84,11 @@ class ExecuTorchLlamaJni
     runner_->stop();
   }
 
-  jint load() {
-    return static_cast<jint>(runner_->load());
-  }
-
   static void registerNatives() {
     registerHybrid({
         makeNativeMethod("initHybrid", ExecuTorchLlamaJni::initHybrid),
         makeNativeMethod("generate", ExecuTorchLlamaJni::generate),
         makeNativeMethod("stop", ExecuTorchLlamaJni::stop),
-        makeNativeMethod("load", ExecuTorchLlamaJni::load),
     });
   }
 };

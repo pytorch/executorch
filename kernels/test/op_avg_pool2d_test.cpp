@@ -17,31 +17,29 @@
 
 using namespace ::testing;
 
-class OpAvgPool2DOutTest : public OperatorTest {
- protected:
-  exec_aten::Tensor& op_avg_pool2d_out(
-      const exec_aten::Tensor& self,
-      exec_aten::ArrayRef<int64_t> kernel_size,
-      exec_aten::ArrayRef<int64_t> stride,
-      exec_aten::ArrayRef<int64_t> padding,
-      bool ceil_mode,
-      bool count_include_pad,
-      exec_aten::optional<int64_t> divisor_override,
-      exec_aten::Tensor& out) {
-    return torch::executor::aten::avg_pool2d_outf(
-        context_,
-        self,
-        kernel_size,
-        stride,
-        padding,
-        ceil_mode,
-        count_include_pad,
-        divisor_override,
-        out);
-  }
-};
+exec_aten::Tensor& op_avg_pool2d_out(
+    const exec_aten::Tensor& self,
+    exec_aten::ArrayRef<int64_t> kernel_size,
+    exec_aten::ArrayRef<int64_t> stride,
+    exec_aten::ArrayRef<int64_t> padding,
+    bool ceil_mode,
+    bool count_include_pad,
+    exec_aten::optional<int64_t> divisor_override,
+    exec_aten::Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::avg_pool2d_outf(
+      context,
+      self,
+      kernel_size,
+      stride,
+      padding,
+      ceil_mode,
+      count_include_pad,
+      divisor_override,
+      out);
+}
 
-TEST_F(OpAvgPool2DOutTest, SanityCheck4D) {
+TEST(OpAvgPool2DOutTest, SanityCheck4D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor self = tfFloat.make(
@@ -193,7 +191,7 @@ TEST_F(OpAvgPool2DOutTest, SanityCheck4D) {
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
-TEST_F(OpAvgPool2DOutTest, SanityCheck4DDivisorOverride) {
+TEST(OpAvgPool2DOutTest, SanityCheck4DDivisorOverride) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor self = tfFloat.make(
@@ -346,7 +344,7 @@ TEST_F(OpAvgPool2DOutTest, SanityCheck4DDivisorOverride) {
   EXPECT_TENSOR_CLOSE(out, out_expected);
 }
 
-TEST_F(OpAvgPool2DOutTest, SanityCheck4DCeilModeNoIncludePadding) {
+TEST(OpAvgPool2DOutTest, SanityCheck4DCeilModeNoIncludePadding) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor self = tfFloat.make(

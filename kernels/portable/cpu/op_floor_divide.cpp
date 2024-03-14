@@ -31,8 +31,6 @@ Tensor& floor_divide_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
-
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = promoteTypes(a_type, b_type);

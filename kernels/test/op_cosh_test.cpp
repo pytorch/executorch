@@ -21,49 +21,12 @@ using exec_aten::Tensor;
 using exec_aten::TensorShapeDynamism;
 using torch::executor::testing::TensorFactory;
 
-class OpCoshOutTest : public OperatorTest {
- protected:
-  Tensor& op_cosh_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::cosh_outf(context_, self, out);
-  }
+Tensor& op_cosh_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::cosh_outf(context, self, out);
+}
 
-  // Common testing for cosh operator and all kinds of supported input types
-  template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
-  void test_floating_point_cosh_out(
-      const std::vector<int32_t>& out_shape = {1, 5},
-      TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
-    TensorFactory<IN_DTYPE> tf_in;
-    TensorFactory<OUT_DTYPE> tf_out;
-
-    // Destination for the cosh operator.
-    Tensor out = tf_out.zeros(out_shape, dynamism);
-
-    // clang-format off
-    op_cosh_out(tf_in.make({1, 5}, { 0, 1, 3, 5, 10 }), out);
-  
-    // Check that it matches (or close to) the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make({1, 5}, { 1.000000e+00, 1.543081e+00, 1.006766e+01, 7.420995e+01, 1.101323e+04 }));
-    // clang-format on
-  }
-
-  // Unhandled output dtypes.
-  template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
-  void test_cosh_invalid_output_dtype_dies() {
-    TensorFactory<INPUT_DTYPE> tf;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 5};
-
-    Tensor in = tf.ones(sizes);
-    Tensor out = tf_out.zeros(sizes);
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_cosh_out(in, out));
-  }
-};
-
-TEST_F(OpCoshOutTest, HandleBoolInput) {
+TEST(OpCoshOutKernelTest, HandleBoolInput) {
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -76,7 +39,28 @@ TEST_F(OpCoshOutTest, HandleBoolInput) {
   EXPECT_TENSOR_CLOSE(op_cosh_out(a, out), res);
 }
 
-TEST_F(OpCoshOutTest, AllRealInputHalfOutputStaticDynamismSupport) {
+// Common testing for cosh operator and all kinds of supported input types
+template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
+void test_floating_point_cosh_out(
+    const std::vector<int32_t>& out_shape = {1, 5},
+    TensorShapeDynamism dynamism = TensorShapeDynamism::STATIC) {
+  TensorFactory<IN_DTYPE> tf_in;
+  TensorFactory<OUT_DTYPE> tf_out;
+
+  // Destination for the cosh operator.
+  Tensor out = tf_out.zeros(out_shape, dynamism);
+
+  // clang-format off
+  op_cosh_out(tf_in.make({1, 5}, { 0, 1, 3, 5, 10 }), out);
+
+  // Check that it matches (or close to) the expected output.
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make({1, 5}, { 1.000000e+00, 1.543081e+00, 1.006766e+01, 7.420995e+01, 1.101323e+04 }));
+  // clang-format on
+}
+
+TEST(OpCoshOutKernelTest, AllRealInputHalfOutputStaticDynamismSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -86,21 +70,21 @@ TEST_F(OpCoshOutTest, AllRealInputHalfOutputStaticDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputFloatOutputStaticDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputFloatOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_cosh_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputDoubleOutputStaticDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputDoubleOutputStaticDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_cosh_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputHalfOutputBoundDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputHalfOutputBoundDynamismSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -111,7 +95,7 @@ TEST_F(OpCoshOutTest, AllRealInputHalfOutputBoundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputFloatOutputBoundDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputFloatOutputBoundDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype)                                      \
   test_floating_point_cosh_out<ScalarType::dtype, ScalarType::Float>( \
       {10, 10}, TensorShapeDynamism::DYNAMIC_BOUND);
@@ -119,7 +103,7 @@ TEST_F(OpCoshOutTest, AllRealInputFloatOutputBoundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputDoubleOutputBoundDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputDoubleOutputBoundDynamismSupport) {
 #define TEST_ENTRY(ctype, dtype)                                       \
   test_floating_point_cosh_out<ScalarType::dtype, ScalarType::Double>( \
       {10, 10}, TensorShapeDynamism::DYNAMIC_BOUND);
@@ -127,7 +111,7 @@ TEST_F(OpCoshOutTest, AllRealInputDoubleOutputBoundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputFloatOutputUnboundDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputFloatOutputUnboundDynamismSupport) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
@@ -138,7 +122,7 @@ TEST_F(OpCoshOutTest, AllRealInputFloatOutputUnboundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllRealInputDoubleOutputUnboundDynamismSupport) {
+TEST(OpCoshOutKernelTest, AllRealInputDoubleOutputUnboundDynamismSupport) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }
@@ -149,7 +133,21 @@ TEST_F(OpCoshOutTest, AllRealInputDoubleOutputUnboundDynamismSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpCoshOutTest, AllNonFloatOutputDTypeDies) {
+// Unhandled output dtypes.
+template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
+void test_cosh_invalid_output_dtype_dies() {
+  TensorFactory<INPUT_DTYPE> tf;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 5};
+
+  Tensor in = tf.ones(sizes);
+  Tensor out = tf_out.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_cosh_out(in, out));
+}
+
+TEST(OpCoshOutKernelTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_cosh_invalid_output_dtype_dies<ScalarType::Float, ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
@@ -157,7 +155,7 @@ TEST_F(OpCoshOutTest, AllNonFloatOutputDTypeDies) {
 }
 
 // Mismatched shape tests.
-TEST_F(OpCoshOutTest, MismatchedInputShapesDies) {
+TEST(OpCoshOutKernelTest, MismatchedInputShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched input shapes";
   }
@@ -166,5 +164,5 @@ TEST_F(OpCoshOutTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_cosh_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cosh_out(a, out));
 }

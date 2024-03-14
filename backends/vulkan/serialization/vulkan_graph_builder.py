@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Union
+from typing import Optional
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
@@ -14,9 +14,6 @@ from executorch.exir.tensor import TensorSpec
 from torch._export.utils import get_buffer, get_param, is_buffer, is_param
 from torch.export import ExportedProgram
 from torch.fx import Node
-
-_ScalarType = Union[int, bool, float]
-_Argument = Union[torch.fx.Node, int, bool, float, str]
 
 
 class VkGraphBuilder:
@@ -109,7 +106,7 @@ class VkGraphBuilder:
 
         return const_buffer_idx
 
-    def create_single_tensor_value(self, node: Node) -> int:
+    def create_single_vk_value(self, node: Node) -> int:
         constant_id = self.maybe_add_constant_tensor(node)
 
         spec = node.meta.get("spec")
@@ -141,48 +138,17 @@ class VkGraphBuilder:
         )
         return new_id
 
-    def create_tensor_values(self, node: Node) -> int:
+    def create_vk_values_for(self, node: Node):
         spec = node.meta.get("spec")
         if isinstance(spec, TensorSpec):
-            return self.create_single_tensor_value(node)
+            return self.create_single_vk_value(node)
         else:
             raise RuntimeError(
                 "Creating values for nodes with collection types is not supported yet."
             )
 
-    def create_scalar_value(self, scalar: _ScalarType) -> int:
-        new_id = len(self.values)
-        if isinstance(scalar, int):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
-        if isinstance(scalar, float):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
-        if isinstance(scalar, bool):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Bool(scalar)))
-        return new_id
-
-    def create_string_value(self, string: str) -> int:
-        new_id = len(self.values)
-        self.values.append(
-            vk_graph_schema.VkValue(vk_graph_schema.String(string_val=string))
-        )
-        return new_id
-
-    def get_or_create_value_for(self, arg: _Argument):
-        if isinstance(arg, torch.fx.Node):
-            # If the value has already been created, return the existing id
-            if arg in self.node_to_value_ids:
-                return self.node_to_value_ids[arg]
-            # Return id for a newly created value
-            return self.create_tensor_values(arg)
-        elif isinstance(arg, (int, float, bool)):
-            return self.create_scalar_value(arg)
-        elif isinstance(arg, str):
-            return self.create_string_value(arg)
-        else:
-            raise RuntimeError(f"Cannot create value for arg of type {type(arg)}")
-
     def process_placeholder_node(self, node: Node) -> None:
-        ids = self.create_tensor_values(node)
+        ids = self.create_vk_values_for(node)
         if not self.is_param_node(node):
             if isinstance(ids, int):
                 self.input_ids.append(ids)
@@ -190,42 +156,36 @@ class VkGraphBuilder:
                 self.input_ids += ids
 
     def process_call_function_node(self, node) -> None:
-        operator_call_args = []
-
-        for i, schema_arg in enumerate(node.target._schema.arguments):
-            if not schema_arg.kwarg_only and i < len(node.args):
-                function_arg = node.args[i]
-            elif schema_arg.name in node.kwargs:
-                function_arg = node.kwargs[schema_arg.name]
-            else:
-                function_arg = schema_arg.default_value
-
-            # Create a value for each function argument. If the argument has been
-            # previously encountered, then use the existing value id.
-            operator_call_args.append(self.get_or_create_value_for(function_arg))
-
+        args = []
+        # Add input nodes
+        for inp_node in node.all_input_nodes:
+            if inp_node not in self.node_to_value_ids:
+                raise AssertionError(
+                    "Cannot find input to current node in node_to_value_ids. This means "
+                    "this node is being serialized before its input which is not allowed."
+                )
+            args.append(self.node_to_value_ids[inp_node])
         # Add output node
-        operator_call_args.append(self.create_tensor_values(node))
+        args.append(self.create_vk_values_for(node))
 
         self.chain.append(
             vk_graph_schema.OperatorCall(
                 name=node.target.__name__,
-                args=operator_call_args,
+                args=args,
             ),
         )
 
     def process_getattr_node(self, node: Node) -> None:
-        self.create_tensor_values(node)
+        self.create_vk_values_for(node)
 
     def process_output_node(self, node: Node) -> None:
-        for out_node in node.all_input_nodes:
-            if out_node not in self.node_to_value_ids:
-                raise AssertionError(
-                    "Cannot find input to output node in node_to_value_ids. This means "
-                    "the output node is being serialized before its corresponding "
-                    "internal node which is not allowed."
-                )
-            self.output_ids.append(self.node_to_value_ids[out_node])
+        if node.all_input_nodes[0] not in self.node_to_value_ids:
+            raise AssertionError(
+                "Cannot find input to output node in node_to_value_ids. This means the "
+                "output node is being serialized before its corresponding internal node "
+                "which is not allowed."
+            )
+        self.output_ids.append(self.node_to_value_ids[node.all_input_nodes[0]])
 
     def process_node(self, node: Node) -> None:
         if node.op == "placeholder":

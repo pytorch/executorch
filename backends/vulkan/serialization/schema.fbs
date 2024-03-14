@@ -26,55 +26,8 @@ table VkTensor {
   mem_obj_id:int;
 }
 
-table Null {}
-
-table Int {
-  int_val:long;
-}
-
-table Bool {
-  bool_val:bool;
-}
-
-table Double {
-  double_val:double;
-}
-
-table String {
-  string_val:string;
-}
-
-table IntList {
-  items:[long];
-}
-
-table DoubleList {
-  items:[double];
-}
-
-table BoolList {
-  items:[bool];
-}
-
-table ValueList {
-  items:[int];
-}
-
-union GraphTypes {
-  Null,
-  Int,
-  Double,
-  Bool,
-  VkTensor,
-  IntList,
-  DoubleList,
-  BoolList,
-  ValueList,
-  String,
-}
-
 table VkValue {
-  value:GraphTypes;
+  value:VkTensor;
 }
 
 // Abstraction to represent a region of bytes in a raw data buffer. Useful for referencing raw data

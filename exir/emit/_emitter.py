@@ -32,9 +32,8 @@ import ctypes
 import hashlib
 import operator
 import typing
-import warnings
 from dataclasses import dataclass, field
-from typing import Any, Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Callable, cast, Dict, List, Mapping, Optional, Tuple, Union
 
 import executorch.exir.memory as memory
 import executorch.extension.pytree as ex_pytree
@@ -463,15 +462,14 @@ class _Emitter(torch.fx.Interpreter):
             return EValue(Int(layout_enum(val)))
 
         if isinstance(val, torch.memory_format):
-            try:
-                return EValue(Int(memory_format_enum(val)))
-            except KeyError:
+            if val != torch.contiguous_format:
                 raise InternalError(
                     self._emit_node_specific_error(
                         self.node,
-                        f"Tensor has a memory_format that is unsupported in ExecuTorch: {val}",
+                        "Non contiguous tensors are not supported in ExecuTorch",
                     )
                 )
+            return EValue(Int(memory_format_enum(val)))
 
         if isinstance(val, torch.Tensor):
             raise ExportError(
@@ -1268,17 +1266,15 @@ class _TopLevelEmitter(_Emitter):
         self,
         name: str,
         exported_program: ExportedProgram,
-        graph_module: torch.fx.GraphModule,
         program_state: _ProgramState,
         emitter_state: _EmitterState,
     ) -> None:
-        super().__init__(graph_module, emitter_state, program_state)
+        super().__init__(exported_program.graph_module, emitter_state, program_state)
         self.name = name
         self.exported_program = exported_program
 
         self.inputs: List[int] = []
         self.outputs: List[int] = []
-        self.given_mutable_buffer_warning = False
 
         def create_container_str(spec: Optional[pytree.TreeSpec]) -> str:
             if spec is None:
@@ -1297,42 +1293,6 @@ class _TopLevelEmitter(_Emitter):
             inp_container_str, out_container_str
         )
 
-    def _find_fqn_for_placeholder(
-        self, target: _Target, spec: Any  # pyre-ignore[2]
-    ) -> Tuple[Optional[str], bool]:
-        # Find the fully qualified name
-        fqn = None
-        is_mutable_buffer = False
-        if target in self.exported_program.graph_signature.inputs_to_parameters:
-            fqn = self.exported_program.graph_signature.inputs_to_parameters[target]
-
-        elif target in self.exported_program.graph_signature.inputs_to_buffers:
-            fqn = self.exported_program.graph_signature.inputs_to_buffers[target]
-
-            # if the buffer is mutated then record that
-            if fqn in self.exported_program.graph_signature.buffers_to_mutate.values():
-                is_mutable_buffer = True
-                if not self.given_mutable_buffer_warning:
-                    warnings.warn(
-                        "Mutation on a buffer in the model is detected. ExecuTorch assumes "
-                        "buffers that are mutated in the graph have a meaningless initial state, "
-                        "only the shape and dtype will be serialized.",
-                        UserWarning,
-                        stacklevel=1,
-                    )
-                    self.given_mutable_buffer_warning = True
-
-        elif (
-            target
-            in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
-        ):
-            fqn = (
-                self.exported_program.graph_signature.inputs_to_lifted_tensor_constants[
-                    target
-                ]
-            )
-        return fqn, is_mutable_buffer
-
     def placeholder(
         self, target: _Target, args: Tuple[_Argument, ...], kwargs: Dict[str, _Argument]
     ) -> _AbstractValue:
@@ -1342,27 +1302,40 @@ class _TopLevelEmitter(_Emitter):
         https://pytorch.org/docs/stable/fx.html#torch.fx.Graph.placeholder
         """
         spec = self.node.meta["spec"]
-        is_user_input = True
-
-        if isinstance(target, str) and isinstance(spec, TensorSpec):
-
-            fqn, is_mutable_buffer = self._find_fqn_for_placeholder(target, spec)
-
-            # From the fqn find the corresponding tensor
-            real_tensor = None
+        const_tensor = False
+        if isinstance(target, str) and (
+            target in self.exported_program.graph_signature.inputs_to_parameters
+            or target in self.exported_program.graph_signature.inputs_to_buffers
+            or target
+            in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
+        ):
+            if (
+                target
+                in self.exported_program.graph_signature.inputs_to_lifted_tensor_constants
+            ):
+                fqn = self.exported_program.graph_signature.inputs_to_lifted_tensor_constants[
+                    target
+                ]
+            elif target in self.exported_program.graph_signature.inputs_to_buffers:
+                fqn = self.exported_program.graph_signature.inputs_to_buffers[target]
+            else:
+                fqn = self.exported_program.graph_signature.inputs_to_parameters[target]
             if fqn in self.exported_program.state_dict:
-                real_tensor = self.exported_program.state_dict[fqn]
-                is_user_input = False
-
+                spec = TensorSpec.from_tensor(
+                    self.exported_program.state_dict[fqn], const=True
+                )
+                const_tensor = True
             elif fqn in self.exported_program.constants:
-                real_tensor = self.exported_program.constants[fqn]
-                is_user_input = False
-            elif fqn is not None:
+                spec = TensorSpec.from_tensor(
+                    self.exported_program.constants[fqn], const=True
+                )
+                const_tensor = True
+            else:
                 buffers = self.exported_program.named_buffers()
                 buf = next((x[1] for x in buffers if x[0] == fqn), None)
                 if buf is not None:
-                    real_tensor = buf
-                    is_user_input = False
+                    spec = TensorSpec.from_tensor(buf, const=True)
+                    const_tensor = True
                 else:
                     raise InternalError(
                         self._emit_node_specific_error(
@@ -1371,28 +1344,13 @@ class _TopLevelEmitter(_Emitter):
                         )
                     )
 
-            # assign the storage of the placeholder spec to the storage of the real tensor if there is one
-            if real_tensor is not None:
-                # for non-contigous tensors, convert to a contiguous one
-                real_tensor = real_tensor.contiguous()
-                # Weights cannot be views during emission or serialization
-                if real_tensor.nbytes != real_tensor.untyped_storage().nbytes():
-                    real_tensor = real_tensor.clone()
-
-                spec.storage = real_tensor.untyped_storage()
-
-            # User inputs and mutable buffers are not constants, other buffers or parameters are.
-            spec.const = not (is_user_input or is_mutable_buffer)
-
         evalue = (
             self._tensor_spec_to_evalue(spec)
             if isinstance(spec, TensorSpec)
             else self._constant_to_evalue(spec, None)
         )
         value = self._emit_evalue(evalue)
-
-        # Only user inputs should remain as inputs.
-        if is_user_input:
+        if not const_tensor:
             self.inputs.append(value.id)
 
         return value
@@ -1409,10 +1367,9 @@ class _TopLevelEmitter(_Emitter):
             self.outputs.append(args_tuple.id)
         else:
             for arg in args_tuple:
-                if isinstance(arg, (int, float, bool, type(None))):
+                if isinstance(arg, (int, float, bool)):
                     arg = self._emit_evalue(self._constant_to_evalue(arg, None))
-                elif isinstance(arg, str):
-                    # TODO(jackkhuu): T181599879 Add support for string outputs IFF compiler supports
+                elif isinstance(arg, (type(None), str)):
                     raise InternalError(
                         self._emit_node_specific_error(
                             self.node,

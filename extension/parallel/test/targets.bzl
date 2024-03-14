@@ -14,6 +14,5 @@ def define_common_targets():
         ],
         deps = [
             "//executorch/extension/parallel:thread_parallel",
-            "//executorch/runtime/platform:platform",
         ],
     )

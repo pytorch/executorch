@@ -35,19 +35,19 @@ std::tuple<Tensor&, Tensor&> max_out(
       ctx,
       check_min_max_args(in, dim, keepdim, max, max_indices),
       InvalidArgument,
-      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+      std::tuple({max, max_indices}));
 
   ET_KERNEL_CHECK(
       ctx,
       resize_reduction_out(in, dim, keepdim, max) == Error::Ok,
       InvalidArgument,
-      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+      std::tuple({max, max_indices}));
 
   ET_KERNEL_CHECK(
       ctx,
       resize_tensor(max_indices, max.sizes()) == Error::Ok,
       InvalidArgument,
-      (std::tuple<Tensor&, Tensor&>({max, max_indices})));
+      std::tuple({max, max_indices}));
 
   dim = dim < 0 ? dim + in.dim() : dim;
 

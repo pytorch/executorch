@@ -22,44 +22,28 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-class OpLogOutTest : public OperatorTest {
- protected:
-  Tensor& op_log_out(const Tensor& a, Tensor& out) {
-    return torch::executor::aten::log_outf(context_, a, out);
-  }
+Tensor& op_log_out(const Tensor& a, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::log_outf(context, a, out);
+}
 
-  // Common testing for log operator
-  template <ScalarType DTYPE, ScalarType OUT_DTYPE>
-  void test__log_out() {
-    TensorFactory<DTYPE> tf;
-    TensorFactory<OUT_DTYPE> tf_out;
+// Common testing for log operator
+template <ScalarType DTYPE, ScalarType OUT_DTYPE>
+void test__log_out() {
+  TensorFactory<DTYPE> tf;
+  TensorFactory<OUT_DTYPE> tf_out;
 
-    const std::vector<int32_t> sizes = {2, 2};
+  const std::vector<int32_t> sizes = {2, 2};
 
-    Tensor out = tf_out.zeros(sizes);
+  Tensor out = tf_out.zeros(sizes);
 
-    // Valid input should give the expected output
-    op_log_out(tf.make(sizes, /*data=*/{0, 1, 2, 4}), out);
-    EXPECT_TENSOR_CLOSE(
-        out, tf_out.make(sizes, /*data=*/{-INFINITY, 0, 0.693147, 1.386294}));
-  }
+  // Valid input should give the expected output
+  op_log_out(tf.make(sizes, /*data=*/{0, 1, 2, 4}), out);
+  EXPECT_TENSOR_CLOSE(
+      out, tf_out.make(sizes, /*data=*/{-INFINITY, 0, 0.693147, 1.386294}));
+}
 
-  // Unhandled output dtypes.
-  template <ScalarType OUTPUT_DTYPE>
-  void test_log_invalid_output_dtype_dies() {
-    TensorFactory<ScalarType::Float> tf_float;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 5};
-
-    Tensor in = tf_float.ones(sizes);
-    Tensor out = tf_out.zeros(sizes);
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_log_out(in, out));
-  }
-};
-
-TEST_F(OpLogOutTest, AllRealInputHalfOutputSupport) {
+TEST(OpLogOutKernelTest, AllRealInputHalfOutputSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -69,21 +53,21 @@ TEST_F(OpLogOutTest, AllRealInputHalfOutputSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogOutTest, AllRealInputFloatOutputSupport) {
+TEST(OpLogOutKernelTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test__log_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogOutTest, AllRealInputDoubleOutputSupport) {
+TEST(OpLogOutKernelTest, AllRealInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test__log_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogOutTest, HandleBoolInput) {
+TEST(OpLogOutKernelTest, HandleBoolInput) {
   // op_log_out() handles Bool as input.
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
@@ -98,7 +82,7 @@ TEST_F(OpLogOutTest, HandleBoolInput) {
 }
 
 // Mismatched shape tests.
-TEST_F(OpLogOutTest, MismatchedShapesDies) {
+TEST(OpLogOutKernelTest, MismatchedShapesDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -109,17 +93,31 @@ TEST_F(OpLogOutTest, MismatchedShapesDies) {
   Tensor a = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_float.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_log_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_log_out(a, out));
 }
 
-TEST_F(OpLogOutTest, AllNonFloatOutputDTypeDies) {
+// Unhandled output dtypes.
+template <ScalarType OUTPUT_DTYPE>
+void test_log_invalid_output_dtype_dies() {
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 5};
+
+  Tensor in = tf_float.ones(sizes);
+  Tensor out = tf_out.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_log_out(in, out));
+}
+
+TEST(OpLogOutKernelTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_log_invalid_output_dtype_dies<ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpLogOutTest, SimpleGeneratedCase) {
+TEST(OpLogOutKernelTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -148,7 +146,7 @@ TEST_F(OpLogOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpLogOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -174,7 +172,7 @@ TEST_F(OpLogOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpLogOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -200,7 +198,7 @@ TEST_F(OpLogOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpLogOutTest, DynamicShapeUnbound) {
+TEST(OpLogOutKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

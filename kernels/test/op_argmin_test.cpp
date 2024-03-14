@@ -22,18 +22,16 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpArgminTest : public OperatorTest {
- protected:
-  Tensor& op_argmin_out(
-      const Tensor& in,
-      optional<int64_t> dim,
-      bool keepdim,
-      Tensor& out) {
-    return torch::executor::aten::argmin_outf(context_, in, dim, keepdim, out);
-  }
-};
+Tensor& op_argmin_out(
+    const Tensor& in,
+    optional<int64_t> dim,
+    bool keepdim,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::argmin_outf(context, in, dim, keepdim, out);
+}
 
-TEST_F(OpArgminTest, SanityCheckLong) {
+TEST(OpArgminTest, SanityCheckLong) {
   TensorFactory<ScalarType::Long> tf;
 
   // clang-format off
@@ -58,7 +56,7 @@ TEST_F(OpArgminTest, SanityCheckLong) {
   // clang-format on
 }
 
-TEST_F(OpArgminTest, SanityCheckShort) {
+TEST(OpArgminTest, SanityCheckShort) {
   TensorFactory<ScalarType::Long> tfl;
   TensorFactory<ScalarType::Short> tfs;
 
@@ -84,7 +82,7 @@ TEST_F(OpArgminTest, SanityCheckShort) {
   // clang-format on
 }
 
-TEST_F(OpArgminTest, SanityCheckNullDim) {
+TEST(OpArgminTest, SanityCheckNullDim) {
   TensorFactory<ScalarType::Long> tf;
 
   // clang-format off

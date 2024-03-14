@@ -56,20 +56,13 @@ void apply_tril(
  * `tril_out` helper function.
  */
 template <typename CTYPE>
-void tril_kernel(
-    RuntimeContext& ctx,
-    const Tensor& self,
-    int64_t diagonal,
-    const Tensor& out) {
+void tril_kernel(const Tensor& self, int64_t diagonal, const Tensor& out) {
   // Dynamically compute `self` sizes and strides.
 
   int64_t ndim = self.dim();
 
-  ET_KERNEL_CHECK_MSG(
-      ctx,
+  ET_CHECK_MSG(
       ndim < kTensorDimensionLimit,
-      InvalidArgument,
-      ,
       "ndim %" PRId64 " >= %zu",
       ndim,
       kTensorDimensionLimit);
@@ -154,7 +147,7 @@ Tensor& tril_out(
 
   ScalarType out_type = out.scalar_type();
   ET_SWITCH_REAL_TYPES_AND(Bool, out_type, ctx, __func__, CTYPE, [&]() {
-    tril_kernel<CTYPE>(ctx, self, diagonal, out);
+    tril_kernel<CTYPE>(self, diagonal, out);
   });
 
   return out;

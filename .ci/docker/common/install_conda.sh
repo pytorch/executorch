@@ -44,15 +44,13 @@ install_pip_dependencies() {
 }
 
 fix_conda_ubuntu_libstdcxx() {
-  cat /etc/issue
   # WARNING: This is a HACK from PyTorch core to be able to build PyTorch on 22.04.
-  # Specifically, ubuntu-20+ all comes lib libstdc++ newer than 3.30+, but anaconda
-  # is stuck with 3.29. So, remove libstdc++6.so.3.29 as installed by
-  # https://anaconda.org/anaconda/libstdcxx-ng/files?version=11.2.0
+  # The issue still exists with the latest conda 23.10.0-1 at the time of writing
+  # (2023/11/16).
   #
   # PyTorch sev: https://github.com/pytorch/pytorch/issues/105248
   # Ref: https://github.com/pytorch/pytorch/blob/main/.ci/docker/common/install_conda.sh
-  if grep -e "2[02].04." /etc/issue >/dev/null; then
+  if grep -e "[12][82].04.[623]" /etc/issue >/dev/null; then
     rm "/opt/conda/envs/py_${PYTHON_VERSION}/lib/libstdc++.so.6"
   fi
 }

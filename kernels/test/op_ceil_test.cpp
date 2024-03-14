@@ -20,14 +20,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpCeilTest : public OperatorTest {
- protected:
-  Tensor& op_ceil_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::ceil_outf(context_, self, out);
-  }
-};
+Tensor& op_ceil_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::ceil_outf(context, self, out);
+}
 
-TEST_F(OpCeilTest, SanityCheck) {
+TEST(OpCeilTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
@@ -40,7 +38,7 @@ TEST_F(OpCeilTest, SanityCheck) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCeilTest, HalfSupport) {
+TEST(OpCeilTest, HalfSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }

@@ -9,12 +9,12 @@ import warnings
 from collections import namedtuple
 from contextlib import contextmanager
 from types import MethodType
-from typing import Any, Callable, cast, List, Optional, Tuple
+from typing import Any, Callable, cast, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir.capture._config import CaptureConfig
 from executorch.exir.error import ExportError, ExportErrorType, InternalError
-from executorch.exir.program import ExirExportedProgram
+from executorch.exir.program import ExirExportedProgram, MultiMethodExirExportedProgram
 from executorch.exir.program._program import _transform, HackedUpExportedProgramDONOTUSE
 from executorch.exir.tracer import (
     _default_decomposition_table,
@@ -358,6 +358,137 @@ def capture(  # noqa: C901
         verifier=EXIRATenDialectVerifierBase,
     )
     return ExirExportedProgram(ep, False)
+
+
+@compatibility(is_backward_compatible=False)
+def capture_multiple(
+    m: Union[torch.nn.Module, Callable[..., Any]],
+    args: Union[Dict[str, Tuple[Value, ...]], Tuple[Value, ...]],
+    config: Optional[CaptureConfig] = None,
+    prim_getters: Optional[Set[str]] = None,
+    dynamic_shapes: Optional[Union[Dict[str, Any], List[Any]]] = None,
+):
+    """
+    capture_multiple traces either an nn.Module or just a callable with PyTorch
+    operations inside and produce a single MultiMethodExirExportedProgram that
+    can potentially have multiple entry points. When multiple entry points
+    are traced, each of them is stored separately in the resulting
+    MultiMethodExirExportedProgram without sharing state.
+
+    Args:
+        m: the `nn.Module` or callable to trace.
+
+        args: Tracing example inputs.
+
+        When `m` is an nn.Module, `args` can be
+        1) A dictionary that maps names of method to their tracing example inputs.
+        in this case, all specified methods will be captured.
+        2) A tuple. In this case, `forward` method of `m` will be captured. It is
+        equivalent to passing {"forward", tuple-type-args}
+
+        When `m` is a non-Module callable, `args` must be a Tuple containing
+        tracing example inputs.
+
+        config: A CaptureConfig object that specifies how to interpret the
+        program being captured.
+
+        prim_getters: A set of primitive getter functions to capture the return values of
+
+        dynamic_shapes: Input dynamic shapes.
+
+        When `m` is an nn.Module, `dynamic_shapes` is a dictionary that maps names of method
+        to their input dynamic shapes.
+
+        When `m` is a non-Module callable, `dynamic_shapes` is a list of input dynamic shapes.
+
+    Returns:
+        A MultiMethodExirExportedProgram.
+
+        if `m` is an nn.Module, returned program would have multiple
+        captured methods, each corresponding to one entry in args dictionary.
+
+        if `m` is a non-Module callable, returned program would have a single
+        captured method named `forward`.
+
+    Raises:
+        AssertionError if given method name do not reference a valid method
+        on the given nn.Module.
+    """
+    warnings.warn(
+        "This function is now deprecated, please use `torch.export and exir.to_edge` instead.",
+        DeprecationWarning,
+        stacklevel=1,
+    )
+    # Normalize m and args.
+    compile_specs = []
+    prim_getter_cache: Optional[Dict[str, Any]] = None
+    if isinstance(m, torch.nn.Module):
+        if dynamic_shapes is not None:
+            assert isinstance(
+                dynamic_shapes, dict
+            ), f"Expected a dict for dynamic_shapes, got {type(dynamic_shapes)}"
+
+        if isinstance(args, tuple):
+            compile_specs.append(
+                CompileSpec(
+                    "forward",
+                    m.forward,
+                    args,
+                    (
+                        dynamic_shapes["forward"]
+                        if dynamic_shapes and "forward" in dynamic_shapes
+                        else None
+                    ),
+                )
+            )
+        else:
+            assert isinstance(
+                args, dict
+            ), f"Expected a tuple or Dict[str, tuple], got {type(args)}"
+            for method_name, method_args in args.items():
+                compile_specs.append(
+                    CompileSpec(
+                        method_name,
+                        getattr(m, method_name),
+                        method_args,
+                        (
+                            dynamic_shapes[method_name]
+                            if dynamic_shapes and method_name in dynamic_shapes
+                            else None
+                        ),
+                    )
+                )
+        if prim_getters is not None:
+            prim_getter_cache = {}
+            for getter in prim_getters:
+                prim_getter_cache[getter] = getattr(m, getter)()
+    else:
+        # Reaching here means `m` is a non-Module callable.
+        assert isinstance(
+            m, Callable
+        ), f"Only nn.Module or callable allowed, got {type(m)}"
+        assert isinstance(
+            args, tuple
+        ), f"When tracing a non-Module callable, `args` must be a tuple of tracing inputs, but got {type(args)}"
+        assert (
+            prim_getters is None
+        ), "Caller should not specify primitive getter functions when only providing a callable as input"
+        if dynamic_shapes is not None:
+            assert isinstance(
+                dynamic_shapes, list
+            ), f"Expected a list for constraints, got {type(dynamic_shapes)}"
+        compile_specs.append(CompileSpec("forward", m, args, dynamic_shapes))
+
+    method_name_to_prog = {}
+    for compile_spec in compile_specs:
+        method_name_to_prog[compile_spec.method_name] = capture(
+            compile_spec.callable,
+            compile_spec.args,
+            config,
+            compile_spec.dynamic_shapes,
+        )
+
+    return MultiMethodExirExportedProgram(method_name_to_prog, prim_getter_cache)
 
 
 # This is to bootstrap the missing meta["val"] when 1. ph consists of scalar

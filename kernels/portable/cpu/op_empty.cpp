@@ -32,7 +32,7 @@ Tensor& empty_out(
 
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
-      context,
+      ctx,
       resize_tensor(out, size) == Error::Ok,
       InvalidArgument,
       out,

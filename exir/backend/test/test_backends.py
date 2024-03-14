@@ -99,7 +99,7 @@ class TestBackends(unittest.TestCase):
         self, delegate: LoweredBackendModule, input_len: int
     ) -> None:
         counter = 0
-        for node in delegate.original_module.graph.nodes:
+        for node in delegate._original_module.graph.nodes:
             if node.op == "placeholder":
                 counter += 1
         self.assertEqual(counter, input_len)

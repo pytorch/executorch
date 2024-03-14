@@ -7,7 +7,6 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
-#include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -24,30 +23,27 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpEmptyOutTest : public OperatorTest {
- protected:
-  Tensor& op_empty_out(
-      IntArrayRef size,
-      optional<MemoryFormat> memory_format,
-      Tensor& out) {
-    return torch::executor::aten::empty_outf(
-        context_, size, memory_format, out);
-  }
+Tensor& op_empty_out(
+    IntArrayRef size,
+    optional<MemoryFormat> memory_format,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::empty_outf(context, size, memory_format, out);
+}
 
-  template <ScalarType DTYPE>
-  void test_empty_out(std::vector<int32_t>&& size_int32_t) {
-    TensorFactory<DTYPE> tf;
-    std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
-    auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
-    optional<MemoryFormat> memory_format;
-    Tensor out = tf.ones(size_int32_t);
+template <ScalarType DTYPE>
+void test_empty_out(std::vector<int32_t>&& size_int32_t) {
+  TensorFactory<DTYPE> tf;
+  std::vector<int64_t> sizes(size_int32_t.begin(), size_int32_t.end());
+  auto aref = exec_aten::ArrayRef<int64_t>(sizes.data(), sizes.size());
+  optional<MemoryFormat> memory_format;
+  Tensor out = tf.ones(size_int32_t);
 
-    op_empty_out(aref, memory_format, out);
-  }
-};
+  op_empty_out(aref, memory_format, out);
+}
 
 #define GENERATE_TEST(_, DTYPE)                   \
-  TEST_F(OpEmptyOutTest, DTYPE##Tensors) {        \
+  TEST(OpEmptyOutKernelTest, DTYPE##Tensors) {    \
     test_empty_out<ScalarType::DTYPE>({2, 3, 4}); \
     test_empty_out<ScalarType::DTYPE>({2, 0, 4}); \
     test_empty_out<ScalarType::DTYPE>({});        \
@@ -55,7 +51,7 @@ class OpEmptyOutTest : public OperatorTest {
 
 ET_FORALL_REAL_TYPES_AND(Bool, GENERATE_TEST)
 
-TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpEmptyOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
@@ -66,7 +62,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundSameAsExpected) {
   op_empty_out(sizes_aref, memory_format, out);
 }
 
-TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpEmptyOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   int64_t sizes[2] = {3, 2};
@@ -77,7 +73,7 @@ TEST_F(OpEmptyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   op_empty_out(sizes_aref, memory_format, out);
 }
 
-TEST_F(OpEmptyOutTest, DynamicShapeUnbound) {
+TEST(OpEmptyOutKernelTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }

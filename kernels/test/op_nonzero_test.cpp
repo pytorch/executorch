@@ -18,39 +18,37 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpNonzeroTest : public OperatorTest {
- protected:
-  Tensor& op_nonzero_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::nonzero_outf(context_, self, out);
-  }
+Tensor& op_nonzero_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::nonzero_outf(context, self, out);
+}
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
-  void test_dtype() {
-    TensorFactory<DTYPE> tf_input;
-    TensorFactory<ScalarType::Long> tf_long;
-    // clang-format off
-    Tensor a = tf_input.make(/*sizes=*/{2, 2}, /*data=*/{2, 0,
-                                                         2, 4});
-    // clang-format on
-    Tensor out = tf_long.zeros({3, 2});
+template <class CTYPE, exec_aten::ScalarType DTYPE>
+void test_dtype() {
+  TensorFactory<DTYPE> tf_input;
+  TensorFactory<ScalarType::Long> tf_long;
+  // clang-format off
+  Tensor a = tf_input.make(/*sizes=*/{2, 2}, /*data=*/{2, 0,
+                                                       2, 4});
+  // clang-format on
+  Tensor out = tf_long.zeros({3, 2});
 
-    op_nonzero_out(a, out);
-    // clang-format off
-    EXPECT_TENSOR_EQ(out, tf_long.make({3, 2}, {0, 0,
-                                                1, 0,
-                                                1, 1}));
-    // clang-format on
-  }
-};
+  op_nonzero_out(a, out);
+  // clang-format off
+  EXPECT_TENSOR_EQ(out, tf_long.make({3, 2}, {0, 0,
+                                              1, 0,
+                                              1, 1}));
+  // clang-format on
+}
 
-TEST_F(OpNonzeroTest, AllDtypesSupported) {
+TEST(OpNonzeroTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
 #if !defined(USE_ATEN_LIB)
-TEST_F(OpNonzeroTest, StaticShapeInconsistentSize) {
+TEST(OpNonzeroTest, StaticShapeInconsistentSize) {
   TensorFactory<ScalarType::Float> tf_input;
   TensorFactory<ScalarType::Long> tf_long;
   // clang-format off
@@ -62,10 +60,10 @@ TEST_F(OpNonzeroTest, StaticShapeInconsistentSize) {
   Tensor out =
       tf_long.zeros({4, 2}, torch::executor::TensorShapeDynamism::STATIC);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_nonzero_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_nonzero_out(a, out));
 }
 
-TEST_F(OpNonzeroTest, DynamicShape) {
+TEST(OpNonzeroTest, DynamicShape) {
   TensorFactory<ScalarType::Float> tf_input;
   TensorFactory<ScalarType::Long> tf_long;
   // clang-format off
@@ -83,7 +81,7 @@ TEST_F(OpNonzeroTest, DynamicShape) {
   // clang-format on
 }
 
-TEST_F(OpNonzeroTest, DynamicShapeInsufficientBuffer) {
+TEST(OpNonzeroTest, DynamicShapeInsufficientBuffer) {
   TensorFactory<ScalarType::Float> tf_input;
   TensorFactory<ScalarType::Long> tf_long;
   // clang-format off
@@ -93,6 +91,6 @@ TEST_F(OpNonzeroTest, DynamicShapeInsufficientBuffer) {
   Tensor out = tf_long.zeros(
       {2, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_nonzero_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_nonzero_out(a, out));
 }
 #endif

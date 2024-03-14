@@ -23,124 +23,39 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpIndexSelectOutTest : public OperatorTest {
- protected:
-  Tensor& op_index_select_out(
-      const Tensor& self,
-      int64_t dim,
-      const Tensor& index,
-      Tensor& out) {
-    return torch::executor::aten::index_select_outf(
-        context_, self, dim, index, out);
-  }
+Tensor& op_index_select_out(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::index_select_outf(
+      context, self, dim, index, out);
+}
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
-  void test_dtype() {
-    TensorFactory<DTYPE> tf;
-    TensorFactory<ScalarType::Long> tfl;
+namespace {
 
-    // test index_select on dimension 0.
+// Run the test by selecting Tensor x on given dim and all available indexes on
+// that dimension
+void run_test_cases(
+    const Tensor& x,
+    ssize_t dim,
+    const Tensor& index,
+    const Tensor& expected) {
+  // Generated out tensor sharing same size and dtype with expected tensor
+  TensorFactory<ScalarType::Double> tf;
 
-    // clang-format off
-    Tensor x = tf.make(
-        {3, 2, 4},
-        {
-          // all ones below are from x,
-          // and all zeros are from y.
-          // [0, :, :]
-          1, 1, 1, 1, // [0, 0, :]
-          0, 0, 0, 0, // [0, 1, :]
+  const std::vector<int32_t> out_size(
+      expected.sizes().begin(), expected.sizes().end());
+  Tensor out = tf.ones(out_size);
 
-          // [1, :, :]
-          1, 1, 1, 1, // [1, 0, :]
-          0, 0, 0, 0, // [1, 1, :]
+  Tensor ret = op_index_select_out(x, dim, index, out);
+  EXPECT_TENSOR_EQ(out, ret);
+  EXPECT_TENSOR_EQ(ret, expected);
+}
+} // namespace
 
-          // [2, :, :]
-          1, 1, 1, 1, // [2, 0, :]
-          0, 0, 0, 0, // [2, 1, :]
-        });
-    // clang-format on
-
-    // Expected values for out_0 and ret_0 after the test are all ones(3, 4)
-    // based on the above rules. So here we set the default value of out_0 as
-    // zeros(3, 4) on purpose, to eliminate the influence to the final result
-    // from initial value. Same for out_1 and ret_1.
-
-    Tensor out_0 = tf.zeros({3, 1, 4});
-    Tensor out_1 = tf.ones({3, 1, 4});
-    Tensor index_0 = tfl.make({1}, {0});
-    Tensor index_1 = tfl.make({1}, {1});
-    Tensor ret_0 = op_index_select_out(x, /*dim=*/1, /*index=*/index_0, out_0);
-    Tensor ret_1 = op_index_select_out(x, /*dim=*/1, /*index=*/index_1, out_1);
-
-    EXPECT_TENSOR_EQ(ret_0, out_0);
-    EXPECT_TENSOR_EQ(ret_1, out_1);
-
-    EXPECT_TENSOR_EQ(ret_0, tf.ones({3, 1, 4}));
-    EXPECT_TENSOR_EQ(ret_1, tf.zeros({3, 1, 4}));
-  }
-
-  void test_dynamic_shape(
-      const std::vector<int32_t>& out_shape,
-      enum torch::executor::TensorShapeDynamism dynamism) {
-    /* %python
-    %rewrite(index_select_template) */
-
-    TensorFactory<ScalarType::Float> tf;
-    TensorFactory<ScalarType::Long> tf_index;
-
-    Tensor input = tf.make(
-        {2, 3, 4},
-        {0.49625658988952637,  0.7682217955589294,  0.08847743272781372,
-         0.13203048706054688,  0.30742281675338745, 0.6340786814689636,
-         0.4900934100151062,   0.8964447379112244,  0.455627977848053,
-         0.6323062777519226,   0.3488934636116028,  0.40171730518341064,
-         0.022325754165649414, 0.16885894536972046, 0.2938884496688843,
-         0.518521785736084,    0.6976675987243652,  0.800011396408081,
-         0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
-         0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
-    Tensor index = tf_index.make({2}, {0, 2});
-    Tensor expected = tf.make(
-        {2, 3, 2},
-        {0.49625658988952637,
-         0.08847743272781372,
-         0.30742281675338745,
-         0.4900934100151062,
-         0.455627977848053,
-         0.3488934636116028,
-         0.022325754165649414,
-         0.2938884496688843,
-         0.6976675987243652,
-         0.16102945804595947,
-         0.6816085577011108,
-         0.39709991216659546});
-    Tensor out = tf.zeros(out_shape, dynamism);
-
-    op_index_select_out(input, 2, index, out);
-    EXPECT_TENSOR_CLOSE(out, expected);
-  }
-
-  // Run the test by selecting Tensor x on given dim and all available indexes
-  // on that dimension
-  void run_test_cases(
-      const Tensor& x,
-      ssize_t dim,
-      const Tensor& index,
-      const Tensor& expected) {
-    // Generated out tensor sharing same size and dtype with expected tensor
-    TensorFactory<ScalarType::Double> tf;
-
-    const std::vector<int32_t> out_size(
-        expected.sizes().begin(), expected.sizes().end());
-    Tensor out = tf.ones(out_size);
-
-    Tensor ret = op_index_select_out(x, dim, index, out);
-    EXPECT_TENSOR_EQ(out, ret);
-    EXPECT_TENSOR_EQ(ret, expected);
-  }
-};
-
-TEST_F(OpIndexSelectOutTest, SelectFrontDimAllIndexes) {
+TEST(OpIndexSelectOutTest, SelectFrontDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -178,7 +93,7 @@ TEST_F(OpIndexSelectOutTest, SelectFrontDimAllIndexes) {
   run_test_cases(x, /*dim=*/0, /*index=*/index, expected);
 }
 
-TEST_F(OpIndexSelectOutTest, SelectMiddleDimAllIndexes) {
+TEST(OpIndexSelectOutTest, SelectMiddleDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -218,7 +133,7 @@ TEST_F(OpIndexSelectOutTest, SelectMiddleDimAllIndexes) {
   run_test_cases(x, /*dim=*/1, /*index=*/index, expected);
 }
 
-TEST_F(OpIndexSelectOutTest, SelectEndDimAllIndexes) {
+TEST(OpIndexSelectOutTest, SelectEndDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -263,7 +178,53 @@ TEST_F(OpIndexSelectOutTest, SelectEndDimAllIndexes) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-TEST_F(OpIndexSelectOutTest, AllDtypesSupported) {
+template <class CTYPE, exec_aten::ScalarType DTYPE>
+void test_dtype() {
+  TensorFactory<DTYPE> tf;
+  TensorFactory<ScalarType::Long> tfl;
+
+  // test index_select on dimension 0.
+
+  // clang-format off
+  Tensor x = tf.make(
+      {3, 2, 4},
+      {
+        // all ones below are from x,
+        // and all zeros are from y.
+        // [0, :, :]
+        1, 1, 1, 1, // [0, 0, :]
+        0, 0, 0, 0, // [0, 1, :]
+
+        // [1, :, :]
+        1, 1, 1, 1, // [1, 0, :]
+        0, 0, 0, 0, // [1, 1, :]
+
+        // [2, :, :]
+        1, 1, 1, 1, // [2, 0, :]
+        0, 0, 0, 0, // [2, 1, :]
+      });
+  // clang-format on
+
+  // Expected values for out_0 and ret_0 after the test are all ones(3, 4) based
+  // on the above rules. So here we set the default value of out_0 as zeros(3,
+  // 4) on purpose, to eliminate the influence to the final result from initial
+  // value. Same for out_1 and ret_1.
+
+  Tensor out_0 = tf.zeros({3, 1, 4});
+  Tensor out_1 = tf.ones({3, 1, 4});
+  Tensor index_0 = tfl.make({1}, {0});
+  Tensor index_1 = tfl.make({1}, {1});
+  Tensor ret_0 = op_index_select_out(x, /*dim=*/1, /*index=*/index_0, out_0);
+  Tensor ret_1 = op_index_select_out(x, /*dim=*/1, /*index=*/index_1, out_1);
+
+  EXPECT_TENSOR_EQ(ret_0, out_0);
+  EXPECT_TENSOR_EQ(ret_1, out_1);
+
+  EXPECT_TENSOR_EQ(ret_0, tf.ones({3, 1, 4}));
+  EXPECT_TENSOR_EQ(ret_1, tf.zeros({3, 1, 4}));
+}
+
+TEST(OpIndexSelectOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -281,7 +242,7 @@ TEST_F(OpIndexSelectOutTest, AllDtypesSupported) {
 
 // In this test we are gonnna find if our select function support non-empty
 // tensor input and empty-size tensor output.
-TEST_F(OpIndexSelectOutTest, NonEmptyInputEmptyOutputWithMismatchDimDies) {
+TEST(OpIndexSelectOutTest, NonEmptyInputEmptyOutputWithMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -297,12 +258,12 @@ TEST_F(OpIndexSelectOutTest, NonEmptyInputEmptyOutputWithMismatchDimDies) {
   // pass the empty-size tensor to the function,
   Tensor expect = tf.make({}, {5});
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
 // This test focuses on the support for empty tensor (dim() > 0) input and empty
 // tensor output
-TEST_F(OpIndexSelectOutTest, EmptyInputEmptyOutputWithMatchingDimSupported) {
+TEST(OpIndexSelectOutTest, EmptyInputEmptyOutputWithMatchingDimSupported) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -324,7 +285,7 @@ TEST_F(OpIndexSelectOutTest, EmptyInputEmptyOutputWithMatchingDimSupported) {
 
 ///////////////////////////////////////////////////////////////////////
 
-TEST_F(OpIndexSelectOutTest, DimOutOfBoundDies) {
+TEST(OpIndexSelectOutTest, DimOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -335,12 +296,11 @@ TEST_F(OpIndexSelectOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int32_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (ssize_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(
-        context_, op_index_select_out(x, dim, /*index=*/index, out));
+    ET_EXPECT_KERNEL_FAILURE(op_index_select_out(x, dim, /*index=*/index, out));
   }
 }
 
-TEST_F(OpIndexSelectOutTest, MismatchedDtypesDies) {
+TEST(OpIndexSelectOutTest, MismatchedDtypesDies) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Long> tf_long;
@@ -352,10 +312,10 @@ TEST_F(OpIndexSelectOutTest, MismatchedDtypesDies) {
   Tensor index = tf_long.make({1}, {0});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
-TEST_F(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
+TEST(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -370,10 +330,10 @@ TEST_F(OpIndexSelectOutTest, OutMatchNumelLackDimAtEndDies) {
   Tensor out = tf.ones({1, 2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
-TEST_F(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
+TEST(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -388,10 +348,10 @@ TEST_F(OpIndexSelectOutTest, OutMatchNumelExtraDimAtFrontDies) {
   Tensor out = tf.ones({1, 1, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/0, /*index=*/index, out));
 }
 
-TEST_F(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
+TEST(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -406,10 +366,10 @@ TEST_F(OpIndexSelectOutTest, OutSizeMismatchDimDies) {
   Tensor out = tf.zeros({2, 4, 7});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/2, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/2, /*index=*/index, out));
 }
 
-TEST_F(OpIndexSelectOutTest, IndexWithInvalidDtypeDies) {
+TEST(OpIndexSelectOutTest, IndexWithInvalidDtypeDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Float> tff;
 
@@ -419,10 +379,10 @@ TEST_F(OpIndexSelectOutTest, IndexWithInvalidDtypeDies) {
   Tensor out = tf.zeros({2, 1, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/1, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/1, /*index=*/index, out));
 }
 
-TEST_F(OpIndexSelectOutTest, IndexWithInvalidDimDies) {
+TEST(OpIndexSelectOutTest, IndexWithInvalidDimDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -433,11 +393,11 @@ TEST_F(OpIndexSelectOutTest, IndexWithInvalidDimDies) {
   Tensor out = tf.zeros({2, 1, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE(
-      context_, op_index_select_out(x, /*dim=*/1, /*index=*/index, out));
+      op_index_select_out(x, /*dim=*/1, /*index=*/index, out));
 }
 
 #if !defined(USE_ATEN_LIB)
-TEST_F(OpIndexSelectOutTest, UpperBoundOutTensor) {
+TEST(OpIndexSelectOutTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -499,12 +459,52 @@ index_select_template = f"""
   op_index_select_out(input, $dim$, index, out);
   EXPECT_TENSOR_CLOSE(out, expected);""" */
 
-TEST_F(OpIndexSelectOutTest, DynamicShapeUpperBoundSameAsExpected) {
+void test_dynamic_shape(
+    const std::vector<int32_t>& out_shape,
+    enum torch::executor::TensorShapeDynamism dynamism) {
+  /* %python
+  %rewrite(index_select_template) */
+
+  TensorFactory<ScalarType::Float> tf;
+  TensorFactory<ScalarType::Long> tf_index;
+
+  Tensor input = tf.make(
+      {2, 3, 4},
+      {0.49625658988952637,  0.7682217955589294,  0.08847743272781372,
+       0.13203048706054688,  0.30742281675338745, 0.6340786814689636,
+       0.4900934100151062,   0.8964447379112244,  0.455627977848053,
+       0.6323062777519226,   0.3488934636116028,  0.40171730518341064,
+       0.022325754165649414, 0.16885894536972046, 0.2938884496688843,
+       0.518521785736084,    0.6976675987243652,  0.800011396408081,
+       0.16102945804595947,  0.28226858377456665, 0.6816085577011108,
+       0.9151939749717712,   0.39709991216659546, 0.8741558790206909});
+  Tensor index = tf_index.make({2}, {0, 2});
+  Tensor expected = tf.make(
+      {2, 3, 2},
+      {0.49625658988952637,
+       0.08847743272781372,
+       0.30742281675338745,
+       0.4900934100151062,
+       0.455627977848053,
+       0.3488934636116028,
+       0.022325754165649414,
+       0.2938884496688843,
+       0.6976675987243652,
+       0.16102945804595947,
+       0.6816085577011108,
+       0.39709991216659546});
+  Tensor out = tf.zeros(out_shape, dynamism);
+
+  op_index_select_out(input, 2, index, out);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST(OpIndexSelectOutTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(
       {2, 3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpIndexSelectOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpIndexSelectOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -512,7 +512,7 @@ TEST_F(OpIndexSelectOutTest, DynamicShapeUpperBoundLargerThanExpected) {
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpIndexSelectOutTest, DynamicShapeUnbound) {
+TEST(OpIndexSelectOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

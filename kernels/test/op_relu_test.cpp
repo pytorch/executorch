@@ -19,70 +19,68 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpReluTest : public OperatorTest {
- protected:
-  Tensor& op_relu_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::relu_outf(context_, self, out);
-  }
+Tensor& op_relu_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::relu_outf(context, self, out);
+}
 
-  // Common testing for relu on two floating point Tensors.
-  template <ScalarType DTYPE>
-  void test_relu_execution_floats() {
-    TensorFactory<DTYPE> tf;
+// Common testing for relu on two floating point Tensors.
+template <ScalarType DTYPE>
+void test_relu_execution_floats() {
+  TensorFactory<DTYPE> tf;
 
-    const std::vector<int32_t> sizes = {3, 2};
+  const std::vector<int32_t> sizes = {3, 2};
 
-    Tensor in = tf.make(
-        sizes, /*data=*/{-0.4775, 0.2948, -0.3984, 1.8690, -0.4048, 0.0});
+  Tensor in =
+      tf.make(sizes, /*data=*/{-0.4775, 0.2948, -0.3984, 1.8690, -0.4048, 0.0});
 
-    // Destination for the relu.
-    Tensor out = tf.zeros(sizes);
+  // Destination for the relu.
+  Tensor out = tf.zeros(sizes);
 
-    // Run relu.
-    op_relu_out(in, out);
+  // Run relu.
+  op_relu_out(in, out);
 
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_EQ(
-        out,
-        tf.make(
-            sizes,
-            /*data=*/
-            {0.0, 0.2948, 0.0, 1.8690, 0.0, 0.0}));
-  }
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          sizes,
+          /*data=*/
+          {0.0, 0.2948, 0.0, 1.8690, 0.0, 0.0}));
+}
 
-  template <ScalarType DTYPE>
-  void test_relu_execution_ints() {
-    TensorFactory<DTYPE> tf;
+template <ScalarType DTYPE>
+void test_relu_execution_ints() {
+  TensorFactory<DTYPE> tf;
 
-    const std::vector<int32_t> sizes = {3, 2};
+  const std::vector<int32_t> sizes = {3, 2};
 
-    Tensor in = tf.make(sizes, /*data=*/{-1, 2, 0, 3, 0, -5});
+  Tensor in = tf.make(sizes, /*data=*/{-1, 2, 0, 3, 0, -5});
 
-    // Destination for the relu.
-    Tensor out = tf.zeros(sizes);
+  // Destination for the relu.
+  Tensor out = tf.zeros(sizes);
 
-    // Run relu.
-    op_relu_out(in, out);
+  // Run relu.
+  op_relu_out(in, out);
 
-    // Check that it matches the expected output.
-    EXPECT_TENSOR_EQ(
-        out,
-        tf.make(
-            sizes,
-            /*data=*/
-            {0, 2, 0, 3, 0, 0}));
-  }
-};
+  // Check that it matches the expected output.
+  EXPECT_TENSOR_EQ(
+      out,
+      tf.make(
+          sizes,
+          /*data=*/
+          {0, 2, 0, 3, 0, 0}));
+}
 
-TEST_F(OpReluTest, FloatTensors) {
+TEST(OpReluKernelTest, FloatTensors) {
   test_relu_execution_floats<ScalarType::Float>();
 }
 
-TEST_F(OpReluTest, DoubleTensors) {
+TEST(OpReluKernelTest, DoubleTensors) {
   test_relu_execution_floats<ScalarType::Double>();
 }
 
-TEST_F(OpReluTest, ByteTensors) {
+TEST(OpReluKernelTest, ByteTensors) {
   TensorFactory<ScalarType::Byte> tf;
 
   const std::vector<int32_t> sizes = {3, 2};
@@ -104,23 +102,23 @@ TEST_F(OpReluTest, ByteTensors) {
           {1, 2, 0, 3, 0, 5}));
 }
 
-TEST_F(OpReluTest, CharTensors) {
+TEST(OpReluKernelTest, CharTensors) {
   test_relu_execution_ints<ScalarType::Char>();
 }
 
-TEST_F(OpReluTest, ShortTensors) {
+TEST(OpReluKernelTest, ShortTensors) {
   test_relu_execution_ints<ScalarType::Short>();
 }
 
-TEST_F(OpReluTest, IntTensors) {
+TEST(OpReluKernelTest, IntTensors) {
   test_relu_execution_ints<ScalarType::Int>();
 }
 
-TEST_F(OpReluTest, LongTensors) {
+TEST(OpReluKernelTest, LongTensors) {
   test_relu_execution_ints<ScalarType::Long>();
 }
 
-TEST_F(OpReluTest, InfAndNanPreserved) {
+TEST(OpReluKernelTest, InfAndNanPreserved) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {4, 2};
@@ -159,7 +157,7 @@ TEST_F(OpReluTest, InfAndNanPreserved) {
            0.0}));
 }
 
-TEST_F(OpReluTest, UnhandledDtypeDies) {
+TEST(OpReluKernelTest, UnhandledDtypeDies) {
   // relu() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;
 
@@ -170,11 +168,11 @@ TEST_F(OpReluTest, UnhandledDtypeDies) {
   // Destination for the relu.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_relu_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_relu_out(a, out));
 }
 
 #if !defined(USE_ATEN_LIB)
-TEST_F(OpReluTest, UpperBoundOutTensor) {
+TEST(OpReluKernelTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {3, 2};
@@ -199,7 +197,7 @@ TEST_F(OpReluTest, UpperBoundOutTensor) {
 }
 #endif
 
-TEST_F(OpReluTest, SimpleGeneratedCase) {
+TEST(OpReluOutKernelTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -228,7 +226,7 @@ TEST_F(OpReluTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpReluTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpReluOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -254,7 +252,7 @@ TEST_F(OpReluTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpReluTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpReluOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -280,7 +278,7 @@ TEST_F(OpReluTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpReluTest, DynamicShapeUnbound) {
+TEST(OpReluOutKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Unbound dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 

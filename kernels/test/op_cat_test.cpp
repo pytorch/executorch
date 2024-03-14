@@ -23,39 +23,12 @@ using exec_aten::Tensor;
 using exec_aten::TensorList;
 using torch::executor::testing::TensorFactory;
 
-class OpCatOutTest : public OperatorTest {
- protected:
-  Tensor& op_cat_out(TensorList tensors, int64_t dim, Tensor& out) {
-    return torch::executor::aten::cat_outf(context_, tensors, dim, out);
-  }
+Tensor& op_cat_out(TensorList tensors, int64_t dim, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::cat_outf(context, tensors, dim, out);
+}
 
-  template <class CTYPE, exec_aten::ScalarType DTYPE>
-  void test_dtype() {
-    TensorFactory<DTYPE> tf;
-
-    // Will be concatenated along dim[1]. Use different input values so we can
-    // see where each output value came from.
-    Tensor x = tf.ones({2, 1});
-    Tensor y = tf.zeros({2, 1});
-    std::vector<Tensor> inputs = {x, y};
-
-    Tensor out = tf.ones({2, 2});
-    op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
-
-    // clang-format off
-    Tensor expected = tf.make(
-        {2, 2},
-        {
-            1, 0,
-            1, 0,
-        });
-    // clang-format on
-
-    EXPECT_TENSOR_EQ(out, expected);
-  }
-};
-
-TEST_F(OpCatOutTest, SmokeDim1) {
+TEST(OpCatOutTest, SmokeDim1) {
   TensorFactory<ScalarType::Int> tf;
 
   // Two tensors with the same number of dimensions and the same dim[0]
@@ -105,7 +78,7 @@ TEST_F(OpCatOutTest, SmokeDim1) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCatOutTest, HalfSupport) {
+TEST(OpCatOutTest, HalfSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -127,7 +100,7 @@ TEST_F(OpCatOutTest, HalfSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCatOutTest, NegativeDims) {
+TEST(OpCatOutTest, NegativeDims) {
   TensorFactory<ScalarType::Int> tf;
 
   // Symmetrical input tensors can can be concatenated along any dimension.
@@ -171,7 +144,32 @@ TEST_F(OpCatOutTest, NegativeDims) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-TEST_F(OpCatOutTest, AllDtypesSupported) {
+template <class CTYPE, exec_aten::ScalarType DTYPE>
+void test_dtype() {
+  TensorFactory<DTYPE> tf;
+
+  // Will be concatenated along dim[1]. Use different input values so we can see
+  // where each output value came from.
+  Tensor x = tf.ones({2, 1});
+  Tensor y = tf.zeros({2, 1});
+  std::vector<Tensor> inputs = {x, y};
+
+  Tensor out = tf.ones({2, 2});
+  op_cat_out(ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/1, out);
+
+  // clang-format off
+  Tensor expected = tf.make(
+      {2, 2},
+      {
+          1, 0,
+          1, 0,
+      });
+  // clang-format on
+
+  EXPECT_TENSOR_EQ(out, expected);
+}
+
+TEST(OpCatOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -180,7 +178,7 @@ TEST_F(OpCatOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST_F(OpCatOutTest, EmptyInputTensorShapeIgnored) {
+TEST(OpCatOutTest, EmptyInputTensorShapeIgnored) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel doesn't ignore empty input tensor shape";
   }
@@ -201,7 +199,7 @@ TEST_F(OpCatOutTest, EmptyInputTensorShapeIgnored) {
   // Success if it doesn't assert on the weird-shaped empty input.
 }
 
-TEST_F(OpCatOutTest, DimBounds) {
+TEST(OpCatOutTest, DimBounds) {
   TensorFactory<ScalarType::Int> tf;
 
   // Cat a single tensor, which can be done across any dimension and still
@@ -223,21 +221,20 @@ TEST_F(OpCatOutTest, DimBounds) {
   // Some invalid dim values.
   const std::vector<int64_t> invalid_dims = {2, -3};
   for (int64_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(context_, op_cat_out(inputs, dim, out));
+    ET_EXPECT_KERNEL_FAILURE(op_cat_out(inputs, dim, out));
   }
 }
 
-TEST_F(OpCatOutTest, NoInputTensorsWithNonEmptyOutputDies) {
+TEST(OpCatOutTest, NoInputTensorsWithNonEmptyOutputDies) {
   TensorFactory<ScalarType::Int> tf;
   Tensor out = tf.ones({1});
 
   // Providing an empty list of input tensors should
   // cause an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(
-      context_, op_cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
 }
 
-TEST_F(OpCatOutTest, NoInputTensorsWithEmptyOutputDies) {
+TEST(OpCatOutTest, NoInputTensorsWithEmptyOutputDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Make an empty out tensor and demonstrate that it's empty.
@@ -246,11 +243,10 @@ TEST_F(OpCatOutTest, NoInputTensorsWithEmptyOutputDies) {
 
   // Providing an empty list of input tensors should
   // cause an assertion and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(
-      context_, op_cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(ArrayRef<Tensor>(), /*dim=*/0, out));
 }
 
-TEST_F(OpCatOutTest, MismatchedDtypesDies) {
+TEST(OpCatOutTest, MismatchedDtypesDies) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   Tensor out = tf_int.zeros({4, 2});
@@ -258,13 +254,11 @@ TEST_F(OpCatOutTest, MismatchedDtypesDies) {
   // Same shape as the output, but a different dtype.
   std::vector<Tensor> inputs = {tf_float.ones({2, 2})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_cat_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
-TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
+TEST(OpCatOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
   }
@@ -274,13 +268,11 @@ TEST_F(OpCatOutTest, MismatchedDimensionsDies) {
   // Same dtype and numel as the output, but a different number of dimensions.
   std::vector<Tensor> inputs = {tf.ones({1, 1, 1, 1})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_cat_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
-TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
+TEST(OpCatOutTest, MismatchedDimensionSizeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
   }
@@ -291,13 +283,11 @@ TEST_F(OpCatOutTest, MismatchedDimensionSizeDies) {
   // dimension.
   std::vector<Tensor> inputs = {tf.ones({2, 3})};
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_cat_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
-TEST_F(OpCatOutTest, WrongOutShapeDies) {
+TEST(OpCatOutTest, WrongOutShapeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle wrong out shape";
   }
@@ -311,10 +301,8 @@ TEST_F(OpCatOutTest, WrongOutShapeDies) {
       tf.ones({2, 3}),
   };
 
-  ET_EXPECT_KERNEL_FAILURE(
-      context_,
-      op_cat_out(
-          ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
+  ET_EXPECT_KERNEL_FAILURE(op_cat_out(
+      ArrayRef<Tensor>(inputs.data(), inputs.size()), /*dim=*/0, out));
 }
 
 /* %python
@@ -330,7 +318,7 @@ opt_extra_params = "0,"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST_F(OpCatOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpCatOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{8, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op_tensor_list_in) */
@@ -352,7 +340,7 @@ TEST_F(OpCatOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpCatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   /* %python
   out_args = "{10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op_tensor_list_in) */
@@ -374,7 +362,7 @@ TEST_F(OpCatOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpCatOutTest, DynamicShapeUnbound) {
+TEST(OpCatOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }

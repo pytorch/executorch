@@ -5,7 +5,6 @@
 # LICENSE file in the root directory of this source tree.
 
 import copy
-import io
 import logging
 from typing import Any, Dict, List, Optional, Sequence, Set, Union
 
@@ -13,7 +12,6 @@ import torch
 import torch._export
 
 from executorch.exir._serialize import _serialize_pte_binary
-from executorch.exir._serialize._cord import Cord
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.partitioner import Partitioner
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
@@ -411,7 +409,6 @@ class ExecutorchProgram:
                 "Need to call prog.to_edge prior to constructing ExecutorchProgram."
             )
         self.exported_program = exir_exported_program.exported_program
-        self._pte_data: Optional[Cord] = None
         self._buffer: Optional[bytes] = None
         self._emitter_output: Optional[EmitterOutput] = None
         self._emit_stacktrace: bool = emit_stacktrace
@@ -421,9 +418,10 @@ class ExecutorchProgram:
         self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
         self._delegate_alignment: Optional[int] = delegate_alignment
 
-    def _get_pte_data(self) -> Cord:
-        if self._pte_data is None:
-            self._pte_data = _serialize_pte_binary(
+    @property
+    def buffer(self) -> bytes:
+        if self._buffer is None:
+            self._buffer = _serialize_pte_binary(
                 program=self.program,
                 extract_delegate_segments=self._extract_delegate_segments,
                 extract_constant_segment=self._extract_constant_segment,
@@ -431,20 +429,6 @@ class ExecutorchProgram:
                 constant_tensor_alignment=self._constant_tensor_alignment,
                 delegate_alignment=self._delegate_alignment,
             )
-        return self._pte_data
-
-    @property
-    def buffer(self) -> bytes:
-        """Returns the serialized ExecuTorch binary as a byte string.
-
-        Note that the call to `buffer` may allocate a very large amount of
-        contiguous memory, depending on the model size. If writing to a file,
-        use `write_to_file` which won't incur additional copies.
-        """
-        # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
-        # amounts of memory longer than necessary.
-        if self._buffer is None:
-            self._buffer = bytes(self._get_pte_data())
         return self._buffer
 
     @property
@@ -479,14 +463,6 @@ class ExecutorchProgram:
 
     def dump_exported_program(self) -> ExportedProgram:
         return self.exported_program
-
-    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
-        """
-        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
-        `buffer`, as it writes to file without copying into a contiguous block of memory first,
-        reducing the peak memory usage.
-        """
-        self._get_pte_data().write_to_file(open_file)
 
 
 def _get_aten_to_edge_passes(config: EdgeCompileConfig):
@@ -586,6 +562,245 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         config.memory_planning_pass,
     ]
     return passes
+
+
+# MultiMethodExirExportedProgram represents an exported program that contains
+# multiple methods, all as valid entry points to the program.
+#
+# Internally, each method is represented as a separate ExirExportedProgram.
+# Methods (fx.GraphModule's) do not share anything with each other to
+# ensure that each is self-contained. This is important because transformation
+# passes can be local and do not need to concern themselves about other methods
+# that exists on the same MultiMethodExirExportedProgram.
+#
+# TODO(T152006915): Merge this into ExirExportedProgram and then delete it.
+@compatibility(is_backward_compatible=False)
+class MultiMethodExirExportedProgram:
+    def __init__(
+        self,
+        progs: Dict[str, ExirExportedProgram],
+        getters: Optional[Dict[str, Any]] = None,
+    ):
+        # TODO(ycao): Support merging use case where user started by creating
+        # an empty MultiMethodExirExportedProgram and then start adding more
+        # graph modules to it.
+        assert (
+            len(progs) > 0
+        ), "Expected at least 1 graph module in MultiMethodExirExportedProgram"
+        self._method_to_program = progs
+        self._method_to_prim_getter = getters
+
+    # Get the default method, which is either the only method contained
+    # in this MultiMethodExirExportedProgram or the method named `forward`.
+    def _get_default_program(self):
+        if len(self._method_to_program) == 1:
+            return next(iter(self._method_to_program.values()))
+        elif "forward" in self._method_to_program:
+            return self._method_to_program["forward"]
+        else:
+            return None
+
+    def save(self) -> None:
+        # TODO(ycao): Implement.
+        raise NotImplementedError()
+
+    def load(self) -> None:
+        # TODO(ycao): Implement.
+        raise NotImplementedError()
+
+    def find_method(self, name: str) -> Optional[ExirExportedProgram]:
+        return self._method_to_program.get(name)
+
+    def merge(self, other: "MultiMethodExirExportedProgram"):
+        for method_name, program in other.methods().items():
+            assert (
+                method_name not in self._method_to_program
+            ), f"There already is a method named {method_name} in this program"
+            self._method_to_program[method_name] = program
+
+    def transform(self, *passes: PassType) -> "MultiMethodExirExportedProgram":
+        method_name_to_transformed_program = {
+            method_name: prog.transform(*passes)
+            for method_name, prog in self._method_to_program.items()
+        }
+        return MultiMethodExirExportedProgram(method_name_to_transformed_program)
+
+    def methods(self) -> Dict[str, ExirExportedProgram]:
+        return self._method_to_program
+
+    def prim_getters(self) -> Optional[Dict[str, Any]]:
+        return self._method_to_prim_getter
+
+    def __call__(self, *args: Val, **kwargs: Val) -> Val:
+        prog = self._get_default_program()
+
+        assert (
+            prog is not None
+        ), """MultiMethodExirExportedProgram can not be called directly unless "
+        "it only contains a single method or it contains a `forward` method. "
+        "Please look up one of its methods first via "
+        "`MultiMethodExirExportedProgram.find_method(method_name)`."""
+
+        return prog(*args, **kwargs)
+
+    def __repr__(self) -> str:
+        # TODO(ycao): Implement.
+        raise NotImplementedError()
+
+    def __str__(self) -> str:
+        # TODO(ycao): Implement a real one.
+        return super().__str__()
+
+    def access_property_of_default_method(self, property_name: str):
+        default_program = self._get_default_program()
+        assert (
+            default_program is not None
+        ), f"""Exported program contains more than one methods and none of them "
+        "is named `forward`, it is impossible to identify the default method. "
+        "please look up one of its methods first via `find_method(method_name)` "
+        "to access property: {property_name}."""
+        return getattr(default_program.exported_program.graph_module, property_name)
+
+    @property
+    def graph(self):
+        return self.access_property_of_default_method("graph")
+
+    @property
+    def code(self):
+        return self.access_property_of_default_method("code")
+
+    @property
+    def module(self):
+        default_prog = self._get_default_program()
+        assert (
+            default_prog is not None
+        ), """Exported program contains more than"
+        " one methods and none of them is named `forward`,"
+        " it is impossible to identify the default method "
+        "to fetch GraphModule for."""
+        return default_prog.exported_program.graph_module
+
+    # TODO(ycao): Implement custom __reduce__ to account for lost of
+    # meta['val']
+
+    # TODO(ycao): Change this to a composable function.
+    def to_edge(
+        self, config: Optional[EdgeCompileConfig] = None
+    ) -> "MultiMethodExirExportedProgram":
+        if config is None:
+            config = EdgeCompileConfig()
+        method_name_to_edge_prog = {
+            method_name: prog.to_edge(config)
+            for method_name, prog in self.methods().items()
+        }
+        return MultiMethodExirExportedProgram(
+            method_name_to_edge_prog,
+            self.prim_getters(),
+        )
+
+    # TODO(ycao): Change this to a composable function.
+    def to_executorch(
+        self,
+        config: Optional[ExecutorchBackendConfig] = None,
+    ) -> "MultiMethodExecutorchProgram":
+        return multi_method_program_to_executorch(self, config)
+
+
+# TODO(T152006915): Merge this into ExecutorchProgram and then delete it.
+@compatibility(is_backward_compatible=False)
+class MultiMethodExecutorchProgram:
+    def __init__(
+        self,
+        executorch_dialect_program: "MultiMethodExirExportedProgram",
+        emit_stacktrace: bool,
+        extract_delegate_segments: bool,
+        extract_constant_segment: bool,
+        segment_alignment: int,
+        constant_tensor_alignment: Optional[int] = None,
+        delegate_alignment: Optional[int] = None,
+        prim_getters: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._buffer: Optional[bytes] = None
+        temp: Dict[str, ExportedProgram] = {}
+        for name, prog in executorch_dialect_program.methods().items():
+            temp[name] = prog.exported_program
+        self._emitter_output: EmitterOutput = emit_program(
+            temp,
+            emit_stacktrace,
+            executorch_dialect_program.prim_getters(),
+        )
+        self._executorch_dialect_ir_program = executorch_dialect_program
+        self._extract_delegate_segments: bool = extract_delegate_segments
+        self._extract_constant_segment: bool = extract_constant_segment
+        self._segment_alignment: int = segment_alignment
+        self._constant_tensor_alignment: Optional[int] = constant_tensor_alignment
+        self._delegate_alignment: Optional[int] = delegate_alignment
+        self._prim_getter_cache = prim_getters
+
+    @property
+    def buffer(self) -> bytes:
+        if self._buffer is None:
+            self._buffer = _serialize_pte_binary(
+                program=self._emitter_output.program,
+                extract_delegate_segments=self._extract_delegate_segments,
+                extract_constant_segment=self._extract_constant_segment,
+                segment_alignment=self._segment_alignment,
+                constant_tensor_alignment=self._constant_tensor_alignment,
+                delegate_alignment=self._delegate_alignment,
+            )
+        return self._buffer
+
+    @property
+    def program(self) -> Program:
+        return self._emitter_output.program
+
+    @property
+    def debug_handle_map(self) -> Dict[int, Union[int, List[int]]]:
+        return self._emitter_output.debug_handle_map
+
+    @property
+    def delegate_map(
+        self,
+    ) -> Dict[str, Dict[int, Dict[str, Union[str, _DelegateDebugIdentifierMap]]]]:
+        if self._emitter_output:
+            return self._emitter_output.method_to_delegate_debug_id_map
+        return {}
+
+    # TODO(ycao): This doesn't make sense any more, remove/change later.
+    def dump_graph_module(self) -> torch.fx.GraphModule:
+        return self.get_multi_method_graph_module().module
+
+    def get_multi_method_graph_module(self) -> "MultiMethodExirExportedProgram":
+        return self._executorch_dialect_ir_program
+
+
+# TODO(T152006915): Merge this into to_executorch and then delete it.
+def multi_method_program_to_executorch(
+    edge_dialect_program: MultiMethodExirExportedProgram,
+    config: Optional[ExecutorchBackendConfig] = None,
+) -> MultiMethodExecutorchProgram:
+    config = config or ExecutorchBackendConfig()
+    passes = edge_to_executorch_passes(config)
+    res = {}
+    for method_name, prog in edge_dialect_program._method_to_program.items():
+        new_prog = copy.deepcopy(prog)
+        gm = prog.exported_program.graph_module
+        for p in passes:
+            gm_res = p(gm)
+            assert gm_res is not None
+            gm = gm_res.graph_module
+        _copy_module(new_prog.exported_program.graph_module, gm)
+        res[method_name] = new_prog
+    return MultiMethodExecutorchProgram(
+        executorch_dialect_program=MultiMethodExirExportedProgram(res),
+        emit_stacktrace=config.emit_stacktrace,
+        extract_delegate_segments=config.extract_delegate_segments,
+        extract_constant_segment=config.extract_constant_segment,
+        segment_alignment=config.segment_alignment,
+        constant_tensor_alignment=config.constant_tensor_alignment,
+        delegate_alignment=config.delegate_alignment,
+        prim_getters=edge_dialect_program.prim_getters(),
+    )
 
 
 def to_edge(
@@ -901,8 +1116,8 @@ class ExecutorchProgramManager:
             self._config_methods,
         )
 
-        # Serialize emitter output, ready to be written to a file.
-        self._pte_data: Cord = _serialize_pte_binary(
+        # Serialize emitter output to a buffer
+        self._buffer: bytes = _serialize_pte_binary(
             program=self._emitter_output.program,
             extract_delegate_segments=backend_config.extract_delegate_segments,
             extract_constant_segment=backend_config.extract_constant_segment,
@@ -910,7 +1125,6 @@ class ExecutorchProgramManager:
             constant_tensor_alignment=backend_config.constant_tensor_alignment,
             delegate_alignment=backend_config.delegate_alignment,
         )
-        self._buffer: Optional[bytes] = None
 
     @property
     def methods(self) -> Set[str]:
@@ -965,22 +1179,7 @@ class ExecutorchProgramManager:
 
     @property
     def buffer(self) -> bytes:
-        """Returns the serialized ExecuTorch binary as a byte string.
-
-        Note that the call to `buffer` may allocate a very large amount of
-        contiguous memory, depending on the model size. If writing to a file,
-        use `write_to_file` which won't incur additional copies.
         """
-        # TODO(T181494963): update pybinding to remove buffer cache, which can consume large
-        # amounts of memory longer than necessary.
-        if self._buffer is None:
-            self._buffer = bytes(self._pte_data)
+        Returns a buffer containing the serialized ExecuTorch binary.
+        """
         return self._buffer
-
-    def write_to_file(self, open_file: io.BufferedIOBase) -> None:
-        """
-        Writes the serialized ExecuTorch binary to the file at `open_file`. Prefer to use this over
-        `buffer`, as it writes to file without copying into a contiguous block of memory first,
-        reducing the peak memory usage.
-        """
-        self._pte_data.write_to_file(open_file)

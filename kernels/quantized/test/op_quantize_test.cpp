@@ -68,16 +68,8 @@ TEST(OpQuantizeOutTest, TensorArgOverload) {
   Tensor out = tfo.zeros({3, 5});
   // 4 / 0.5 + 127
   Tensor expected = tfo.full({3, 5}, 135);
-  auto context = torch::executor::KernelRuntimeContext();
   quantize_per_tensor_tensor_args_out(
-      context,
-      input,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      ScalarType::Byte,
-      out);
+      input, scale, zero_point, quant_min, quant_max, ScalarType::Byte, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }
@@ -101,16 +93,8 @@ TEST(OpQuantizeOutTest, TestOutOfBounds) {
 
   Tensor expected = tfo.full({1, 3, 256, 256}, 127);
 
-  auto context = torch::executor::KernelRuntimeContext();
   quantize_per_tensor_tensor_args_out(
-      context,
-      input,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      ScalarType::Char,
-      out);
+      input, scale, zero_point, quant_min, quant_max, ScalarType::Char, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }

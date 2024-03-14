@@ -1,14 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "generated_op_test", "op_test")
 
-def _common_op_test(name, kernels):
+def _common_op_test(name, kernels, aten_compatible = True):
     """
     Defines test targets in format of <kernel>_op_<op-name>_test
     For ATen kernel testing, let's use portable functions.yaml for tested ops.
     """
     for kernel in kernels:
         deps = [":function_header_wrapper_{}".format(kernel)]
-        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
+        op_test(name, aten_compatible = aten_compatible, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
 
 def make_example_generated_op_test_target():
     """
@@ -50,12 +50,10 @@ def define_common_targets(is_fbcode = False):
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
-                "//executorch/runtime/kernel:kernel_includes",
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
-                "//executorch/runtime/kernel:kernel_includes",
             ],
         )
 

@@ -71,10 +71,11 @@ Tensor& linear_scratch_example(
   N = input.size(1);
   K = weight.size(0);
 
-  // TODO: Update to use ET_KERNEL_CHECK when context is available in custom
-  // ops.
-  ET_CHECK(
-      check_linear_scratch_example_args(input, weight, bias, out, scratch));
+  ET_KERNEL_CHECK(
+      ctx,
+      check_linear_scratch_example_args(input, weight, bias, out, scratch),
+      InvalidArgument,
+      out);
 
   // input @ weight -> scratch
   // TODO: does not handle the case that accumulator has different type
@@ -102,7 +103,12 @@ Tensor& linear_scratch_example(
 
     // add the bias
     if (bias.has_value()) {
-      ET_CHECK_MSG(K == bias.value().numel(), "Unexpected numel for bias");
+      ET_KERNEL_CHECK_MSG(
+          ctx,
+          K == bias.value().numel(),
+          InvalidArgument,
+          out,
+          "Unexpected numel for bias");
       for (size_t i = 0; i < M; ++i) {
         for (size_t j = 0; j < K; ++j) {
           scalar_t* scratch_ptr =

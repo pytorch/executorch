@@ -57,15 +57,23 @@ Tensor& quantized_mixed_mm_out(
     const Tensor& weight_scales,
     const optional<Tensor>& opt_weight_zero_points,
     Tensor& out) {
-  ET_CHECK(check_quantized_mixed_mm_args(
-      in, weight, weight_scales, opt_weight_zero_points, out));
+  ET_KERNEL_CHECK(
+      ctx,
+      check_quantized_mixed_mm_args(
+          in, weight, weight_scales, opt_weight_zero_points, out),
+      InvalidArgument,
+      out);
 
   size_t output_ndim = 2;
   exec_aten::SizesType output_sizes[kTensorDimensionLimit];
   output_sizes[0] = in.size(0);
   output_sizes[1] = weight.size(1);
 
-  ET_CHECK(resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok);
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
+      InvalidArgument,
+      out);
 
   constexpr auto name = "quantized_decomposed::mixed_mm.out";
 

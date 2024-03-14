@@ -35,12 +35,7 @@ Tensor& opt_mul_out(
       a_type != ScalarType::Half) {
     // Resize for dynamic shape
     auto error = resize_tensor(out, a.sizes());
-    ET_KERNEL_CHECK_MSG(
-        ctx,
-        error == Error::Ok,
-        InvalidArgument,
-        out,
-        "Failed to resize output tensor.");
+    ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
     ET_SWITCH_REALB_TYPES(out_type, ctx, "mul.out", CTYPE, [&]() {
       using Vec = executorch::vec::Vectorized<CTYPE>;
@@ -54,7 +49,7 @@ Tensor& opt_mul_out(
   } else {
     ScalarType common_type =
         promoteTypes(a_type, b_type, /*half_to_float*/ true);
-    ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+    ET_CHECK(canCast(common_type, out_type));
 
     ET_KERNEL_CHECK(
         ctx,

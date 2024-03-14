@@ -7,7 +7,6 @@
  */
 
 #include <cmath>
-#include <stdexcept>
 
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/platform/assert.h>
@@ -64,11 +63,7 @@ void relu(const Tensor& input, Tensor& output) {
 Tensor& my_relu_out(RuntimeContext& context, const Tensor& input, Tensor& out) {
   (void)context;
   resize(out, input.sizes());
-  ET_KERNEL_CHECK(
-      context,
-      executor::tensors_have_same_shape_and_dtype(input, out),
-      InvalidArgument,
-      out);
+  ET_CHECK_SAME_SHAPE_AND_DTYPE2(input, out);
 
 // helper for generating the cases for different data types
 #define RELU(ctype, dtype)   \
@@ -79,13 +74,7 @@ Tensor& my_relu_out(RuntimeContext& context, const Tensor& input, Tensor& out) {
   switch (input.scalar_type()) {
     ET_FORALL_REAL_TYPES(RELU)
     default:
-      ET_KERNEL_CHECK_MSG(
-          context,
-          false,
-          InvalidArgument,
-          out,
-          "Unhandled dtype %hhd",
-          input.scalar_type());
+      ET_CHECK_MSG(false, "Unhandled dtype %hhd", input.scalar_type());
   }
 #undef RELU
 

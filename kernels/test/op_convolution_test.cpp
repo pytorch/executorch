@@ -22,130 +22,67 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpConvOutTest : public OperatorTest {
- protected:
-  Tensor& op_convolution_out(
-      const Tensor& input,
-      const Tensor& weight,
-      const optional<Tensor>& bias,
-      ArrayRef<int64_t> stride,
-      ArrayRef<int64_t> padding,
-      ArrayRef<int64_t> dilation,
-      bool transposed,
-      ArrayRef<int64_t> output_padding,
-      int64_t groups,
-      Tensor& out) {
-    return torch::executor::aten::convolution_outf(
-        context_,
-        input,
-        weight,
-        bias,
-        stride,
-        padding,
-        dilation,
-        transposed,
-        output_padding,
-        groups,
-        out);
-  }
+Tensor& op_convolution_out(
+    const Tensor& input,
+    const Tensor& weight,
+    const optional<Tensor>& bias,
+    ArrayRef<int64_t> stride,
+    ArrayRef<int64_t> padding,
+    ArrayRef<int64_t> dilation,
+    bool transposed,
+    ArrayRef<int64_t> output_padding,
+    int64_t groups,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::convolution_outf(
+      context,
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      transposed,
+      output_padding,
+      groups,
+      out);
+}
 
-  /* Correctness Test Template for test code generation via Python */
-  /* %python
-  correctness_test_template = f"""
-    {declare_tensor_factory("ScalarType::$DTYPE$", "tf")}
+/* Correctness Test Template for test code generation via Python */
+/* %python
+correctness_test_template = f"""
+  {declare_tensor_factory("ScalarType::$DTYPE$", "tf")}
 
-    {declare_tensor_make_t("input", "tf")}
-    {declare_tensor_make_t("weight", "tf")}
-    {declare_optional_tensor_make_t("bias", "tf")}
-    {declare_tensor_make_t("expected", "tf")}
-    Tensor out = tf.zeros($out_size$, $dynamism$);
+  {declare_tensor_make_t("input", "tf")}
+  {declare_tensor_make_t("weight", "tf")}
+  {declare_optional_tensor_make_t("bias", "tf")}
+  {declare_tensor_make_t("expected", "tf")}
+  Tensor out = tf.zeros($out_size$, $dynamism$);
 
-    {declare_array_ref_t("stride", "int64_t")}
-    {declare_array_ref_t("padding", "int64_t")}
-    {declare_array_ref_t("dilation", "int64_t")}
-    {declare_array_ref_t("output_padding", "int64_t")}
+  {declare_array_ref_t("stride", "int64_t")}
+  {declare_array_ref_t("padding", "int64_t")}
+  {declare_array_ref_t("dilation", "int64_t")}
+  {declare_array_ref_t("output_padding", "int64_t")}
 
-    op_convolution_out(
-        input,
-        weight,
-        bias,
-        stride,
-        padding,
-        dilation,
-        $transposed$,
-        output_padding,
-        $groups$,
-        out);
-    EXPECT_TENSOR_CLOSE(out, expected);"""
-  */
-
-  /* %python
-  import torch
-  torch.manual_seed(0)
-  input = (torch.randint(10, 100, (1, 2, 5)).to(torch.double) / 10.0);
-  weight = (torch.randint(10, 100, (4, 2, 3)).to(torch.double) / 10.0);
-  bias = torch.ones(4).to(torch.double)
-  stride = [2]
-  padding = [0]
-  dilation = [1]
-  transposed = False
-  output_padding = [0]
-  groups = 1
-  expected = torch.nn.functional.conv1d(
-      input, weight, bias, stride, padding, dilation, groups)
-
-  DTYPE = "Float"
-  out_size = "out_shape"
-  dynamism = "dynamism"
-  */
-
-  void test_dynamic_shape(
-      const std::vector<int32_t>& out_shape,
-      enum torch::executor::TensorShapeDynamism dynamism) {
-    /* %python
-    %past-rewrite(correctness_test_template) */
-
-    TensorFactory<ScalarType::Float> tf;
-
-    Tensor input =
-        tf.make({1, 2, 5}, {5.4, 1.9, 9.3, 7.0, 5.3, 7.9, 1.7, 8.3, 4.7, 7.3});
-    Tensor weight =
-        tf.make({4, 2, 3}, {8.1, 6.6, 1.6, 4.9, 3.8, 6.6, 4.6, 2.8,
-                            2.4, 1.3, 3.6, 3.9, 8.1, 8.4, 5.4, 5.1,
-                            8.9, 9.9, 7.9, 1.0, 1.1, 8.2, 6.3, 7.0});
-    optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
-    Tensor expected = tf.make(
-        {1, 4, 2},
-        {172.11, 237.72, 102.24, 132.28, 248.51, 320.18, 189.38, 236.07});
-    Tensor out = tf.zeros(out_shape, dynamism);
-
-    int64_t stride[] = {2};
-    int64_t padding[] = {0};
-    int64_t dilation[] = {1};
-    int64_t output_padding[] = {0};
-
-    op_convolution_out(
-        input,
-        weight,
-        bias,
-        stride,
-        padding,
-        dilation,
-        false,
-        output_padding,
-        1,
-        out);
-    EXPECT_TENSOR_CLOSE(out, expected);
-  }
-};
-
-class OpConvCorrectnessTest : public OpConvOutTest {};
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      $transposed$,
+      output_padding,
+      $groups$,
+      out);
+  EXPECT_TENSOR_CLOSE(out, expected);"""
+*/
 
 //
 // Correctness Tests
 //
 
-TEST_F(OpConvCorrectnessTest, GenericSmokeTest) {
+TEST(OpConvCorrectnessTest, GenericSmokeTest) {
   TensorFactory<ScalarType::Int> tf;
 
   auto input = tf.make({1, 2, 5}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
@@ -194,7 +131,7 @@ DTYPE = "Float"
 out_size = expected.size()
 dynamism = "torch::executor::TensorShapeDynamism::STATIC"
 */
-TEST_F(OpConvCorrectnessTest, NonZeroPadding) {
+TEST(OpConvCorrectnessTest, NonZeroPadding) {
   /* %python
   %past-rewrite(correctness_test_template) */
 
@@ -265,7 +202,7 @@ DTYPE = "Float"
 out_size = expected.size()
 dynamism = "torch::executor::TensorShapeDynamism::STATIC"
 */
-TEST_F(OpConvCorrectnessTest, MultipleInputBatches) {
+TEST(OpConvCorrectnessTest, MultipleInputBatches) {
   /* %python
   %past-rewrite(correctness_test_template) */
 
@@ -327,7 +264,7 @@ DTYPE = "Float"
 out_size = expected.size()
 dynamism = "torch::executor::TensorShapeDynamism::STATIC"
 */
-TEST_F(OpConvCorrectnessTest, 2DSanityCheck) {
+TEST(OpConvCorrectnessTest, 2DSanityCheck) {
   /* %python
   %past-rewrite(correctness_test_template) */
 
@@ -391,7 +328,7 @@ TEST_F(OpConvCorrectnessTest, 2DSanityCheck) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST_F(OpConvCorrectnessTest, 2DSanityCheckChannelsLast) {
+TEST(OpConvCorrectnessTest, 2DSanityCheckChannelsLast) {
   /* %python
   %past-rewrite(correctness_test_template) */
 
@@ -455,17 +392,75 @@ TEST_F(OpConvCorrectnessTest, 2DSanityCheckChannelsLast) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST_F(OpConvOutTest, DynamicShapeUpperBoundSameAsExpected) {
+/* %python
+import torch
+torch.manual_seed(0)
+input = (torch.randint(10, 100, (1, 2, 5)).to(torch.double) / 10.0);
+weight = (torch.randint(10, 100, (4, 2, 3)).to(torch.double) / 10.0);
+bias = torch.ones(4).to(torch.double)
+stride = [2]
+padding = [0]
+dilation = [1]
+transposed = False
+output_padding = [0]
+groups = 1
+expected = torch.nn.functional.conv1d(
+    input, weight, bias, stride, padding, dilation, groups)
+
+DTYPE = "Float"
+out_size = "out_shape"
+dynamism = "dynamism"
+*/
+
+void test_dynamic_shape(
+    const std::vector<int32_t>& out_shape,
+    enum torch::executor::TensorShapeDynamism dynamism) {
+  /* %python
+  %past-rewrite(correctness_test_template) */
+
+  TensorFactory<ScalarType::Float> tf;
+
+  Tensor input =
+      tf.make({1, 2, 5}, {5.4, 1.9, 9.3, 7.0, 5.3, 7.9, 1.7, 8.3, 4.7, 7.3});
+  Tensor weight = tf.make(
+      {4, 2, 3}, {8.1, 6.6, 1.6, 4.9, 3.8, 6.6, 4.6, 2.8, 2.4, 1.3, 3.6, 3.9,
+                  8.1, 8.4, 5.4, 5.1, 8.9, 9.9, 7.9, 1.0, 1.1, 8.2, 6.3, 7.0});
+  optional<Tensor> bias(tf.make({4}, {1.0, 1.0, 1.0, 1.0}));
+  Tensor expected = tf.make(
+      {1, 4, 2},
+      {172.11, 237.72, 102.24, 132.28, 248.51, 320.18, 189.38, 236.07});
+  Tensor out = tf.zeros(out_shape, dynamism);
+
+  int64_t stride[] = {2};
+  int64_t padding[] = {0};
+  int64_t dilation[] = {1};
+  int64_t output_padding[] = {0};
+
+  op_convolution_out(
+      input,
+      weight,
+      bias,
+      stride,
+      padding,
+      dilation,
+      false,
+      output_padding,
+      1,
+      out);
+  EXPECT_TENSOR_CLOSE(out, expected);
+}
+
+TEST(OpConvOut, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(
       {1, 4, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpConvOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpConvOut, DynamicShapeUpperBoundLargerThanExpected) {
   test_dynamic_shape(
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST_F(OpConvOutTest, DynamicShapeUnbound) {
+TEST(OpConvOut, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }

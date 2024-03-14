@@ -20,14 +20,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpIsNanTest : public OperatorTest {
- protected:
-  Tensor& op_isnan_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::isnan_outf(context_, self, out);
-  }
-};
+Tensor& op_isnan_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::isnan_outf(context, self, out);
+}
 
-TEST_F(OpIsNanTest, SanityCheckFloat) {
+TEST(OpIsNanTest, SanityCheckFloat) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -42,7 +40,7 @@ TEST_F(OpIsNanTest, SanityCheckFloat) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpIsNanTest, SanityCheckHalf) {
+TEST(OpIsNanTest, SanityCheckHalf) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -60,7 +58,7 @@ TEST_F(OpIsNanTest, SanityCheckHalf) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpIsNanTest, SanityCheckByte) {
+TEST(OpIsNanTest, SanityCheckByte) {
   TensorFactory<ScalarType::Byte> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -74,7 +72,7 @@ TEST_F(OpIsNanTest, SanityCheckByte) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpIsNanTest, SanityCheckBool) {
+TEST(OpIsNanTest, SanityCheckBool) {
   TensorFactory<ScalarType::Bool> tfb;
 
   Tensor in = tfb.make({1, 5}, {true, false, true, true, false});
@@ -87,11 +85,11 @@ TEST_F(OpIsNanTest, SanityCheckBool) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST_F(OpIsNanTest, SanityCheckOutDtype) {
+TEST(OpIsNanTest, SanityCheckOutDtype) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor in = tf.make({1, 5}, {1, 2, 3, 4, 5});
   Tensor out = tf.zeros({1, 5});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_isnan_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_isnan_out(in, out));
 }

@@ -23,82 +23,54 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpAnyOutTest : public OperatorTest {
+Tensor& op_any_all_out(const Tensor& input, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::any_outf(context, input, out);
+}
+
+Tensor& op_any_dims_out(
+    const Tensor& input,
+    optional<ArrayRef<int64_t>> dim,
+    bool keepdim,
+    Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::any_outf(context, input, dim, keepdim, out);
+}
+
+Tensor&
+op_any_out(const Tensor& input, int64_t dim, bool keepdim, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::any_outf(context, input, dim, keepdim, out);
+}
+
+class OpAnyAllOutTest : public ::testing::Test {
  protected:
-  Tensor& op_any_all_out(const Tensor& input, Tensor& out) {
-    return torch::executor::aten::any_outf(context_, input, out);
-  }
-
-  Tensor& op_any_dims_out(
-      const Tensor& input,
-      optional<ArrayRef<int64_t>> dim,
-      bool keepdim,
-      Tensor& out) {
-    return torch::executor::aten::any_outf(context_, input, dim, keepdim, out);
-  }
-
-  Tensor&
-  op_any_out(const Tensor& input, int64_t dim, bool keepdim, Tensor& out) {
-    return torch::executor::aten::any_outf(context_, input, dim, keepdim, out);
-  }
-
-  template <ScalarType OUT_DTYPE>
-  void test_any_all_out_invalid_type() {
-    TensorFactory<ScalarType::Float> tf_float;
-    TensorFactory<OUT_DTYPE> tf_out;
-
-    Tensor in = tf_float.make(
-        {1, 4},
-        {
-            0,
-            0,
-            1,
-            0,
-        });
-    Tensor out = tf_out.zeros(/*size=*/{0});
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_any_all_out(in, out));
-  }
-
-  template <ScalarType IN_DTYPE>
-  void test_any_all_out() {
-    TensorFactory<IN_DTYPE> tf_in;
-    TensorFactory<ScalarType::Bool> tf_bool;
-    // clang-format off
-    Tensor in = tf_in.make(
-      {2, 4},
-      {
-        0, 1, 0, 1,
-        1, 0, 1, 0
-      });
-    Tensor bool_false_in = tf_bool.make(
-      {2, 4},
-      {
-        false, false, false, false,
-        false, false, false, false,
-      });
-    Tensor bool_true_in = tf_bool.make(
-      {2, 4},
-      {
-        true, true, true, true,
-        true, true, true, true,
-      });
-    // clang-format on
-
-    Tensor out = tf_bool.make({}, {false});
-
-    op_any_all_out(in, out);
-    EXPECT_TENSOR_EQ(out, tf_bool.make({}, {true}));
-
-    op_any_all_out(bool_false_in, out);
-    EXPECT_TENSOR_EQ(out, tf_bool.make({}, {false}));
-
-    op_any_all_out(bool_true_in, out);
-    EXPECT_TENSOR_EQ(out, tf_bool.make({}, {true}));
+  void SetUp() override {
+    // Since these tests cause ET_LOG to be called, the PAL must be initialized
+    // first.
+    torch::executor::runtime_init();
   }
 };
 
-TEST_F(OpAnyOutTest, MismatchedDimensionsDies) {
+class OpAnyDimsOutTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Since these tests cause ET_LOG to be called, the PAL must be initialized
+    // first.
+    torch::executor::runtime_init();
+  }
+};
+
+class OpAnyOutTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    // Since these tests cause ET_LOG to be called, the PAL must be initialized
+    // first.
+    torch::executor::runtime_init();
+  }
+};
+
+TEST_F(OpAnyAllOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
   }
@@ -108,23 +80,78 @@ TEST_F(OpAnyOutTest, MismatchedDimensionsDies) {
   Tensor in = tff.make(size, {0, 0, 1, 0});
   Tensor out = tff.ones(/*size=*/{1, 1});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_any_all_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(in, out));
 }
 
-TEST_F(OpAnyOutTest, InvalidDtypeDies) {
+template <ScalarType OUT_DTYPE>
+void test_any_all_out_invalid_type() {
+  TensorFactory<ScalarType::Float> tf_float;
+  TensorFactory<OUT_DTYPE> tf_out;
+
+  Tensor in = tf_float.make(
+      {1, 4},
+      {
+          0,
+          0,
+          1,
+          0,
+      });
+  Tensor out = tf_out.zeros(/*size=*/{0});
+
+  ET_EXPECT_KERNEL_FAILURE(op_any_all_out(in, out));
+}
+
+TEST_F(OpAnyAllOutTest, InvalidDtypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_any_all_out_invalid_type<ScalarType::dtype>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAnyOutTest, AllRealInputTypePasses) {
+template <ScalarType IN_DTYPE>
+void test_any_all_out() {
+  TensorFactory<IN_DTYPE> tf_in;
+  TensorFactory<ScalarType::Bool> tf_bool;
+  // clang-format off
+  Tensor in = tf_in.make(
+    {2, 4},
+    {
+      0, 1, 0, 1,
+      1, 0, 1, 0
+    });
+  Tensor bool_false_in = tf_bool.make(
+    {2, 4},
+    {
+      false, false, false, false,
+      false, false, false, false,
+    });
+  Tensor bool_true_in = tf_bool.make(
+    {2, 4},
+    {
+      true, true, true, true,
+      true, true, true, true,
+    });
+  // clang-format on
+
+  Tensor out = tf_bool.make({}, {false});
+
+  op_any_all_out(in, out);
+  EXPECT_TENSOR_EQ(out, tf_bool.make({}, {true}));
+
+  op_any_all_out(bool_false_in, out);
+  EXPECT_TENSOR_EQ(out, tf_bool.make({}, {false}));
+
+  op_any_all_out(bool_true_in, out);
+  EXPECT_TENSOR_EQ(out, tf_bool.make({}, {true}));
+}
+
+TEST_F(OpAnyAllOutTest, AllRealInputTypePasses) {
 #define TEST_ENTRY(ctype, dtype) test_any_all_out<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpAnyOutTest, SmokeTestDims) {
+TEST_F(OpAnyDimsOutTest, SmokeTest) {
   TensorFactory<ScalarType::Bool> tfBool;
 
   Tensor self = tfBool.make({2, 3, 1}, {true, false, true, true, false, false});

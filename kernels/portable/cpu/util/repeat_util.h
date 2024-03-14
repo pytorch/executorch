@@ -20,9 +20,9 @@ namespace executor {
  * @param[in] The number of times to repeat this tensor along each dimension
  * @param[in] Output tensor to write to.
  *
- * @returns The status of the repeat operation.
+ * @returns Repeated tensor.
  */
-Error repeat_tensor(
+exec_aten::Tensor& repeat_tensor(
     const exec_aten::Tensor& in,
     exec_aten::ArrayRef<int64_t> repeats,
     exec_aten::Tensor& out);

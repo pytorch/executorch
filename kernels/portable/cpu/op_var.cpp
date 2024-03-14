@@ -71,9 +71,6 @@ Tensor& var_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(in), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
-
   ET_KERNEL_CHECK(
       ctx,
       resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,

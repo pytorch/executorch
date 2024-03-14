@@ -1,5 +1,4 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
-load(":log.bzl", "get_et_logging_flags")
 
 def _select_pal(dict_):
     """Returns an element of `dict_` based on the value of the
@@ -58,6 +57,9 @@ def define_common_targets():
         force_static = True,
     )
 
+    # Enable or disable ET_LOGs
+    enable_et_log = native.read_config("executorch", "enable_et_log", None)
+
     # Interfaces for executorch users
     runtime.cxx_library(
         name = "platform",
@@ -75,7 +77,7 @@ def define_common_targets():
             "profiler.cpp",
             "runtime.cpp",
         ],
-        exported_preprocessor_flags = get_profiling_flags() + get_et_logging_flags(),
+        exported_preprocessor_flags = get_profiling_flags() + (["-DET_LOG_ENABLED=0"] if enable_et_log else []),
         exported_deps = [
             "//executorch/runtime/platform:pal_interface",
             ":compiler",

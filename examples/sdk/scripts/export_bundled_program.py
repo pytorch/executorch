@@ -8,11 +8,15 @@
 
 import argparse
 
-from typing import List
+from typing import List, Union
 
 import torch
 
-from executorch.exir import ExecutorchProgramManager
+from executorch.exir import (
+    ExecutorchProgram,
+    ExecutorchProgramManager,
+    MultiMethodExecutorchProgram,
+)
 from executorch.sdk import BundledProgram
 from executorch.sdk.bundled_program.config import (
     MethodInputType,
@@ -29,7 +33,11 @@ from ...portable.utils import export_to_exec_prog
 
 
 def save_bundled_program(
-    executorch_program: ExecutorchProgramManager,
+    executorch_program: Union[
+        ExecutorchProgram,
+        MultiMethodExecutorchProgram,
+        ExecutorchProgramManager,
+    ],
     method_test_suites: List[MethodTestSuite],
     output_path: str,
 ):

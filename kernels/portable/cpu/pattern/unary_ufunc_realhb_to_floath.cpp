@@ -23,8 +23,6 @@ Tensor& unary_ufunc_realhb_to_floath(
     Tensor& out) {
   (void)ctx;
 
-  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
-
   // Resize for dynamic shape
   ET_KERNEL_CHECK_MSG(
       ctx,

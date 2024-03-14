@@ -1,0 +1,26 @@
+From 394636ef2063e386f54abde094298bb0e40a2cb7 Mon Sep 17 00:00:00 2001
+From: Zingo Andersen <zingo.andersen@arm.com>
+Date: Sat, 20 Jan 2024 10:34:45 +0100
+Subject: [PATCH 2/2] Use TOSA 0.80.1
+
+Signed-off-by: Zingo Andersen <zingo.andersen@arm.com>
+---
+ ethosu/vela/tosa_reader.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ethosu/vela/tosa_reader.py b/ethosu/vela/tosa_reader.py
+index 56af59d..7cb2bf3 100644
+--- a/ethosu/vela/tosa_reader.py
++++ b/ethosu/vela/tosa_reader.py
+@@ -294,7 +294,7 @@ class TosaGraph:
+     def check_version(self, tosa_graph):
+         version = tosa_graph.Version()
+         version_str = f"{version._Major()}.{version._Minor()}.{version._Patch()}"
+-        if version_str != "0.80.0":
++        if version_str != "0.80.1":
+             print(f"Unsupported TOSA version: {version_str}")
+             assert False
+ 
+-- 
+2.25.1
+

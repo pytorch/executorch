@@ -44,7 +44,8 @@ void split_copy_Tensor_out(
   ET_KERNEL_CHECK(
       ctx,
       check_split_copy_args(input, split_size, dim, out),
-      InvalidArgument, );
+      InvalidArgument,
+      out);
 
   const size_t leading_dims = getLeadingDims(input, dim);
   const size_t trailing_dims = getTrailingDims(input, dim);

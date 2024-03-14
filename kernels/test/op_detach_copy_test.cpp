@@ -22,73 +22,70 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpDetachCopyOutTest : public OperatorTest {
- protected:
-  Tensor& op_detach_copy_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::detach_copy_outf(context_, self, out);
-  }
+Tensor& op_detach_copy_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::detach_copy_outf(context, self, out);
+}
 
-  // Common testing for eq operator
-  template <ScalarType DTYPE>
-  void test_detach_copy_out() {
-    TensorFactory<DTYPE> tf;
-    const std::vector<int32_t> sizes = {2, 2};
+// Common testing for eq operator
+template <ScalarType DTYPE>
+void test_detach_copy_out() {
+  TensorFactory<DTYPE> tf;
+  const std::vector<int32_t> sizes = {2, 2};
 
-    Tensor in = tf.make(sizes, {1, 2, 3, 4});
-    Tensor out = tf.zeros(sizes);
+  Tensor in = tf.make(sizes, {1, 2, 3, 4});
+  Tensor out = tf.zeros(sizes);
 
-    // Valid input should give the expected output
-    op_detach_copy_out(in, out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, {1, 2, 3, 4}));
-  }
+  // Valid input should give the expected output
+  op_detach_copy_out(in, out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, {1, 2, 3, 4}));
+}
 
-  template <>
-  void test_detach_copy_out<ScalarType::Bool>() {
-    TensorFactory<ScalarType::Bool> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor out = tf.zeros(sizes);
+template <>
+void test_detach_copy_out<ScalarType::Bool>() {
+  TensorFactory<ScalarType::Bool> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor out = tf.zeros(sizes);
 
-    // Valid input should give the expected output
-    op_detach_copy_out(
-        tf.make(sizes, /*data=*/{true, false, true, false}), out);
-    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, false, true, false}));
-  }
+  // Valid input should give the expected output
+  op_detach_copy_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, false, true, false}));
+}
 
-  template <>
-  void test_detach_copy_out<ScalarType::Float>() {
-    TensorFactory<ScalarType::Float> tf;
-    const std::vector<int32_t> sizes = {2, 2};
-    Tensor out = tf.zeros(sizes);
+template <>
+void test_detach_copy_out<ScalarType::Float>() {
+  TensorFactory<ScalarType::Float> tf;
+  const std::vector<int32_t> sizes = {2, 2};
+  Tensor out = tf.zeros(sizes);
 
-    // Valid input should give the expected output
-    op_detach_copy_out(
-        tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}), out);
-    EXPECT_TENSOR_EQ(
-        out, tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}));
-  }
+  // Valid input should give the expected output
+  op_detach_copy_out(
+      tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}), out);
+  EXPECT_TENSOR_EQ(
+      out, tf.make(sizes, /*data=*/{3.14, INFINITY, -INFINITY, NAN}));
+}
 
-  template <ScalarType DTYPE>
-  void test_detach_copy_out_invalid_shape() {
-    TensorFactory<DTYPE> tf;
-
-    const std::vector<int32_t> in_sizes = {2, 2};
-    const std::vector<int32_t> out_sizes = {4};
-
-    Tensor in = tf.ones(in_sizes);
-    Tensor out = tf.zeros(out_sizes);
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_detach_copy_out(in, out));
-  }
-};
-
-TEST_F(OpDetachCopyOutTest, AllScalarInputOutputSupport) {
+TEST(OpDetachCopyOutKernelTest, AllScalarInputOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_detach_copy_out<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
+template <ScalarType DTYPE>
+void test_detach_copy_out_invalid_shape() {
+  TensorFactory<DTYPE> tf;
+
+  const std::vector<int32_t> in_sizes = {2, 2};
+  const std::vector<int32_t> out_sizes = {4};
+
+  Tensor in = tf.ones(in_sizes);
+  Tensor out = tf.zeros(out_sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_detach_copy_out(in, out));
+}
+
 // Mismatched shape tests.
-TEST_F(OpDetachCopyOutTest, MismatchedShapesDies) {
+TEST(OpDetachCopyOutKernelTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -98,7 +95,7 @@ TEST_F(OpDetachCopyOutTest, MismatchedShapesDies) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpDetachCopyOutTest, MismatchedInputDtypesDies) {
+TEST(OpDetachCopyOutKernelTest, MismatchedInputDtypesDies) {
   TensorFactory<ScalarType::Byte> tf_byte;
   TensorFactory<ScalarType::Char> tf_char;
 
@@ -107,10 +104,10 @@ TEST_F(OpDetachCopyOutTest, MismatchedInputDtypesDies) {
   Tensor in = tf_byte.ones(sizes);
   Tensor out = tf_char.ones(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_detach_copy_out(in, out));
+  ET_EXPECT_KERNEL_FAILURE(op_detach_copy_out(in, out));
 }
 
-TEST_F(OpDetachCopyOutTest, SimpleGeneratedCase) {
+TEST(OpDetachCopyOutKernelTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -139,7 +136,7 @@ TEST_F(OpDetachCopyOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpDetachCopyOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpDetachCopyOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -165,7 +162,7 @@ TEST_F(OpDetachCopyOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpDetachCopyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpDetachCopyOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -191,7 +188,7 @@ TEST_F(OpDetachCopyOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpDetachCopyOutTest, DynamicShapeUnbound) {
+TEST(OpDetachCopyOutKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

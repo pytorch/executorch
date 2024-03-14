@@ -33,7 +33,7 @@ struct ContentView: View {
       TopBar(title: "ExecuTorch Demo")
       ClassificationLabelView(controller: classificationController)
       Spacer()
-      ClassificationTimeView(controller: classificationController)
+      ClassificationTimeView(controller: classificationController).hidden()
       ModeSelector(controller: classificationController)
     }
   }

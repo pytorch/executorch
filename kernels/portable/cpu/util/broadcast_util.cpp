@@ -198,10 +198,7 @@ Tensor broadcast_tensor(
       repeats[i] = 1;
     }
   }
-
-  ET_CHECK(
-      repeat_tensor(broadcast_from, makeArrayRef(repeats, ndim), out) ==
-      Error::Ok);
+  repeat_tensor(broadcast_from, makeArrayRef(repeats, ndim), out);
 
   free(repeats);
 

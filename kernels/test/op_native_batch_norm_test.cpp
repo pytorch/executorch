@@ -17,68 +17,63 @@
 
 using namespace ::testing;
 
-class OpNativeBatchNormLegitNoTrainingOutTest : public OperatorTest {
- protected:
-  ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
-  op_native_batch_norm_legit_no_training_out(
-      const exec_aten::Tensor& input,
-      const exec_aten::optional<exec_aten::Tensor>& weight,
-      const exec_aten::optional<exec_aten::Tensor>& bias,
-      const exec_aten::Tensor& running_mean,
-      const exec_aten::Tensor& running_var,
-      double momentum,
-      double eps,
-      exec_aten::Tensor& out0,
-      exec_aten::Tensor& out1,
-      exec_aten::Tensor& out2) {
-    return torch::executor::aten::_native_batch_norm_legit_no_training_outf(
-        context_,
-        input,
-        weight,
-        bias,
-        running_mean,
-        running_var,
-        momentum,
-        eps,
-        out0,
-        out1,
-        out2);
-  }
-};
+::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
+op_native_batch_norm_legit_no_training_out(
+    const exec_aten::Tensor& input,
+    const exec_aten::optional<exec_aten::Tensor>& weight,
+    const exec_aten::optional<exec_aten::Tensor>& bias,
+    const exec_aten::Tensor& running_mean,
+    const exec_aten::Tensor& running_var,
+    double momentum,
+    double eps,
+    exec_aten::Tensor& out0,
+    exec_aten::Tensor& out1,
+    exec_aten::Tensor& out2) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::_native_batch_norm_legit_no_training_outf(
+      context,
+      input,
+      weight,
+      bias,
+      running_mean,
+      running_var,
+      momentum,
+      eps,
+      out0,
+      out1,
+      out2);
+}
 
-class OpNativeBatchNormLegitOutTest : public OperatorTest {
- protected:
-  ::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
-  op_native_batch_norm_legit_out(
-      const exec_aten::Tensor& input,
-      const exec_aten::optional<exec_aten::Tensor>& weight,
-      const exec_aten::optional<exec_aten::Tensor>& bias,
-      exec_aten::Tensor& running_mean,
-      exec_aten::Tensor& running_var,
-      bool training,
-      double momentum,
-      double eps,
-      exec_aten::Tensor& out0,
-      exec_aten::Tensor& out1,
-      exec_aten::Tensor& out2) {
-    exec_aten::RuntimeContext context{};
-    return torch::executor::aten::_native_batch_norm_legit_outf(
-        context,
-        input,
-        weight,
-        bias,
-        running_mean,
-        running_var,
-        training,
-        momentum,
-        eps,
-        out0,
-        out1,
-        out2);
-  }
-};
+::std::tuple<exec_aten::Tensor&, exec_aten::Tensor&, exec_aten::Tensor&>
+op_native_batch_norm_legit_out(
+    const exec_aten::Tensor& input,
+    const exec_aten::optional<exec_aten::Tensor>& weight,
+    const exec_aten::optional<exec_aten::Tensor>& bias,
+    exec_aten::Tensor& running_mean,
+    exec_aten::Tensor& running_var,
+    bool training,
+    double momentum,
+    double eps,
+    exec_aten::Tensor& out0,
+    exec_aten::Tensor& out1,
+    exec_aten::Tensor& out2) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::_native_batch_norm_legit_outf(
+      context,
+      input,
+      weight,
+      bias,
+      running_mean,
+      running_var,
+      training,
+      momentum,
+      eps,
+      out0,
+      out1,
+      out2);
+}
 
-TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D) {
+TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor input = tfFloat.make(
@@ -164,7 +159,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest2D) {
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
+TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor input = tfFloat.make(
@@ -324,7 +319,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest3D) {
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
+TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor input = tfFloat.make(
@@ -514,7 +509,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTest4D) {
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
+TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Double>
       tfDouble;
 
@@ -643,7 +638,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestDouble) {
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
+TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor input = tfFloat.make(
@@ -794,9 +789,7 @@ TEST_F(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeight) {
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(
-    OpNativeBatchNormLegitNoTrainingOutTest,
-    SampleAtomicTestNoWeightNoBias) {
+TEST(OpNativeBatchNormLegitNoTrainingOutTest, SampleAtomicTestNoWeightNoBias) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor input = tfFloat.make(
@@ -862,7 +855,7 @@ TEST_F(
   EXPECT_TENSOR_CLOSE(out2, out2_expected);
 }
 
-TEST_F(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
+TEST(OpNativeBatchNormLegitOutTest, SampleAtomicTest2D) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor input = tfFloat.make(

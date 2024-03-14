@@ -20,56 +20,12 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-class OpTanhOutTest : public OperatorTest {
- protected:
-  Tensor& op_tanh_out(const Tensor& self, Tensor& out) {
-    return torch::executor::aten::tanh_outf(context_, self, out);
-  }
+Tensor& op_tanh_out(const Tensor& self, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::aten::tanh_outf(context, self, out);
+}
 
-  // Common testing for tanh operator and all kinds of supported input types
-  template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
-  void test_floating_point_tanh_out() {
-    TensorFactory<IN_DTYPE> tf_in;
-    TensorFactory<OUT_DTYPE> tf_out;
-
-    const std::vector<int32_t> sizes = {1, 12};
-
-    // Destination for the tanh operator.
-    Tensor out = tf_out.zeros(sizes);
-
-    // clang-format off
-    op_tanh_out(
-        tf_in.make(sizes, /*data=*/{ 0,  1,  2,  3,   4,  5,
-                                     6,  7,  8,  9,  10,  100}),
-        out);
-  
-    // Check that it matches (or close to) the expected output.
-    EXPECT_TENSOR_CLOSE(
-        out,
-        tf_out.make(
-            sizes, /*data=*/{ 0.0000000000,  0.7615941763,
-                               0.9640275836,  0.9950547814,  0.9993293285,
-                               0.9999092221,  0.9999877214,  0.9999983311,
-                               0.9999997616,  0.9999999404,  1.0000000000, 1.0000000000}));
-    // clang-format on
-  }
-
-  // Unhandled output dtypes.
-  template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
-  void test_tanh_invalid_output_dtype_dies() {
-    TensorFactory<INPUT_DTYPE> tf;
-    TensorFactory<OUTPUT_DTYPE> tf_out;
-
-    const std::vector<int32_t> sizes = {2, 5};
-
-    Tensor in = tf.ones(sizes);
-    Tensor out = tf_out.zeros(sizes);
-
-    ET_EXPECT_KERNEL_FAILURE(context_, op_tanh_out(in, out));
-  }
-};
-
-TEST_F(OpTanhOutTest, HandleBoolInput) {
+TEST(OpTanhOutKernelTest, HandleBoolInput) {
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -82,7 +38,35 @@ TEST_F(OpTanhOutTest, HandleBoolInput) {
   EXPECT_TENSOR_CLOSE(op_tanh_out(a, out), res);
 }
 
-TEST_F(OpTanhOutTest, AllRealInputHalfOutputSupport) {
+// Common testing for tanh operator and all kinds of supported input types
+template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
+void test_floating_point_tanh_out() {
+  TensorFactory<IN_DTYPE> tf_in;
+  TensorFactory<OUT_DTYPE> tf_out;
+
+  const std::vector<int32_t> sizes = {1, 12};
+
+  // Destination for the tanh operator.
+  Tensor out = tf_out.zeros(sizes);
+
+  // clang-format off
+  op_tanh_out(
+      tf_in.make(sizes, /*data=*/{ 0,  1,  2,  3,   4,  5,
+                                   6,  7,  8,  9,  10,  100}),
+      out);
+
+  // Check that it matches (or close to) the expected output.
+  EXPECT_TENSOR_CLOSE(
+      out,
+      tf_out.make(
+          sizes, /*data=*/{ 0.0000000000,  0.7615941763,
+                             0.9640275836,  0.9950547814,  0.9993293285,
+                             0.9999092221,  0.9999877214,  0.9999983311,
+                             0.9999997616,  0.9999999404,  1.0000000000, 1.0000000000}));
+  // clang-format on
+}
+
+TEST(OpTanhOutKernelTest, AllRealInputHalfOutputSupport) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }
@@ -92,21 +76,35 @@ TEST_F(OpTanhOutTest, AllRealInputHalfOutputSupport) {
 #undef TEST_ENTRY
 }
 
-TEST_F(OpTanhOutTest, AllRealInputFloatOutputSupport) {
+TEST(OpTanhOutKernelTest, AllRealInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_tanh_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpTanhOutTest, AllRealInputDoubleOutputSupport) {
+TEST(OpTanhOutKernelTest, AllRealInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_floating_point_tanh_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST_F(OpTanhOutTest, AllNonFloatOutputDTypeDies) {
+// Unhandled output dtypes.
+template <ScalarType INPUT_DTYPE, ScalarType OUTPUT_DTYPE>
+void test_tanh_invalid_output_dtype_dies() {
+  TensorFactory<INPUT_DTYPE> tf;
+  TensorFactory<OUTPUT_DTYPE> tf_out;
+
+  const std::vector<int32_t> sizes = {2, 5};
+
+  Tensor in = tf.ones(sizes);
+  Tensor out = tf_out.zeros(sizes);
+
+  ET_EXPECT_KERNEL_FAILURE(op_tanh_out(in, out));
+}
+
+TEST(OpTanhOutKernelTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_tanh_invalid_output_dtype_dies<ScalarType::Float, ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
@@ -114,7 +112,7 @@ TEST_F(OpTanhOutTest, AllNonFloatOutputDTypeDies) {
 }
 
 // Mismatched shape tests.
-TEST_F(OpTanhOutTest, MismatchedInputShapesDies) {
+TEST(OpTanhOutKernelTest, MismatchedInputShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched input shapes";
   }
@@ -123,10 +121,10 @@ TEST_F(OpTanhOutTest, MismatchedInputShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(context_, op_tanh_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(op_tanh_out(a, out));
 }
 
-TEST_F(OpTanhOutTest, SimpleGeneratedCase) {
+TEST(OpTanhOutKernelTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -180,7 +178,7 @@ TEST_F(OpTanhOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpTanhOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST(OpTanhOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -206,7 +204,7 @@ TEST_F(OpTanhOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpTanhOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST(OpTanhOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -232,7 +230,7 @@ TEST_F(OpTanhOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST_F(OpTanhOutTest, DynamicShapeUnbound) {
+TEST(OpTanhOutKernelTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

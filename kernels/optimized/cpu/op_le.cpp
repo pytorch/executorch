@@ -26,16 +26,11 @@ Tensor& opt_le_tensor_out(
     Tensor& out) {
   (void)ctx;
 
-  ET_KERNEL_CHECK(ctx, tensors_have_same_shape(a, b), InvalidArgument, out);
+  ET_CHECK_SAME_SHAPE2(a, b);
 
   // Resize for dynamic shape
   auto error = resize_tensor(out, a.sizes());
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      error == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
@@ -95,12 +90,7 @@ Tensor& opt_le_scalar_out(
 
   // Resize for dynamic shape
   auto error = resize_tensor(out, a.sizes());
-  ET_KERNEL_CHECK_MSG(
-      ctx,
-      error == Error::Ok,
-      InvalidArgument,
-      out,
-      "Failed to resize output tensor.");
+  ET_CHECK_MSG(error == Error::Ok, "Failed to resize output tensor.");
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

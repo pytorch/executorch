@@ -29,8 +29,6 @@ Tensor& sub_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
-
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = b.scalar_type();
   ScalarType alpha_type = utils::get_scalar_dtype(alpha);
@@ -40,7 +38,6 @@ Tensor& sub_out(
   ET_KERNEL_CHECK(
       ctx, check_alpha_type(alpha_type, common_type), InvalidArgument, out);
   ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
-  ET_KERNEL_CHECK(ctx, tensor_is_realh_type(out), InvalidArgument, out);
 
   ET_SWITCH_REALH_TYPES(a_type, ctx, "sub.out", CTYPE_A, [&]() {
     ET_SWITCH_REALH_TYPES(b_type, ctx, "sub.out", CTYPE_B, [&]() {
@@ -83,8 +80,6 @@ Tensor& sub_scalar_out(
       InvalidArgument,
       out,
       "Failed to resize output tensor.");
-
-  ET_KERNEL_CHECK(ctx, tensor_is_realhb_type(out), InvalidArgument, out);
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);

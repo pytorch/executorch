@@ -193,7 +193,7 @@ def main() -> None:
     prog = edge_m.to_executorch(
         config=ExecutorchBackendConfig(extract_constant_segment=False)
     )
-    save_pte_program(prog, f"{args.model_name}_quantized")
+    save_pte_program(prog.buffer, f"{args.model_name}_quantized")
     end = time.perf_counter()
     logging.info(f"Save time: {end - start}s")
     logging.info("finished")

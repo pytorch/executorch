@@ -7,7 +7,6 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
-import copy
 import logging
 import shlex
 from dataclasses import dataclass
@@ -20,10 +19,9 @@ import pkg_resources
 import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
+    XnnpackPartitioner,
 )
-from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -35,11 +33,9 @@ from .builder import DType, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
-    Int8DynActInt4WeightGPTQQuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
-
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -176,16 +172,6 @@ def quantize(
     model: torch.nn.Module,
     qmode: str,
     activation_dtype: Optional[DType],
-    checkpoint_path: Optional[Path] = None,
-    # following arguments only available when setting int4 quantization.
-    groupsize: int = 128,
-    # following arguments only used for GPTQ
-    calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 1000,
-    calibration_seq_length: int = 100,
-    pad_calibration_inputs: bool = False,
-    percdamp: float = 0.01,
-    blocksize: int = 128,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -200,44 +186,15 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
-    if checkpoint_path is None:
-        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
-
-    if calibration_tasks is None:
-        calibration_tasks = ["hellaswag"]
-
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "int4":
         model_int4 = Int8DynActInt4WeightQuantHandler(
-            model,
-            precision=torch_dtype,
+            model, activation_precision=torch_dtype
         ).quantized_model()
         print("quantized model:", model_int4)
         return model_int4
-    elif qmode == "8da4w-gptq":
-        gptq_quant_handler = Int8DynActInt4WeightGPTQQuantHandler(
-            precision=torch_dtype,
-        )
-        tokenizer_path = checkpoint_path.parent / "tokenizer.model"
-        assert tokenizer_path.is_file(), tokenizer_path
-        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
-            model_file=str(tokenizer_path)
-        )
-        model_updated_state_dict = gptq_quant_handler.create_quantized_state_dict(
-            tokenizer,
-            blocksize,
-            percdamp,
-            groupsize,
-            calibration_tasks,
-            calibration_limit,
-            calibration_seq_length,
-            pad_calibration_inputs,
-        )
-        model = gptq_quant_handler.convert_for_runtime(model)
-        model.load_state_dict(model_updated_state_dict)
-        return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 
@@ -285,7 +242,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "int4", "8da4w-gptq"],
+        choices=["int8", "int4"],
         help="type of quantization",
     )
 
@@ -347,25 +304,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
     )
-
-    parser.add_argument(
-        "-n",
-        "--output_name",
-        default=None,
-        help="Override the output filename of the saved pte model file.",
-    )
-
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
-
-    parser.add_argument(
-        "--generate_etrecord",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Generate the ETRecord debug artifact.",
-    )
 
     return parser
 
@@ -452,17 +393,16 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        # Following changes due to.
-        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
-        #    as well as "qmode int4" which is also dynamic quantizes linear layers.
-        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
-            XnnpackDynamicallyQuantizedPartitioner()
-        )
-        # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
+        partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
 
-    builder_exported_to_edge = (
+    # TODO: remove this after xnnpack delegation is ready
+    if args.quantization_mode == "int4":
+        raise Exception(
+            "some quantized ops should be lowered to xnnpack, but xnnpack delegate is not ready yet"
+        )
+
+    builder = (
         load_llama_model(
             checkpoint=checkpoint_path,
             params_path=params_path,
@@ -476,22 +416,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         .source_transform(transforms)
         .to_dtype(dtype_override)
         .export_to_edge(quantizers)
+        .to_backend(partitioners)
+        .to_executorch()
     )
-
-    if args.generate_etrecord and not builder_exported_to_edge.edge_manager:
-        raise ValueError("Unable to generate etrecord due to missing edge manager.")
-
-    edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-    builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
-
-    # Generate ETRecord
-    if args.generate_etrecord and edge_manager_copy:
-        logging.info("Generating etrecord.bin")
-        generate_etrecord(
-            etrecord_path="etrecord.bin",
-            edge_dialect_program=edge_manager_copy,
-            executorch_program=builder.export_program,
-        )
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -499,20 +426,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     if builder.dtype == DType.fp16:
         modelname = f"{modelname}_h"
 
-    if args.output_name:
-        modelname = args.output_name
-        if modelname.endswith(".pte"):
-            output_file = modelname
-            modelname = modelname[:-4]
-            print(f"modelname: {modelname}")
-            print(f"output_file: {output_file}")
-        else:
-            output_file = f"{builder.output_dir}/{modelname}.pte"
-            print(f"modelname: {modelname}")
-            print(f"output_file: {output_file}")
-    else:
-        output_file = f"{builder.output_dir}/{modelname}.pte"
-
-    builder.save_to_pte(output_file)
+    builder.save_to_pte(modelname)
+    output_file = f"{builder.output_dir}/{modelname}.pte"
 
     return output_file

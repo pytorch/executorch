@@ -52,7 +52,7 @@ public class Module {
    * @param inputs arguments for the ExecuTorch module's 'forward' method.
    * @return return value from the 'forward' method.
    */
-  public EValue[] forward(EValue... inputs) {
+  public EValue forward(EValue... inputs) {
     return mNativePeer.forward(inputs);
   }
 
@@ -63,7 +63,7 @@ public class Module {
    * @param inputs arguments that will be passed to ExecuTorch method.
    * @return return value from the method.
    */
-  public EValue[] execute(String methodName, EValue... inputs) {
+  public EValue execute(String methodName, EValue... inputs) {
     return mNativePeer.execute(methodName, inputs);
   }
 

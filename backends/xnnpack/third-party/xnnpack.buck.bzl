@@ -17,7 +17,6 @@ load(
     "PROD_AVX512F_MICROKERNEL_SRCS",
     "PROD_AVX512SKX_MICROKERNEL_SRCS",
     "PROD_AVX512VBMI_MICROKERNEL_SRCS",
-    "PROD_AVX512VNNIGFNI_MICROKERNEL_SRCS",
     "PROD_AVX512VNNI_MICROKERNEL_SRCS",
     "PROD_AVXVNNI_MICROKERNEL_SRCS",
     "PROD_AVX_MICROKERNEL_SRCS",
@@ -1126,45 +1125,9 @@ def define_xnnpack():
         ],
     )
 
-    AVX512VNNIGFNI_COMPILER_FLAGS = AVX512VNNI_COMPILER_FLAGS + [
-        "-mgfni",
-    ]
-
-    # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
-    native.cxx_library(
-        name = "ukernels_avx512vnnigfni",
-        srcs = select({
-            "DEFAULT": PROD_AVX512VNNIGFNI_MICROKERNEL_SRCS,
-            "ovr_config//cpu:arm32": DEFAULT_DUMMY_SRC,
-            "ovr_config//cpu:arm64": DEFAULT_DUMMY_SRC,
-        }),
-        headers = subdir_glob([
-            ("XNNPACK/src", "**/*.h"),
-            ("XNNPACK/src", "**/*.c"),
-        ]),
-        header_namespace = "",
-        compiler_flags = [
-            "-O2",
-            "-Wno-error=missing-braces",  # required since the SGX toolchain does not have this by default
-        ] + select({
-            "DEFAULT": AVX512VNNIGFNI_COMPILER_FLAGS,
-            "ovr_config//cpu:arm32": [],
-            "ovr_config//cpu:arm64": [],
-        }),
-        preferred_linkage = "static",
-        preprocessor_flags = [
-            "-DXNN_LOG_LEVEL=0",
-        ],
-        exported_deps = [
-            ":interface",
-        ],
-    )
-
     AVXVNNI_COMPILER_FLAGS = [
         "-mavx2",
         "-mavxvnni",
-        "-mf16c",
-        "-mfma",
     ]
 
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
@@ -1217,7 +1180,6 @@ def define_xnnpack():
         ":ukernels_ssse3",
         ":ukernels_xop",
         ":ukernels_avx512vbmi",
-        ":ukernels_avx512vnnigfni",
         ":ukernels_avx512vnni",
         ":ukernels_avxvnni",
     ]

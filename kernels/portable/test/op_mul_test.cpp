@@ -26,14 +26,12 @@ using torch::executor::testing::TensorFactory;
 // If your test case is generic and should be tested on all kernels, add it to
 // executorch/kernels/test/op_mul_test.cpp instead.
 
-class OpMulOutKernelTest : public OperatorTest {
- protected:
-  Tensor& mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
-    return torch::executor::native::mul_out(context_, self, other, out);
-  }
-};
+Tensor& mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
+  exec_aten::RuntimeContext context{};
+  return torch::executor::native::mul_out(context, self, other, out);
+}
 
-TEST_F(OpMulOutKernelTest, UnhandledDtypeDies) {
+TEST(OpMulOutKernelTest, UnhandledDtypeDies) {
   // mul_out() doesn't handle QInt8.
   // TensorFactory cannot be used with ScalarType::QInt8 since
   // torch::executor::qint8 does not have a default constructor. It must be
@@ -66,5 +64,5 @@ TEST_F(OpMulOutKernelTest, UnhandledDtypeDies) {
 
   // Multiplying the two QInt8 tensors should cause an assertion and
   // kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(context_, mul_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(mul_out(a, b, out));
 }
