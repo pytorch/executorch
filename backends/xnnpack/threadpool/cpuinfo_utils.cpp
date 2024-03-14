@@ -67,10 +67,9 @@ uint32_t _get_model_specific_num_cores() {
       // And we have balanced execution with 4 cores.
       return 4;
     }
-  } else {
-    ET_LOG(Info, "Failed to open midr file %s", kImageVersionPath.c_str());
-    return 0;
   }
+  ET_LOG(Info, "Failed to open midr file %s", kImageVersionPath.c_str());
+  return 0;
 }
 
 bool populate_available_cpu_mids() {
