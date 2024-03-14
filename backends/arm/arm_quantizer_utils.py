@@ -17,7 +17,6 @@ from torch.ao.quantization.pt2e.utils import (
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
     QuantizationSpec,
-    QuantizationSpecBase,
     SharedQuantizationSpec,
 )
 
@@ -416,6 +415,25 @@ def _annotate_conv_bn_relu(
     return _do_annotate_conv_bn(gm, quantization_config, filter_fn, has_relu=True)
 
 
+def _get_pattern(conv_fn: Callable, relu_is_inplace: bool, has_relu: bool):
+    def _conv_bn(x, conv_weight, conv_bias, bn_weight, bn_bias, bn_rm, bn_rv):
+        conv = conv_fn(x, conv_weight, conv_bias)
+        bn = F.batch_norm(conv, bn_rm, bn_rv, bn_weight, bn_bias, training=True)
+        if has_relu:
+            output = F.relu_(bn) if relu_is_inplace else F.relu(bn)
+        else:
+            output = bn
+        return output, {
+            "input": x,
+            "conv": conv,
+            "weight": conv_weight,
+            "bias": conv_bias,
+            "output": output,
+        }
+
+    return _WrapperModule(_conv_bn)
+
+
 def _do_annotate_conv_bn(
     gm: torch.fx.GraphModule,
     quantization_config: Optional[QuantizationConfig],
@@ -429,24 +447,6 @@ def _do_annotate_conv_bn(
     The output of the pattern must include a dictionary from string name to node
     for the following names: "input", "conv", "weight", "bias", and "output".
     """
-
-    def get_pattern(conv_fn: Callable, relu_is_inplace: bool):
-        def _conv_bn(x, conv_weight, conv_bias, bn_weight, bn_bias, bn_rm, bn_rv):
-            conv = conv_fn(x, conv_weight, conv_bias)
-            bn = F.batch_norm(conv, bn_rm, bn_rv, bn_weight, bn_bias, training=True)
-            if has_relu:
-                output = F.relu_(bn) if relu_is_inplace else F.relu(bn)
-            else:
-                output = bn
-            return output, {
-                "input": x,
-                "conv": conv,
-                "weight": conv_weight,
-                "bias": conv_bias,
-                "output": output,
-            }
-
-        return _WrapperModule(_conv_bn)
 
     # Needed for matching, otherwise the matches gets filtered out due to unused
     # nodes returned by batch norm
@@ -468,7 +468,7 @@ def _do_annotate_conv_bn(
 
     # Match against all conv dimensions and cuda variants
     for (conv_fn, example_inputs), is_cuda, relu_is_inplace in combinations:
-        pattern = get_pattern(conv_fn, relu_is_inplace)
+        pattern = _get_pattern(conv_fn, relu_is_inplace, has_relu)
         pattern = get_aten_graph_module(pattern, example_inputs, is_cuda)
         pattern.graph.eliminate_dead_code()
         pattern.recompile()
@@ -545,7 +545,6 @@ def _annotate_gru_io_only(
             continue
         # inside each GRU partition, we should be able to annotate each linear
         # subgraph
-        input_qspec_map: Dict[Node, QuantizationSpecBase] = {}
         input_act = input_nodes[0]
         input_act_user = next(iter(input_act.users.keys()))
         assert isinstance(input_act, Node)
