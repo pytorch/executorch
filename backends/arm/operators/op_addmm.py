@@ -65,7 +65,15 @@ class AddmmVisitor(NodeVisitor):
         stride_attr = [1, 1]
         dilation_attr = [1, 1]
 
-        input_zp = -128 if is_quant_node else 0
+        input_zp = 0
+        if is_quant_node:
+            input_node = node.all_input_nodes[1]
+            # rank > 2 linear layer
+            if input_node.target == exir_ops.edge.aten.view_copy.default:
+                quant_node = input_node.all_input_nodes[0]
+            else:
+                quant_node = input_node
+            input_zp = get_quant_node_args(quant_node)[1]
         attr.ConvAttribute(
             pad=pad_attr,
             stride=stride_attr,

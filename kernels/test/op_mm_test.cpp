@@ -25,19 +25,40 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_mm_out(const Tensor& self, const Tensor& mat2, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::mm_outf(context, self, mat2, out);
-}
-
-class OpMmOutTest : public ::testing::Test {
+class OpMmOutTest : public OperatorTest {
  protected:
-  void SetUp() override {
-    torch::executor::runtime_init();
+  Tensor& op_mm_out(const Tensor& self, const Tensor& mat2, Tensor& out) {
+    return torch::executor::aten::mm_outf(context_, self, mat2, out);
+  }
+
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+      if (DTYPE == ScalarType::Half) {
+        GTEST_SKIP()
+            << "skip Half because torch::executor::aten::mm_out does not support Half";
+        return;
+      }
+    }
+
+    // matmul gives 4 * 2 * 3 = 24
+    Tensor x = tf.full({3, 4}, 2);
+    Tensor y = tf.full({4, 5}, 3);
+
+    // Output shape should be (3, 5)
+    Tensor out = tf.zeros({3, 5});
+
+    op_mm_out(x, y, out);
+
+    Tensor expected = tf.full({3, 5}, 24);
+
+    EXPECT_TENSOR_EQ(out, expected);
   }
 };
 
-TEST(OpMmOutTest, OutputDim) {
+TEST_F(OpMmOutTest, OutputDim) {
   TensorFactory<ScalarType::Int> tf;
 
   // 3 tensors with compatible dimensions: (3, 5), (3, 4) and (4, 5).
@@ -58,33 +79,7 @@ TEST(OpMmOutTest, OutputDim) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    if (DTYPE == ScalarType::Half) {
-      GTEST_SKIP()
-          << "skip Half because torch::executor::aten::mm_out does not support Half";
-      return;
-    }
-  }
-
-  // matmul gives 4 * 2 * 3 = 24
-  Tensor x = tf.full({3, 4}, 2);
-  Tensor y = tf.full({4, 5}, 3);
-
-  // Output shape should be (3, 5)
-  Tensor out = tf.zeros({3, 5});
-
-  op_mm_out(x, y, out);
-
-  Tensor expected = tf.full({3, 5}, 24);
-
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST(OpMmOutTest, AllDtypesSupported) {
+TEST_F(OpMmOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Half, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -93,7 +88,7 @@ TEST(OpMmOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
+TEST_F(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 
   // Empty input matrices
@@ -108,7 +103,7 @@ TEST(OpMmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   EXPECT_TENSOR_EQ(op_mm_out(x, y, out), expected);
 }
 
-TEST(OpMmOutTest, InfinityTensorPasses) {
+TEST_F(OpMmOutTest, InfinityTensorPasses) {
   TensorFactory<ScalarType::Float> tff;
 
   Tensor x = tff.full({3, 4}, std::numeric_limits<float>::infinity());
@@ -122,7 +117,7 @@ TEST(OpMmOutTest, InfinityTensorPasses) {
   EXPECT_TENSOR_EQ(op_mm_out(x, y, out), expected);
 }
 
-TEST(OpMmOutTest, MismatchedDimensionsDies) {
+TEST_F(OpMmOutTest, MismatchedDimensionsDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.full({2, 2}, 3);
@@ -134,12 +129,12 @@ TEST(OpMmOutTest, MismatchedDimensionsDies) {
   Tensor out = tf.full({2, 2}, 0);
 
   Tensor expected = tf.full({2, 2}, 6);
-  ET_EXPECT_KERNEL_FAILURE(op_mm_out(x, wrong_y, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, wrong_y, out));
 
   EXPECT_TENSOR_EQ(op_mm_out(x, right_y, out), expected);
 }
 
-TEST(OpMmOutTest, MismatchedDimensionSizeDies) {
+TEST_F(OpMmOutTest, MismatchedDimensionSizeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimension size";
   }
@@ -154,11 +149,11 @@ TEST(OpMmOutTest, MismatchedDimensionSizeDies) {
   Tensor right_out = tf.ones({2, 2});
   Tensor wrong_out = tf.ones({2, 2, 3});
 
-  ET_EXPECT_KERNEL_FAILURE(op_mm_out(x, right_y, wrong_out));
-  ET_EXPECT_KERNEL_FAILURE(op_mm_out(x, wrong_y, right_out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, right_y, wrong_out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, wrong_y, right_out));
 }
 
-TEST(OpMmOutTest, WrongOutShapeDies) {
+TEST_F(OpMmOutTest, WrongOutShapeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle wrong out shape";
   }
@@ -171,12 +166,12 @@ TEST(OpMmOutTest, WrongOutShapeDies) {
   Tensor right_out = tf.ones({10, 4});
   Tensor wrong_out = tf.ones({7, 5});
 
-  ET_EXPECT_KERNEL_FAILURE(op_mm_out(x, y, wrong_out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mm_out(x, y, wrong_out));
 
   EXPECT_TENSOR_EQ(op_mm_out(x, y, right_out), tf.full({10, 4}, 3));
 }
 
-TEST(OpMmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpMmOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -218,7 +213,7 @@ TEST(OpMmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMmOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpMmOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -260,7 +255,7 @@ TEST(OpMmOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMmOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpMmOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 

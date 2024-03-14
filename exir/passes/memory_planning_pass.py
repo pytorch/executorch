@@ -6,6 +6,7 @@
 
 import logging
 import warnings
+from typing import Optional
 
 import torch
 from executorch.exir.error import internal_assert
@@ -20,6 +21,7 @@ from executorch.exir.memory_planning import (
 from executorch.exir.operator.convert import get_out_args_from_opoverload
 from executorch.exir.pass_base import PassBase, PassResult
 from executorch.exir.tensor import ALIGNMENT
+from torch.export.exported_program import ExportGraphSignature
 
 
 class MemoryPlanningPass(PassBase):
@@ -82,13 +84,19 @@ class MemoryPlanningPass(PassBase):
                         out_alloc_node.meta["spec"] = specs[i]
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:
+        return self.run(graph_module)
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
         """
         A pass for memory planning. The actual algorithm used will be picked by
         memory_planning_algo
         """
         self._set_alloc_node_spec(graph_module)
         algo = get_algo(self.memory_planning_algo)
-
         # TODO(shunting) if people have concern of adding a field to GraphModule
         # directly, we should define a GraphModule subclass that we can add our
         # customized fields. Using the graph_module object to convey information across
@@ -98,6 +106,7 @@ class MemoryPlanningPass(PassBase):
             algo,
             graph_module,
             self.alignment,
+            graph_signature,
             self.alloc_graph_input,
             self.alloc_graph_output,
         )
@@ -105,7 +114,10 @@ class MemoryPlanningPass(PassBase):
         # TODO: make the verifier do the work recursively to handle
         # control flow
         verifier = Verifier(
-            graph_module, self.alloc_graph_input, self.alloc_graph_output
+            graph_module,
+            self.alloc_graph_input,
+            self.alloc_graph_output,
+            graph_signature,
         )
 
         if logging.getLogger().isEnabledFor(logging.DEBUG):

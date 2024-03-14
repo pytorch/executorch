@@ -68,8 +68,8 @@ class ComputeGraph final {
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
 
-  std::vector<ValueRef> inputs_;
-  std::vector<ValueRef> outputs_;
+  std::vector<IOValueRef> inputs_;
+  std::vector<IOValueRef> outputs_;
 
  public:
   //
@@ -80,11 +80,11 @@ class ComputeGraph final {
     return context_.get();
   }
 
-  inline std::vector<ValueRef>& inputs() {
+  inline std::vector<IOValueRef>& inputs() {
     return inputs_;
   }
 
-  inline std::vector<ValueRef>& outputs() {
+  inline std::vector<IOValueRef>& outputs() {
     return outputs_;
   }
 
@@ -143,11 +143,13 @@ class ComputeGraph final {
 
   template <typename T>
   typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-  add_scalar_list(std::vector<T>&& values);
+  add_scalar(T value);
 
   template <typename T>
   typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-  add_scalar(T value);
+  add_scalar_list(std::vector<T>&& value);
+
+  ValueRef add_value_list(std::vector<ValueRef>&& value);
 
   ValueRef add_string(std::string&& str);
 
@@ -201,21 +203,28 @@ class ComputeGraph final {
 
   void encode_execute();
   void execute() const;
-};
 
-template <typename T>
-inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
-ComputeGraph::add_scalar_list(std::vector<T>&& values) {
-  ValueRef idx(static_cast<int>(values_.size()));
-  values_.emplace_back(std::move(values));
-  return idx;
-}
+  //
+  // Dynamic Shape support
+  //
+
+  void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+  void propagate_resize();
+};
 
 template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
 ComputeGraph::add_scalar(T value) {
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(value);
+  return idx;
+}
+
+template <typename T>
+inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+ComputeGraph::add_scalar_list(std::vector<T>&& value) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(std::move(value));
   return idx;
 }
 

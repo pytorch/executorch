@@ -125,38 +125,6 @@ class TorchBuilder:
         def forward(self, x, y):
             return x + y
 
-    @register_test
-    class simple_linear(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (torch.rand(1, 2),),
-            TosaProfile.MI: (torch.rand(1, 2),),
-        }
-
-        def __init__(self):
-            super().__init__()
-            torch.manual_seed(seed)
-            self.fc = torch.nn.Linear(2, 3)
-
-        def forward(self, x):
-            x = self.fc(x)
-            return x
-
-    @register_test
-    class simple_linear_rank4(torch.nn.Module):
-        inputs = {
-            TosaProfile.BI: (torch.rand(5, 10, 25, 20),),
-            TosaProfile.MI: (torch.rand(5, 10, 25, 20),),
-        }
-
-        def __init__(self):
-            super().__init__()
-            torch.manual_seed(42)
-            self.fc = torch.nn.Linear(20, 30)
-
-        def forward(self, x):
-            x = self.fc(x)
-            return x
-
     """Currenly we compare the quantized result directly with the floating point result, to avoid a noticable
        precision difference due to wide random numerical distribution, generate small random value range for
        convolution testing instead for now"""
