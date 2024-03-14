@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -69,7 +69,9 @@ def _insert_copy(
     return buffer_output_nodes
 
 
-def insert_write_back_for_buffers_pass(ep: ExportedProgram):
+def insert_write_back_for_buffers_pass(
+    ep: ExportedProgram,
+) -> Tuple[torch.fx.GraphModule, ExportGraphSignature]:
     gm: torch.fx.GraphModule = ep.graph_module
     lifted_inputs: List[Optional[str]] = [
         (
