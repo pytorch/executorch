@@ -23,17 +23,87 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_cumsum_out(
-    const Tensor& self,
-    int64_t dim,
-    optional<ScalarType> enforced_dtype,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::cumsum_outf(
-      context, self, dim, enforced_dtype, out);
-}
+class OpCumSumOutTest : public OperatorTest {
+ protected:
+  Tensor& op_cumsum_out(
+      const Tensor& self,
+      int64_t dim,
+      optional<ScalarType> enforced_dtype,
+      Tensor& out) {
+    return torch::executor::aten::cumsum_outf(
+        context_, self, dim, enforced_dtype, out);
+  }
 
-TEST(OpCumSumOutTest, MismatchedDimensionsDies) {
+  template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
+  void test_cumsum_out_dtype() {
+    TensorFactory<IN_DTYPE> tf_in;
+    TensorFactory<OUT_DTYPE> tf_out;
+    // clang-format off
+    Tensor in = tf_in.make(
+      {2, 4},
+      {
+        0, 1,  2,  4,
+        8, 16, 32, 64
+      });
+    // clang-format on
+
+    Tensor out = tf_out.zeros({2, 4});
+    optional<ScalarType> enforced_dtype = OUT_DTYPE;
+    op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+
+    // clang-format off
+    Tensor expected = tf_out.make(
+      {2, 4},
+      {
+        0, 1,  3,  7,
+        8, 24, 56, 120
+      });
+    // clang-format on
+
+    EXPECT_TENSOR_CLOSE(out, expected);
+
+    // negative dim should work
+    op_cumsum_out(in, /*dim=*/-1, enforced_dtype, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+
+    op_cumsum_out(in, /*dim=*/0, enforced_dtype, out);
+    // clang-format off
+    expected = tf_out.make(
+      {2, 4},
+      {
+        0, 1,  2,  4,
+        8, 17, 34, 68
+      });
+    // clang-format on
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+
+  template <ScalarType OUT_DTYPE>
+  void test_cumsum_out_float() {
+    TensorFactory<ScalarType::Float> tf_float;
+    TensorFactory<OUT_DTYPE> tf_out;
+
+    Tensor in = tf_float.make({1, 2}, {1, INFINITY});
+    Tensor out = tf_out.zeros({1, 2});
+    optional<ScalarType> enforced_dtype = OUT_DTYPE;
+    op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, INFINITY}));
+
+    in = tf_float.make({1, 2}, {1, -INFINITY});
+    op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, -INFINITY}));
+
+    in = tf_float.make({1, 2}, {1, NAN});
+    op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, NAN}));
+
+    in = tf_float.make({1, 2}, {-INFINITY, INFINITY});
+    op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
+    EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {-INFINITY, NAN}));
+  }
+};
+
+TEST_F(OpCumSumOutTest, MismatchedDimensionsDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched dimensions";
   }
@@ -46,62 +116,19 @@ TEST(OpCumSumOutTest, MismatchedDimensionsDies) {
 
   // Dim out of bounds
   optional<ScalarType> enforced_dtype;
-  ET_EXPECT_KERNEL_FAILURE(op_cumsum_out(in, /*dim=*/3, enforced_dtype, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_cumsum_out(in, /*dim=*/3, enforced_dtype, out));
 
   // wrong_out has incompatible dim
   Tensor wrong_out = tff.zeros({2, 10, 4});
   ET_EXPECT_KERNEL_FAILURE(
-      op_cumsum_out(in, /*dim=*/1, enforced_dtype, wrong_out));
+      context_, op_cumsum_out(in, /*dim=*/1, enforced_dtype, wrong_out));
 }
 
 /* A generic smoke test that works for the supported dtypes with
  * enforced_dtype specified.
  */
-template <ScalarType IN_DTYPE, ScalarType OUT_DTYPE>
-void test_cumsum_out_dtype() {
-  TensorFactory<IN_DTYPE> tf_in;
-  TensorFactory<OUT_DTYPE> tf_out;
-  // clang-format off
-  Tensor in = tf_in.make(
-    {2, 4},
-    {
-      0, 1,  2,  4,
-      8, 16, 32, 64
-    });
-  // clang-format on
-
-  Tensor out = tf_out.zeros({2, 4});
-  optional<ScalarType> enforced_dtype = OUT_DTYPE;
-  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
-
-  // clang-format off
-  Tensor expected = tf_out.make(
-    {2, 4},
-    {
-      0, 1,  3,  7,
-      8, 24, 56, 120
-    });
-  // clang-format on
-
-  EXPECT_TENSOR_CLOSE(out, expected);
-
-  // negative dim should work
-  op_cumsum_out(in, /*dim=*/-1, enforced_dtype, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-
-  op_cumsum_out(in, /*dim=*/0, enforced_dtype, out);
-  // clang-format off
-  expected = tf_out.make(
-    {2, 4},
-    {
-      0, 1,  2,  4,
-      8, 17, 34, 68
-    });
-  // clang-format on
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
-
-TEST(OpCumSumOutTest, EnforcedDtypePasses) {
+TEST_F(OpCumSumOutTest, EnforcedDtypePasses) {
 // Use a two layer switch to hanldle each possible data pair
 #define TEST_KERNEL(INPUT_CTYPE, INPUT_DTYPE, OUTPUT_CTYPE, OUTPUT_DTYPE) \
   test_cumsum_out_dtype<ScalarType::INPUT_DTYPE, ScalarType::OUTPUT_DTYPE>();
@@ -114,7 +141,7 @@ TEST(OpCumSumOutTest, EnforcedDtypePasses) {
 #undef TEST_KERNEL
 }
 
-TEST(OpCumSumOutTest, TypeCastCornerCases) {
+TEST_F(OpCumSumOutTest, TypeCastCornerCases) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   TensorFactory<ScalarType::Byte> tf_byte;
@@ -144,31 +171,7 @@ TEST(OpCumSumOutTest, TypeCastCornerCases) {
 /* A generic smoke test that works for the supported dtypes with
  * enforced_dtype specified.
  */
-template <ScalarType OUT_DTYPE>
-void test_cumsum_out_float() {
-  TensorFactory<ScalarType::Float> tf_float;
-  TensorFactory<OUT_DTYPE> tf_out;
-
-  Tensor in = tf_float.make({1, 2}, {1, INFINITY});
-  Tensor out = tf_out.zeros({1, 2});
-  optional<ScalarType> enforced_dtype = OUT_DTYPE;
-  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
-  EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, INFINITY}));
-
-  in = tf_float.make({1, 2}, {1, -INFINITY});
-  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
-  EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, -INFINITY}));
-
-  in = tf_float.make({1, 2}, {1, NAN});
-  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
-  EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {1, NAN}));
-
-  in = tf_float.make({1, 2}, {-INFINITY, INFINITY});
-  op_cumsum_out(in, /*dim=*/1, enforced_dtype, out);
-  EXPECT_TENSOR_CLOSE(out, tf_out.make({1, 2}, {-INFINITY, NAN}));
-}
-
-TEST(OpCumSumOutTest, FloatSpecificTest) {
+TEST_F(OpCumSumOutTest, FloatSpecificTest) {
 // Float/double specific +/-Inf and NAN test
 #define TEST_ENTRY_FLOAT_SPECIFIC_CASES(ctype, dtype) \
   test_cumsum_out_float<ScalarType::dtype>();
@@ -176,7 +179,7 @@ TEST(OpCumSumOutTest, FloatSpecificTest) {
 #undef TEST_ENTRY_FLOAT_SPECIFIC_CASES
 }
 
-TEST(OpCumSumOutTest, SimpleGeneratedCase) {
+TEST_F(OpCumSumOutTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -205,7 +208,7 @@ TEST(OpCumSumOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpCumSumOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpCumSumOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -231,7 +234,7 @@ TEST(OpCumSumOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpCumSumOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpCumSumOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -257,7 +260,7 @@ TEST(OpCumSumOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpCumSumOutTest, DynamicShapeUnbound) {
+TEST_F(OpCumSumOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

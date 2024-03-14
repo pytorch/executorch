@@ -110,7 +110,9 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 def precompute_freqs_cis(dim: int, end: int, theta: float):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    freqs = 1.0 / (
+        theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
+    )
     t = torch.arange(end, device=freqs.device)  # pyre-ignore
     freqs = torch.outer(t, freqs).float()  # pyre-ignore
     freqs_cos = torch.cos(freqs)
@@ -171,6 +173,7 @@ class Attention(nn.Module):
         mask = torch.full(
             (1, 1, args.max_seq_len, args.max_seq_len),
             float("-inf"),
+            device="cpu",
         )
 
         mask = torch.triu(mask, diagonal=1)

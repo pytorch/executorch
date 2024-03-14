@@ -37,6 +37,9 @@ Tensor& select_scatter_out(
   if (dim < 0) {
     dim += in.dim();
   }
+
+  ET_KERNEL_CHECK(ctx, dim >= 0 && dim < in.dim(), InvalidArgument, out);
+
   if (index < 0) {
     index += in.size(dim);
   }
