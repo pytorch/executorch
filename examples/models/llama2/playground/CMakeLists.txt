@@ -32,14 +32,12 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(Llama REQUIRED)
 find_package(ExecuTorch REQUIRED)
-find_package(
-  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../../third-party
-)
+
 
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
 
-set(kernel_sources ${EXECUTORCH_ROOT}/examples/llama2/playground/op_mm.cpp)
+set(kernel_sources ${EXECUTORCH_ROOT}/examples/llama2/playground/op_linear.cpp)
 #
 # custom_kernels: C++ kernel implementations of custom ops
 #
@@ -50,6 +48,9 @@ target_include_directories(custom_kernels PRIVATE ${EXECUTORCH_ROOT}/examples/th
 
 
 if(EXECUTORCH_BUILD_GTEST)
+    find_package(
+        gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../../third-party
+    )
     #
     # llama_cpp_test: test binary to run llama.cpp kernel ggml_mul_mat
     #
@@ -58,3 +59,10 @@ if(EXECUTORCH_BUILD_GTEST)
     target_link_libraries(llama_cpp_test executorch gflags custom_kernels)
     target_compile_options(llama_cpp_test PUBLIC ${_common_compile_options})
 endif()
+
+# Install libraries
+install(
+  TARGETS custom_kernels
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})

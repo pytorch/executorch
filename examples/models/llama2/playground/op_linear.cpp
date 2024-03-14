@@ -5,13 +5,16 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include "ggml-quants.h"
-#include "ggml.h"
-#include <executorch/kernels/portable/cpu/util/matmul_ops_util.h>
+
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <torch/torch.h>
 #include <torch/library.h>
-
+ #define restrict __restrict__
+ extern "C"
+{
+  #include <llama.cpp/ggml.h>
+  #include <llama.cpp/ggml-quants.h>
+}
 namespace llama_cpp {
 namespace native {
 
@@ -20,13 +23,13 @@ using RuntimeContext = exec_aten::RuntimeContext;
 using Error = torch::executor::Error;
 
 static void ggml_compute_forward_mul_mat(
-        const void * restrict src0,
+        const void * src0,
         int64_t * ne0s,
         size_t * nb0s,
-        const float * restrict src1,
+        const float * src1,
         int64_t * ne1s,
         size_t * nb1s,
-        float * restrict dst,
+        float * dst,
         int64_t * nes,
         size_t * nbs) {
     // Takes a q4_0 weight (src0) and a float activation (src1)
@@ -48,10 +51,10 @@ static void ggml_compute_forward_mul_mat(
     int64_t ne12 = ne1s[2];
     int64_t ne13 = ne1s[3];
 
-    size_t nb00 = nb0s[0];
-    size_t nb01 = nb0s[1];
-    size_t nb02 = nb0s[2];
-    size_t nb03 = nb0s[3];
+    size_t nb10 = nb0s[0];
+    size_t nb11 = nb0s[1];
+    size_t nb12 = nb0s[2];
+    size_t nb13 = nb0s[3];
     // dst dim
     int64_t ne0 = nes[0];
     int64_t ne1 = nes[1];
@@ -95,20 +98,20 @@ static void ggml_compute_forward_mul_mat(
 
     // quantize activation
     const size_t row_size = ggml_row_size(GGML_TYPE_Q8_0, ne10);
-    char * buffer = (char *) malloc(ne11*ne12*ne13*row_size)
-    char * wdata = buffer;
+    char * buffer = (char *) malloc(ne11*ne12*ne13*row_size);
+    char * wdata_itr = buffer;
 
     for (int64_t i13 = 0; i13 < ne13; ++i13) {
         for (int64_t i12 = 0; i12 < ne12; ++i12) {
             for (int64_t i11 = 0; i11 < ne11; ++i11) {
-                quantize_row_q8_0((float *)((char *) src1 + i13*nb13 + i12*nb12 + i11*nb11), (void *) wdata, ne10);
-                wdata += row_size;
+                quantize_row_q8_0((float *)((char *) src1 + i13*nb13 + i12*nb12 + i11*nb11), (void *) wdata_itr, ne10);
+                wdata_itr += row_size;
             }
         }
     }
 
 
-    const void * wdata = buffer;
+    const char * wdata = buffer;
 
     const int64_t nr0 = ne01;          // src0 rows
     const int64_t nr1 = ne1*ne12*ne13; // src1 rows
