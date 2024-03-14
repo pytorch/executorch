@@ -786,6 +786,15 @@
             <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
             <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
+
+        <span class="c1"># This is tech debt on tech debt. memory planning pass inherits from some pass infra for GMs.</span>
+        <span class="c1"># This isnt enough info now so i cant use call I have to use some new function &#39;run&#39;.</span>
+        <span class="c1"># Existing user passes dont use run so Im just cheating here because they dont need to work on mutable buffers yet.</span>
+        <span class="c1"># After exir.capture is gone I will clean up the memory planning infra to be consistent.</span>
+        <span class="c1"># Frankly all of exir has big code quality issues because of the migrations that need to be addressed.</span>
+        <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[19]</span>
+        <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
         <span class="n">new_prog</span> <span class="o">=</span> <span class="n">ExirExportedProgram</span><span class="p">(</span>
             <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">exported_program</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">after_to_edge_passes</span>
         <span class="p">)</span>
@@ -1005,7 +1014,6 @@
         <span class="n">RemoveGraphAssertsPass</span><span class="p">(),</span>
         <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
         <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
-        <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span>
     <span class="p">]</span>
     <span class="k">return</span> <span class="n">passes</span>
 
@@ -1246,7 +1254,7 @@
 
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">gm</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
+            <span class="n">gm</span><span class="p">,</span> <span class="n">new_signature</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
             <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
                 <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">p</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>
@@ -1266,6 +1274,14 @@
                     <span class="n">p</span><span class="o">.</span><span class="n">update_placeholder_tensor_specs</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
 
             <span class="c1"># TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work</span>
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">,</span> <span class="s2">&quot;run&quot;</span><span class="p">):</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="o">.</span><span class="n">run</span><span class="p">(</span>  <span class="c1"># pyre-ignore[16]</span>
+                    <span class="n">new_gm</span><span class="p">,</span> <span class="n">new_signature</span>
+                <span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">new_gm_res</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">memory_planning_pass</span><span class="p">(</span><span class="n">new_gm</span><span class="p">)</span>  <span class="c1"># pyre-ignore[19]</span>
+            <span class="k">assert</span> <span class="n">new_gm_res</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="n">new_gm</span> <span class="o">=</span> <span class="n">new_gm_res</span><span class="o">.</span><span class="n">graph_module</span>
 
             <span class="n">_copy_module</span><span class="p">(</span><span class="n">program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">new_gm</span><span class="p">)</span>
             <span class="n">execution_programs</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="n">program</span>
