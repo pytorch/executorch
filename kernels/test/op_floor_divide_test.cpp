@@ -20,34 +20,57 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor&
-op_floor_divide_out(const Tensor& self, const Tensor& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::floor_divide_outf(context, self, other, out);
-}
+class OpFloorDivideTest : public OperatorTest {
+ protected:
+  Tensor&
+  op_floor_divide_out(const Tensor& self, const Tensor& other, Tensor& out) {
+    return torch::executor::aten::floor_divide_outf(context_, self, other, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_integer_floor_divide() {
+    TensorFactory<DTYPE> tf;
+
+    const std::vector<int32_t> sizes = {3, 2};
+
+    // Destination for the floor_divide.
+    Tensor out = tf.zeros(sizes);
+
+    // floor_divide two tensors.
+    // Integer division of -8 / 6 return -1, but -8 // 6 is -2
+    op_floor_divide_out(
+        tf.make(sizes, /*data=*/{-8, 1, 2, 4, 8, 3}),
+        tf.make(sizes, /*data=*/{6, 2, 2, 2, 2, -5}),
+        out);
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-2, 0, 1, 2, 4, -1}));
+  }
+
+  template <ScalarType DTYPE>
+  void test_floating_point_floor_divide() {
+    TensorFactory<DTYPE> tf;
+
+    const std::vector<int32_t> sizes = {3, 2};
+
+    // Destination for the floor_divide.
+    Tensor out = tf.zeros(sizes);
+
+    // floor_divide two tensors.
+    // std::floor(-0.5 / -0.1) == 5.0, but -0.5 // -0.1 yeilds 4.0
+    op_floor_divide_out(
+        tf.make(sizes, /*data=*/{-5.3, 1.1, 2.2, 4.4, 6.8, -0.5}),
+        tf.make(sizes, /*data=*/{2.7, 2.0, 2.0, 2.0, 2.0, -0.1}),
+        out);
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(
+        out, tf.make(sizes, /*data=*/{-2.0, 0.0, 1.0, 2.0, 3.0, 4.0}));
+  }
+};
 
 // Common testing for floor-dividing two integer Tensors.
-template <ScalarType DTYPE>
-void test_integer_floor_divide() {
-  TensorFactory<DTYPE> tf;
-
-  const std::vector<int32_t> sizes = {3, 2};
-
-  // Destination for the floor_divide.
-  Tensor out = tf.zeros(sizes);
-
-  // floor_divide two tensors.
-  // Integer division of -8 / 6 return -1, but -8 // 6 is -2
-  op_floor_divide_out(
-      tf.make(sizes, /*data=*/{-8, 1, 2, 4, 8, 3}),
-      tf.make(sizes, /*data=*/{6, 2, 2, 2, 2, -5}),
-      out);
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-2, 0, 1, 2, 4, -1}));
-}
-
-TEST(OpFloorDivideKernelTest, ByteTensors) {
+TEST_F(OpFloorDivideTest, ByteTensors) {
   TensorFactory<ScalarType::Byte> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -65,53 +88,32 @@ TEST(OpFloorDivideKernelTest, ByteTensors) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{0, 1, 2, 4}));
 }
 
-TEST(OpFloorDivideKernelTest, CharTensors) {
+TEST_F(OpFloorDivideTest, CharTensors) {
   test_integer_floor_divide<ScalarType::Char>();
 }
 
-TEST(OpFloorDivideKernelTest, ShortTensors) {
+TEST_F(OpFloorDivideTest, ShortTensors) {
   test_integer_floor_divide<ScalarType::Short>();
 }
 
-TEST(OpFloorDivideKernelTest, IntTensors) {
+TEST_F(OpFloorDivideTest, IntTensors) {
   test_integer_floor_divide<ScalarType::Int>();
 }
 
-TEST(OpFloorDivideKernelTest, LongTensors) {
+TEST_F(OpFloorDivideTest, LongTensors) {
   test_integer_floor_divide<ScalarType::Long>();
 }
 
 // Common testing for floor-dividing two floating point Tensors.
-template <ScalarType DTYPE>
-void test_floating_point_floor_divide() {
-  TensorFactory<DTYPE> tf;
-
-  const std::vector<int32_t> sizes = {3, 2};
-
-  // Destination for the floor_divide.
-  Tensor out = tf.zeros(sizes);
-
-  // floor_divide two tensors.
-  // std::floor(-0.5 / -0.1) == 5.0, but -0.5 // -0.1 yeilds 4.0
-  op_floor_divide_out(
-      tf.make(sizes, /*data=*/{-5.3, 1.1, 2.2, 4.4, 6.8, -0.5}),
-      tf.make(sizes, /*data=*/{2.7, 2.0, 2.0, 2.0, 2.0, -0.1}),
-      out);
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      out, tf.make(sizes, /*data=*/{-2.0, 0.0, 1.0, 2.0, 3.0, 4.0}));
-}
-
-TEST(OpFloorDivideKernelTest, FloatTensors) {
+TEST_F(OpFloorDivideTest, FloatTensors) {
   test_floating_point_floor_divide<ScalarType::Float>();
 }
 
-TEST(OpFloorDivideKernelTest, DoubleTensors) {
+TEST_F(OpFloorDivideTest, DoubleTensors) {
   test_floating_point_floor_divide<ScalarType::Double>();
 }
 
-TEST(OpFloorDivideKernelTest, UnhandledDtypeDies) {
+TEST_F(OpFloorDivideTest, UnhandledDtypeDies) {
   // floor_divide() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;
 
@@ -126,12 +128,12 @@ TEST(OpFloorDivideKernelTest, UnhandledDtypeDies) {
 
   // Dividing the two boolean tensors should cause an assertion and kill the
   // test process.
-  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_floor_divide_out(a, b, out));
 }
 
 // Mismatched shape tests.
 
-TEST(OpFloorDivideKernelTest, MismatchedInputShapesDies) {
+TEST_F(OpFloorDivideTest, MismatchedInputShapesDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Addends with different shapes.
@@ -143,10 +145,10 @@ TEST(OpFloorDivideKernelTest, MismatchedInputShapesDies) {
 
   // Adding the two mismatched tensors should cause an assertion and kill the
   // test process.
-  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_floor_divide_out(a, b, out));
 }
 
-TEST(OpFloorDivideKernelTest, MismatchedOutputShapesDies) {
+TEST_F(OpFloorDivideTest, MismatchedOutputShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched output shape";
   }
@@ -163,10 +165,10 @@ TEST(OpFloorDivideKernelTest, MismatchedOutputShapesDies) {
 
   // Adding the tensors into a mismatched output should cause an assertion and
   // kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(op_floor_divide_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_floor_divide_out(a, b, out));
 }
 
-TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneAB) {
+TEST_F(OpFloorDivideTest, BroadcastDimSizeIsOneAB) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -186,7 +188,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFloorDivideKernelTest, BroadcastDimSizeMissingAB) {
+TEST_F(OpFloorDivideTest, BroadcastDimSizeMissingAB) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -206,7 +208,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeMissingAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneBA) {
+TEST_F(OpFloorDivideTest, BroadcastDimSizeIsOneBA) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -226,7 +228,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeIsOneBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFloorDivideKernelTest, BroadcastDimSizeMissingBA) {
+TEST_F(OpFloorDivideTest, BroadcastDimSizeMissingBA) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -246,7 +248,7 @@ TEST(OpFloorDivideKernelTest, BroadcastDimSizeMissingBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFloorDivideKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpFloorDivideTest, DynamicShapeUpperBoundSameAsExpected) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -274,7 +276,7 @@ TEST(OpFloorDivideKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFloorDivideKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpFloorDivideTest, DynamicShapeUpperBoundLargerThanExpected) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -302,7 +304,7 @@ TEST(OpFloorDivideKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFloorDivideKernelTest, DynamicShapeUnbound) {
+TEST_F(OpFloorDivideTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 

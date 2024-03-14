@@ -37,7 +37,11 @@ namespace {
  * matches the dtype of the tensors.
  */
 template <typename CTYPE>
-void gelu(const Tensor& input, string_view approximate, Tensor& output) {
+void gelu(
+    exec_aten::RuntimeContext& context,
+    const Tensor& input,
+    string_view approximate,
+    Tensor& output) {
   const CTYPE* in_data = input.data_ptr<CTYPE>();
   CTYPE* out_data = output.data_ptr<CTYPE>();
   size_t lim = input.numel();
@@ -85,8 +89,11 @@ void gelu(const Tensor& input, string_view approximate, Tensor& output) {
 #endif // __aarch64__
 
   } else {
-    ET_CHECK_MSG(
+    ET_KERNEL_CHECK_MSG(
+        context,
         false,
+        InvalidArgument,
+        ,
         "Invalid approximation format: %.*s for gelu",
         static_cast<int>(approximate.length()),
         approximate.data());
@@ -108,20 +115,27 @@ Tensor& opt_gelu_out(
     string_view approximate,
     Tensor& out) {
   (void)context;
-  ET_CHECK_SAME_SHAPE_AND_DTYPE2(input, out);
+  ET_KERNEL_CHECK(
+      context,
+      tensors_have_same_shape_and_dtype(input, out),
+      InvalidArgument,
+      out);
 
 // helper for generating the cases for different data types
-#define GELU(ctype, dtype)                \
-  case ScalarType::dtype:                 \
-    gelu<ctype>(input, approximate, out); \
+#define GELU(ctype, dtype)                         \
+  case ScalarType::dtype:                          \
+    gelu<ctype>(context, input, approximate, out); \
     break;
 
   switch (input.scalar_type()) {
     // TODO support Double as well
     GELU(float, Float)
     default:
-      ET_CHECK_MSG(
+      ET_KERNEL_CHECK_MSG(
+          context,
           false,
+          InvalidArgument,
+          out,
           "Unhandled dtype %" PRId8,
           static_cast<int8_t>(input.scalar_type()));
   }
