@@ -19,7 +19,10 @@ def define_common_targets():
     exir_custom_ops_aot_lib(
         name = "aot_lib",
         yaml_target = ":quantized.yaml",
-        visibility = ["//executorch/..."],
+        visibility = [
+            "//executorch/...",
+            "//bento/...",
+        ],
         kernels = [":quantized_operators_aten"],
         deps = [
             ":all_quantized_ops",
