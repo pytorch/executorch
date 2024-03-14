@@ -1,4 +1,4 @@
-name: Build ExecuTorch demo apps
+name: Build ExecuTorch Android demo apps
 
 on:
   push:
@@ -8,11 +8,8 @@ on:
   pull_request:
     paths:
       - .ci/docker/**
-      - .github/workflows/app-build.yml
+      - .github/workflows/android.yml
       - install_requirements.sh
-      - backends/apple/**
-      - build/build_apple_frameworks.sh
-      - build/test_ios_ci.sh
       - examples/demo-apps/**
       - extension/module/**
   workflow_dispatch:
@@ -22,27 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-demo-ios:
-    name: test-demo-ios
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
-    with:
-      runner: macos-latest-xlarge
-      python-version: '3.11'
-      submodules: 'true'
-      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      timeout: 90
-      script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-        BUILD_TOOL=cmake
-
-        bash .ci/scripts/setup-conda.sh
-        # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
-        # Build and test iOS Demo App
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} bash build/test_ios_ci.sh
-        popd
-
   test-demo-android:
     name: test-demo-android
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main

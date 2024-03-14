@@ -173,6 +173,7 @@ python_unittest(
         "//executorch/exir:schema",
         "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:sym_shape_eval_pass",
     ],
 )
 

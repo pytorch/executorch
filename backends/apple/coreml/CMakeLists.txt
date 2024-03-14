@@ -4,6 +4,10 @@ cmake_minimum_required(VERSION 3.19)
 
 project(executorch_coreml_backend)
 
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+endif()
+
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
@@ -116,9 +120,4 @@ set(
 set(
   TARGET coremldelegate
   APPEND_STRING PROPERTY COMPILE_FLAGS "-Wno-receiver-expr"
-)
-
-set_property(
-  TARGET coremldelegate
-  PROPERTY CXX_STANDARD 17
 )
