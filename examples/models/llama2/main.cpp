@@ -29,6 +29,11 @@ DEFINE_int32(
     128,
     "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
 
+DEFINE_string(
+    etdump_path,
+    "llama_etdump.etdp",
+    "Where to write the llama etdump.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -50,6 +55,9 @@ int32_t main(int32_t argc, char** argv) {
 
   // generate
   runner.generate(prompt, seq_len);
+
+  // dump etdump profiling data
+  runner.dump_etdump(FLAGS_etdump_path);
 
   return 0;
 }
