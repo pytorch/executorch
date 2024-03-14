@@ -70,7 +70,7 @@ curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DAT
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
-./install_requirements.sh
+./install_requirements.sh --pybind coreml mps xnnpack
 export PATH="$(realpath third-party/flatbuffers/cmake-out):$PATH"
 ./build/install_flatc.sh
 
@@ -81,14 +81,6 @@ say "Installing CoreML Backend Requirements"
 say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
-
-say "Installing Python Bindings"
-
-EXECUTORCH_BUILD_PYBIND=ON \
-BUCK="$(pwd)/$BUCK2" \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
-CMAKE_BUILD_PARALLEL_LEVEL=9 \
-pip install . --no-build-isolation -v
 
 say "Exporting Models"
 
