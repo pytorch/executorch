@@ -28,7 +28,7 @@ class I64toI32(ExportPass):
             )
         else:
             if meta_val.dtype == torch.int64:
-                node.meta["val"] = meta_val.to(torch.int32)
+                node.meta["val"] = meta_val.to(torch.float)
 
     def _cast_to_int32(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:

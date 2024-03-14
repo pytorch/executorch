@@ -15,7 +15,7 @@ from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Squeeze(NodeVisitor):
-    target = "aten.squeeze_copy.dims"
+    target = ["aten.squeeze_copy.dims", "aten.squeeze.dims"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

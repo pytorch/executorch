@@ -16,7 +16,7 @@ from .qnn_constants import OpReluMinMax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Clamp(NodeVisitor):
-    target = "aten.clamp.default"
+    target = ["aten.clamp.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

@@ -16,7 +16,7 @@ from .qnn_constants import OpHardSwish, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class HardSwishVisitor(NodeVisitor):
-    target = "aten.hardswish.default"
+    target = ["aten.hardswish.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

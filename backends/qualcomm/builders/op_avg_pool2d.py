@@ -16,7 +16,7 @@ from .qnn_constants import OpPoolAvg2d, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class AvgPool2d(NodeVisitor):
-    target = "aten.avg_pool2d.default"
+    target = ["aten.avg_pool2d.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

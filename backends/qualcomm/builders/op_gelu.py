@@ -16,7 +16,7 @@ from .qnn_constants import OpGelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class GeluVisitor(NodeVisitor):
-    target = "aten.gelu.default"
+    target = ["aten.gelu.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

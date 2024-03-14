@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseSubtract, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Sub(NodeVisitor):
-    target = "aten.sub.Tensor"
+    target = ["aten.sub.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

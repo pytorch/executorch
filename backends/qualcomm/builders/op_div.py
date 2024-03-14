@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseDivide, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Div(NodeVisitor):
-    target = "aten.div.Tensor"
+    target = ["aten.div.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
