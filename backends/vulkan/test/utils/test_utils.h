@@ -12,6 +12,7 @@
 
 #include <ATen/native/vulkan/api/api.h>
 
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 using namespace at::native::vulkan;
@@ -70,9 +71,9 @@ void record_image_to_nchw_op(
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer);
 
-void record_arithmetic_op(
+void record_binary_op(
     api::Context* const context,
-    const api::ShaderInfo& compute_shader,
+    const std::string& op_name,
     vTensor& v_in1,
     vTensor& v_in2,
     vTensor& v_dst);

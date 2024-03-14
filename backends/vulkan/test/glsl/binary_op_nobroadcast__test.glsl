@@ -9,7 +9,6 @@
 #version 450 core
 // clang-format off
 #define PRECISION ${PRECISION}
-#define FORMAT ${FORMAT}
 
 #define OP(X, Y) ${OPERATOR}
 // clang-format on
@@ -17,7 +16,7 @@
 layout(std430) buffer;
 
 // clang-format off
-layout(set = 0, binding = 0, FORMAT) uniform PRECISION restrict writeonly image3D image_out;
+layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly image3D image_out;
 // clang-format on
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 2) uniform PRECISION sampler3D image_other;
