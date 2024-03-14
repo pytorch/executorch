@@ -486,7 +486,7 @@ backends. Feel free to skip building anything just yet.</p>
 the exported model to a specific location where the Demo App will pick them up:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.xnnpack.aot_compiler<span class="w"> </span>--delegate<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
-python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export_and_delegate<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
+python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.coreml.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.apple.mps.scripts.mps_example<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;mv3&quot;</span>
 
 mkdir<span class="w"> </span>-p<span class="w"> </span>examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/
