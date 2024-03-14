@@ -19,7 +19,7 @@ binary_op:
   shader_variants:
     - NAME: binary_add
     - NAME: binary_sub
-      OPERATOR: X - Y
+      OPERATOR: X - A * Y
     - NAME: binary_mul
       OPERATOR: X * Y
     - NAME: binary_div
