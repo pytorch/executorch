@@ -12,7 +12,7 @@ import operator
 import typing
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Iterable, List, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 from executorch.exir import memory
@@ -29,6 +29,7 @@ from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 
 from torch import fx
+from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Node
 from torch.utils._pytree import tree_flatten
 
@@ -47,8 +48,10 @@ class Verifier:
         graph_module: torch.fx.GraphModule,
         alloc_graph_input: bool,
         alloc_graph_output: bool,
+        graph_signature: Optional[ExportGraphSignature] = None,
     ) -> None:
         self.graph_module = graph_module
+        self.graph_signature = graph_signature
         self.alloc_graph_input = alloc_graph_input
         self.alloc_graph_output = alloc_graph_output
 
@@ -135,6 +138,7 @@ class Verifier:
         all_specs = list(
             collect_specs_from_nodes(
                 self.graph_module.graph.nodes,
+                self.graph_signature,
                 ignore_const=True,
                 ignore_graph_input=not self.alloc_graph_input,
                 ignore_graph_output=not self.alloc_graph_output,
@@ -180,7 +184,6 @@ class Verifier:
         input/output is allocated by the compiler. If not, the runtime will
         set them using buffers provided by users.
         """
-
         graph_module = self.graph_module
         # There is one tricky case here. If the graph input and graph output
         # tensors have overlap, but alloc_graph_input != alloc_graph_output,
@@ -190,7 +193,7 @@ class Verifier:
         #
         # Ignore the check in this case for now.
         overlap = get_graph_input_tensors(
-            graph_module.graph.nodes
+            graph_module.graph.nodes, self.graph_signature
         ) & get_graph_output_tensors(graph_module.graph.nodes)
         if overlap and (self.alloc_graph_input != self.alloc_graph_output):
             logging.debug(
@@ -212,6 +215,8 @@ class Verifier:
         for nd in graph_module.graph.nodes:
             if nd.op in check_list:
                 if not (specs := get_node_tensor_specs(nd)):
+                    continue
+                if _is_mutable_buffer(nd, self.graph_signature):
                     continue
                 assert len(specs) > 0, "Expect tensor specs"
                 allocated = any(
@@ -300,10 +305,31 @@ def filter_nodes(inputs: Iterable[Any]) -> Iterable[Node]:
     return [nd for nd in tree_flatten(list(inputs))[0] if isinstance(nd, Node)]
 
 
-def get_graph_input_tensors(nodes: Iterable[Node]) -> Set[TensorSpec]:
+def _is_mutable_buffer(
+    node: Node, graph_signature: Optional[ExportGraphSignature] = None
+) -> bool:
+    """
+    Check if the node is mutable buffer according to the provided graph signature.
+    """
+    # graph signature is None for memory planning passes not called from EdgeProgramManager, these paths are deprecated so mutable buffers are not supported on them.
+    if graph_signature is None:
+        return False
+    if node.op == "placeholder":
+        if isinstance(node.target, str):
+            if node.target in graph_signature.inputs_to_buffers:
+                fqn = graph_signature.inputs_to_buffers[node.target]
+                # if the buffer is mutated then record that
+                if fqn in graph_signature.buffers_to_mutate.values():
+                    return True
+    return False
+
+
+def get_graph_input_tensors(
+    nodes: Iterable[Node], graph_signature: Optional[ExportGraphSignature] = None
+) -> Set[TensorSpec]:
     graph_input_tensors = set()
     for node in nodes:
-        if node.op == "placeholder":
+        if node.op == "placeholder" and not _is_mutable_buffer(node, graph_signature):
             for spec in get_node_tensor_specs(node):
                 graph_input_tensors.add(spec)
 
@@ -322,6 +348,7 @@ def get_graph_output_tensors(nodes: Iterable[Node]) -> Set[TensorSpec]:
 
 def collect_specs_from_nodes(  # noqa: C901
     nodes: Iterable[Node],
+    graph_signature: Optional[ExportGraphSignature] = None,
     ignore_graph_input: bool = False,
     ignore_graph_output: bool = False,
     ignore_const: bool = True,
@@ -342,7 +369,7 @@ def collect_specs_from_nodes(  # noqa: C901
     """
     unique_spec = set()
     graph_input_tensors: Set[TensorSpec] = (
-        get_graph_input_tensors(nodes) if ignore_graph_input else set()
+        get_graph_input_tensors(nodes, graph_signature) if ignore_graph_input else set()
     )
     graph_output_tensors: Set[TensorSpec] = (
         get_graph_output_tensors(nodes) if ignore_graph_output else set()
@@ -406,7 +433,10 @@ def collect_specs_from_nodes(  # noqa: C901
             yield spec
 
 
-def update_all_tensors_lifetime(graph_module: torch.fx.GraphModule) -> Set[TensorSpec]:
+def update_all_tensors_lifetime(
+    graph_module: torch.fx.GraphModule,
+    graph_signature: Optional[ExportGraphSignature] = None,
+) -> Set[TensorSpec]:
     r"""
     Set the lifetime for all the tensors encountered in the Fx graph.
     """
@@ -414,6 +444,7 @@ def update_all_tensors_lifetime(graph_module: torch.fx.GraphModule) -> Set[Tenso
     for node_idx, node in enumerate(graph_module.graph.nodes):
         for spec in collect_specs_from_nodes(
             filter_nodes(itertools.chain([node], node.args, node.kwargs.values())),
+            graph_signature,
             ignore_graph_input=False,
             ignore_const=False,
             ignore_out_var_node=False,
@@ -520,6 +551,7 @@ def get_node_tensor_specs(
 def greedy(
     graph_module: torch.fx.GraphModule,
     alignment: int,
+    graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
 ) -> List[int]:
@@ -533,6 +565,7 @@ def greedy(
     # one.
     for spec in collect_specs_from_nodes(
         graph_module.graph.nodes,
+        graph_signature,
         do_assertion=do_assertion,
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
@@ -572,9 +605,11 @@ def greedy(
 def naive(
     graph_module: torch.fx.GraphModule,
     alignment: int,
+    graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
 ) -> List[int]:
+
     # allocate 'allocated' bytes from buffer with id mem_id.
     # return the starting offset of the allocated buffer.
     def _allocate_buf(bufsizes: List[int], mem_id: int, allocated: int) -> int:
@@ -591,6 +626,7 @@ def naive(
     bufsizes = typing.cast(List[int], bufsizes)
     for spec in collect_specs_from_nodes(
         graph_module.graph.nodes,
+        graph_signature,
         ignore_graph_input=not alloc_graph_input,
         ignore_graph_output=not alloc_graph_output,
     ):
@@ -695,9 +731,13 @@ def insert_calls_to_free(
 
 
 def apply_algo(
-    algo: Callable[[torch.fx.GraphModule, int, bool, bool], List[int]],
+    algo: Callable[
+        [torch.fx.GraphModule, int, Optional[ExportGraphSignature], bool, bool],
+        List[int],
+    ],
     graph_module: torch.fx.GraphModule,
     alignment: int,
+    graph_signature: Optional[ExportGraphSignature] = None,
     alloc_graph_input: bool = True,
     alloc_graph_output: bool = True,
 ) -> List[int]:
@@ -712,9 +752,9 @@ def apply_algo(
        storage with tensors in the outer module.
     TODO: make these optimizations once we have some baseline working.
     """
-    specs = update_all_tensors_lifetime(graph_module)
+    specs = update_all_tensors_lifetime(graph_module, graph_signature)
     bufsizes: List[int] = algo(
-        graph_module, alignment, alloc_graph_input, alloc_graph_output
+        graph_module, alignment, graph_signature, alloc_graph_input, alloc_graph_output
     )
     insert_calls_to_free(graph_module, specs)
 
@@ -726,7 +766,12 @@ def apply_algo(
         # buffer already allocated.
         submodule.input_mem_buffer_sizes = bufsizes
         bufsizes = apply_algo(
-            algo, submodule, alignment, alloc_graph_input=False, alloc_graph_output=True
+            algo,
+            submodule,
+            alignment,
+            graph_signature,
+            alloc_graph_input=False,
+            alloc_graph_output=True,
         )
         submodule.meta.update({"non_const_buffer_sizes": bufsizes})
 
