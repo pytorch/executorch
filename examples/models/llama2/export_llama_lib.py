@@ -21,7 +21,8 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
-from executorch.sdk.etrecord import generate_etrecord
+
+# from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
@@ -486,12 +487,13 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     # Generate ETRecord
     if args.generate_etrecord and edge_manager_copy:
-        logging.info("Generating etrecord.bin")
-        generate_etrecord(
-            etrecord_path="etrecord.bin",
-            edge_dialect_program=edge_manager_copy,
-            executorch_program=builder.export_program,
-        )
+        # logging.info("Generating etrecord.bin")
+        # generate_etrecord(
+        #     etrecord_path="etrecord.bin",
+        #     edge_dialect_program=edge_manager_copy,
+        #     executorch_program=builder.export_program,
+        # )
+        pass
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
