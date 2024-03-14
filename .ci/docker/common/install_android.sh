@@ -34,7 +34,7 @@ download_and_install_ndk() {
 
   # Print the content for manual verification
   ls -lah "android-ndk-${ANDROID_NDK_VERSION}"
-  mv "android-ndk-${NDK_INSTALLATION_DIR}"/* "${NDK_INSTALLATION_DIR}"
+  mv "android-ndk-${ANDROID_NDK_VERSION}"/* "${NDK_INSTALLATION_DIR}"
 
   popd
 }
