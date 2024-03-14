@@ -14,6 +14,7 @@ import torch
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 from executorch.sdk import generate_etrecord
+from torch.nn.attention import SDPBackend
 
 from ..models import MODEL_NAME_TO_MODEL
 from ..models.model_factory import EagerModelFactory
@@ -78,22 +79,23 @@ if __name__ == "__main__":
     )
 
     model = model.eval()
-    # pre-autograd export. eventually this will become torch.export
-    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
-    if args.quantize:
-        logging.info("Quantizing Model...")
-        # TODO(T165162973): This pass shall eventually be folded into quantizer
-        model = quantize(model, example_inputs)
+    with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+        # pre-autograd export. eventually this will become torch.export
+        model = torch._export.capture_pre_autograd_graph(model, example_inputs)
 
-    edge = export_to_edge(
-        model,
-        example_inputs,
-        edge_compile_config=EdgeCompileConfig(
-            _check_ir_validity=False if args.quantize else True,
-        ),
-    )
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+        if args.quantize:
+            logging.info("Quantizing Model...")
+            # TODO(T165162973): This pass shall eventually be folded into quantizer
+            model = quantize(model, example_inputs)
+
+        edge = export_to_edge(
+            model,
+            example_inputs,
+            edge_compile_config=EdgeCompileConfig(
+                _check_ir_validity=False if args.quantize else True,
+            ),
+        )
 
     # this is needed for the ETRecord as lowering modifies the graph in-place
     edge_copy = copy.deepcopy(edge)
