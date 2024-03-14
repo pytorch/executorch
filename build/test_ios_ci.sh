@@ -39,14 +39,6 @@ say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
 
-say "Installing Python Bindings"
-
-EXECUTORCH_BUILD_PYBIND=ON \
-BUCK="$(which buck2)" \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
-CMAKE_BUILD_PARALLEL_LEVEL=9 \
-pip install . --no-build-isolation -v
-
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="$MODEL_NAME" --segment_alignment=0x4000
