@@ -27,25 +27,29 @@ using torch::executor::testing::TensorFactory;
 // If your test case is generic and should be tested on all kernels, add it to
 // executorch/kernels/test/op_div_test.cpp instead.
 
-Tensor& op_div_out_mode(
-    const Tensor& a,
-    const Tensor& b,
-    exec_aten::optional<exec_aten::string_view> mode,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::div_outf(context, a, b, mode, out);
-}
+class OpDivScalarOutKernelTest : public OperatorTest {
+ protected:
+  Tensor& op_div_out_mode(
+      const Tensor& a,
+      const Tensor& b,
+      exec_aten::optional<exec_aten::string_view> mode,
+      Tensor& out) {
+    return torch::executor::aten::div_outf(context_, a, b, mode, out);
+  }
+};
 
-Tensor& op_div_scalar_mode_out(
-    const Tensor& a,
-    const Scalar& b,
-    exec_aten::optional<exec_aten::string_view> mode,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::div_outf(context, a, b, mode, out);
-}
+class OpDivScalarModeOutKernelTest : public OperatorTest {
+ protected:
+  Tensor& op_div_scalar_mode_out(
+      const Tensor& a,
+      const Scalar& b,
+      exec_aten::optional<exec_aten::string_view> mode,
+      Tensor& out) {
+    return torch::executor::aten::div_outf(context_, a, b, mode, out);
+  }
+};
 
-TEST(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
+TEST_F(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -63,7 +67,7 @@ TEST(OpDivScalarOutKernelTest, SanityCheckModeTrunc) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.0, 1.0, 2.0, -4.0}));
 }
 
-TEST(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
+TEST_F(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -81,7 +85,7 @@ TEST(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.0, 1.0, 2.0, -5.0}));
 }
 
-TEST(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
+TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -99,7 +103,7 @@ TEST(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.0, 1.0, 2.0, -4.0}));
 }
 
-TEST(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
+TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 

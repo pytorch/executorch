@@ -17,17 +17,19 @@
 
 using namespace ::testing;
 
-void op_split_with_sizes_copy_out(
-    const exec_aten::Tensor& self,
-    exec_aten::ArrayRef<int64_t> split_sizes,
-    int64_t dim,
-    exec_aten::TensorList out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::split_with_sizes_copy_outf(
-      context, self, split_sizes, dim, out);
-}
+class OpSplitWithSizesCopyOutTest : public OperatorTest {
+ protected:
+  void op_split_with_sizes_copy_out(
+      const exec_aten::Tensor& self,
+      exec_aten::ArrayRef<int64_t> split_sizes,
+      int64_t dim,
+      exec_aten::TensorList out) {
+    return torch::executor::aten::split_with_sizes_copy_outf(
+        context_, self, split_sizes, dim, out);
+  }
+};
 
-TEST(OpSplitWithSizesCopyOutTest, SanityCheckDim1) {
+TEST_F(OpSplitWithSizesCopyOutTest, SanityCheckDim1) {
   torch::executor::testing::TensorFactory<exec_aten::ScalarType::Float> tfFloat;
 
   exec_aten::Tensor self = tfFloat.make(

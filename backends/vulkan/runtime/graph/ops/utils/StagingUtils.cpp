@@ -8,6 +8,7 @@
 
 // @lint-ignore-every CLANGTIDY facebook-security-vulnerable-memcpy
 
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
@@ -92,101 +93,50 @@ void copy_staging_to_ptr(
 
 api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
   if (v_dst.is_quantized()) {
-    switch (v_dst.storage_type()) {
-      case api::StorageType::TEXTURE_3D:
-        switch (v_dst.dtype()) {
-          case api::ScalarType::QUInt8:
-            return VK_KERNEL(nchw_to_image_uint8);
-          case api::ScalarType::QInt8:
-            return VK_KERNEL(nchw_to_image_int8);
-          case api::ScalarType::QInt32:
-            return VK_KERNEL(nchw_to_image_int32);
-          default:
-            VK_THROW(
-                "Vulkan quantization currently not supported for dtype ",
-                v_dst.dtype());
-        }
-      case api::StorageType::TEXTURE_2D:
-        switch (v_dst.dtype()) {
-          case api::ScalarType::QUInt8:
-            return VK_KERNEL(nchw_to_image2d_uint8);
-          case api::ScalarType::QInt8:
-            return VK_KERNEL(nchw_to_image2d_int8);
-          case api::ScalarType::QInt32:
-            return VK_KERNEL(nchw_to_image2d_int32);
-          default:
-            VK_THROW(
-                "Vulkan quantization currently not supported for dtype ",
-                v_dst.dtype());
-        }
-      default:
-        VK_THROW("No kernel available!");
-      case api::StorageType::BUFFER:
-      case api::StorageType::UNKNOWN:
-        VK_THROW("Requested storage type must be a texture type.");
-    }
+    VK_THROW("Quantized Tensors are currently not supported!");
   }
 
-  if (v_dst.dtype() == api::kFloat) {
-    switch (v_dst.storage_type()) {
-      case api::StorageType::TEXTURE_3D:
-        return VK_KERNEL(nchw_to_image);
-      case api::StorageType::TEXTURE_2D:
-        return VK_KERNEL(nchw_to_image2d);
-      default:
-        VK_THROW("No kernel available!");
-    }
-  } else if (v_dst.dtype() == api::kBool) {
-    switch (v_dst.storage_type()) {
-      case api::StorageType::TEXTURE_3D:
-        return VK_KERNEL(nchw_to_image_bool);
-      default:
-        VK_THROW("No kernel available!");
-    }
-  } else {
-    VK_THROW("Unsupported dtype!");
+  std::stringstream kernel_name;
+
+  switch (v_dst.storage_type()) {
+    case api::StorageType::TEXTURE_3D:
+      kernel_name << "nchw_to_image3d";
+      break;
+    case api::StorageType::TEXTURE_2D:
+      kernel_name << "nchw_to_image2d";
+      break;
+    default:
+      VK_THROW("No kernel available!");
   }
+
+  apply_memory_layout_suffix(kernel_name, v_dst);
+  apply_dtype_suffix(kernel_name, v_dst);
+
+  return VK_KERNEL_FROM_STR(kernel_name.str());
 }
 
 api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src) {
-  if (v_src.is_quantized() || v_src.dtype() == api::kBool) {
-    auto plane_size =
-        dim_at<Dim4D::Height>(v_src) * dim_at<Dim4D::Width>(v_src);
-    switch (v_src.storage_type()) {
-      case api::StorageType::TEXTURE_3D:
-        switch (v_src.dtype()) {
-          case api::ScalarType::QUInt8:
-          case api::ScalarType::QInt8:
-          case api::kBool:
-            return plane_size % 4 == 0 ? VK_KERNEL(image_to_nchw_quantized_mul4)
-                                       : VK_KERNEL(image_to_nchw_uint);
-          case api::ScalarType::QInt32:
-            return VK_KERNEL(image_to_nchw_int32);
-          default:
-            VK_THROW(
-                "Vulkan quantization currently not supported for dtype ",
-                v_src.dtype());
-        }
-      default:
-        VK_THROW("No kernel available!");
-      case api::StorageType::BUFFER:
-      case api::StorageType::UNKNOWN:
-        VK_THROW("Requested storage type must be a texture type.");
-    }
+  if (v_src.is_quantized()) {
+    VK_THROW("Quantized Tensors are currently not supported!");
   }
 
-  if (v_src.dtype() == api::kFloat) {
-    switch (v_src.storage_type()) {
-      case api::StorageType::TEXTURE_3D:
-        return VK_KERNEL(image_to_nchw);
-      case api::StorageType::TEXTURE_2D:
-        return VK_KERNEL(image2d_to_nchw);
-      default:
-        VK_THROW("No kernel available!");
-    }
-  } else {
-    VK_THROW("Unsupported dtype!");
+  std::stringstream kernel_name;
+
+  switch (v_src.storage_type()) {
+    case api::StorageType::TEXTURE_3D:
+      kernel_name << "image3d_to_nchw";
+      break;
+    case api::StorageType::TEXTURE_2D:
+      kernel_name << "image2d_to_nchw";
+      break;
+    default:
+      VK_THROW("No kernel available!");
   }
+
+  apply_memory_layout_suffix(kernel_name, v_src);
+  apply_dtype_suffix(kernel_name, v_src);
+
+  return VK_KERNEL_FROM_STR(kernel_name.str());
 }
 
 } // namespace vulkan

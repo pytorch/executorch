@@ -55,6 +55,8 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
+
   ScalarType common_type = get_compute_type(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
@@ -99,6 +101,8 @@ Tensor& div_out_mode(
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = get_compute_type(a_type, b_type);
   ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
 
   // Allow casting float -> integral here
   // non-bool -> bool is still disallowed
