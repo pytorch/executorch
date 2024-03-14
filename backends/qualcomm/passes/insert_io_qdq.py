@@ -38,6 +38,12 @@ class InsertIOQDQ(ExportPass):
         arg_schemas = list(target._schema.arguments)[1:]
         for arg_schema in arg_schemas:
             name = arg_schema.name
+            # TODO: Due to the new parameter "out_dtype" in the dequantize node,
+            # it could not be found in the quant_attrs of other nodes,
+            # and it will cause a key error. For now, the output type
+            # of our dequantize node is only float. (by default in pytorch)
+            if name == "out_dtype":
+                continue
             value = quant_attrs[name]
             if type(arg_schema.type) == torch.tensor and type(value) in [int, float]:
                 value = torch.tensor(value)

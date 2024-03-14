@@ -131,3 +131,4 @@ class QnnExecuTorchOptions:
     online_prepare: bool = False
     tensor_dump_output_path: str = ""
     profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
+    shared_buffer: bool = False
