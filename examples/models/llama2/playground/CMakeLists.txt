@@ -17,7 +17,7 @@
 #
 
 cmake_minimum_required(VERSION 3.19)
-
+project(QuantizedLinearOp)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
@@ -32,19 +32,19 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(Llama REQUIRED)
 find_package(ExecuTorch REQUIRED)
-
+find_package(Torch CONFIG REQUIRED)
 
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
 
-set(kernel_sources ${EXECUTORCH_ROOT}/examples/llama2/playground/op_linear.cpp)
+set(kernel_sources ${EXECUTORCH_ROOT}/examples/models/llama2/playground/op_linear.cpp)
 #
 # custom_kernels: C++ kernel implementations of custom ops
 #
 add_library(custom_kernels SHARED ${kernel_sources})
 target_link_libraries(custom_kernels PRIVATE executorch ${LLAMA_LIBRARY})
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
-target_include_directories(custom_kernels PRIVATE ${EXECUTORCH_ROOT}/examples/third-party/llama.cpp)
+target_include_directories(custom_kernels PRIVATE ${EXECUTORCH_ROOT}/examples/third-party ${TORCH_INCLUDE_DIRS})
 
 
 if(EXECUTORCH_BUILD_GTEST)
@@ -54,7 +54,7 @@ if(EXECUTORCH_BUILD_GTEST)
     #
     # llama_cpp_test: test binary to run llama.cpp kernel ggml_mul_mat
     #
-    add_executable(llama_cpp_test PRIVATE ${EXECUTORCH_ROOT}/examples/llama2/playground/test_op_mm.cpp)
+    add_executable(llama_cpp_test PRIVATE ${EXECUTORCH_ROOT}/examples/llama2/playground/test_op_linear.cpp)
 
     target_link_libraries(llama_cpp_test executorch gflags custom_kernels)
     target_compile_options(llama_cpp_test PUBLIC ${_common_compile_options})

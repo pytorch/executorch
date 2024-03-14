@@ -7,14 +7,24 @@
  */
 
 #include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
+#include <executorch/extension/aten_util/make_aten_functor_from_et_functor.h>
 #include <torch/torch.h>
 #include <torch/library.h>
  #define restrict __restrict__
  extern "C"
 {
   #include <llama.cpp/ggml.h>
+  #include <llama.cpp/ggml-impl.h>
   #include <llama.cpp/ggml-quants.h>
 }
+
+#undef MAX
+#undef MIN
+
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 namespace llama_cpp {
 namespace native {
 
@@ -232,7 +242,7 @@ static void * pack_q4_0(const Tensor & t, const Tensor & scale) {
         int8_t* group_end = data + (i+1) * qk;
         block_q4_0* block = buf + i;
 
-        block->scale = GGML_FP32_TO_FP16(scales[i]);
+        block->d = GGML_FP32_TO_FP16(scales[i]);
         for (int j = 0; j < QK4_0/2; ++j) {
             block->qs[j]  = group_start[j];
             block->qs[j] |= group_start[qk/2 + j] << 4;
@@ -250,7 +260,7 @@ linear_q4_0_out(const Tensor& weights, const Tensor& scale, const Tensor& activa
   // weights are int4 quantized values stored in int8 tensors, i.e., first 4 bits are 0.
   // scale contains scales for groupwise (32) quantized values, numel = weights.numel() / 32
   // activation and out are float32 tensor
-  const void * weights_packed = pack_q4_0(weights, scale);
+  void * weights_packed = pack_q4_0(weights, scale);
   int64_t weights_sizes[4];
   for (int i = 0; i < 4; i++) {
     weights_sizes[i] = weights.size(i);
@@ -283,32 +293,32 @@ linear_q4_0_out(const Tensor& weights, const Tensor& scale, const Tensor& activa
     out_byte_sizes[i] = out.size(i-1) * out_byte_sizes[i-1];
   }
 
-  ggml_compute_forward_mul_mat(weights_packed, &weights_sizes, &weights_byte_sizes, input, &input_sizes, &input_byte_sizes, out_data, &out_sizes, &out_byte_sizes);
+  ggml_compute_forward_mul_mat(weights_packed, weights_sizes, weights_byte_sizes, input, input_sizes, input_byte_sizes, out_data, out_sizes, out_byte_sizes);
 
   free(weights_packed);
   return out;
 }
 
 Tensor&
-linear_q4_0_out_with_context(RuntimeContext& context, const Tensor& weights, const Tensor& scale, const Tensor& activation, Tensor& out) {
+linear_q4_0_out_with_context(RuntimeContext& context, const Tensor& weights, const Tensor& scale, const Tensor& input, Tensor& out) {
     (void)context;
-    return linear_q4_0_out(weights, scale, zeros, activation, out);
+    return linear_q4_0_out(weights, scale, input, out);
 }
 
 
-static Kernel k = Kernel::make_boxed_kernel("ggml::linear_q4_0.out", EXECUTORCH_FN(linear_q4_0_out));
-auto a = register_kernels({k});
+EXECUTORCH_LIBRARY(ggml, "linear_q4_0.out", linear_q4_0_out_with_context);
 
 at::Tensor linear_q4_0(const at::Tensor& weight, const at::Tensor& scale, const at::Tensor& input) {
   auto output = at::empty({input.size(0), weight.size(0)}, input.options().dtype(at::kHalf));
-  WRAP(linear_q4_0_out, 4)((weight, scale, input, output));
+  WRAP_TO_ATEN(linear_q4_0_out, 3)(weight, scale, input, output);
   return output;
+}
+
+
+TORCH_LIBRARY(ggml, m) {
+    m.def("linear_q4_0(Tensor weight, Tensor scale, Tensor input) -> Tensor", linear_q4_0);
+    m.def("linear_q4_0.out(Tensor weight, Tensor scale, Tensor input, *, Tensor(a!) out) -> Tensor(a!)", WRAP_TO_ATEN(linear_q4_0_out, 3));
 }
 
 } // namespace native
 } // namespace llama_cpp
-
-TORCH_LIBRARY(ggml, m) {
-    m.def("linear_q4_0(Tensor weight, Tensor scale, Tensor input) -> Tensor", &llama_cpp::native::linear_q4_0);
-    m.def("linear_q4_0.out(Tensor weight, Tensor scale, Tensor input, *, Tensor(a!) out) -> Tensor(a!)", WRAP(llama_cpp::native::linear_q4_0_out, 4));
-}
