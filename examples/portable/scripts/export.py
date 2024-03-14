@@ -9,6 +9,8 @@
 import argparse
 import logging
 
+import torch
+
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 
 from ...models import MODEL_NAME_TO_MODEL
@@ -75,4 +77,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()  # pragma: no cover
+    with torch.no_grad():
+        main()  # pragma: no cover

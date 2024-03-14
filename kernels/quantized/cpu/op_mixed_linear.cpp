@@ -67,12 +67,9 @@ Tensor& quantized_mixed_linear_out(
     const optional<Tensor>& opt_weight_zero_points,
     const optional<ScalarType> dtype,
     Tensor& out) {
-  ET_KERNEL_CHECK(
-      ctx,
-      check_quantized_mixed_linear_args(
-          in, weight, weight_scales, opt_weight_zero_points, dtype, out),
-      InvalidArgument,
-      out);
+  // TODO (gjcomer) Replace with ET_KERNEL_CHECK when context is available.
+  ET_CHECK(check_quantized_mixed_linear_args(
+      in, weight, weight_scales, opt_weight_zero_points, dtype, out));
 
   ScalarType out_dtype = dtype.has_value() ? dtype.value() : out.scalar_type();
 
@@ -81,11 +78,8 @@ Tensor& quantized_mixed_linear_out(
   output_sizes[0] = in.size(0);
   output_sizes[1] = weight.size(0);
 
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok,
-      InvalidArgument,
-      out);
+  // TODO (gjcomer) Replace with ET_KERNEL_CHECK when context is available.
+  ET_CHECK(resize_tensor(out, {output_sizes, output_ndim}) == Error::Ok);
 
   constexpr auto name = "quantized_decomposed::mixed_linear.out";
 

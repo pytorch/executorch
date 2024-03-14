@@ -23,8 +23,8 @@ cd "$EXECUTORCH_ROOT_PATH"
 MODELS=("add" "mul" "mv3")
 for MODEL in "${MODELS[@]}"
 do
-  # TODO: Don't use the script in examples directory. 
-  python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name "$MODEL" --save_processed_bytes
+  # TODO: Don't use the script in examples directory.
+  python3 -m examples.apple.coreml.scripts.export --model_name "$MODEL" --save_processed_bytes
   mv -f "$MODEL""_coreml_all.pte" "$COREML_DIR_PATH/runtime/test/models"
   mv -f "$MODEL""_coreml_all.bin" "$COREML_DIR_PATH/runtime/test/models"
 done
