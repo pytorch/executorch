@@ -101,7 +101,11 @@ def export_to_exec_prog(
 def save_pte_program(
     prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
 ) -> None:
-    filename = os.path.join(output_dir, f"{model_name}.pte")
+    if model_name.endswith(".pte"):
+        filename = model_name
+    else:
+        filename = os.path.join(output_dir, f"{model_name}.pte")
+
     try:
         with open(filename, "wb") as file:
             prog.write_to_file(file)

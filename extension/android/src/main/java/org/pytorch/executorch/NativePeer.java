@@ -38,4 +38,7 @@ class NativePeer implements INativePeer {
 
   @DoNotStrip
   public native EValue[] execute(String methodName, EValue... inputs);
+
+  @DoNotStrip
+  public native int loadMethod(String methodName);
 }
