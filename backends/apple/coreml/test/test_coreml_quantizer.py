@@ -2,19 +2,24 @@
 #
 # Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-import numpy as np
-import pytest
 from typing import Tuple
 
-import torch
-from torch._export import capture_pre_autograd_graph
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e, prepare_qat_pt2e
+import numpy as np
+import pytest
 
-from executorch.backends.apple.coreml.quantizer.coreml_quantizer import CoreMLQuantizer
+import torch
 
 from coremltools.optimize.torch.quantization.quantization_config import (
     LinearQuantizerConfig,
     QuantizationScheme,
+)
+
+from executorch.backends.apple.coreml.quantizer.coreml_quantizer import CoreMLQuantizer
+from torch._export import capture_pre_autograd_graph
+from torch.ao.quantization.quantize_pt2e import (
+    convert_pt2e,
+    prepare_pt2e,
+    prepare_qat_pt2e,
 )
 
 
