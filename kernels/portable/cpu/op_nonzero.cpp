@@ -39,7 +39,7 @@ void increment_index(size_t* index, const ArrayRef<SizesType> sizes) {
  * out to the appropriate size, and then loop again and properly write into out
  */
 template <typename CTYPE>
-void nonzero(const Tensor& input, Tensor& output) {
+void nonzero(RuntimeContext& ctx, const Tensor& input, Tensor& output) {
   const CTYPE* in_data = input.const_data_ptr<CTYPE>();
   size_t lim = input.numel();
   int32_t num_nonzero = 0;
@@ -58,8 +58,7 @@ void nonzero(const Tensor& input, Tensor& output) {
       ctx,
       resize_tensor(output, ArrayRef<exec_aten::SizesType>(out_shape, 2)) ==
           Error::Ok,
-      InvalidArgument,
-      out);
+      InvalidArgument, );
 
   size_t index[kTensorDimensionLimit];
   memset(index, 0, sizeof(index));
@@ -91,7 +90,7 @@ Tensor& nonzero_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
 
   ET_SWITCH_REAL_TYPES_AND(
       Bool, in.scalar_type(), ctx, "nonzero.out", CTYPE, [&] {
-        nonzero<CTYPE>(in, out);
+        nonzero<CTYPE>(ctx, in, out);
       });
 
   return out;

@@ -44,12 +44,16 @@ Tensor& slice_scatter_out(
     return out;
   }
 
+  ET_KERNEL_CHECK(ctx, dim >= 0 && dim < input.dim(), InvalidArgument, out);
+
   // If user do not set value to end_val, set end to input.size(dim) (largest
   // value available)
   int64_t end = end_val.has_value() ? end_val.value() : input.size(dim);
   // If user do not set value to start_val, set start to 0 (smallest value
   // available)
   int64_t start = start_val.has_value() ? start_val.value() : 0;
+
+  ET_KERNEL_CHECK(ctx, step > 0, InvalidArgument, out);
 
   int64_t num_values =
       adjust_slice_indices(input.size(dim), &start, &end, step);

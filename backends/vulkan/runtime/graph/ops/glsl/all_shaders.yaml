@@ -1,0 +1,62 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+binary_op:
+  parameter_names_with_default_values:
+    OPERATOR: X + A * Y
+    NDIM: 3
+    DTYPE: float
+    PACKING: CHANNELS_PACKED
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
+  shader_variants:
+    - NAME: binary_add
+    - NAME: binary_sub
+      OPERATOR: X - Y
+    - NAME: binary_mul
+      OPERATOR: X * Y
+    - NAME: binary_div
+      OPERATOR: X / Y
+    - NAME: binary_pow
+      OPERATOR: pow(X, Y)
+    - NAME: binary_floor_divide
+      OPERATOR: floor(X / Y)
+
+image_to_nchw:
+  parameter_names_with_default_values:
+    NDIM: 3
+    DTYPE: float
+    PACKING: CHANNELS_PACKED
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
+  shader_variants:
+    - NAME: image3d_to_nchw_C_packed
+    - NAME: image2d_to_nchw_C_packed
+      NDIM: 2
+
+nchw_to_image:
+  parameter_names_with_default_values:
+    NDIM: 3
+    DTYPE: float
+    PACKING: CHANNELS_PACKED
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
+  shader_variants:
+    - NAME: nchw_to_image3d_C_packed
+    - NAME: nchw_to_image2d_C_packed
+      NDIM: 2
