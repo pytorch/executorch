@@ -260,6 +260,8 @@ class LlamaEdgeManager:
         edge_config = self._get_edge_config()
         metadata = self._get_metadata()
 
+        # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
+        # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             m = capture_pre_autograd_graph(
                 self.model, self.example_inputs, dynamic_shapes=dynamic_shape
