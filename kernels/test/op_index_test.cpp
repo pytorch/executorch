@@ -26,44 +26,115 @@ using torch::executor::testing::TensorFactory;
 
 using OptTensorArrayRef = ArrayRef<optional<Tensor>>;
 
-Tensor& op_index_tensor_out(
-    const Tensor& input,
-    OptTensorArrayRef indices,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
+class OpIndexTensorOutTest : public OperatorTest {
+ protected:
+  Tensor& op_index_tensor_out(
+      const Tensor& input,
+      OptTensorArrayRef indices,
+      Tensor& out) {
 #ifdef USE_ATEN_LIB
-  c10::List<c10::optional<at::Tensor>> indices_list(indices);
-  return torch::executor::aten::index_outf(context, input, indices_list, out);
+    c10::List<c10::optional<at::Tensor>> indices_list(indices);
+    return torch::executor::aten::index_outf(
+        context_, input, indices_list, out);
 #else
-  return torch::executor::aten::index_outf(context, input, indices, out);
+    return torch::executor::aten::index_outf(context_, input, indices, out);
 #endif
-}
+  }
 
-namespace {
+  template <
+      exec_aten::ScalarType INPUT_DTYPE,
+      exec_aten::ScalarType INDEX_DTYPE,
+      exec_aten::ScalarType OUTPUT_DTYPE>
+  void test_dtype() {
+    TensorFactory<INPUT_DTYPE> tf;
+    TensorFactory<INDEX_DTYPE> tfl;
+    TensorFactory<OUTPUT_DTYPE> tfo;
+    TensorFactory<ScalarType::Bool> tfb;
 
-// Run the test by selecting elements in input
-void run_test_cases(
-    const Tensor& x,
-    OptTensorArrayRef indices,
-    const Tensor& expected) {
-  // Generated out tensor sharing same size and dtype with expected tensor
-  TensorFactory<ScalarType::Double> tf;
+    // clang-format off
+    Tensor x = tf.make(
+        {3, 2, 4},
+        {
+          // all ones below are from x,
+          // and all zeros are from y.
+          // [0, :, :]
+          1, 1, 1, 1, // [0, 0, :]
+          0, 0, 0, 0, // [0, 1, :]
 
-  const std::vector<int32_t> out_size(
-      expected.sizes().begin(), expected.sizes().end());
-  Tensor out = tf.ones(out_size);
+          // [1, :, :]
+          1, 1, 1, 1, // [1, 0, :]
+          0, 0, 0, 0, // [1, 1, :]
 
-  Tensor ret = op_index_tensor_out(x, indices, out);
-  EXPECT_TENSOR_EQ(out, ret);
-  EXPECT_TENSOR_EQ(ret, expected);
-}
-} // namespace
+          // [2, :, :]
+          1, 1, 1, 1, // [2, 0, :]
+          0, 0, 0, 0, // [2, 1, :]
+        });
+    // clang-format on
+
+    // indices [0, 1, 2], [1, 0, 3], expressed two different ways
+    optional<Tensor> indices[] = {
+        optional<Tensor>(tfl.make({2}, {0, 1})),
+        optional<Tensor>(tfl.make({2}, {1, 0})),
+        optional<Tensor>(tfl.make({2}, {2, 3}))};
+
+    optional<Tensor> indices_mixed[] = {
+        optional<Tensor>(tfl.make({2}, {0, 1})),
+        optional<Tensor>(tfb.make({2}, {false, true})),
+        optional<Tensor>(tfl.make({2}, {2, 3}))};
+
+    std::vector<int32_t> out_size{2};
+
+    Tensor out_0 = tfo.zeros(out_size);
+    Tensor ret_0 = op_index_tensor_out(x, /*indices=*/indices, out_0);
+
+    EXPECT_TENSOR_EQ(ret_0, out_0);
+    EXPECT_TENSOR_EQ(ret_0, tfo.make(out_size, {0, 1}));
+
+    // Repeat the test with alternative indices representation
+
+    Tensor out_0_with_mixed = tfo.zeros(out_size);
+    Tensor ret_0_with_mixed =
+        op_index_tensor_out(x, /*indices=*/indices, out_0_with_mixed);
+
+    EXPECT_TENSOR_EQ(ret_0_with_mixed, out_0_with_mixed);
+    EXPECT_TENSOR_EQ(ret_0_with_mixed, tfo.make(out_size, {0, 1}));
+  }
+
+  /**
+   * Generic test for integral index lists
+   */
+  void test_dtype_enumerate_in_types() {
+#define TEST_ENTRY(ctype, dtype) \
+  test_dtype<ScalarType::dtype, ScalarType::Long, ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
+
+#undef TEST_ENTRY
+  }
+
+  // Run the test by selecting elements in input
+  void run_test_cases(
+      const Tensor& x,
+      OptTensorArrayRef indices,
+      const Tensor& expected) {
+    // Generated out tensor sharing same size and dtype with expected tensor
+    TensorFactory<ScalarType::Double> tf;
+
+    const std::vector<int32_t> out_size(
+        expected.sizes().begin(), expected.sizes().end());
+    Tensor out = tf.ones(out_size);
+
+    Tensor ret = op_index_tensor_out(x, indices, out);
+    EXPECT_TENSOR_EQ(out, ret);
+    EXPECT_TENSOR_EQ(ret, expected);
+  }
+};
 
 //
 // Correctness Tests
 //
 
-TEST(OpIndexTensorOutTest, IndexMask) {
+TEST_F(OpIndexTensorOutTest, IndexMask) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Bool> tfb;
   // clang-format off
@@ -108,7 +179,7 @@ TEST(OpIndexTensorOutTest, IndexMask) {
   run_test_cases(x, {indices}, expected);
 }
 
-TEST(OpIndexTensorOutTest, SelectFrontDimAllIndexes) {
+TEST_F(OpIndexTensorOutTest, SelectFrontDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Int> tfi;
   TensorFactory<ScalarType::Long> tfl;
@@ -173,7 +244,7 @@ TEST(OpIndexTensorOutTest, SelectFrontDimAllIndexes) {
   run_test_cases(x, /*indices=*/indices_mixed, expected);
 }
 
-TEST(OpIndexTensorOutTest, SelectTwoValuesAtSameIndex) {
+TEST_F(OpIndexTensorOutTest, SelectTwoValuesAtSameIndex) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -210,7 +281,7 @@ TEST(OpIndexTensorOutTest, SelectTwoValuesAtSameIndex) {
   run_test_cases(x, /*indices=*/indices, expected);
 }
 
-TEST(OpIndexTensorOutTest, IndicesFewerThanInputDimSupported) {
+TEST_F(OpIndexTensorOutTest, IndicesFewerThanInputDimSupported) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Int> tfi;
   TensorFactory<ScalarType::Long> tfl;
@@ -259,7 +330,7 @@ TEST(OpIndexTensorOutTest, IndicesFewerThanInputDimSupported) {
   run_test_cases(x, /*indices=*/indices_mixed, expected);
 }
 
-TEST(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
+TEST_F(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off
@@ -330,7 +401,7 @@ TEST(OpIndexTensorOutTest, IndicesWithNullTensorsSupported) {
   run_test_cases(x, /*indices=*/indices2, expected2);
 }
 
-TEST(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
+TEST_F(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -346,10 +417,11 @@ TEST(OpIndexTensorOutTest, IndicesWithOnlyNullTensorsSupported) {
   optional<Tensor> indices2[] = {
       optional<Tensor>(), optional<Tensor>(), optional<Tensor>()};
   Tensor out = tf.ones({2, 3});
-  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(op_index_tensor_out(x, indices2, out), "");
+  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
+      context_, op_index_tensor_out(x, indices2, out), "");
 }
 
-TEST(OpIndexTensorOutTest, EmptyIndicesSupported) {
+TEST_F(OpIndexTensorOutTest, EmptyIndicesSupported) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel test fails";
   }
@@ -370,82 +442,11 @@ TEST(OpIndexTensorOutTest, EmptyIndicesSupported) {
 // Test that all dtypes are supported
 //
 
-/**
- * Generic test for integral index lists
- */
-template <
-    exec_aten::ScalarType INPUT_DTYPE,
-    exec_aten::ScalarType INDEX_DTYPE,
-    exec_aten::ScalarType OUTPUT_DTYPE>
-void test_dtype() {
-  TensorFactory<INPUT_DTYPE> tf;
-  TensorFactory<INDEX_DTYPE> tfl;
-  TensorFactory<OUTPUT_DTYPE> tfo;
-  TensorFactory<ScalarType::Bool> tfb;
-
-  // clang-format off
-  Tensor x = tf.make(
-      {3, 2, 4},
-      {
-        // all ones below are from x,
-        // and all zeros are from y.
-        // [0, :, :]
-        1, 1, 1, 1, // [0, 0, :]
-        0, 0, 0, 0, // [0, 1, :]
-
-        // [1, :, :]
-        1, 1, 1, 1, // [1, 0, :]
-        0, 0, 0, 0, // [1, 1, :]
-
-        // [2, :, :]
-        1, 1, 1, 1, // [2, 0, :]
-        0, 0, 0, 0, // [2, 1, :]
-      });
-  // clang-format on
-
-  // indices [0, 1, 2], [1, 0, 3], expressed two different ways
-  optional<Tensor> indices[] = {
-      optional<Tensor>(tfl.make({2}, {0, 1})),
-      optional<Tensor>(tfl.make({2}, {1, 0})),
-      optional<Tensor>(tfl.make({2}, {2, 3}))};
-
-  optional<Tensor> indices_mixed[] = {
-      optional<Tensor>(tfl.make({2}, {0, 1})),
-      optional<Tensor>(tfb.make({2}, {false, true})),
-      optional<Tensor>(tfl.make({2}, {2, 3}))};
-
-  std::vector<int32_t> out_size{2};
-
-  Tensor out_0 = tfo.zeros(out_size);
-  Tensor ret_0 = op_index_tensor_out(x, /*indices=*/indices, out_0);
-
-  EXPECT_TENSOR_EQ(ret_0, out_0);
-  EXPECT_TENSOR_EQ(ret_0, tfo.make(out_size, {0, 1}));
-
-  // Repeat the test with alternative indices representation
-
-  Tensor out_0_with_mixed = tfo.zeros(out_size);
-  Tensor ret_0_with_mixed =
-      op_index_tensor_out(x, /*indices=*/indices, out_0_with_mixed);
-
-  EXPECT_TENSOR_EQ(ret_0_with_mixed, out_0_with_mixed);
-  EXPECT_TENSOR_EQ(ret_0_with_mixed, tfo.make(out_size, {0, 1}));
-}
-
-void test_dtype_enumerate_in_types() {
-#define TEST_ENTRY(ctype, dtype) \
-  test_dtype<ScalarType::dtype, ScalarType::Long, ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
-
-#undef TEST_ENTRY
-}
-
-TEST(OpIndexTensorOutTest, AllDtypesSupportedForInput) {
+TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForInput) {
   test_dtype_enumerate_in_types();
 }
 
-TEST(OpIndexTensorOutTest, AllDtypesSupportedForIndex) {
+TEST_F(OpIndexTensorOutTest, AllDtypesSupportedForIndex) {
   test_dtype<ScalarType::Double, ScalarType::Long, ScalarType::Double>();
   test_dtype<ScalarType::Double, ScalarType::Int, ScalarType::Double>();
 }
@@ -454,7 +455,7 @@ TEST(OpIndexTensorOutTest, AllDtypesSupportedForIndex) {
 // Death Tests
 //
 
-TEST(OpIndexTensorOutTest, IndexOutOfBoundDies) {
+TEST_F(OpIndexTensorOutTest, IndexOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -463,10 +464,10 @@ TEST(OpIndexTensorOutTest, IndexOutOfBoundDies) {
   Tensor index = tfl.make({1}, {5});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, NegativeIndexOutOfBoundDies) {
+TEST_F(OpIndexTensorOutTest, NegativeIndexOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -475,10 +476,10 @@ TEST(OpIndexTensorOutTest, NegativeIndexOutOfBoundDies) {
   Tensor index = tfl.make({1}, {-5});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, TooManyBooleanIndexCountDies) {
+TEST_F(OpIndexTensorOutTest, TooManyBooleanIndexCountDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -487,10 +488,10 @@ TEST(OpIndexTensorOutTest, TooManyBooleanIndexCountDies) {
   Tensor index = tfb.make({3}, {true, false, false});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, TooFewBooleanIndexCountDies) {
+TEST_F(OpIndexTensorOutTest, TooFewBooleanIndexCountDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -500,10 +501,10 @@ TEST(OpIndexTensorOutTest, TooFewBooleanIndexCountDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, MismatchedIndexMaskDies) {
+TEST_F(OpIndexTensorOutTest, MismatchedIndexMaskDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Bool> tfb;
 
@@ -513,10 +514,10 @@ TEST(OpIndexTensorOutTest, MismatchedIndexMaskDies) {
 
   // ATen kernel will throw exception instead of death
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, MismatchedOutputDimDies) {
+TEST_F(OpIndexTensorOutTest, MismatchedOutputDimDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -527,10 +528,10 @@ TEST(OpIndexTensorOutTest, MismatchedOutputDimDies) {
   Tensor out = tf.zeros({2, 4});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, InvalidIndicesDtypeDies) {
+TEST_F(OpIndexTensorOutTest, InvalidIndicesDtypeDies) {
   TensorFactory<ScalarType::Int> tf;
   TensorFactory<ScalarType::Float> tff;
 
@@ -540,10 +541,10 @@ TEST(OpIndexTensorOutTest, InvalidIndicesDtypeDies) {
   Tensor out = tf.zeros({1, 4, 7, 5});
 
   ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
-      op_index_tensor_out(x, /*indices=*/{index}, out), "");
+      context_, op_index_tensor_out(x, /*indices=*/{index}, out), "");
 }
 
-TEST(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
+TEST_F(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Long> tfl;
 
@@ -556,10 +557,11 @@ TEST(OpIndexTensorOutTest, InvalidIndicesShapesDies) {
   Tensor out = tf.ones({3, 7, 5});
   // clang-format on
 
-  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(op_index_tensor_out(x, indices, out), "");
+  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
+      context_, op_index_tensor_out(x, indices, out), "");
 }
 
-TEST(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
+TEST_F(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "";
   }
@@ -575,7 +577,8 @@ TEST(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
   Tensor out = tf.ones({4});
   // clang-format on
 
-  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(op_index_tensor_out(x, indices, out), "");
+  ET_EXPECT_KERNEL_FAILURE_WITH_MSG(
+      context_, op_index_tensor_out(x, indices, out), "");
 }
 
 //
@@ -583,7 +586,7 @@ TEST(OpIndexTensorOutTest, InvalidIndicesShapeDies2) {
 //
 
 // Test whether resize works when out is having larger size
-TEST(OpIndexTensorOutTest, UpperBoundOutTensor) {
+TEST_F(OpIndexTensorOutTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Double> tf;
   TensorFactory<ScalarType::Long> tfl;
   // clang-format off

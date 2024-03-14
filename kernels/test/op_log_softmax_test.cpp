@@ -23,17 +23,50 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_log_softmax_out(
-    const Tensor& self,
-    int64_t dim,
-    bool half_to_float,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::_log_softmax_outf(
-      context, self, dim, half_to_float, out);
-}
+class OpLogSoftmaxOutTest : public OperatorTest {
+ protected:
+  Tensor& op_log_softmax_out(
+      const Tensor& self,
+      int64_t dim,
+      bool half_to_float,
+      Tensor& out) {
+    return torch::executor::aten::_log_softmax_outf(
+        context_, self, dim, half_to_float, out);
+  }
 
-TEST(OpLogSoftmaxOutTest, Smoke) {
+  // A generic smoke test that works for the supported dtypes.
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    // Input tensor with shape (2, 3) and values (0, 1, 2, 3, 4, 5).
+    // clang-format off
+    Tensor x = tf.make(
+      {2, 3},
+      {
+        0, 1, 2,
+        3, 4, 5
+      });
+    // clang-format on
+
+    Tensor out = tf.zeros({2, 3});
+
+    op_log_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out);
+
+    // clang-format off
+    Tensor expected = tf.make(
+      {2, 3},
+      {
+        -2.40761, -1.40761, -0.407606,
+        -2.40761, -1.40761, -0.407606
+      });
+    // clang-format on
+
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+};
+
+TEST_F(OpLogSoftmaxOutTest, Smoke) {
   TensorFactory<ScalarType::Float> tff;
   std::vector<int32_t> sizes = {1, 3};
   Tensor in = tff.make(sizes, {0, 1, 2});
@@ -50,38 +83,7 @@ TEST(OpLogSoftmaxOutTest, Smoke) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-/// A generic smoke test that works for the supported dtypes.
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  // Input tensor with shape (2, 3) and values (0, 1, 2, 3, 4, 5).
-  // clang-format off
-  Tensor x = tf.make(
-    {2, 3},
-    {
-      0, 1, 2,
-      3, 4, 5
-    });
-  // clang-format on
-
-  Tensor out = tf.zeros({2, 3});
-
-  op_log_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, out);
-
-  // clang-format off
-  Tensor expected = tf.make(
-    {2, 3},
-    {
-      -2.40761, -1.40761, -0.407606,
-      -2.40761, -1.40761, -0.407606
-    });
-  // clang-format on
-
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
-
-TEST(OpLogSoftmaxOutTest, AllDtypesSupported) {
+TEST_F(OpLogSoftmaxOutTest, AllDtypesSupported) {
   if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
     GTEST_SKIP() << "This kernel does not support dtype double";
   }
@@ -93,7 +95,7 @@ TEST(OpLogSoftmaxOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
+TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched dimensions";
   }
@@ -108,10 +110,10 @@ TEST(OpLogSoftmaxOutTest, MismatchedDimensionsDies) {
 
   // Dim out of bounds
   ET_EXPECT_KERNEL_FAILURE(
-      op_log_softmax_out(x, /*dim=*/3, /*half_to_float*/ false, out));
+      context_, op_log_softmax_out(x, /*dim=*/3, /*half_to_float*/ false, out));
 }
 
-TEST(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
+TEST_F(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched dimension size";
   }
@@ -124,10 +126,11 @@ TEST(OpLogSoftmaxOutTest, MismatchedDimensionSizeDies) {
   Tensor wrong_out = tf.zeros({2, 10, 4});
 
   ET_EXPECT_KERNEL_FAILURE(
+      context_,
       op_log_softmax_out(x, /*dim=*/1, /*half_to_float*/ false, wrong_out));
 }
 
-TEST(OpLogSoftmaxOutTest, TestWithLargeNumber) {
+TEST_F(OpLogSoftmaxOutTest, TestWithLargeNumber) {
   if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
     GTEST_SKIP() << "This kernel does not support dtype double";
   }
@@ -162,7 +165,7 @@ TEST(OpLogSoftmaxOutTest, TestWithLargeNumber) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST(OpLogSoftmaxOutTest, NegativeDim) {
+TEST_F(OpLogSoftmaxOutTest, NegativeDim) {
   if (!SupportedFeatures::get()->op_log_softmax_dtype_double) {
     GTEST_SKIP() << "This kernel does not support dtype double";
   }
@@ -218,7 +221,7 @@ TEST(OpLogSoftmaxOutTest, NegativeDim) {
 }
 
 #if !defined(USE_ATEN_LIB)
-TEST(OpLogSoftmaxOutTest, UpperBoundOutTensor) {
+TEST_F(OpLogSoftmaxOutTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Float> tff;
 
   // Input tensor with shape (2, 3) and values (0, 1, 2, 3, 4, 5).
@@ -249,7 +252,7 @@ TEST(OpLogSoftmaxOutTest, UpperBoundOutTensor) {
 }
 #endif
 
-TEST(OpLogSoftmaxOutTest, SimpleGeneratedCase) {
+TEST_F(OpLogSoftmaxOutTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -303,7 +306,7 @@ TEST(OpLogSoftmaxOutTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpLogSoftmaxOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpLogSoftmaxOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -329,7 +332,7 @@ TEST(OpLogSoftmaxOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpLogSoftmaxOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpLogSoftmaxOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -355,7 +358,7 @@ TEST(OpLogSoftmaxOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpLogSoftmaxOutTest, DynamicShapeUnbound) {
+TEST_F(OpLogSoftmaxOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 

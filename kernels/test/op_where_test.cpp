@@ -21,95 +21,146 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_where_self_out(
-    const Tensor& condition,
-    const Tensor& self,
-    const Tensor& other,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::where_outf(
-      context, condition, self, other, out);
-}
+class OpWhereOutTest : public OperatorTest {
+ protected:
+  Tensor& op_where_self_out(
+      const Tensor& condition,
+      const Tensor& self,
+      const Tensor& other,
+      Tensor& out) {
+    return torch::executor::aten::where_outf(
+        context_, condition, self, other, out);
+  }
+
+  template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
+  void test_where() {
+    if (DTYPE_OUT == ScalarType::Byte || DTYPE_OUT == ScalarType::Char) {
+      return;
+    }
+    TensorFactory<ScalarType::Bool> tf_condition;
+    TensorFactory<DTYPE_A> tf_a;
+    TensorFactory<DTYPE_B> tf_b;
+    TensorFactory<DTYPE_OUT> tf_out;
+
+    const std::vector<int32_t> condition_sizes = {12};
+    const std::vector<int32_t> sizes = {1, 12};
+
+    Tensor out = tf_out.zeros(sizes);
+
+    // clang-format off
+    op_where_self_out(
+        tf_condition.make(condition_sizes, /*data=*/{false, true, false, true, true, false,
+                                                     false, true, false, true, true, false}),
+        tf_a.make(sizes, /*data=*/{  1,  2,  3,  4,  5,  6,  6,  5,  4,  3,  2,  1}),
+        tf_b.make(sizes, /*data=*/{  6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6}),
+        out);
+
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_CLOSE(
+        out,
+        tf_out.make(
+            sizes, /*data=*/{  6,  2,  4,  4,  5,  1,  1,  5,  3,  3,  2,  6}));
+    // clang-format on
+  }
+
+  template <ScalarType DTYPE_A, ScalarType DTYPE_B>
+  void test_where_enumerate_out_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_where<DTYPE_A, DTYPE_B, ScalarType::dtype>();
+
+    ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <ScalarType DTYPE_A>
+  void test_where_enumerate_b_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_where<DTYPE_A, ScalarType::dtype, DTYPE_A>();
+
+    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+
+  void test_dynamic_shape(
+      const std::vector<int32_t>& out_shape,
+      enum torch::executor::TensorShapeDynamism dynamism) {
+    /* %python
+    %rewrite(where_template) */
+
+    TensorFactory<ScalarType::Bool> tfBool;
+    TensorFactory<ScalarType::Float> tf;
+
+    Tensor condition = tfBool.make(
+        {2, 3, 4}, {true,  false, true, true,  true,  false, false, true,
+                    false, true,  true, false, false, false, false, false,
+                    false, false, true, true,  false, false, true,  true});
+    Tensor input = tf.make(
+        {2, 3, 4},
+        {0.41940832138061523,  0.5529070496559143,   0.9527381062507629,
+         0.036164820194244385, 0.1852310299873352,   0.37341737747192383,
+         0.3051000237464905,   0.9320003986358643,   0.17591017484664917,
+         0.2698335647583008,   0.15067976713180542,  0.03171950578689575,
+         0.20812976360321045,  0.9297990202903748,   0.7231091856956482,
+         0.7423362731933594,   0.5262957811355591,   0.24365824460983276,
+         0.584592342376709,    0.033152639865875244, 0.13871687650680542,
+         0.242235004901886,    0.815468966960907,    0.793160617351532});
+    Tensor other = tf.make(
+        {2, 3, 4},
+        {0.2782524824142456,  0.48195880651474,   0.8197803497314453,
+         0.9970665574073792,  0.6984410881996155, 0.5675464272499084,
+         0.8352431654930115,  0.2055988311767578, 0.593172013759613,
+         0.11234724521636963, 0.1534569263458252, 0.24170821905136108,
+         0.7262365221977234,  0.7010802030563354, 0.2038237452507019,
+         0.6510535478591919,  0.7744860053062439, 0.4368913173675537,
+         0.5190907716751099,  0.6158523559570312, 0.8101882934570312,
+         0.9800970554351807,  0.1146882176399231, 0.3167651295661926});
+    Tensor expected = tf.make(
+        {2, 3, 4},
+        {0.41940832138061523,  0.48195880651474,     0.9527381062507629,
+         0.036164820194244385, 0.1852310299873352,   0.5675464272499084,
+         0.8352431654930115,   0.9320003986358643,   0.593172013759613,
+         0.2698335647583008,   0.15067976713180542,  0.24170821905136108,
+         0.7262365221977234,   0.7010802030563354,   0.2038237452507019,
+         0.6510535478591919,   0.7744860053062439,   0.4368913173675537,
+         0.584592342376709,    0.033152639865875244, 0.8101882934570312,
+         0.9800970554351807,   0.815468966960907,    0.793160617351532});
+    Tensor out = tf.zeros(out_shape, dynamism);
+
+    op_where_self_out(condition, input, other, out);
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+
+  void test_where_enumerate_a_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_where_enumerate_b_types<ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+
+  void test_where_enumerate_a_types_aten() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_where<ScalarType::dtype, ScalarType::dtype, ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+};
 
 //
 // Correctness Test
 //
 
-template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
-void test_where() {
-  if (DTYPE_OUT == ScalarType::Byte || DTYPE_OUT == ScalarType::Char) {
-    return;
-  }
-  TensorFactory<ScalarType::Bool> tf_condition;
-  TensorFactory<DTYPE_A> tf_a;
-  TensorFactory<DTYPE_B> tf_b;
-  TensorFactory<DTYPE_OUT> tf_out;
-
-  const std::vector<int32_t> condition_sizes = {12};
-  const std::vector<int32_t> sizes = {1, 12};
-
-  Tensor out = tf_out.zeros(sizes);
-
-  // clang-format off
-  op_where_self_out(
-      tf_condition.make(condition_sizes, /*data=*/{false, true, false, true, true, false,
-                                                   false, true, false, true, true, false}),
-      tf_a.make(sizes, /*data=*/{  1,  2,  3,  4,  5,  6,  6,  5,  4,  3,  2,  1}),
-      tf_b.make(sizes, /*data=*/{  6,  5,  4,  3,  2,  1,  1,  2,  3,  4,  5,  6}),
-      out);
-
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_CLOSE(
-      out,
-      tf_out.make(
-          sizes, /*data=*/{  6,  2,  4,  4,  5,  1,  1,  5,  3,  3,  2,  6}));
-  // clang-format on
-}
-
-template <ScalarType DTYPE_A, ScalarType DTYPE_B>
-void test_where_enumerate_out_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_where<DTYPE_A, DTYPE_B, ScalarType::dtype>();
-
-  ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-template <ScalarType DTYPE_A>
-void test_where_enumerate_b_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_where<DTYPE_A, ScalarType::dtype, DTYPE_A>();
-
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-void test_where_enumerate_a_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_where_enumerate_b_types<ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-void test_where_enumerate_a_types_aten() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_where<ScalarType::dtype, ScalarType::dtype, ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-TEST(OpWhereOutKernelTest, AllRealDtypesSupported) {
+TEST_F(OpWhereOutTest, AllRealDtypesSupported) {
   test_where_enumerate_a_types_aten();
 }
 
 // Condition is true, all items will be from x
-TEST(OpWhereOutKernelTest, AllTrueTest) {
+TEST_F(OpWhereOutTest, AllTrueTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Float> tf_x;
   TensorFactory<ScalarType::Float> tf_y;
@@ -139,7 +190,7 @@ TEST(OpWhereOutKernelTest, AllTrueTest) {
 }
 
 // Condition is false, all items will be from y
-TEST(OpWhereOutKernelTest, AllFalseTest) {
+TEST_F(OpWhereOutTest, AllFalseTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Float> tf_x;
   TensorFactory<ScalarType::Float> tf_y;
@@ -170,7 +221,7 @@ TEST(OpWhereOutKernelTest, AllFalseTest) {
 }
 
 // Choosing based on condition[i] ? x[i] : y[i]
-TEST(OpWhereOutKernelTest, MixedTrueFalseTest) {
+TEST_F(OpWhereOutTest, MixedTrueFalseTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Float> tf_x;
   TensorFactory<ScalarType::Float> tf_y;
@@ -202,7 +253,7 @@ TEST(OpWhereOutKernelTest, MixedTrueFalseTest) {
 }
 
 // Choosing based on condition[i] ? x[i] : y[i]
-TEST(OpWhereOutKernelTest, BroadcastConditionTest) {
+TEST_F(OpWhereOutTest, BroadcastConditionTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Float> tf_x;
   TensorFactory<ScalarType::Float> tf_y;
@@ -242,7 +293,7 @@ TEST(OpWhereOutKernelTest, BroadcastConditionTest) {
 }
 
 // Choosing based on condition[i] ? x[i] : y[i]
-TEST(OpWhereOutKernelTest, BroadcastConditionAndBroadCastYTest) {
+TEST_F(OpWhereOutTest, BroadcastConditionAndBroadCastYTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Float> tf_x;
   TensorFactory<ScalarType::Float> tf_y;
@@ -283,7 +334,7 @@ TEST(OpWhereOutKernelTest, BroadcastConditionAndBroadCastYTest) {
 }
 
 // Choosing based on condition[i] ? x[i] : y[i]
-TEST(OpWhereOutKernelTest, DoubleTypeTest) {
+TEST_F(OpWhereOutTest, DoubleTypeTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Double> tf_x;
   TensorFactory<ScalarType::Double> tf_y;
@@ -324,7 +375,7 @@ TEST(OpWhereOutKernelTest, DoubleTypeTest) {
 }
 
 // Choosing based on condition[i] ? x[i] : y[i]
-TEST(OpWhereOutKernelTest, MismatchedShapeTest) {
+TEST_F(OpWhereOutTest, MismatchedShapeTest) {
   TensorFactory<ScalarType::Bool> tf_condition;
   TensorFactory<ScalarType::Float> tf_x;
   TensorFactory<ScalarType::Double> tf_y;
@@ -338,7 +389,7 @@ TEST(OpWhereOutKernelTest, MismatchedShapeTest) {
   Tensor out = tf_out.zeros(x_sizes);
 
   // clang-format off
-  ET_EXPECT_KERNEL_FAILURE(op_where_self_out(
+  ET_EXPECT_KERNEL_FAILURE(context_, op_where_self_out(
       tf_condition.make(condition_sizes, /*data=*/{
                                   false,
                                   true,
@@ -378,60 +429,12 @@ where_template = f"""
   op_where_self_out(condition, input, other, out);
   EXPECT_TENSOR_EQ(out, expected);""" */
 
-void test_dynamic_shape(
-    const std::vector<int32_t>& out_shape,
-    enum torch::executor::TensorShapeDynamism dynamism) {
-  /* %python
-  %rewrite(where_template) */
-
-  TensorFactory<ScalarType::Bool> tfBool;
-  TensorFactory<ScalarType::Float> tf;
-
-  Tensor condition = tfBool.make(
-      {2, 3, 4}, {true,  false, true, true,  true,  false, false, true,
-                  false, true,  true, false, false, false, false, false,
-                  false, false, true, true,  false, false, true,  true});
-  Tensor input = tf.make(
-      {2, 3, 4},
-      {0.41940832138061523,  0.5529070496559143,   0.9527381062507629,
-       0.036164820194244385, 0.1852310299873352,   0.37341737747192383,
-       0.3051000237464905,   0.9320003986358643,   0.17591017484664917,
-       0.2698335647583008,   0.15067976713180542,  0.03171950578689575,
-       0.20812976360321045,  0.9297990202903748,   0.7231091856956482,
-       0.7423362731933594,   0.5262957811355591,   0.24365824460983276,
-       0.584592342376709,    0.033152639865875244, 0.13871687650680542,
-       0.242235004901886,    0.815468966960907,    0.793160617351532});
-  Tensor other = tf.make(
-      {2, 3, 4}, {0.2782524824142456,  0.48195880651474,   0.8197803497314453,
-                  0.9970665574073792,  0.6984410881996155, 0.5675464272499084,
-                  0.8352431654930115,  0.2055988311767578, 0.593172013759613,
-                  0.11234724521636963, 0.1534569263458252, 0.24170821905136108,
-                  0.7262365221977234,  0.7010802030563354, 0.2038237452507019,
-                  0.6510535478591919,  0.7744860053062439, 0.4368913173675537,
-                  0.5190907716751099,  0.6158523559570312, 0.8101882934570312,
-                  0.9800970554351807,  0.1146882176399231, 0.3167651295661926});
-  Tensor expected = tf.make(
-      {2, 3, 4},
-      {0.41940832138061523,  0.48195880651474,     0.9527381062507629,
-       0.036164820194244385, 0.1852310299873352,   0.5675464272499084,
-       0.8352431654930115,   0.9320003986358643,   0.593172013759613,
-       0.2698335647583008,   0.15067976713180542,  0.24170821905136108,
-       0.7262365221977234,   0.7010802030563354,   0.2038237452507019,
-       0.6510535478591919,   0.7744860053062439,   0.4368913173675537,
-       0.584592342376709,    0.033152639865875244, 0.8101882934570312,
-       0.9800970554351807,   0.815468966960907,    0.793160617351532});
-  Tensor out = tf.zeros(out_shape, dynamism);
-
-  op_where_self_out(condition, input, other, out);
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST(OpWhereOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpWhereOutTest, DynamicShapeUpperBoundSameAsExpected) {
   test_dynamic_shape(
       {2, 3, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST(OpWhereOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpWhereOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -439,7 +442,7 @@ TEST(OpWhereOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
       {10, 10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND);
 }
 
-TEST(OpWhereOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpWhereOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

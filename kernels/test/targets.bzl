@@ -50,10 +50,12 @@ def define_common_targets(is_fbcode = False):
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
+                "//executorch/runtime/kernel:kernel_includes",
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
+                "//executorch/runtime/kernel:kernel_includes",
             ],
         )
 
