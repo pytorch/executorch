@@ -96,7 +96,7 @@ def export_to_exec_prog(
 
     exec_prog = edge_m.to_executorch(backend_config)
     if verbose:
-        logging.inf(f"Lowered graph:\n{exec_prog.exported_program().graph}")
+        logging.info(f"Lowered graph:\n{exec_prog.exported_program().graph}")
     return exec_prog
 
 
