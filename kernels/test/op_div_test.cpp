@@ -24,126 +24,145 @@ using torch::executor::testing::TensorFactory;
 
 namespace {
 
-Tensor& op_div_out(const Tensor& a, const Tensor& b, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::div_outf(context, a, b, out);
-}
+class OpDivOutTest : public OperatorTest {
+ protected:
+  Tensor& op_div_out(const Tensor& a, const Tensor& b, Tensor& out) {
+    return torch::executor::aten::div_outf(context_, a, b, out);
+  }
 
-Tensor& op_div_scalar_out(const Tensor& a, const Scalar& b, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::div_outf(context, a, b, out);
-}
+  template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
+  void test_div() {
+    TensorFactory<DTYPE_A> tf_a;
+    TensorFactory<DTYPE_B> tf_b;
+    TensorFactory<DTYPE_OUT> tf_out;
 
-} // namespace
+    const std::vector<int32_t> sizes = {2, 2};
+
+    Tensor out = tf_out.zeros(sizes);
+
+    // Valid input should give the expected output
+    op_div_out(
+        tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
+        tf_b.make(sizes, /*data=*/{8, 4, 2, 1}),
+        out);
+
+    EXPECT_TENSOR_CLOSE(out, tf_out.make(sizes, /*data=*/{0.125, 0.5, 2, 8}));
+  }
+
+  template <>
+  void test_div<ScalarType::Float, ScalarType::Float, ScalarType::Float>() {
+    TensorFactory<ScalarType::Float> tf;
+
+    const std::vector<int32_t> sizes = {2, 5};
+
+    // Invalid divisor input zero should die
+    Tensor out = tf.zeros(sizes);
+
+    // Valid input should give the expected output
+    op_div_out(
+        tf.make(
+            sizes, /*data=*/{1, 2, 4, 8, INFINITY, -INFINITY, NAN, 1, 1, 1}),
+        tf.make(
+            sizes,
+            /*data=*/
+            {8, 0, 2, 1, INFINITY, -INFINITY, NAN, INFINITY, -INFINITY, NAN}),
+        out);
+    EXPECT_TENSOR_CLOSE(
+        out,
+        tf.make(
+            sizes, /*data=*/{0.125, INFINITY, 2, 8, NAN, NAN, NAN, 0, 0, NAN}));
+  }
+
+  template <>
+  void test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>() {
+    TensorFactory<ScalarType::Bool> tf_b;
+    TensorFactory<ScalarType::Float> tf;
+
+    const std::vector<int32_t> sizes = {2, 2};
+
+    // Invalid divisor input zero should die
+    Tensor out = tf.zeros(sizes);
+
+    // Valid input should give the expected output
+    op_div_out(
+        tf_b.make(sizes, /*data=*/{1, 1, 1, 1}),
+        tf.make(sizes, /*data=*/{4, 4, 2, 1}),
+        out);
+
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.25, 0.25, 0.5, 1.0}));
+  }
+
+  template <ScalarType DTYPE_A, ScalarType DTYPE_B>
+  void test_div_enumerate_out_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_div<DTYPE_A, DTYPE_B, ScalarType::dtype>();
+
+    ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <ScalarType DTYPE_A>
+  void test_div_enumerate_b_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_div_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+
+  template <ScalarType OUTPUT_DTYPE>
+  void test_div_invalid_output_dtype_dies() {
+    TensorFactory<ScalarType::Float> tf_float;
+    TensorFactory<OUTPUT_DTYPE> tf_out;
+
+    const std::vector<int32_t> sizes = {2, 5};
+
+    Tensor a = tf_float.ones(sizes);
+    Tensor b = tf_float.ones(sizes);
+    Tensor out = tf_out.zeros(sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_div_out(a, b, out));
+  }
+
+  /**
+   * Common testing for div operator, for float output types
+   */
+  void test_div_enumerate_a_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_div_enumerate_b_types<ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
+
+    test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>();
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+};
+
+class OpDivScalarOutTest : public OperatorTest {
+ protected:
+  Tensor& op_div_scalar_out(const Tensor& a, const Scalar& b, Tensor& out) {
+    return torch::executor::aten::div_outf(context_, a, b, out);
+  }
+};
+
+}; // namespace
 
 //
 // Correctness Tests
 //
 
 /**
- * Common testing for div operator, for float output types
- */
-template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
-void test_div() {
-  TensorFactory<DTYPE_A> tf_a;
-  TensorFactory<DTYPE_B> tf_b;
-  TensorFactory<DTYPE_OUT> tf_out;
-
-  const std::vector<int32_t> sizes = {2, 2};
-
-  Tensor out = tf_out.zeros(sizes);
-
-  // Valid input should give the expected output
-  op_div_out(
-      tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
-      tf_b.make(sizes, /*data=*/{8, 4, 2, 1}),
-      out);
-
-  EXPECT_TENSOR_CLOSE(out, tf_out.make(sizes, /*data=*/{0.125, 0.5, 2, 8}));
-}
-
-template <>
-void test_div<ScalarType::Float, ScalarType::Float, ScalarType::Float>() {
-  TensorFactory<ScalarType::Float> tf;
-
-  const std::vector<int32_t> sizes = {2, 5};
-
-  // Invalid divisor input zero should die
-  Tensor out = tf.zeros(sizes);
-
-  // Valid input should give the expected output
-  op_div_out(
-      tf.make(sizes, /*data=*/{1, 2, 4, 8, INFINITY, -INFINITY, NAN, 1, 1, 1}),
-      tf.make(
-          sizes,
-          /*data=*/
-          {8, 0, 2, 1, INFINITY, -INFINITY, NAN, INFINITY, -INFINITY, NAN}),
-      out);
-  EXPECT_TENSOR_CLOSE(
-      out,
-      tf.make(
-          sizes, /*data=*/{0.125, INFINITY, 2, 8, NAN, NAN, NAN, 0, 0, NAN}));
-}
-
-template <>
-void test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>() {
-  TensorFactory<ScalarType::Bool> tf_b;
-  TensorFactory<ScalarType::Float> tf;
-
-  const std::vector<int32_t> sizes = {2, 2};
-
-  // Invalid divisor input zero should die
-  Tensor out = tf.zeros(sizes);
-
-  // Valid input should give the expected output
-  op_div_out(
-      tf_b.make(sizes, /*data=*/{1, 1, 1, 1}),
-      tf.make(sizes, /*data=*/{4, 4, 2, 1}),
-      out);
-
-  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.25, 0.25, 0.5, 1.0}));
-}
-
-template <ScalarType DTYPE_A, ScalarType DTYPE_B>
-void test_div_enumerate_out_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_div<DTYPE_A, DTYPE_B, ScalarType::dtype>();
-
-  ET_FORALL_FLOAT_TYPES(ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-template <ScalarType DTYPE_A>
-void test_div_enumerate_b_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_div_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-void test_div_enumerate_a_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_div_enumerate_b_types<ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES(ENUMERATE_TEST_ENTRY)
-
-  test_div<ScalarType::Bool, ScalarType::Float, ScalarType::Float>();
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-/**
  * Uses the function templates above to test all valid combinations of inputs
  * and output dtypes
  */
-TEST(OpDivOutKernelTest, AllRealDtypesSupported) {
+TEST_F(OpDivOutTest, AllRealDtypesSupported) {
   test_div_enumerate_a_types();
 }
 
-TEST(OpDivOutKernelTest, BroadcastSupported1) {
+TEST_F(OpDivOutTest, BroadcastSupported1) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({2, 1, 2, 1}, {4, 8, 12, 16});
@@ -161,7 +180,7 @@ TEST(OpDivOutKernelTest, BroadcastSupported1) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-TEST(OpDivOutKernelTest, BroadcastSupported2) {
+TEST_F(OpDivOutTest, BroadcastSupported2) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({3, 2, 1}, {2, 3, 4, 5, 6, 7});
@@ -177,7 +196,7 @@ TEST(OpDivOutKernelTest, BroadcastSupported2) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-TEST(OpDivOutKernelTest, BroadcastScalarSupported1) {
+TEST_F(OpDivOutTest, BroadcastScalarSupported1) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({2, 1, 3}, {2, 3, 4, 5, 6, 7});
@@ -193,7 +212,7 @@ TEST(OpDivOutKernelTest, BroadcastScalarSupported1) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-TEST(OpDivOutKernelTest, BroadcastScalarSupported2) {
+TEST_F(OpDivOutTest, BroadcastScalarSupported2) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor a = tf.make({1, 1, 1}, {8});
@@ -209,7 +228,7 @@ TEST(OpDivOutKernelTest, BroadcastScalarSupported2) {
   EXPECT_TENSOR_EQ(out, ret);
 }
 
-TEST(OpDivOutKernelTest, BroadcastDimSizeIsOneAB) {
+TEST_F(OpDivOutTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -235,7 +254,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeIsOneAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpDivOutKernelTest, BroadcastDimSizeMissingAB) {
+TEST_F(OpDivOutTest, BroadcastDimSizeMissingAB) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -261,7 +280,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeMissingAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpDivOutKernelTest, BroadcastDimSizeIsOneBA) {
+TEST_F(OpDivOutTest, BroadcastDimSizeIsOneBA) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.942541241645813, 0.0298004150390625});
@@ -287,7 +306,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeIsOneBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpDivOutKernelTest, BroadcastDimSizeMissingBA) {
+TEST_F(OpDivOutTest, BroadcastDimSizeMissingBA) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.942541241645813, 0.0298004150390625});
@@ -317,7 +336,7 @@ TEST(OpDivOutKernelTest, BroadcastDimSizeMissingBA) {
 // Death Tests
 //
 
-TEST(OpDivOutKernelTest, MismatchedShapesDies) {
+TEST_F(OpDivOutTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -328,24 +347,10 @@ TEST(OpDivOutKernelTest, MismatchedShapesDies) {
   Tensor b = tf_int.ones(/*sizes=*/{4});
   Tensor out = tf_float.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(op_div_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_div_out(a, b, out));
 }
 
-template <ScalarType OUTPUT_DTYPE>
-void test_div_invalid_output_dtype_dies() {
-  TensorFactory<ScalarType::Float> tf_float;
-  TensorFactory<OUTPUT_DTYPE> tf_out;
-
-  const std::vector<int32_t> sizes = {2, 5};
-
-  Tensor a = tf_float.ones(sizes);
-  Tensor b = tf_float.ones(sizes);
-  Tensor out = tf_out.zeros(sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_div_out(a, b, out));
-}
-
-TEST(OpDivOutKernelTest, AllNonFloatOutputDTypeDies) {
+TEST_F(OpDivOutTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_div_invalid_output_dtype_dies<ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
@@ -356,7 +361,7 @@ TEST(OpDivOutKernelTest, AllNonFloatOutputDTypeDies) {
 // Dynamic Shape Tests
 //
 
-TEST(OpDivOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpDivOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -390,7 +395,7 @@ TEST(OpDivOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpDivOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpDivOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -424,7 +429,7 @@ TEST(OpDivOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpDivOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpDivOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -459,7 +464,7 @@ TEST(OpDivOutKernelTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpDivScalarOutKernelTest, SanityCheckIntScalar) {
+TEST_F(OpDivScalarOutTest, SanityCheckIntScalar) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -473,7 +478,7 @@ TEST(OpDivScalarOutKernelTest, SanityCheckIntScalar) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
 }
 
-TEST(OpDivScalarOutKernelTest, SanityCheckFloatScalar) {
+TEST_F(OpDivScalarOutTest, SanityCheckFloatScalar) {
   TensorFactory<ScalarType::Int> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -487,7 +492,7 @@ TEST(OpDivScalarOutKernelTest, SanityCheckFloatScalar) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.5, 1.0, 2.0, -4.5}));
 }
 
-TEST(OpDivScalarOutKernelTest, OptimizedSanityCheck) {
+TEST_F(OpDivScalarOutTest, OptimizedSanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {2, 2};

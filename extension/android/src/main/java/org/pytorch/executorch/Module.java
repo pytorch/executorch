@@ -68,6 +68,19 @@ public class Module {
   }
 
   /**
+   * Load a method on this module. This might help with the first time inference performance,
+   * because otherwise the method is loaded lazily when it's execute. Note: this function is
+   * synchronous, and will block until the method is loaded. Therefore, it is recommended to call
+   * this on a background thread. However, users need to make sure that they don't execute before
+   * this function returns.
+   *
+   * @return the Error code if there was an error loading the method
+   */
+  public int loadMethod(String methodName) {
+    return mNativePeer.loadMethod(methodName);
+  }
+
+  /**
    * Explicitly destroys the native torch::jit::Module. Calling this method is not required, as the
    * native object will be destroyed when this object is garbage-collected. However, the timing of
    * garbage collection is not guaranteed, so proactively calling {@code destroy} can free memory
