@@ -51,7 +51,8 @@ jobs:
         include:
           - build-tool: buck2
     with:
-      runner: linux.4xlarge
+      # NB: The example model dl3 requires lots of memory (T161064121)
+      runner: linux.12xlarge
       docker-image: executorch-ubuntu-22.04-clang12-android
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
