@@ -172,6 +172,7 @@ class TosaTestUtils:
                 int8_min = np.iinfo(np.int8).min
                 data_np = (
                     ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
+                    .round()
                     .clip(int8_min, int8_max)
                     .astype(np.int8)
                 )
@@ -200,9 +201,7 @@ class TosaTestUtils:
             assert (
                 quant_param is not None
             ), "There are no qunatization parameters, check output parameters"
-            tosa_ref_output = (
-                np.round(tosa_ref_output - quant_param.zp) * quant_param.scale
-            )
+            tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
         # tosa_output is a numpy array, convert to torch tensor for comparison
         tosa_ref_output = torch.from_numpy(tosa_ref_output.astype("float32"))

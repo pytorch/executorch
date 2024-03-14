@@ -27,65 +27,72 @@ using exec_aten::Tensor;
 
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_arange_out(const Scalar& end, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::arange_outf(context, end, out);
-}
-
-Tensor& op_arange_start_out(
-    const Scalar& start,
-    const Scalar& end,
-    const Scalar& step,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::arange_outf(context, start, end, step, out);
-}
-
-class OpArangeOutTest : public ::testing::Test {
+class OpArangeOutTest : public OperatorTest {
  protected:
-  void SetUp() override {
-    // Since these tests cause ET_LOG to be called, the PAL must be initialized
-    // first.
-    torch::executor::runtime_init();
+  Tensor& op_arange_out(const Scalar& end, Tensor& out) {
+    return torch::executor::aten::arange_outf(context_, end, out);
+  }
+
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_arange_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Scalar end = Scalar(static_cast<CTYPE>(10));
+
+    Tensor out = tf.zeros({10});
+
+    Tensor ret = op_arange_out(end, out);
+
+    // Should always return the provided out Tensor.
+    EXPECT_TENSOR_EQ(ret, out);
+
+    // Expected tensor, filled with 0, 1, ..., 9
+    Tensor expected = tf.make({10}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+    EXPECT_TENSOR_EQ(out, expected);
   }
 };
 
-class OpArangeStartOutTest : public ::testing::Test {
+class OpArangeStartOutTest : public OperatorTest {
  protected:
-  void SetUp() override {
-    // Since these tests cause ET_LOG to be called, the PAL must be initialized
-    // first.
-    torch::executor::runtime_init();
+  Tensor& op_arange_start_out(
+      const Scalar& start,
+      const Scalar& end,
+      const Scalar& step,
+      Tensor& out) {
+    return torch::executor::aten::arange_outf(context_, start, end, step, out);
+  }
+
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_arange_start_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    Scalar start = Scalar(static_cast<CTYPE>(0));
+    Scalar end = Scalar(static_cast<CTYPE>(10));
+    Scalar step = Scalar(static_cast<CTYPE>(1));
+
+    Tensor out = tf.zeros({10});
+
+    Tensor ret = op_arange_start_out(start, end, step, out);
+
+    // Should always return the provided out Tensor.
+    EXPECT_TENSOR_EQ(ret, out);
+
+    // Expected tensor, filled with 0, 1, ..., 9
+    Tensor expected = tf.make({10}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+
+    EXPECT_TENSOR_EQ(out, expected);
   }
 };
 
 /// A generic smoke test that works for any dtype that supports  zeros().
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_arange_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  Scalar end = Scalar(static_cast<CTYPE>(10));
-
-  Tensor out = tf.zeros({10});
-
-  Tensor ret = op_arange_out(end, out);
-
-  // Should always return the provided out Tensor.
-  EXPECT_TENSOR_EQ(ret, out);
-
-  // Expected tensor, filled with 0, 1, ..., 9
-  Tensor expected = tf.make({10}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST(OpArangeOutTest, AllRealDtypesSupported) {
+TEST_F(OpArangeOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_arange_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
+TEST_F(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   TensorFactory<ScalarType::Float> tf;
 
   // end = any floating point number between [a, a+1) where a is an arbitrary
@@ -106,7 +113,7 @@ TEST(OpArangeOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpArangeOutTest, OutDimUnsupportedDie) {
+TEST_F(OpArangeOutTest, OutDimUnsupportedDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
   }
@@ -117,10 +124,10 @@ TEST(OpArangeOutTest, OutDimUnsupportedDie) {
   Tensor out = tf.zeros({5, 1});
 
   // out.dim() should be 1, not 2
-  ET_EXPECT_KERNEL_FAILURE(op_arange_out(end, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_arange_out(end, out));
 }
 
-TEST(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -131,7 +138,7 @@ TEST(OpArangeOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -142,7 +149,7 @@ TEST(OpArangeOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpArangeOutTest, DynamicShapeUnbound) {
+TEST_F(OpArangeOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Dynamic Unbound not supported";
   }
@@ -157,35 +164,14 @@ TEST(OpArangeOutTest, DynamicShapeUnbound) {
 }
 
 /// A generic smoke test that works for any dtype that supports  zeros().
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_arange_start_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  Scalar start = Scalar(static_cast<CTYPE>(0));
-  Scalar end = Scalar(static_cast<CTYPE>(10));
-  Scalar step = Scalar(static_cast<CTYPE>(1));
-
-  Tensor out = tf.zeros({10});
-
-  Tensor ret = op_arange_start_out(start, end, step, out);
-
-  // Should always return the provided out Tensor.
-  EXPECT_TENSOR_EQ(ret, out);
-
-  // Expected tensor, filled with 0, 1, ..., 9
-  Tensor expected = tf.make({10}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
-
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST(OpArangeStartOutTest, AllRealDtypesSupported) {
+TEST_F(OpArangeStartOutTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) \
   test_arange_start_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
+TEST_F(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   TensorFactory<ScalarType::Float> tf;
 
   // Tested in bento:
@@ -209,7 +195,7 @@ TEST(OpArangeStartOutTest, FloatNumberNotEqualIntSupport) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpArangeStartOutTest, OutDimUnsupportedDie) {
+TEST_F(OpArangeStartOutTest, OutDimUnsupportedDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched out dim";
   }
@@ -222,10 +208,11 @@ TEST(OpArangeStartOutTest, OutDimUnsupportedDie) {
   Tensor out = tf.zeros({5, 1});
 
   // out.dim() should be 1, not 2
-  ET_EXPECT_KERNEL_FAILURE(op_arange_start_out(start, end, step, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_arange_start_out(start, end, step, out));
 }
 
-TEST(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -236,7 +223,7 @@ TEST(OpArangeStartOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor expected_result = tf.make({5}, {0, 1, 2, 3, 4});
@@ -247,7 +234,7 @@ TEST(OpArangeStartOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpArangeStartOutTest, DynamicShapeUnbound) {
+TEST_F(OpArangeStartOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Dynamic Unbound not supported";
   }
@@ -261,7 +248,7 @@ TEST(OpArangeStartOutTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpArangeStartOutTest, StartOut) {
+TEST_F(OpArangeStartOutTest, StartOut) {
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(1.1);
@@ -294,7 +281,7 @@ TEST(OpArangeStartOutTest, StartOut) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpArangeStartOutTest, StartOutNegativeStep) {
+TEST_F(OpArangeStartOutTest, StartOutNegativeStep) {
   TensorFactory<ScalarType::Float> tf;
 
   Scalar start = Scalar(5.5);
