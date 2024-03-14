@@ -48,11 +48,6 @@ template <class FuncType, FuncType* func_ptr>
 struct is_compile_time_function_pointer<
     CompileTimeFunctionPointer<FuncType, func_ptr>> : std::true_type {};
 
-#define EXECUTORCH_FN_TYPE(func)                                      \
-  CompileTimeFunctionPointer<                                         \
-      std::remove_pointer_t<std::remove_reference_t<decltype(func)>>, \
-      func>
-#define EXECUTORCH_FN(func) EXECUTORCH_FN_TYPE(func)()
 
 /**
  * strip_class: helper to remove the class type from pointers to `operator()`.
@@ -113,3 +108,9 @@ using infer_function_traits_t = typename infer_function_traits<T>::type;
 
 } // namespace executor
 } // namespace torch
+
+#define EXECUTORCH_FN_TYPE(func)                                      \
+  torch::executor::CompileTimeFunctionPointer<                                         \
+      std::remove_pointer_t<std::remove_reference_t<decltype(func)>>, \
+      func>
+#define EXECUTORCH_FN(func) EXECUTORCH_FN_TYPE(func)()

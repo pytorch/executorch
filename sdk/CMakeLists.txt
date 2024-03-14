@@ -52,7 +52,7 @@ endforeach()
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc
                  ${CMAKE_BINARY_DIR}/third-party/flatcc)
-
+target_compile_options(flatcc PUBLIC -fPIC)
 # Assume we are cross-compiling and the CMAKE_TOOLCHAIN_FILE is set
 include(ExternalProject)
 
