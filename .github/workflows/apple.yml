@@ -95,7 +95,6 @@ jobs:
     runs-on: ubuntu-22.04
     needs: build-frameworks-ios
     timeout-minutes: 30
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     permissions:
       id-token: write
       contents: read
@@ -116,4 +115,25 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - run: make deploy
+      - name: Only push to S3 from main branch
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -eux
+          echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
+      - name: Upload the artifact to ossci-ios S3 bucket
+        shell: bash
+        run: |
+          set -eux
+
+          pip install awscli==1.32.18
+
+          AWS_CMD="aws s3 cp --dryrun"
+          if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            AWS_CMD="aws s3 cp"
+          fi
+
+          for FILENAME in "${RUNNER_TEMP}"/frameworks-ios/*.zip; do
+            [ -e "${FILENAME}" ] || continue
+            ${AWS_CMD} "${FILENAME}" s3://ossci-ios/ --acl public-read
+          done
