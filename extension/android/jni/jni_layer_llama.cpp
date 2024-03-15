@@ -23,6 +23,33 @@
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+
+// For Android, write to logcat
+void et_pal_emit_log_message(
+    et_timestamp_t timestamp,
+    et_pal_log_level_t level,
+    const char* filename,
+    const char* function,
+    size_t line,
+    const char* message,
+    size_t length) {
+  int android_log_level = ANDROID_LOG_UNKNOWN;
+  if (level == 'D') {
+    android_log_level = ANDROID_LOG_DEBUG;
+  } else if (level == 'I') {
+    android_log_level = ANDROID_LOG_INFO;
+  } else if (level == 'E') {
+    android_log_level = ANDROID_LOG_ERROR;
+  } else if (level == 'F') {
+    android_log_level = ANDROID_LOG_FATAL;
+  }
+
+  __android_log_print(android_log_level, "LLAMA", "%s", message);
+}
+#endif
+
 using namespace torch::executor;
 
 namespace executorch_jni {
