@@ -36,6 +36,5 @@ class TestDeepLabV3(unittest.TestCase):
             .partition()
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
