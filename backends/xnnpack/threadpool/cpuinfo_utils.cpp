@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
 #include <executorch/runtime/platform/assert.h>
 #include <fstream>
 #include <iostream>
@@ -53,7 +61,6 @@ uint32_t _get_model_specific_num_cores() {
   const std::string kImageVersionPath = "/sys/devices/soc0/image_version";
   ET_LOG(Info, "Reading file %s", kImageVersionPath.c_str());
   std::fstream image_version_file(kImageVersionPath, std::ios_base::in);
-  uint32_t tmp{0};
   if (image_version_file.is_open()) {
     std::string x;
     std::getline(image_version_file, x);
@@ -99,7 +106,9 @@ bool populate_available_cpu_mids() {
 }
 
 uint32_t _get_num_performant_cores() {
+  // @lint-ignore CLANGTIDY facebook-hte-std::once_flag
   static std::once_flag flag;
+  // @lint-ignore CLANGTIDY facebook-hte-std::call_once
   std::call_once(flag, []() { populate_available_cpu_mids(); });
   std::vector<uint32_t>* cpu_midrs = get_static_cpu_midr_vector();
   uint32_t num_possible_cores = cpuinfo_get_processors_count();
