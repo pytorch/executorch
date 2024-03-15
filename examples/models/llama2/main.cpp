@@ -10,8 +10,10 @@
 
 #include <executorch/examples/models/llama2/runner/runner.h>
 
+#if defined(ET_USE_THREADPOOL)
 #include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#endif
 
 DEFINE_string(
     model_path,
