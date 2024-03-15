@@ -14,7 +14,7 @@ install_prerequiresites() {
   apt-get update
 
   apt-get install -y --no-install-recommends \
-    openjdk-11-jdk \
+    openjdk-17-jdk \
     ca-certificates-java \
     ant
 
