@@ -18,6 +18,7 @@ from typing import List, Optional
 
 import pkg_resources
 import torch
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
@@ -359,6 +360,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument("-V", "--vulkan", action="store_true")
 
     parser.add_argument(
         "--generate_etrecord",
@@ -462,6 +464,17 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         )
         # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
+
+    if args.vulkan:
+        assert (
+            args.dtype_override is None
+        ), "Vulkan backend does not support non fp32 dtypes at the moment"
+        assert (
+            args.quantization_mode is None
+        ), "Vulkan backend does not support quantization at the moment"
+
+        partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
+        modelname = f"vulkan_{modelname}"
 
     builder_exported_to_edge = (
         load_llama_model(
