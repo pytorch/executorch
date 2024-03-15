@@ -39,8 +39,7 @@ class TestInceptionV4(unittest.TestCase):
             .check_not(list(self.all_operators))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_ic4(self):
@@ -60,6 +59,5 @@ class TestInceptionV4(unittest.TestCase):
             .check_not(list(ops_after_quantization))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
