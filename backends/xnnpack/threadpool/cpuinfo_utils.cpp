@@ -8,7 +8,6 @@
 
 #include <executorch/runtime/platform/assert.h>
 #include <fstream>
-#include <iostream>
 #include <mutex>
 #include <string>
 #include <vector>
