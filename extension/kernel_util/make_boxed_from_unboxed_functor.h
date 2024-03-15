@@ -87,6 +87,21 @@ struct evalue_to_arg<const exec_aten::Tensor&> final {
     return v.toTensor();
   }
 };
+
+template <class T>
+struct evalue_to_arg<exec_aten::optional<T>> final {
+  static exec_aten::optional<T> call(EValue& v) {
+    return v.toOptional<T>();
+  }
+};
+
+template <class T>
+struct evalue_to_arg<exec_aten::ArrayRef<exec_aten::optional<T>>> final {
+  static exec_aten::ArrayRef<exec_aten::optional<T>> call(EValue& v) {
+    return v.toListOptionalTensor();
+  }
+};
+
 // Call functor with args from stack
 
 template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>

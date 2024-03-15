@@ -7,6 +7,7 @@
  */
 
 #include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
+#include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/portable_type/tensor.h>
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -26,6 +27,50 @@ Tensor& my_op_out(RuntimeContext& ctx, const Tensor& a, Tensor& out) {
 Tensor& set_1_out(RuntimeContext& ctx, Tensor& out) {
   (void)ctx;
   out.mutable_data_ptr<int32_t>()[0] = 1;
+  return out;
+}
+
+Tensor& add_tensor_out(RuntimeContext& ctx, ArrayRef<Tensor> a, Tensor& out) {
+  (void)ctx;
+  for (int i = 0; i < out.numel(); i++) {
+    int sum = 0;
+    for (int j = 0; j < a.size(); j++) {
+      sum += a[j].const_data_ptr<int32_t>()[i];
+    }
+    out.mutable_data_ptr<int32_t>()[i] = sum;
+  }
+  return out;
+}
+
+Tensor& add_optional_scalar_out(
+    RuntimeContext& ctx,
+    optional<int64_t> s1,
+    optional<int64_t> s2,
+    Tensor& out) {
+  (void)ctx;
+  if (s1.has_value()) {
+    out.mutable_data_ptr<int32_t>()[0] += s1.value();
+  }
+  if (s2.has_value()) {
+    out.mutable_data_ptr<int32_t>()[0] += s2.value();
+  }
+  return out;
+}
+
+Tensor& add_optional_tensor_out(
+    RuntimeContext& ctx,
+    ArrayRef<optional<Tensor>> a,
+    Tensor& out) {
+  (void)ctx;
+
+  for (int i = 0; i < a.size(); i++) {
+    if (a[i].has_value()) {
+      for (int j = 0; j < a[i].value().numel(); j++) {
+        out.mutable_data_ptr<int32_t>()[j] +=
+            a[i].value().const_data_ptr<int32_t>()[j];
+      }
+    }
+  }
   return out;
 }
 
@@ -66,4 +111,83 @@ TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxLogicWorks) {
 
   // check result
   EXPECT_EQ(a.const_data_ptr<int32_t>()[0], 1);
+}
+
+TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxArrayRef) {
+  EXECUTORCH_LIBRARY(my_ns, "add_tensor.out", add_tensor_out);
+  EXPECT_TRUE(hasOpsFn("my_ns::add_tensor.out"));
+
+  // prepare ArrayRef input.
+  torch::executor::testing::TensorFactory<ScalarType::Int> tf;
+  Tensor storage[2] = {tf.ones({5}), tf.ones({5})};
+  EValue evalues[2] = {storage[0], storage[1]};
+  EValue* values_p[2] = {&evalues[0], &evalues[1]};
+  BoxedEvalueList<Tensor> a_box(values_p, storage, 2);
+  EValue boxed_array_ref(a_box);
+  // prepare out tensor.
+  EValue out(tf.zeros({5}));
+
+  auto fn = getOpsFn("my_ns::add_tensor.out");
+
+  // run it.
+  RuntimeContext context;
+  EValue values[2] = {boxed_array_ref, out};
+  EValue* stack[2] = {&values[0], &values[1]};
+  fn(context, stack);
+
+  // check result.
+  for (int i = 0; i < 5; i++) {
+    EXPECT_EQ(stack[1]->toTensor().const_data_ptr<int32_t>()[i], 2);
+  }
+}
+
+TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptional) {
+  EXECUTORCH_LIBRARY(my_ns, "add_optional_scalar.out", add_optional_scalar_out);
+  EXPECT_TRUE(hasOpsFn("my_ns::add_optional_scalar.out"));
+
+  // prepare optional input.
+  EValue scalar((int64_t)3);
+  EValue scalar_none;
+
+  // prepare out tensor.
+  torch::executor::testing::TensorFactory<ScalarType::Int> tf;
+  EValue out(tf.ones({1}));
+  auto fn = getOpsFn("my_ns::add_optional_scalar.out");
+
+  // run it.
+  RuntimeContext context;
+  EValue values[3] = {scalar, scalar_none, out};
+  EValue* stack[3] = {&values[0], &values[1], &values[2]};
+  fn(context, stack);
+
+  // check result.
+  EXPECT_EQ(stack[2]->toTensor().const_data_ptr<int32_t>()[0], 4);
+}
+
+TEST_F(MakeBoxedFromUnboxedFunctorTest, UnboxOptionalArrayRef) {
+  EXECUTORCH_LIBRARY(my_ns, "add_optional_tensor.out", add_optional_tensor_out);
+  EXPECT_TRUE(hasOpsFn("my_ns::add_optional_tensor.out"));
+
+  // prepare optional tensors.
+  torch::executor::testing::TensorFactory<ScalarType::Int> tf;
+  optional<Tensor> storage[2];
+  EValue evalues[2] = {EValue(tf.ones({5})), EValue()};
+  EValue* values_p[2] = {&evalues[0], &evalues[1]};
+  BoxedEvalueList<optional<Tensor>> a_box(values_p, storage, 2);
+  EValue boxed_array_ref(a_box);
+
+  // prepare out tensor.
+  EValue out(tf.zeros({5}));
+  auto fn = getOpsFn("my_ns::add_optional_tensor.out");
+
+  // run it.
+  RuntimeContext context;
+  EValue values[2] = {boxed_array_ref, out};
+  EValue* stack[2] = {&values[0], &values[1]};
+  fn(context, stack);
+
+  // check result.
+  for (int i = 0; i < 5; i++) {
+    EXPECT_EQ(stack[1]->toTensor().const_data_ptr<int32_t>()[i], 1);
+  }
 }
