@@ -507,7 +507,9 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-    @unittest.skipIf(IS_LINUX, "Flaky test on Linux x86, needs debugging")
+    @unittest.skipIf(
+        IS_LINUX, "Flaky test on Linux x86, needs debugging. Issue is tracked in #2468"
+    )
     @torch.inference_mode()  # TODO Use  for capturing.
     def test(self) -> None:
         mod = TestModel(
@@ -977,7 +979,10 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
                 backend_config=get_executorch_backend_config(),
             )
             print("converted:", converted_mod)
-            captured_mod = exir.capture(converted_mod, example_inputs,).to_edge(
+            captured_mod = exir.capture(
+                converted_mod,
+                example_inputs,
+            ).to_edge(
                 exir.EdgeCompileConfig(_check_ir_validity=False, _use_edge_ops=True)
             )
 
