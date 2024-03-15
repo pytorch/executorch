@@ -501,12 +501,25 @@ class Tester:
         assert len(model_output) == len(ref_output)
 
         for i in range(len(model_output)):
+            model = model_output[i]
+            ref = ref_output[i]
             assert torch.allclose(
-                model_output[i],
-                ref_output[i],
+                model,
+                ref,
                 atol=atol,
                 rtol=rtol,
-            ), f" Output {i} does not match reference output. Max difference: {torch.max(torch.abs(model_output[i] - ref_output[i]))}"
+            ), (
+                f"Output {i} does not match reference output.\n"
+                f"\tGiven atol: {atol}, rtol: {rtol}.\n"
+                f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
+                f"\tDifference: max: {torch.max(model-ref)}, abs: {torch.max(torch.abs(model-ref))}.\n"
+                f"\t-- Model vs. Reference --\n"
+                f"\t Numel: {model.numel()}, {ref.numel()}\n"
+                f"\tMedian: {model.median()}, {ref.median()}\n"
+                f"\t  Mean: {model.mean()}, {ref.mean()}\n"
+                f"\t   Max: {model.max()}, {ref.max()}\n"
+                f"\t   Min: {model.min()}, {ref.min()}\n"
+            )
 
     def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
         """
