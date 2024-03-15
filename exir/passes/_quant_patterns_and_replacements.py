@@ -9,7 +9,6 @@ from typing import Callable, List, Tuple
 
 import torch
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops as exir_ops
-
 from executorch.exir.passes.replace_aten_with_edge_pass import (
     aten_to_edge,
     should_lower_to_edge,
@@ -488,6 +487,50 @@ def _get_embedding_ops_patterns_and_replacements() -> (
             return out
 
         @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte")
+        def pattern_groupwise(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indices,
+            group_size,
+        ):
+            weight = (
+                torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+                    weight,
+                    weight_scales,
+                    weight_zero_points,
+                    weight_quant_min,
+                    weight_quant_max,
+                    weight.dtype,
+                    group_size,
+                    weight_scales.dtype,
+                )
+            )
+            out = torch.ops.aten.embedding.default(weight, indices)
+            return out
+
+        def replacement_groupwise(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indices,
+            group_size,
+        ):
+            out = torch.ops.quantized_decomposed.embedding_byte.default(
+                weight,
+                weight_scales,
+                weight_zero_points,
+                weight_quant_min,
+                weight_quant_max,
+                indices,
+            )
+            return out
+
+        @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte")
         def pattern_with_padding_idx(
             weight,
             weight_scales,
@@ -528,35 +571,86 @@ def _get_embedding_ops_patterns_and_replacements() -> (
             )
             return out
 
-        @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte.dtype")
-        def pattern_with_dtype(
+        @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte")
+        def pattern_with_padding_idx_groupwise(
             weight,
             weight_scales,
             weight_zero_points,
             weight_quant_min,
             weight_quant_max,
-            indicies,
-            dtype,
+            indices,
+            group_size,
+            padding_idx,
         ):
-            weight = torch.ops.quantized_decomposed.dequantize_per_channel.default(
+            weight = (
+                torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+                    weight,
+                    weight_scales,
+                    weight_zero_points,
+                    weight_quant_min,
+                    weight_quant_max,
+                    weight.dtype,
+                    group_size,
+                    weight_scales.dtype,
+                )
+            )
+            out = torch.ops.aten.embedding.default(weight, indices, padding_idx)
+            return out
+
+        def replacement_with_padding_idx_groupwise(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indices,
+            group_size,
+            _,  # padding_idx only matters for training and not when running op for inference
+        ):
+            out = torch.ops.quantized_decomposed.embedding_byte.default(
                 weight,
                 weight_scales,
                 weight_zero_points,
-                0,
                 weight_quant_min,
                 weight_quant_max,
-                torch.uint8,
+                indices,
             )
-            out = torch.ops.aten.embedding.default(weight, indicies).to(dtype)
             return out
 
-        def replacement_with_dtype(
+        @bind_pattern_to_op(quantized_decomposed_lib, "embedding_byte.dtype")
+        def pattern_with_dtype_groupwise(
             weight,
             weight_scales,
             weight_zero_points,
             weight_quant_min,
             weight_quant_max,
-            indicies,
+            indices,
+            group_size,
+            dtype,
+        ):
+            weight = (
+                torch.ops.quantized_decomposed.dequantize_per_channel_group.default(
+                    weight,
+                    weight_scales,
+                    weight_zero_points,
+                    weight_quant_min,
+                    weight_quant_max,
+                    weight.dtype,
+                    group_size,
+                    dtype,
+                )
+            )
+            out = torch.ops.aten.embedding.default(weight, indices)
+            return out
+
+        def replacement_with_dtype_groupwise(
+            weight,
+            weight_scales,
+            weight_zero_points,
+            weight_quant_min,
+            weight_quant_max,
+            indices,
+            group_size,
             dtype,
         ):
             out = torch.ops.quantized_decomposed.embedding_byte.dtype(
@@ -565,7 +659,7 @@ def _get_embedding_ops_patterns_and_replacements() -> (
                 weight_zero_points,
                 weight_quant_min,
                 weight_quant_max,
-                indicies,
+                indices,
                 dtype=dtype,
             )
             return out
@@ -577,13 +671,23 @@ def _get_embedding_ops_patterns_and_replacements() -> (
                 [],
             ),
             (
+                _trace_and_lower_to_edge_ops(pattern_groupwise),
+                _trace_and_lower_to_edge_ops(replacement_groupwise),
+                [],
+            ),
+            (
                 _trace_and_lower_to_edge_ops(pattern_with_padding_idx),
                 _trace_and_lower_to_edge_ops(replacement_with_padding_idx),
                 [],
             ),
             (
-                _trace_and_lower_to_edge_ops(pattern_with_dtype),
-                _trace_and_lower_to_edge_ops(replacement_with_dtype),
+                _trace_and_lower_to_edge_ops(pattern_with_padding_idx_groupwise),
+                _trace_and_lower_to_edge_ops(replacement_with_padding_idx_groupwise),
+                [],
+            ),
+            (
+                _trace_and_lower_to_edge_ops(pattern_with_dtype_groupwise),
+                _trace_and_lower_to_edge_ops(replacement_with_dtype_groupwise),
                 [],
             ),
         ]
