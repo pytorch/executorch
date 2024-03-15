@@ -138,8 +138,10 @@ static Kernel make_boxed_kernel(const char* name, FuncType) {
   return Kernel(name, WrapUnboxedIntoFunctor<FuncType>::call);
 }
 
-#define EXECUTORCH_LIBRARY(ns, op_name, func) \
-  static auto res_##ns = register_kernels(    \
-      make_boxed_kernel(#ns "::" op_name, EXECUTORCH_FN(func)))
 } // namespace executor
 } // namespace torch
+
+#define EXECUTORCH_LIBRARY(ns, op_name, func)                 \
+  static auto res_##ns = ::torch::executor::register_kernels( \
+      ::torch::executor::make_boxed_kernel(                   \
+          #ns "::" op_name, EXECUTORCH_FN(func)))
