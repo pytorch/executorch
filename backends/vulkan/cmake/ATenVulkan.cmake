@@ -8,7 +8,7 @@
 #
 # This file should be formatted with
 # ~~~
-# cmake-format --first-comment-is-literal=True CMakeLists.txt
+# cmake-format --first-comment-is-literal=True -i ATenVulkan.cmake
 # ~~~
 # It should also be cmake-lint clean.
 #
@@ -21,20 +21,6 @@ endif()
 if(NOT VULKAN_THIRD_PARTY_PATH)
   set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../third-party)
 endif()
-
-# Shader Codegen
-
-# Trigger Shader code generation
-set(USE_VULKAN ON)
-set(VULKAN_CODEGEN_CMAKE_PATH ${PYTORCH_PATH}/cmake/VulkanCodegen.cmake)
-if(NOT EXISTS ${VULKAN_CODEGEN_CMAKE_PATH})
-  message(
-    FATAL_ERROR
-      "Cannot perform SPIR-V codegen because " ${VULKAN_CODEGEN_CMAKE_PATH}
-      " does not exist. Please make sure that submodules are initialized"
-      " and updated.")
-endif()
-include(${PYTORCH_PATH}/cmake/VulkanCodegen.cmake)
 
 # Source paths and compile settings
 
@@ -65,19 +51,56 @@ list(APPEND VULKAN_API_HEADERS ${VOLK_PATH})
 list(APPEND VULKAN_API_HEADERS ${VMA_PATH})
 
 target_include_directories(vulkan_api_lib PRIVATE ${VULKAN_API_HEADERS})
-
 target_compile_options(vulkan_api_lib PRIVATE ${VULKAN_CXX_FLAGS})
 
-# vulkan_shader_lib
+# Find GLSL compiler executable
 
-file(GLOB VULKAN_IMPL_CPP ${ATEN_VULKAN_PATH}/impl/*.cpp)
+if(ANDROID)
+  if(NOT ANDROID_NDK)
+    message(FATAL_ERROR "ANDROID_NDK not set")
+  endif()
 
-add_library(vulkan_shader_lib STATIC ${VULKAN_IMPL_CPP} ${vulkan_generated_cpp})
+  set(GLSLC_PATH
+      "${ANDROID_NDK}/shader-tools/${ANDROID_NDK_HOST_SYSTEM_NAME}/glslc")
+else()
+  find_program(
+    GLSLC_PATH glslc
+    PATHS ENV VULKAN_SDK
+    PATHS "$ENV{VULKAN_SDK}/${CMAKE_HOST_SYSTEM_PROCESSOR}/bin"
+    PATHS "$ENV{VULKAN_SDK}/bin")
 
-list(APPEND VULKAN_API_HEADERS ${CMAKE_BINARY_DIR}/vulkan)
+  if(NOT GLSLC_PATH)
+    message(FATAL_ERROR "USE_VULKAN glslc not found")
+  endif()
+endif()
 
-target_include_directories(vulkan_shader_lib PRIVATE ${VULKAN_API_HEADERS})
+# Required to enable linking with --whole-archive
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-target_link_libraries(vulkan_shader_lib vulkan_api_lib)
+# Convenience macro to create a shader library
 
-target_compile_options(vulkan_shader_lib PRIVATE ${VULKAN_CXX_FLAGS})
+macro(vulkan_shader_library SHADERS_PATH LIBRARY_NAME)
+  set(VULKAN_SHADERGEN_ENV "")
+  set(VULKAN_SHADERGEN_OUT_PATH ${CMAKE_BINARY_DIR}/${LIBRARY_NAME})
+
+  execute_process(
+    COMMAND
+      "${PYTHON_EXECUTABLE}" ${PYTORCH_PATH}/tools/gen_vulkan_spv.py --glsl-path
+      ${SHADERS_PATH} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
+      --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}
+      --env ${VULKAN_GEN_ARG_ENV}
+    RESULT_VARIABLE error_code)
+  set(ENV{PYTHONPATH} ${PYTHONPATH})
+
+  set(vulkan_generated_cpp ${VULKAN_SHADERGEN_OUT_PATH}/spv.cpp)
+
+  add_library(${LIBRARY_NAME} STATIC ${vulkan_generated_cpp})
+  target_include_directories(${LIBRARY_NAME} PRIVATE ${COMMON_INCLUDES})
+  target_link_libraries(${LIBRARY_NAME} vulkan_api_lib)
+  target_compile_options(${LIBRARY_NAME} PRIVATE ${VULKAN_CXX_FLAGS})
+  # Link this library with --whole-archive due to dynamic shader registrations
+  target_link_options_shared_lib(${LIBRARY_NAME})
+
+  unset(VULKAN_SHADERGEN_ENV)
+  unset(VULKAN_SHADERGEN_OUT_PATH)
+endmacro()

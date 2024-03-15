@@ -246,9 +246,10 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "extension_data_loader",
   "extension_module",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
 ]
-# ---------------------------------- LLama start ----------------------------------
+# ---------------------------------- LLama end ----------------------------------

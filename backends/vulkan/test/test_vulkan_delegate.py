@@ -124,8 +124,8 @@ class TestBackends(unittest.TestCase):
                 self.weight = torch.rand(size=(2, 3), dtype=torch.float32)
 
             def forward(self, x, y):
-                z = x + y
-                z = z + x
+                z = torch.add(x, y, alpha=2)
+                z = torch.add(x, y, alpha=3.14)
                 z = z + x
                 z = z + self.weight
                 return z
@@ -144,8 +144,8 @@ class TestBackends(unittest.TestCase):
                 super().__init__()
 
             def forward(self, x, y):
-                z = x - y
-                z = z - x
+                z = torch.sub(x, y, alpha=2)
+                z = torch.sub(z, x, alpha=3.14)
                 z = z - x
                 return z
 
