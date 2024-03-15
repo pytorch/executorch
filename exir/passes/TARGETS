@@ -127,6 +127,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:pass_base",
         "//executorch/exir/dialects:lib",
+        "//pytorch/ao:torchao",
     ],
 )
 
