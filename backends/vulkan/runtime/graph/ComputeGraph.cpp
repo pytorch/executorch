@@ -122,6 +122,12 @@ ValueRef ComputeGraph::add_staging(
   return idx;
 }
 
+ValueRef ComputeGraph::add_none() {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back();
+  return idx;
+}
+
 ValueRef ComputeGraph::add_value_list(std::vector<ValueRef>&& value) {
   ValueRef idx(static_cast<int>(values_.size()));
   values_.emplace_back(std::move(value));
