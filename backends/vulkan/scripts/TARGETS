@@ -1,0 +1,20 @@
+load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
+
+python_binary(
+    name = "export_ocr_recognizer_vulkan",
+    srcs = ["export_ocr_recognizer_vulkan.py"],
+    base_module = "executorch.backends.vulkan.scripts",
+    main_function = "executorch.backends.vulkan.scripts.export_ocr_recognizer_vulkan.main",
+    par_style = "xar",
+    deps = [
+        "//caffe2:torch",
+        "//executorch/backends/vulkan:vulkan_backend_lib",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
+        "//executorch/exir:lib",
+        "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
+        "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//mobile-vision/d2go/d2go:setup",
+        "//mobile-vision/d2go/projects/ego_ocr:lib",
+    ],
+)
