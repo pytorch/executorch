@@ -8,7 +8,7 @@
 set -ex
 
 # https://github.com/pytorch/executorch/tree/main/examples/demo-apps/android/ExecuTorchDemo
-build_executorch_android_demo_app() {
+build_executorch() {
   MODEL_NAME=dl3
   # Delegating DeepLab v3 to XNNPACK backend
   python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
@@ -17,40 +17,16 @@ build_executorch_android_demo_app() {
   mkdir -p "${ASSETS_DIR}"
   cp "${MODEL_NAME}_xnnpack_fp32.pte" "${ASSETS_DIR}"
 
-  EXECUTOR_JAVA_DIR=examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/executor/
-  mkdir -p "${EXECUTOR_JAVA_DIR}"
-  cp extension/android/src/main/java/org/pytorch/executorch/*.java "${EXECUTOR_JAVA_DIR}"
-
-  NDK_INSTALLATION_DIR=/opt/ndk
-  BUCK2=$(which buck2)
-  FLATC=$(which flatc)
-
   rm -rf cmake-out && mkdir cmake-out
+  ANDROID_NDK=/opt/ndk BUCK2=$(which buck2) FLATC=$(which flatc) ANDROID_ABI=arm64-v8a \
+    bash examples/demo-apps/android/ExecuTorchDemo/setup.sh
+}
 
-  pushd cmake-out
-  cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_TOOLCHAIN_FILE="${NDK_INSTALLATION_DIR}/build/cmake/android.toolchain.cmake" \
-        -DANDROID_ABI=arm64-v8a \
-        -DBUCK2="${BUCK2}" \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_FLATC=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DFLATC_EXECUTABLE="${FLATC}" \
-        -DEXECUTORCH_BUILD_ANDROID_JNI=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
-  popd
-
-  if [ "$(uname)" == "Darwin" ]; then
-    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
-  else
-    CMAKE_JOBS=$(( $(nproc) - 1 ))
-  fi
-  cmake --build . -j "${CMAKE_JOBS}"
-
-  # There is no test for Android app atm, so we just stop here if the build finishes
-  # successfully
-  ls -lah extension/android
+build_android_demo_app() {
+  pushd examples/demo-apps/android/ExecuTorchDemo
+  ./gradlew build
   popd
 }
 
-build_executorch_android_demo_app
+build_executorch
+build_android_demo_app
