@@ -253,6 +253,46 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(pow_module, sample_inputs)
 
+    def test_vulkan_backend_clamp(self):
+        class ClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.clamp(x, min=-3.14)
+
+        clamp_module = ClampModule()
+        sample_inputs = (torch.rand(size=(1, 8, 96, 72), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(clamp_module, sample_inputs)
+
+    def test_vulkan_backend_hardtanh(self):
+        class HardTanHModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.tanh = torch.nn.Hardtanh(min_val=-3.14, max_val=6.28)
+
+            def forward(self, x):
+                return self.tanh(x)
+
+        hard_tanh_module = HardTanHModule()
+        sample_inputs = (torch.rand(size=(1, 8, 96, 72), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(hard_tanh_module, sample_inputs)
+
+    def test_vulkan_backend_relu(self):
+        class ReLUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.relu(x)
+
+        relu_module = ReLUModule()
+        sample_inputs = (torch.rand(size=(1, 8, 96, 72), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(relu_module, sample_inputs)
+
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):

@@ -29,6 +29,19 @@ binary_op:
     - NAME: binary_floor_divide
       OPERATOR: floor(X / Y)
 
+clamp:
+  parameter_names_with_default_values:
+    NDIM: 3
+    DTYPE: float
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
+  shader_variants:
+    - NAME: clamp
+
 image_to_nchw:
   parameter_names_with_default_values:
     NDIM: 3
