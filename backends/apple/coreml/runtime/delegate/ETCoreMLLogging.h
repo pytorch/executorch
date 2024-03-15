@@ -1,7 +1,7 @@
 //
 // ETCoreMLLogging.h
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -22,7 +22,8 @@ typedef NS_ERROR_ENUM(ETCoreMLErrorDomain, ETCoreMLError) {
     ETCoreMLErrorBrokenModel, // CoreML model doesn't match the input and output specification.
     ETCoreMLErrorCompilationFailed, // CoreML model failed to compile.
     ETCoreMLErrorModelSaveFailed, // Failed to save CoreML model to disk.
-    ETCoreMLErrorModelCacheCreationFailed // Failed to create model cache.
+    ETCoreMLErrorModelCacheCreationFailed, // Failed to create model cache.
+    ETCoreMLErrorInternalError, // Internal error.
 };
 
 @interface ETCoreMLErrorUtils : NSObject

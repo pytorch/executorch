@@ -1,7 +1,7 @@
 //
-// metadata.h
+// model_metadata.h
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -14,7 +14,7 @@
 
 namespace executorchcoreml {
 
-/// A class representing a model's metadata.
+/// A struct representing a model's metadata.
 struct ModelMetadata {
     /// Constructs a `ModelMetada` instance.
     /// @param identifier The unique identifier.
@@ -29,7 +29,7 @@ struct ModelMetadata {
     inline ModelMetadata() noexcept { }
 
     /// Returns `true` if the metadata is valid otherwise `false`.
-    inline bool isValid() const noexcept {
+    inline bool is_valid() const noexcept {
         return !identifier.empty() && !input_names.empty() && !output_names.empty();
     }
 
@@ -46,5 +46,4 @@ struct ModelMetadata {
     /// Output names of the model.
     std::vector<std::string> output_names;
 };
-
 } // namespace executorchcoreml
