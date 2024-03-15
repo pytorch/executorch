@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - .ci/docker/**
-      - .github/workflows/app-build.yml
+      - .github/workflows/apple.yml
       - install_requirements.sh
       - backends/apple/**
       - build/build_apple_frameworks.sh
