@@ -35,6 +35,16 @@ from torch.utils._pytree import tree_flatten
 
 REGISTERED_ALGOS: Dict[str, Callable[..., List[int]]] = {}
 
+SPECIAL_TARGETS = [  # pyre-ignore
+    memory.alloc,
+    memory.view,
+    operator.getitem,
+    torch.ops.higher_order.cond,
+    exir_while,
+    torch.ops.higher_order.map_impl,
+    executorch_call_delegate,
+]
+
 
 class Verifier:
     """
@@ -393,16 +403,7 @@ def collect_specs_from_nodes(  # noqa: C901
 
         if do_assertion:
             internal_assert(
-                node.op in ("placeholder", "output")
-                or node.target
-                in [
-                    memory.alloc,
-                    operator.getitem,
-                    torch.ops.higher_order.cond,
-                    exir_while,
-                    torch.ops.higher_order.map_impl,
-                    executorch_call_delegate,
-                ],
+                node.op in ("placeholder", "output") or node.target in SPECIAL_TARGETS,
                 f"Unexpected op {node.op}, target {node.target}",
             )
         for spec in specs:
@@ -687,6 +688,24 @@ def get_input_specs(graph_module: fx.GraphModule) -> Set[TensorSpec]:
             for spec in tree_flatten(node.meta["spec"])[0]:
                 input_specs.add(spec)
     return input_specs
+
+
+def is_op_memory_planned(node: torch.fx.Node) -> bool:
+    """
+    Return true if this call function node is memory planned.
+    We are cautious in this function and are OK returning False even if a node
+    may be memory planned.
+    """
+    assert node.op == "call_function"
+    if node.target in SPECIAL_TARGETS:
+        # Assume nodes in SPECIAL_TARGETS are not memory planned,
+        # unless they are in the exceptions below
+        exceptions = [
+            executorch_call_delegate,
+        ]
+        return node.target in exceptions
+
+    return True
 
 
 def insert_calls_to_free(
