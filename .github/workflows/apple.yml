@@ -135,5 +135,5 @@ jobs:
 
           for FILENAME in "${RUNNER_TEMP}"/frameworks-ios/*.zip; do
             [ -e "${FILENAME}" ] || continue
-            ${AWS_CMD} "${FILENAME}" s3://ossci-ios/ --acl public-read
+            ${AWS_CMD} "${FILENAME}" s3://ossci-ios/executorch/ --acl public-read
           done
