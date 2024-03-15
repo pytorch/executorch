@@ -479,21 +479,26 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         .export_to_edge(quantizers)
     )
 
-    if args.generate_etrecord and not builder_exported_to_edge.edge_manager:
-        raise ValueError("Unable to generate etrecord due to missing edge manager.")
+    if args.generate_etrecord:
+        if not builder_exported_to_edge.edge_manager:
+            raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
-    edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-    builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        # logging.info("Generating etrecord")
+        # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
+        edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
-    # Generate ETRecord
-    if args.generate_etrecord and edge_manager_copy:
-        # logging.info("Generating etrecord.bin")
-        # generate_etrecord(
-        #     etrecord_path="etrecord.bin",
-        #     edge_dialect_program=edge_manager_copy,
-        #     executorch_program=builder.export_program,
-        # )
-        pass
+        # Generate ETRecord
+        if edge_manager_copy:
+            # generate_etrecord(
+            #     etrecord_path="etrecord.bin",
+            #     edge_dialect_program=edge_manager_copy,
+            #     executorch_program=builder.export_program,
+            # )
+            # logging.info("Generated etrecord.bin")
+            pass
+    else:
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
