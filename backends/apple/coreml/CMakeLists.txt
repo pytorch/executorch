@@ -38,6 +38,9 @@ set(DELEGATE_SOURCES
   runtime/delegate/coreml_backend_delegate.mm
   runtime/delegate/ETCoreMLAsset.mm
   runtime/delegate/ETCoreMLAssetManager.mm
+  runtime/delegate/ETCoreMLDefaultModelExecutor.mm
+  runtime/delegate/ETCoreMLModelLoader.mm
+  runtime/delegate/ETCoreMLModelCompiler.mm
   runtime/delegate/ETCoreMLLogging.mm
   runtime/delegate/ETCoreMLModel.mm
   runtime/delegate/ETCoreMLModelManager.mm
@@ -54,6 +57,57 @@ set(UTIL_SOURCES
   runtime/util/objc_json_serde.mm
 )
 
+# sdk sources
+set(SDK_SOURCES
+  runtime/sdk/ETCoreMLModelAnalyzer.mm
+  runtime/sdk/ETCoreMLModelStructurePath.mm
+  runtime/sdk/ETCoreMLOperationProfilingInfo.mm
+  runtime/sdk/ETCoreMLModelDebugger.mm
+  runtime/sdk/ETCoreMLModelProfiler.mm
+  runtime/sdk/ETCoreMLPair.mm
+  runtime/sdk/model_package_info.mm
+  runtime/sdk/model_event_logger_impl.mm
+  runtime/sdk/program_path.mm
+)
+
+# protobuf sources
+set(PROTOBUF_SOURCES
+  runtime/sdk/format/ArrayFeatureExtractor.pb.cc
+  runtime/sdk/format/AudioFeaturePrint.pb.cc
+  runtime/sdk/format/BayesianProbitRegressor.pb.cc
+  runtime/sdk/format/CategoricalMapping.pb.cc
+  runtime/sdk/format/ClassConfidenceThresholding.pb.cc
+  runtime/sdk/format/CustomModel.pb.cc
+  runtime/sdk/format/DataStructures.pb.cc
+  runtime/sdk/format/DictVectorizer.pb.cc
+  runtime/sdk/format/FeatureTypes.pb.cc
+  runtime/sdk/format/FeatureVectorizer.pb.cc
+  runtime/sdk/format/Gazetteer.pb.cc
+  runtime/sdk/format/GLMClassifier.pb.cc
+  runtime/sdk/format/GLMRegressor.pb.cc
+  runtime/sdk/format/Identity.pb.cc
+  runtime/sdk/format/Imputer.pb.cc
+  runtime/sdk/format/ItemSimilarityRecommender.pb.cc
+  runtime/sdk/format/LinkedModel.pb.cc
+  runtime/sdk/format/MIL.pb.cc
+  runtime/sdk/format/Model.pb.cc
+  runtime/sdk/format/NearestNeighbors.pb.cc
+  runtime/sdk/format/NeuralNetwork.pb.cc
+  runtime/sdk/format/NonMaximumSuppression.pb.cc
+  runtime/sdk/format/Normalizer.pb.cc
+  runtime/sdk/format/NonMaximumSuppression.pb.cc
+  runtime/sdk/format/OneHotEncoder.pb.cc
+  runtime/sdk/format/Parameters.pb.cc
+  runtime/sdk/format/Scaler.pb.cc
+  runtime/sdk/format/SoundAnalysisPreprocessing.pb.cc
+  runtime/sdk/format/SVM.pb.cc
+  runtime/sdk/format/TextClassifier.pb.cc
+  runtime/sdk/format/TreeEnsemble.pb.cc
+  runtime/sdk/format/VisionFeaturePrint.pb.cc
+  runtime/sdk/format/WordEmbedding.pb.cc
+  runtime/sdk/format/WordTagger.pb.cc
+)
+
 # Define the delegate library
 add_library(coremldelegate)
 target_sources(
@@ -63,6 +117,7 @@ target_sources(
   ${DELEGATE_SOURCES}
   ${UTIL_SOURCES}
 )
+
 target_include_directories(
   coremldelegate PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/runtime/include
@@ -87,7 +142,30 @@ target_include_directories(
   coremldelegate PRIVATE
   ${EXECUTORCH_ROOT}/..
 )
-target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
+target_link_libraries(
+  coremldelegate PRIVATE
+  executorch
+)
+
+if(EXECUTORCH_BUILD_SDK)
+target_sources(
+  coremldelegate PRIVATE
+  ${SDK_SOURCES}
+  ${PROTOBUF_SOURCES}
+)
+target_include_directories(
+  coremldelegate PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/runtime/sdk
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/src
+)
+add_subdirectory(
+  ${CMAKE_CURRENT_SOURCE_DIR}/third-party/coremltools/deps/protobuf/cmake
+)
+target_link_libraries(
+  coremldelegate PRIVATE
+  libprotobuf-lite
+)
+endif()
 
 find_library(ACCELERATE_FRAMEWORK Accelerate)
 find_library(COREML_FRAMEWORK CoreML)
@@ -105,7 +183,14 @@ target_link_libraries(coremldelegate
 
 target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
 target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
+
+if(EXECUTORCH_BUILD_SDK)
+target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
+target_compile_options(coremldelegate PRIVATE "-frtti")
+target_compile_options(libprotobuf-lite PRIVATE "-frtti")
+else()
 target_compile_options(coremldelegate PRIVATE "-fno-rtti")
+endif()
 
 set(
   TARGET coremldelegate

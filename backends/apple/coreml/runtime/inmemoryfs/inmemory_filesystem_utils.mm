@@ -1,7 +1,7 @@
 //
 // inmemory_filesystem_utils.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -26,7 +26,7 @@ namespace json {
 using namespace inmemoryfs;
 
 template <>
-struct JSONSerde<MemoryRegion> {
+struct Converter<MemoryRegion> {
     static id to_json(const MemoryRegion& region) {
         return @{
             to_string(MemoryRegionKeys::kOffset) : to_json_value(region.offset),
@@ -46,7 +46,7 @@ struct JSONSerde<MemoryRegion> {
 };
 
 template <>
-struct JSONSerde<InMemoryNodeMetadata> {
+struct Converter<InMemoryNodeMetadata> {
     static id to_json(const InMemoryNodeMetadata& node) {
         return @{
             to_string(InMemoryNodeMetadataKeys::kName) : to_json_value(node.name),
@@ -70,7 +70,7 @@ struct JSONSerde<InMemoryNodeMetadata> {
 };
 
 template <>
-struct JSONSerde<InMemoryFileSystemMetadata> {
+struct Converter<InMemoryFileSystemMetadata> {
     static id to_json(const InMemoryFileSystemMetadata& fs) {
         return @{
             to_string(InMemoryFileSystemMetadataKeys::kNodes) : to_json_value(fs.nodes)
@@ -96,7 +96,7 @@ using namespace::inmemoryfs;
 
 void write_metadata_to_stream(const InMemoryFileSystemMetadata& metadata, std::ostream& stream) {
     using namespace executorchcoreml::serde::json;
-    std::string json_string = to_json_string(JSONSerde<InMemoryFileSystemMetadata>::to_json(metadata));
+    std::string json_string = to_json_string(Converter<InMemoryFileSystemMetadata>::to_json(metadata));
     std::reverse(json_string.begin(), json_string.end());
     stream << json_string;
 }
@@ -109,7 +109,7 @@ std::optional<InMemoryFileSystemMetadata> read_metadata_from_stream(std::istream
     }
     
     InMemoryFileSystemMetadata metadata;
-    JSONSerde<InMemoryFileSystemMetadata>::from_json(to_json_object(json_object.value()), metadata);
+    Converter<InMemoryFileSystemMetadata>::from_json(to_json_object(json_object.value()), metadata);
     return metadata;
 }
 

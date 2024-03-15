@@ -2,20 +2,20 @@
 // ETCoreMLModelManagerTests.m
 //
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <XCTest/XCTest.h>
 
-#import <ETCoreMLModelManager.h>
 
+#import "ETCoreMLTestUtils.h"
 #import <ETCoreMLAsset.h>
 #import <ETCoreMLAssetManager.h>
 #import <ETCoreMLModel.h>
+#import <ETCoreMLModelManager.h>
 #import <MLModel_Prewarm.h>
-
-#import "ETCoreMLTestUtils.h"
+#import <model_logging_options.h>
 
 @interface ETCoreMLModelManagerTests : XCTestCase
 
@@ -113,7 +113,11 @@
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
-    XCTAssertTrue([self.modelManager executeModelWithHandle:handle args:args error:&localError]);
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle 
+                                                       args:args
+                                            loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
     for (NSUInteger i = 0; i < output.count; i++) {
         NSNumber *value = [output objectAtIndexedSubscript:i];
         XCTAssertEqual(value.integerValue, z);
@@ -136,7 +140,11 @@
     XCTAssertNotNil(inputs);
     MLMultiArray *output = [ETCoreMLTestUtils filledMultiArrayWithShape:inputs[0].shape dataType:inputs[0].dataType repeatedValue:@(0) error:&localError];
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
-    XCTAssertTrue([self.modelManager executeModelWithHandle:handle args:args error:&localError]);
+    XCTAssertTrue([self.modelManager executeModelWithHandle:handle
+                                                       args:args
+                                            loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                                eventLogger:nullptr
+                                                      error:&localError]);
     for (NSUInteger i = 0; i < output.count; i++) {
         NSNumber *value = [output objectAtIndexedSubscript:i];
         XCTAssertEqual(value.integerValue, x * y);

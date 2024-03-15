@@ -5,29 +5,33 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#import "ETCoreMLModelManager.h"
-
+#import <ETCoreMLAsset.h>
+#import <ETCoreMLAssetManager.h>
+#import <ETCoreMLDefaultModelExecutor.h>
+#import <ETCoreMLLogging.h>
+#import <ETCoreMLModel.h>
+#import <ETCoreMLModelCompiler.h>
+#import <ETCoreMLModelExecutor.h>
+#import <ETCoreMLModelLoader.h>
+#import <ETCoreMLModelManager.h>
+#import <ETCoreMLStrings.h>
+#import <MLModel_Prewarm.h>
+#import <MLMultiArray_Copy.h>
 #import <filesystem>
+#import <inmemory_filesystem_utils.hpp>
+#import <iostream>
 #import <memory>
+#import <model_metadata.h>
 #import <optional>
+#import <os/lock.h>
+#import <serde_json.h>
 #import <string>
 #import <system_error>
 #import <vector>
-#import <iostream>
 
-#import <os/lock.h>
-
-#import <inmemory_filesystem_utils.hpp>
-#import <metadata.h>
-#import <serde_json.h>
-
-#import <ETCoreMLLogging.h>
-#import <ETCoreMLAsset.h>
-#import <ETCoreMLAssetManager.h>
-#import <ETCoreMLModel.h>
-#import <ETCoreMLStrings.h>
-#import <MLMultiArray_Copy.h>
-#import <MLModel_Prewarm.h>
+#ifdef ET_EVENT_TRACER_ENABLED
+#import <ETCoreMLModelAnalyzer.h>
+#endif
 
 namespace {
 
@@ -102,15 +106,12 @@ BOOL copy(MLMultiArray *src, MLMultiArray *dst, NSError * __autoreleasing *error
 }
 
 BOOL set_outputs(NSArray<MLMultiArray *> *outputs,
-                 id<MLFeatureProvider> feature_provider,
-                 NSOrderedSet<NSString *> *output_names,
+                 NSArray<MLMultiArray *> *model_outputs,
                  NSError * __autoreleasing *error) {
-    NSEnumerator<NSString *> *enumerator = [output_names objectEnumerator];
+    NSEnumerator<MLMultiArray *> *enumerator = [model_outputs objectEnumerator];
     for (MLMultiArray *output in outputs) {
-        NSString *name = [enumerator nextObject];
-        MLFeatureValue *featureValue = [feature_provider featureValueForName:name];
-        MLMultiArray *result = featureValue.multiArrayValue;
-        if (!::copy(result, output, error)) {
+        MLMultiArray *model_output = [enumerator nextObject];
+        if (!::copy(output, model_output, error)) {
             return NO;
         }
     }
@@ -130,7 +131,7 @@ std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSy
     contents.assign(reinterpret_cast<char *>(buffer->data()), buffer->size());
     ModelMetadata metadata;
     metadata.from_json_string(std::move(contents));
-    if (metadata.isValid()) {
+    if (metadata.is_valid()) {
         return metadata;
     }
     
@@ -143,29 +144,6 @@ NSOrderedSet<NSString *> *get_ordered_set(const std::vector<std::string>& values
         [result addObject:@(value.c_str())];
     }
     
-    return result;
-}
-
-NSURL * _Nullable compile_model(NSURL *model_url, NSError * __autoreleasing *error) {
-    __block NSError *local_error = nil;
-    __block NSURL *result = nil;
-    
-    dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-    [MLModel compileModelAtURL:model_url completionHandler:^(NSURL * _Nullable temp_url, NSError * _Nullable compilation_error) {
-        result = [temp_url copy];
-        local_error = compilation_error;
-        dispatch_semaphore_signal(sema);
-    }];
-    
-    long status = dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * 60 * NSEC_PER_SEC)));
-    if (status != 0) {
-        ETCoreMLLogUnderlyingErrorAndSetNSError(error,
-                                                ETCoreMLErrorCompilationFailed,
-                                                local_error,
-                                                "%@: Failed to compile model.",
-                                                NSStringFromClass(ETCoreMLModelManager.class));
-        return nil;
-    }
     return result;
 }
 
@@ -214,37 +192,6 @@ ETCoreMLModel * _Nullable get_model_from_asset(ETCoreMLAsset *asset,
     return model;
 }
 
-ETCoreMLModel * _Nullable load_model_from_url(NSURL *compiled_url,
-                                              MLModelConfiguration *configuration,
-                                              const ModelMetadata& metadata,
-                                              ETCoreMLAssetManager *asset_manager,
-                                              NSFileManager *fm,
-                                              NSError * __autoreleasing *error) {
-    NSError *local_error = nil;
-    NSString *identifier = @(metadata.identifier.c_str());
-    ETCoreMLAsset *asset = [asset_manager storeAssetAtURL:compiled_url withIdentifier:identifier error:&local_error];
-    ETCoreMLModel *model = (asset != nil) ? get_model_from_asset(asset, configuration, metadata, &local_error) : nil;
-    if (model) {
-        return model;
-    }
-    
-    if (local_error) {
-        ETCoreMLLogError(local_error,
-                         "%@: Failed to load model from asset with identifier = %@",
-                         NSStringFromClass(ETCoreMLModelManager.class),
-                         identifier);
-    }
-    
-    // If store failed then we will load the model from compiledURL.
-    auto backing_asset = Asset::make(compiled_url, identifier, fm, error);
-    if (!backing_asset) {
-        return nil;
-    }
-    
-    asset = [[ETCoreMLAsset alloc] initWithBackingAsset:backing_asset.value()];
-    return get_model_from_asset(asset, configuration, metadata, error);
-}
-
 std::string to_string(MLComputeUnits compute_units) {
     switch (compute_units) {
         case MLComputeUnitsAll: {
@@ -269,6 +216,19 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     identifier.append("_");
     identifier.append(to_string(compute_units));
 }
+
+ETCoreMLAsset * _Nullable make_asset(NSURL *url,
+                                     NSString *identifier,
+                                     NSFileManager *fm,
+                                     NSError * __autoreleasing *error) {
+    auto backingAsset = executorchcoreml::Asset::make(url, identifier, fm, error);
+    if (!backingAsset) {
+        return nil;
+    }
+    
+    return [[ETCoreMLAsset alloc] initWithBackingAsset:std::move(backingAsset.value())];
+}
+
 } //namespace
 
 @interface ETCoreMLModelManager () {
@@ -276,11 +236,9 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
 }
 
 @property (nonatomic, readonly, strong) NSFileManager *fileManager;
-
-@property (nonatomic, readonly, strong) NSMutableDictionary<NSValue *, ETCoreMLModel *> *handleToModelMap;
+@property (nonatomic, readonly, strong) NSMutableDictionary<NSValue *, id<ETCoreMLModelExecutor>> *handleToExecutorMap;
 @property (nonatomic, readonly, strong) NSMapTable<NSString *, dispatch_queue_t> *modelIdentifierToLoadingQueueMap;
 @property (nonatomic, readonly, strong) NSMutableDictionary<NSString *, ETCoreMLAsset *> *modelIdentifierToPrewarmedAssetMap;
-
 @property (nonatomic, readonly, strong) dispatch_queue_t prewarmQueue;
 
 @end
@@ -292,7 +250,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     if (self) {
         _assetManager = assetManager;
         _lock = OS_UNFAIR_LOCK_INIT;
-        _handleToModelMap = [NSMutableDictionary dictionary];
+        _handleToExecutorMap = [NSMutableDictionary dictionary];
         _modelIdentifierToLoadingQueueMap = [NSMapTable strongToWeakObjectsMapTable];
         _modelIdentifierToPrewarmedAssetMap = [NSMutableDictionary dictionary];
         _fileManager = [[NSFileManager alloc] init];
@@ -303,16 +261,21 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     return self;
 }
 
-- (nullable ETCoreMLModel *)modelWithHandle:(ModelHandle *)handle {
-    ETCoreMLModel *model = nil;
+- (nullable id<ETCoreMLModelExecutor>)executorWithHandle:(ModelHandle *)handle {
+    id<ETCoreMLModelExecutor> executor = nil;
     NSValue *key = [NSValue valueWithPointer:handle];
     {
         os_unfair_lock_lock(&_lock);
-        model = self.handleToModelMap[key];
+        executor = self.handleToExecutorMap[key];
         os_unfair_lock_unlock(&_lock);
     }
     
-    return model;
+    return executor;
+}
+
+- (nullable ETCoreMLModel *)modelWithHandle:(ModelHandle *)handle {
+    id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
+    return executor.model;
 }
 
 - (nullable ETCoreMLAsset *)assetWithIdentifier:(NSString *)identifier {
@@ -339,16 +302,65 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     return modelAsset;
 }
 
-- (nullable ETCoreMLModel *)loadModelUsingMetadata:(const ModelMetadata&)metadata
-                                        inMemoryFS:(const inmemoryfs::InMemoryFileSystem *)inMemoryFS
-                                     configuration:(MLModelConfiguration *)configuration
-                                             error:(NSError * __autoreleasing *)error {
+#if ET_EVENT_TRACER_ENABLED
+- (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
+                                                     inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                                  configuration:(MLModelConfiguration *)configuration
+                                                          error:(NSError * __autoreleasing *)error {
+    NSString *identifier = @(metadata.identifier.c_str());
+    // Otherwise try to retrieve the compiled asset.
+    ETCoreMLAsset *compiledModelAsset = [self assetWithIdentifier:identifier];
+    // Create a unique directory for writing model files.
+    NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    // Write the model files for on-device compilation.
+    NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, *inMemoryFS, error);
+    if (!modelURL) {
+        return nil;
+    }
+    
+    ETCoreMLAsset *modelAsset = make_asset(modelURL,
+                                           identifier,
+                                           self.fileManager,
+                                           error);
+    if (!modelAsset) {
+        return nil;
+    }
+    
+    if (!compiledModelAsset) {
+        // Compile the model.
+        NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelAsset.contentURL
+                                                      maxWaitTimeInSeconds:(5 * 60)
+                                                                     error:error];
+        compiledModelAsset = make_asset(compiledModelURL,
+                                        identifier,
+                                        self.fileManager,
+                                        error);
+    }
+    
+    if (!compiledModelAsset) {
+        return nil;
+    }
+    
+
+    return [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
+                                                          modelAsset:modelAsset
+                                                            metadata:metadata
+                                                       configuration:configuration
+                                                        assetManager:self.assetManager
+                                                               error:error];
+}
+
+#else
+- (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
+                                                     inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                                  configuration:(MLModelConfiguration *)configuration
+                                                          error:(NSError * __autoreleasing *)error {
     NSString *identifier = @(metadata.identifier.c_str());
     // Otherwise try to retrieve the compiled asset.
     ETCoreMLAsset *asset = [self assetWithIdentifier:identifier];
     ETCoreMLModel *model = asset ? get_model_from_asset(asset, configuration, metadata, error) : nil;
     if (model) {
-        return model;
+        return [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
     }
     
     // Create a unique directory for writing model files.
@@ -360,23 +372,26 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     }
     
     // Compile the model.
-    NSURL *compiledModelURL = ::compile_model(modelURL, error);
+    NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
+                                                  maxWaitTimeInSeconds:(5 * 60)
+                                                                 error:error];
     if (!compiledModelURL) {
         return nil;
     }
     
-    model = ::load_model_from_url(compiledModelURL,
-                                  configuration,
-                                  metadata,
-                                  self.assetManager,
-                                  self.fileManager,
-                                  error);
-    return model;
+    model = [ETCoreMLModelLoader loadModelWithContentsOfURL:compiledModelURL
+                                              configuration:configuration
+                                                   metadata:metadata
+                                               assetManager:self.assetManager
+                                                      error:error];
+    
+    return [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
 }
+#endif
 
-- (nullable ETCoreMLModel *)loadModelFromData:(NSData *)data
-                                configuration:(MLModelConfiguration *)configuration
-                                        error:(NSError * __autoreleasing *)error {
+- (nullable id<ETCoreMLModelExecutor>)_modelExecutorWithAOTData:(NSData *)data
+                                                  configuration:(MLModelConfiguration *)configuration
+                                                          error:(NSError * __autoreleasing *)error {
     using namespace inmemoryfs;
     
     auto buffer = MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
@@ -402,17 +417,17 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     add_compute_unit(metadataValue.identifier, configuration.computeUnits);
     NSString *identifier = @(metadataValue.identifier.c_str());
     // If there are multiple calls to load the same model, we only want to compile it once.
-    __block ETCoreMLModel *model = nil;
+    __block id<ETCoreMLModelExecutor> executor = nil;
     dispatch_queue_t loadingQueue = [self queueForLoadingModelWithIdentifier:identifier];
     auto inMemoryFSPtr = inMemoryFS.get();
     dispatch_sync(loadingQueue, ^{
-        model = [self loadModelUsingMetadata:metadataValue
-                                  inMemoryFS:inMemoryFSPtr
-                               configuration:configuration
-                                       error:error];
+        executor = [self modelExecutorWithMetadata:metadataValue
+                                        inMemoryFS:inMemoryFSPtr
+                                     configuration:configuration
+                                             error:error];
     });
     
-    return model;
+    return executor;
 }
 
 - (dispatch_queue_t)queueForLoadingModelWithIdentifier:(NSString *)identifier {
@@ -427,20 +442,22 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     return queue;
 }
 
-- (ModelHandle *)loadModelFromAOTData:(NSData *)data
-                        configuration:(MLModelConfiguration *)configuration
-                                error:(NSError * __autoreleasing *)error {
-    ETCoreMLModel *model = [self loadModelFromData:data configuration:configuration error:error];
+- (ModelHandle *)loadModelFromAOTData:(NSData*)data
+                        configuration:(MLModelConfiguration*)configuration
+                                error:(NSError* __autoreleasing*)error {
+    id<ETCoreMLModelExecutor> executor = [self _modelExecutorWithAOTData:data
+                                                           configuration:configuration
+                                                                   error:error];
     {
         os_unfair_lock_lock(&_lock);
-        if (model) {
-            NSValue *key = [NSValue valueWithPointer:(__bridge void *)model];
-            self.handleToModelMap[key] = model;
+        if (executor) {
+            NSValue *key = [NSValue valueWithPointer:(__bridge void *)executor.model];
+            self.handleToExecutorMap[key] = executor;
         }
         os_unfair_lock_unlock(&_lock);
     }
     
-    return (__bridge ModelHandle *)model;
+    return (__bridge ModelHandle *)executor.model;
 }
 
 - (BOOL)prewarmModelWithHandle:(ModelHandle *)handle
@@ -510,9 +527,11 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
 
 - (BOOL)executeModelWithHandle:(ModelHandle *)handle
                           args:(NSArray<MLMultiArray *> *)args
+                loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                   eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                          error:(NSError * __autoreleasing *)error {
-    ETCoreMLModel *model = [self modelWithHandle:handle];
-    if (!model) {
+    id<ETCoreMLModelExecutor> executor = [self executorWithHandle:handle];
+    if (!executor) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       0,
                                       "%@: Model is already unloaded.",
@@ -520,6 +539,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
         return NO;
     }
     
+    ETCoreMLModel *model = executor.model;
     if (args.count != model.orderedInputNames.count + model.orderedOutputNames.count) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,
@@ -540,14 +560,16 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
         return NO;
     }
     
-    id<MLFeatureProvider> outputFeatures = [model.mlModel predictionFromFeatures:inputFeatures
-                                                                         options:predictionOptions
-                                                                           error:error];
-    if (!outputFeatures) {
+    NSArray<MLMultiArray *> *modelOutputs = [executor executeModelWithInputs:inputFeatures
+                                                           predictionOptions:predictionOptions
+                                                             loggingOptions:loggingOptions
+                                                                 eventLogger:eventLogger
+                                                                       error:error];
+    if (!outputs) {
         return NO;
     }
     
-    return ::set_outputs(outputs, outputFeatures, model.orderedOutputNames, error);
+    return ::set_outputs(outputs, modelOutputs, error);
 }
 
 - (BOOL)unloadModelWithHandle:(ModelHandle *)handle {
@@ -555,8 +577,8 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     @autoreleasepool {
         NSValue *key = [NSValue valueWithPointer:handle];
         os_unfair_lock_lock(&_lock);
-        result = (self.handleToModelMap[key] != nil);
-        [self.handleToModelMap removeObjectForKey:key];
+        result = (self.handleToExecutorMap[key] != nil);
+        [self.handleToExecutorMap removeObjectForKey:key];
         os_unfair_lock_unlock(&_lock);
     }
     
