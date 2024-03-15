@@ -24,5 +24,6 @@ def define_common_targets():
             deps = [
                 "//executorch/backends/xnnpack/threadpool:threadpool",
                 "//executorch/runtime/core:core",
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
         )

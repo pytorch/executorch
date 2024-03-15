@@ -8,116 +8,86 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
-#include <ATen/native/vulkan/impl/Packing.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 namespace at {
 namespace native {
 namespace vulkan {
 
-void memcpy_to_mapping(
-    const void* src,
-    api::MemoryMap& dst_mapping,
-    const size_t nbytes,
-    const api::ScalarType dtype) {
-#define DTYPE_CASE(ctype, vkformat, name)                    \
-  case api::ScalarType::name:                                \
-    memcpy_to_mapping_impl<ctype>(src, dst_mapping, nbytes); \
-    break;
+void add_staging_to_tensor_node(
+    ComputeGraph& graph,
+    const ValueRef in_staging,
+    const ValueRef out_tensor) {
+  vTensor& t_out = graph.get_val(out_tensor).toTensor();
+  VK_CHECK_COND(graph.get_val(in_staging).isStaging());
 
-  switch (dtype) {
-    VK_FORALL_SCALAR_TYPES(DTYPE_CASE)
-    default:
-      VK_THROW("Unrecognized dtype!");
-  }
-#undef DTYPE_CASE
-}
+  api::ShaderInfo shader = get_nchw_to_image_shader(t_out);
 
-void memcpy_from_mapping(
-    api::MemoryMap& src_mapping,
-    void* dst,
-    const size_t nbytes,
-    const api::ScalarType dtype) {
-#define DTYPE_CASE(ctype, vkformat, name)                      \
-  case api::ScalarType::name:                                  \
-    memcpy_from_mapping_impl<ctype>(src_mapping, dst, nbytes); \
-    break;
+  api::utils::uvec3 global_size = t_out.extents();
+  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  switch (dtype) {
-    VK_FORALL_SCALAR_TYPES(DTYPE_CASE)
-    default:
-      VK_THROW("Unrecognized dtype!");
-  }
-#undef DTYPE_CASE
-}
-
-void copy_ptr_to_staging(
-    const void* src,
-    api::StorageBuffer& staging,
-    const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::WRITE);
-  mapping.invalidate();
-  memcpy_to_mapping(src, mapping, nbytes, staging.dtype());
-}
-
-void copy_staging_to_ptr(
-    api::StorageBuffer& staging,
-    void* dst,
-    const size_t nbytes) {
-  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::READ);
-  mapping.invalidate();
-  memcpy_from_mapping(mapping, dst, nbytes, staging.dtype());
-}
-
-void encode_copy_to_vtensor(
-    api::Context* context,
-    api::StorageBuffer& staging,
-    vTensor& tensor) {
-  api::ShaderInfo shader = packing::get_nchw_to_image_shader(tensor);
-  api::PipelineBarrier pipeline_barrier{};
-  packing::record_nchw_to_image_op(
-      context,
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
       shader,
-      staging.buffer(),
-      tensor,
-      pipeline_barrier,
-      VK_NULL_HANDLE);
+      global_size,
+      local_size,
+      {{out_tensor, api::MemoryAccessType::WRITE},
+       {in_staging, api::MemoryAccessType::READ}},
+      {t_out.gpu_sizes_ubo(), t_out.cpu_sizes_ubo()}));
 }
 
-void encode_copy_from_vtensor(
-    api::Context* context,
-    vTensor& tensor,
-    api::StorageBuffer& staging) {
-  api::ShaderInfo shader = packing::get_image_to_nchw_shader(tensor);
-  api::PipelineBarrier pipeline_barrier{};
-  packing::record_image_to_nchw_op(
-      context,
+void add_tensor_to_staging_node(
+    ComputeGraph& graph,
+    const ValueRef in_tensor,
+    const ValueRef out_staging) {
+  vTensor& t_in = graph.get_val(in_tensor).toTensor();
+  VK_CHECK_COND(graph.get_val(out_staging).isStaging());
+
+  api::ShaderInfo shader = get_image_to_nchw_shader(t_in);
+
+  api::utils::uvec3 global_size = t_in.extents();
+  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
       shader,
-      tensor,
-      staging.buffer(),
-      pipeline_barrier,
-      VK_NULL_HANDLE);
+      global_size,
+      local_size,
+      {{in_tensor, api::MemoryAccessType::READ},
+       {out_staging, api::MemoryAccessType::WRITE}},
+      {t_in.gpu_sizes_ubo(), t_in.cpu_sizes_ubo()}));
 }
 
-StagingNode::StagingNode(ValueRef from, ValueRef to) : ExecuteNode(from, to) {}
+ValueRef prepack(ComputeGraph& graph, const ValueRef vref) {
+  TensorRef& tref = graph.get_val(vref).toTensorRef();
+  ValueRef v = graph.add_tensor(tref.sizes, tref.dtype);
+  vTensor t = graph.get_val(v).toTensor();
 
-void StagingNode::encode(ComputeGraph* graph) {
-  Value& in_val = graph->get_val(inputs_[0]);
-  Value& out_val = graph->get_val(outputs_[0]);
+  api::ShaderInfo shader = get_nchw_to_image_shader(t);
 
-  if (in_val.isStaging() && out_val.isTensor()) {
-    api::StorageBuffer& from_staging = graph->get_val(inputs_[0]).toStaging();
-    vTensor& to_tensor = graph->get_val(outputs_[0]).toTensor();
-    encode_copy_to_vtensor(graph->context(), from_staging, to_tensor);
-  } else if (in_val.isTensor() && out_val.isStaging()) {
-    vTensor& from_tensor = graph->get_val(inputs_[0]).toTensor();
-    api::StorageBuffer& to_staging = graph->get_val(outputs_[0]).toStaging();
-    encode_copy_from_vtensor(graph->context(), from_tensor, to_staging);
+  api::utils::uvec3 global_size = t.extents();
+  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+
+  graph.prepack_nodes().emplace_back(new PrepackNode(
+      graph,
+      shader,
+      global_size,
+      local_size,
+      vref,
+      v,
+      {t.gpu_sizes_ubo(), t.cpu_sizes_ubo()}));
+
+  return v;
+}
+
+ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
+  if (graph.get_val(v).isTensorRef()) {
+    return prepack(graph, v);
   } else {
-    VK_THROW(
-        "Unexpected input value type ",
-        in_val.type(),
-        " and output value type ",
-        out_val.type());
+    return v;
   }
 }
 

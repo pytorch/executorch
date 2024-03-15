@@ -12,9 +12,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
@@ -27,6 +25,19 @@
 namespace at {
 namespace native {
 namespace vulkan {
+
+// Define valid scalar types that the Value class can accept
+template <typename T>
+struct is_valid_scalar_type : std::false_type {};
+
+template <>
+struct is_valid_scalar_type<int64_t> : std::true_type {};
+
+template <>
+struct is_valid_scalar_type<double> : std::true_type {};
+
+template <>
+struct is_valid_scalar_type<bool> : std::true_type {};
 
 /*
  * This is the core data structure used to execute Vulkan models in graph mode.
@@ -47,6 +58,9 @@ class ComputeGraph final {
 
  private:
   GraphConfig config_;
+  api::DescriptorPoolConfig prepack_descriptor_counts_;
+  api::DescriptorPoolConfig execute_descriptor_counts_;
+
   std::unique_ptr<api::Context> context_;
   std::vector<SharedObject> shared_objects_;
   std::vector<Value> values_;
@@ -54,8 +68,8 @@ class ComputeGraph final {
   std::vector<std::unique_ptr<PrepackNode>> prepack_nodes_;
   std::vector<std::unique_ptr<ExecuteNode>> execute_nodes_;
 
-  std::vector<ValueRef> inputs_;
-  std::vector<ValueRef> outputs_;
+  std::vector<IOValueRef> inputs_;
+  std::vector<IOValueRef> outputs_;
 
  public:
   //
@@ -66,13 +80,17 @@ class ComputeGraph final {
     return context_.get();
   }
 
-  inline std::vector<ValueRef>& inputs() {
+  inline std::vector<IOValueRef>& inputs() {
     return inputs_;
   }
 
-  inline std::vector<ValueRef>& outputs() {
+  inline std::vector<IOValueRef>& outputs() {
     return outputs_;
   }
+
+  void update_descriptor_counts(
+      const api::ShaderInfo& shader_info,
+      bool execute);
 
   /*
    * Returns the value at a particular reference
@@ -123,8 +141,26 @@ class ComputeGraph final {
       const void* const data);
   ValueRef add_staging(const api::ScalarType dtype, const size_t numel);
 
+  template <typename T>
+  typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+  add_scalar(T value);
+
+  template <typename T>
+  typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+  add_scalar_list(std::vector<T>&& value);
+
+  ValueRef add_value_list(std::vector<ValueRef>&& value);
+
+  ValueRef add_string(std::string&& str);
+
   ValueRef set_input_tensor(const ValueRef idx, const bool use_staging = true);
   ValueRef set_output_tensor(const ValueRef idx, const bool use_staging = true);
+
+  template <typename Block>
+  inline std::shared_ptr<api::UniformParamsBuffer> create_params_buffer(
+      const Block& data) {
+    return std::make_shared<api::UniformParamsBuffer>(context_.get(), data);
+  }
 
   /*
    * Convenience function to add an input tensor along with its staging buffer
@@ -139,6 +175,12 @@ class ComputeGraph final {
   }
 
   SharedObject& get_shared_object(const int64_t idx);
+
+  //
+  // Graph Preparation
+  //
+
+  void prepare();
 
   //
   // Input/Output
@@ -161,7 +203,30 @@ class ComputeGraph final {
 
   void encode_execute();
   void execute() const;
+
+  //
+  // Dynamic Shape support
+  //
+
+  void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
+  void propagate_resize();
 };
+
+template <typename T>
+inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+ComputeGraph::add_scalar(T value) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(value);
+  return idx;
+}
+
+template <typename T>
+inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
+ComputeGraph::add_scalar_list(std::vector<T>&& value) {
+  ValueRef idx(static_cast<int>(values_.size()));
+  values_.emplace_back(std::move(value));
+  return idx;
+}
 
 } // namespace vulkan
 } // namespace native

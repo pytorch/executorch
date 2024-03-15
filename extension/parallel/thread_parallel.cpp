@@ -10,6 +10,7 @@
 
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/extension/parallel/thread_parallel.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
 #include <executorch/runtime/platform/assert.h>
 
 namespace torch::executor {
@@ -34,14 +35,14 @@ calc_num_tasks_and_chunk_size(int64_t begin, int64_t end, int64_t grain_size) {
   return std::make_tuple(num_tasks, chunk_size);
 }
 
-void parallel_for(
+bool parallel_for(
     const int64_t begin,
     const int64_t end,
     const int64_t grain_size,
     const std::function<void(int64_t, int64_t)>& f) {
-  ET_CHECK_MSG(begin >= 0 && end >= 0, "Begin and end should be non-negative");
-  ET_CHECK_MSG(end >= begin, "end should be greater than or equal to begin");
-  ET_CHECK_MSG(grain_size > 0, "grain_size should be positive");
+  ET_LOG_AND_RETURN_IF_FALSE(begin >= 0 && end >= 0);
+  ET_LOG_AND_RETURN_IF_FALSE(end >= begin);
+  ET_LOG_AND_RETURN_IF_FALSE(grain_size > 0);
   int64_t num_tasks = 0, chunk_size = 0;
   std::tie(num_tasks, chunk_size) =
       calc_num_tasks_and_chunk_size(begin, end, grain_size);
@@ -57,6 +58,7 @@ void parallel_for(
   // Per protocol from threadpool (pthreadpool), when this returns, all tasks
   // are executed, so this is synchronous.
   get_threadpool()->run(task, num_tasks);
+  return true;
 }
 
 } // namespace torch::executor

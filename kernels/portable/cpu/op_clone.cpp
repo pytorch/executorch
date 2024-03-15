@@ -19,11 +19,11 @@ using Tensor = exec_aten::Tensor;
 // clone.out(Tensor self, *, MemoryFormat? memory_format=None, Tensor(a!) out)
 // -> Tensor(a!)
 Tensor& clone_out(
-    RuntimeContext& ctx,
+    RuntimeContext& context,
     const Tensor& self,
     exec_aten::optional<exec_aten::MemoryFormat> memory_format,
     Tensor& out) {
-  (void)ctx;
+  (void)context;
 
   ET_KERNEL_CHECK(
       context,

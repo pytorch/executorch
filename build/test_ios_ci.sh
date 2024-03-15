@@ -39,18 +39,10 @@ say "Installing MPS Backend Requirements"
 
 ./backends/apple/mps/install_requirements.sh
 
-say "Installing Python Bindings"
-
-EXECUTORCH_BUILD_PYBIND=ON \
-BUCK="$(which buck2)" \
-CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
-CMAKE_BUILD_PARALLEL_LEVEL=9 \
-pip install . --no-build-isolation -v
-
 say "Exporting Models"
 
 python3 -m examples.portable.scripts.export --model_name="$MODEL_NAME" --segment_alignment=0x4000
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="$MODEL_NAME"
+python3 -m examples.apple.coreml.scripts.export --model_name="$MODEL_NAME"
 python3 -m examples.apple.mps.scripts.mps_example --model_name="$MODEL_NAME"
 python3 -m examples.xnnpack.aot_compiler --model_name="$MODEL_NAME" --delegate
 
@@ -64,7 +56,7 @@ curl https://raw.githubusercontent.com/pytorch/hub/master/imagenet_classes.txt \
 
 say "Building Frameworks"
 
-./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --coreml --mps --xnnpack
+./build/build_apple_frameworks.sh --buck2="$(which buck2)" --flatc="$(which flatc)" --coreml --mps --portable --xnnpack
 mv cmake-out "$APP_PATH/Frameworks"
 
 say "Creating Simulator"

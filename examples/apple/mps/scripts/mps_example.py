@@ -143,13 +143,10 @@ if __name__ == "__main__":
         if not args.use_fp16:
             extension = "fp32"
         model_name = f"{model_name}_{extension}"
-        program_buffer = bundled_program_buffer
-    else:
-        program_buffer = executorch_program.buffer
 
     if args.generate_etrecord:
         etrecord_path = "etrecord.bin"
         logging.info("generating etrecord.bin")
         generate_etrecord(etrecord_path, edge_program_manager_copy, executorch_program)
 
-    save_pte_program(program_buffer, model_name)
+    save_pte_program(executorch_program, model_name)

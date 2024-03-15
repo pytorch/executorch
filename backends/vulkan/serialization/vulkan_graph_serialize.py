@@ -12,7 +12,6 @@ import tempfile
 from dataclasses import dataclass
 from typing import ClassVar, List
 
-# pyre-ignore[21]: Could not find module `executorch.exir._serialize._bindings`.
 import pkg_resources
 import torch
 
@@ -35,7 +34,6 @@ def convert_to_flatbuffer(vk_graph: VkGraph) -> bytes:
         json_path = os.path.join(d, "schema.json")
         with open(json_path, "wb") as json_file:
             json_file.write(vk_graph_json.encode("ascii"))
-        # pyre-ignore
         _flatc_compile(d, schema_path, json_path)
         output_path = os.path.join(d, "schema.bin")
         with open(output_path, "rb") as output_file:

@@ -98,7 +98,7 @@ endif()
 # data into sections so they can be properly gc'd. -s: strip symbol.
 # -fno-exceptions -fno-rtti: disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-O2 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
@@ -204,6 +204,13 @@ if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
   set(CMAKE_TOOLCHAIN_IOS ON)
 else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
+endif()
+
+# Detect if an Android toolchain is set.
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*android\.toolchain\.cmake$")
+  set(CMAKE_TOOLCHAIN_ANDROID ON)
+else()
+  set(CMAKE_TOOLCHAIN_ANDROID OFF)
 endif()
 
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
@@ -328,16 +335,15 @@ if(EXECUTORCH_BUILD_GTESTS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
-option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
-endif()
-
 if(EXECUTORCH_BUILD_SDK)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -359,6 +365,12 @@ endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)

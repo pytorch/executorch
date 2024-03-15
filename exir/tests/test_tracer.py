@@ -234,6 +234,7 @@ class TestTorchDispatchFXTracer(unittest.TestCase):
                 exir.CaptureConfig(
                     enable_functionalization=False,
                     enable_dynamic_shape=True,
+                    _dynamo_config=ExirDynamoConfig(assume_static_by_default=True),
                 ),
                 # sym_size is not reg op
             )

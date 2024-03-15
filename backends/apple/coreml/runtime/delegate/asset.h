@@ -8,6 +8,7 @@
 #import <Foundation/Foundation.h>
 
 #import <numeric>
+#import <optional>
 #import <string>
 #import <vector>
 

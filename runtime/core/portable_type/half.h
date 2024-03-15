@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <ostream>
 
 #if defined(__GNUC__) || defined(__clang__)
 #if defined(__aarch64__)
@@ -672,6 +673,13 @@ inline Half operator/(int64_t a, Half b) {
 
 /// NOTE: we do not define comparisons directly and instead rely on the implicit
 /// conversion Half to float.
+
+static inline std::ostream& operator<<(
+    std::ostream& out,
+    const torch::executor::Half& value) {
+  out << (float)value;
+  return out;
+}
 
 } // namespace executor
 } // namespace torch

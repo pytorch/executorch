@@ -47,7 +47,7 @@ def define_common_targets():
         deps = [
             ":executor_runner_lib",
             "//executorch/runtime/executor/test:test_backend_compiler_lib",
-            "//executorch/kernels/portable:generated_lib_all_ops",
+            "//executorch/kernels/portable:generated_lib",
         ] + custom_ops_lib,
         define_static_target = True,
         **get_oss_build_kwargs()

@@ -10,136 +10,18 @@
 
 #include <ATen/native/vulkan/api/api.h>
 
-#include <ATen/native/vulkan/impl/Common.h>
-#include <ATen/native/vulkan/impl/Packing.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Arithmetic.h>
-#include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
+
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
+
+#include <executorch/backends/vulkan/test/utils/test_utils.h>
 
 using namespace at::native::vulkan;
 
 //
-// Utilities
-//
-
-#define CREATE_FLOAT_TEXTURE(sizes, allocate_memory) \
-  vTensor(                                           \
-      api::context(),                                \
-      sizes,                                         \
-      api::kFloat,                                   \
-      api::StorageType::TEXTURE_3D,                  \
-      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,  \
-      allocate_memory);
-
-#define CREATE_FLOAT_BUFFER(sizes, allocate_memory) \
-  vTensor(                                          \
-      api::context(),                               \
-      sizes,                                        \
-      api::kFloat,                                  \
-      api::StorageType::BUFFER,                     \
-      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, \
-      allocate_memory);
-
-void fill_vtensor(vTensor& vten, std::vector<float>& data) {
-  api::StorageBuffer staging_buffer(api::context(), api::kFloat, data.size());
-
-  copy_ptr_to_staging(data.data(), staging_buffer, vten.gpu_nbytes());
-
-  if (vten.storage_type() == api::StorageType::BUFFER) {
-    packing::record_nchw_to_buffer_op(
-        api::context(), staging_buffer.buffer(), vten, {}, VK_NULL_HANDLE);
-  } else {
-    api::ShaderInfo compute_shader = packing::get_nchw_to_image_shader(vten);
-    packing::record_nchw_to_image_op(
-        api::context(),
-        compute_shader,
-        staging_buffer.buffer(),
-        vten,
-        {},
-        VK_NULL_HANDLE);
-  }
-}
-
-void fill_vtensor(ComputeGraph& graph, const IOValueRef idx, float val) {
-  std::vector<float> data(graph.get_val(idx.value).toTensor().gpu_numel());
-  std::fill(data.begin(), data.end(), val);
-
-  graph.copy_into_staging(idx.staging, data.data(), data.size());
-}
-
-void extract_vtensor(vTensor& vten, std::vector<float>& data) {
-  api::StorageBuffer staging_buffer(
-      api::context(), api::kFloat, vten.gpu_numel());
-
-  if (vten.storage_type() == api::StorageType::BUFFER) {
-    packing::record_buffer_to_nchw_op(
-        api::context(), vten, staging_buffer.buffer(), {}, VK_NULL_HANDLE);
-  } else {
-    api::ShaderInfo compute_shader = packing::get_image_to_nchw_shader(vten);
-    packing::record_image_to_nchw_op(
-        api::context(),
-        compute_shader,
-        vten,
-        staging_buffer.buffer(),
-        {},
-        VK_NULL_HANDLE);
-  }
-
-  api::VulkanFence fence = api::context()->fences().get_fence();
-  api::context()->submit_cmd_to_gpu(fence.get_submit_handle());
-  fence.wait();
-
-  copy_staging_to_ptr(staging_buffer, data.data(), vten.gpu_nbytes());
-}
-
-api::MemoryAllocation allocate_memory_for(const vTensor& vten) {
-  return api::context()->adapter_ptr()->vma().create_allocation(
-      vten.get_memory_requirements(), vten.get_allocation_create_info());
-}
-
-VmaTotalStatistics get_vma_stats() {
-  return api::context()->adapter_ptr()->vma().get_memory_statistics();
-}
-
-size_t get_vma_allocation_count() {
-  return get_vma_stats().total.statistics.allocationCount;
-}
-
-GraphConfig generate_graph_config() {
-  const uint32_t submit_frequency = UINT32_MAX;
-
-  const api::CommandPoolConfig cmd_config{
-      4u, // cmdPoolInitialSize
-      2u, // cmdPoolBatchSize
-  };
-
-  const api::DescriptorPoolConfig descriptor_pool_config{
-      1024u, // descriptorPoolMaxSets
-      1024u, // descriptorUniformBufferCount
-      1024u, // descriptorStorageBufferCount
-      1024u, // descriptorCombinedSamplerCount
-      1024u, // descriptorStorageImageCount
-      32u, // descriptorPileSizes
-  };
-
-  const api::QueryPoolConfig query_pool_config{};
-
-  const api::ContextConfig context_config{
-      submit_frequency, // cmdSubmitFrequency
-      cmd_config, // cmdPoolConfig
-      descriptor_pool_config, // descriptorPoolConfig
-      query_pool_config, // queryPoolConfig
-  };
-
-  const GraphConfig graph_config{
-      context_config,
-  };
-
-  return graph_config;
-}
-
-//
-// Test Wrapper
+// Compute API Tests
 //
 
 class VulkanComputeAPITest : public ::testing::Test {
@@ -157,63 +39,67 @@ class VulkanComputeAPITest : public ::testing::Test {
   }
 };
 
-//
-// Compute API Tests
-//
+TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
+  // Try to get shader from custom shader library
+  const api::ShaderInfo& kernel = VK_KERNEL(test_shader);
 
-TEST_F(VulkanComputeAPITest, buffer_copy_sanity_check) {
-  // Simple test that copies data into a and reads from a
-  std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory = */ true);
-
-  // Input data
-  std::vector<float> data_in(a.gpu_numel());
-  std::fill(data_in.begin(), data_in.end(), 2.524f);
-
-  // Fill input tensor
-  fill_vtensor(a, data_in);
-
-  // Read back data
-  std::vector<float> data_out(a.gpu_numel());
-  extract_vtensor(a, data_out);
-
-  // Check output
-  for (const auto& d : data_out) {
-    EXPECT_TRUE(d == 2.524f);
-  }
+  EXPECT_TRUE(kernel.kernel_name == "test_shader");
 }
 
-TEST_F(VulkanComputeAPITest, buffer_deferred_allocation_test) {
-  // Same as buffer_copy_sanity_check, but defers memory allocation
+TEST_F(VulkanComputeAPITest, update_params_between_submit) {
+  api::context()->set_cmd(/*reusable = */ true);
+  std::vector<int64_t> sizes = {4, 4, 2};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
-  std::vector<int64_t> sizes = {4, 4, 1};
-  vTensor a = CREATE_FLOAT_BUFFER(sizes, /*allocate_memory = */ false);
+  std::stringstream kernel_name;
+  kernel_name << "fill_texture__test";
+  apply_dtype_suffix(kernel_name, a);
 
-  // For buffer storage, a small uniform buffer is allocated containing size and
-  // stride data, which is why the check is for 1 allocation below.
-  EXPECT_TRUE(get_vma_allocation_count() == 1);
+  struct Params final {
+    api::utils::ivec3 size;
+    int32_t fill;
+    api::utils::vec4 values;
+  };
 
-  // Input data
-  std::vector<float> data_in(a.gpu_numel());
-  std::fill(data_in.begin(), data_in.end(), 1.234f);
+  Params block{
+      {2, 4, 1},
+      0,
+      {5.0, 5.0, 5.0, 5.0},
+  };
 
-  // Allocate memory at the last possible opportunity
-  api::MemoryAllocation a_mem = allocate_memory_for(a);
-  a.buffer().bind_allocation(a_mem);
+  api::UniformParamsBuffer params(api::context(), block);
 
-  EXPECT_TRUE(get_vma_allocation_count() == 2);
-
-  // Fill input tensor
-  fill_vtensor(a, data_in);
-
-  // Read back data
-  std::vector<float> data_out(a.gpu_numel());
-  extract_vtensor(a, data_out);
-
-  // Check output
-  for (const auto& d : data_out) {
-    EXPECT_TRUE(d == 1.234f);
+  {
+    api::PipelineBarrier pipeline_barrier{};
+    api::context()->submit_compute_job(
+        VK_KERNEL_FROM_STR(kernel_name.str()),
+        pipeline_barrier,
+        {4, 4, 4},
+        {4, 4, 4},
+        VK_NULL_HANDLE,
+        a.image(
+            pipeline_barrier,
+            api::PipelineStage::COMPUTE,
+            api::MemoryAccessType::WRITE),
+        params.buffer());
   }
+
+  api::StorageBuffer staging_buffer(api::context(), api::kFloat, a.gpu_numel());
+  record_image_to_nchw_op(api::context(), a, staging_buffer.buffer());
+
+  submit_to_gpu();
+  check_staging_buffer(staging_buffer, 5.0f);
+
+  Params new_block{
+      {2, 4, 1},
+      0,
+      {4.0, 4.0, 4.0, 4.0},
+  };
+
+  params.update(new_block);
+
+  submit_to_gpu();
+  check_staging_buffer(staging_buffer, 4.0f);
 }
 
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
@@ -224,25 +110,15 @@ TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
   vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
-  // Input data
-  std::vector<float> data_a(a.gpu_numel());
-  std::fill(data_a.begin(), data_a.end(), 2.5f);
-  std::vector<float> data_b(b.gpu_numel());
-  std::fill(data_b.begin(), data_b.end(), 1.5f);
-
-  // Add shader kernel
-  api::ShaderInfo kernel = arithmetic::get_shader(arithmetic::OpType::ADD);
-
   // Fill input tensors
-  fill_vtensor(a, data_a);
-  fill_vtensor(b, data_b);
+  fill_vtensor(a, 2.5f);
+  fill_vtensor(b, 1.5f);
 
   // a + b -> c
-  arithmetic::record_op(api::context(), kernel, a, b, c, 1.0f);
+  record_binary_op(api::context(), "add", a, b, c);
 
   // Extract output tensor
-  std::vector<float> data_out(c.gpu_numel());
-  extract_vtensor(c, data_out);
+  std::vector<float> data_out = extract_vtensor(c);
 
   // Check output
   for (const auto& d : data_out) {
@@ -267,8 +143,6 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   std::vector<float> data_b(b.gpu_numel());
   std::fill(data_b.begin(), data_b.end(), 1.5f);
 
-  api::ShaderInfo kernel = arithmetic::get_shader(arithmetic::OpType::ADD);
-
   // Allocate memory at the last possible opportunity
   api::MemoryAllocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
@@ -283,7 +157,7 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   fill_vtensor(a, data_a);
   fill_vtensor(b, data_b);
 
-  arithmetic::record_op(api::context(), kernel, a, b, c, 1.0f);
+  record_binary_op(api::context(), "add", a, b, c);
 
   std::vector<float> data_c(c.gpu_numel());
   extract_vtensor(c, data_c);
@@ -332,21 +206,18 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   std::vector<float> data_d(b.gpu_numel());
   std::fill(data_d.begin(), data_d.end(), 1.0f);
 
-  // Get shader kernel for add
-  api::ShaderInfo kernel = arithmetic::get_shader(arithmetic::OpType::ADD);
-
   // First, fill a and b with data
   fill_vtensor(a, data_a);
   fill_vtensor(b, data_b);
 
   // a + b -> c
-  arithmetic::record_op(api::context(), kernel, a, b, c, 1.0f);
+  record_binary_op(api::context(), "add", a, b, c);
 
   // Now d can be filled with data
   fill_vtensor(d, data_d);
 
   // c + d -> e
-  arithmetic::record_op(api::context(), kernel, c, d, e, 1.0f);
+  record_binary_op(api::context(), "add", c, d, e);
 
   // Extract data from e
   std::vector<float> data_e(e.gpu_numel());
@@ -408,6 +279,103 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
   EXPECT_THROW(fill_vtensor(a, data_a), api::Error);
 }
 
+TEST_F(VulkanComputeAPITest, tensor_reallocation_test) {
+  std::vector<int64_t> sizes = {4, 4, 1};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  execute_and_check_add(a, b, c, 3.0f, 5.0f);
+
+  // Redo with new sizes
+  std::vector<int64_t> new_sizes = {4, 6, 3};
+  a.reallocate(new_sizes);
+  b.reallocate(new_sizes);
+  c.reallocate(new_sizes);
+
+  // Flush everything
+  api::context()->flush();
+
+  execute_and_check_add(a, b, c, 12.0f, 10.0f);
+}
+
+TEST_F(
+    VulkanComputeAPITest,
+    tensor_reallocation_with_deferred_allocation_test) {
+  std::vector<int64_t> sizes = {8, 8, 8};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+
+  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  a.image().bind_allocation(a_mem);
+  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  b.image().bind_allocation(b_mem);
+  api::MemoryAllocation c_mem = allocate_memory_for(c);
+  c.image().bind_allocation(c_mem);
+
+  execute_and_check_add(a, b, c, 4.0f, 8.0f);
+
+  std::vector<std::vector<int64_t>> new_sizes_list = {
+      {4, 3, 5}, {4, 1, 7}, {8, 3, 2}, {8, 7, 2}};
+
+  for (auto& new_sizes : new_sizes_list) {
+    // Redo with new sizes
+    a.reallocate(new_sizes);
+    b.reallocate(new_sizes);
+    c.reallocate(new_sizes);
+
+    // Flush everything
+    api::context()->flush();
+
+    a.image().bind_allocation(a_mem);
+    b.image().bind_allocation(b_mem);
+    c.image().bind_allocation(c_mem);
+
+    execute_and_check_add(
+        a, b, c, float(new_sizes[1] + 4.5f), float(new_sizes[2] + 13.0f));
+  }
+}
+
+TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
+  api::context()->set_cmd(/*reusable = */ true);
+  std::vector<int64_t> sizes = {8, 12, 12};
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+  vTensor c = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
+
+  DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(a)
+  DEFINE_STAGING_BUFFER_AND_RECORD_TO_GPU_FOR(b)
+
+  fill_staging(staging_buffer_a, 11.5f);
+  fill_staging(staging_buffer_b, 12.5f);
+
+  record_binary_op(api::context(), "add", a, b, c);
+
+  DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(c)
+
+  submit_to_gpu();
+  check_staging_buffer(staging_buffer_c, 24.0f);
+
+  std::vector<std::vector<int64_t>> new_sizes_list = {
+      {4, 2, 4}, {4, 3, 6}, {8, 12, 12}, {8, 1, 1}, {8, 11, 10}};
+
+  for (auto& new_sizes : new_sizes_list) {
+    a.virtual_resize(new_sizes);
+    b.virtual_resize(new_sizes);
+    c.virtual_resize(new_sizes);
+
+    fill_staging(staging_buffer_a, float(new_sizes[1] + 1.5f), a.gpu_numel());
+    fill_staging(staging_buffer_b, float(new_sizes[2] + 55.0f), b.gpu_numel());
+
+    submit_to_gpu();
+    check_staging_buffer(
+        staging_buffer_c,
+        float(new_sizes[1] + new_sizes[2] + 56.5f),
+        c.gpu_numel());
+  }
+}
+
 //
 // Compute Graph Tests
 //
@@ -417,12 +385,66 @@ TEST_F(VulkanComputeAPITest, use_non_bound_textures_fails) {
       graph.get_val(name.value).toTensor().gpu_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
-TEST(VulkanComputeGraphTest, test_simple_graph) {
-  GraphConfig config = generate_graph_config();
+TEST(VulkanComputeGraphTest, test_values_scalars) {
+  GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {4, 4, 4};
-  std::vector<int64_t> size_small = {4, 4, 1};
+  ValueRef idx;
+
+  idx = graph.add_scalar<int64_t>(4);
+  EXPECT_TRUE(graph.get_val(idx).toInt() == 4);
+
+  idx = graph.add_scalar<double>(5.5f);
+  EXPECT_TRUE(graph.get_val(idx).toDouble() == 5.5f);
+}
+
+TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  ValueRef idx = graph.add_scalar_list<int64_t>({1, 2, 3, 4});
+  std::vector<int64_t>& arr = graph.get_val(idx).toIntList();
+  EXPECT_TRUE(arr.size() == 4);
+  for (int i = 0; i < 4; i++) {
+    EXPECT_TRUE(arr[i] == i + 1);
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  ValueRef idx;
+  {
+    std::vector<double> data = {5.0, 4.0, 3.0, 2.0, 1.0};
+    idx = graph.add_scalar_list(std::move(data));
+  }
+  std::vector<double>& arr = graph.get_val(idx).toDoubleList();
+  EXPECT_TRUE(arr.size() == 5);
+  for (int i = 0; i < 5; i++) {
+    EXPECT_TRUE(arr[i] == (5 - i));
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_values_string) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  ValueRef idx;
+  {
+    std::string data = "hello, world";
+    idx = graph.add_string(std::move(data));
+  }
+  std::string& stored = graph.get_val(idx).toString();
+  EXPECT_TRUE(stored == "hello, world");
+}
+
+TEST(VulkanComputeGraphTest, test_simple_graph) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size_big = {8, 64, 124};
+  std::vector<int64_t> size_small = {8, 1, 124};
 
   // Build graph
 
@@ -431,10 +453,14 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
 
   IOValueRef out = {};
 
-  out.value = add_arithmetic_node(graph, a.value, b.value, 1.0, VK_KERNEL(add));
+  out.value = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, out.value});
 
   out.staging = graph.set_output_tensor(out.value);
 
+  graph.prepare();
   graph.encode_execute();
 
   // Run graph
@@ -464,11 +490,11 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   ValueRef name = graph.add_tensorref(sizes, api::kFloat, data_##name.data());
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
-  GraphConfig config = generate_graph_config();
+  GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {4, 4, 4};
-  std::vector<int64_t> size_small = {4, 4, 1};
+  std::vector<int64_t> size_big = {8, 73, 62};
+  std::vector<int64_t> size_small = {8, 73, 1};
 
   CREATE_WEIGHT_TENSOR(w1, size_small, 3.5f);
   CREATE_WEIGHT_TENSOR(w2, size_small, 3.0f);
@@ -477,12 +503,20 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
 
   IOValueRef a = graph.add_input_tensor(size_big, api::kFloat);
 
-  ValueRef c = add_arithmetic_node(graph, a.value, w1, 1.0, VK_KERNEL(add));
-  ValueRef e = add_arithmetic_node(graph, c, w2, 1.0, VK_KERNEL(mul));
+  ValueRef c = graph.add_tensor(size_big, api::kFloat);
+  ValueRef e = graph.add_tensor(size_big, api::kFloat);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, w1, kDummyValueRef, c});
+
+  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
+  mulFn(graph, {c, w2, e});
 
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
 
   graph.encode_prepack();
   graph.prepack();
@@ -508,12 +542,12 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   }
 }
 
-TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
-  GraphConfig config = generate_graph_config();
+TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
+  GraphConfig config;
   ComputeGraph graph(config);
 
-  std::vector<int64_t> size_big = {4, 4, 4};
-  std::vector<int64_t> size_small = {4, 4, 1};
+  std::vector<int64_t> size_big = {12, 64, 64};
+  std::vector<int64_t> size_small = {12, 64, 64};
 
   // Build graph
 
@@ -526,59 +560,70 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  // Allocation count will be 2:
-  // 1 staging buffer for each input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 2);
+  // Allocation count will be 6:
+  // 4: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for each staging shader
+  // 2: staging buffer for each input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 6);
 
-  ValueRef c = add_arithmetic_node(
-      graph,
-      a.value,
-      b.value,
-      1.0,
-      VK_KERNEL(add),
+  ValueRef c = graph.add_tensor(
+      size_big,
+      api::kFloat,
       /*shared_object_idx = */ 6);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
 
   IOValueRef d = graph.add_input_tensor(
       size_small,
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // Allocation count will be 4, two are new:
-  // 1 uniform buffer for arithmetic shader params
-  // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 4);
+  // Allocation count will be 11, 5 are new:
+  // 2: out.gpu_sizes_ubo(), alpha UBO for arithmetic shader
+  // 2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() uniform buffer for staging shader
+  // 1: staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 11);
 
-  ValueRef e = add_arithmetic_node(
-      graph,
-      c,
-      d.value,
-      1.0,
-      VK_KERNEL(mul),
+  ValueRef e = graph.add_tensor(
+      size_big,
+      api::kFloat,
       /*shared_object_idx = */ 4);
+
+  auto mulFn = VK_GET_OP_FN("aten.mul.Tensor");
+  mulFn(graph, {c, d.value, e});
 
   IOValueRef out = {};
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // Allocation count will be 6, three are new:
-  // 1 uniform buffer for arithmetic shader params
+  // Allocation count will be 15, 4 are new:
+  // 1: alpha UBO for arithmetic shader
+  // 2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for staging shader
   // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 6);
+  EXPECT_TRUE(get_vma_allocation_count() == 15);
 
+  graph.prepare();
   graph.encode_execute();
 
-  // Allocation count will be 13:
-  // 4 staging buffers for each I/O tensor
-  // 6 uniform buffers to store params for each shader dispatch
-  // 3 shared objects to back tensor memory
-  EXPECT_TRUE(get_vma_allocation_count() == 13);
+  // Allocation count will be 18, 3 are new:
+  // 3: shared memory allocations for tensors
+  EXPECT_TRUE(get_vma_allocation_count() == 18);
 
   // Run graph
 
-  for (float i = 4.0f; i < 30.0f; i += 7.0f) {
-    float val_a = i + 2.0f;
-    float val_b = i + 1.5f;
-    float val_d = i + 1.0f;
+  std::vector<std::vector<int64_t>> new_sizes_list = {
+      {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
+
+  for (auto& new_sizes : new_sizes_list) {
+    graph.get_val(a.value).toTensor().virtual_resize(new_sizes);
+    graph.get_val(b.value).toTensor().virtual_resize(new_sizes);
+    graph.get_val(c).toTensor().virtual_resize(new_sizes);
+    graph.get_val(d.value).toTensor().virtual_resize(new_sizes);
+    graph.get_val(e).toTensor().virtual_resize(new_sizes);
+
+    float val_a = new_sizes[1] + 4.0f;
+    float val_b = new_sizes[2] + 1.5f;
+    float val_d = new_sizes[0] + 2.0f;
     float val_out = (val_a + val_b) * val_d;
 
     fill_vtensor(graph, a, val_a);
@@ -593,6 +638,93 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects) {
     // Sanity check that the values are correct
     for (const auto& val : data_out) {
       EXPECT_TRUE(val == val_out);
+    }
+  }
+
+  std::vector<std::vector<int64_t>> new_sizes_list_2 = {
+      {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
+
+  for (auto& new_sizes : new_sizes_list_2) {
+    graph.resize_input(0, new_sizes);
+    graph.resize_input(1, new_sizes);
+    graph.resize_input(2, new_sizes);
+    graph.propagate_resize();
+
+    // Check output shape
+    EXPECT_TRUE(graph.get_val(out.value).toTensor().sizes() == new_sizes);
+
+    float val_a = new_sizes[1] + 6.0f;
+    float val_b = new_sizes[2] + 2.5f;
+    float val_d = new_sizes[0] + 4.0f;
+    float val_out = (val_a + val_b) * val_d;
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+    fill_vtensor(graph, d, val_d);
+
+    // Execute graph
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    // Sanity check that the values are correct
+    for (const auto& val : data_out) {
+      ASSERT_TRUE(val == val_out);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_large_graph) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  int64_t input_w = 256;
+  int64_t input_h = 256;
+  int64_t input_c = 8;
+
+  std::vector<int64_t> size_big = {input_c, input_h, input_w};
+  std::vector<int64_t> size_small = {input_c, input_h, 1};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat, 2);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat, 4);
+
+  ValueRef c = graph.add_tensor(size_big, api::kFloat, 6);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
+
+  int n = 100;
+
+  for (int i = 0; i < n; i++) {
+    addFn(graph, {c, b.value, kDummyValueRef, a.value});
+
+    addFn(graph, {a.value, b.value, kDummyValueRef, c});
+  }
+
+  IOValueRef out = {};
+  out.value = c;
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  for (int i = 0; i < 10; i++) {
+    float val_a = 1.0f;
+    float val_b = 2.0f;
+
+    float val_e = val_a + val_b * (2 * n + 1);
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    for (const auto& val : data_out) {
+      EXPECT_TRUE(val == val_e);
     }
   }
 }

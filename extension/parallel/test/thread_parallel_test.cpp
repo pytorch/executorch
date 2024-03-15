@@ -12,7 +12,7 @@
 #include <mutex>
 
 #include <executorch/extension/parallel/thread_parallel.h>
-#include <executorch/test/utils/DeathTest.h>
+#include <executorch/runtime/platform/platform.h>
 
 using namespace ::testing;
 
@@ -49,9 +49,9 @@ class ParallelTest : public ::testing::Test {
 };
 
 TEST_F(ParallelTest, TestAllInvoked) {
-  parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], i);
@@ -59,9 +59,9 @@ TEST_F(ParallelTest, TestAllInvoked) {
 }
 
 TEST_F(ParallelTest, TestAllInvokedWithMutex) {
-  parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunExclusiveTask(begin, end);
-  });
+  }));
 
   int expected_sum = 0;
   for (int64_t i = 0; i < 10; ++i) {
@@ -72,13 +72,10 @@ TEST_F(ParallelTest, TestAllInvokedWithMutex) {
 }
 
 TEST_F(ParallelTest, TestInvalidRange) {
-  ET_EXPECT_DEATH(
-      {
-        parallel_for(10, 0, 1, [this](int64_t begin, int64_t end) {
-          this->RunExclusiveTask(begin, end);
-        });
-      },
-      "");
+  et_pal_init();
+  EXPECT_FALSE(parallel_for(10, 0, 1, [this](int64_t begin, int64_t end) {
+    this->RunExclusiveTask(begin, end);
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], 0);
@@ -87,13 +84,10 @@ TEST_F(ParallelTest, TestInvalidRange) {
 }
 
 TEST_F(ParallelTest, TestInvalidRange2) {
-  ET_EXPECT_DEATH(
-      {
-        parallel_for(6, 5, 1, [this](int64_t begin, int64_t end) {
-          this->RunExclusiveTask(begin, end);
-        });
-      },
-      "");
+  et_pal_init();
+  EXPECT_FALSE(parallel_for(6, 5, 1, [this](int64_t begin, int64_t end) {
+    this->RunExclusiveTask(begin, end);
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], 0);
@@ -102,9 +96,9 @@ TEST_F(ParallelTest, TestInvalidRange2) {
 }
 
 TEST_F(ParallelTest, TestInvokePartialFromBeginning) {
-  parallel_for(0, 5, 1, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 5, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 5; ++i) {
     EXPECT_EQ(data_[i], i);
@@ -115,9 +109,9 @@ TEST_F(ParallelTest, TestInvokePartialFromBeginning) {
 }
 
 TEST_F(ParallelTest, TestInvokePartialToEnd) {
-  parallel_for(5, 10, 1, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(5, 10, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 5; ++i) {
     EXPECT_EQ(data_[i], 0);
@@ -128,9 +122,9 @@ TEST_F(ParallelTest, TestInvokePartialToEnd) {
 }
 
 TEST_F(ParallelTest, TestInvokePartialMiddle) {
-  parallel_for(2, 8, 1, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(2, 8, 1, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 2; ++i) {
     EXPECT_EQ(data_[i], 0);
@@ -144,9 +138,9 @@ TEST_F(ParallelTest, TestInvokePartialMiddle) {
 }
 
 TEST_F(ParallelTest, TestChunkSize2) {
-  parallel_for(0, 10, 2, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 10, 2, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], i);
@@ -154,9 +148,9 @@ TEST_F(ParallelTest, TestChunkSize2) {
 }
 
 TEST_F(ParallelTest, TestChunkSize2Middle) {
-  parallel_for(3, 8, 2, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(3, 8, 2, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 3; ++i) {
     EXPECT_EQ(data_[i], 0);
@@ -170,9 +164,9 @@ TEST_F(ParallelTest, TestChunkSize2Middle) {
 }
 
 TEST_F(ParallelTest, TestChunkSize3) {
-  parallel_for(0, 10, 3, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 10, 3, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], i);
@@ -180,9 +174,9 @@ TEST_F(ParallelTest, TestChunkSize3) {
 }
 
 TEST_F(ParallelTest, TestChunkSize6) {
-  parallel_for(0, 10, 6, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 10, 6, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], i);
@@ -190,9 +184,9 @@ TEST_F(ParallelTest, TestChunkSize6) {
 }
 
 TEST_F(ParallelTest, TestChunkSizeTooLarge) {
-  parallel_for(0, 10, 11, [this](int64_t begin, int64_t end) {
+  EXPECT_TRUE(parallel_for(0, 10, 11, [this](int64_t begin, int64_t end) {
     this->RunTask(begin, end);
-  });
+  }));
 
   for (int64_t i = 0; i < 10; ++i) {
     EXPECT_EQ(data_[i], i);

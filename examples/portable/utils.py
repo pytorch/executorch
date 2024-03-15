@@ -98,11 +98,17 @@ def export_to_exec_prog(
     return exec_prog
 
 
-def save_pte_program(buffer: bytes, model_name: str, output_dir: str = "") -> None:
-    filename = os.path.join(output_dir, f"{model_name}.pte")
+def save_pte_program(
+    prog: ExecutorchProgramManager, model_name: str, output_dir: str = ""
+) -> None:
+    if model_name.endswith(".pte"):
+        filename = model_name
+    else:
+        filename = os.path.join(output_dir, f"{model_name}.pte")
+
     try:
         with open(filename, "wb") as file:
-            file.write(buffer)
+            prog.write_to_file(file)
             logging.info(f"Saved exported program to {filename}")
     except Exception as e:
         logging.error(f"Error while saving to {filename}: {e}")

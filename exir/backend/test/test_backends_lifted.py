@@ -98,7 +98,7 @@ class TestBackends(unittest.TestCase):
         self, delegate: LoweredBackendModule, input_len: int
     ) -> None:
         counter = 0
-        for node in delegate._original_module.graph.nodes:
+        for node in delegate.original_module.graph.nodes:
             if node.op == "placeholder":
                 counter += 1
         self.assertEqual(counter, input_len)
@@ -913,7 +913,7 @@ class TestBackends(unittest.TestCase):
         )
         self.assertEqual(len(lowered_backends), 2)
         for backend in lowered_backends:
-            original_program = backend._original_module
+            original_program = backend.original_module
             # check that program has the lowered attributes
             self.assertEqual(len(original_program.state_dict), 1)
             # check backend has one placeholder input one placeholder parameter
@@ -1012,17 +1012,19 @@ class TestBackends(unittest.TestCase):
             x = x - y
             return x
 
-        def f(x, y):
-            x = x + y
-            x = control_flow.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
-            x = x - y
-            return x
+        class Module(torch.nn.Module):
+            def forward(self, x, y):
+                x = x + y
+                x = control_flow.cond(x[0][0] == 1, true_fn, false_fn, [x, y])
+                x = x - y
+                return x
 
+        f = Module()
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
         orig = to_edge(
             export(
-                torch.export.WrapperModule(f),
+                f,
                 inputs,
             )
         )
@@ -1066,15 +1068,17 @@ class TestBackends(unittest.TestCase):
             x = x + y
             return x
 
-        def f(xs, y):
-            y = torch.mm(y, y)
-            return control_flow.map(map_fn, xs, y)
+        class Module(torch.nn.Module):
+            def forward(self, xs, y):
+                y = torch.mm(y, y)
+                return control_flow.map(map_fn, xs, y)
 
+        f = Module()
         inputs = (torch.ones(2, 2), torch.ones(2, 2))
         orig_res = f(*inputs)
         orig = to_edge(
             export(
-                torch.export.WrapperModule(f),
+                f,
                 inputs,
             )
         )
@@ -1132,9 +1136,10 @@ class TestBackends(unittest.TestCase):
             x = x + y
             return x.sin()
 
-        def f(xs, pred1, pred2, y):
-            y = torch.mm(y, y)
-            return control_flow.map(map_fn, xs, pred1, pred2, y)
+        class Module(torch.nn.Module):
+            def forward(self, xs, pred1, pred2, y):
+                y = torch.mm(y, y)
+                return control_flow.map(map_fn, xs, pred1, pred2, y)
 
         inputs = (
             torch.ones(2, 2),
@@ -1143,10 +1148,11 @@ class TestBackends(unittest.TestCase):
             torch.ones(2, 2),
         )
 
+        f = Module()
         orig_res = f(*inputs)
         orig = to_edge(
             export(
-                torch.export.WrapperModule(f),
+                f,
                 inputs,
             )
         )
@@ -1205,12 +1211,14 @@ class TestBackends(unittest.TestCase):
         )
 
     def test_list_input(self):
-        def f(x: List[torch.Tensor]):
-            y = x[0] + x[1]
-            return y
+        class Module(torch.nn.Module):
+            def forward(self, x: List[torch.Tensor]):
+                y = x[0] + x[1]
+                return y
 
+        f = Module()
         inputs = ([torch.randn(2, 2), torch.randn(2, 2)],)
-        edge_prog = to_edge(export(torch.export.WrapperModule(f), inputs))
+        edge_prog = to_edge(export(f, inputs))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )
@@ -1227,12 +1235,14 @@ class TestBackends(unittest.TestCase):
         gm.exported_program().module()(*inputs)
 
     def test_dict_input(self):
-        def f(x: Dict[str, torch.Tensor]):
-            y = x["a"] + x["b"]
-            return y
+        class Module(torch.nn.Module):
+            def forward(self, x: Dict[str, torch.Tensor]):
+                y = x["a"] + x["b"]
+                return y
 
+        f = Module()
         inputs = ({"a": torch.randn(2, 2), "b": torch.randn(2, 2)},)
-        edge_prog = to_edge(export(torch.export.WrapperModule(f), inputs))
+        edge_prog = to_edge(export(f, inputs))
         lowered_gm = to_backend(
             BackendWithCompilerDemo.__name__, edge_prog.exported_program(), []
         )

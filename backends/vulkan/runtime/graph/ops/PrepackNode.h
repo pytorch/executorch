@@ -10,9 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <ATen/native/vulkan/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
@@ -28,20 +26,31 @@ class ComputeGraph;
  * encoding of shaders transferring necessary data (such as weights and biases)
  * to the GPU.
  */
-class PrepackNode {
+class PrepackNode final {
   friend class ComputeGraph;
 
  public:
-  PrepackNode(ValueRef tref, ValueRef packed) : tref_{tref}, packed_{packed} {}
+  PrepackNode(
+      ComputeGraph& graph,
+      const api::ShaderInfo& shader,
+      const api::utils::uvec3& global_workgroup_size,
+      const api::utils::uvec3& local_workgroup_size,
+      const ValueRef tref,
+      const ValueRef packed,
+      const std::vector<std::shared_ptr<api::UniformParamsBuffer>>& params);
 
-  virtual ~PrepackNode() = default;
+  ~PrepackNode() = default;
+
+  void encode(ComputeGraph* graph);
 
  protected:
-  ValueRef tref_;
-  ValueRef packed_;
-
- public:
-  virtual void encode(ComputeGraph* graph) const = 0;
+  const api::ShaderInfo shader_;
+  const api::utils::uvec3 global_workgroup_size_;
+  const api::utils::uvec3 local_workgroup_size_;
+  const ValueRef tref_;
+  const ValueRef packed_;
+  // TODO(T180906457): allow re-computing param buffers.
+  std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
 };
 
 } // namespace vulkan
