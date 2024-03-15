@@ -101,7 +101,6 @@ __ET_NODISCARD Error XNNExecutor::prepare_args(EValue** args) {
   }
   // // Propagate Input Shape and Memory Plan for increased allocation
   status = xnn_reshape_runtime(runtime_.get());
-  status = xnn_reshape_runtime(runtime_.get());
 
   ET_CHECK_OR_RETURN_ERROR(
       status == xnn_status_success,
