@@ -13,6 +13,7 @@ set -ex
 install_prerequiresites() {
   apt-get update
 
+  # NB: Need OpenJDK 17 at the minimum
   apt-get install -y --no-install-recommends \
     openjdk-17-jdk \
     ca-certificates-java \
@@ -23,14 +24,14 @@ install_prerequiresites() {
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 }
 
-download_and_install_ndk() {
+install_ndk() {
   NDK_INSTALLATION_DIR=/opt/ndk
   mkdir -p "${NDK_INSTALLATION_DIR}"
 
   pushd /tmp
   # The NDK installation is cached on ossci-android S3 bucket
   curl -Os --retry 3 "https://ossci-android.s3.amazonaws.com/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
-  unzip -qo "/tmp/android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
+  unzip -qo "android-ndk-${ANDROID_NDK_VERSION}-linux.zip"
 
   # Print the content for manual verification
   ls -lah "android-ndk-${ANDROID_NDK_VERSION}"
@@ -39,8 +40,31 @@ download_and_install_ndk() {
   popd
 }
 
-install_prerequiresites
-download_and_install_ndk
+install_cmdtools() {
+  CMDTOOLS_FILENAME=commandlinetools-linux-11076708_latest.zip
 
-# NB: We might also need to install Android SDK and some additional tools like
-# Gradle here
+  pushd /tmp
+  # The file is cached on ossci-android S3 bucket
+  curl -Os --retry 3 "https://ossci-android.s3.us-west-1.amazonaws.com/${CMDTOOLS_FILENAME}"
+  unzip -qo "${CMDTOOLS_FILENAME}" -d /opt
+
+  ls -lah /opt/cmdline-tools/bin
+  popd
+}
+
+install_sdk() {
+  SDK_INSTALLATION_DIR=/opt/android/sdk
+  mkdir -p "${SDK_INSTALLATION_DIR}"
+
+  # These are the tools needed to build Android apps
+  yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platforms;android-34"
+  yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "build-tools;33.0.1"
+  # And some more tools for future emulator tests
+  yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "platform-tools"
+  yes | /opt/cmdline-tools/bin/sdkmanager --sdk_root="${SDK_INSTALLATION_DIR}" --install "tools"
+}
+
+install_prerequiresites
+install_ndk
+install_cmdtools
+install_sdk

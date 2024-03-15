@@ -24,7 +24,7 @@ build_executorch() {
 
 build_android_demo_app() {
   pushd examples/demo-apps/android/ExecuTorchDemo
-  ./gradlew build
+  ANDROID_HOME=/opt/android/sdk ./gradlew build
   popd
 }
 
