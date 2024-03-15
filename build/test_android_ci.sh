@@ -39,6 +39,18 @@ build_executorch_android_demo_app() {
         -DEXECUTORCH_BUILD_ANDROID_JNI=ON \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
   popd
+
+  if [ "$(uname)" == "Darwin" ]; then
+    CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
+  else
+    CMAKE_JOBS=$(( $(nproc) - 1 ))
+  fi
+  cmake --build . -j "${CMAKE_JOBS}"
+
+  # There is no test for Android app atm, so we just stop here if the build finishes
+  # successfully
+  ls -lah extension/android
+  popd
 }
 
 build_executorch_android_demo_app
