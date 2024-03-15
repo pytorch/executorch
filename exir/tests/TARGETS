@@ -447,3 +447,17 @@ python_unittest(
         "//executorch/exir:print_program",
     ],
 )
+
+python_unittest(
+    name = "test_try_remove_view_copy",
+    srcs = [
+        "test_try_remove_view_copy.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir:memory",
+        "//executorch/exir/capture:config",
+        "//executorch/exir/passes:lib",
+    ],
+)
