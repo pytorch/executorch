@@ -39,8 +39,7 @@ class TestDiv(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_div(self):
@@ -64,6 +63,5 @@ class TestDiv(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_div_Tensor"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
