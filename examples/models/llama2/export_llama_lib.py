@@ -23,7 +23,7 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
 
-# from executorch.sdk.etrecord import generate_etrecord
+from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
@@ -496,20 +496,19 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         if not builder_exported_to_edge.edge_manager:
             raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
-        # logging.info("Generating etrecord")
+        logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
         builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
-            # generate_etrecord(
-            #     etrecord_path="etrecord.bin",
-            #     edge_dialect_program=edge_manager_copy,
-            #     executorch_program=builder.export_program,
-            # )
-            # logging.info("Generated etrecord.bin")
-            pass
+            generate_etrecord(
+                etrecord_path="etrecord.bin",
+                edge_dialect_program=edge_manager_copy,
+                executorch_program=builder.export_program,
+            )
+            logging.info("Generated etrecord.bin")
     else:
         builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
