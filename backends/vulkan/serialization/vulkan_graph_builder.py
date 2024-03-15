@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
+from types import NoneType
 from typing import cast, List, Optional, Union
 
 import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
@@ -17,7 +18,9 @@ from torch.export import ExportedProgram
 from torch.fx import Node
 
 _ScalarType = Union[bool, int, float]
-_Argument = Union[Node, List[Node], TensorSpec, _ScalarType, List[_ScalarType], str]
+_Argument = Union[
+    Node, NoneType, _ScalarType, TensorSpec, List[_ScalarType], List[Node], str
+]
 
 
 class VkGraphBuilder:
@@ -123,6 +126,37 @@ class VkGraphBuilder:
 
         return constant_id
 
+    def create_node_value(self, node: Node) -> int:
+        spec = node.meta.get("spec")
+        if isinstance(spec, TensorSpec):
+            constant_id = self.maybe_add_constant_tensor(node)
+            new_id = self.create_tensor_value(spec, constant_id)
+            self.node_to_value_ids[node] = new_id
+            return new_id
+        elif isinstance(spec, tuple):
+            # Create a Value for each element in the tuple, wrap Values in a
+            # ValueList, and map the Node to the ValueList id.
+            new_id = self.create_value_list_value(spec)
+            self.node_to_value_ids[node] = new_id
+            return new_id
+        else:
+            raise RuntimeError(f"Cannot create value for spec of type {type(spec)}")
+
+    def create_null_value(self) -> int:
+        new_id = len(self.values)
+        self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Null()))
+        return new_id
+
+    def create_scalar_value(self, scalar: _ScalarType) -> int:
+        new_id = len(self.values)
+        if isinstance(scalar, bool):
+            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Bool(scalar)))
+        elif isinstance(scalar, int):
+            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
+        elif isinstance(scalar, float):
+            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
+        return new_id
+
     def create_tensor_value(self, spec: TensorSpec, constant_id: int = -1) -> int:
         # Negative id indicates that this tensor will have its own dedicated memory.
         mem_obj_id = -1
@@ -140,42 +174,6 @@ class VkGraphBuilder:
                 )
             )
         )
-        return new_id
-
-    def create_node_value(self, node: Node) -> int:
-        spec = node.meta.get("spec")
-        if isinstance(spec, TensorSpec):
-            constant_id = self.maybe_add_constant_tensor(node)
-            new_id = self.create_tensor_value(spec, constant_id)
-            self.node_to_value_ids[node] = new_id
-            return new_id
-        elif isinstance(spec, tuple):
-            # Create a Value for each element in the tuple, wrap Values in a
-            # ValueList, and map the Node to the ValueList id.
-            new_id = self.create_value_list_value(spec)
-            self.node_to_value_ids[node] = new_id
-            return new_id
-        else:
-            raise RuntimeError(f"Cannot create value for spec of type {type(spec)}")
-
-    def create_value_list_value(self, arg: List[Node] | tuple) -> int:
-        self.values.append(
-            vk_graph_schema.VkValue(
-                vk_graph_schema.ValueList(
-                    items=[self.get_or_create_value_for(e) for e in arg]
-                )
-            )
-        )
-        return len(self.values) - 1
-
-    def create_scalar_value(self, scalar: _ScalarType) -> int:
-        new_id = len(self.values)
-        if isinstance(scalar, bool):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Bool(scalar)))
-        elif isinstance(scalar, int):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Int(scalar)))
-        elif isinstance(scalar, float):
-            self.values.append(vk_graph_schema.VkValue(vk_graph_schema.Double(scalar)))
         return new_id
 
     def create_scalar_list_value(self, arg: List[_ScalarType]) -> int:
@@ -200,6 +198,16 @@ class VkGraphBuilder:
             )
         return new_id
 
+    def create_value_list_value(self, arg: List[Node] | tuple) -> int:
+        self.values.append(
+            vk_graph_schema.VkValue(
+                vk_graph_schema.ValueList(
+                    items=[self.get_or_create_value_for(e) for e in arg]
+                )
+            )
+        )
+        return len(self.values) - 1
+
     def create_string_value(self, string: str) -> int:
         new_id = len(self.values)
         self.values.append(
@@ -213,16 +221,18 @@ class VkGraphBuilder:
             if arg in self.node_to_value_ids:
                 return self.node_to_value_ids[arg]
             return self.create_node_value(arg)
-        elif isinstance(arg, list) and isinstance(arg[0], Node):
-            # pyre-ignore[6]
-            return self.create_value_list_value(arg)
-        elif isinstance(arg, TensorSpec):
-            return self.create_tensor_value(arg)
+        elif isinstance(arg, NoneType):
+            return self.create_null_value()
         elif isinstance(arg, _ScalarType):
             return self.create_scalar_value(arg)
+        elif isinstance(arg, TensorSpec):
+            return self.create_tensor_value(arg)
         elif isinstance(arg, list) and isinstance(arg[0], _ScalarType):
             # pyre-ignore[6]
             return self.create_scalar_list_value(arg)
+        elif isinstance(arg, list) and isinstance(arg[0], Node):
+            # pyre-ignore[6]
+            return self.create_value_list_value(arg)
         elif isinstance(arg, str):
             return self.create_string_value(arg)
         else:
