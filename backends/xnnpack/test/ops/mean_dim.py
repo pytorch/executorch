@@ -33,8 +33,7 @@ class TestMeanDim(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_mean_dim"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_mean_dim(self):
@@ -85,6 +84,5 @@ class TestMeanDim(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(qtol=1)
         )
