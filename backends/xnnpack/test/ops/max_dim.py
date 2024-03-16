@@ -37,8 +37,7 @@ class TestMaxDim(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_max_dim"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171468483 - Fails to partition due to index output dtype.")
@@ -65,6 +64,5 @@ class TestMaxDim(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_max_dim"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

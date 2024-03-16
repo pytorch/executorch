@@ -39,8 +39,7 @@ class TestSub(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_sub_Tensor"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_sub(self):
@@ -75,8 +74,7 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
@@ -100,8 +98,7 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
@@ -125,8 +122,7 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171957656 - Quantized sub not implemented.")
@@ -166,6 +162,5 @@ class TestSub(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

@@ -42,8 +42,7 @@ class TestAvgPool2d(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_avg_pool2d_default"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_avgpool2d(self):

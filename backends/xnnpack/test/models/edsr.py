@@ -25,8 +25,7 @@ class TestEDSR(unittest.TestCase):
             .partition()
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_edsr(self):
@@ -38,6 +37,5 @@ class TestEDSR(unittest.TestCase):
             .partition()
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

@@ -23,8 +23,7 @@ class TestResNet18(unittest.TestCase):
             .partition()
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_resnet18(self):
@@ -37,6 +36,5 @@ class TestResNet18(unittest.TestCase):
             .partition()
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
