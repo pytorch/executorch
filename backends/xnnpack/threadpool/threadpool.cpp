@@ -45,8 +45,8 @@ size_t ThreadPool::get_thread_count() const {
 }
 
 bool ThreadPool::_unsafe_reset_threadpool(uint32_t new_thread_count) {
-  // No need to do anything if the count is same
-  if (new_thread_count == get_thread_count()) {
+  // No need to do anything if the count is same or 0
+  if (new_thread_count == get_thread_count() || new_thread_count == 0) {
     return true;
   }
 
