@@ -16,6 +16,8 @@ def define_common_targets():
                 deps = [
                     "//executorch/examples/models/llama2/runner:runner" + aten_suffix,
                     "//executorch/extension/evalue_util:print_evalue",
+                    "//executorch/backends/xnnpack/threadpool:threadpool",
+                    "//executorch/backends/xnnpack/threadpool:cpuinfo_utils",
                 ],
                 external_deps = [
                     "gflags",
