@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .ops.quantized_ops import *  # noqa
 
+# TODO: move to correct place
 from torchao.quantization.quant_primitives import (
     get_group_qparams_symmetric,
     group_quantize_tensor_symmetric,
@@ -652,7 +653,7 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
             self.scales,
             self.zeros,
             self.out_features,
-            self.groupsize,
+            self.group_size,
             self.precision,
         )
 
@@ -737,7 +738,6 @@ class GPTQQuantHandler(QuantHandler):
     """
 
     def __init__(self):
-        assert self.mod is not None
         assert self.get_qparams_func is not None
         assert self.quantize_func is not None
         assert self.dequantize_func is not None
