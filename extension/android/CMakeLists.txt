@@ -29,7 +29,7 @@ if(CMAKE_TOOLCHAIN_ANDROID)
 
     add_library(executorch_llama_jni SHARED jni/jni_layer_llama.cpp)
     target_link_libraries(executorch_llama_jni fbjni llama_runner
-                          portable_ops_lib)
+                          xnn_executor_runner_lib)
     target_compile_options(executorch_llama_jni PUBLIC
                            ${_common_compile_options})
 endif()
