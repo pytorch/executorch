@@ -37,6 +37,11 @@ namespace {
 
 using namespace executorchcoreml;
 
+enum class ModelAssetType: uint8_t {
+    CompiledModel,
+    Model
+};
+
 std::vector<std::string> canonical_path(NSString *path) {
     NSArray<NSString *> *components = path.pathComponents;
     std::vector<std::string> result;
@@ -150,7 +155,8 @@ NSOrderedSet<NSString *> *get_ordered_set(const std::vector<std::string>& values
 NSURL * _Nullable write_model_files(NSURL *dst_url,
                                     NSFileManager *fm,
                                     NSString *identifier,
-                                    const inmemoryfs::InMemoryFileSystem& inmemory_fs,
+                                    ModelAssetType model_asset_type,
+                                    const inmemoryfs::InMemoryFileSystem *inmemory_fs,
                                     NSError * __autoreleasing *error) {
     NSError *local_error = nil;
     if (![fm createDirectoryAtURL:dst_url withIntermediateDirectories:NO attributes:@{} error:error]) {
@@ -165,8 +171,20 @@ NSURL * _Nullable write_model_files(NSURL *dst_url,
     
     std::filesystem::path model_path(dst_url.fileSystemRepresentation);
     std::error_code ec;
-    const auto& file_path = canonical_path(ETCoreMLStrings.modelFileRelativePath);
-    if (!inmemory_fs.write_item_to_disk(file_path, model_path, true, ec)) {
+    std::vector<std::string> file_path;
+    switch (model_asset_type) {
+        case ModelAssetType::Model: {
+            file_path = canonical_path(ETCoreMLStrings.modelFileRelativePath);
+            break;
+        }
+            
+        case ModelAssetType::CompiledModel: {
+            file_path = canonical_path(ETCoreMLStrings.compiledModelFileRelativePath);
+            break;
+        }
+    }
+    
+    if (!inmemory_fs->write_item_to_disk(file_path, model_path, true, ec)) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorModelSaveFailed,
                                       "%@: Failed to write model files to disk when saving model with identifier = %@.",
@@ -175,8 +193,29 @@ NSURL * _Nullable write_model_files(NSURL *dst_url,
         return nil;
     }
     
-    return [dst_url URLByAppendingPathComponent:[NSString stringWithFormat:@"model.%@", ETCoreMLStrings.modelExtensionName]];
+    switch (model_asset_type) {
+        case ModelAssetType::Model: {
+            return [dst_url URLByAppendingPathComponent:[NSString stringWithFormat:@"model.%@", ETCoreMLStrings.modelExtensionName]];
+        }
+        case ModelAssetType::CompiledModel: {
+            return [dst_url URLByAppendingPathComponent:[NSString stringWithFormat:@"model.%@", ETCoreMLStrings.compiledModelExtensionName]];
+        }
+    }
 }
+
+std::optional<ModelAssetType> get_model_asset_type(const inmemoryfs::InMemoryFileSystem *inmemory_fs) {
+    std::error_code ec;
+    if (inmemory_fs->exists(canonical_path(ETCoreMLStrings.compiledModelFileRelativePath))) {
+        return ModelAssetType::CompiledModel;
+    }
+    
+    if (inmemory_fs->exists(canonical_path(ETCoreMLStrings.modelFileRelativePath))) {
+        return ModelAssetType::Model;
+    }
+    
+    return std::nullopt;
+}
+
 
 ETCoreMLModel * _Nullable get_model_from_asset(ETCoreMLAsset *asset,
                                                MLModelConfiguration *configuration,
@@ -228,7 +267,6 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     
     return [[ETCoreMLAsset alloc] initWithBackingAsset:std::move(backingAsset.value())];
 }
-
 } //namespace
 
 @interface ETCoreMLModelManager () {
@@ -302,6 +340,37 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     return modelAsset;
 }
 
+- (nullable NSURL *)compiledModelURLWithIdentifier:(NSString *)identifier
+                                        inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
+                                      assetManager:(ETCoreMLAssetManager *)assetManager
+                                             error:(NSError * __autoreleasing *)error {
+    auto modelAssetType = get_model_asset_type(inMemoryFS);
+    if (!modelAssetType) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedModel,
+                                      "%@: AOT blob is missing model file.",
+                                      NSStringFromClass(ETCoreMLModelManager.class));
+        return nil;
+    }
+    
+    NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
+    switch (modelAssetType.value()) {
+        case ModelAssetType::CompiledModel: {
+            return modelURL;
+        }
+            
+        case ModelAssetType::Model: {
+            // we need to compiled the model.
+            NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
+                                                          maxWaitTimeInSeconds:(5 * 60)
+                                                                         error:error];
+            
+            return compiledModelURL;
+        }
+    }
+}
+
 #if ET_EVENT_TRACER_ENABLED
 - (nullable id<ETCoreMLModelExecutor>)modelExecutorWithMetadata:(const ModelMetadata&)metadata
                                                      inMemoryFS:(const inmemoryfs::InMemoryFileSystem*)inMemoryFS
@@ -312,25 +381,25 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     ETCoreMLAsset *compiledModelAsset = [self assetWithIdentifier:identifier];
     // Create a unique directory for writing model files.
     NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    // Write the model files for on-device compilation.
-    NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, *inMemoryFS, error);
-    if (!modelURL) {
-        return nil;
+    auto modelAssetType = get_model_asset_type(inMemoryFS);
+    ETCoreMLAsset *modelAsset = nil;
+    // Write the model files.
+    if (modelAssetType == ModelAssetType::ModelPackage) {
+        NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
+        if (modelURL) {
+            modelAsset = make_asset(modelURL,
+                                    identifier,
+                                    self.fileManager,
+                                    error);
+        }
     }
-    
-    ETCoreMLAsset *modelAsset = make_asset(modelURL,
-                                           identifier,
-                                           self.fileManager,
-                                           error);
-    if (!modelAsset) {
-        return nil;
-    }
-    
+   
     if (!compiledModelAsset) {
         // Compile the model.
-        NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelAsset.contentURL
-                                                      maxWaitTimeInSeconds:(5 * 60)
-                                                                     error:error];
+        NSURL *compiledModelURL = [self compiledModelURLWithIdentifier:identifier
+                                                            inMemoryFS:inMemoryFS
+                                                          assetManager:self.assetManager
+                                                                 error:error];
         compiledModelAsset = make_asset(compiledModelURL,
                                         identifier,
                                         self.fileManager,
@@ -363,18 +432,11 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
         return [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
     }
     
-    // Create a unique directory for writing model files.
-    NSURL *dstURL = [self.assetManager.trashDirectoryURL URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
-    // Write the model files for on-device compilation.
-    NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, *inMemoryFS, error);
-    if (!modelURL) {
-        return nil;
-    }
-    
     // Compile the model.
-    NSURL *compiledModelURL = [ETCoreMLModelCompiler compileModelAtURL:modelURL
-                                                  maxWaitTimeInSeconds:(5 * 60)
-                                                                 error:error];
+    NSURL *compiledModelURL = [self compiledModelURLWithIdentifier:identifier
+                                                        inMemoryFS:inMemoryFS
+                                                      assetManager:self.assetManager
+                                                             error:error];
     if (!compiledModelURL) {
         return nil;
     }

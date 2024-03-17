@@ -158,7 +158,7 @@ public:
     ///
     /// @param canonical_path   The path components from the root.
     /// @retval `true` if the node at the specified path exists.
-    bool exists(const std::vector<std::string>& canonical_path) noexcept;
+    bool exists(const std::vector<std::string>& canonical_path) const noexcept;
     
     /// Retrieves the canonical path of all the child nodes at the specified path. The node
     /// at the specified path must be a directory otherwise it returns an empty vector with the `error`

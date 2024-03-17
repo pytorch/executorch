@@ -36,7 +36,7 @@ __attribute__((objc_subclassing_restricted))
 /// @param assetManager The asset manager used to manage storage of compiled models.
 /// @param error   On failure, error is filled with the failure information.
 - (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset*)compiledModelAsset
-                                         modelAsset:(ETCoreMLAsset*)modelAsset
+                                         modelAsset:(nullable ETCoreMLAsset*)modelAsset
                                            metadata:(const executorchcoreml::ModelMetadata&)metadata
                                       configuration:(MLModelConfiguration*)configuration
                                        assetManager:(ETCoreMLAssetManager*)assetManager
