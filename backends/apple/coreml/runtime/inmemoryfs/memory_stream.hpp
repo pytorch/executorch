@@ -1,6 +1,5 @@
 //
-//  Stream.hpp
-//  inmemoryfs
+// memory_stream.hpp
 //
 // Copyright © 2024 Apple Inc. All rights reserved.
 //

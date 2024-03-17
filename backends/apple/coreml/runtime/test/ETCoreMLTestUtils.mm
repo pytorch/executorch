@@ -243,8 +243,8 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
                                          dstURL:(NSURL *)dstURL
                                     fileManager:(NSFileManager *)fileManager
                                           error:(NSError * __autoreleasing *)error {
-    auto buffer = inmemoryfs::MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
-    std::unique_ptr<inmemoryfs::InMemoryFileSystem> inMemoryFS = inmemoryfs::make(buffer);
+    std::shared_ptr<inmemoryfs::MemoryBuffer> buffer = inmemoryfs::MemoryBuffer::make_unowned(const_cast<void *>(data.bytes), data.length);
+    std::unique_ptr<inmemoryfs::InMemoryFileSystem> inMemoryFS = inmemoryfs::make_from_buffer(buffer);
     if (!inMemoryFS) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedModel,

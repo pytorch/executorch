@@ -260,6 +260,7 @@
 		C998838E2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelProfilerTests.mm; path = ../test/ETCoreMLModelProfilerTests.mm; sourceTree = "<group>"; };
 		C99883902B96BEED000953A3 /* ETCoreMLModelCompiler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelCompiler.h; path = ../delegate/ETCoreMLModelCompiler.h; sourceTree = "<group>"; };
 		C99883912B96BEED000953A3 /* ETCoreMLModelCompiler.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelCompiler.mm; path = ../delegate/ETCoreMLModelCompiler.mm; sourceTree = "<group>"; };
+		C988D6FB2B9BA94000979CF6 /* range.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = range.hpp; path = ../inmemoryfs/range.hpp; sourceTree = "<group>"; };
 		C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetManager.mm; path = ../delegate/ETCoreMLAssetManager.mm; sourceTree = "<group>"; };
 		C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAssetManager.h; path = ../delegate/ETCoreMLAssetManager.h; sourceTree = "<group>"; };
 		C9D3DF002A9FD16E001CC178 /* statement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = statement.hpp; path = ../kvstore/statement.hpp; sourceTree = "<group>"; };
@@ -485,6 +486,7 @@
 		C952663F2A7E065F0016283E /* inmemoryfs */ = {
 			isa = PBXGroup;
 			children = (
+				C988D6FB2B9BA94000979CF6 /* range.hpp */,
 				C95266442A7E06760016283E /* inmemory_filesystem.hpp */,
 				C95266452A7E06760016283E /* inmemory_filesystem.cpp */,
 				C97716B12AE9BBBA00FC0DAC /* inmemory_filesystem_utils.hpp */,

@@ -5,29 +5,28 @@
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
-#include "inmemory_filesystem_utils.hpp"
-
-#include <iostream>
-#include <json.hpp>
-#include <sstream>
-
 #include <inmemory_filesystem_metadata.hpp>
 #include <inmemory_filesystem_metadata_keys.hpp>
+#include <inmemory_filesystem_utils.hpp>
+#include <iostream>
+#include <json.hpp>
+#include <json_util.hpp>
+#include <sstream>
 
 namespace inmemoryfs {
 
 using json = nlohmann::json;
 
-void to_json(json& j, const MemoryRegion& region) {
-    j = json { { MemoryRegionKeys::kOffset, region.offset }, { MemoryRegionKeys::kSize, region.size } };
+void to_json(json& j, const Range& range) {
+    j = json { { RangeKeys::kOffset, range.offset }, { RangeKeys::kSize, range.size } };
 }
 
-void from_json(const json& j, MemoryRegion& region) {
-    if (j.contains(MemoryRegionKeys::kOffset)) {
-        j.at(MemoryRegionKeys::kOffset).get_to(region.offset);
+void from_json(const json& j, Range& range) {
+    if (j.contains(RangeKeys::kOffset)) {
+        j.at(RangeKeys::kOffset).get_to(range.offset);
     }
-    if (j.contains(MemoryRegionKeys::kSize)) {
-        j.at(MemoryRegionKeys::kSize).get_to(region.size);
+    if (j.contains(RangeKeys::kSize)) {
+        j.at(RangeKeys::kSize).get_to(range.size);
     }
 }
 
@@ -63,53 +62,80 @@ void from_json(const json& j, InMemoryFileSystemMetadata& fs) {
     }
 }
 
-static void write_metadata_to_stream(const InMemoryFileSystemMetadata& fs_metadata, std::ostream& stream) {
+static std::string serialize_metadata(const InMemoryFileSystemMetadata& fs_metadata) {
     std::stringstream ss;
     json value;
     to_json(value, fs_metadata);
     ss << value;
-    std::string metadata_json = ss.str();
+    std::string result = ss.str();
     // reverse it for writing
-    std::reverse(metadata_json.begin(), metadata_json.end());
-    stream << metadata_json;
+    std::reverse(result.begin(), result.end());
+    return result;
 }
 
-void serialize(const InMemoryFileSystem& file_system,
+static bool write_metadata_to_stream(const InMemoryFileSystemMetadata& fs_metadata, std::ostream& stream) {
+    auto content = serialize_metadata(fs_metadata);
+    stream << content;
+    return stream.good();
+}
+
+static size_t write_metadata_to_buffer(const InMemoryFileSystemMetadata& fs_metadata, void* dst) {
+    auto content = serialize_metadata(fs_metadata);
+    std::memcpy(dst, content.data(), content.length());
+    return content.length();
+}
+
+bool serialize(const InMemoryFileSystem& file_system,
                const std::vector<std::string>& canonical_path,
                size_t alignment,
-               std::ostream& ostream) noexcept {
+               std::ostream& ostream,
+               std::error_code& ec) noexcept {
     InMemoryFileSystem::MetadataWriter metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
                                                             std::ostream& stream) {
         write_metadata_to_stream(fs_metadata, stream);
+        return true;
     };
 
-    file_system.serialize(canonical_path, alignment, metadata_writer, ostream);
+    return file_system.serialize(canonical_path, alignment, metadata_writer, ostream, ec);
 }
 
-size_t get_serialization_size(const InMemoryFileSystem& file_system,
-                              const std::vector<std::string>& canonical_path,
-                              size_t alignment) noexcept {
+bool serialize(const InMemoryFileSystem& file_system,
+               const std::vector<std::string>& canonical_path,
+               size_t alignment,
+               void* dst,
+               std::error_code& ec) noexcept {
+    InMemoryFileSystem::MetadataWriterInMemory metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
+                                                                    void* metadata_dst) {
+        return write_metadata_to_buffer(fs_metadata, metadata_dst);
+    };
+
+    return file_system.serialize(canonical_path, alignment, metadata_writer, dst, ec);
+}
+
+size_t get_buffer_size_for_serialization(const InMemoryFileSystem& file_system,
+                                         const std::vector<std::string>& canonical_path,
+                                         size_t alignment) noexcept {
     InMemoryFileSystem::MetadataWriter metadata_writer = [](const InMemoryFileSystemMetadata& fs_metadata,
                                                             std::ostream& stream) {
-        write_metadata_to_stream(fs_metadata, stream);
+        return write_metadata_to_stream(fs_metadata, stream);
     };
 
-    return file_system.get_serialization_size(canonical_path, alignment, metadata_writer);
+    return file_system.get_buffer_size_for_serialization(canonical_path, alignment, metadata_writer);
 }
 
-std::unique_ptr<InMemoryFileSystem> make(const std::shared_ptr<MemoryBuffer>& buffer) noexcept {
+std::unique_ptr<InMemoryFileSystem> make_from_buffer(const std::shared_ptr<MemoryBuffer>& buffer) noexcept {
     InMemoryFileSystem::MetadataReader metadata_reader = [](std::istream& stream) {
-        json metadata_json;
-        nlohmann::detail::json_sax_dom_parser<json> sdp(metadata_json, true);
-        if (!json::sax_parse(stream, &sdp, nlohmann::detail::input_format_t::json, false)) {
+        auto json_object = executorchcoreml::json::read_object_from_stream(stream);
+        if (!json_object) {
             return std::optional<InMemoryFileSystemMetadata>();
         }
 
+        json metadata_json = json::parse(json_object.value());
         InMemoryFileSystemMetadata metadata;
         from_json(metadata_json, metadata);
         return std::optional<InMemoryFileSystemMetadata>(std::move(metadata));
     };
 
-    return InMemoryFileSystem::make(buffer, metadata_reader);
+    return InMemoryFileSystem::make_from_buffer(buffer, metadata_reader);
 }
 } // namespace inmemoryfs

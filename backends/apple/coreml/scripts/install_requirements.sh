@@ -69,15 +69,8 @@ if [ $STATUS -ne 0 ]; then
     exit 1
 fi
 
-echo "${green}ExecuTorch: Installing inmemoryfs extension."
-pip install "$COREML_DIR_PATH/runtime/inmemoryfs"
-STATUS=$?
-if [ $STATUS -ne 0 ]; then
-    echo "${red}ExecuTorch: Failed to install inmemoryfs extension."
-    exit 1
-fi
+sh "$COREML_DIR_PATH/scripts/install_inmemoryfs.sh"
 
 echo "${green}ExecuTorch: Copying protobuf files."
 mkdir -p "$COREML_DIR_PATH/runtime/sdk/format/" 
 cp -rf "$PROTOBUF_FILES_DIR_PATH" "$COREML_DIR_PATH/runtime/sdk/format/" 
-

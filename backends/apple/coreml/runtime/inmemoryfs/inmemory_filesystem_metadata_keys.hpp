@@ -23,7 +23,7 @@ struct InMemoryFileSystemMetadataKeys {
     constexpr static std::string_view kNodes = "nodes";
 };
 
-struct MemoryRegionKeys {
+struct RangeKeys {
     constexpr static std::string_view kOffset = "offset";
     constexpr static std::string_view kSize = "size";
 };

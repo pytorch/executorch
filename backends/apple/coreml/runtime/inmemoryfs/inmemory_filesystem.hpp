@@ -8,14 +8,13 @@
 #pragma once
 
 #include <functional>
-#include <optional>
+#include <inmemory_filesystem_metadata.hpp>
 #include <memory>
+#include <memory_buffer.hpp>
+#include <optional>
 #include <stdio.h>
 #include <string>
 #include <system_error>
-
-#include <inmemory_filesystem_metadata.hpp>
-#include <memory_buffer.hpp>
 
 namespace inmemoryfs {
 
@@ -29,6 +28,13 @@ public:
         ItemExists,            // If an item at the path already exists.
         DirectoryExpected,     // If path is not a directory.
         FileExpected,          // If the path is not a file.
+    };
+    
+    /// Options for loading file content.
+    enum class FileLoadOption: int8_t {
+        Malloc = 1,   // Copy file contents into memory.
+        MMap,         // Memory map file contents.
+        LazyMMap      // Memory map file contents but lazily.
     };
     
     /// The error category for `InMemoryFileSystem`.
@@ -49,7 +55,8 @@ public:
         {}
     };
     
-    using MetadataWriter = std::function<void(const InMemoryFileSystemMetadata&, std::ostream&)>;
+    using MetadataWriter = std::function<bool(const InMemoryFileSystemMetadata&, std::ostream&)>;
+    using MetadataWriterInMemory = std::function<size_t(const InMemoryFileSystemMetadata&, void *)>;
     using MetadataReader = std::function<std::optional<InMemoryFileSystemMetadata>(std::istream&)>;
     
     /// A class representing an in-memory node. This could either be a file node or a directory node.
@@ -85,7 +92,7 @@ public:
         /// Sets the node attributes.
         ///
         /// @param attributes The node attributes.
-        inline void setAttributes(Attributes attributes) noexcept {
+        inline void set_attributes(Attributes attributes) noexcept {
             attributes_ = std::move(attributes);
         }
         
@@ -97,6 +104,10 @@ public:
         /// Returns the name of the node.
         inline const std::string& name() const noexcept {
             return name_;
+        }
+        
+        inline void set_name(std::string name) noexcept {
+            std::swap(name_, name);
         }
         
         /// Returns `true` if the node is a directory otherwise `false`.
@@ -115,12 +126,12 @@ public:
         }
         
     private:
-        const std::string name_;
+        std::string name_;
         InMemoryFileSystem::Attributes attributes_;
         const Kind kind_;
     };
     
-    /// Constructs an`InMemoryFileSystem` instance with an empty root with the specified name.
+    /// Constructs an`InMemoryFileSystem` instance with an empty root and the specified name.
     ///
     /// @param rootName The name of the root node.
     explicit InMemoryFileSystem(std::string rootName = "root") noexcept;
@@ -241,16 +252,29 @@ public:
                             bool recursive,
                             std::error_code& error) const noexcept;
     
+    /// Renames the item at the specified path, if there is already an item with the same name then
+    /// the rename would fail.
+    ///
+    /// @param canonical_path  The path components from the root.
+    /// @param name The new name,
+    /// @param error   On failure, error is populated with the failure reason.
+    /// @retval `true` if the write succeeded otherwise `false`.
+    bool rename_item(const std::vector<std::string>& canonical_path,
+                     const std::string& name,
+                     std::error_code& error) noexcept;
+    
     /// Creates  an`InMemoryFileSystem` from the filesystem path.
     ///
     /// The structure of the `InMemoryFileSystem` is identical to the structure of the filesystem at the
     /// specified path.
     ///
     /// @param path  The filesystem path.
+    /// @param option The loading option.
     /// @param error   On failure, error is populated with the failure reason.
     /// @retval The `InMemoryFileSystem` instance if the construction succeeded otherwise `nullptr`.
-    static std::unique_ptr<InMemoryFileSystem> make(const std::string& path,
-                                                    std::error_code& error) noexcept;
+    static std::unique_ptr<InMemoryFileSystem> make_from_directory(const std::string& path,
+                                                                   FileLoadOption option,
+                                                                   std::error_code& error) noexcept;
     
     /// Serializes the item at the specified path and writes it to the stream.
     ///
@@ -258,31 +282,51 @@ public:
     /// specified path.
     ///
     /// @param canonical_path  The path components from the root.
-    /// @param alignment  The offset alignment where an item is written to the stream.
-    /// @param metadata_writer The function to use when writing the filesystem metadata.
+    /// @param alignment  The alignment of the offset where an item is written to the stream.
+    /// @param metadata_writer The function to use when serializing the filesystem metadata.
     /// @param ostream   The output stream.
-    void serialize(const std::vector<std::string>& canonical_path,
+    /// @param error   On failure, error is populated with the failure reason.
+    /// @retval `true` if the serialized bytes were written to `ostream` otherwise `false`.
+    bool serialize(const std::vector<std::string>& canonical_path,
                    size_t alignment,
                    const MetadataWriter& metadata_writer,
-                   std::ostream& ostream) const noexcept;
+                   std::ostream& ostream,
+                   std::error_code& error) const noexcept;
+    
+    /// Serializes the item at the specified path and writes it to the stream.
+    ///
+    /// The structure of the `InMemoryFileSystem` is identical to the structure of the filesystem at the
+    /// specified path.
+    ///
+    /// @param canonical_path  The path components from the root.
+    /// @param alignment  The alignment of the offset where an item is written to the stream.
+    /// @param metadata_writer The function to use when serializing the filesystem metadata.
+    /// @param dst   The destination pointer.
+    /// @param error   On failure, error is populated with the failure reason.
+    /// @retval `true` if the serialized bytes were written to `ostream` otherwise `false`.
+    bool serialize(const std::vector<std::string>& canonical_path,
+                   size_t alignment,
+                   const MetadataWriterInMemory& metadata_writer,
+                   void *dst,
+                   std::error_code& error) const noexcept;
     
     /// Computes the size of the buffer that would be needed to serialized the item at the specified path.
     ///
     /// @param canonical_path  The path components from the root.
     /// @param alignment  The offset alignment where an item is written to the stream.
-    /// @param metadata_writer The function to use when writing the filesystem metadata.
+    /// @param metadata_writer The function to use when serializing the filesystem metadata.
     /// @retval The size of the buffer that will be needed to write the item at the specified path.
-    size_t get_serialization_size(const std::vector<std::string>& canonical_path,
-                                  size_t alignment,
-                                  const MetadataWriter& metadata_writer) const noexcept;
+    size_t get_buffer_size_for_serialization(const std::vector<std::string>& canonical_path,
+                                             size_t alignment,
+                                             const MetadataWriter& metadata_writer) const noexcept;
     
     /// Constructs an `InMemoryFileSystem` instance from the buffer contents.
     ///
     /// @param buffer  The memory buffer.
-    /// @param metadata_reader The function to use when reading the filesystem metadata.
+    /// @param metadata_reader The function to use when deserializing the filesystem metadata.
     /// @retval The constructed `InMemoryFileSystem` or `nullptr` if the deserialization failed.
-    static std::unique_ptr<InMemoryFileSystem> make(const std::shared_ptr<MemoryBuffer>& buffer,
-                                                    const MetadataReader& metadata_reader) noexcept;
+    static std::unique_ptr<InMemoryFileSystem> make_from_buffer(const std::shared_ptr<MemoryBuffer>& buffer,
+                                                                const MetadataReader& metadata_reader) noexcept;
     
 private:
     const std::unique_ptr<InMemoryNode> root_;
