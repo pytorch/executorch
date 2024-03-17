@@ -75,9 +75,9 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
 
 @property (readonly, strong, nonatomic) ETCoreMLAsset *modelAsset;
 @property (readonly, strong, nonatomic) ETCoreMLAssetManager *assetManager;
-@property (strong, nonatomic) ETCoreMLModelProfiler *profiler;
-@property (strong, nonatomic) ETCoreMLModelDebugger *debugger;
-@property (strong, nonatomic) id<ETCoreMLModelExecutor> executor;
+@property (strong, nonatomic, nullable) ETCoreMLModelProfiler *profiler;
+@property (strong, nonatomic, nullable) ETCoreMLModelDebugger *debugger;
+@property (strong, nonatomic, nullable) id<ETCoreMLModelExecutor> executor;
 @property (readonly, copy, nonatomic, nullable) NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap;
 @property (readonly, strong, nonatomic) MLModelConfiguration *configuration;
 
@@ -86,7 +86,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
 @implementation ETCoreMLModelAnalyzer
 
 - (nullable instancetype)initWithCompiledModelAsset:(ETCoreMLAsset *)compiledModelAsset
-                                         modelAsset:(ETCoreMLAsset *)modelAsset
+                                         modelAsset:(nullable ETCoreMLAsset *)modelAsset
                                            metadata:(const executorchcoreml::ModelMetadata&)metadata
                                       configuration:(MLModelConfiguration *)configuration
                                        assetManager:(ETCoreMLAssetManager *)assetManager
@@ -164,6 +164,14 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                                          predictionOptions:(MLPredictionOptions *)predictionOptions
                                                eventLogger:(const executorchcoreml::ModelEventLogger *)eventLogger
                                                      error:(NSError * __autoreleasing *)error {
+    if (!self.modelAsset) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorCorruptedData,
+                                      "%@: There is no mlpackage, mlpackage is required for debugging a model. Please check the export path.",
+                                      NSStringFromClass(ETCoreMLModelAnalyzer.class));
+        return nil;
+    }
+    
     if (!self.debugger) {
         self.debugger = [[ETCoreMLModelDebugger alloc] initWithModelAsset:self.modelAsset
                                                               outputNames:self.model.orderedOutputNames
@@ -196,13 +204,13 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
             }
         }
     }
-  
+    
     return modelOutputs;
 }
 
 - (nullable NSArray<MLMultiArray *> *)executeModelWithInputs:(id<MLFeatureProvider>)inputs
                                            predictionOptions:(MLPredictionOptions *)predictionOptions
-                                             loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
+                                              loggingOptions:(const executorchcoreml::ModelLoggingOptions&)loggingOptions
                                                  eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
     NSError *localError = nil;
@@ -226,7 +234,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
     if (!loggingOptions.log_profiling_info && !loggingOptions.log_intermediate_tensors) {
         outputs = [self.executor executeModelWithInputs:inputs
                                       predictionOptions:predictionOptions
-                                        loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                         loggingOptions:executorchcoreml::ModelLoggingOptions()
                                             eventLogger:nullptr
                                                   error:&localError];
     }
