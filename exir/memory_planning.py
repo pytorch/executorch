@@ -261,6 +261,19 @@ class Verifier:
                 graph_output_allocated == self.alloc_graph_output
             ), f"Misallocate graph output {graph_output_allocated} v.s. {self.alloc_graph_output}"
 
+    def verify_memory_view_are_memory_planned(self) -> None:
+        """
+        memory.view nodes should only exist if their base is memory planned.
+        """
+        for node in self.graph_module.graph.nodes:
+            if node.op == "call_function" and node.target == memory.view:
+                assert (
+                    node.meta["spec"].const or node.meta["spec"].mem_id is not None
+                ), "memory.view node is not const and has no mem_id."
+                assert (
+                    node.meta["spec"].const or node.meta["spec"].mem_offset is not None
+                ), "memory.view node is not const has no mem_offset."
+
 
 def register_algo(fn: Callable[..., List[int]]) -> Callable[..., List[int]]:
     algo_name = fn.__name__
@@ -535,7 +548,13 @@ def get_node_tensor_specs(
     has no tensor specs.
     """
     # get tensor specs
-    specs = node.meta.get("spec")
+    if node.target == memory.view:
+        base = node.args[0]
+        assert isinstance(base, torch.fx.Node)
+        specs = base.meta.get("spec")
+    else:
+        specs = node.meta.get("spec")
+
     if isinstance(specs, TensorSpec):
         specs = [specs]
     if not isinstance(specs, (list, tuple)):
