@@ -71,7 +71,7 @@
 }
 
 + (NSString *)cpuAndNeuralEngineComputeUnitsName {
-    static NSString * const ETCoreMLCPUAndNeuralEngineComputeUnitsName = @"cpu_and_ane";
+    static NSString * const ETCoreMLCPUAndNeuralEngineComputeUnitsName = @"cpu_and_ne";
     return ETCoreMLCPUAndNeuralEngineComputeUnitsName;
 }
 

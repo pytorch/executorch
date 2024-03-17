@@ -7,12 +7,23 @@
 
 #import <ETCoreMLModelCompiler.h>
 #import <ETCoreMLLogging.h>
+#import <TargetConditionals.h>
 
 @implementation ETCoreMLModelCompiler
 
 + (nullable NSURL *)compileModelAtURL:(NSURL *)modelURL
                  maxWaitTimeInSeconds:(NSTimeInterval)maxWaitTimeInSeconds
                                 error:(NSError* __autoreleasing *)error {
+#if TARGET_OS_WATCH
+    (void)modelURL;
+    (void)maxWaitTimeInSeconds;
+    (void)error;
+    ETCoreMLLogErrorAndSetNSError(error,
+                                  ETCoreMLErrorModelCompilationNotSupported,
+                                  "%@: Model compilation is not supported on the target, please make sure to export a compiled model.",
+                                  NSStringFromClass(ETCoreMLModelCompiler.class));
+    return nil;
+#else
     __block NSError *localError = nil;
     __block NSURL *result = nil;
     
@@ -34,6 +45,7 @@
     }
     
     return result;
+#endif
 }
 
 @end

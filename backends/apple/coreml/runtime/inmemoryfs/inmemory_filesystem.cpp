@@ -427,7 +427,7 @@ bool InMemoryFileSystem::is_file(const std::vector<std::string>& canonical_path)
     return node && node->isFile();
 }
 
-bool InMemoryFileSystem::exists(const std::vector<std::string>& canonical_path) noexcept {
+bool InMemoryFileSystem::exists(const std::vector<std::string>& canonical_path) const noexcept {
     auto node = get_node(root_.get(), canonical_path.begin(), canonical_path.end());
     return node != nullptr;
 }

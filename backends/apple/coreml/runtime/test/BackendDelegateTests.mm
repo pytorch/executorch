@@ -146,7 +146,7 @@ std::vector<MultiArray> toMultiArrays(NSArray<MLMultiArray *> *mlMultiArrays) {
     
     {
         std::unordered_map<std::string, Buffer> compileSpecs;
-        NSData *specData = [@"cpu_and_ane" dataUsingEncoding:NSUTF8StringEncoding];
+        NSData *specData = [@"cpu_and_ne" dataUsingEncoding:NSUTF8StringEncoding];
         compileSpecs.emplace(computeUnitsKey, Buffer(specData.bytes, specData.length));
         BackendDelegate::Handle *handle = _delegate->init(Buffer(data.bytes, data.length), compileSpecs);
         ETCoreMLModel *model = (__bridge ETCoreMLModel *)handle;
