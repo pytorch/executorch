@@ -7,8 +7,10 @@
 
 #include "inmemory_filesystem.hpp"
 
+#include <assert.h>
 #include <fstream>
 #include <iostream>
+#include <range.hpp>
 #include <sstream>
 
 #if __has_include(<filesystem>)
@@ -74,6 +76,20 @@ public:
         return it->second.get();
     }
 
+    InMemoryNode* rename_item(const std::string& old_name, const std::string& new_name) noexcept {
+        auto it = items_.find(old_name);
+        if (it == items_.end()) {
+            return nullptr;
+        }
+
+        auto node = std::move(it->second);
+        auto ptr = node.get();
+        items_.erase(old_name);
+        items_.emplace(new_name, std::move(node));
+
+        return ptr;
+    }
+
 private:
     ItemsType items_;
 };
@@ -128,12 +144,26 @@ InMemoryFileSystem::Attributes get_file_attributes(const std::filesystem::path& 
     return attributes;
 }
 
-std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_file_node(const std::filesystem::path& path,
-                                                                 std::error_code& error) {
-    error.clear();
+MemoryBuffer::ReadOption to_memory_buffer_read_option(InMemoryFileSystem::FileLoadOption option) {
+    switch (option) {
+        case InMemoryFileSystem::FileLoadOption::Malloc:
+            return MemoryBuffer::ReadOption::Malloc;
+
+        case InMemoryFileSystem::FileLoadOption::MMap:
+            return MemoryBuffer::ReadOption::MMap;
+
+        case InMemoryFileSystem::FileLoadOption::LazyMMap:
+            return MemoryBuffer::ReadOption::LazyMMap;
+    }
+}
+
+std::unique_ptr<InMemoryFileSystem::InMemoryNode>
+make_file_node(const std::filesystem::path& path, InMemoryFileSystem::FileLoadOption option, std::error_code& error) {
     auto name = path.filename().string();
     auto file_path = path.string();
-    auto buffer = MemoryBuffer::read_file_content(file_path, MemoryBuffer::ReadOption::Any, error);
+
+
+    auto buffer = MemoryBuffer::read_file_content(file_path, to_memory_buffer_read_option(option), error);
     if (error) {
         return nullptr;
     }
@@ -143,6 +173,7 @@ std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_file_node(const std::file
 }
 
 std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_directory_node(const std::filesystem::path& path,
+                                                                      InMemoryFileSystem::FileLoadOption option,
                                                                       std::error_code& error) {
     auto name = path.filename();
     std::unordered_map<std::string, std::unique_ptr<InMemoryFileSystem::InMemoryNode>> items = {};
@@ -155,9 +186,9 @@ std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_directory_node(const std:
         auto itemName = itemPath.filename().string();
         std::unique_ptr<InMemoryFileSystem::InMemoryNode> node;
         if (entry.is_directory()) {
-            node = make_directory_node(itemPath, error);
+            node = make_directory_node(itemPath, option, error);
         } else if (!entry.is_directory()) {
-            node = make_file_node(itemPath, error);
+            node = make_file_node(itemPath, option, error);
         }
 
         if (node) {
@@ -168,8 +199,8 @@ std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_directory_node(const std:
     return std::make_unique<InMemoryDirectoryNode>(std::move(name), std::move(attributes), std::move(items));
 }
 
-std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_node(const std::filesystem::path& path, std::error_code& error) {
-    error.clear();
+std::unique_ptr<InMemoryFileSystem::InMemoryNode>
+make_node(const std::filesystem::path& path, InMemoryFileSystem::FileLoadOption option, std::error_code& error) {
     auto status = std::filesystem::exists(path, error);
     if (!status || error) {
         return nullptr;
@@ -182,10 +213,10 @@ std::unique_ptr<InMemoryFileSystem::InMemoryNode> make_node(const std::filesyste
     }
 
     if (isDirectory) {
-        return make_directory_node(path, error);
+        return make_directory_node(path, option, error);
     }
 
-    return make_file_node(path, error);
+    return make_file_node(path, option, error);
 }
 
 bool write_node(InMemoryFileSystem::InMemoryNode* node,
@@ -194,7 +225,6 @@ bool write_node(InMemoryFileSystem::InMemoryNode* node,
                 std::error_code& error);
 
 bool write_file_node(InMemoryFileNode* node, const std::filesystem::path& dst_path, std::error_code& error) {
-    error.clear();
     std::filesystem::path file_path = dst_path;
     file_path.append(node->name());
     std::ofstream stream;
@@ -205,6 +235,9 @@ bool write_file_node(InMemoryFileNode* node, const std::filesystem::path& dst_pa
     }
     auto buffer = node->getBuffer().get();
     if (buffer->size() > 0) {
+        if (!buffer->load(error)) {
+            return false;
+        }
         char* bufferPtr = static_cast<char*>(buffer->data());
         stream.write(bufferPtr, static_cast<std::streamsize>(buffer->size()));
     }
@@ -220,7 +253,6 @@ bool write_directory_node(InMemoryDirectoryNode* node,
                           const std::filesystem::path& dst_path,
                           bool recursive,
                           std::error_code& error) {
-    error.clear();
     std::filesystem::path dir_path = dst_path;
     dir_path.append(node->name());
     if (!std::filesystem::create_directory(dir_path, error)) {
@@ -262,6 +294,7 @@ struct Attributes {
 struct FlattenedInMemoryNode {
     InMemoryNodeMetadata metadata;
     InMemoryFileNode* file_node = nullptr;
+    std::pair<size_t, size_t> offset_range = { 0, 0 };
 
     FlattenedInMemoryNode(InMemoryNodeMetadata metadata) noexcept : metadata(std::move(metadata)) { }
 
@@ -278,7 +311,7 @@ size_t next_offset_to_write(const std::vector<FlattenedInMemoryNode>& nodes) noe
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
         const auto& metadata = it->metadata;
         if (metadata.kind == static_cast<int>(InMemoryFileSystem::InMemoryNode::Kind::File)) {
-            return metadata.data_region.get_length() + 1;
+            return metadata.data_region.length();
         }
     }
 
@@ -300,7 +333,9 @@ void populate(InMemoryFileSystem::InMemoryNode* node,
             size_t offset = align(next_offset_to_write(result), alignment);
             auto buffer = file_node->getBuffer();
             size_t size = buffer->size();
-            flattened_node_metadata.data_region = MemoryRegion(offset, size);
+            flattened_node.metadata.data_region = Range(offset, size);
+            auto offset_range = buffer->get_offset_range(offset);
+            flattened_node.offset_range = offset_range;
             flattened_node.file_node = file_node;
             node_to_index_map[node] = index;
             break;
@@ -393,6 +428,28 @@ std::vector<FlattenedInMemoryNode> get_flattened_nodes(std::vector<InMemoryNodeM
         [](InMemoryNodeMetadata&& node_metadata) { return FlattenedInMemoryNode(std::move(node_metadata)); });
 
     return flattened_nodes;
+}
+
+bool fill_stream(std::vector<uint8_t>& buffer, std::ostream& stream, size_t size) {
+    if (size == 0) {
+        return true;
+    }
+
+    size_t n = size / buffer.size();
+    for (size_t i = 0; i < n; i++) {
+        if (!stream.write(reinterpret_cast<char*>(buffer.data()), buffer.size()).good()) {
+            return false;
+        }
+    }
+
+    size_t rem = size % buffer.size();
+    if (rem > 0) {
+        if (!stream.write(reinterpret_cast<char*>(buffer.data()), rem).good()) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace
@@ -574,6 +631,33 @@ bool InMemoryFileSystem::remove_item(const std::vector<std::string>& canonical_p
     return true;
 }
 
+bool InMemoryFileSystem::rename_item(const std::vector<std::string>& canonical_path,
+                                     const std::string& name,
+                                     std::error_code& error) noexcept {
+
+    auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
+    if (!node) {
+        error = InMemoryFileSystem::ErrorCode::ItemNotFound;
+        return false;
+    }
+
+    auto parent_node =
+        canonical_path.size() > 0 ? get_node(root(), canonical_path.begin(), std::prev(canonical_path.end())) : nullptr;
+    if (parent_node && parent_node->isDirectory()) {
+        InMemoryDirectoryNode* parent_directory_node = static_cast<InMemoryDirectoryNode*>(parent_node);
+        if (parent_directory_node->contains(name)) {
+            error = InMemoryFileSystem::ErrorCode::ItemExists;
+            return false;
+        }
+
+        parent_directory_node->rename_item(node->name(), name);
+    } else {
+        node->set_name(name);
+    }
+
+    return true;
+}
+
 bool InMemoryFileSystem::set_attributes(const std::vector<std::string>& canonical_path,
                                         Attributes attributes,
                                         std::error_code& error) noexcept {
@@ -588,7 +672,7 @@ bool InMemoryFileSystem::set_attributes(const std::vector<std::string>& canonica
         return false;
     }
 
-    node->setAttributes(std::move(attributes));
+    node->set_attributes(std::move(attributes));
     return true;
 }
 
@@ -618,14 +702,21 @@ bool InMemoryFileSystem::write_item_to_disk(const std::vector<std::string>& cano
     return result;
 }
 
-std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::string& path, std::error_code& error) noexcept {
+std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make_from_directory(const std::string& path,
+                                                                            FileLoadOption option,
+                                                                            std::error_code& error) noexcept {
     std::filesystem::path file_path(path);
     auto status = std::filesystem::exists(file_path, error);
-    if (!status || error) {
+    if (error) {
         return nullptr;
     }
 
-    auto node = make_node(file_path, error);
+    if (!status) {
+        error = InMemoryFileSystem::ErrorCode::ItemNotFound;
+        return nullptr;
+    }
+
+    auto node = make_node(file_path, option, error);
     if (!node) {
         return nullptr;
     }
@@ -644,37 +735,68 @@ std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::string& 
     }
 }
 
-void InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_path,
+bool InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_path,
                                    size_t alignment,
                                    const MetadataWriter& metadata_writer,
-                                   std::ostream& stream) const noexcept {
+                                   std::ostream& stream,
+                                   std::error_code& error) const noexcept {
+    assert(alignment > 0);
     auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
     if (!node) {
-        return;
+        return true;
     }
 
+    static constexpr size_t buffer_size = 512;
+    std::vector<uint8_t> empty_buffer(buffer_size, 0);
     auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
+    size_t write_pos = 0;
     for (const auto& flattened_node: flattened_nodes) {
         if (flattened_node.file_node == nullptr) {
             continue;
         }
+
         const auto& flattened_node_metadata = flattened_node.metadata;
-        auto region = flattened_node_metadata.data_region;
+        auto range = flattened_node_metadata.data_region;
         auto buffer = flattened_node.file_node->getBuffer();
+        if (!buffer->load(error)) {
+            return false;
+        }
+
         auto start = static_cast<char*>(buffer->data());
-        stream.seekp(region.offset);
-        stream.write(start, region.size);
+        assert(range.offset >= write_pos);
+        if (!fill_stream(empty_buffer, stream, range.offset - write_pos)) {
+            error = std::error_code(errno, std::system_category());
+            return false;
+        }
+
+        if (!stream.write(start, range.size).good()) {
+            error = std::error_code(errno, std::system_category());
+            return false;
+        }
+
+        write_pos = std::max(write_pos, range.length());
+    }
+
+    size_t metadata_write_pos = align(write_pos, alignment);
+    if (!fill_stream(empty_buffer, stream, metadata_write_pos - write_pos)) {
+        error = std::error_code(errno, std::system_category());
+        return false;
     }
 
     auto fs_metadata = get_metadatas(std::move(flattened_nodes));
     // Serialize metadata at the end of the stream.
-    metadata_writer(fs_metadata, stream);
+    if (!metadata_writer(fs_metadata, stream)) {
+        error = std::error_code(errno, std::system_category());
+        return false;
+    }
+
+    return true;
 }
 
-size_t InMemoryFileSystem::get_serialization_size(const std::vector<std::string>& canonical_path,
-                                                  size_t alignment,
-                                                  const MetadataWriter& metadata_writer) const noexcept {
-
+size_t InMemoryFileSystem::get_buffer_size_for_serialization(const std::vector<std::string>& canonical_path,
+                                                             size_t alignment,
+                                                             const MetadataWriter& metadata_writer) const noexcept {
+    assert(alignment > 0);
     auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
     if (!node) {
         return 0;
@@ -682,21 +804,77 @@ size_t InMemoryFileSystem::get_serialization_size(const std::vector<std::string>
 
     auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
     size_t length = 0;
-    for (const auto& flattened_node: flattened_nodes) {
-        auto region = flattened_node.metadata.data_region;
-        length = std::max(region.get_length(), length);
+    size_t diff = 0;
+    for (auto& flattened_node: flattened_nodes) {
+        if (flattened_node.file_node == nullptr) {
+            continue;
+        }
+
+        auto& data_region = flattened_node.metadata.data_region;
+        size_t max_offset = flattened_node.offset_range.second;
+        size_t proposed_offset = data_region.offset;
+        // When calculating length make sure that we use the maximum offset.
+        data_region.offset = max_offset + diff;
+        diff += (max_offset - proposed_offset);
+        length = data_region.length();
     }
 
+    length = align(length, alignment);
     auto fs_metadata = get_metadatas(std::move(flattened_nodes));
     std::stringstream stream;
     metadata_writer(fs_metadata, stream);
+    assert(stream.good());
     length += stream.str().length();
 
     return length;
 }
 
-std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::shared_ptr<MemoryBuffer>& buffer,
-                                                             const MetadataReader& metadata_reader) noexcept {
+
+bool InMemoryFileSystem::serialize(const std::vector<std::string>& canonical_path,
+                                   size_t alignment,
+                                   const MetadataWriterInMemory& metadata_writer,
+                                   void* dst,
+                                   std::error_code& error) const noexcept {
+    assert(alignment > 0);
+    auto node = get_node(root(), canonical_path.begin(), canonical_path.end());
+    if (!node) {
+        return true;
+    }
+
+    uint8_t* ptr = static_cast<uint8_t*>(dst);
+    size_t write_pos = 0;
+    ssize_t diff = 0;
+    auto flattened_nodes = FlattenedInMemoryNode::flatten(node, alignment);
+    for (auto& flattened_node: flattened_nodes) {
+        if (flattened_node.file_node == nullptr) {
+            continue;
+        }
+
+        auto& data_region = flattened_node.metadata.data_region;
+        auto buffer = flattened_node.file_node->getBuffer();
+        // Get the revised range that must be used for writing the buffer content.
+        Range revised_data_region =
+            buffer->get_revised_range_for_writing(dst, Range(data_region.offset + diff, data_region.size));
+        if (!buffer->write(ptr, revised_data_region.offset, error)) {
+            return false;
+        }
+
+        diff += (revised_data_region.offset - data_region.offset);
+        // update data region.
+        data_region = revised_data_region;
+        write_pos = std::max(write_pos, data_region.length());
+    }
+
+    size_t metadata_write_pos = align(write_pos, alignment);
+    auto fs_metadata = get_metadatas(std::move(flattened_nodes));
+    // Serialize metadata at the end of the stream.
+    metadata_writer(fs_metadata, ptr + metadata_write_pos);
+    return true;
+}
+
+std::unique_ptr<InMemoryFileSystem>
+InMemoryFileSystem::make_from_buffer(const std::shared_ptr<MemoryBuffer>& buffer,
+                                     const MetadataReader& metadata_reader) noexcept {
     // read metadata from the end of the stream
     auto istream = ReversedIMemoryStream(buffer);
     auto fs_metadata = metadata_reader(istream);
@@ -712,5 +890,4 @@ std::unique_ptr<InMemoryFileSystem> InMemoryFileSystem::make(const std::shared_p
 
     return std::make_unique<InMemoryFileSystem>(std::move(rootNode));
 }
-
 } // namespace inmemoryfs
