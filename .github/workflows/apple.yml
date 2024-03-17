@@ -65,7 +65,13 @@ jobs:
         pushd "${WORKSPACE}/pytorch/executorch"
         BUILD_TOOL=cmake
         VERSION="0.1.0"
-        OUTPUT="executorch-${VERSION}"
+        FRAMEWORKS=(
+          "executorch"
+          "coreml_backend"
+          "mps_backend"
+          "portable_backend"
+          "xnnpack_backend"
+        )
 
         .ci/scripts/setup-conda.sh
 
@@ -83,11 +89,12 @@ jobs:
 
         # Build iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --output="${OUTPUT}" --coreml --mps --portable --xnnpack
+        build/build_apple_frameworks.sh --coreml --mps --portable --xnnpack
 
         # Bundle iOS Frameworks
-        cp LICENSE "${OUTPUT}"
-        zip -r "${RUNNER_TEMP}/artifacts/${OUTPUT}.zip" "${OUTPUT}"
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do
+          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "cmake-out/${FRAMEWORK}.xcframework" LICENSE
+        done
 
         popd
 
