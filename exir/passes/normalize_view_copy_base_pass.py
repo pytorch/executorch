@@ -29,8 +29,6 @@ class NormalizeViewCopyBasePass(PassBase):
 
     When combined with dead-code elimination, this pass removes redundant
     view_copy nodes.
-
-    TODO: replace RemoveRedundantViewCopyPass with NormalizeViewCopyBasePass + dead code elimination.
     """
 
     def call(self, graph_module: torch.fx.GraphModule) -> PassResult:

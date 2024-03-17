@@ -1254,6 +1254,11 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(count_copies(gm), 1)
 
     def test_remove_redundant_view_copy_pass(self) -> None:
+        # This tests that redundant view_copy nodes are removed
+        # during to_edge.  There is no pass that explicitly does this.
+        # It results from running the NormalizeViewCopyBasePass and dead code
+        # elimination.
+
         def is_view(node: torch.fx.Node) -> bool:
             return node.op == "call_function" and node.target in (
                 torch.ops.aten.view_copy.default,
@@ -1271,7 +1276,7 @@ class TestPasses(unittest.TestCase):
 
         view_chain = ViewChain()
 
-        exported_program = export(view_chain, (torch.ones(30),))
+        exported_program = torch.export.export(view_chain, (torch.ones(30),))
         n_views_before = 0
         for node in exported_program.graph.nodes:
             if is_view(node):
