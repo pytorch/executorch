@@ -597,6 +597,14 @@
                     <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
                         <span class="sa">f</span><span class="s2">&quot;placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: </span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2"> &quot;</span>
                     <span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="c1"># check that the users all belong to the same tag</span>
+                    <span class="k">for</span> <span class="n">user</span> <span class="ow">in</span> <span class="n">node</span><span class="o">.</span><span class="n">users</span><span class="p">:</span>
+                        <span class="n">users_tag</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">users_tag</span> <span class="o">!=</span> <span class="n">tag</span><span class="p">:</span>
+                            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                                <span class="sa">f</span><span class="s2">&quot;constant data node (</span><span class="si">{</span><span class="n">node</span><span class="si">}</span><span class="s2">) is tagged with (</span><span class="si">{</span><span class="n">tag</span><span class="si">}</span><span class="s2">) but has user (</span><span class="si">{</span><span class="n">user</span><span class="si">}</span><span class="s2">) which has tag (</span><span class="si">{</span><span class="n">users_tag</span><span class="si">}</span><span class="s2">)&quot;</span>
+                            <span class="p">)</span>
             <span class="n">node_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">node_list</span>
 
@@ -636,7 +644,7 @@
         <span class="n">logging</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Partitioned graph module: </span><span class="si">{</span><span class="n">tagged_graph_module</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
         <span class="n">submodule_program</span> <span class="o">=</span> <span class="n">create_exported_program_from_submodule</span><span class="p">(</span>
-            <span class="n">submodule</span><span class="p">,</span> <span class="n">owning_program</span>
+            <span class="n">submodule</span><span class="p">,</span> <span class="n">owning_program</span><span class="p">,</span> <span class="n">tag</span>
         <span class="p">)</span>
 
         <span class="n">lowered_submodule</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span>
@@ -647,9 +655,12 @@
 
         <span class="c1"># call delegate args should only use user_inputs</span>
         <span class="n">call_delegate_args</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">inp</span> <span class="ow">in</span> <span class="n">call_module_node</span><span class="o">.</span><span class="n">all_input_nodes</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">submodule_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">:</span>
-                <span class="n">call_delegate_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inp</span><span class="p">)</span>
+        <span class="c1"># Preserve input order as user_inputs</span>
+        <span class="k">for</span> <span class="n">inp_name</span> <span class="ow">in</span> <span class="n">submodule_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">inp_node</span> <span class="ow">in</span> <span class="n">call_module_node</span><span class="o">.</span><span class="n">all_input_nodes</span><span class="p">:</span>
+                <span class="k">if</span> <span class="n">inp_node</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">inp_name</span><span class="p">:</span>
+                    <span class="n">call_delegate_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">inp_node</span><span class="p">)</span>
+                    <span class="k">break</span>
 
         <span class="c1"># Replace the partitioned submodule with a lowered submodule</span>
         <span class="c1"># Add call_method node with function &quot;forward&quot;</span>
@@ -784,7 +795,8 @@
     <span class="c1"># TODO(angelayi): Update this signature in a less manual way (maybe through</span>
     <span class="c1"># retracing)</span>
     <span class="n">new_signature</span><span class="p">,</span> <span class="n">new_state_dict</span><span class="p">,</span> <span class="n">new_constants</span> <span class="o">=</span> <span class="n">_get_new_signature</span><span class="p">(</span>
-        <span class="n">edge_program</span><span class="p">,</span> <span class="n">tagged_graph_module</span>
+        <span class="n">edge_program</span><span class="p">,</span>
+        <span class="n">tagged_graph_module</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">return</span> <span class="n">ExportedProgram</span><span class="p">(</span>
         <span class="n">root</span><span class="o">=</span><span class="n">tagged_graph_module</span><span class="p">,</span>
