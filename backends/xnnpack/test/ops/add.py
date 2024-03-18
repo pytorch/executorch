@@ -83,6 +83,25 @@ class TestAdd(unittest.TestCase):
             .compare_outputs()
         )
 
+    def test_qs8_add_constant(self):
+        inputs = (torch.randn(4, 4, 4),)
+        (
+            Tester(self.AddConstant(torch.ones(4, 4, 4)), inputs)
+            .quantize()
+            .export()
+            .check_count({"torch.ops.aten.add.Tensor": 4})
+            .to_edge()
+            .check_count({"executorch_exir_dialects_edge__ops_aten_add_Tensor": 4})
+            .partition()
+            .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
+            .to_executorch()
+            .serialize()
+            .dump_artifact("/data/users/maxren/models/q_add_constant.pte")
+            .run_method()
+            .compare_outputs()
+        )
+
     def test_qs8_add(self):
         inputs = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 4))
         (

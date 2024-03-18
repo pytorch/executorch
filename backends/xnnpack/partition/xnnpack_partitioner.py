@@ -25,6 +25,7 @@ from executorch.backends.xnnpack.partition.graphs import bilinear_2d, sdpa
 from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
+from executorch.backends.xnnpack.utils.quant_utils import is_dequant
 from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
@@ -99,6 +100,12 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         self.supported_ops = supported_ops
         self.constraints = constraints_dict
         self.ep = ep
+        self.nodes_with_packed_weights = {
+            exir_ops.edge.aten.convolution.default,
+            exir_ops.edge.aten.addmm.default,
+            exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.bmm.default,
+        }
         assert len(self.constraints)
 
     def _check_inputs_are_valid_dtypes(self, node, valid_dtypes):
@@ -191,9 +198,18 @@ class XnnpackOperatorSupport(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         # Parameters are supported if any of their users are supported
         if is_param_node(self.ep, node):
-            return any(
-                self.is_node_supported(submodules, user) for user in node.users.keys()
-            )
+            for user in node.users.keys():
+                user_of_param = user
+                if is_dequant(user):
+                    user_of_param = list(user.users.keys())[0]
+                if (
+                    self.is_node_supported(submodules, user_of_param)
+                    and user_of_param.target in self.nodes_with_packed_weights
+                ):
+                    return True
+
+            return False
+
         # TODO - other ops?
         if node.op != "call_function":
             return False
