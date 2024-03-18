@@ -5,10 +5,10 @@ unary_op:
     DTYPE: float
   generate_variant_forall:
     DTYPE:
-      - VALUE: "half"
-        SUFFIX: "half"
-      - VALUE: "float"
-        SUFFIX: "float"
+      - VALUE: half
+        SUFFIX: half
+      - VALUE: float
+        SUFFIX: float
   shader_variants:
     - NAME: clamp
       OPERATOR: clamp(X, A, B)

@@ -27,13 +27,7 @@ void resize_clamp_node(
   vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
   vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
 
-  std::vector<int64_t> new_out_sizes(self.sizes().size());
-
-  for (int i = 0; i < new_out_sizes.size(); ++i) {
-    new_out_sizes.at(i) = api::utils::val_at(i, self.sizes());
-  }
-
-  out.virtual_resize(new_out_sizes);
+  out.virtual_resize(self.sizes());
 }
 
 void add_clamp_node(
