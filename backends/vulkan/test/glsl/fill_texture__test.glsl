@@ -8,14 +8,13 @@
 
 #version 450 core
 #define PRECISION ${PRECISION}
-#define FORMAT ${FORMAT}
 
 layout(std430) buffer;
 
 /* Qualifiers: layout - storage - precision - memory */
 
 // clang-format off
-layout(set = 0, binding = 0, FORMAT) uniform PRECISION restrict writeonly image3D uOutput;
+layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} uOutput;
 // clang-format on
 layout(set = 0, binding = 1) uniform PRECISION restrict Block {
   ivec3 size;

@@ -319,7 +319,7 @@ int main(int argc, char * argv[]) {
         ET_CHECK_MSG(method_name.ok(), "Failed to load method with name=%s from program=%p", method_name.get().c_str(), program.get());
         ET_LOG(Info, "Running method = %s", method_name.get().c_str());
 
-        auto inputs = prepare_input_tensors(*method);
+        auto inputs = ::prepare_input_tensors(*method);
         ET_LOG(Info, "Inputs prepared.");
 
         // Run the model.

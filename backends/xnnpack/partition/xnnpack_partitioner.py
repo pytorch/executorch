@@ -313,6 +313,40 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         q = list(getitem0.users.keys())[0]
         return XnnpackOperatorSupport.check_constraint(q, ep)
 
+    @_constraint(exir_ops.edge.quantized_decomposed.dequantize_per_token.default)
+    def dequant_per_token(dq: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
+        node = list(dq.users.keys())[0]
+        assert isinstance(node, torch.fx.Node)
+        return node.target in [
+            exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.addmm.default,
+        ]
+
+    @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_token.default)
+    def quant_per_token(q: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
+        dq = list(q.users.keys())[0]
+        return (
+            dq.target == exir_ops.edge.quantized_decomposed.dequantize_per_token.default
+            and XnnpackOperatorSupport.dequant_per_token(dq, ep)
+        )
+
+    @_constraint(
+        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default
+    )
+    def choose_qparams_per_token_asymmetric(
+        cqp: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
+        """
+        Given, cqp -> getitem -> q -> dq -> {mm, addmm}
+        Just check q, because it will check dq
+        """
+        getitem0 = list(cqp.users.keys())[0]
+        q = list(getitem0.users.keys())[0]
+        return (
+            q.target == exir_ops.edge.quantized_decomposed.quantize_per_token.default
+            and XnnpackOperatorSupport.check_constraint(q, ep)
+        )
+
     @_constraint(exir_ops.edge.aten.pow.Tensor_Scalar)
     def pow_tensor_scalar(node: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         """
@@ -563,16 +597,19 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_token.default,
     ]
 
     _DQ_OPS = [
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     ]
 
     _QPARAM_OPS = [
         exir_ops.edge.quantized_decomposed.choose_qparams.tensor,
+        exir_ops.edge.quantized_decomposed.choose_qparams_per_token_asymmetric.default,
     ]
 
     _QUANT_OPS = _Q_OPS + _DQ_OPS + _QPARAM_OPS

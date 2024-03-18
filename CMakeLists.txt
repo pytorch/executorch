@@ -206,6 +206,13 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
+# Detect if an Android toolchain is set.
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*android\.toolchain\.cmake$")
+  set(CMAKE_TOOLCHAIN_ANDROID ON)
+else()
+  set(CMAKE_TOOLCHAIN_ANDROID OFF)
+endif()
+
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
@@ -328,11 +335,6 @@ if(EXECUTORCH_BUILD_GTESTS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
-option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
-endif()
-
 if(EXECUTORCH_BUILD_SDK)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
@@ -363,6 +365,12 @@ endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)

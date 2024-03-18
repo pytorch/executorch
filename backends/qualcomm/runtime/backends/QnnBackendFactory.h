@@ -57,12 +57,8 @@ class QnnBackendFactory {
   std::unique_ptr<BackendConfigParameters> Create(
       const QnnImplementation& implementation,
       QnnLogger* logger,
-      const QnnExecuTorchLogLevel& log_level,
       const QnnExecuTorchContextBinary& qnn_context_blob,
-      const QnnExecuTorchBackendType& backend_type,
-      const std::string& graph_name,
-      const SocInfo* soc_info,
-      const QnnExecuTorchHtpBackendOptions* htp_options);
+      const QnnExecuTorchOptions* options);
 };
 } // namespace qnn
 } // namespace executor

@@ -10,6 +10,11 @@
 
 #include <executorch/examples/models/llama2/runner/runner.h>
 
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
+#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#endif
+
 DEFINE_string(
     model_path,
     "llama2.pte",
@@ -45,6 +50,14 @@ int32_t main(int32_t argc, char** argv) {
 
   int32_t seq_len = FLAGS_seq_len;
 
+#if defined(ET_USE_THREADPOOL)
+  uint32_t num_performant_cores =
+      torch::executorch::cpuinfo::get_num_performant_cores();
+  ET_LOG(
+      Info, "Resetting threadpool with num threads = %d", num_performant_cores);
+  torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
+      num_performant_cores);
+#endif
   // create llama runner
   ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
 

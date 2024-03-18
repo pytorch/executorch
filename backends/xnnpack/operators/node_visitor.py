@@ -268,8 +268,12 @@ class NodeVisitor:
                 channel_dim=quant_params.axis,
             )
         elif quant_params.is_dynamic:
+            # NB:
+            # We use per_token quantization for per_tensor quantization
+            # Beacuase that's the only option in XNNPACK in absance of per_tensor dynamic quantization
+            # TODO: Upstream support for per_tensor dynamic quantization or broadcasting same scale value internally
             return PerTokenDynamicQuant(
-                num_nonbatch_dims=1,  # TODO, currently only per token dynamic quant is supported
+                num_nonbatch_dims=quant_params.num_nonbatch_dims,
             )
 
         return PerTensorQuant(

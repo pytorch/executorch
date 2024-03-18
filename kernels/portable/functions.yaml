@@ -253,6 +253,11 @@
     - arg_meta: null
       kernel_name: torch::executor::copy_out
 
+- op: copy_
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::copy_
+
 - op: cos.out
   kernels:
     - arg_meta: null

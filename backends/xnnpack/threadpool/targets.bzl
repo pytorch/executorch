@@ -40,3 +40,27 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
+
+    runtime.cxx_library(
+        name = "cpuinfo_utils",
+        srcs = [
+            "cpuinfo_utils.cpp",
+        ],
+        deps = [
+            "//executorch/runtime/core:core",
+        ],
+        exported_headers = [
+            "cpuinfo_utils.h",
+        ],
+        exported_deps = [
+            third_party_dep("pthreadpool"),
+            third_party_dep("cpuinfo"),
+        ],
+        visibility = [
+            "//executorch/...",
+            "//executorch/backends/...",
+            "//executorch/runtime/backend/...",
+            "//executorch/extension/threadpool/test/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
