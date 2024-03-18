@@ -42,8 +42,7 @@ class TestMobileNetV3(unittest.TestCase):
             .check_not(list(self.all_operators))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_mv3(self):
@@ -63,6 +62,5 @@ class TestMobileNetV3(unittest.TestCase):
             .check_not(list(ops_after_lowering))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
