@@ -624,6 +624,9 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
         self.precision = precision
 
         # currently storing unpacked int8 weights
+        # TODO: ????!!!!!
+        # weights should be registers as parameters, since they're
+        # read-only for inference
         self.register_buffer(
             "weight",
             torch.empty((out_features, in_features), dtype=torch.int8),
@@ -635,6 +638,9 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
                 dtype=scales_precision,
             ),
         )
+        # TODO:
+        # Let's not store 0 - and then have to process them?!
+        # All our quantization is symmetric.
         self.register_buffer(
             "zeros",
             torch.empty(
@@ -645,8 +651,19 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         input = input.to(self.precision)
+        ##############################################################
+        #
         # padding is removed for perf
         # input = F.pad(input, pad=(0, self.in_features - self.origin_in_features))
+
+        # TODO:
+        # we don't need to pad this?  We need to pad for
+        # computing the weights, so we can assume that all groups have
+        # the same size. then strip extra padding and store like that.
+        # but that does not a kernel that can handle a terminal group
+        # that's partial group (which really just means not raising an error
+        # if you're out of inputs
+
         return linear_forward_8da4w(
             input,
             self.weight,
