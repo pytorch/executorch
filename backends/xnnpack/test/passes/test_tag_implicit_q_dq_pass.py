@@ -55,8 +55,7 @@ class TestTagImplicitQDq(unittest.TestCase):
             .export()
             .to_edge()
             .run_passes(self.PassStage)
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
             .get_artifact(Tester.stage_name(self.PassStage))
         )
 
