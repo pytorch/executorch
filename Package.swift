@@ -27,7 +27,7 @@ struct Framework {
       name: name,
       url: "\(url)/\(name)-\(version).zip",
       checksum: checksum,
-      linkerSettings: deps.isEmpty ? nil : deps.map { .linkedFramework($0) }
+      linkerSettings: dependencies.isEmpty ? nil : dependencies.map { .linkedFramework($0) }
     )
   }
 }
