@@ -68,6 +68,9 @@ target_sources(qnn_context
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.h
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
+    ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
 )
 
 # qnn_backend_cache

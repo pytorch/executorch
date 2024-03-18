@@ -164,15 +164,16 @@ struct wrapper_impl<R (*)(Args...), f, int, N> {
   }
 };
 
+} // namespace executor
+} // namespace torch
+
 // Wrapper macro for out variant function. N is the index of the out tensor.
 // We need N to know how to preserve the semantics of modifying out tensor and
 // return the reference without allocating a new memory buffer for out tensor.
 #define _WRAP_2(func, N) \
-  wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
-#define _WRAP_1(func) wrapper_impl<decltype(&func), func>::wrap
+  ::torch::executor::wrapper_impl<decltype(&func), func, decltype(N), N>::wrap
+#define _WRAP_1(func) \
+  ::torch::executor::wrapper_impl<decltype(&func), func>::wrap
 
 #define GET_MACRO(_1, _2, NAME, ...) NAME
 #define WRAP_TO_ATEN(...) GET_MACRO(__VA_ARGS__, _WRAP_2, _WRAP_1)(__VA_ARGS__)
-
-} // namespace executor
-} // namespace torch

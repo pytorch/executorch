@@ -115,15 +115,19 @@ void record_image_to_nchw_op(
       v_src.cpu_sizes_ubo()->buffer());
 }
 
-void record_arithmetic_op(
+void record_binary_op(
     api::Context* const context,
-    const api::ShaderInfo& compute_shader,
+    const std::string& op_name,
     vTensor& v_in1,
     vTensor& v_in2,
     vTensor& v_dst) {
+  std::stringstream kernel_name;
+  kernel_name << "binary_" << op_name << "_nobroadcast__test";
+  apply_dtype_suffix(kernel_name, v_dst);
+
   api::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      compute_shader,
+      VK_KERNEL_FROM_STR(kernel_name.str()),
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
@@ -144,14 +148,17 @@ void execute_and_check_add(
     float a_val,
     float b_val) {
   // Add shader kernel
-  api::ShaderInfo kernel = VK_KERNEL(binary_add_nobroadcast__test);
+  api::ShaderInfo kernel = VK_KERNEL(binary_add_nobroadcast__test_half);
+  if (c.image().format() == VK_FORMAT_R32G32B32A32_SFLOAT) {
+    kernel = VK_KERNEL(nchw_to_image3d__test_C_packed_float);
+  }
 
   // Fill input tensors
   fill_vtensor(a, a_val);
   fill_vtensor(b, b_val);
 
   // a + b = c
-  record_arithmetic_op(api::context(), kernel, a, b, c);
+  record_binary_op(api::context(), "add", a, b, c);
 
   // Extract output tensor
   std::vector<float> data_out = extract_vtensor(c);
