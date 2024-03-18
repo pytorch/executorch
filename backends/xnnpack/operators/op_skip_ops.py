@@ -95,3 +95,12 @@ class OpSymSizeInt(OpSkipOps):
     """
 
     target = "sym_size.int"
+
+
+@register_node_visitor
+class OpChooseQparamsToken(OpSkipOps):
+    """
+    do nothing if node is choose_qparams_per_token_asymmetric.tensor
+    """
+
+    target = "quantized_decomposed.choose_qparams_per_token_asymmetric.default"
