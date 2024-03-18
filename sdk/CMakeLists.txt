@@ -50,6 +50,8 @@ foreach(schema_file ${_bundled_input_schema_names})
        "${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/schema/${schema_file}")
 endforeach()
 
+set(FLATCC_TEST OFF CACHE BOOL "")
+set(FLATCC_REFLECTION OFF CACHE BOOL "")
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc
                  ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
@@ -72,6 +74,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_BINARY_DIR}/_host_build
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatcc
   BINARY_DIR ${CMAKE_BINARY_DIR}/_host_build
+  CMAKE_CACHE_ARGS -DFLATCC_TEST:BOOL=OFF -DFLATCC_REFLECTION:BOOL=OFF
   INSTALL_COMMAND "" # Prevent the install step, modify as needed
 )
 
