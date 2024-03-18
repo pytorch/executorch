@@ -43,8 +43,7 @@ class TestLeakyRelu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_leaky_relu(self):
@@ -76,8 +75,7 @@ class TestLeakyRelu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T172863987 - Missing quantizer support.")
@@ -107,8 +105,7 @@ class TestLeakyRelu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T172863987 - Missing quantizer support.")
@@ -143,6 +140,5 @@ class TestLeakyRelu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
