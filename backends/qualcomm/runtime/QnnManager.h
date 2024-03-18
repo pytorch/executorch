@@ -43,7 +43,7 @@ class QnnManager {
   bool IsAvailable();
 
   bool IsTensorDump() {
-    return !tensor_dump_output_path_.empty();
+    return options_->tensor_dump_output_path()->size() > 0;
   }
 
   bool IsOnlinePrepare();
@@ -69,21 +69,13 @@ class QnnManager {
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
 
-  QnnExecuTorchBackendType backend_type_;
-  std::string library_path_;
-  std::string skel_library_dir_;
-  std::string tensor_dump_output_path_;
-  std::string graph_name_;
-  const SocInfo* soc_info_;
-  const QnnExecuTorchHtpBackendOptions* htp_options_;
-  QnnExecuTorchLogLevel log_level_;
   QnnExecuTorchContextBinary qnn_context_blob_;
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
   QnnImplementation qnn_loaded_backend_;
   std::unique_ptr<QnnLogger> logger_;
+  const QnnExecuTorchOptions* options_;
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors_;
   std::vector<std::shared_ptr<TensorWrapper>> output_tensors_;
-  bool online_prepare_;
 };
 } // namespace qnn
 } // namespace executor

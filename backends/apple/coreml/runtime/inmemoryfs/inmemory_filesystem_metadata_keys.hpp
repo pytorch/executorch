@@ -2,7 +2,7 @@
 // metadata_keys.hpp
 // inmemoryfs
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -23,7 +23,7 @@ struct InMemoryFileSystemMetadataKeys {
     constexpr static std::string_view kNodes = "nodes";
 };
 
-struct MemoryRegionKeys {
+struct RangeKeys {
     constexpr static std::string_view kOffset = "offset";
     constexpr static std::string_view kSize = "size";
 };

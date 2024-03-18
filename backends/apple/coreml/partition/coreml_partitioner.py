@@ -9,6 +9,9 @@ import coremltools as ct
 
 import torch
 
+from executorch.backends.apple.coreml.compiler import CoreMLBackend
+from executorch.exir.backend.compile_spec_schema import CompileSpec
+
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
     Partitioner,
@@ -52,15 +55,19 @@ class OperatorsSupportedForCoreMLBackend(OperatorSupportBase):
 
 
 class CoreMLPartitioner(Partitioner):
-    compile_spec = []
 
     def __init__(
-        self, skip_ops_for_coreml_delegation: Optional[List[str]] = None
+        self,
+        skip_ops_for_coreml_delegation: Optional[List[str]] = None,
+        compile_specs: Optional[List[CompileSpec]] = None,
     ) -> None:
         if skip_ops_for_coreml_delegation is None:
             skip_ops_for_coreml_delegation = []
         self.skip_ops_for_coreml_delegation = skip_ops_for_coreml_delegation
-        self.delegation_spec = DelegationSpec("CoreMLBackend", self.compile_spec)
+        self.delegation_spec = DelegationSpec(
+            backend_id=CoreMLBackend.__name__,
+            compile_specs=compile_specs if compile_specs is not None else [],
+        )
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
         # Run the CapabilityBasedPartitioner to return the largest possible

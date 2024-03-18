@@ -115,6 +115,13 @@ class OpCopyTest : public OperatorTest {
   }
 };
 
+class OpCopyInplaceTest : public OperatorTest {
+ protected:
+  Tensor& op_copy_(Tensor& self, const Tensor& src, bool non_blocking) {
+    return torch::executor::aten::copy_(context_, self, src, non_blocking);
+  }
+};
+
 // regular test for copy.out
 TEST_F(OpCopyTest, AllRealDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
@@ -254,4 +261,24 @@ TEST_F(OpCopyTest, DynamicShapeUnbound) {
   }
   test_dynamic_shape(
       {1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
+}
+
+TEST_F(OpCopyInplaceTest, SmokeTest) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor in = tf.zeros({2, 2});
+  Tensor src = tf.make(/*sizes=*/{2, 2}, /*data=*/{1, 2, 3, 4});
+  bool non_blocking = false;
+  op_copy_(in, src, non_blocking);
+  Tensor expected = tf.make(/*sizes=*/{2, 2}, /*data=*/{1, 2, 3, 4});
+  EXPECT_TENSOR_EQ(in, expected);
+}
+
+TEST_F(OpCopyInplaceTest, BroadCastSrcSupported) {
+  TensorFactory<ScalarType::Int> tf;
+  Tensor in = tf.make(/*sizes=*/{2, 2}, /*data=*/{1, 2, 3, 4});
+  Tensor src = tf.make(/*sizes=*/{1, 2}, /*data=*/{3, 3});
+  bool non_blocking = false;
+  op_copy_(in, src, non_blocking);
+  Tensor expected = tf.make(/*sizes=*/{2, 2}, /*data=*/{3, 3, 3, 3});
+  EXPECT_TENSOR_EQ(in, expected);
 }

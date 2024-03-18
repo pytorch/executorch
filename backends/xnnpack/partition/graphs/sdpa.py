@@ -8,6 +8,7 @@ from functools import lru_cache
 from typing import List, Optional
 
 import torch
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
 from executorch.exir import to_edge
 from torch import Tensor
 from torch.export import export
@@ -75,7 +76,8 @@ def get_graphs() -> List[torch.fx.GraphModule]:
                         v,
                         mask,
                     ),
-                )
+                ),
+                compile_config=get_xnnpack_edge_compile_config(),
             )
             gm = edge.exported_program().graph_module
             graphs.append(gm)
