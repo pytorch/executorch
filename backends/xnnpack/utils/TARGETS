@@ -11,5 +11,6 @@ python_library(
         "//executorch/exir:pass_manager",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
+        "//pytorch/ao:torchao",  # @manual
     ],
 )
