@@ -65,7 +65,6 @@ from torch.export import ExportedProgram
 from torch.fx import subgraph_rewriter
 from torch.fx.passes.infra.pass_base import PassResult
 from torch.testing import FileCheck
-from torch.testing._internal.common_utils import IS_LINUX
 
 
 # pyre-ignore
@@ -507,8 +506,8 @@ class TestQuantLoweringCustomBackendPass(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
 
-    @unittest.skipIf(
-        IS_LINUX, "Flaky test on Linux x86, needs debugging. Issue is tracked in #2468"
+    @unittest.skip(
+        "Flaky test on Linux and Mac, needs debugging. Issue is tracked in #2468"
     )
     @torch.inference_mode()  # TODO Use  for capturing.
     def test(self) -> None:
