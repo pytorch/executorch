@@ -51,6 +51,10 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   std::vector<int64_t> sizes = {4, 4, 2};
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
+  std::stringstream kernel_name;
+  kernel_name << "fill_texture__test";
+  apply_dtype_suffix(kernel_name, a);
+
   struct Params final {
     api::utils::ivec3 size;
     int32_t fill;
@@ -68,7 +72,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   {
     api::PipelineBarrier pipeline_barrier{};
     api::context()->submit_compute_job(
-        VK_KERNEL(fill_texture__test),
+        VK_KERNEL_FROM_STR(kernel_name.str()),
         pipeline_barrier,
         {4, 4, 4},
         {4, 4, 4},
@@ -111,8 +115,7 @@ TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   fill_vtensor(b, 1.5f);
 
   // a + b -> c
-  record_arithmetic_op(
-      api::context(), VK_KERNEL(binary_add_nobroadcast__test), a, b, c);
+  record_binary_op(api::context(), "add", a, b, c);
 
   // Extract output tensor
   std::vector<float> data_out = extract_vtensor(c);
@@ -140,8 +143,6 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   std::vector<float> data_b(b.gpu_numel());
   std::fill(data_b.begin(), data_b.end(), 1.5f);
 
-  api::ShaderInfo kernel = VK_KERNEL(binary_add_nobroadcast__test);
-
   // Allocate memory at the last possible opportunity
   api::MemoryAllocation a_mem = allocate_memory_for(a);
   a.image().bind_allocation(a_mem);
@@ -156,7 +157,7 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   fill_vtensor(a, data_a);
   fill_vtensor(b, data_b);
 
-  record_arithmetic_op(api::context(), kernel, a, b, c);
+  record_binary_op(api::context(), "add", a, b, c);
 
   std::vector<float> data_c(c.gpu_numel());
   extract_vtensor(c, data_c);
@@ -205,21 +206,18 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   std::vector<float> data_d(b.gpu_numel());
   std::fill(data_d.begin(), data_d.end(), 1.0f);
 
-  // Get shader kernel for add
-  api::ShaderInfo kernel = VK_KERNEL(binary_add_nobroadcast__test);
-
   // First, fill a and b with data
   fill_vtensor(a, data_a);
   fill_vtensor(b, data_b);
 
   // a + b -> c
-  record_arithmetic_op(api::context(), kernel, a, b, c);
+  record_binary_op(api::context(), "add", a, b, c);
 
   // Now d can be filled with data
   fill_vtensor(d, data_d);
 
   // c + d -> e
-  record_arithmetic_op(api::context(), kernel, c, d, e);
+  record_binary_op(api::context(), "add", c, d, e);
 
   // Extract data from e
   std::vector<float> data_e(e.gpu_numel());
@@ -352,8 +350,7 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
   fill_staging(staging_buffer_a, 11.5f);
   fill_staging(staging_buffer_b, 12.5f);
 
-  record_arithmetic_op(
-      api::context(), VK_KERNEL(binary_add_nobroadcast__test), a, b, c);
+  record_binary_op(api::context(), "add", a, b, c);
 
   DEFINE_STAGING_BUFFER_AND_RECORD_FROM_GPU_FOR(c)
 
@@ -671,10 +668,63 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    int i = 0;
     for (const auto& val : data_out) {
       ASSERT_TRUE(val == val_out);
-      ++i;
+    }
+  }
+}
+
+TEST(VulkanComputeGraphTest, test_large_graph) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  int64_t input_w = 256;
+  int64_t input_h = 256;
+  int64_t input_c = 8;
+
+  std::vector<int64_t> size_big = {input_c, input_h, input_w};
+  std::vector<int64_t> size_small = {input_c, input_h, 1};
+
+  // Build graph
+
+  IOValueRef a = graph.add_input_tensor(size_big, api::kFloat, 2);
+  IOValueRef b = graph.add_input_tensor(size_small, api::kFloat, 4);
+
+  ValueRef c = graph.add_tensor(size_big, api::kFloat, 6);
+
+  auto addFn = VK_GET_OP_FN("aten.add.Tensor");
+  addFn(graph, {a.value, b.value, kDummyValueRef, c});
+
+  int n = 100;
+
+  for (int i = 0; i < n; i++) {
+    addFn(graph, {c, b.value, kDummyValueRef, a.value});
+
+    addFn(graph, {a.value, b.value, kDummyValueRef, c});
+  }
+
+  IOValueRef out = {};
+  out.value = c;
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  for (int i = 0; i < 10; i++) {
+    float val_a = 1.0f;
+    float val_b = 2.0f;
+
+    float val_e = val_a + val_b * (2 * n + 1);
+
+    fill_vtensor(graph, a, val_a);
+    fill_vtensor(graph, b, val_b);
+
+    graph.execute();
+
+    EXTRACT_TENSOR(out);
+
+    for (const auto& val : data_out) {
+      EXPECT_TRUE(val == val_e);
     }
   }
 }

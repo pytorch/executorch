@@ -177,9 +177,6 @@ inline void fill_stub(scalar_t* data, scalar_t val, int64_t size) {
   for (; d < size - (size % Vec::size()); d += Vec::size()) {
     data_vec.store(data + d);
   }
-#if !defined(_MSC_VER) && !defined(COMPILING_FOR_MIN_SIZE)
-#pragma unroll
-#endif
   for (; d < size; d++) {
     data[d] = val;
   }
@@ -249,7 +246,7 @@ void cpu_flash_attention(
     ET_CHECK_MSG(
         attn_mask.value().size(1) == kvSize,
         "attn_mask shape mismatch"
-        "attn_mask.size(1)=%ld kvSize=%" PRId64,
+        "attn_mask.size(1)=%zd kvSize=%" PRId64,
         attn_mask.value().size(1),
         kvSize);
   }
@@ -578,7 +575,7 @@ bool validate_cache_params(
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
-      "key cache size: %ld",
+      "key cache size: %zd",
       start_pos,
       seq_length,
       k_cache.size(2));
@@ -588,7 +585,7 @@ bool validate_cache_params(
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
-      "value cache size: %ld",
+      "value cache size: %zd",
       start_pos,
       seq_length,
       v_cache.size(2));

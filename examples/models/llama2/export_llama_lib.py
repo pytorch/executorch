@@ -18,9 +18,11 @@ from typing import List, Optional
 
 import pkg_resources
 import torch
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
@@ -35,7 +37,6 @@ from .builder import DType, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
-    Int8DynActInt4WeightGPTQQuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
@@ -181,7 +182,7 @@ def quantize(
     groupsize: int = 128,
     # following arguments only used for GPTQ
     calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 1000,
+    calibration_limit: int = 5,
     calibration_seq_length: int = 100,
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
@@ -204,7 +205,7 @@ def quantize(
         checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
     if calibration_tasks is None:
-        calibration_tasks = ["hellaswag"]
+        calibration_tasks = ["wikitext"]
 
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
@@ -217,15 +218,14 @@ def quantize(
         print("quantized model:", model_int4)
         return model_int4
     elif qmode == "8da4w-gptq":
-        gptq_quant_handler = Int8DynActInt4WeightGPTQQuantHandler(
-            precision=torch_dtype,
-        )
+        from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
+
         tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
             model_file=str(tokenizer_path)
         )
-        model_updated_state_dict = gptq_quant_handler.create_quantized_state_dict(
+        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
             tokenizer,
             blocksize,
             percdamp,
@@ -235,8 +235,7 @@ def quantize(
             calibration_seq_length,
             pad_calibration_inputs,
         )
-        model = gptq_quant_handler.convert_for_runtime(model)
-        model.load_state_dict(model_updated_state_dict)
+        model = gptq_quantizer.quantize(model)
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
@@ -358,6 +357,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument("-V", "--vulkan", action="store_true")
 
     parser.add_argument(
         "--generate_etrecord",
@@ -462,6 +462,17 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
 
+    if args.vulkan:
+        assert (
+            args.dtype_override is None
+        ), "Vulkan backend does not support non fp32 dtypes at the moment"
+        assert (
+            args.quantization_mode is None
+        ), "Vulkan backend does not support quantization at the moment"
+
+        partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
+        modelname = f"vulkan_{modelname}"
+
     builder_exported_to_edge = (
         load_llama_model(
             checkpoint=checkpoint_path,
@@ -478,20 +489,25 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         .export_to_edge(quantizers)
     )
 
-    if args.generate_etrecord and not builder_exported_to_edge.edge_manager:
-        raise ValueError("Unable to generate etrecord due to missing edge manager.")
+    if args.generate_etrecord:
+        if not builder_exported_to_edge.edge_manager:
+            raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
-    edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-    builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        logging.info("Generating etrecord")
+        # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
+        edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
-    # Generate ETRecord
-    if args.generate_etrecord and edge_manager_copy:
-        logging.info("Generating etrecord.bin")
-        generate_etrecord(
-            etrecord_path="etrecord.bin",
-            edge_dialect_program=edge_manager_copy,
-            executorch_program=builder.export_program,
-        )
+        # Generate ETRecord
+        if edge_manager_copy:
+            generate_etrecord(
+                etrecord_path="etrecord.bin",
+                edge_dialect_program=edge_manager_copy,
+                executorch_program=builder.export_program,
+            )
+            logging.info("Generated etrecord.bin")
+    else:
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")

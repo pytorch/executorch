@@ -24,6 +24,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
 )
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
+    generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
 from executorch.exir.backend.backend_api import to_backend
@@ -135,6 +136,7 @@ class SimpleADB:
             callback()
 
 
+# TODO: refactor to support different backends
 def build_executorch_binary(
     model,  # noqa: B006
     inputs,  # noqa: B006
@@ -175,10 +177,11 @@ def build_executorch_binary(
         "SM8450": QcomChipset.SM8450,
     }
 
+    backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            is_fp16=use_fp16,
             soc_model=arch_table[soc_model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
         ),

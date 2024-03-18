@@ -1,7 +1,7 @@
 //
 // ETCoreMLAsset.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -66,14 +66,14 @@ void set_error_from_error_code(const std::error_code& cppError, NSError * __auto
     os_unfair_lock _lock;
 }
 
-- (instancetype)initWithBackingAsset:(const executorchcoreml::Asset&)backingAsset {
+- (instancetype)initWithBackingAsset:(executorchcoreml::Asset)backingAsset {
     self = [super init];
     if (self) {
-        _backingAsset = backingAsset;
         _isValid = static_cast<BOOL>(is_asset_valid(backingAsset));
         _identifier = @(backingAsset.identifier.c_str());
         _contentURL = [NSURL fileURLWithPath:@(backingAsset.path.c_str())];
         _totalSizeInBytes = backingAsset.total_size_in_bytes();
+        _backingAsset = std::move(backingAsset);
     }
     
     return self;
