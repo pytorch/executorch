@@ -2,7 +2,7 @@
 //  json_util.cpp
 //  util
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -71,8 +71,12 @@ std::optional<std::string> read_object_from_stream(std::istream& stream, size_t 
     static constexpr size_t buffer_size = 512;
     JSONParseState state;
     char ch;
+    // Ignore 0, 0 is added for padding.
+    do {
+        stream >> ch;
+    } while (stream.good() && static_cast<uint8_t>(ch) == 0);
     // The first character must be an opening brace.
-    if (!(stream >> ch) || ch != '{') {
+    if (ch != '{') {
         return std::optional<std::string>();
     }
     state.json_object += ch;

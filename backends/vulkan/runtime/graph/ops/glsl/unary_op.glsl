@@ -10,6 +10,8 @@
 
 #define PRECISION ${PRECISION}
 
+#define OP(X, A, B) ${OPERATOR}
+
 layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
@@ -36,6 +38,5 @@ void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
 
   vec4 in_texel = texelFetch(image_in, pos, 0);
-
-  imageStore(image_out, pos, clamp(in_texel, minimum.data, maximum.data));
+  imageStore(image_out, pos, OP(in_texel, minimum.data, maximum.data));
 }

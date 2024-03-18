@@ -1,7 +1,7 @@
 //
 // serde_json.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -9,7 +9,7 @@
 
 #import <asset.h>
 #import <objc_json_serde.h>
-#import <metadata.h>
+#import <model_metadata.h>
 
 namespace  {
 struct FileInfoKeys {
@@ -41,7 +41,7 @@ namespace serde {
 namespace json {
 
 template <>
-struct JSONSerde<executorchcoreml::FileInfo> {
+struct Converter<executorchcoreml::FileInfo> {
     static id to_json(const executorchcoreml::FileInfo& file_info) {
         return @{
             to_string(FileInfoKeys::kRelativePath) : to_json_value(file_info.relative_path),
@@ -62,9 +62,8 @@ struct JSONSerde<executorchcoreml::FileInfo> {
     }
 };
 
-
 template <>
-struct JSONSerde<executorchcoreml::PackageInfo> {
+struct Converter<executorchcoreml::PackageInfo> {
     static id to_json(const executorchcoreml::PackageInfo& package_info) {
         return @{
             to_string(PackageInfoKeys::kNameKey) : to_json_value(package_info.name),
@@ -84,7 +83,7 @@ struct JSONSerde<executorchcoreml::PackageInfo> {
 };
 
 template <>
-struct JSONSerde<executorchcoreml::Asset> {
+struct Converter<executorchcoreml::Asset> {
     static id to_json(const executorchcoreml::Asset& asset) {
         return @{
             to_string(ModelAssetKeys::kIdentifierKey) : to_json_value(asset.identifier),
@@ -106,7 +105,7 @@ struct JSONSerde<executorchcoreml::Asset> {
 };
 
 template <>
-struct JSONSerde<executorchcoreml::ModelMetadata> {
+struct Converter<executorchcoreml::ModelMetadata> {
     static id to_json(const executorchcoreml::ModelMetadata& metadata) {
         return @{
             to_string(ModelMetadataKeys::kIdentifierKey) : to_json_value(metadata.identifier),
@@ -128,23 +127,23 @@ struct JSONSerde<executorchcoreml::ModelMetadata> {
 };
 
 std::string to_json_string(const Asset& asset) {
-    id json = JSONSerde<Asset>::to_json(asset);
+    id json = Converter<Asset>::to_json(asset);
     return to_json_string(json);
 }
 
 void from_json_string(const std::string& json_string, Asset& asset) {
     id json = to_json_object(json_string);
-    JSONSerde<Asset>::from_json(json, asset);
+    Converter<Asset>::from_json(json, asset);
 }
 
 std::string to_json_string(const ModelMetadata& metdata) {
-    id json = JSONSerde<ModelMetadata>::to_json(metdata);
+    id json = Converter<ModelMetadata>::to_json(metdata);
     return to_json_string(json);
 }
 
 void from_json_string(const std::string& json_string, ModelMetadata& metadata) {
     id json = to_json_object(json_string);
-    JSONSerde<ModelMetadata>::from_json(json, metadata);
+    Converter<ModelMetadata>::from_json(json, metadata);
 }
 
 } // namespace json

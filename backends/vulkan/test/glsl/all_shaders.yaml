@@ -1,6 +1,13 @@
 binary_op_nobroadcast__test:
   parameter_names_with_default_values:
+    DTYPE: float
     OPERATOR: X + Y
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
   shader_variants:
     - NAME: binary_add_nobroadcast__test
       OPERATOR: X + Y
@@ -12,6 +19,19 @@ binary_op_nobroadcast__test:
       OPERATOR: X / Y
     - NAME: binary_pow_nobroadcast__test
       OPERATOR: pow(X, Y)
+
+fill_texture__test:
+  parameter_names_with_default_values:
+    DTYPE: float
+    NDIM: 3
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
+  shader_variants:
+    - NAME: fill_texture__test
 
 image_to_nchw__test:
   parameter_names_with_default_values:
