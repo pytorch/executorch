@@ -25,15 +25,14 @@ _EDGE_COMPILE_CONFIG: EdgeCompileConfig = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
 
+## For quantization
+from executorch.backends.arm.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 from executorch.exir import EdgeCompileConfig
 from executorch.exir.program import to_edge
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-
-## For quantization
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 
 
 class TestBasicNN(unittest.TestCase):
@@ -88,7 +87,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
             model, copy.deepcopy(model.inputs[profile])
         )
         # Setup the quantizer
-        quantizer = XNNPACKQuantizer()
+        quantizer = ArmQuantizer()
         operator_config = get_symmetric_quantization_config(is_per_channel=False)
         quantizer.set_global(operator_config)
 
