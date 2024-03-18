@@ -332,7 +332,23 @@ def _(
     Returns:
         ExportedProgram: The input program, with some portions targeted for delegation.
     """
-    copied_edge_program = copy.deepcopy(edge_program)
+
+    def copy_graph_only(ep):
+        gm = ep.graph_module
+        gm_copy = copy.deepcopy(gm)
+        return ExportedProgram(
+            root=gm_copy,
+            graph=gm_copy.graph,
+            graph_signature=ep.graph_signature,
+            state_dict=ep.state_dict,
+            range_constraints=ep.range_constraints,
+            module_call_graph=ep.module_call_graph,
+            example_inputs=ep.example_inputs,
+            verifier=ep.verifier,
+            constants=ep.constants,
+        )
+
+    copied_edge_program = copy_graph_only(edge_program)
     partitioner_result = partitioner_instance(copied_edge_program)
     tagged_exported_program = partitioner_result.tagged_exported_program
 
