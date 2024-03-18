@@ -453,7 +453,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      flatcc
       portable_ops_lib
       util
       torch
