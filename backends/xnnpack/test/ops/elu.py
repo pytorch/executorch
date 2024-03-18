@@ -39,8 +39,7 @@ class TestElu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171810227 - Missing recomposition for ELU")
@@ -74,8 +73,7 @@ class TestElu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T171810227 - Missing recomposition for ELU")
@@ -99,6 +97,5 @@ class TestElu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

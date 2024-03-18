@@ -36,8 +36,7 @@ class TestPrelu(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     @unittest.skip("T158653285 - Missing recomposition for PReLU")
