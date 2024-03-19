@@ -92,9 +92,12 @@ jobs:
         build/build_apple_frameworks.sh --coreml --mps --portable --xnnpack
 
         # Bundle iOS Frameworks
-        for FRAMEWORK in "${FRAMEWORKS[@]}"; do
-          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "cmake-out/${FRAMEWORK}.xcframework" LICENSE
-        done
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cd cmake-out && \
+          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" \
+          "${FRAMEWORK}.xcframework" \
+          ../LICENSE
+        ) done
 
         popd
 
