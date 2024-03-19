@@ -53,7 +53,7 @@ void main() {
 
   if (coord.z + 3 >= cpu_sizes.data.z) {
     ivec4 c_ind = ivec4(coord.z) + ivec4(0, 1, 2, 3);
-    vec4 valid_c = vec4(lessThan(c_ind, ivec4(cpu_sizes.data.z)));
+    ${VEC4_T[DTYPE]} valid_c = ${VEC4_T[DTYPE]}(lessThan(c_ind, ivec4(cpu_sizes.data.z)));
     texel = texel * valid_c;
   }
 
