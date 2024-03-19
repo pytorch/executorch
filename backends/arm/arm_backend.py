@@ -42,11 +42,12 @@ def generate_ethosu_compile_spec(
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
     extra_flags: Optional[str] = None,
+    config_ini: Optional[str] = "Arm/vela.ini",
 ) -> List[CompileSpec]:
     """
     Generate compile spec for Ethos-U NPU
     """
-    compiler_flags = [f"--accelerator-config={config}"]
+    compiler_flags = [f"--accelerator-config={config}", f"--config={config_ini}"]
     if system_config is not None:
         compiler_flags.append(f"--system-config={system_config}")
     if memory_mode is not None:
@@ -56,7 +57,7 @@ def generate_ethosu_compile_spec(
 
     compile_spec = [
         CompileSpec("output_format", "vela".encode()),
-        CompileSpec("compile_flags", "".join(compiler_flags).encode()),
+        CompileSpec("compile_flags", " ".join(compiler_flags).encode()),
     ]
 
     return compile_spec
