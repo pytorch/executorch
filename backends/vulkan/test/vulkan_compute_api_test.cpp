@@ -782,12 +782,12 @@ void run_from_gpu_test(
 
   submit_to_gpu();
 
-  std::vector<T> data(staging_buffer.numel());
+  std::vector<T> data_out(staging_buffer.numel());
   copy_staging_to_ptr(
-      staging_buffer, data.data(), sizeof(float) * staging_buffer.numel());
+      staging_buffer, data_out.data(), sizeof(float) * staging_buffer.numel());
 
   for (int i = 0; i < vten.numel(); i++) {
-    CHECK_VALUE(data, i, i);
+    CHECK_VALUE(data_out, i, i);
   }
 }
 
@@ -823,15 +823,15 @@ void run_to_gpu_test(
   submit_to_gpu();
 
   // Extract data from output staging buffer
-  std::vector<T> data(staging_buffer_out.numel());
+  std::vector<T> data_out(staging_buffer_out.numel());
   copy_staging_to_ptr(
       staging_buffer_out,
-      data.data(),
+      data_out.data(),
       sizeof(float) * staging_buffer_out.numel());
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
-    CHECK_VALUE(data, i, i);
+    CHECK_VALUE(data_out, i, i);
   }
 }
 
