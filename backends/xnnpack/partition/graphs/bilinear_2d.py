@@ -10,6 +10,8 @@ from typing import Dict, List
 import executorch.exir as exir
 import torch
 
+from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+
 
 @lru_cache(maxsize=None)
 def _get_bilinear_2d_graphs():
@@ -37,7 +39,9 @@ def _get_bilinear_2d_graphs():
         for config in capture_configs:
             edge = exir.capture(
                 bilinear2d(align_corners), sample_inputs, config
-            ).to_edge()
+            ).to_edge(
+                config=get_xnnpack_edge_compile_config(),
+            )
             _bilinear2d_graphs[edge.exported_program.graph_module] = align_corners
     return _bilinear2d_graphs
 

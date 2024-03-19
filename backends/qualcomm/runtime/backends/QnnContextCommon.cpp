@@ -78,7 +78,7 @@ Error QnnContext::Configure() {
     QNN_EXECUTORCH_LOG_ERROR("QNN context cache is invalid.");
     return Error::Internal;
   }
-  return Error::Ok;
+  return AfterConfigure();
 }
 
 Error QnnContext::GetContextBinary(

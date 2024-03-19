@@ -20,6 +20,8 @@ from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
 )
 from executorch.exir import EdgeProgramManager
 from executorch.exir.backend.partitioner import Partitioner
+
+from executorch.exir.backend.utils import print_delegated_graph
 from executorch.exir.capture._config import EdgeCompileConfig, ExecutorchBackendConfig
 
 from executorch.exir.passes import MemoryPlanningPass
@@ -33,7 +35,6 @@ from torch.nn.attention import SDPBackend
 
 from ...portable.utils import export_to_edge, save_pte_program
 from ..model_factory import EagerModelFactory
-
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
@@ -260,6 +261,8 @@ class LlamaEdgeManager:
         edge_config = self._get_edge_config()
         metadata = self._get_metadata()
 
+        # 1. torch.nn.attention.sdpa_kernel([SDPBackend.MATH]) is for bypassing the dynamo error when tracing
+        # 2. torch.no_grad() is for getting rid of the dropout (not sure why training ops will show up)
         with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
             m = capture_pre_autograd_graph(
                 self.model, self.example_inputs, dynamic_shapes=dynamic_shape
@@ -304,6 +307,11 @@ class LlamaEdgeManager:
             assert self.edge_manager is not None
             self.edge_manager = self.edge_manager.to_backend(partitioner)
             if self.verbose:
+                logging.info(
+                    print_delegated_graph(
+                        self.edge_manager.exported_program().graph_module
+                    )
+                )
                 logging.info(f"Applied partitioners: {partitioner}")
         else:
             logging.warning("Invalid partitioner, skipping...")

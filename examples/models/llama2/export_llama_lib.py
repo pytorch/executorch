@@ -18,11 +18,14 @@ from typing import List, Optional
 
 import pkg_resources
 import torch
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
 
-# from executorch.sdk.etrecord import generate_etrecord
+from executorch.examples.models.llama2.llama_transformer import Transformer
+
+from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
@@ -36,7 +39,6 @@ from .builder import DType, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
-    Int8DynActInt4WeightGPTQQuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
@@ -173,6 +175,31 @@ def get_pt2e_quantizers(
     return quantizers
 
 
+def materialze_broadcast_of_rope_freq_cis(
+    module: torch.nn.Module,
+):
+    assert isinstance(module, Transformer)
+    assert module.freqs_cos.dim() == 2
+    dim0 = module.freqs_cos.size(0)
+    dim1 = module.freqs_cos.size(1)
+    assert (
+        module.layers[0].attention.n_local_kv_heads == module.layers[0].attention.n_local_heads
+    ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
+    num_heads = module.layers[0].attention.n_local_heads
+    module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)
+    module.freqs_cos = module.freqs_cos.expand(dim0, num_heads, dim1).contiguous()
+    assert module.freqs_sin.dim() == 2
+    assert dim0 == module.freqs_sin.size(
+        0
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 0: {dim0} vs {module.freqs_sin.size(0)}"
+    assert dim1 == module.freqs_sin.size(
+        1
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
+    module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
+    module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
+    return module
+
+
 def quantize(
     model: torch.nn.Module,
     qmode: str,
@@ -182,7 +209,7 @@ def quantize(
     groupsize: int = 128,
     # following arguments only used for GPTQ
     calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 1000,
+    calibration_limit: int = 5,
     calibration_seq_length: int = 100,
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
@@ -205,7 +232,7 @@ def quantize(
         checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
     if calibration_tasks is None:
-        calibration_tasks = ["hellaswag"]
+        calibration_tasks = ["wikitext"]
 
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
@@ -218,15 +245,14 @@ def quantize(
         print("quantized model:", model_int4)
         return model_int4
     elif qmode == "8da4w-gptq":
-        gptq_quant_handler = Int8DynActInt4WeightGPTQQuantHandler(
-            precision=torch_dtype,
-        )
+        from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
+
         tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
             model_file=str(tokenizer_path)
         )
-        model_updated_state_dict = gptq_quant_handler.create_quantized_state_dict(
+        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
             tokenizer,
             blocksize,
             percdamp,
@@ -236,8 +262,7 @@ def quantize(
             calibration_seq_length,
             pad_calibration_inputs,
         )
-        model = gptq_quant_handler.convert_for_runtime(model)
-        model.load_state_dict(model_updated_state_dict)
+        model = gptq_quantizer.quantize(model)
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
@@ -359,6 +384,14 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument("-V", "--vulkan", action="store_true")
+
+    parser.add_argument(
+        "--expand_rope_table",
+        default=False,
+        action="store_true",
+        help="[Temp workaround] Expand sin/cos table in head dim to take vectorized path in optimized kernels.",
+    )
 
     parser.add_argument(
         "--generate_etrecord",
@@ -440,6 +473,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             ).quantized_model()
         )
 
+    if args.expand_rope_table:
+        transforms.append(materialze_broadcast_of_rope_freq_cis)
+
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
@@ -463,6 +499,17 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
 
+    if args.vulkan:
+        assert (
+            args.dtype_override is None
+        ), "Vulkan backend does not support non fp32 dtypes at the moment"
+        assert (
+            args.quantization_mode is None
+        ), "Vulkan backend does not support quantization at the moment"
+
+        partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
+        modelname = f"vulkan_{modelname}"
+
     builder_exported_to_edge = (
         load_llama_model(
             checkpoint=checkpoint_path,
@@ -479,21 +526,25 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         .export_to_edge(quantizers)
     )
 
-    if args.generate_etrecord and not builder_exported_to_edge.edge_manager:
-        raise ValueError("Unable to generate etrecord due to missing edge manager.")
+    if args.generate_etrecord:
+        if not builder_exported_to_edge.edge_manager:
+            raise ValueError("Unable to generate etrecord due to missing edge manager.")
 
-    edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-    builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+        logging.info("Generating etrecord")
+        # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
+        edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
-    # Generate ETRecord
-    if args.generate_etrecord and edge_manager_copy:
-        # logging.info("Generating etrecord.bin")
-        # generate_etrecord(
-        #     etrecord_path="etrecord.bin",
-        #     edge_dialect_program=edge_manager_copy,
-        #     executorch_program=builder.export_program,
-        # )
-        pass
+        # Generate ETRecord
+        if edge_manager_copy:
+            generate_etrecord(
+                etrecord_path="etrecord.bin",
+                edge_dialect_program=edge_manager_copy,
+                executorch_program=builder.export_program,
+            )
+            logging.info("Generated etrecord.bin")
+    else:
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")

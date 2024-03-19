@@ -109,7 +109,7 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     )
 
 
-def precompute_freqs_cis(dim: int, n_heads: int, end: int, theta: float):
+def precompute_freqs_cis(dim: int, end: int, theta: float):
     freqs = 1.0 / (
         theta ** (torch.arange(0, dim, 2, device="cpu")[: (dim // 2)].float() / dim)
     )
@@ -117,20 +117,23 @@ def precompute_freqs_cis(dim: int, n_heads: int, end: int, theta: float):
     freqs = torch.outer(t, freqs).float()  # pyre-ignore
     freqs_cos = torch.cos(freqs)
     freqs_sin = torch.sin(freqs)
-    freqs_cos = freqs_cos.view(end, 1, dim // 2)
-    freqs_cos = freqs_cos.expand(end, n_heads, dim // 2).contiguous()
-    freqs_sin = freqs_sin.view(end, 1, dim // 2)
-    freqs_sin = freqs_sin.expand(end, n_heads, dim // 2).contiguous()
     return freqs_cos, freqs_sin
 
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[2], x.shape[-1])
-    shape = [
-        d if (i == 1 or i == 2 or i == ndim - 1) else 1 for i, d in enumerate(x.shape)
-    ]
+    freqs_cis_ndim = freqs_cis.ndim
+    if freqs_cis_ndim == 3:
+        # freqs_cis: (seq_len, n_heads, head_dim // 2)
+        assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
+        shape = [
+            d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
+            for i, d in enumerate(x.shape)
+        ]
+    else:
+        # freqs_cis: (seq_len, head_dim // 2)
+        assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(shape)
 
 
@@ -422,7 +425,6 @@ class Transformer(nn.Module):
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             params.dim // params.n_heads,
-            params.n_heads,
             params.max_seq_len,
             params.rope_freq_base,
         )
@@ -471,9 +473,9 @@ class Transformer(nn.Module):
             freqs_cos = self.freqs_cos[sp : sp + seqlen]
             freqs_sin = self.freqs_sin[sp : sp + seqlen]
         else:
-            assert (
-                start_pos is None and cache_k is None and cache_v is None
-            ), "Caches and start_pos are unused when use_kv_cache is False"
+            # assert (
+            #     start_pos is None and cache_k is None and cache_v is None
+            # ), "Caches and start_pos are unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]
             freqs_sin = self.freqs_sin[:seqlen]
 

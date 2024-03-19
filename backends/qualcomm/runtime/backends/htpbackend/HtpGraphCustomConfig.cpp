@@ -63,6 +63,14 @@ HtpGraphCustomConfig::CreateGraphCustomConfig(
       qcom_target_soc_info->htp_info()->vtcm_size_in_mb();
   ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
 
+  p_custom_config = AllocGraphCustomConfig();
+  p_custom_config->option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+  p_custom_config->optimizationOption.type =
+      QNN_HTP_GRAPH_OPTIMIZATION_TYPE_ENABLE_DLBC;
+  p_custom_config->optimizationOption.floatValue =
+      htp_options_->use_dlbc() ? 1.0 : 0.0;
+  ret.push_back(static_cast<QnnGraph_CustomConfig_t>(p_custom_config));
+
   return ret;
 }
 } // namespace qnn

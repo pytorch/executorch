@@ -39,6 +39,7 @@ runtime.python_test(
         "//executorch/sdk:lib",
         "//executorch/sdk/bundled_program:config",
         "//executorch/sdk/bundled_program/serialize:lib",
+        "//pytorch/ao:torchao",  # @manual
     ],
     external_deps = [
         "libtorch",
