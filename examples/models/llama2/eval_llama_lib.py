@@ -43,42 +43,6 @@ def encode_tokens(tokenizer, string: str, bos: bool = True, device: str = "cpu")
     return torch.tensor(tokens, dtype=torch.int, device=device)
 
 
-def model_forward(model, x, input_pos):
-    return model(x, input_pos)
-
-
-def setup_padded_seq_input_pos_max_seq_length_for_prefill(
-    prompt: torch.Tensor,
-    max_new_tokens: int,
-    max_seq_length: Optional[int],
-):
-    """
-    Bookkeeping calculations for prompt, input_pos and max_seq_length
-    that are needed for prefill or model_forward
-
-    Args:
-        prompt (torch.Tensor): Tensor of shape (T) with indices of the prompt sequence.
-        max_new_tokens (int): The desired maximum number of new tokens that can be generated.
-        max_seq_length (Optional[int], optional): The maximum sequence length allowed.
-
-    Returns:
-        seq (torch.Tensor): prompt but padded with zeros to size max_seq_length
-        input_pos (torch.Tensor): tensor of integers in increasing order
-        max_seq_length (int): The maximum sequence length allowed, updated based on other numbers
-    """
-    T = prompt.size(0)
-    T_new = T + max_new_tokens
-
-    device, dtype = prompt.device, prompt.dtype
-    # create an empty tensor of the expected final shape and fill in the current tokens
-    empty = torch.empty(T_new, dtype=dtype, device=device)
-    empty[:T] = prompt
-    seq = empty
-    input_pos = torch.arange(0, T, device=device)
-
-    return seq, input_pos, max_seq_length
-
-
 class GPTFastEvalWrapper(eval_wrapper):
     """
     A wrapper class for GPTFast, providing integration with the lm-evaluation-harness library.
@@ -129,20 +93,7 @@ class GPTFastEvalWrapper(eval_wrapper):
         return decoded
 
     def _model_call(self, inps):
-        # TODO: make batches work
-        inps = inps.squeeze(0)
-
-        max_new_tokens = 1
-        seq, input_pos, max_seq_length = (
-            setup_padded_seq_input_pos_max_seq_length_for_prefill(
-                inps,
-                max_new_tokens,
-                self.max_length,
-            )
-        )
-        x = seq.index_select(0, input_pos).view(1, -1)
-        logits = model_forward(self._model, x, input_pos)
-        return logits
+        return self._model(inps)
 
     def _model_generate(self, context, max_length, eos_token_id):
         raise Exception("unimplemented")
@@ -227,7 +178,11 @@ def eval_llama(
 
     # Evaluate the model
     eval_results = eval(
-        manager.model.to(device="cpu"), tokenizer, args.tasks, args.limit
+        manager.model.to(device="cpu"),
+        tokenizer,
+        args.tasks,
+        args.limit,
+        args.max_seq_length,
     )
 
     print("Results: ", eval_results)
