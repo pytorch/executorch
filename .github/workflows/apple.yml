@@ -5,6 +5,17 @@ on:
     branches:
       - main
       - release/*
+    paths:
+      - .ci/docker/**
+      - .github/workflows/apple.yml
+      - install_requirements.sh
+      - backends/apple/**
+      - build/build_apple_frameworks.sh
+      - build/create_frameworks.sh
+      - build/test_ios_ci.sh
+      - examples/demo-apps/**
+      - extension/apple/**
+      - extension/module/**
   pull_request:
     paths:
       - .ci/docker/**
@@ -125,8 +136,8 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - name: Only push to S3 from main branch
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Only push to S3 when running the workflow manually from main branch
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
         shell: bash
         run: |
           set -eux
