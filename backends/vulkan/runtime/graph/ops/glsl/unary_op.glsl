@@ -18,7 +18,7 @@ layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict 
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict OutExtents {
-  ivec4 data;
+  uvec4 data;
 }
 out_extents;
 
