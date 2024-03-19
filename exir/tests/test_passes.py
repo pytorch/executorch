@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # pyre-strict
+import operator
 import os
 import tempfile
 import unittest
@@ -30,6 +31,7 @@ from executorch.exir.passes import (
     RemoveNoopPass,
     ReplaceSymSizeOpPass,
     ToOutVarPass,
+    unsafe_remove_auto_functionalized_pass,
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
@@ -50,6 +52,7 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
+from torch._higher_order_ops.auto_functionalize import auto_functionalized
 from torch.export import export
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -77,6 +80,7 @@ lib = Library("DO_NOT_USE_TEST_ONLY", "DEF")
 
 lib.define("foo(Tensor self) -> (Tensor, Tensor)")
 lib.define("add_relu(Tensor self, Tensor other) -> Tensor")
+lib.define("custom_mutator(Tensor x, Tensor(a!) y) -> Tensor")
 
 
 @impl(lib, "foo", "CompositeExplicitAutograd")
@@ -94,6 +98,24 @@ def foo_out(
     a: torch.Tensor, out1: torch.Tensor, out2: torch.Tensor
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     return a + 1, None
+
+
+
+
+@impl(lib, "custom_mutator", "Meta")
+def custom_mutator_meta(
+    x,
+    y,
+):
+    return torch.empty_like(x)
+
+
+@impl(lib, "custom_mutator", "CompositeExplicitAutograd")
+def custom_mutator(
+    x,
+    y,
+):
+    return x + y.add_(1)
 
 
 class TestPasses(unittest.TestCase):
@@ -1244,3 +1266,27 @@ class TestPasses(unittest.TestCase):
         #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%arg0_1, %aten_add_tensor_1), kwargs = {})
         #     return (copy__default, aten_add_tensor)
         self.assertEqual(count_copies(gm), 1)
+
+    def test_remove_auto_functionalized_pass(self) -> None:
+        class M(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                return torch.ops.DO_NOT_USE_TEST_ONLY.custom_mutator(x, self.state)
+
+        mod = M()
+        x = torch.randn([3, 3])
+        edge = to_edge(
+            export(mod, (x,)),
+        )
+        inplace_ep = unsafe_remove_auto_functionalized_pass(edge.exported_program())
+        nodes = inplace_ep.graph.nodes
+        for node in nodes:
+            if node.op == "call_function":
+                self.assertFalse(node.target is auto_functionalized)
+                self.assertFalse(node.target is operator.getitem)
+
+        for spec in inplace_ep.graph_signature.output_specs:
+            self.assertFalse("getitem" in spec.arg.name)
