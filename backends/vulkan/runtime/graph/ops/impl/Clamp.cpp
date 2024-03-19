@@ -54,7 +54,7 @@ void add_clamp_node(
       // Inputs and Outputs
       {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
-      {t_out.gpu_sizes_ubo(),
+      {t_out.extents_ubo(),
        graph.create_params_buffer(min),
        graph.create_params_buffer(max)},
       // Resizing
