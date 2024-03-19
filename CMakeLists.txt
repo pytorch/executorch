@@ -152,6 +152,10 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
 option(EXECUTORCH_BUILD_GTESTS
        "Build googletest based test binaries" OFF)
 
+# Build the AOT util extension library
+option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL
+       "Build the extension/aot_util directory" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -356,6 +360,10 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
 endif()
 
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
