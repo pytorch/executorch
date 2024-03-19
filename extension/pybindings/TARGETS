@@ -37,14 +37,14 @@ runtime.genrule(
 )
 
 executorch_pybindings(
-    compiler_flags = ["-std=c++17"],
+    compiler_flags = ["-std=c++20"],  # Pinned to C++20 for OSS builds.
     cppdeps = PORTABLE_MODULE_DEPS,
     python_module_name = "core",
     visibility = ["PUBLIC"],
 )
 
 executorch_pybindings(
-    compiler_flags = ["-std=c++17"],
+    compiler_flags = ["-std=c++20"],  # Pinned to C++20 for OSS builds.
     cppdeps = PORTABLE_MODULE_DEPS + MODELS_ATEN_OPS_LEAN_MODE_GENERATED_LIB,
     python_module_name = "portable_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[portable_lib.pyi]"],
@@ -52,7 +52,7 @@ executorch_pybindings(
 )
 
 executorch_pybindings(
-    compiler_flags = ["-std=c++17"],
+    compiler_flags = ["-std=c++20"],  # Pinned to C++20 for OSS builds.
     cppdeps = ATEN_MODULE_DEPS + MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB,
     python_module_name = "aten_lib",
     types = ["//executorch/extension/pybindings:pybindings_types_gen[aten_lib.pyi]"],
