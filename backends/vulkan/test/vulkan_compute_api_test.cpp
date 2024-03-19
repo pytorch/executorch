@@ -965,6 +965,10 @@ void test_binary_op(
   _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
   _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
 
+#define CALL_TEST_FN_FOR_C_PACKED(_)                                  \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
 #define RUN_TESTS(dtype, layout, prepack)                                  \
   test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
@@ -1053,6 +1057,7 @@ TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
   test_mm(/*B=*/1, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
+  CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
 
 #undef RUN_TESTS
 }
