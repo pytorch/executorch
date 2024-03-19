@@ -18,7 +18,6 @@ binary_op:
         SUFFIX: "float"
   shader_variants:
     - NAME: binary_add
-      OPERATOR: X + A * Y
     - NAME: binary_sub
       OPERATOR: X - A * Y
     - NAME: binary_mul
