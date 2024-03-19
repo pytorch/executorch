@@ -201,7 +201,7 @@ Result<FreeableBuffer> MmapDataLoader::Load(size_t offset, size_t size) {
     if (err < 0) {
       if (mlock_config_ == MlockConfig::UseMlockIgnoreErrors) {
         ET_LOG(
-            Info,
+            Debug,
             "Ignoring mlock error for file %s (off=0x%zd): "
             "mlock(%p, %zu) failed: %s (%d)",
             file_name_,
