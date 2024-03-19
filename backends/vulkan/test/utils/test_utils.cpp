@@ -73,13 +73,9 @@ void record_nchw_to_image_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst) {
   api::PipelineBarrier pipeline_barrier{};
-  api::ShaderInfo compute_shader =
-      VK_KERNEL(nchw_to_image3d__test_C_packed_half);
-  if (v_dst.image().format() == VK_FORMAT_R32G32B32A32_SFLOAT) {
-    compute_shader = VK_KERNEL(nchw_to_image3d__test_C_packed_float);
-  }
+
   context->submit_compute_job(
-      compute_shader,
+      get_nchw_to_image_shader(v_dst),
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
@@ -97,14 +93,9 @@ void record_image_to_nchw_op(
     api::Context* const context,
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer) {
-  api::ShaderInfo compute_shader =
-      VK_KERNEL(image3d_to_nchw__test_C_packed_half);
-  if (v_src.image().format() == VK_FORMAT_R32G32B32A32_SFLOAT) {
-    compute_shader = VK_KERNEL(image3d_to_nchw__test_C_packed_float);
-  }
   api::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      compute_shader,
+      get_image_to_nchw_shader(v_src),
       pipeline_barrier,
       v_src.virtual_extents(),
       adaptive_work_group_size(v_src.virtual_extents()),
@@ -147,12 +138,6 @@ void execute_and_check_add(
     vTensor& c,
     float a_val,
     float b_val) {
-  // Add shader kernel
-  api::ShaderInfo kernel = VK_KERNEL(binary_add_nobroadcast__test_half);
-  if (c.image().format() == VK_FORMAT_R32G32B32A32_SFLOAT) {
-    kernel = VK_KERNEL(nchw_to_image3d__test_C_packed_float);
-  }
-
   // Fill input tensors
   fill_vtensor(a, a_val);
   fill_vtensor(b, b_val);
@@ -164,8 +149,8 @@ void execute_and_check_add(
   std::vector<float> data_out = extract_vtensor(c);
 
   // Check output
-  for (const auto& d : data_out) {
-    EXPECT_TRUE(d == (a_val + b_val));
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, (a_val + b_val));
   }
 }
 

@@ -47,6 +47,16 @@ using namespace at::native::vulkan;
   record_image_to_nchw_op(                                    \
       api::context(), tensor, staging_buffer_##tensor.buffer());
 
+#define CHECK_VALUE(data, idx, expected)                          \
+  do {                                                            \
+    if (data[idx] != expected) {                                  \
+      std::cout << "Output at [" << idx << "] = " << data[idx]    \
+                << ", does not match expected value " << expected \
+                << std::endl;                                     \
+    }                                                             \
+    ASSERT_TRUE(data[idx] == expected);                           \
+  } while (false)
+
 //
 // Operator Recording
 //
@@ -126,8 +136,8 @@ check_staging_buffer(api::StorageBuffer& staging, float val, int numel = -1) {
   std::vector<float> data(numel);
   copy_staging_to_ptr(staging, data.data(), sizeof(float) * numel);
 
-  for (const auto& d : data) {
-    EXPECT_TRUE(d == val);
+  for (size_t i = 0; i < data.size(); ++i) {
+    CHECK_VALUE(data, i, val);
   }
 }
 
@@ -142,3 +152,31 @@ api::MemoryAllocation allocate_memory_for(const vTensor& vten);
 VmaTotalStatistics get_vma_stats();
 
 size_t get_vma_allocation_count();
+
+//
+// Debugging Utilities
+//
+
+#define PRINT_DATA(vec) \
+  do {                  \
+    std::cout << #vec;  \
+    print_vector(vec);  \
+  } while (false);
+
+#define PRINT_DATA_RANGE(vec, start, range)                                \
+  do {                                                                     \
+    std::cout << #vec << "[" << start << ", " << (start + range) << "]: "; \
+    print_vector(vec, start, range);                                       \
+  } while (false);
+
+template <typename T>
+void print_vector(std::vector<T>& data, size_t start = 0, size_t range = 20) {
+  size_t end = data.size();
+  if (range >= 1) {
+    end = std::min(data.size(), start + range);
+  }
+  for (size_t i = start; i < end; ++i) {
+    std::cout << data.at(i) << ", ";
+  }
+  std::cout << std::endl << std::endl;
+}

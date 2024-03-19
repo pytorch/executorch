@@ -42,7 +42,7 @@ void main() {
 
   const int base_index = COORD_TO_BUFFER_IDX(coord, cpu_sizes.data);
   const ivec4 buf_indices =
-      base_index + ivec4(0, 1, 2, 3) * (gpu_sizes.data.x * gpu_sizes.data.y);
+      base_index + ivec4(0, 1, 2, 3) * STRIDE_${PACKING}(cpu_sizes.data);
 
   ${T[DTYPE]} val_x = buffer_in.data[buf_indices.x];
   ${T[DTYPE]} val_y = buffer_in.data[buf_indices.y];
@@ -51,10 +51,13 @@ void main() {
 
   ${VEC4_T[DTYPE]} texel = ${VEC4_T[DTYPE]}(val_x, val_y, val_z, val_w);
 
-  if (coord.z + 3 >= cpu_sizes.data.z) {
-    ivec4 c_ind = ivec4(coord.z) + ivec4(0, 1, 2, 3);
-    ${VEC4_T[DTYPE]} valid_c = ${VEC4_T[DTYPE]}(lessThan(c_ind, ivec4(cpu_sizes.data.z)));
-    texel = texel * valid_c;
+  const int packed_dim_size = PACKED_DIM_${PACKING}(cpu_sizes.data);
+  int packed_coord = PACKED_DIM_${PACKING}(coord);
+
+  if (packed_coord + 3 >= packed_dim_size) {
+    ivec4 packed_ind = ivec4(packed_coord) + ivec4(0, 1, 2, 3);
+    ${VEC4_T[DTYPE]} valid_idx = ${VEC4_T[DTYPE]}(lessThan(packed_ind, ivec4(packed_dim_size)));
+    texel = texel * valid_idx;
   }
 
   imageStore(image_out, ${GET_POS[NDIM]("pos")}, texel);

@@ -10,14 +10,21 @@ nchw_to_image:
     DTYPE: float
     PACKING: CHANNELS_PACKED
   generate_variant_forall:
+    PACKING:
+      - VALUE: CHANNELS_PACKED
+        SUFFIX: C_packed
+      - VALUE: WIDTH_PACKED
+        SUFFIX: W_packed
+      - VALUE: HEIGHT_PACKED
+        SUFFIX: H_packed
     DTYPE:
-      - VALUE: "half"
-        SUFFIX: "half"
-      - VALUE: "float"
-        SUFFIX: "float"
-      - VALUE: "int"
-        SUFFIX: "int"
+      - VALUE: half
+        SUFFIX: half
+      - VALUE: float
+        SUFFIX: float
+      - VALUE: int
+        SUFFIX: int
   shader_variants:
-    - NAME: nchw_to_image3d_C_packed
-    - NAME: nchw_to_image2d_C_packed
+    - NAME: nchw_to_image3d
+    - NAME: nchw_to_image2d
       NDIM: 2

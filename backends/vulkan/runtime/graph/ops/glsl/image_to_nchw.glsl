@@ -44,18 +44,21 @@ void main() {
 
   const int base_index = COORD_TO_BUFFER_IDX(coord, cpu_sizes.data);
   const ivec4 buf_indices =
-      base_index + ivec4(0, 1, 2, 3) * (gpu_sizes.data.x * gpu_sizes.data.y);
+      base_index + ivec4(0, 1, 2, 3) * STRIDE_${PACKING}(cpu_sizes.data);
 
-  if (coord.z < cpu_sizes.data.z) {
+  const int packed_dim_size = PACKED_DIM_${PACKING}(cpu_sizes.data);
+  int packed_coord = PACKED_DIM_${PACKING}(coord);
+
+  if (packed_coord < packed_dim_size) {
     buffer_out.data[buf_indices.x] = intex.x;
   }
-  if (coord.z + 1 < cpu_sizes.data.z) {
+  if (packed_coord + 1 < packed_dim_size) {
     buffer_out.data[buf_indices.y] = intex.y;
   }
-  if (coord.z + 2 < cpu_sizes.data.z) {
+  if (packed_coord + 2 < packed_dim_size) {
     buffer_out.data[buf_indices.z] = intex.z;
   }
-  if (coord.z + 3 < cpu_sizes.data.z) {
+  if (packed_coord + 3 < packed_dim_size) {
     buffer_out.data[buf_indices.w] = intex.w;
   }
 }
