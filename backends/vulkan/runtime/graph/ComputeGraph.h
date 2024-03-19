@@ -141,6 +141,8 @@ class ComputeGraph final {
       const void* const data);
   ValueRef add_staging(const api::ScalarType dtype, const size_t numel);
 
+  ValueRef add_none();
+
   template <typename T>
   typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
   add_scalar(T value);
