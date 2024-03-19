@@ -15,6 +15,8 @@ image_to_nchw:
         SUFFIX: "half"
       - VALUE: "float"
         SUFFIX: "float"
+      - VALUE: "int"
+        SUFFIX: "int"
   shader_variants:
     - NAME: image3d_to_nchw_C_packed
     - NAME: image2d_to_nchw_C_packed
