@@ -258,7 +258,6 @@ def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
                 graph_format_str += (
                     f"{indent * 3}{node_in_lowered_module.format_node()}\n"
                 )
-    print(graph_format_str)
     return graph_format_str
 
 
