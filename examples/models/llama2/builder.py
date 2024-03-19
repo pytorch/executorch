@@ -302,6 +302,11 @@ class LlamaEdgeManager:
                 assert self.edge_manager is not None
                 self.edge_manager = self.edge_manager.to_backend(p)
                 if self.verbose:
+                    logging.info(
+                        print_delegated_graph(
+                            self.edge_manager.exported_program().graph_module
+                        )
+                    )
                     logging.info(f"Applied partitioners: {key}")
         elif isinstance(partitioner, Partitioner):
             assert self.edge_manager is not None
