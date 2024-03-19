@@ -26,17 +26,19 @@ from torch.fx.passes.operator_support import OperatorSupportBase
 class VulkanSupportedOperators(OperatorSupportBase):
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
         supported = node.op == "call_function" and node.target in [
-            # BinaryOp
+            # Binary arithmetic operators
             exir_ops.edge.aten.add.Tensor,
             exir_ops.edge.aten.sub.Tensor,
             exir_ops.edge.aten.mul.Tensor,
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.div.Tensor_mode,
             exir_ops.edge.aten.pow.Tensor_Tensor,
-            # Clamp
+            # Activation operators
             exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.relu.default,
+            # Matrix multiplication operators
+            exir_ops.edge.aten.mm.default,
             # Other
             operator.getitem,
         ]
