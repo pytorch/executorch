@@ -292,7 +292,7 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
     }
 #endif
     ETCoreMLLogErrorAndSetNSError(error,
-                                  ETCoreMLErrorCorruptedModel,
+                                  ETCoreMLErrorModelProfilingNotSupported,
                                   "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
                                   NSStringFromClass(self.class));
     return nil;

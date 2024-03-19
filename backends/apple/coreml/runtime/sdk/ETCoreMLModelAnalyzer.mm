@@ -99,33 +99,34 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
         return nil;
     }
     
+    NSError *localError = nil;
     ETCoreMLModel *model = [ETCoreMLModelLoader loadModelWithContentsOfURL:compiledModelAsset.contentURL
                                                              configuration:configuration
                                                                   metadata:metadata
                                                               assetManager:assetManager
-                                                                     error:error];
+                                                                     error:&localError];
     if (!model) {
-        return nil;
+        ETCoreMLLogError(localError,
+                         "%@: Failed to create model profiler.",
+                         NSStringFromClass(ETCoreMLAssetManager.class));
     }
     
-    NSError *localError = nil;
+    localError = nil;
     NSDictionary<ETCoreMLModelStructurePath *, NSString *> *pathToSymbolNameMap = get_path_to_symbol_name_map(modelAsset,
                                                                                                               assetManager.fileManager,
                                                                                                               &localError);
     
     if (localError) {
-        os_log_error(ETCoreMLErrorUtils.loggingChannel , "%@: The model package at path=%@ has invalid or missing debug symbols file.",
-                     NSStringFromClass(ETCoreMLModelAnalyzer.class),
-                     modelAsset.contentURL.path);
+        ETCoreMLLogError(localError,
+                         "%@: The model package at path=%@ has invalid or missing debug symbols file.",
+                         NSStringFromClass(ETCoreMLModelAnalyzer.class),
+                         modelAsset.contentURL.path);
     }
     
     ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithCompiledModelAsset:model.asset
                                                                                     outputNames:model.orderedOutputNames
                                                                                   configuration:configuration
                                                                                           error:error];
-    if (!profiler) {
-        return nil;
-    }
     
     self = [super init];
     if (self) {
@@ -145,6 +146,13 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                                            predictionOptions:(MLPredictionOptions *)predictionOptions
                                                  eventLogger:(const executorchcoreml::ModelEventLogger *)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
+    if (self.profiler == nil) {
+        ETCoreMLLogErrorAndSetNSError(error,
+                                      ETCoreMLErrorModelProfilingNotSupported,
+                                      "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
+                                      NSStringFromClass(ETCoreMLModelAnalyzer.class));
+        return nil;
+    }
     NSArray<MLMultiArray *> *modelOutputs = nil;
     NSArray<ETCoreMLModelStructurePath *> *operationPaths = self.profiler.operationPaths;
     ETCoreMLModelProfilingResult *profilingInfos = [self.profiler profilingInfoForOperationsAtPaths:operationPaths
