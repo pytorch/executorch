@@ -59,7 +59,7 @@ void main() {
 
         mat1_pos.x++;
         mat2_pos.y++;
-      $else:
+      $elif MAT2_PACKING == "WIDTH_PACKED":
         vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
         texel = fma(mat1_tex.xxxx, texelFetch(im_mat2, mat2_pos, 0), texel);
         mat2_pos.y++;
@@ -71,8 +71,10 @@ void main() {
         mat2_pos.y++;
 
         mat1_pos.x++;
+      $else:
+        $raise Exception("Unsupported value for MAT2_PACKING")
     }
-  $else:
+  $elif MAT1_PACKING == "CHANNELS_PACKED" and MAT2_PACKING == "CHANNELS_PACKED":
     int K = in_sizes.data[0];
     for (int i = 0; i < K; ++i) {
       texel = fma(
@@ -83,6 +85,8 @@ void main() {
       mat1_pos.x++;
       mat2_pos.y++;
     }
+  $else:
+    $raise Exception("Unsupported value combo for MAT1_PACKING and MAT2_PACKING")
 
   imageStore(im_out, pos, texel);
 }
