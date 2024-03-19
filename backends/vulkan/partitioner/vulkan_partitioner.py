@@ -15,6 +15,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
@@ -65,6 +66,8 @@ class VulkanPartitioner(Partitioner):
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
+
+        tag_constant_data(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

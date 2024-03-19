@@ -59,10 +59,48 @@
 
 {% endblock %}
 
+<!-- START OF LOCAL OVERRIDE -->
+<!--  This block overrides the theme to enable third level left navigation.-->
+{% block menu %}
+    {% if 'singlehtml' not in builder %}
+         {% set global_toc = toctree(collapse=theme_collapse_navigation|tobool,
+                                     includehidden=theme_includehidden|tobool,
+                                     titles_only=theme_titles_only|tobool) %}
+         {% endif %}
+         {% if global_toc %}
+              {{ global_toc }}
+         {% else %}
+              <!-- Local TOC -->
+              <div class="local-toc">{{ toc }}</div>
+         {% endif %}
+{% endblock %}
+<!-- END OF LOCAL OVERRIDE -->  
+
 {% block footer %}
 {{ super() }}
 <script script type="text/javascript">
-  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'SDK', 'Tutorials']
+  var collapsedSections = ['Introduction', 'Getting Started', 'Working with LLMs', 'Exporting to ExecuTorch',  'API Reference', 'IR Specification', 'Compiler Entry Points', 'Runtime', 'Quantization', 'Kernel Library', 'Native Delegates', 'Backend Delegates', 'SDK', 'Tutorials']
+</script>
+
+{{ super() }}
+<script type="text/javascript">
+// Handle the right navigation in third level pages. Without this
+// in third level, only the last item always selected. This is a hacky
+// way and we should revise it eventually.
+// #side-scroll-highlight is disabled in .css.
+// Get all menu items
+var menuItems = document.querySelectorAll('.pytorch-right-menu a.reference.internal');
+// Add a click event listener to each menu item
+for (var i = 0; i < menuItems.length; i++) {
+  menuItems[i].addEventListener('click', function(event) {
+    // Remove the 'side-scroll-highlight-local' class from all menu items
+    for (var j = 0; j < menuItems.length; j++) {
+      menuItems[j].classList.remove('side-scroll-highlight-local');
+    }
+    // Add the 'side-scroll-highlight-local' class to the clicked item
+    event.target.classList.add('side-scroll-highlight-local');
+  });
+}
 </script>
 
 {{ super() }}
