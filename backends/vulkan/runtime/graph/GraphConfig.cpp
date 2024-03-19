@@ -58,7 +58,7 @@ GraphConfig::GraphConfig() {
   // For now, force TENSOR_CHANNELS_PACKED memory layout by default as we are
   // still developing support for other memory layouts.
   enableMemoryLayoutOverride = true;
-  memoryLayoutOverride = api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  memoryLayoutOverride = api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
 }
 
 void GraphConfig::setStorageTypeOverride(api::StorageType storage_type) {
