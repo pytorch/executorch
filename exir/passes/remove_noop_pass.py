@@ -6,9 +6,42 @@
 
 # pyre-strict
 
+from typing import List, Tuple
+
 import torch
-from executorch.exir.pass_base import ExportPass, ProxyValue
-from torch.utils import _pytree as pytree
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass, PassResult
+from torch.fx import GraphModule
+
+_DEQUANT_OPS: Tuple[torch._ops.OpOverload] = (
+    torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+    torch.ops.quantized_decomposed.dequantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+)
+_QUANT_OPS: Tuple[torch._ops.OpOverload] = (
+    torch.ops.quantized_decomposed.quantize_per_tensor.default,
+    torch.ops.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+)
+
+
+def eliminate_dq_q(
+    graph_module: GraphModule,
+    dequant_nodes: List[torch.fx.Node],
+    check_qparams: bool = True,
+) -> None:
+    for node in dequant_nodes:
+        assert node.target in _DEQUANT_OPS
+        for user in list(node.users):
+            if user.target in _QUANT_OPS:
+                # Drop the input arg and check that the qparams are the same.
+                qparams_dq = list(node.args)[1:]
+                qparams_q = list(user.args)[1:]
+                if check_qparams and (qparams_dq != qparams_q):
+                    continue
+                user.replace_all_uses_with(node.args[0])
 
 
 class RemoveNoopPass(ExportPass):
@@ -16,28 +49,45 @@ class RemoveNoopPass(ExportPass):
     Removes noops that pass through arguments.
     """
 
-    # pyre-ignore
-    def call_operator(self, op, args, kwargs, meta):
-        if op not in (
-            torch.ops.aten.to.dtype,
-            torch.ops.aten.dropout.default,
-            torch.ops.aten.slice_copy.Tensor,
-        ):
-            return super().call_operator(op, args, kwargs, meta)
+    def call(self, graph_module: GraphModule) -> PassResult:
 
-        args_data, kwargs_data = pytree.tree_map_only(
-            ProxyValue, lambda x: x.data, (args, kwargs)
-        )
-        orig_tensor = (
-            args[0].to_tensor() if isinstance(args[0], ProxyValue) else args[0]
-        )
+        # In this list we'll collect all the dequant nodes that are inputs to ops that
+        # are removed in this pass and later check for redundant dq->q patterns and
+        # remove them.
+        dequant_nodes = []
 
-        if orig_tensor is op(*args_data, **kwargs_data):
-            return args[0]
+        for node in graph_module.graph.nodes:
+            if node.op != "call_function":
+                continue
 
-        if op == torch.ops.aten.slice_copy.Tensor:
-            result = op(*args_data, **kwargs_data)
-            if orig_tensor.size() == result.size():
-                return args[0]
+            if node.target not in (
+                torch.ops.aten.to.dtype,
+                torch.ops.aten.dropout.default,
+                torch.ops.aten.slice_copy.Tensor,
+            ):
+                continue
 
-        return super().call_operator(op, args, kwargs, meta)
+            orig_tensor = node.args[0].meta["val"]
+
+            if orig_tensor is node.meta["val"]:
+                # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
+                # Otherwise, removing only the op will suffice.
+                if node.args[0].target in _DEQUANT_OPS:
+                    dequant_nodes += [node.args[0]]
+                node.replace_all_uses_with(node.args[0])
+                continue
+
+            if node.target == torch.ops.aten.slice_copy.Tensor:
+                if orig_tensor.size() == node.meta["val"].size():
+                    # If the graph is quantized, we must remove the entire pattern consisting of dq->op->q.
+                    # Otherwise, removing only the op will suffice.
+                    if node.args[0].target in _DEQUANT_OPS:
+                        dequant_nodes += [node.args[0]]
+                    node.replace_all_uses_with(node.args[0])
+
+        graph_module.graph.eliminate_dead_code()
+        eliminate_dq_q(graph_module, dequant_nodes)
+        graph_module.graph.lint()
+        graph_module.graph.eliminate_dead_code()
+
+        return PassResult(graph_module, True)

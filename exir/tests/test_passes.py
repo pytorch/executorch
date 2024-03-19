@@ -15,7 +15,7 @@ import executorch.exir as exir
 # Import passes
 import executorch.exir.memory_planning  # noqa
 import torch
-from executorch.exir import EdgeCompileConfig, memory, to_edge
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, memory, to_edge
 from executorch.exir.dialects._ops import bind_pattern_to_op, ops, ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.emit import emit_program
@@ -50,6 +50,12 @@ from executorch.exir.tests.models import MLP, Mul
 from functorch.experimental import control_flow
 
 from torch import nn
+
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
 from torch.export import export
 from torch.fx import GraphModule, subgraph_rewriter
 from torch.fx.experimental.proxy_tensor import make_fx
@@ -1244,3 +1250,134 @@ class TestPasses(unittest.TestCase):
         #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%arg0_1, %aten_add_tensor_1), kwargs = {})
         #     return (copy__default, aten_add_tensor)
         self.assertEqual(count_copies(gm), 1)
+
+    def test_remove_quantized_op_noop_pass(self) -> None:
+        class TestAddSliceNoop(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x + x
+                x = x + x[:]
+                return x
+
+        class TestAddSliceNotNoop(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = x + x
+                x = x + x[:1]
+                return x
+
+        def count_dq_nodes(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (
+                    node.target
+                    in (
+                        torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+                        exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+                    )
+                )
+                for node in gm.graph.nodes
+            )
+
+        def count_q_nodes(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (
+                    node.target
+                    in (
+                        torch.ops.quantized_decomposed.quantize_per_tensor.default,
+                        exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+                    )
+                )
+                for node in gm.graph.nodes
+            )
+
+        def quantize_model(
+            m_eager: torch.nn.Module, example_inputs: Tuple[torch.Tensor]
+        ) -> Tuple[EdgeProgramManager, int, int]:
+            # program capture
+            m = torch._export.capture_pre_autograd_graph(
+                m_eager,
+                example_inputs,
+            )
+
+            quantizer = XNNPACKQuantizer()
+            quantization_config = get_symmetric_quantization_config()
+            quantizer.set_global(quantization_config)
+            m = prepare_pt2e(m, quantizer)
+            m = convert_pt2e(m, fold_quantize=True)
+            ep = torch.export.export(m, example_inputs)
+            dq_nodes_pre = count_dq_nodes(ep.graph_module)
+            q_nodes_pre = count_q_nodes(ep.graph_module)
+            edge = to_edge(
+                ep, compile_config=EdgeCompileConfig(_check_ir_validity=False)
+            )
+            return edge, dq_nodes_pre, q_nodes_pre
+
+        example_inputs = (torch.randn(9, 8),)
+        model = TestAddSliceNoop()
+        m_eager = model.eval()
+        edge, dq_nodes_pre, q_nodes_pre = quantize_model(m_eager, example_inputs)
+
+        dq_nodes_post = count_dq_nodes(edge.exported_program().graph_module)
+        q_nodes_post = count_q_nodes(edge.exported_program().graph_module)
+        # One dq and one q node around the slice copy should have been removed.
+        self.assertEqual(dq_nodes_pre - dq_nodes_post, 1)
+        self.assertEqual(q_nodes_pre - q_nodes_post, 1)
+
+        # Check that the slice_copy is removed by the RemoveNoopPass.
+        for node in edge.exported_program().graph_module.graph.nodes:
+            self.assertFalse("slice" in str(node.target))
+
+        model = TestAddSliceNotNoop()
+        m_eager = model.eval()
+        edge, dq_nodes_pre, q_nodes_pre = quantize_model(m_eager, example_inputs)
+
+        dq_nodes_post = count_dq_nodes(edge.exported_program().graph_module)
+        q_nodes_post = count_q_nodes(edge.exported_program().graph_module)
+        # One dq and one q node around the slice copy should have been removed.
+        self.assertEqual(dq_nodes_pre, dq_nodes_post)
+        self.assertEqual(q_nodes_pre, q_nodes_post)
+
+        print(edge.exported_program().graph_module.graph)
+        # Check that the slice_copy is not removed by the RemoveNoopPass.
+        self.assertTrue(
+            any(
+                "slice" in str(node.target)
+                for node in edge.exported_program().graph_module.graph.nodes
+            )
+        )
+
+    def test_dq_q_no_op_pass(self) -> None:
+        class TestDqQ(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                dq = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                    x, 1.0, 0, -128, 127, torch.int8
+                )
+                q = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                    dq, 1.0, 0, -128, 127, torch.int8
+                )
+                return q
+
+        model = TestDqQ()
+        m_eager = model.eval()
+        ep = torch.export.export(m_eager, (torch.randn(9, 8),))
+        edge = to_edge(ep)
+        # Check that the dq and q nodes are not touched by the RemoveNoopPass.
+        self.assertTrue(
+            any(
+                "dequantize" in str(node.target)
+                for node in edge.exported_program().graph_module.graph.nodes
+            )
+        )
+        self.assertTrue(
+            any(
+                "quantize" in str(node.target)
+                for node in edge.exported_program().graph_module.graph.nodes
+            )
+        )
