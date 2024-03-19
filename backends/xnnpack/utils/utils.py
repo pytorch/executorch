@@ -115,3 +115,16 @@ def get_param_tensor(
         except AttributeError:
             return getattr(exp_prog.graph_module, node.target)
     raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
+def get_source_fn(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Returns the source fn of the given node, return None if something goes wrong
+    """
+    if (
+        node.op != "call_function"
+        or (source_fn_st := node.meta.get("source_fn_stack", None)) is None
+    ):
+        return None
+    source_fn = source_fn_st[-1]
+    return source_fn[1]
