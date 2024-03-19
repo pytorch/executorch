@@ -19,6 +19,8 @@
 namespace  {
 using namespace executorchcoreml::modelstructure;
 
+#if MODEL_PROFILING_IS_AVAILABLE
+
 API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
 MLComputePlan *_Nullable get_compute_plan_of_model_at_url(NSURL *model_url,
                                                           MLModelConfiguration *configuration,
@@ -212,20 +214,24 @@ void set_model_outputs(id<MLFeatureProvider> output_features,
     
     *model_outputs = values;
 }
+
+#endif
+
 }
 
-API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
 @interface ETCoreMLModelProfiler ()
 /// The CoreML model.
 @property (readonly, strong, nonatomic) MLModel *model;
 /// The model output names.
 @property (readonly, copy, nonatomic) NSOrderedSet<NSString *> *outputNames;
+#if MODEL_PROFILING_IS_AVAILABLE
 /// The compute plan.
-@property (readonly, strong, nonatomic) MLComputePlan *computePlan;
+@property (readonly, strong, nonatomic) MLComputePlan *computePlan API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4));
+/// The topologically sorted operations.
+@property (readonly, copy, nonatomic) NSArray<MLModelStructureProgramOperation *> *topologicallySortedOperations API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4));
+#endif
 /// The mapping from operation to it's path in the model structure.
 @property (readonly, strong, nonatomic) NSDictionary<NSValue *, ETCoreMLModelStructurePath *> *operationToPathMap;
-/// The topologically sorted operations.
-@property (readonly, copy, nonatomic) NSArray<MLModelStructureProgramOperation *> *topologicallySortedOperations;
 /// The profiling infos for all the operations.
 @property (readonly, copy, nonatomic) NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *profilingInfos;
 
@@ -237,6 +243,7 @@ API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
                                         outputNames:(NSOrderedSet<NSString *> *)outputNames
                                       configuration:(MLModelConfiguration *)configuration
                                               error:(NSError * __autoreleasing *)error  {
+#if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
         NSURL *compiledModelURL = compiledModelAsset.contentURL;
         MLComputePlan *computePlan = get_compute_plan_of_model_at_url(compiledModelURL,
@@ -282,13 +289,13 @@ API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
         }
         
         return self;
-    } else {
-        ETCoreMLLogErrorAndSetNSError(error,
-                                      ETCoreMLErrorCorruptedModel,
-                                      "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
-                                      NSStringFromClass(self.class));
-        return nil;
     }
+#endif
+    ETCoreMLLogErrorAndSetNSError(error,
+                                  ETCoreMLErrorCorruptedModel,
+                                  "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
+                                  NSStringFromClass(self.class));
+    return nil;
 }
 
 - (nullable ETCoreMLModelProfilingResult *)profilingInfoForOperationsAtPaths:(NSArray<ETCoreMLModelStructurePath *> *)paths
@@ -296,6 +303,7 @@ API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
                                                                       inputs:(id<MLFeatureProvider>)inputs
                                                                 modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
                                                                        error:(NSError* __autoreleasing *)error {
+#if MODEL_PROFILING_IS_AVAILABLE
     uint64_t modelExecutionStartTime = mach_absolute_time();
     id<MLFeatureProvider> outputFeatures = [self.model predictionFromFeatures:inputs options:options error:error];
     uint64_t modelExecutionEndTime = mach_absolute_time();
@@ -319,7 +327,7 @@ API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
         
         return profilingInfos;
     }
-    
+#endif
     return nil;
 }
 
@@ -327,6 +335,7 @@ API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
                                                                              inputs:(id<MLFeatureProvider>)inputs
                                                                        modelOutputs:(NSArray<MLMultiArray *> *_Nullable __autoreleasing *_Nonnull)modelOutputs
                                                                               error:(NSError* __autoreleasing *)error {
+#if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
         __block NSMutableArray<ETCoreMLModelStructurePath *> *paths = [NSMutableArray array];
         visit_program_operation(self.computePlan.modelStructure, ^BOOL(MLModelStructureProgramOperation *operation, ETCoreMLModelStructurePath *path) {
@@ -342,7 +351,7 @@ API_AVAILABLE(macos(14.4), ios(17.4), tvos(17.4), watchos(10.4))
                                           modelOutputs:modelOutputs
                                                  error:error];
     }
-    
+#endif
     return nil;
 }
 
