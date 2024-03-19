@@ -33,7 +33,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from .builder import DType, load_llama_model, WeightType
+from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
@@ -409,7 +409,14 @@ def export_llama(modelname, args) -> str:
         return _export_llama(modelname, args)
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
+def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+    """
+    Helper function for export_llama. Loads the model from checkpoint and params,
+    and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
+
+    Returns a LlamaEdgeManager prior to calling export_to_edge with quantizers
+    """
+
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
@@ -455,9 +462,30 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             ).quantized_model()
         )
 
+    return (
+        load_llama_model(
+            checkpoint=checkpoint_path,
+            params_path=params_path,
+            use_kv_cache=args.use_kv_cache,
+            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
+            weight_type=weight_type,
+            verbose=args.verbose,
+        )
+        .set_output_dir(output_dir_path)
+        .set_metadata(args.metadata)
+        .source_transform(transforms)
+        .to_dtype(dtype_override)
+    )
+
+
+def _export_llama(modelname, args) -> str:  # noqa: C901
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
+
+    builder_exported_to_edge = _prepare_for_llama_export(
+        modelname, args
+    ).export_to_edge(quantizers)
 
     # to_backend
     partitioners = {}
@@ -488,22 +516,6 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
         modelname = f"vulkan_{modelname}"
-
-    builder_exported_to_edge = (
-        load_llama_model(
-            checkpoint=checkpoint_path,
-            params_path=params_path,
-            use_kv_cache=args.use_kv_cache,
-            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
-            weight_type=weight_type,
-            verbose=args.verbose,
-        )
-        .set_output_dir(output_dir_path)
-        .set_metadata(args.metadata)
-        .source_transform(transforms)
-        .to_dtype(dtype_override)
-        .export_to_edge(quantizers)
-    )
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
