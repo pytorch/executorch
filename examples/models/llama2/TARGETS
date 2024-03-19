@@ -82,6 +82,7 @@ runtime.python_library(
         "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
         "//executorch/examples/portable:utils",

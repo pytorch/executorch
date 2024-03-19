@@ -55,6 +55,7 @@ class QuantParams:
         is_output: bool,
         is_input: bool,
         is_dynamic: bool = False,
+        num_nonbatch_dims: int = 1,
     ) -> None:
         self.per_channel = per_channel
         self.q_input = q_input
@@ -67,6 +68,7 @@ class QuantParams:
         self.is_output = is_output
         self.is_input = is_input
         self.is_dynamic = is_dynamic
+        self.num_nonbatch_dims = num_nonbatch_dims
         self.is_qc4w = (
             self.per_channel
             and not self.is_dynamic
@@ -105,6 +107,9 @@ class QuantParams:
     def _from_dynamic_input_node(cls, quant_node: torch.fx.Node) -> QuantParams:
         q_input = quant_node.args[0]  # fp32 input
         assert isinstance(q_input, torch.fx.Node)
+        # TODO - materialize this from the quant_node scale count and val shape
+        num_nonbatch_dims = 1
+
         return cls(
             per_channel=False,  # True is not valid
             q_input=q_input,
@@ -117,6 +122,7 @@ class QuantParams:
             is_output=False,
             is_input=q_input.op == "placeholder",
             is_dynamic=True,
+            num_nonbatch_dims=num_nonbatch_dims,
         )
 
     @classmethod
@@ -129,9 +135,12 @@ class QuantParams:
         )
         q_input = quant_node.all_input_nodes[0]
 
+        # TODO: Use presence of choose_qparam node to determine if this is a dynamic quantization
         if quant_node.target in [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+            exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
         ]:
             return cls._from_dynamic_input_node(quant_node)
 
@@ -271,6 +280,7 @@ class QuantParams:
             "Input can not be quantized per channel",
         )
 
+        # Only per_tensor quantization is supported for input here
         check_or_raise(
             isinstance(input_quantizer.scale, float),
             f"q_input scale should be float, but got {input_quantizer.scale}",

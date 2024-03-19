@@ -229,7 +229,7 @@ cmdclass = {
     "egg_info": CustomEggInfoCommand,
 }
 ext_modules = None
-if os.environ.get("EXECUTORCH_BUILD_PYBIND", None):
+if os.environ.get("EXECUTORCH_BUILD_PYBIND", "OFF") == "ON":
     cmdclass["build_ext"] = CMakeBuild
     ext_modules = [CMakeExtension("executorch.extension.pybindings.portable_lib")]
 

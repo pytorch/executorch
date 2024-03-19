@@ -644,7 +644,9 @@ class GraphModuleSerializer:
                     if a is None:
                         return OptionalTensorArgument.create(as_none=())
                     elif isinstance(a, torch.fx.Node):
-                        return OptionalTensorArgument.create(as_tensor=a.name)
+                        return OptionalTensorArgument.create(
+                            as_tensor=TensorArgument(name=a.name)
+                        )
                     else:
                         raise SerializeError(f"Unsupported list/tuple argument: {a}")
 
@@ -664,7 +666,9 @@ class GraphModuleSerializer:
                     if a is None:
                         return OptionalTensorArgument.create(as_none=())
                     elif isinstance(a, inductor_tensor_buffers):
-                        return OptionalTensorArgument.create(as_tensor=a.get_name())
+                        return OptionalTensorArgument.create(
+                            as_tensor=TensorArgument(name=a.get_name())
+                        )
                     else:
                         raise SerializeError(f"Unsupported list/tuple argument: {a}")
 

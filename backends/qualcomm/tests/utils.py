@@ -27,6 +27,9 @@ from executorch.examples.qualcomm.scripts.utils import SimpleADB
 
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.exir.pass_base import ExportPass
+from executorch.exir.program._program import ExecutorchProgram
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -95,6 +98,49 @@ class TestQNN(unittest.TestCase):
 
         return input_list, ref_outputs, pte_fname
 
+    def verify_output(
+        self,
+        module: torch.nn.Module,
+        sample_inputs: Tuple[torch.Tensor],
+        executorch_prog: ExecutorchProgram,
+    ):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (
+                input_list,
+                ref_outputs,
+                pte_fname,
+            ) = self._save_model_and_expected_output(
+                module,
+                executorch_prog.buffer,
+                sample_inputs,
+                tmp_dir,
+            )
+
+            device_output_dir = f"{tmp_dir}/outputs"
+            device_outputs = []
+
+            def post_process():
+                for i, f in enumerate(os.listdir(device_output_dir)):
+                    filename = os.path.join(device_output_dir, f)
+                    output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
+                    output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
+                    device_outputs.append(output)
+
+            adb = SimpleADB(
+                qnn_sdk=os.getenv("QNN_SDK_ROOT"),
+                artifact_path=self.build_folder,
+                pte_path=pte_fname,
+                workspace="/data/local/tmp/qnn_executorch_test",
+                device_id=self.device,
+                host_id=self.host,
+                soc_model=self.model,
+                error_only=self.error_only,
+            )
+            adb.push(inputs=[sample_inputs], input_list=input_list)
+            adb.execute()
+            adb.pull(output_path=tmp_dir, callback=post_process)
+            self._assert_outputs_equal(device_outputs, ref_outputs)
+
     def lower_module_and_test_output(
         self,
         module: torch.nn.Module,
@@ -125,44 +171,7 @@ class TestQNN(unittest.TestCase):
 
         # Check numerics
         if assert_output_equal:
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                (
-                    input_list,
-                    ref_outputs,
-                    pte_fname,
-                ) = self._save_model_and_expected_output(
-                    module,
-                    exec_prog.buffer,
-                    sample_inputs,
-                    tmp_dir,
-                )
-
-                device_output_dir = f"{tmp_dir}/outputs"
-                device_outputs = []
-
-                def post_process():
-                    for i, f in enumerate(os.listdir(device_output_dir)):
-                        filename = os.path.join(device_output_dir, f)
-                        output = np.fromfile(
-                            filename, dtype=ref_outputs[i].numpy().dtype
-                        )
-                        output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
-                        device_outputs.append(output)
-
-                adb = SimpleADB(
-                    qnn_sdk=os.getenv("QNN_SDK_ROOT"),
-                    artifact_path=self.build_folder,
-                    pte_path=pte_fname,
-                    workspace="/data/local/tmp/qnn_executorch_test",
-                    device_id=self.device,
-                    host_id=self.host,
-                    soc_model=self.model,
-                    error_only=self.error_only,
-                )
-                adb.push(inputs=[sample_inputs], input_list=input_list)
-                adb.execute()
-                adb.pull(output_path=tmp_dir, callback=post_process)
-                self._assert_outputs_equal(device_outputs, ref_outputs)
+            self.verify_output(module, sample_inputs, exec_prog)
 
     def get_qdq_module(
         self,
@@ -194,3 +203,44 @@ class TestQNN(unittest.TestCase):
         }
         self.assertTrue(nodes.intersection(q_and_dq))
         return quantized_module
+
+    def split_graph(self, graph_module: torch.fx.GraphModule, division: int):
+        class SplitGraph(ExportPass):
+            """
+            Split graph based on number of nodes.
+            """
+
+            def __init__(self, shares):
+                super().__init__()
+                self.shares = shares
+
+            def _insert_clone(
+                self, graph_module: torch.fx.GraphModule
+            ) -> torch.fx.GraphModule:
+                num_graph_nodes = 0
+                for node in graph_module.graph.nodes:
+                    num_graph_nodes += 1 if node.op == "call_function" else 0
+
+                    if num_graph_nodes % self.shares != 0 or node.op != "call_function":
+                        continue
+
+                    with graph_module.graph.inserting_after(node):
+                        users = list(node.users.keys())
+                        inserted_node = graph_module.graph.create_node(
+                            "call_function",
+                            exir_ops.edge.aten.clone.default,
+                            (node,),
+                        )
+                        inserted_node.meta["val"] = node.meta["val"]
+                        for user in users:
+                            user.replace_input_with(node, inserted_node)
+
+            def call(self, graph_module: torch.fx.GraphModule):
+                self._insert_clone(graph_module)
+                graph_module.recompile()
+
+        num_graph_nodes = 0
+        for node in graph_module.graph.nodes:
+            num_graph_nodes += 1 if node.op == "call_function" else 0
+
+        SplitGraph(-(num_graph_nodes // -division))(graph_module)

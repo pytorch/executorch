@@ -464,9 +464,9 @@ class Transformer(nn.Module):
             freqs_cos = self.freqs_cos[sp : sp + seqlen]
             freqs_sin = self.freqs_sin[sp : sp + seqlen]
         else:
-            assert (
-                start_pos is None and cache_k is None and cache_v is None
-            ), "Caches and start_pos are unused when use_kv_cache is False"
+            # assert (
+            #     start_pos is None and cache_k is None and cache_v is None
+            # ), "Caches and start_pos are unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]
             freqs_sin = self.freqs_sin[:seqlen]
 
