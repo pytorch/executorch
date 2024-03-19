@@ -253,6 +253,54 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(pow_module, sample_inputs)
 
+    def lower_clamp_module_and_test_output(self, module):
+        batch = Dim("batch", max=8)
+        sample_inputs = (torch.randn(8, 16, 96, 92),)
+
+        dynamic_shapes = {"x": {0: batch}}
+        test_inputs = [
+            (torch.randn(3, 14, 15, 92),),
+            (torch.randn(6, 5, 35, 89),),
+            (torch.randn(7, 9, 32, 38),),
+        ]
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+        )
+
+    def test_vulkan_backend_clamp(self):
+        class ClampModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.clamp(x, min=-3.14)
+
+        self.lower_clamp_module_and_test_output(ClampModule())
+
+    def test_vulkan_backend_hardtanh(self):
+        class HardTanHModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.tanh = torch.nn.Hardtanh(min_val=-3.14, max_val=6.28)
+
+            def forward(self, x):
+                return self.tanh(x)
+
+        self.lower_clamp_module_and_test_output(HardTanHModule())
+
+    def test_vulkan_backend_relu(self):
+        class ReLUModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.relu(x)
+
+        self.lower_clamp_module_and_test_output(ReLUModule())
+
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
