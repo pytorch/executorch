@@ -11,11 +11,18 @@ binary_op:
     DTYPE: float
     PACKING: CHANNELS_PACKED
   generate_variant_forall:
+    PACKING:
+      - VALUE: CHANNELS_PACKED
+        SUFFIX: C_packed
+      - VALUE: WIDTH_PACKED
+        SUFFIX: W_packed
+      - VALUE: HEIGHT_PACKED
+        SUFFIX: H_packed
     DTYPE:
-      - VALUE: "half"
-        SUFFIX: "half"
-      - VALUE: "float"
-        SUFFIX: "float"
+      - VALUE: half
+        SUFFIX: half
+      - VALUE: float
+        SUFFIX: float
   shader_variants:
     - NAME: binary_add
     - NAME: binary_sub

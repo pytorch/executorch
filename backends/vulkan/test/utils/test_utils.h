@@ -154,6 +154,15 @@ VmaTotalStatistics get_vma_stats();
 size_t get_vma_allocation_count();
 
 //
+// Graph Test Utilities
+//
+
+void execute_graph_and_check_output(
+    ComputeGraph& graph,
+    std::vector<float> input_vals,
+    std::vector<float> expected_outputs);
+
+//
 // Debugging Utilities
 //
 
