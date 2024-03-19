@@ -22,6 +22,7 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -366,6 +367,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
     parser.add_argument("-V", "--vulkan", action="store_true")
+    parser.add_argument("--mps", action="store_true")
 
     parser.add_argument(
         "--generate_etrecord",
@@ -516,6 +518,25 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
         modelname = f"vulkan_{modelname}"
+
+    if args.mps:
+        assert (
+            args.use_kv_cache is True
+        ), "MPS backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.mps.partition.mps_partitioner`.
+            from executorch.backends.apple.mps.partition.mps_partitioner import (
+                MPSPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
+            )
+
+        compile_specs = [CompileSpec("use_fp16", bytes([True]))]
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        partitioners[MPSPartitioner.__name__] = MPSPartitioner(compile_specs)
+        modelname = f"mps_{modelname}"
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
