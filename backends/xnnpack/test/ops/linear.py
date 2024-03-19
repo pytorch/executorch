@@ -315,12 +315,12 @@ class TestLinear(unittest.TestCase):
             assert dtype in [torch.float, torch.half], "Unsupported op dtype"
             self.op_dtype = dtype
 
-            group_size = self.ic if group_size == 0 else group_size
-            assert group_size == self.ic, "TODO: Unsupported group_size != ic"
-            self.group_size = group_size
-            # assert self.ic % self.group_size == 0
-            # assert self.group_size % 16 == 0
-            self.num_groups = self.ic // self.group_size
+            self.group_size = self.ic if group_size == 0 else group_size
+            self.num_groups = 1
+            if self.group_size != self.ic:
+                assert self.ic % self.group_size == 0
+                assert self.group_size % 8 == 0  # TODO make this 16
+                self.num_groups = self.ic // self.group_size
 
             assert weight_n_bit in [4, 8], "Unsupported weight_n_bit"
             self.w_n_bit = weight_n_bit
@@ -350,6 +350,7 @@ class TestLinear(unittest.TestCase):
                 )
                 self.quant_weight_per_channel()
 
+            # TODO - change bias dtyoe to arg.dtype
             self.bias = (
                 torch.nn.Parameter(torch.randn(self.oc), requires_grad=False)
                 if use_bias
@@ -508,7 +509,6 @@ class TestLinear(unittest.TestCase):
 
         def fwd_weight_per_channel(self) -> torch.Tensor:
             # This is HACKY because the dequant will produce fp32
-            # Works because the xnnpack has static fp32 weights even for fp16.
             return torch.ops.quantized_decomposed.dequantize_per_channel(
                 self.w_q,
                 self.w_scales,
@@ -532,15 +532,12 @@ class TestLinear(unittest.TestCase):
             )
 
         def forward(self, input: torch.Tensor) -> torch.Tensor:
-            # TODO - add support for general linear with ndim > 2
-            assert input.ndim == 2, "Only suppors 2D input"
-
             # Input
             input = self.fwd_input_per_token(input)
 
             # Weights
             w = (
-                self.fwd_weight_per_channel_group
+                self.fwd_weight_per_channel_group()
                 if self.w_scales.ndim == 2
                 else self.fwd_weight_per_channel()
             )
@@ -553,11 +550,9 @@ class TestLinear(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         weight_groupwise: bool = False,
         use_bias: bool = False,
-        atol: float = 1e-2,
-        rtol: float = 1e-2,
+        atol: float = 1e-3,
+        rtol: float = 1e-3,
     ):
-        assert weight_groupwise is False
-
         linear_edge_op = (
             "executorch_exir_dialects_edge__ops_aten_addmm_default"
             if use_bias
@@ -574,7 +569,6 @@ class TestLinear(unittest.TestCase):
             Tester(mod, inputs)
             .export()
             .to_edge()
-            .dump_artifact()
             .check_count(
                 {
                     "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_per_token_asymmetric_default": 1,
@@ -623,7 +617,7 @@ class TestLinear(unittest.TestCase):
                     use_bias=use_bias,
                 )
 
-                inputs = (torch.randn(in_size, input_size).to(op_dtype),)
+                inputs = (torch.randn(1, in_size, input_size).to(op_dtype),)
                 self._test_manual_dq_linear(mod, inputs, use_bias=use_bias)
 
     def test_qd8_fp32_per_token_weight_per_channel_int8(self):
@@ -648,6 +642,36 @@ class TestLinear(unittest.TestCase):
     @unittest.skip("Need to fix the dq_per_channel output dtype")
     def test_qd8_fp16_per_token_weight_per_channel_int4(self):
         self._run_manual_dqlinear_tests(4, torch.float16)
+
+    def test_qd8_fp32_per_token_weight_per_channel_group_int4(self):
+        M_sizes = [1, 2, 17, 31]
+        K_sizes = [8, 32, 64, 128]
+        bl_sizes = [8, 16, 16, 32]
+        N_sizes = [2, 17, 92, 128]
+
+        for use_bias in [True, False]:
+            for i, _ in enumerate(M_sizes):
+                M = int(M_sizes[i])
+                K = int(K_sizes[i])
+                N = int(N_sizes[i])
+                bl = int(bl_sizes[i])
+                mod = self.ManualDQLinear(
+                    input_channels=K,
+                    output_channels=N,
+                    weight_n_bit=4,
+                    dtype=torch.float,
+                    group_size=bl,
+                    force_groupwise_quant=True,
+                    use_bias=use_bias,
+                )
+
+                inputs = (torch.randn(1, M, K),)
+                self._test_manual_dq_linear(
+                    mod,
+                    inputs,
+                    weight_groupwise=True,
+                    use_bias=use_bias,
+                )
 
     def _test_linear(
         self,

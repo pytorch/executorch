@@ -73,6 +73,8 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qcint4;
     case DataType::xnn_datatype_qdint8:
       return xnn_datatype::xnn_datatype_qdint8;
+    case DataType::xnn_datatype_qbint4:
+      return xnn_datatype::xnn_datatype_qbint4;
     default:
       return xnn_datatype::xnn_datatype_invalid;
   }
@@ -336,6 +338,53 @@ Error defineTensor(
             /*scale=*/qparams->scale()->data(),
             /*num_dims=*/tensor_value->num_dims(),
             /*channel_dim*/ qparams->channel_dim(),
+            /*dims=*/dims_data.data(),
+            /*data=*/buffer_ptr,
+            /*external_id=*/tensor_value->external_id(),
+            /*flags=*/tensor_value->flags(),
+            /*id_out=*/&id);
+        break;
+      }
+      case fb_xnnpack::XNNQuantParams::PerChannelGroupQuant: {
+        xnn_datatype datatype = getDataType(tensor_value->datatype());
+        ET_CHECK_OR_RETURN_ERROR(
+            datatype == xnn_datatype::xnn_datatype_qbint4,
+            Internal,
+            "Unsupported datatype for per channel group quantization: %d",
+            datatype);
+        auto qparams = qtensor_value->quant_params_as_PerChannelGroupQuant();
+        size_t group_size = qparams->group_size();
+        size_t output_channels = tensor_value->dims()->Get(0);
+        size_t input_channels = tensor_value->dims()->Get(1);
+        ET_CHECK_OR_RETURN_ERROR(
+            qparams->scale()->size() ==
+                output_channels * input_channels / group_size,
+            Internal,
+            "scale size %zu != output channels %zu * group size %zu",
+            (size_t)qparams->scale()->size(),
+            output_channels,
+            group_size);
+        int32_t zero_point =
+            (datatype == xnn_datatype::xnn_datatype_qbint4 ? 8 : 0);
+        ET_LOG(
+            Debug,
+            "define quant tensor (per channel group): buffer_ptr: %p, scale.numel(): %u, channel_dim: %u, grpup_size: %zu, output_channels: %zu, dtype: %u, zero_point: %d, datatype: %d\n",
+            buffer_ptr,
+            qparams->scale()->size(),
+            qparams->channel_dim(),
+            group_size,
+            output_channels,
+            datatype,
+            zero_point,
+            datatype);
+        status = xnn_define_blockwise_quantized_tensor_value(
+            /*subgraph=*/subgraph_ptr,
+            /*datatype=*/datatype,
+            /*zero_point=*/zero_point,
+            /*scale=*/qparams->scale()->data(),
+            /*num_dims=*/tensor_value->num_dims(),
+            /*channel_dim=*/qparams->channel_dim(),
+            /*block_size=*/qparams->group_size(),
             /*dims=*/dims_data.data(),
             /*data=*/buffer_ptr,
             /*external_id=*/tensor_value->external_id(),

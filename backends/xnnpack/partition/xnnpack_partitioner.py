@@ -14,6 +14,7 @@ import torch
 from executorch.backends.xnnpack.partition.configs import (
     _SUPPORTED_MODULES_WITH_DYNAMIC_SHAPE,
     _SUPPORTED_OPS_WITH_DYNAMIC_SHAPE,
+    SUPPORTED_DYN_QUANT_LINEAR_MODULES,
     SUPPORTED_DYN_QUANT_MODULES,
     SUPPORTED_MODULES,
     SUPPORTED_OPS,
@@ -26,7 +27,11 @@ from executorch.backends.xnnpack.passes.fuse_batch_norm_with_conv import (
     FuseBatchNormWithConvPass,
 )
 from executorch.backends.xnnpack.utils.quant_utils import is_dequant
-from executorch.backends.xnnpack.utils.utils import get_input_node, is_param_node
+from executorch.backends.xnnpack.utils.utils import (
+    get_input_node,
+    get_source_fn,
+    is_param_node,
+)
 from executorch.backends.xnnpack.xnnpack_preprocess import XnnpackBackend
 
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
@@ -333,10 +338,14 @@ class XnnpackOperatorSupport(OperatorSupportBase):
     def dequant_per_token(dq: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
         node = list(dq.users.keys())[0]
         assert isinstance(node, torch.fx.Node)
-        return node.target in [
-            exir_ops.edge.aten.mm.default,
-            exir_ops.edge.aten.addmm.default,
-        ]
+        return (
+            node.target
+            in [
+                exir_ops.edge.aten.mm.default,
+                exir_ops.edge.aten.addmm.default,
+            ]
+            or get_source_fn(node) in SUPPORTED_DYN_QUANT_LINEAR_MODULES
+        )
 
     @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_token.default)
     def quant_per_token(q: torch.fx.Node, ep: ExportedProgram) -> bool:  # noqa
@@ -361,6 +370,38 @@ class XnnpackOperatorSupport(OperatorSupportBase):
         return (
             q.target == exir_ops.edge.quantized_decomposed.quantize_per_token.default
             and XnnpackOperatorSupport.check_constraint(q, ep)
+        )
+
+    @_constraint(
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+    )
+    def dequant_per_channel_group_default(
+        dq: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
+        # Currently only supported by dqlinear weights
+        permute_node = list(dq.users.keys())[0]
+        assert isinstance(permute_node, torch.fx.Node)
+        # We must have a transpose on [add]mm weights
+        if permute_node.target != exir_ops.edge.aten.permute_copy.default:
+            return False
+        mm_node = list(permute_node.users.keys())[0]
+        assert isinstance(mm_node, torch.fx.Node)
+        return mm_node.target in [
+            exir_ops.edge.aten.mm.default,
+            exir_ops.edge.aten.addmm.default,
+        ]
+
+    @_constraint(exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default)
+    def quant_per_channel_group_default(
+        q: torch.fx.Node, ep: ExportedProgram  # noqa
+    ) -> bool:
+        # we shouldn't have this with folded quant weights but doesn't hurt to lower it
+        dq = list(q.users.keys())[0]
+        assert isinstance(dq, torch.fx.Node)
+        return (
+            dq.target
+            == exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default
+            and XnnpackOperatorSupport.dequant_per_channel_default(dq, ep)
         )
 
     @_constraint(exir_ops.edge.aten.pow.Tensor_Scalar)
@@ -612,6 +653,7 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
     _Q_OPS = [
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.quantize_per_token.default,
     ]
@@ -619,6 +661,7 @@ class XnnpackQuantizedPartitioner(XnnpackFloatingPointPartitioner):
     _DQ_OPS = [
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
         exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     ]
@@ -763,13 +806,17 @@ class XnnpackPartitioner(Partitioner):
     _Q_OPS = [
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
         exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.quantize_per_token.default,
     ]
 
     _DQ_OPS = [
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+        exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
         exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
     ]
 
     _QPARAM_OPS = [
