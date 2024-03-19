@@ -187,6 +187,7 @@ def quantize(
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
     blocksize: int = 128,
+    tokenizer_path: Optional[Path] = None,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -220,7 +221,8 @@ def quantize(
     elif qmode == "8da4w-gptq":
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
-        tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        if tokenizer_path is None:
+            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
             model_file=str(tokenizer_path)
@@ -293,6 +295,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint",
         default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
+    )
+    parser.add_argument(
+        "-t",
+        "--tokenizer_path",
+        default=None,
+        help="tokenizer path (Note: .model not .bin)",
     )
     parser.add_argument(
         "-kv",
@@ -421,7 +429,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"{modelname}_q"
         transforms.append(
             partial(
-                quantize, qmode=args.quantization_mode, activation_dtype=dtype_override
+                quantize,
+                qmode=args.quantization_mode,
+                activation_dtype=dtype_override,
+                checkpoint_path=(
+                    Path(path) if (path := args.checkpoint) is not None else None
+                ),
+                tokenizer_path=(
+                    Path(path) if (path := args.tokenizer_path) is not None else None
+                ),
             )
         )
 

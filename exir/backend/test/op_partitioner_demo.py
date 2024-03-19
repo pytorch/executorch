@@ -22,6 +22,7 @@ from executorch.exir.backend.test.backend_with_compiler_demo import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.graph_module import get_control_flow_submodules
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
 from torch.fx.passes.operator_support import any_chain, OperatorSupportBase
 
@@ -103,11 +104,19 @@ class AddAttributePartitionerDemo(Partitioner):
                 # Tag the add nodes
                 node.meta["delegation_tag"] = delegation_tag
 
-                # Tag the get_attr nodes that are arguments to the add nodes.
-                # This will add the attributes into the lowered submodule.
-                for arg in node.args:
-                    if isinstance(arg, torch.fx.Node) and arg.op == "get_attr":
-                        arg.meta["delegation_tag"] = delegation_tag
+                for arg_node in node.args:
+                    if not isinstance(arg_node, torch.fx.Node):
+                        continue
+
+                    is_get_attr = arg_node.op == "get_attr"
+                    is_param_buffer = arg_node.op == "placeholder" and (
+                        is_param(edge_exported_program, arg_node)
+                        or is_buffer(edge_exported_program, arg_node)
+                        or is_lifted_tensor_constant(edge_exported_program, arg_node)
+                    )
+                    if is_get_attr or is_param_buffer:
+                        arg_node.meta["delegation_tag"] = delegation_tag
+                    # Add to the list of partitioned nodes.
 
         return PartitionResult(
             tagged_exported_program=edge_exported_program, partition_tags=partition_tags
