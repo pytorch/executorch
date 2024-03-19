@@ -105,6 +105,7 @@ void add_matmul_node(
 void matmul(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   return add_matmul_node(graph, args[0], args[1], args[2]);
 }
+
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.mm.default, matmul);
 }
