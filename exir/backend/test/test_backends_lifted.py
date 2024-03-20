@@ -891,10 +891,11 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.add_one = AddOne()
+                self.add_one_2 = AddOne()
 
             def forward(self, x, y):
                 x = self.add_one(x) * y
-                return self.add_one(x)
+                return self.add_one_2(x)
 
         inputs = (torch.randn(1, 3), torch.randn(1, 3))
         orig_res = Model()(*inputs)

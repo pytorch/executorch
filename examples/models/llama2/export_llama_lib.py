@@ -22,6 +22,7 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
@@ -33,7 +34,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from .builder import DType, load_llama_model, WeightType
+from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
@@ -187,6 +188,7 @@ def quantize(
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
     blocksize: int = 128,
+    tokenizer_path: Optional[Path] = None,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -220,7 +222,8 @@ def quantize(
     elif qmode == "8da4w-gptq":
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
-        tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        if tokenizer_path is None:
+            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
         assert tokenizer_path.is_file(), tokenizer_path
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
             model_file=str(tokenizer_path)
@@ -295,6 +298,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="checkpoint path",
     )
     parser.add_argument(
+        "-t",
+        "--tokenizer_path",
+        default=None,
+        help="tokenizer path (Note: .model not .bin)",
+    )
+    parser.add_argument(
         "-kv",
         "--use_kv_cache",
         default=False,
@@ -358,6 +367,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
     parser.add_argument("-V", "--vulkan", action="store_true")
+    parser.add_argument("--mps", action="store_true")
 
     parser.add_argument(
         "--generate_etrecord",
@@ -401,7 +411,14 @@ def export_llama(modelname, args) -> str:
         return _export_llama(modelname, args)
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
+def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+    """
+    Helper function for export_llama. Loads the model from checkpoint and params,
+    and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
+
+    Returns a LlamaEdgeManager prior to calling export_to_edge with quantizers
+    """
+
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
@@ -421,7 +438,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"{modelname}_q"
         transforms.append(
             partial(
-                quantize, qmode=args.quantization_mode, activation_dtype=dtype_override
+                quantize,
+                qmode=args.quantization_mode,
+                activation_dtype=dtype_override,
+                checkpoint_path=(
+                    Path(path) if (path := args.checkpoint) is not None else None
+                ),
+                tokenizer_path=(
+                    Path(path) if (path := args.tokenizer_path) is not None else None
+                ),
             )
         )
 
@@ -439,9 +464,30 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             ).quantized_model()
         )
 
+    return (
+        load_llama_model(
+            checkpoint=checkpoint_path,
+            params_path=params_path,
+            use_kv_cache=args.use_kv_cache,
+            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
+            weight_type=weight_type,
+            verbose=args.verbose,
+        )
+        .set_output_dir(output_dir_path)
+        .set_metadata(args.metadata)
+        .source_transform(transforms)
+        .to_dtype(dtype_override)
+    )
+
+
+def _export_llama(modelname, args) -> str:  # noqa: C901
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
+
+    builder_exported_to_edge = _prepare_for_llama_export(
+        modelname, args
+    ).export_to_edge(quantizers)
 
     # to_backend
     partitioners = {}
@@ -473,21 +519,24 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
         modelname = f"vulkan_{modelname}"
 
-    builder_exported_to_edge = (
-        load_llama_model(
-            checkpoint=checkpoint_path,
-            params_path=params_path,
-            use_kv_cache=args.use_kv_cache,
-            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
-            weight_type=weight_type,
-            verbose=args.verbose,
-        )
-        .set_output_dir(output_dir_path)
-        .set_metadata(args.metadata)
-        .source_transform(transforms)
-        .to_dtype(dtype_override)
-        .export_to_edge(quantizers)
-    )
+    if args.mps:
+        assert (
+            args.use_kv_cache is True
+        ), "MPS backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.mps.partition.mps_partitioner`.
+            from executorch.backends.apple.mps.partition.mps_partitioner import (
+                MPSPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
+            )
+
+        compile_specs = [CompileSpec("use_fp16", bytes([True]))]
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        partitioners[MPSPartitioner.__name__] = MPSPartitioner(compile_specs)
+        modelname = f"mps_{modelname}"
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
