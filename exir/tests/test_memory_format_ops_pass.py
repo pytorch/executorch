@@ -68,12 +68,7 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         ).run(before.graph_module.code)
 
         # TODO(gasoonjia): make to_dim_copy pass verifier
-        epm = to_edge(
-            before,
-            compile_config=EdgeCompileConfig(
-                _check_ir_validity=False, _skip_dim_order=False
-            ),
-        )
+        epm = to_edge(before)
 
         # check op strings
         FileCheck().check_not(aten_op_str).check_count(

@@ -508,9 +508,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
         [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
     )
 
-    post_op_replace_passes = (
-        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
-    ) + base_post_op_replace_passes
+    post_op_replace_passes = base_post_op_replace_passes
 
     return pre_op_replace_passes, post_op_replace_passes
 
@@ -553,6 +551,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm_res = OpReplacePass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
+        if not config._skip_dim_order:
+            new_gm_res = MemoryFormatOpsPass()(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -573,6 +575,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             check_edge_ops=config._use_edge_ops,
             enable=config._check_ir_validity,
             class_only=True,
+            dim_order=not config._skip_dim_order,
         ),
         constants=new_ep.exported_program.constants,
     )
@@ -643,6 +646,8 @@ def to_edge(
         passes.extend(pre_op_replace_passes)
         if config._use_edge_ops:
             passes.append(OpReplacePass())
+            if not config._skip_dim_order:
+                passes.append(MemoryFormatOpsPass())
 
         gm = program.graph_module
         for p in passes:
@@ -662,6 +667,7 @@ def to_edge(
                 check_edge_ops=config._use_edge_ops,
                 enable=config._check_ir_validity,
                 class_only=True,
+                dim_order=not config._skip_dim_order,
             ),
             constants=program.constants,
         )
@@ -700,6 +706,7 @@ class EdgeProgramManager:
                 EXIREdgeDialectVerifier(
                     check_edge_ops=config._use_edge_ops,
                     enable=config._check_ir_validity,
+                    dim_order=not config._skip_dim_order,
                 )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
