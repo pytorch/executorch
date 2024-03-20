@@ -133,8 +133,20 @@ if __name__ == "__main__":
         default=False,
         help="Produce a quantized model",
     )
+    parser.add_argument(
+        "-s",
+        "--so_library",
+        required=False,
+        default=None,
+        help="Provide path to so library. E.g., cmake-out/examples/portable/custom_ops/libcustom_ops_aot_lib.so",
+    )
 
     args = parser.parse_args()
+
+    # if we have custom ops, register them before processing the model
+    if args.so_library is not None:
+        logging.info(f"Loading custom ops from {args.so_library}")
+        torch.ops.load_library(args.so_library)
 
     # support models defined within this file or examples/models/ lists
     if (

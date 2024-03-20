@@ -24,6 +24,8 @@ script_dir=$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)
 root_dir=${1:-"${script_dir}/ethos-u-scratch"}
 root_dir=$(realpath ${root_dir})
 buck2=${2:-"/tmp/buck2"}
+[[ -x ${buck2} ]] || buck2=`which buck2`
+
 ethos_u_root_dir="$(cd ${root_dir}/ethos-u && pwd)"
 ethos_u_build_dir=${ethos_u_root_dir}/core_platform/build
 setup_path_script=${root_dir}/setup_path.sh
@@ -47,9 +49,14 @@ function generate_pte_file() {
         model_filename=${model}_arm_delegate.pte
     fi
     cd $et_root_dir
-    python3 -m examples.arm.aot_arm_compiler --model_name="${model}" ${delegate} 1>&2
+
     local pte_file
     pte_file=$(realpath ${model_filename})
+    rm -f "${pte_file}"
+
+    SO_LIB=$(buck2 build //kernels/quantized:aot_lib --show-output | grep "buck-out" | cut -d" " -f2)
+
+    python3 -m examples.arm.aot_arm_compiler --model_name="${model}" ${delegate} --so_library="$SO_LIB" 1>&2
     [[ -f ${pte_file} ]] || { echo "Failed to generate a pte file - ${pte_file}"; exit 1; }
     echo "${pte_file}"
 }
