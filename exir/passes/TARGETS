@@ -16,6 +16,7 @@ python_library(
         ":normalize_transpose_pass",
         ":prim_ops_py_registry",
         ":quant_fusion_pass",
+        ":remove_auto_functionalized_pass",
         ":remove_noop_pass",
         ":replace_aten_with_edge_pass",
         ":replace_broken_ops_with_function_ops_pass",
@@ -89,6 +90,16 @@ python_library(
     name = "constant_prop_pass",
     srcs = [
         "constant_prop_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "remove_auto_functionalized_pass",
+    srcs = [
+        "remove_auto_functionalized_pass.py",
     ],
     deps = [
         "//caffe2:torch",
