@@ -122,9 +122,18 @@ def precompute_freqs_cis(dim: int, end: int, theta: float):
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    freqs_cis_ndim = freqs_cis.ndim
+    if freqs_cis_ndim == 3:
+        # freqs_cis: (seq_len, n_heads, head_dim // 2)
+        assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
+        shape = [
+            d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
+            for i, d in enumerate(x.shape)
+        ]
+    else:
+        # freqs_cis: (seq_len, head_dim // 2)
+        assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(shape)
 
 
