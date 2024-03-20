@@ -52,8 +52,4 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten/util/...",
             "//executorch/kernels/...",
         ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:tag",
-        ],
     )
