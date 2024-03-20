@@ -74,7 +74,7 @@ class ModelArgs:
     ffn_dim_multiplier: Optional[float] = None
     norm_eps: float = 1e-5
     max_batch_size: int = 32
-    max_seq_len: int = 2048
+    max_seq_len: int = 128#2048
     moe: bool = False  # True to enable the MoE (Mixture of Experts)
     num_experts: int = 8  # Number of experts
     num_activated_experts: int = 2  # Number of experts to activate
