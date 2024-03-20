@@ -21,7 +21,7 @@ enum VkDataType : byte {
 
 // Describes what kind of GPU resource should be used to represent a tensor. The
 // int values assigned to each entry must match the corresponding entry in
-// api::GPUMemoryLayout.
+// api::StorageType.
 enum VkStorageType : ubyte {
   BUFFER = 0,
   TEXTURE_3D = 1,
