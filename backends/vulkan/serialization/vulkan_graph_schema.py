@@ -41,10 +41,6 @@ class VkMemoryLayout(IntEnum):
     TENSOR_WIDTH_PACKED = 0
     TENSOR_HEIGHT_PACKED = 1
     TENSOR_CHANNELS_PACKED = 2
-    WHCW = 3
-    WHCH = 4
-    WHCC = 5
-    CHWC = 6
     DEFAULT_LAYOUT = 255
 
 

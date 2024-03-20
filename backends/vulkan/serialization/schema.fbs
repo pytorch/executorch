@@ -26,7 +26,6 @@ enum VkStorageType : ubyte {
   BUFFER = 0,
   TEXTURE_3D = 1,
   TEXTURE_2D = 2,
-  // Magic Number
   DEFAULT_STORAGE = 255,
 }
 
@@ -37,11 +36,6 @@ enum VkMemoryLayout : ubyte {
   TENSOR_WIDTH_PACKED = 0,
   TENSOR_HEIGHT_PACKED = 1,
   TENSOR_CHANNELS_PACKED = 2,
-  WHCW = 3,
-  WHCH = 4,
-  WHCC = 5,
-  CHWC = 6,
-  // Magic number
   DEFAULT_LAYOUT = 255,
 }
 
