@@ -61,3 +61,21 @@ def get_dim_order(
     raise AssertionError(
         f"Failed to generate dim_order for a given memory format: {memory_format}"
     )
+
+
+def is_channel_last_dim_order(tensor: torch.Tensor) -> bool:
+    """
+    Check if a tensor has channels last dim order
+    """
+    if tensor.dim() != 4:
+        # Only support 4D tensors for channel list memory format.
+        return False
+
+    return tensor.dim_order() == tuple(_get_channels_last_dim_order(tensor.dim()))
+
+
+def is_contiguous_dim_order(tensor: torch.Tensor) -> bool:
+    """
+    Check if a tensor has contiguous dim order
+    """
+    return tensor.dim_order() == tuple(_get_contiguous_dim_order(tensor.dim()))
