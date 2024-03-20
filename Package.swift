@@ -20,14 +20,12 @@ let xnnpack_sha256 = ""
 struct Framework {
   let name: String
   let checksum: String
-  var dependencies: [String] = []
 
   func target() -> Target {
     .binaryTarget(
       name: name,
       url: "\(url)/\(name)-\(version).zip",
-      checksum: checksum,
-      linkerSettings: dependencies.isEmpty ? nil : dependencies.map { .linkedFramework($0) }
+      checksum: checksum
     )
   }
 }
@@ -35,12 +33,7 @@ struct Framework {
 let frameworks = [
   Framework(
     name: "coreml_backend",
-    checksum: coreml_sha256,
-    dependencies: [
-      "Accelerate",
-      "CoreML",
-      "sqlite3"
-    ]
+    checksum: coreml_sha256
   ),
   Framework(
     name: "executorch",
@@ -48,12 +41,7 @@ let frameworks = [
   ),
   Framework(
     name: "mps_backend",
-    checksum: mps_sha256,
-    dependencies: [
-      "Metal",
-      "MetalPerformanceShaders",
-      "MetalPerformanceShadersGraph"
-    ]
+    checksum: mps_sha256
   ),
   Framework(
     name: "portable_backend",
