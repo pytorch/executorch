@@ -33,6 +33,7 @@ def define_common_targets():
                 "//executorch/test/...",
                 "//executorch/util/...",
                 "//executorch/backends/fb/qnnpack/test/...",
+                "//executorch/extension/kernel_util/test/...",
                 "@EXECUTORCH_CLIENTS",
             ],
             compiler_flags = ["-Wno-unneeded-internal-declaration"],

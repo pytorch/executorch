@@ -34,6 +34,11 @@ DEFINE_int32(
     128,
     "Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
 
+DEFINE_int32(
+    cpu_threads,
+    -1,
+    "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -50,9 +55,12 @@ int32_t main(int32_t argc, char** argv) {
 
   int32_t seq_len = FLAGS_seq_len;
 
+  int32_t cpu_threads = FLAGS_cpu_threads;
+
 #if defined(ET_USE_THREADPOOL)
-  uint32_t num_performant_cores =
-      torch::executorch::cpuinfo::get_num_performant_cores();
+  uint32_t num_performant_cores = cpu_threads == -1
+      ? torch::executorch::cpuinfo::get_num_performant_cores()
+      : static_cast<uint32_t>(cpu_threads);
   ET_LOG(
       Info, "Resetting threadpool with num threads = %d", num_performant_cores);
   torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(

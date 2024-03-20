@@ -5,6 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
+import sys
+
+from pathlib import Path
 from typing import cast, Dict, Optional, Tuple
 
 import torch
@@ -390,6 +393,18 @@ class NodeVisitor:
             vals_to_ids[quant_params.q_input] = id_out
 
     @staticmethod
+    def find_aot_util_path() -> str:
+        # Look for .so installed by wheel (OSS).
+        rel_path = "executorch/extension/pybindings/libaot_util.so"
+        for sys_path in sys.path:
+            so_path = Path(sys_path) / rel_path
+            if so_path.exists():
+                return str(so_path.absolute().as_posix())
+
+        # Fall back to buck.
+        return "//executorch/extension/aot_util:aot_util"
+
+    @staticmethod
     def convert_to_qc4w(inp: torch.Tensor) -> torch.Tensor:
         """
         Convert a tensor to a quantized channelwise tensor 4bit tensor
@@ -423,13 +438,13 @@ class NodeVisitor:
         result = torch.zeros([oc, ric], dtype=torch.uint8)
 
         try:
-            # TODO(): Enable this in OSS
-            torch.ops.load_library(
-                "//executorch/backends/xnnpack/operators:convert_to_qc4w"
-            )
+            aot_path = NodeVisitor.find_aot_util_path()
+            torch.ops.load_library(aot_path)
             result = torch.ops.xnnpack.convert_to_qc4w(inp)
         except:
             # Fallback to python implementation
+            # TODO Warn the user? They might be developing in-tree and didn't install,
+            # in which case, this will be very slow for large models.
             for o in range(oc):
                 for i in range(ric):
                     j = 2 * i

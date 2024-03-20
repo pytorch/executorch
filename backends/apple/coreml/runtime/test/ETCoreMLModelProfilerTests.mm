@@ -8,6 +8,7 @@
 
 #import <XCTest/XCTest.h>
 #import <ETCoreMLModelAnalyzer.h>
+#import <ETCoreMLModelProfiler.h>
 #import <ETCoreMLOperationProfilingInfo.h>
 #import <ETCoreMLModelStructurePath.h>
 #import <model_logging_options.h>
@@ -97,7 +98,8 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
 }
 
 - (void)testAddProgramProfiling {
-    if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
+#if MODEL_PROFILING_IS_AVAILABLE
+    if (@available(macOS 14.4, iOS 17.4, watchOS 10.4, tvOS 17.4, *)) {
         NotifyFn notify = [](NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *profilingResult,
                              NSDictionary<ETCoreMLModelStructurePath *, NSString *> *__unused pathToSymbolNameMap) {
             // There are 3 add ops, we verify that the profiling info exists for the ops.
@@ -110,9 +112,13 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
                repeatedInputValues:@[@(1), @(2)]
                             notify:notify];
     }
+#else
+    XCTSkip(@"Model profiling is only available on macOS 14.4, iOS 17.4, tvOS 17.4, and watchOS 10.4.");
+#endif
 }
 
 - (void)testMulProgramProfiling {
+#if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
         NotifyFn notify = [](NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *profilingResult,
                              NSDictionary<ETCoreMLModelStructurePath *, NSString *> *__unused pathToSymbolNameMap) {
@@ -124,9 +130,13 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
                repeatedInputValues:@[@(1), @(2)]
                             notify:notify];
     }
+#else
+    XCTSkip(@"Model profiling is only available on macOS 14.4, iOS 17.4, tvOS 17.4, and watchOS 10.4.");
+#endif
 }
 
 - (void)testMV3ProgramProfiling {
+#if MODEL_PROFILING_IS_AVAILABLE
     if (@available(macOS 14.4, iOS 17.4, tvOS 17.4, watchOS 10.4, *)) {
         NotifyFn notify = [](NSDictionary<ETCoreMLModelStructurePath *, ETCoreMLOperationProfilingInfo *> *profilingResult,
                              NSDictionary<ETCoreMLModelStructurePath *, NSString *> *__unused pathToSymbolNameMap) {
@@ -143,6 +153,9 @@ ETCoreMLModelStructurePath *make_path_with_output_name(const std::string& output
                repeatedInputValues:@[@(1), @(2)]
                             notify:notify];
     }
+#else
+    XCTSkip(@"Model profiling is only available on macOS 14.4, iOS 17.4, tvOS 17.4, and watchOS 10.4.");
+#endif
 }
 
 @end

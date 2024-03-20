@@ -152,6 +152,10 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
 option(EXECUTORCH_BUILD_GTESTS
        "Build googletest based test binaries" OFF)
 
+# Build the AOT util extension library
+option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL
+       "Build the extension/aot_util directory" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -236,11 +240,11 @@ if(EXECUTORCH_BUILD_FLATC)
     )
   endif()
   set(FLATC_EXECUTABLE flatc)
-  option(FLATBUFFERS_BUILD_FLATC "" ON)
-  option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
-  option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
-  option(FLATBUFFERS_BUILD_TESTS "" OFF)
-  option(FLATBUFFERS_INSTALL "" OFF)
+  set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
+  set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
   add_subdirectory(third-party/flatbuffers)
 endif()
 if(NOT FLATC_EXECUTABLE)
@@ -358,6 +362,10 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
+endif()
+
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
@@ -453,7 +461,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      flatcc
       portable_ops_lib
       util
       torch

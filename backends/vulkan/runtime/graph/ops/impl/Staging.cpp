@@ -61,9 +61,12 @@ void add_tensor_to_staging_node(
       {t_in.gpu_sizes_ubo(), t_in.cpu_sizes_ubo()}));
 }
 
-ValueRef prepack(ComputeGraph& graph, const ValueRef vref) {
+ValueRef prepack(
+    ComputeGraph& graph,
+    const ValueRef vref,
+    const api::GPUMemoryLayout layout) {
   TensorRef& tref = graph.get_val(vref).toTensorRef();
-  ValueRef v = graph.add_tensor(tref.sizes, tref.dtype);
+  ValueRef v = graph.add_tensor(tref.sizes, tref.dtype, layout);
   vTensor t = graph.get_val(v).toTensor();
 
   api::ShaderInfo shader = get_nchw_to_image_shader(t);
@@ -83,9 +86,22 @@ ValueRef prepack(ComputeGraph& graph, const ValueRef vref) {
   return v;
 }
 
+ValueRef prepack_if_tensor_ref(
+    ComputeGraph& graph,
+    const ValueRef v,
+    const api::GPUMemoryLayout layout) {
+  if (graph.get_val(v).isTensorRef()) {
+    return prepack(graph, v, layout);
+  } else {
+    return v;
+  }
+}
+
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
   if (graph.get_val(v).isTensorRef()) {
-    return prepack(graph, v);
+    api::GPUMemoryLayout layout =
+        graph.suggested_memory_layout(graph.get_val(v).toTensorRef().sizes);
+    return prepack(graph, v, layout);
   } else {
     return v;
   }

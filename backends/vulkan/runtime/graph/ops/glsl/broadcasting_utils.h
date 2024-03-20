@@ -9,7 +9,7 @@
 ivec4 out_coord_to_in_coord(const ivec4 out_coord, const ivec4 in_sizes) {
   ivec4 in_coord = out_coord;
   for (int i = 0; i < 4; ++i) {
-    if (in_sizes[i] == 1) {
+    if (out_coord[i] >= in_sizes[i]) {
       in_coord[i] = 0;
     }
   }

@@ -62,7 +62,9 @@ def _convert_to_state_dict(gguf_weights: GGUFWeights) -> Mapping[str, Any]:
     for tensor in gguf_weights.tensors:
         gguf_tensor_name = tensor.name
         nn_tensor_name = _convert_gguf_tensor_name_to_llama_nn(gguf_tensor_name)
-        new_tensor = tensor.data.reshape(tensor.shape).transpose()
+        # gguf is reversed
+        reversed_shape = tensor.shape[::-1]
+        new_tensor = tensor.data.reshape(reversed_shape)
         state_dict[nn_tensor_name] = torch.from_numpy(new_tensor)
 
     return state_dict
