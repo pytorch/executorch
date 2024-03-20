@@ -100,6 +100,7 @@ class CMakeBuild(build_ext):
         cmake_prefix_path = os.environ.get("CMAKE_PREFIX_PATH", get_python_lib())
         cmake_args = [
             "-DEXECUTORCH_BUILD_PYBIND=ON",
+            "-DEXECUTORCH_BUILD_EXTENSION_AOT_UTIL=ON",
             "-DBUILD_SHARED_LIBS=ON",  # For flatcc
             f"-DBUCK2={buck}",
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",

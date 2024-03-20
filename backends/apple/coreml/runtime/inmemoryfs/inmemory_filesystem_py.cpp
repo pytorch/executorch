@@ -14,6 +14,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/pytypes.h>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <sys/mman.h>
 #include <system_error>
@@ -151,8 +152,38 @@ pybind11::bytes flatten_directory_contents(const std::string& path) {
     return bytes == nullptr ? pybind11::none() : pybind11::reinterpret_steal<pybind11::object>((PyObject*)bytes);
 }
 
+/// Unflattens and writes the contents of the memory buffer at the specified path.
+///
+/// @param bytes  The bytes returned from `flatten_directory_contents`.
+/// @param path  The directory path
+bool unflatten_directory_contents(pybind11::bytes bytes, const std::string& path) {
+    using namespace inmemoryfs;
+
+    char* buffer = nullptr;
+    ssize_t length = 0;
+    if (PYBIND11_BYTES_AS_STRING_AND_SIZE(bytes.ptr(), &buffer, &length)) {
+        pybind11::pybind11_fail("Failed to extract contents of bytes object!");
+    }
+    std::shared_ptr<MemoryBuffer> memory_buffer =
+        MemoryBuffer::make_unowned((void*)buffer, static_cast<size_t>(length));
+    auto fs = inmemoryfs::make_from_buffer(memory_buffer);
+    if (!fs) {
+        pybind11::pybind11_fail("Failed to de-serialize bytes object!");
+        return false;
+    }
+    std::error_code ec;
+    std::filesystem::path fs_path(path);
+    auto canonical_path = std::filesystem::canonical(fs_path);
+    if (!fs->write_item_to_disk({}, canonical_path, true, ec)) {
+        pybind11::pybind11_fail("Failed to write the item to disk!");
+        return false;
+    }
+
+    return true;
+}
 } // namespace executorchcoreml
 
 PYBIND11_MODULE(executorchcoreml, mod) {
     mod.def("flatten_directory_contents", &executorchcoreml::flatten_directory_contents);
+    mod.def("unflatten_directory_contents", &executorchcoreml::unflatten_directory_contents);
 }

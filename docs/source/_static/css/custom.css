@@ -172,3 +172,23 @@ article.pytorch-article .class .simple dt {
 article.pytorch-article .function dt.sig {
     border-top: none;
 }
+
+/* styles needed for 3rd level left nav */
+
+.pytorch-left-menu ul, .pytorch-right-menu ul {
+    margin-left: 1.2em;
+}
+
+.pytorch-left-menu li.toctree-l2.current > a {
+    color: #e44c2c;
+}
+
+/* The next two styles enable normal hihglighting in the third level nav
+in right side bar.*/
+#pytorch-right-menu .side-scroll-highlight {
+    color: #6c6c6d;
+}
+
+#pytorch-right-menu a.reference.internal.side-scroll-highlight-local {
+  color: #ee4c2c;
+}

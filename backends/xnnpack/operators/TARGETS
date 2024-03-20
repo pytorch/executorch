@@ -10,18 +10,9 @@ runtime.python_library(
         "@EXECUTORCH_CLIENTS",
     ],
     deps = [
-        ":convert_to_qc4w",
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:graph_module",
         "//executorch/exir/backend:backend_details",
+        "//executorch/extension/aot_util:aot_util",
     ],
-)
-
-runtime.cxx_library(
-    name = "convert_to_qc4w",
-    srcs = ["convert_to_qc4w.cpp"],
-    visibility = [
-        "//executorch/...",
-    ],
-    external_deps = ["libtorch"],
 )

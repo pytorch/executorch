@@ -43,7 +43,7 @@ TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
   // Try to get shader from custom shader library
   const api::ShaderInfo& kernel = VK_KERNEL(test_shader);
 
-  EXPECT_TRUE(kernel.kernel_name == "test_shader");
+  ASSERT_TRUE(kernel.kernel_name == "test_shader");
 }
 
 TEST_F(VulkanComputeAPITest, update_params_between_submit) {
@@ -121,8 +121,8 @@ TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
   std::vector<float> data_out = extract_vtensor(c);
 
   // Check output
-  for (const auto& d : data_out) {
-    EXPECT_TRUE(d == 4.0f);
+  for (size_t i = 0; i < data_out.size(); ++i) {
+    CHECK_VALUE(data_out, i, 4.0f);
   }
 }
 
@@ -162,8 +162,8 @@ TEST_F(VulkanComputeAPITest, texture_deferred_allocation_test) {
   std::vector<float> data_c(c.gpu_numel());
   extract_vtensor(c, data_c);
 
-  for (const auto& val : data_c) {
-    EXPECT_TRUE(val == 4.0f);
+  for (size_t i = 0; i < data_c.size(); ++i) {
+    CHECK_VALUE(data_c, i, 4.0f);
   }
 }
 
@@ -224,8 +224,8 @@ TEST_F(VulkanComputeAPITest, texture_resource_aliasing_test) {
   extract_vtensor(e, data_e);
 
   // Sanity check that the values are correct
-  for (const auto& val : data_e) {
-    EXPECT_TRUE(val == 5.0f);
+  for (size_t i = 0; i < data_e.size(); ++i) {
+    CHECK_VALUE(data_e, i, 5.0f);
   }
 }
 
@@ -478,16 +478,16 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (const auto& val : data_out) {
-      EXPECT_TRUE(val == val_c);
+    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_c);
     }
   }
 }
 
-#define CREATE_WEIGHT_TENSOR(name, sizes, val)                          \
+#define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)                   \
   std::vector<float> data_##name(api::utils::multiply_integers(sizes)); \
   std::fill(data_##name.begin(), data_##name.end(), val);               \
-  ValueRef name = graph.add_tensorref(sizes, api::kFloat, data_##name.data());
+  ValueRef name = graph.add_tensorref(sizes, dtype, data_##name.data());
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   GraphConfig config;
@@ -496,8 +496,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   std::vector<int64_t> size_big = {8, 73, 62};
   std::vector<int64_t> size_small = {8, 73, 1};
 
-  CREATE_WEIGHT_TENSOR(w1, size_small, 3.5f);
-  CREATE_WEIGHT_TENSOR(w2, size_small, 3.0f);
+  CREATE_WEIGHT_TENSOR(w1, size_small, api::kFloat, 3.5f);
+  CREATE_WEIGHT_TENSOR(w2, size_small, api::kFloat, 3.0f);
 
   // Build graph
 
@@ -536,8 +536,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (const auto& val : data_out) {
-      EXPECT_TRUE(val == val_out);
+    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); ++i) {
+      CHECK_VALUE(data_out, i, val_out);
     }
   }
 }
@@ -636,8 +636,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (const auto& val : data_out) {
-      EXPECT_TRUE(val == val_out);
+    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); i++) {
+      CHECK_VALUE(data_out, i, val_out);
     }
   }
 
@@ -668,8 +668,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (const auto& val : data_out) {
-      ASSERT_TRUE(val == val_out);
+    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); i++) {
+      CHECK_VALUE(data_out, i, val_out);
     }
   }
 }
@@ -723,8 +723,341 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
 
     EXTRACT_TENSOR(out);
 
-    for (const auto& val : data_out) {
-      EXPECT_TRUE(val == val_e);
+    for (int i = 0; i < graph.get_val(out.value).toTensor().numel(); i++) {
+      CHECK_VALUE(data_out, i, val_e);
     }
   }
+}
+
+class VulkanToFromGPUShaderTest : public ::testing::Test {
+ public:
+  void SetUp() override {
+    // Make sure we are starting with a clean slate
+    EXPECT_TRUE(get_vma_allocation_count() == 0);
+  }
+
+  void TearDown() override {
+    api::context()->flush();
+
+    // Make sure we are ending with a clean slate
+    EXPECT_TRUE(get_vma_allocation_count() == 0);
+  }
+};
+
+template <typename T>
+void run_from_gpu_test(
+    std::vector<int64_t>& sizes,
+    api::GPUMemoryLayout memory_layout =
+        api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
+    api::ScalarType dtype = api::kFloat,
+    api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  vTensor vten =
+      vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
+
+  std::stringstream kernel_name;
+  kernel_name << "idx_fill_texture";
+  apply_memory_layout_suffix(kernel_name, vten);
+  apply_dtype_suffix(kernel_name, vten);
+
+  {
+    api::PipelineBarrier pipeline_barrier{};
+    api::context()->submit_compute_job(
+        VK_KERNEL_FROM_STR(kernel_name.str()),
+        pipeline_barrier,
+        vten.virtual_extents(),
+        {4, 4, 4},
+        VK_NULL_HANDLE,
+        vten.image(
+            pipeline_barrier,
+            api::PipelineStage::COMPUTE,
+            api::MemoryAccessType::WRITE),
+        vten.gpu_sizes_ubo()->buffer(),
+        vten.cpu_sizes_ubo()->buffer());
+  }
+
+  api::StorageBuffer staging_buffer(
+      api::context(), api::kFloat, vten.gpu_numel());
+
+  record_image_to_nchw_op(api::context(), vten, staging_buffer.buffer());
+
+  submit_to_gpu();
+
+  std::vector<T> data_out(staging_buffer.numel());
+  copy_staging_to_ptr(
+      staging_buffer, data_out.data(), sizeof(float) * staging_buffer.numel());
+
+  for (int i = 0; i < vten.numel(); i++) {
+    CHECK_VALUE(data_out, i, i);
+  }
+}
+
+template <typename T>
+void run_to_gpu_test(
+    std::vector<int64_t>& sizes,
+    api::GPUMemoryLayout memory_layout =
+        api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
+    api::ScalarType dtype = api::kFloat,
+    api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  vTensor vten =
+      vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
+
+  // Create and fill input staging buffer
+  api::StorageBuffer staging_buffer_in(
+      api::context(), api::kFloat, vten.gpu_numel());
+
+  std::vector<T> data_in(staging_buffer_in.numel());
+  for (int i = 0; i < staging_buffer_in.numel(); i++) {
+    data_in[i] = i;
+  }
+  copy_ptr_to_staging(data_in.data(), staging_buffer_in, vten.gpu_nbytes());
+
+  // Output staging buffer
+  api::StorageBuffer staging_buffer_out(
+      api::context(), api::kFloat, vten.gpu_numel());
+
+  // Copy data in and out of the tensor
+  record_nchw_to_image_op(api::context(), staging_buffer_in.buffer(), vten);
+  record_image_to_nchw_op(api::context(), vten, staging_buffer_out.buffer());
+
+  // Execute command buffer
+  submit_to_gpu();
+
+  // Extract data from output staging buffer
+  std::vector<T> data_out(staging_buffer_out.numel());
+  copy_staging_to_ptr(
+      staging_buffer_out,
+      data_out.data(),
+      sizeof(float) * staging_buffer_out.numel());
+
+  // All indices should be equal to the input data
+  for (int i = 0; i < vten.numel(); i++) {
+    CHECK_VALUE(data_out, i, i);
+  }
+}
+
+TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
+  // The below tests will fill each texel element with the value of the linear
+  // buffer index that corresponds to it. The texel at position (0, 0, 0) will
+  // be filled with the values [0, 1, 2, 3], the texel at position (1, 0, 0)
+  // will be filled with the values [4, 5, 6, 7], and so forth. The contents of
+  // the texture are then written back to the CPU, and to check that the
+  // transfer has ben performed correctly the value at each index of the CPU
+  // data buffer should be equal to the index.
+  //
+  // The below test cases should ensure that the total number of elements does
+  // not exceed 2048, or else the tests will fail for FP16 textures due to
+  // precision issues. Half precision floating point formats can only represent
+  // integers from 2048 to 4096 using intervals of 2.
+  std::vector<std::vector<int64_t>> to_test = {
+      // 2D sizes
+      {17, 21},
+      {67, 23},
+      {55, 33},
+      // 3D sizes
+      {7, 9, 13},
+      {21, 2, 19},
+      {17, 17, 5},
+      // 4D sizes
+      {7, 3, 13, 7},
+      {11, 9, 9, 1},
+      {3, 3, 3, 3},
+      {3, 1, 7, 13},
+  };
+
+#define RUN_TESTS(ctype, dtype)                                    \
+  run_from_gpu_test<ctype>(                                        \
+      sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
+  run_from_gpu_test<ctype>(                                        \
+      sizes, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
+  run_from_gpu_test<ctype>(                                        \
+      sizes, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);   \
+  run_to_gpu_test<ctype>(                                          \
+      sizes, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, dtype); \
+  run_to_gpu_test<ctype>(                                          \
+      sizes, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, dtype);    \
+  run_to_gpu_test<ctype>(                                          \
+      sizes, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, dtype);
+
+  for (auto& sizes : to_test) {
+    RUN_TESTS(float, api::kFloat)
+    RUN_TESTS(float, api::kHalf)
+  }
+#undef RUN_TESTS
+}
+
+//
+// Operator Smoke Tests
+//
+
+void test_binary_op(
+    std::string op_name,
+    std::vector<int64_t> sizes_big,
+    std::vector<int64_t> sizes_small,
+    api::ScalarType dtype,
+    api::GPUMemoryLayout memory_layout,
+    bool prepack = true) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  IOValueRef arg2{};
+
+  CREATE_WEIGHT_TENSOR(arg2_w, sizes_small, dtype, 2.5f);
+
+  // Build graph
+
+  IOValueRef arg1 = graph.add_input_tensor(sizes_big, dtype, memory_layout);
+
+  if (prepack) {
+    arg2.value = arg2_w;
+  } else {
+    arg2 = graph.add_input_tensor(sizes_small, dtype, memory_layout);
+  }
+
+  IOValueRef out;
+  out.value = graph.add_tensor(sizes_big, dtype, memory_layout);
+
+  std::stringstream ss;
+  ss << "aten.";
+  ss << op_name;
+  ss << ".Tensor";
+  VK_GET_OP_FN(ss.str())
+  (graph, {arg1.value, arg2.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_arg1 = i + 1.5;
+    float val_arg2 = prepack ? 2.5f : i - 3.5;
+
+    float val_out = val_arg1 + val_arg2;
+    if (op_name == "sub") {
+      val_out = val_arg1 - val_arg2;
+    }
+    if (op_name == "mul") {
+      val_out = val_arg1 * val_arg2;
+    }
+    if (op_name == "div") {
+      val_out = val_arg1 / val_arg2;
+    }
+
+    if (prepack) {
+      execute_graph_and_check_output(graph, {val_arg1}, {val_out});
+    } else {
+      execute_graph_and_check_output(graph, {val_arg1, val_arg2}, {val_out});
+    }
+  }
+}
+
+#define CALL_TEST_FN_FORALL_CONDITIONS(_)                             \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false)    \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, false)   \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)     \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+
+#define CALL_TEST_FN_FOR_W_PACKED(_)                               \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
+
+#define CALL_TEST_FN_FOR_C_PACKED(_)                                  \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+
+TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
+#define RUN_TESTS(dtype, layout, prepack)                                  \
+  test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
+  test_binary_op("add", {17, 21}, {1, 1}, dtype, layout, prepack);         \
+  test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout, prepack);       \
+  test_binary_op("sub", {11, 22}, {11, 1}, dtype, layout, prepack);        \
+  test_binary_op("add", {7, 17, 17}, {7, 17, 17}, dtype, layout, prepack); \
+  test_binary_op("add", {7, 17, 17}, {7, 1, 17}, dtype, layout, prepack);  \
+  test_binary_op("sub", {9, 9, 7}, {9, 9, 7}, dtype, layout, prepack);     \
+  test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout, prepack);
+
+  CALL_TEST_FN_FORALL_CONDITIONS(RUN_TESTS);
+
+#undef RUN_TESTS
+}
+
+void test_mm(
+    int B,
+    int M,
+    int K,
+    int N,
+    api::ScalarType dtype,
+    api::GPUMemoryLayout memory_layout,
+    bool prepack = true) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> mat1_size = {M, K};
+  std::vector<int64_t> mat2_size = {K, N};
+  std::vector<int64_t> out_size = {M, N};
+  if (B > 1) {
+    mat1_size.resize(3);
+    mat1_size = {B, M, K};
+    mat2_size.resize(3);
+    mat2_size = {B, K, N};
+    out_size.resize(3);
+    out_size = {B, M, N};
+  }
+
+  IOValueRef mat2{};
+
+  CREATE_WEIGHT_TENSOR(mat2_w, mat2_size, dtype, 2.0f);
+
+  // Build graph
+
+  IOValueRef mat1 = graph.add_input_tensor(mat1_size, dtype, memory_layout);
+
+  if (prepack) {
+    mat2.value = mat2_w;
+  } else {
+    mat2.value = graph.add_tensor(mat2_size, dtype, memory_layout);
+    mat2.staging = graph.set_input_tensor(mat2.value);
+  }
+
+  IOValueRef out;
+  out.value = graph.add_tensor(out_size, dtype, memory_layout);
+
+  VK_GET_OP_FN("aten.mm.default")(graph, {mat1.value, mat2.value, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    if (prepack) {
+      float val_mat1 = i;
+      float val_out = K * (val_mat1 * 2.0f);
+      execute_graph_and_check_output(graph, {val_mat1}, {val_out});
+    } else {
+      float val_mat1 = i;
+      float val_mat2 = i + 1;
+      float val_out = K * (val_mat1 * val_mat2);
+      execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+    }
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
+#define RUN_TESTS(dtype, layout, prepack)                                  \
+  test_mm(/*B=*/1, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
+  test_mm(/*B=*/5, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
+  test_mm(/*B=*/7, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);  \
+  test_mm(/*B=*/1, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);
+
+  CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
+  CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
+
+#undef RUN_TESTS
 }

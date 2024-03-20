@@ -6,14 +6,18 @@
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <CoreML/CoreML.h>
-
-#import "ETCoreMLPair.h"
+#import <ETCoreMLPair.h>
+#import <TargetConditionals.h>
 
 @class ETCoreMLModel;
 @class ETCoreMLModelStructurePath;
 @class ETCoreMLOperationProfilingInfo;
 
 typedef NSDictionary<ETCoreMLModelStructurePath*, ETCoreMLOperationProfilingInfo*> ETCoreMLModelProfilingResult;
+
+#if !defined(MODEL_PROFILING_IS_AVAILABLE) && __has_include(<CoreML/MLComputePlan.h>)
+#define MODEL_PROFILING_IS_AVAILABLE 1
+#endif
 
 NS_ASSUME_NONNULL_BEGIN
 /// A class responsible for profiling a model.

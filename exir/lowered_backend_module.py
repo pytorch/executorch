@@ -423,7 +423,9 @@ def arrange_graph_placeholders(
 
 # TODO Don't regenerate new signature manually.
 def _get_new_signature(
-    original_program: ExportedProgram, gm: torch.fx.GraphModule
+    original_program: ExportedProgram,
+    gm: torch.fx.GraphModule,
+    tag: Optional[str] = None,
 ) -> Tuple[
     ExportGraphSignature,
     Dict[str, Union[torch.Tensor, torch.nn.Parameter]],
@@ -442,8 +444,9 @@ def _get_new_signature(
     non_persistent_buffers = set(old_signature.non_persistent_buffers)
 
     for node in gm.graph.nodes:
+        is_tagged = node.meta.get("delegation_tag", None) == tag
         if node.op == "placeholder":
-            if node.name in old_signature.inputs_to_parameters:
+            if node.name in old_signature.inputs_to_parameters and is_tagged:
                 parameter_name = old_signature.inputs_to_parameters[node.name]
                 # add param to graph signature
                 input_specs.append(
@@ -458,7 +461,7 @@ def _get_new_signature(
                 new_state_dict[parameter_name] = original_program.state_dict[
                     parameter_name
                 ]
-            elif node.name in old_signature.inputs_to_buffers:
+            elif node.name in old_signature.inputs_to_buffers and is_tagged:
                 buffer_name = old_signature.inputs_to_buffers[node.name]
                 persistent = buffer_name not in non_persistent_buffers
                 # add buffer to graph signature
@@ -478,7 +481,10 @@ def _get_new_signature(
                     ]
                 else:
                     new_constants[buffer_name] = original_program.constants[buffer_name]
-            elif node.name in old_signature.inputs_to_lifted_tensor_constants:
+            elif (
+                node.name in old_signature.inputs_to_lifted_tensor_constants
+                and is_tagged
+            ):
                 constant_name = old_signature.inputs_to_lifted_tensor_constants[
                     node.name
                 ]
@@ -494,7 +500,7 @@ def _get_new_signature(
                 # add constant to new_constants
                 new_constants[constant_name] = original_program.constants[constant_name]
             else:
-                # not param or buffer then user input
+                # not param, buffer, or lifted_tensor_constant then user input
                 input_specs.append(
                     InputSpec(
                         kind=InputKind.USER_INPUT,
@@ -520,6 +526,7 @@ def _get_new_signature(
 def create_exported_program_from_submodule(
     submodule: torch.fx.GraphModule,
     owning_program: ExportedProgram,
+    tag: str,
 ) -> ExportedProgram:
     """
     Creates an ExportedProgram from the given submodule using the parameters and buffers
@@ -538,7 +545,7 @@ def create_exported_program_from_submodule(
 
     # Get updated graph signature
     subgraph_signature, subgraph_state_dict, subgraph_constants = _get_new_signature(
-        owning_program, submodule
+        owning_program, submodule, tag
     )
 
     in_spec = pytree.tree_flatten((tuple(subgraph_signature.user_inputs), {}))[1]
