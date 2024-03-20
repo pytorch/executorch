@@ -5,17 +5,6 @@ on:
     branches:
       - main
       - release/*
-    paths:
-      - .ci/docker/**
-      - .github/workflows/apple.yml
-      - install_requirements.sh
-      - backends/apple/**
-      - build/build_apple_frameworks.sh
-      - build/create_frameworks.sh
-      - build/test_ios_ci.sh
-      - examples/demo-apps/**
-      - extension/apple/**
-      - extension/module/**
   pull_request:
     paths:
       - .ci/docker/**
