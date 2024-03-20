@@ -961,6 +961,14 @@ void test_binary_op(
   _(api::kFloat, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
   _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
 
+#define CALL_TEST_FN_FOR_W_PACKED(_)                               \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)
+
+#define CALL_TEST_FN_FOR_C_PACKED(_)                                  \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+
 TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
 #define RUN_TESTS(dtype, layout, prepack)                                  \
   test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
@@ -973,6 +981,83 @@ TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
   test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout, prepack);
 
   CALL_TEST_FN_FORALL_CONDITIONS(RUN_TESTS);
+
+#undef RUN_TESTS
+}
+
+void test_mm(
+    int B,
+    int M,
+    int K,
+    int N,
+    api::ScalarType dtype,
+    api::GPUMemoryLayout memory_layout,
+    bool prepack = true) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> mat1_size = {M, K};
+  std::vector<int64_t> mat2_size = {K, N};
+  std::vector<int64_t> out_size = {M, N};
+  if (B > 1) {
+    mat1_size.resize(3);
+    mat1_size = {B, M, K};
+    mat2_size.resize(3);
+    mat2_size = {B, K, N};
+    out_size.resize(3);
+    out_size = {B, M, N};
+  }
+
+  IOValueRef mat2{};
+
+  CREATE_WEIGHT_TENSOR(mat2_w, mat2_size, dtype, 2.0f);
+
+  // Build graph
+
+  IOValueRef mat1 = graph.add_input_tensor(mat1_size, dtype, memory_layout);
+
+  if (prepack) {
+    mat2.value = mat2_w;
+  } else {
+    mat2.value = graph.add_tensor(mat2_size, dtype, memory_layout);
+    mat2.staging = graph.set_input_tensor(mat2.value);
+  }
+
+  IOValueRef out;
+  out.value = graph.add_tensor(out_size, dtype, memory_layout);
+
+  VK_GET_OP_FN("aten.mm.default")(graph, {mat1.value, mat2.value, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    if (prepack) {
+      float val_mat1 = i;
+      float val_out = K * (val_mat1 * 2.0f);
+      execute_graph_and_check_output(graph, {val_mat1}, {val_out});
+    } else {
+      float val_mat1 = i;
+      float val_mat2 = i + 1;
+      float val_out = K * (val_mat1 * val_mat2);
+      execute_graph_and_check_output(graph, {val_mat1, val_mat2}, {val_out});
+    }
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
+#define RUN_TESTS(dtype, layout, prepack)                                  \
+  test_mm(/*B=*/1, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
+  test_mm(/*B=*/5, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
+  test_mm(/*B=*/7, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);  \
+  test_mm(/*B=*/1, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);
+
+  CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
+  CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
 
 #undef RUN_TESTS
 }
