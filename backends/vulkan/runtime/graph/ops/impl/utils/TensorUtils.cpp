@@ -37,8 +37,29 @@ std::vector<int64_t> calculate_broadcasted_output_size(
 // Tensor property checking functions
 //
 
+bool check_ndim_is(const vTensor& t, size_t ndim) {
+  return t.sizes().size() == ndim;
+}
+
+bool check_same_sizes_at(
+    const vTensor& t1,
+    const int64_t d1,
+    const vTensor& t2,
+    const int64_t d2) {
+  return api::utils::val_at(d1, t1.sizes()) ==
+      api::utils::val_at(d2, t2.sizes());
+}
+
+bool check_memory_layout_is(const vTensor& t, api::GPUMemoryLayout layout) {
+  return t.gpu_memory_layout() == layout;
+}
+
+bool check_same_ndim(const vTensor& t1, const vTensor& t2) {
+  return t1.sizes().size() == t2.sizes().size();
+}
+
 bool check_same_memory_layout(const vTensor& t1, const vTensor& t2) {
-  return (t1.gpu_memory_layout() == t2.gpu_memory_layout());
+  return t1.gpu_memory_layout() == t2.gpu_memory_layout();
 }
 
 bool check_same_memory_layout(

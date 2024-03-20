@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#define DIVUP4(x) ((x + 3) / 4)
+
 #define PACKED_DIM_CHANNELS_PACKED(vec) vec.z
 
 #define PACKED_DIM_WIDTH_PACKED(vec) vec.x

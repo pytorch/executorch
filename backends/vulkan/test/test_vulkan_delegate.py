@@ -351,3 +351,17 @@ class TestBackends(unittest.TestCase):
         self.lower_module_and_test_output(
             model, sample_inputs, dynamic_shapes=dynamic_shapes, test_inputs=test_inputs
         )
+
+    def test_vulkan_backend_matmul(self):
+        class MatMulModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.weight = torch.ones(size=(63, 22), dtype=torch.float32)
+
+            def forward(self, x):
+                return torch.matmul(x, self.weight)
+
+        module = MatMulModule()
+        sample_inputs = (torch.ones(size=(31, 63), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(module, sample_inputs)
