@@ -1061,3 +1061,92 @@ TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
 
 #undef RUN_TESTS
 }
+
+void test_max_pool2d(
+    const std::vector<int64_t>& in_size,
+    const int64_t base_val,
+    std::vector<int64_t>& kernel) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  // Build graph
+
+  std::vector<int64_t> out_size(in_size);
+  int h = in_size.size() - 2;
+  int w = in_size.size() - 1;
+  out_size[h] = in_size[h] - kernel[0] + 1;
+  out_size[w] = in_size[w] - kernel[1] + 1;
+
+  IOValueRef in_ioval = graph.add_input_tensor(
+      in_size, api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  IOValueRef out_ioval;
+  out_ioval.value = graph.add_tensor(
+      out_size, api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  IOValueRef idx_ioval;
+  idx_ioval.value = graph.add_tensor(
+      out_size, api::kInt, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  ValueRef out = graph.add_value_list({out_ioval.value, idx_ioval.value});
+
+  std::vector<int64_t> kernel_copy(kernel);
+  VK_GET_OP_FN("aten.max_pool2d_with_indices.default")
+  (graph,
+   {in_ioval.value,
+    graph.add_scalar_list<int64_t>(std::move(kernel)),
+    graph.add_scalar_list<int64_t>({1, 1}),
+    graph.add_scalar_list<int64_t>({0, 0}),
+    graph.add_scalar_list<int64_t>({1, 1}),
+    graph.add_scalar(false),
+    out});
+
+  out_ioval.staging = graph.set_output_tensor(out_ioval.value);
+  idx_ioval.staging = graph.set_output_tensor(idx_ioval.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  // Run graph
+
+  fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota=*/true);
+
+  vTensor& t_in = graph.get_val(in_ioval.value).toTensor();
+  std::vector<float> input_data(t_in.gpu_numel());
+  graph.copy_from_staging(
+      in_ioval.staging, input_data.data(), input_data.size());
+
+  graph.execute();
+
+  vTensor& t_out = graph.get_val(out_ioval.value).toTensor();
+  std::vector<float> output_data(t_out.gpu_numel());
+  graph.copy_from_staging(
+      out_ioval.staging, output_data.data(), output_data.size());
+  vTensor& t_idx = graph.get_val(idx_ioval.value).toTensor();
+  std::vector<int> index_data(t_idx.gpu_numel());
+  graph.copy_from_staging(
+      idx_ioval.staging, index_data.data(), index_data.size());
+
+  // Check results
+
+  int h_offset = kernel_copy[0] - 1;
+  int w_offset = kernel_copy[1] - 1;
+  int h_out = api::utils::val_at(-2, t_out.sizes());
+  int w_out = api::utils::val_at(-1, t_out.sizes());
+  int w_in = api::utils::val_at(-1, t_in.sizes());
+  for (size_t i = 0; i < h_out; ++i) {
+    for (size_t j = 0; j < w_out; ++j) {
+      size_t idx_out = i * w_out + j;
+      size_t idx_in = (i + h_offset) * w_in + (j + w_offset);
+      CHECK_VALUE(index_data, idx_out, idx_in);
+      CHECK_VALUE(output_data, idx_out, input_data[idx_in]);
+    }
+  }
+}
+
+TEST(VulkanComputeGraphOpsTest, max_pool2d_smoke_test) {
+  std::vector<int64_t> kernel = {2, 3};
+  test_max_pool2d(
+      /*in_size=*/{1, 4, 6},
+      /*base_val=*/10.0f,
+      kernel);
+}
