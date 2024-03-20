@@ -93,10 +93,13 @@ class ComputeGraph final {
       bool execute);
 
   /*
-   * Returns the value at a particular reference
+   * Returns the value at a particular index in the graph. If storing this
+   * function's return value in a lvalue reference, it is imperative that no
+   * values are added to the graph while the reference is in scope, otherwise
+   * the underlying value may have been moved as part of a vector resize.
    */
   inline Value& get_val(ValueRef idx) {
-    return values_[idx];
+    return values_.at(idx);
   }
 
   inline const std::vector<int64_t>& get_val_sizes(ValueRef idx) {
@@ -128,17 +131,87 @@ class ComputeGraph final {
   }
 
   //
+  // Utility functions
+  //
+
+  /*
+   * Returns a suggested storage type (i.e. buffer or texture) that can be used
+   * to construct `vTensor`s. The storage type is typically determined by the
+   * GPU reported by the Vulkan context, unless a storage type override is
+   * defined in the graph configuration. Some GPU architectures work better with
+   * buffer storage, and others with texture storage. Current only texture
+   * storage is supported.
+   */
+  api::StorageType suggested_storage_type();
+
+  /*
+   * Returns a suggested memory layout (i.e. channels, width, or height packed)
+   * that can be used to construct `vTensor`s. The memory layout impacts which
+   * dimension will be treated as the vectorized dimension. For texture storage,
+   * elements along the vectorized dimension are packed into texels. The
+   * suggested memory layout is determined based on the sizes of the tensor,
+   * unless a memory layout override is defined in the graph configuration.
+   */
+  api::GPUMemoryLayout suggested_memory_layout(
+      const std::vector<int64_t>& sizes);
+
+  /*
+   * Returns the memory layout of a Tensor value at the specified index.
+   */
+  inline api::GPUMemoryLayout memory_layout_of(ValueRef idx) {
+    return get_val(idx).toTensor().gpu_memory_layout();
+  }
+
+  //
   // Graph Building
   //
 
+  /*
+   * Add a `vTensor` value to the graph with the specified properties. There are
+   * various convenience overloads of this function that may be used instead.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const api::ScalarType dtype,
+      const api::StorageType storage_type,
+      const api::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx);
+
+  /*
+   * Add a `vTensor` value to the graph with the specified properties. The
+   * suggested storage type will be used to construct the `vTensor`.
+   */
+  ValueRef add_tensor(
+      const std::vector<int64_t>& sizes,
+      const api::ScalarType dtype,
+      const api::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx = -1);
+
+  /*
+   * Add a `vTensor` value to the graph with the specified properties. The
+   * suggested storage type and memory layout will be used to construct the
+   * `vTensor`.
+   */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
       const api::ScalarType dtype = api::ScalarType::Float,
       const int64_t shared_object_idx = -1);
+
+  /*
+   * Add a `TensorRef` value to the graph with the specific properties. A
+   * `TensorRef` is a reference to a `vTensor` whose data is stored in an
+   * external CPU buffer.
+   */
   ValueRef add_tensorref(
       const std::vector<int64_t>& sizes,
       const api::ScalarType dtype,
       const void* const data);
+
+  /*
+   * Add a staging buffer to the graph. Staging buffers are data buffers that
+   * use memory that is visible to both the CPU and GPU, and therefore is used
+   * as a intermediary when transferring data between the CPU and GPU.
+   */
   ValueRef add_staging(const api::ScalarType dtype, const size_t numel);
 
   ValueRef add_none();
@@ -172,6 +245,20 @@ class ComputeGraph final {
       const api::ScalarType dtype,
       const int64_t shared_object_idx = -1) {
     ValueRef t = add_tensor(sizes, dtype, shared_object_idx);
+    ValueRef staging = set_input_tensor(t);
+    return {t, staging};
+  }
+
+  /*
+   * Convenience function to add an input tensor with a specific memory layout
+   * along with its staging buffer
+   */
+  inline IOValueRef add_input_tensor(
+      const std::vector<int64_t>& sizes,
+      const api::ScalarType dtype,
+      const api::GPUMemoryLayout memory_layout,
+      const int64_t shared_object_idx = -1) {
+    ValueRef t = add_tensor(sizes, dtype, memory_layout, shared_object_idx);
     ValueRef staging = set_input_tensor(t);
     return {t, staging};
   }

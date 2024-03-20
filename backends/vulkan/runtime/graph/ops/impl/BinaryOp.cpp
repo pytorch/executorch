@@ -19,6 +19,17 @@ namespace at {
 namespace native {
 namespace vulkan {
 
+void check_binary_op_args(
+    const vTensor& self,
+    const vTensor& other,
+    const vTensor& out) {
+  VK_CHECK_COND(check_same_memory_layout(self, other, out));
+  VK_CHECK_COND(check_broadcastable(self, other));
+  std::vector<int64_t> broadcasted_sizes =
+      calculate_broadcasted_output_size(self, other);
+  VK_CHECK_COND(out.sizes() == broadcasted_sizes);
+}
+
 void resize_binary_op_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
@@ -28,15 +39,8 @@ void resize_binary_op_node(
   vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
   vTensor& other = graph->get_val(args[1].refs[1]).toTensor();
 
-  std::vector<int64_t> new_out_sizes(
-      std::max(self.sizes().size(), other.sizes().size()));
-
-  // Match the sizes in reverse because sizes are in NCHW order
-  for (int i = -1; i >= -new_out_sizes.size(); --i) {
-    new_out_sizes.at(new_out_sizes.size() + i) = std::max(
-        api::utils::val_at(i, self.sizes()),
-        api::utils::val_at(i, other.sizes()));
-  }
+  std::vector<int64_t> new_out_sizes =
+      calculate_broadcasted_output_size(self, other);
 
   out.virtual_resize(new_out_sizes);
 }
@@ -49,11 +53,15 @@ void add_binary_op_node(
     const ValueRef out,
     const std::string& op_name) {
   ValueRef arg1 = prepack_if_tensor_ref(graph, in1);
-  ValueRef arg2 = prepack_if_tensor_ref(graph, in2);
+  ValueRef arg2 =
+      prepack_if_tensor_ref(graph, in2, graph.memory_layout_of(arg1));
 
   vTensor& t_in1 = graph.get_val(arg1).toTensor();
   vTensor& t_in2 = graph.get_val(arg2).toTensor();
+
   vTensor& t_out = graph.get_val(out).toTensor();
+
+  check_binary_op_args(t_in1, t_in2, t_out);
 
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -67,6 +75,7 @@ void add_binary_op_node(
 
   std::stringstream kernel_name;
   kernel_name << "binary_" << op_name;
+  apply_memory_layout_suffix(kernel_name, t_out);
   apply_dtype_suffix(kernel_name, t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(

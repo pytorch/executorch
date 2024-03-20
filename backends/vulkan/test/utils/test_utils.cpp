@@ -10,6 +10,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
+#include <cassert>
+
 //
 // Operator Recording Functions
 //
@@ -215,4 +217,35 @@ VmaTotalStatistics get_vma_stats() {
 
 size_t get_vma_allocation_count() {
   return get_vma_stats().total.statistics.allocationCount;
+}
+
+//
+// Graph Test Utilities
+//
+
+void execute_graph_and_check_output(
+    ComputeGraph& graph,
+    std::vector<float> input_vals,
+    std::vector<float> expected_outputs) {
+  assert(input_vals.size() == graph.inputs().size());
+  assert(expected_outputs.size() == graph.outputs().size());
+
+  for (size_t i = 0; i < graph.inputs().size(); ++i) {
+    fill_vtensor(graph, graph.inputs().at(i), input_vals.at(i));
+  }
+
+  graph.execute();
+
+  for (size_t i = 0; i < graph.outputs().size(); ++i) {
+    IOValueRef out_ioval = graph.outputs().at(i);
+    vTensor& t_out = graph.get_val(out_ioval.value).toTensor();
+
+    std::vector<float> output_data(t_out.gpu_numel());
+    graph.copy_from_staging(
+        out_ioval.staging, output_data.data(), output_data.size());
+
+    for (size_t j = 0; j < t_out.numel(); ++j) {
+      CHECK_VALUE(output_data, j, expected_outputs.at(i));
+    }
+  }
 }
