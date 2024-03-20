@@ -36,8 +36,9 @@ from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     _soc_info_table,
     QcomChipset,
+    QnnExecuTorchBackendOptions,
     QnnExecuTorchBackendType,
-    QnnExecuTorchHtpPdSession,
+    QnnExecuTorchHtpBackendOptions,
     QnnExecuTorchHtpPerformanceMode,
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
@@ -45,8 +46,10 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
     convert_to_flatbuffer,
+    convert_to_option,
 )
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from torch.export.exported_program import ExportedProgram
 from torch.fx import passes
 
 QNN_COMPILE_SPEC = "qnn_compile_spec"
@@ -58,6 +61,28 @@ def qnn_capture_config():
 
 def qnn_edge_config() -> exir.EdgeCompileConfig:
     return exir.EdgeCompileConfig(_check_ir_validity=False)
+
+
+def canonicalize_program(prog: ExportedProgram):
+    # check if user specifies to use multi_contexts
+    # this is a generic approach in case there exists multiple backends
+    max_sf_buf_size, modules = 0, {}
+    for _, m in prog.graph_module._modules.items():
+        # currently only 1 compile spec is expected in each partition
+        options = convert_to_option(m.compile_specs[0].value)
+        if (
+            options.backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+            and options.backend_options.htp_options.use_multi_contexts
+        ):
+            max_sf_buf_size = max(max_sf_buf_size, len(m.processed_bytes))
+            modules[m] = options
+
+    if max_sf_buf_size != 0:
+        for module, options in modules.items():
+            options.backend_options.htp_options.max_sf_buf_size = max_sf_buf_size
+            module.compile_specs[0] = CompileSpec(
+                QNN_COMPILE_SPEC, convert_to_flatbuffer(options)
+            )
 
 
 def capture_program(
@@ -115,10 +140,48 @@ def generate_qnn_executorch_option(
     return qnn_compile_spec_buffer
 
 
-# TODO: refactor this for supporting other backends
+def generate_htp_compiler_spec(
+    use_fp16: bool,
+    use_dlbc: bool = False,
+    use_multi_contexts: bool = False,
+) -> QnnExecuTorchBackendOptions:
+    """
+    Helper function generating backend options for QNN HTP
+
+    Args:
+        use_fp16: If true, the model is compiled to QNN HTP fp16 runtime.
+            Note that not all SoC support QNN HTP fp16. Only premium tier SoC
+            like Snapdragon 8 Gen 1 or newer can support HTP fp16.
+        use_dlbc: Deep Learning Bandwidth Compression allows inputs to be
+            compressed, such that the processing bandwidth can be lowered.
+        use_multi_contexts: When multiple contexts are generated inside the same
+            pte, it is possible to reserve a single spill-fill allocation that
+            could be re-used across all the splits.
+
+    Returns:
+        QnnExecuTorchHtpBackendOptions: backend options for QNN HTP.
+    """
+    htp_options = QnnExecuTorchHtpBackendOptions()
+    htp_options.precision = (
+        QnnExecuTorchHtpPrecision.kHtpFp16
+        if use_fp16
+        else QnnExecuTorchHtpPrecision.kHtpQuantized
+    )
+    # This actually is not an option which can affect the compiled blob.
+    # But we don't have other place to pass this option at execution stage.
+    # TODO: enable voting mechanism in runtime and make this as an option
+    htp_options.performance_mode = QnnExecuTorchHtpPerformanceMode.kHtpBurst
+    htp_options.use_multi_contexts = use_multi_contexts
+    htp_options.use_dlbc = use_dlbc
+    return QnnExecuTorchBackendOptions(
+        backend_type=QnnExecuTorchBackendType.kHtpBackend,
+        htp_options=htp_options,
+    )
+
+
 def generate_qnn_executorch_compiler_spec(
-    is_fp16: bool,
     soc_model: QcomChipset,
+    backend_options: QnnExecuTorchBackendOptions,
     debug: bool = False,
     saver: bool = False,
     online_prepare: bool = False,
@@ -128,18 +191,16 @@ def generate_qnn_executorch_compiler_spec(
     Helper function generating compiler specs for Qualcomm AI Engine Direct
 
     Args:
-        is_fp16: If true, the model is compiled to QNN HTP fp16 runtime.
-            Note that not all SoC support QNN HTP fp16. Only premium tier SoC
-            like Snapdragon 8 Gen 1 or newer can support HTP fp16.
         soc_model: The SoC you plan to run the compiled model. Please check
             QcomChipset for supported SoC.
             SM8450 (Snapdragon 8 Gen 1)
             SM8475(Snapdragon 8 Gen 1+)
             SM8550(Snapdragon 8 Gen 2)
             SM8650(Snapdragon 8 Gen 3)
-        online_prepare: Compose QNN graph on device if set to True
+        backend_options: Options required by different backends.
         debug: Enable verbose logging. Disclaimer: this option must change in
             the near future.
+        online_prepare: Compose QNN graph on device if set to True
         saver: Instead of compiling the model, run QNN Saver. Please check
             documents of Qualcomm AI Engine Direct SDK. This feature is usually
             for debugging purpose.
@@ -153,41 +214,21 @@ def generate_qnn_executorch_compiler_spec(
 
     Raises:
         ValueError: The value QcomChipset is currently not supported.
+        ValueError: Confliction between compiler specs.
     """
-    qnn_executorch_options = QnnExecuTorchOptions()
-    qnn_executorch_options.backend_type = QnnExecuTorchBackendType.kHtpBackend
-    qnn_executorch_options.graph_name = "executorch"
-    qnn_executorch_options.htp_options.pd_session = (
-        QnnExecuTorchHtpPdSession.kHtpUnsignedPd
-    )
-    qnn_executorch_options.htp_options.use_conv_hmx = True
-    qnn_executorch_options.htp_options.use_fold_relu = True
-
-    if is_fp16:
-        qnn_executorch_options.htp_options.precision = (
-            QnnExecuTorchHtpPrecision.kHtpFp16
-        )
-    else:
-        qnn_executorch_options.htp_options.precision = (
-            QnnExecuTorchHtpPrecision.kHtpQuantized
-        )
-
-    if debug:
-        qnn_executorch_options.log_level = QnnExecuTorchLogLevel.kLogLevelDebug
-    else:
-        qnn_executorch_options.log_level = QnnExecuTorchLogLevel.kLogLevelWarn
-
-    # This actually is not an option which can affect the compiled blob.
-    # But we don't have other place to pass this option at execution stage.
-    qnn_executorch_options.htp_options.performance_mode = (
-        QnnExecuTorchHtpPerformanceMode.kHtpBurst
-    )
-
     _supported_soc_models = {soc_model.value for soc_model in QcomChipset}
     if soc_model not in _supported_soc_models:
         raise ValueError(f"unknown SoC model for QNN: {soc_model}")
-    else:
-        qnn_executorch_options.soc_info = _soc_info_table[soc_model]
+
+    qnn_executorch_options = QnnExecuTorchOptions(
+        _soc_info_table[soc_model], backend_options
+    )
+    qnn_executorch_options.graph_name = "executorch"
+    qnn_executorch_options.log_level = (
+        QnnExecuTorchLogLevel.kLogLevelDebug
+        if debug
+        else QnnExecuTorchLogLevel.kLogLevelWarn
+    )
 
     if saver:
         qnn_executorch_options.library_path = "libQnnSaver.so"
@@ -195,8 +236,18 @@ def generate_qnn_executorch_compiler_spec(
     if len(tensor_dump_output_path.strip()) != 0:
         qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
 
-    if online_prepare:
-        qnn_executorch_options.online_prepare = True
+    if (
+        online_prepare
+        and backend_options.backend_type == QnnExecuTorchBackendType.kHtpBackend
+        and backend_options.htp_options.use_multi_contexts
+    ):
+        raise ValueError(
+            "'use_multi_context' could not function in online prepare mode, "
+            "please set 'online_prepare' to False"
+        )
+
+    qnn_executorch_options.online_prepare = online_prepare
+
     return [
         CompileSpec(QNN_COMPILE_SPEC, convert_to_flatbuffer(qnn_executorch_options))
     ]

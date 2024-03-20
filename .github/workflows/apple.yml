@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - .ci/docker/**
-      - .github/workflows/app-build.yml
+      - .github/workflows/apple.yml
       - install_requirements.sh
       - backends/apple/**
       - build/build_apple_frameworks.sh
@@ -58,14 +58,20 @@ jobs:
       python-version: '3.11'
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-      upload-artifact: executorch.zip
+      upload-artifact: executorch-frameworks-ios
       timeout: 90
       script: |
         WORKSPACE=$(pwd)
         pushd "${WORKSPACE}/pytorch/executorch"
         BUILD_TOOL=cmake
         VERSION="0.1.0"
-        OUTPUT="executorch-${VERSION}"
+        FRAMEWORKS=(
+          "executorch"
+          "coreml_backend"
+          "mps_backend"
+          "portable_backend"
+          "xnnpack_backend"
+        )
 
         .ci/scripts/setup-conda.sh
 
@@ -83,10 +89,58 @@ jobs:
 
         # Build iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --output="${OUTPUT}" --coreml --mps --portable --xnnpack
+        build/build_apple_frameworks.sh --coreml --mps --portable --xnnpack
 
         # Bundle iOS Frameworks
-        cp LICENSE "${OUTPUT}"
-        zip -r "${RUNNER_TEMP}/artifacts/${OUTPUT}.zip" "${OUTPUT}"
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cd cmake-out && zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
+        ) done
 
         popd
+
+  upload-frameworks-ios:
+    runs-on: ubuntu-22.04
+    needs: build-frameworks-ios
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
+        with:
+          role-to-assume: arn:aws:iam::308535385114:role/gha_executorch_upload-frameworks-ios
+          aws-region: us-east-1
+      - name: Download the artifact
+        uses: actions/download-artifact@v3
+        with:
+          # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
+          name: executorch-frameworks-ios
+          path: ${{ runner.temp }}/frameworks-ios/
+      - name: Only push to S3 when running the workflow manually from main branch
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          set -eux
+          echo "UPLOAD_ON_MAIN=1" >> "${GITHUB_ENV}"
+      - name: Upload the artifact to ossci-ios S3 bucket
+        shell: bash
+        run: |
+          set -eux
+
+          pip install awscli==1.32.18
+
+          AWS_CMD="aws s3 cp --dryrun"
+          if [[ "${UPLOAD_ON_MAIN:-0}" == "1" ]]; then
+            AWS_CMD="aws s3 cp"
+          fi
+
+          for FILENAME in "${RUNNER_TEMP}"/frameworks-ios/*.zip; do
+            [ -e "${FILENAME}" ] || continue
+            ${AWS_CMD} "${FILENAME}" s3://ossci-ios/executorch/ --acl public-read
+          done

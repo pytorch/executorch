@@ -28,8 +28,8 @@ class HtpDevice : public QnnDevice {
       const SocInfo* soc_info,
       const QnnExecuTorchHtpBackendOptions* htp_options)
       : QnnDevice(implementation, logger),
-        htp_options_(htp_options),
-        qcom_target_soc_info_(soc_info) {
+        qcom_target_soc_info_(soc_info),
+        htp_options_(htp_options) {
     htp_device_platform_info_config_ =
         std::make_unique<HtpDevicePlatformInfoConfig>(htp_options);
     htp_device_custom_config_ =
@@ -88,8 +88,8 @@ class HtpDevice : public QnnDevice {
   std::vector<const QnnHtpPerfInfrastructure_PowerConfig_t*>
       down_vote_power_configs_ptr_;
 
-  const QnnExecuTorchHtpBackendOptions* htp_options_;
   const SocInfo* qcom_target_soc_info_;
+  const QnnExecuTorchHtpBackendOptions* htp_options_;
 };
 } // namespace qnn
 } // namespace executor

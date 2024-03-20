@@ -87,6 +87,21 @@ struct evalue_to_arg<const exec_aten::Tensor&> final {
     return v.toTensor();
   }
 };
+
+template <class T>
+struct evalue_to_arg<exec_aten::optional<T>> final {
+  static exec_aten::optional<T> call(EValue& v) {
+    return v.toOptional<T>();
+  }
+};
+
+template <class T>
+struct evalue_to_arg<exec_aten::ArrayRef<exec_aten::optional<T>>> final {
+  static exec_aten::ArrayRef<exec_aten::optional<T>> call(EValue& v) {
+    return v.toListOptionalTensor();
+  }
+};
+
 // Call functor with args from stack
 
 template <class Functor, size_t... evalue_arg_indices, typename... ArgTypes>
@@ -138,8 +153,10 @@ static Kernel make_boxed_kernel(const char* name, FuncType) {
   return Kernel(name, WrapUnboxedIntoFunctor<FuncType>::call);
 }
 
-#define EXECUTORCH_LIBRARY(ns, op_name, func) \
-  static auto res_##ns = register_kernels(    \
-      make_boxed_kernel(#ns "::" op_name, EXECUTORCH_FN(func)))
 } // namespace executor
 } // namespace torch
+
+#define EXECUTORCH_LIBRARY(ns, op_name, func)                 \
+  static auto res_##ns = ::torch::executor::register_kernels( \
+      ::torch::executor::make_boxed_kernel(                   \
+          #ns "::" op_name, EXECUTORCH_FN(func)))

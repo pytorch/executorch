@@ -152,6 +152,10 @@ option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
 option(EXECUTORCH_BUILD_GTESTS
        "Build googletest based test binaries" OFF)
 
+# Build the AOT util extension library
+option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL
+       "Build the extension/aot_util directory" OFF)
+
 if(NOT BUCK2)
   set(BUCK2 buck2)
 endif()
@@ -206,6 +210,13 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
+# Detect if an Android toolchain is set.
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*android\.toolchain\.cmake$")
+  set(CMAKE_TOOLCHAIN_ANDROID ON)
+else()
+  set(CMAKE_TOOLCHAIN_ANDROID OFF)
+endif()
+
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
@@ -229,11 +240,11 @@ if(EXECUTORCH_BUILD_FLATC)
     )
   endif()
   set(FLATC_EXECUTABLE flatc)
-  option(FLATBUFFERS_BUILD_FLATC "" ON)
-  option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
-  option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
-  option(FLATBUFFERS_BUILD_TESTS "" OFF)
-  option(FLATBUFFERS_INSTALL "" OFF)
+  set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
+  set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
   add_subdirectory(third-party/flatbuffers)
 endif()
 if(NOT FLATC_EXECUTABLE)
@@ -328,11 +339,6 @@ if(EXECUTORCH_BUILD_GTESTS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
-option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
-endif()
-
 if(EXECUTORCH_BUILD_SDK)
   set(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
       ON
@@ -356,6 +362,10 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
+if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
+endif()
+
 option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
@@ -363,6 +373,12 @@ endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
@@ -445,7 +461,6 @@ if(EXECUTORCH_BUILD_PYBIND)
       etdump
       executorch
       extension_data_loader
-      flatcc
       portable_ops_lib
       util
       torch

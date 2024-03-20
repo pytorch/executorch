@@ -48,6 +48,7 @@ SUPPORTED_BI_TEST_LIST = [
     "simple_conv2d_2x2_3x1x40x40_non_bias",
     "block_two_conv2d",
     "block_two_conv2d_non_bias",
+    "block_bottleneck_residual",
 ]
 
 
@@ -105,6 +106,7 @@ def tosa_ref_dump_inputs(
     path,
     input_quantization_scales,
     input_quantization_zps,
+    permute_memory_to_nhwc,
     profile=TosaProfile.MI,
     save_on_disk=True,
 ) -> Optional[List[Tuple[np.ndarray, str]]]:
@@ -129,6 +131,10 @@ def tosa_ref_dump_inputs(
     for arg in zip(argument_names, inputs):
         name = arg[0]
         data = arg[1].detach().numpy()
+
+        if permute_memory_to_nhwc:
+            NHWC_Order = (0, 2, 3, 1)
+            data = np.transpose(data, NHWC_Order)
 
         # Torch is doing Input[FP32]->Q[INT8]->DQ[FP32]->Operator[FP32]->Q[INT]->DQ[FP32]->[Output]FP32
         # Need to quantize the input to INT8 for TOSA comsumption
@@ -167,12 +173,14 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
     TOSA_OUT_PATH = os.path.join(DEBUG_OUTPUT_PATH, op, "tosa", "")
     os.makedirs(TOSA_OUT_PATH, exist_ok=True)
 
+    model, inputs, torch_output = prepare_model_and_ref(op, profile)
+
     # Debug flags for compilers
     # - Emit some debug files into /tmp
     # - output_format TOSA for this test (and pure tosa flows)
-    compile_spec = generate_tosa_compile_spec(TOSA_OUT_PATH)
-
-    model, inputs, torch_output = prepare_model_and_ref(op, profile)
+    compile_spec = generate_tosa_compile_spec(
+        model.permute_memory_to_nhwc, TOSA_OUT_PATH
+    )
 
     if inputs is None:
         print("\033[96m Skipping, no inputs for TOSA profile \033[0m")
@@ -208,10 +216,13 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             TOSA_OUT_PATH,
             input_quantization_scales,
             input_quantization_zps,
+            model.permute_memory_to_nhwc,
             profile,
         )
     else:
-        tosa_ref_dump_inputs(model_edge, inputs, TOSA_OUT_PATH, {}, {})
+        tosa_ref_dump_inputs(
+            model_edge, inputs, TOSA_OUT_PATH, {}, {}, model.permute_memory_to_nhwc
+        )
 
     print(TORCH_OUT_PATH, TOSA_OUT_PATH)
 
@@ -250,6 +261,10 @@ def tosa_run_test(op, profile=TosaProfile.MI):  # noqa: C901
             tosa_output = (
                 tosa_output - output_quantization_zp
             ) * output_quantization_scale
+
+    if model.permute_memory_to_nhwc:
+        NCHW_Order = (0, 3, 1, 2)
+        tosa_output = np.transpose(tosa_output, NCHW_Order)
 
     ## Read the Torch Output
     torch_file = open(TORCH_OUT_PATH + "/torch_output.npy", "rb")

@@ -55,6 +55,8 @@ class QuantParams:
         is_output: bool,
         is_input: bool,
         is_dynamic: bool = False,
+        num_nonbatch_dims: int = 1,
+        group_size: int = 0,
     ) -> None:
         self.per_channel = per_channel
         self.q_input = q_input
@@ -67,6 +69,7 @@ class QuantParams:
         self.is_output = is_output
         self.is_input = is_input
         self.is_dynamic = is_dynamic
+        self.num_nonbatch_dims = num_nonbatch_dims
         self.is_qc4w = (
             self.per_channel
             and not self.is_dynamic
@@ -75,12 +78,29 @@ class QuantParams:
             and self.dtype == torch.int8
         )
 
+        # Groupwise quantization for weight
+        self.per_channel_group = False
+        self.group_size = group_size
+        if self.group_size > 0:
+            assert (
+                self.per_channel is True
+            ), "Only per channel quantization supports groupwise quantization"
+            assert (
+                cast(torch.Tensor, scale).ndim == 2
+            ), "Scale must be 2D for per channel groupwise quant"
+            self.per_channel_group = True
+            assert group_size > 0, "Group size must be greater than 0"
+        self.is_per_channel_group = self.per_channel and self.group_size > 0
+
     def quantize_tensor(self, tensor: torch.Tensor) -> torch.Tensor:
         # Do nothing if already quantized by the Quantizer
         if tensor.dtype == self.dtype:
             return tensor
 
         if self.per_channel:
+            assert (
+                self.per_channel_group is False
+            ), f"Not expecting per channel group quantization, got q dtype: {self.dtype}, tensor.dtype {tensor.dtype}"
             assert (
                 tensor.shape[self.axis] == cast(torch.Tensor, self.scale).shape[0]
             ), f"Invalid size of per channel quantization scales, axis: {self.axis}, scale size: {self.scale.shape}, tensor shape: {tensor.shape}"
@@ -105,6 +125,9 @@ class QuantParams:
     def _from_dynamic_input_node(cls, quant_node: torch.fx.Node) -> QuantParams:
         q_input = quant_node.args[0]  # fp32 input
         assert isinstance(q_input, torch.fx.Node)
+        # TODO - materialize this from the quant_node scale count and val shape
+        num_nonbatch_dims = 1
+
         return cls(
             per_channel=False,  # True is not valid
             q_input=q_input,
@@ -117,6 +140,7 @@ class QuantParams:
             is_output=False,
             is_input=q_input.op == "placeholder",
             is_dynamic=True,
+            num_nonbatch_dims=num_nonbatch_dims,
         )
 
     @classmethod
@@ -129,9 +153,12 @@ class QuantParams:
         )
         q_input = quant_node.all_input_nodes[0]
 
+        # TODO: Use presence of choose_qparam node to determine if this is a dynamic quantization
         if quant_node.target in [
-            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+            exir_ops.edge.quantized_decomposed.quantize_per_token.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_token.default,
         ]:
             return cls._from_dynamic_input_node(quant_node)
 
@@ -139,6 +166,16 @@ class QuantParams:
             exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
         ]
+
+        _groupwise = False
+        if quant_node.target in [
+            exir_ops.edge.quantized_decomposed.quantize_per_channel_group.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel_group.default,
+        ]:
+            # This is a sub-category of per channel quantization
+            per_channel = True
+            _groupwise = True
+
         scale = quant_node.args[1]
         zp = quant_node.args[2]
         axis = 0
@@ -157,6 +194,14 @@ class QuantParams:
             scale = _get_tensor(scale)
             zp = _get_tensor(zp)
             axis = cast(int, quant_node.args[3])
+
+            if _groupwise:
+                scale_tensor = cast(torch.Tensor, scale)
+                assert (
+                    scale_tensor.ndim == 2
+                ), "Weight scale must be 2D for per_channel_group [de]quant node, got {scale.ndim}D"
+                axis = 0  # axis is ignored for groupwise quantization
+
         check_or_raise(
             bool(
                 quant_node.args[-1] != torch.uint8
@@ -164,9 +209,19 @@ class QuantParams:
             ),
             "XNNPACK does not support unsigned quantization",
         )
-        dtype = cast(torch.dtype, quant_node.args[-1])
-        qmax = cast(int, quant_node.args[-2])
-        qmin = cast(int, quant_node.args[-3])
+
+        if _groupwise:
+            _ = quant_node.args[-1]  # output dtype - not used
+            group_size = cast(int, quant_node.args[-2])
+            dtype = cast(torch.dtype, quant_node.args[-3])
+            qmax = cast(int, quant_node.args[-4])
+            qmin = cast(int, quant_node.args[-5])
+        else:
+            group_size = 0
+            dtype = cast(torch.dtype, quant_node.args[-1])
+            qmax = cast(int, quant_node.args[-2])
+            qmin = cast(int, quant_node.args[-3])
+
         is_output = any(
             user_node.op == "output" for user_node in quant_node.users.keys()
         )
@@ -182,6 +237,7 @@ class QuantParams:
             qmin,
             is_output,
             is_input,
+            group_size=group_size,
         )
 
     @classmethod
@@ -271,6 +327,7 @@ class QuantParams:
             "Input can not be quantized per channel",
         )
 
+        # Only per_tensor quantization is supported for input here
         check_or_raise(
             isinstance(input_quantizer.scale, float),
             f"q_input scale should be float, but got {input_quantizer.scale}",

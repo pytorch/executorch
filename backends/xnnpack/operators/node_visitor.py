@@ -5,7 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
-from typing import cast, Dict, Optional, Tuple
+import sys
+
+from pathlib import Path
+from typing import cast, Dict, List, Optional, Tuple
 
 import torch
 from executorch.backends.transforms import get_shape
@@ -18,6 +21,7 @@ from executorch.backends.xnnpack.passes.channels_last_tagged_reshape_pass import
 
 from executorch.backends.xnnpack.serialization.xnnpack_graph_schema import (
     ConstantDataOffset,
+    PerChannelGroupQuant,
     PerChannelQuant,
     PerTensorQuant,
     PerTokenDynamicQuant,
@@ -226,12 +230,20 @@ class NodeVisitor:
             if quant_params.dtype == torch.int32:
                 return XNNDatatype.xnn_datatype_qcint32
             elif quant_params.dtype == torch.int8:
-                # 4/8-bit per channel quantized weights
-                return (
-                    XNNDatatype.xnn_datatype_qcint4
-                    if quant_params.is_qc4w
-                    else XNNDatatype.xnn_datatype_qcint8
-                )
+                if quant_params.is_per_channel_group:
+                    # 4-bit per channel group quantized weights
+                    # No 8-bit support yet
+                    assert (
+                        quant_params.is_qc4w is True
+                    ), "Only 4-bit per channel group quantization is supported"
+                    return XNNDatatype.xnn_datatype_qbint4
+                else:
+                    # 4/8-bit per channel quantized weights
+                    return (
+                        XNNDatatype.xnn_datatype_qcint4
+                        if quant_params.is_qc4w
+                        else XNNDatatype.xnn_datatype_qcint8
+                    )
             else:
                 raise RuntimeError(
                     f"Unable to resolve static quantized tensor dtype using quant params dtype: {quant_params.dtype}, [qmin, qmax]: {quant_params.qmin}, {quant_params.qmax} for per channel quantization"
@@ -263,19 +275,66 @@ class NodeVisitor:
     def get_quant_params(self, quant_params: QuantParams) -> XNNQuantParams:
         if quant_params.per_channel:
             scale = cast(torch.Tensor, quant_params.scale)
-            return PerChannelQuant(
-                scale=scale.tolist(),
-                channel_dim=quant_params.axis,
-            )
+            if quant_params.is_per_channel_group:
+                return PerChannelGroupQuant(
+                    scale=scale.flatten().tolist(),
+                    channel_dim=quant_params.axis,
+                    group_size=quant_params.group_size,
+                )
+            else:  # per_channel quant
+                return PerChannelQuant(
+                    scale=scale.tolist(),
+                    channel_dim=quant_params.axis,
+                )
         elif quant_params.is_dynamic:
+            # NB:
+            # We use per_token quantization for per_tensor quantization
+            # Beacuase that's the only option in XNNPACK in absance of per_tensor dynamic quantization
+            # TODO: Upstream support for per_tensor dynamic quantization or broadcasting same scale value internally
             return PerTokenDynamicQuant(
-                num_nonbatch_dims=1,  # TODO, currently only per token dynamic quant is supported
+                num_nonbatch_dims=quant_params.num_nonbatch_dims,
             )
 
         return PerTensorQuant(
             scale=cast(float, quant_params.scale),
             zero_point=cast(int, quant_params.zp),
         )
+
+    @staticmethod
+    def _check_per_channel_group_params(
+        quant_params: QuantParams, dims: List[int]
+    ) -> None:
+        # Make sure things are lining up for per_channel_group quantization case
+        # Has to be done this late because we don't have clean access to the actual tensor
+        assert quant_params.is_per_channel_group, "Not per_channel_group quantization"
+        # linear weights will be in [oc, ic]. And per_channel quantization must be on axis 0
+        num_groups = cast(torch.Tensor, quant_params.scale).shape[1]
+        assert (
+            quant_params.axis == 0
+        ), "For per_channel_group quant, axis must be 0, but got {axis}"
+        assert (
+            len(dims) == 2
+        ), "For per_channel_group quant, expecting linear weights to be 2d, but got {len(dims)}"
+        assert (
+            num_groups > 0 and quant_params.group_size > 0
+        ), "For per_channel_group quant, num_groups and group_size must be > 0, but got num_groups: {num_groups}, group_size: {quant_params.group_size}"
+        output_channels = dims[quant_params.axis]
+        input_channels = dims[quant_params.axis ^ 1]
+        assert (
+            output_channels == cast(torch.Tensor, quant_params.scale).shape[0]
+        ), "For per_channel_group quant, expecting output channels to match scale.shape[0], gut got: {output_channels}, scale.shape[0]: {quant_params.scale.shape[0]}"
+        assert (
+            input_channels % num_groups == 0
+        ), "For per_channel_group quant, expecting input channels to be divisible by num_groups, but got ic: {input_channels}, num_groups: {num_groups}"
+        assert (
+            input_channels % quant_params.group_size == 0
+        ), "For per_channel_group quant, expecting input channels to be divisible by group_size, but got ic: {input_channels}, group_size: {quant_params.group_size}"
+        assert (
+            input_channels / quant_params.group_size == num_groups
+        ), "For per_channel_group quant, expecting input channels // group_size == num_groups, but got ic: {input_channels}, group_size: {quant_params.group_size}, num_groups: {num_groups}"
+
+        # For now group quantization is only supported for 4b weights
+        assert quant_params.is_qc4w, "Only 4b group quantization is supported"
 
     def define_tensor(
         self,
@@ -324,6 +383,10 @@ class NodeVisitor:
         dims = get_shape(tensor)
         dims = [1] if len(dims) == 0 else dims
 
+        # check for per_channel_group quantization
+        if quant_params and quant_params.per_channel_group:
+            self._check_per_channel_group_params(quant_params, dims)
+
         # constant values serialize data
         buffer_idx = self.get_serialized_buffer_index(
             tensor,
@@ -369,6 +432,7 @@ class NodeVisitor:
             else:
                 assert f"Unsupported weight per channel quantization axis for depthwise conv2d: {quant_params.axis}, expecting 0."
 
+        # Serialize tensor value
         ser_val = (
             XValue(xvalue_union=tvalue)
             if quant_params is None
@@ -384,6 +448,18 @@ class NodeVisitor:
         vals_to_ids[tensor] = id_out
         if quant_params is not None:
             vals_to_ids[quant_params.q_input] = id_out
+
+    @staticmethod
+    def find_aot_util_path() -> str:
+        # Look for .so installed by wheel (OSS).
+        rel_path = "executorch/extension/pybindings/libaot_util.so"
+        for sys_path in sys.path:
+            so_path = Path(sys_path) / rel_path
+            if so_path.exists():
+                return str(so_path.absolute().as_posix())
+
+        # Fall back to buck.
+        return "//executorch/extension/aot_util:aot_util"
 
     @staticmethod
     def convert_to_qc4w(inp: torch.Tensor) -> torch.Tensor:
@@ -419,13 +495,13 @@ class NodeVisitor:
         result = torch.zeros([oc, ric], dtype=torch.uint8)
 
         try:
-            # TODO(): Enable this in OSS
-            torch.ops.load_library(
-                "//executorch/backends/xnnpack/operators:convert_to_qc4w"
-            )
+            aot_path = NodeVisitor.find_aot_util_path()
+            torch.ops.load_library(aot_path)
             result = torch.ops.xnnpack.convert_to_qc4w(inp)
         except:
             # Fallback to python implementation
+            # TODO Warn the user? They might be developing in-tree and didn't install,
+            # in which case, this will be very slow for large models.
             for o in range(oc):
                 for i in range(ric):
                     j = 2 * i

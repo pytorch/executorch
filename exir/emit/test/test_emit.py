@@ -28,7 +28,6 @@ from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
 from executorch.exir.error import InternalError
 from executorch.exir.passes import MemoryPlanningPass
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -251,44 +250,6 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(inputs), 3)
         self.assertEqual(program.execution_plan[0].values[inputs[1]].val.int_val, 2)
         self.assertEqual(program.execution_plan[0].values[inputs[2]].val.bool_val, True)
-
-    def test_buffers_with_perfect_alignment(self) -> None:
-        class Foo(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return torch.ones(100) + x + (torch.ones(100) * 2)
-
-        f = Foo()
-
-        program = to_edge(constant_prop_pass(export(f, (torch.randn(100),))))
-        program = program.to_executorch().executorch_program
-        self.assertEqual(len(program.constant_buffer), 2)
-        instructions = program.execution_plan[0].chains[0].instructions
-        values = program.execution_plan[0].values
-
-        # first arg to first torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[0], values, 0, 1, 800  # pyre-ignore[16]
-        )
-        # second arg to first torch_add is an input tensor
-        self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[1], values, 0, 1, 400  # pyre-ignore[16]
-        )
-        # output of first torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[3], values, 0, 1, 1200  # pyre-ignore[16]
-        )
-        # first arg to second torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[0], values, 0, 1, 1200  # pyre-ignore[16]
-        )
-        # second arg to second torch_add is a input tensor
-        self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
-        )
-        # output of second torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
-        )
 
     def test_inplace_ops(self) -> None:
         class Foo(torch.nn.Module):

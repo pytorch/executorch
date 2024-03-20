@@ -11,9 +11,7 @@ import torch
 
 class TestCustomQC4WConvert(unittest.TestCase):
     def setUp(self):
-        torch.ops.load_library(
-            "//executorch/backends/xnnpack/operators:convert_to_qc4w"
-        )
+        torch.ops.load_library("//executorch/extension/aot_util:aot_util")
 
     def test_convert(self):
         def _ref_output(inp):
