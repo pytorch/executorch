@@ -30,12 +30,32 @@ class VkDataType(IntEnum):
     FLOAT32 = 5
 
 
+class VkStorageType(IntEnum):
+    BUFFER = 0
+    TEXTURE_3D = 1
+    TEXTURE_2D = 2
+    DEFAULT_STORAGE = 255
+
+
+class VkMemoryLayout(IntEnum):
+    TENSOR_WIDTH_PACKED = 0
+    TENSOR_HEIGHT_PACKED = 1
+    TENSOR_CHANNELS_PACKED = 2
+    WHCW = 3
+    WHCH = 4
+    WHCC = 5
+    CHWC = 6
+    DEFAULT_LAYOUT = 255
+
+
 @dataclass
 class VkTensor:
     datatype: VkDataType
     dims: List[int]
     constant_id: int
     mem_obj_id: int
+    storage_type: VkStorageType = VkStorageType.DEFAULT_STORAGE
+    memory_layout: VkMemoryLayout = VkMemoryLayout.DEFAULT_LAYOUT
 
 
 @dataclass
@@ -120,3 +140,6 @@ class VkGraph:
 
     constants: List[VkBytes]
     shaders: List[VkBytes]
+
+    storage_type_override: VkStorageType = VkStorageType.DEFAULT_STORAGE
+    memory_layout_override: VkMemoryLayout = VkMemoryLayout.DEFAULT_LAYOUT

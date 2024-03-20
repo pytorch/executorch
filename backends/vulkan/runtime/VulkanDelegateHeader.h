@@ -14,6 +14,11 @@ namespace torch {
 namespace executor {
 namespace vulkan {
 
+// Byte decoding utilities
+uint64_t GetUInt64LE(const uint8_t* data);
+uint32_t GetUInt32LE(const uint8_t* data);
+uint32_t GetUInt16LE(const uint8_t* data);
+
 struct VulkanDelegateHeader {
   bool is_valid() const;
 
