@@ -81,7 +81,7 @@ runtime.python_test(
     srcs = ["ops/test_custom_convert_to_qc4w.py"],
     deps = [
         "//caffe2:torch",
-        "//executorch/backends/xnnpack/operators:convert_to_qc4w",
+        "//executorch/extension/aot_util:aot_util",
     ],
     external_deps = [
         "libtorch",
