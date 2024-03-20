@@ -28,6 +28,11 @@ void add_tensor_to_staging_node(
     const ValueRef in_tensor,
     const ValueRef out_staging);
 
+ValueRef prepack_if_tensor_ref(
+    ComputeGraph& graph,
+    const ValueRef v,
+    const api::GPUMemoryLayout layout);
+
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
 
 } // namespace vulkan

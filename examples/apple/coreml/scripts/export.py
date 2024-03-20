@@ -64,7 +64,12 @@ def parse_args() -> argparse.ArgumentParser:
         help=f"Provide compute precision for the model. Valid ones: {[[precision.value for precision in ct.precision]]}",
     )
 
-    parser.add_argument("--compile", action=argparse.BooleanOptionalAction)
+    parser.add_argument(
+        "--compile",
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        default=False,
+    )
     parser.add_argument("--use_partitioner", action=argparse.BooleanOptionalAction)
     parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
     parser.add_argument("--save_processed_bytes", action=argparse.BooleanOptionalAction)
@@ -128,11 +133,10 @@ def save_processed_bytes(processed_bytes, model_name, compute_unit):
 
 
 def generate_compile_specs_from_args(args):
-    model_type = (
-        CoreMLBackend.MODEL_TYPE.MODEL
-        if args.compile
-        else CoreMLBackend.MODEL_TYPE.COMPILED_MODEL
-    )
+    model_type = CoreMLBackend.MODEL_TYPE.MODEL
+    if args.compile:
+        model_type = CoreMLBackend.MODEL_TYPE.COMPILED_MODEL
+
     compute_precision = ct.precision(args.compute_precision)
     compute_unit = ct.ComputeUnit[args.compute_unit.upper()]
 

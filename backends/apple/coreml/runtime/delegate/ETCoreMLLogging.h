@@ -22,6 +22,7 @@ typedef NS_ERROR_ENUM(ETCoreMLErrorDomain, ETCoreMLError) {
     ETCoreMLErrorBrokenModel, // CoreML model doesn't match the input and output specification.
     ETCoreMLErrorCompilationFailed, // CoreML model failed to compile.
     ETCoreMLErrorModelCompilationNotSupported, // CoreML model compilation is not supported by the target.
+    ETCoreMLErrorModelProfilingNotSupported, // Model profiling is not supported by the target.
     ETCoreMLErrorModelSaveFailed, // Failed to save CoreML model to disk.
     ETCoreMLErrorModelCacheCreationFailed, // Failed to create model cache.
     ETCoreMLErrorInternalError, // Internal error.

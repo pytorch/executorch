@@ -11,11 +11,13 @@ from functools import lru_cache
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+from executorch.exir.backend.backend_details import ExportedProgram
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.node import Node
 from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 
@@ -256,8 +258,39 @@ def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
                 graph_format_str += (
                     f"{indent * 3}{node_in_lowered_module.format_node()}\n"
                 )
-    print(graph_format_str)
     return graph_format_str
+
+
+def tag_constant_data(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners. This function tags the const/param/buffers nodes
+    whose users all belong within the same partition. This should be called after tagging all other nodes.
+    Any const/param/buffer which is used as input to a subgraph, will be tagged with the same tag as that
+    subgraph. Throw error when const/param/buffers is used across different partitions. That is the
+    underlying data will be owned by multiple delegates.
+    """
+    for node in edge_program.graph.nodes:
+        # go through const/param/buffer nodes
+        is_attr = (
+            node.op == "placeholder"
+            and (
+                is_param(edge_program, node)
+                or is_buffer(edge_program, node)
+                or is_lifted_tensor_constant(edge_program, node)
+            )
+        ) or (node.op == "get_attr")
+        # if all users of const/param/buffer nodes are partitioned then partition
+        if is_attr:
+            user_tags = set()
+            for user in node.users:
+                user_tags.add(user.meta.get("delegation_tag", None))
+            assert len(user_tags) <= 1, (
+                "Const/Param/Buffer users have multiple tags because one constant data can't "
+                "be owned by multiple backends. Consider duplicating the constant data so that "
+                "each user is unique"
+            )
+            if len(user_tags) == 1:
+                node.meta["delegation_tag"] = user_tags.pop()
 
 
 # TODO - style: use templated types

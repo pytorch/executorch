@@ -63,5 +63,10 @@ void main() {
     COORD_TO_POS_${PACKING}(other_coord, other_sizes.data),
     0);
 
+  // Detect broadcasting
+  if (PACKED_DIM_${PACKING}(other_sizes.data) < PACKED_DIM_${PACKING}(in_sizes.data)) {
+    other_texel = other_texel.xxxx;
+  }
+
   imageStore(image_out, pos, OP(in_texel, other_texel, alpha.data));
 }

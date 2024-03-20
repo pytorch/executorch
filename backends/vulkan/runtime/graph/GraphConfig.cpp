@@ -49,6 +49,27 @@ GraphConfig::GraphConfig() {
   // Empirically selected safety factor. If descriptor pools start running out
   // of memory, increase this safety factor.
   descriptorPoolSafetyFactor = 1.25;
+
+  // For now, force TEXTURE_3D storage as we are still developing shader
+  // support for buffer storage type.
+  enableStorageTypeOverride = true;
+  storageTypeOverride = api::StorageType::TEXTURE_3D;
+
+  // For now, force TENSOR_WIDTH_PACKED memory layout by default as we are still
+  // developing support for other memory layouts. In the future memory layout
+  // settings will be serialized as part of the graph.
+  enableMemoryLayoutOverride = true;
+  memoryLayoutOverride = api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+}
+
+void GraphConfig::setStorageTypeOverride(api::StorageType storage_type) {
+  enableStorageTypeOverride = true;
+  storageTypeOverride = storage_type;
+}
+
+void GraphConfig::setMemoryLayoutOverride(api::GPUMemoryLayout memory_layout) {
+  enableMemoryLayoutOverride = true;
+  memoryLayoutOverride = memory_layout;
 }
 
 } // namespace vulkan

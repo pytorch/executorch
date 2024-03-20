@@ -109,6 +109,17 @@ deps = [
   "executorch",
 ]
 
+[targets.extension_aot_util]
+buck_targets = [
+  "//extension/aot_util:aot_util",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
 # ---------------------------------- extension end ----------------------------------
 # ---------------------------------- binary start ----------------------------------
 

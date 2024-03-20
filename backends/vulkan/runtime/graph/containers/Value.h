@@ -182,6 +182,16 @@ struct Value final {
     }
   }
 
+  //
+  // Constructors, isType(), toType()
+  //
+
+  Value() : tag(TypeTag::NONE) {}
+
+  inline bool isNone() const {
+    return tag == TypeTag::NONE;
+  }
+
 #define SUPPORT_TRIVIALLY_COPYABLE_TYPE(                    \
     type, type_name, type_tag, member_name)                 \
   explicit Value(type t) : tag(type_tag) {                  \

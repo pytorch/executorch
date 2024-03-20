@@ -59,6 +59,13 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   }
 
   private void setLocalModel(String modelPath, String tokenizerPath) {
+    Message modelLoadingMessage = new Message("Loading model...", false);
+    runOnUiThread(
+        () -> {
+          mSendButton.setEnabled(false);
+          mMessageAdapter.add(modelLoadingMessage);
+          mMessageAdapter.notifyDataSetChanged();
+        });
     long runStartTime = System.currentTimeMillis();
     mModule = new LlamaModule(modelPath, tokenizerPath, 0.8f);
     int loadResult = mModule.load();
@@ -66,7 +73,10 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
       AlertDialog.Builder builder = new AlertDialog.Builder(this);
       builder.setTitle("Load failed: " + loadResult);
       AlertDialog alert = builder.create();
-      alert.show();
+      runOnUiThread(
+          () -> {
+            alert.show();
+          });
     }
 
     long runDuration = System.currentTimeMillis() - runStartTime;
@@ -79,8 +89,13 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
             + runDuration
             + " ms";
     Message modelLoadedMessage = new Message(modelInfo, false);
-    mMessageAdapter.add(modelLoadedMessage);
-    mMessageAdapter.notifyDataSetChanged();
+    runOnUiThread(
+        () -> {
+          mSendButton.setEnabled(true);
+          mMessageAdapter.remove(modelLoadingMessage);
+          mMessageAdapter.add(modelLoadedMessage);
+          mMessageAdapter.notifyDataSetChanged();
+        });
   }
 
   private String memoryInfo() {
@@ -116,7 +131,14 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
         -1,
         (dialog, item) -> {
           mModelFilePath = pteFiles[item];
-          setLocalModel(mModelFilePath, mTokenizerFilePath);
+          Runnable runnable =
+              new Runnable() {
+                @Override
+                public void run() {
+                  setLocalModel(mModelFilePath, mTokenizerFilePath);
+                }
+              };
+          new Thread(runnable).start();
           dialog.dismiss();
         });
 
@@ -130,6 +152,7 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
 
     mEditTextMessage = findViewById(R.id.editTextMessage);
     mSendButton = findViewById(R.id.sendButton);
+    mSendButton.setEnabled(false);
     mModelButton = findViewById(R.id.modelButton);
     mMessagesView = findViewById(R.id.messages_view);
     mMessageAdapter = new MessageAdapter(this, R.layout.sent_message);
@@ -142,8 +165,8 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
           modelDialog();
         });
 
-    setLocalModel("/data/local/tmp/llama/stories110M.pte", "/data/local/tmp/llama/tokenizer.bin");
     onModelRunStopped();
+    modelDialog();
   }
 
   private void onModelRunStarted() {
