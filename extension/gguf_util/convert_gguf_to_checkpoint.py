@@ -4,24 +4,30 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# TODO(mnachin): Move this file to torchao
+
+from typing import Any, Mapping
+
 from executorch.extension.gguf_util.load_gguf import GGUFModelArgs, GGUFWeights
 
 
-def convert_to_pte(model_args: GGUFModelArgs, weights: GGUFWeights) -> None:
-    """Convert a GGUF model into a PTE file, an ExecuTorch program.
+def convert_gguf_to_checkpoint(
+    gguf_model_args: GGUFModelArgs,
+    gguf_weights: GGUFWeights,
+) -> Mapping[str, Any]:
+    """
+    Convert a GGUF model to a checkpoint/state_dict
 
     Args:
-        model_args: The arguments for the GGUF model.
-        weights: The weights of the GGUF model.
+        gguf_model_args: The GGUF model args.
+        gguf_weights: The GGUF weights.
     """
-
     # Switch statement based on the architecture enum.
     # Each enum has its own converter function.
-    if model_args.arch == "llama":
+    if gguf_model_args.arch == "llama":
         from executorch.extension.gguf_util.converters.llama_converter import (
-            convert_to_pte as llama_convert_to_pte,
+            convert_to_state_dict as llama_convert_to_state_dict,
         )
-
-        return llama_convert_to_pte(model_args, weights)
+        llama_convert_to_state_dict(gguf_weights)
     else:
         raise NotImplementedError("Unsupported architecture.")

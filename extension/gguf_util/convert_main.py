@@ -6,7 +6,7 @@
 
 import argparse
 
-from executorch.extension.gguf_util.converter import convert_to_pte
+from executorch.extension.gguf_util.convert_gguf_to_pte import convert_to_pte
 from executorch.extension.gguf_util.load_gguf import load_file
 
 
@@ -37,7 +37,7 @@ def main() -> None:
     # to a PyTorch model (nn.Module), then exporting to ET.
     #
     # NOTE: In the future, it may makes sense to refactor out the conversion from GGUF to nn.Module
-    # into its own package that can be shared between ExecuTorch and PyTorch core. I can
+    # into its own package in torchao that can be shared between ExecuTorch and PyTorch. I can
     # imagine that there will be a need to do load GGUF file directly into PyTorch core, and
     # use torch.compile/AOTInductor to accelerate on server, without ever touching ExecuTorch.
     #
