@@ -23,6 +23,10 @@ void diagonal_copy_impl(
     int64_t dim1,
     int64_t dim2,
     Tensor& out) {
+  if (out.numel() == 0) {
+    return;
+  }
+
   int64_t storage_offset = 0;
   size_t diag_size = out.size(out.dim() - 1);
 
@@ -89,7 +93,7 @@ Tensor& diagonal_copy_out(
 
   constexpr auto name = "diagonal_copy.out";
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     diagonal_copy_impl<CTYPE>(in, offset, dim1, dim2, out);
   });
 

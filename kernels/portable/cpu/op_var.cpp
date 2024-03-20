@@ -26,7 +26,7 @@ void compute_variance(
     const size_t num,
     const double denominator) {
   CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-  if (num == 0 || denominator == 0) {
+  if (num == 0 || denominator <= 0) {
     for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
       out_data[out_ix] = NAN;
     }
