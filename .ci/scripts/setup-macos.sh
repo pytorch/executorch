@@ -23,8 +23,8 @@ install_buck() {
     brew install zstd
   fi
 
-  if ! command -v wget &> /dev/null; then
-    brew install wget
+  if ! command -v curl &> /dev/null; then
+    brew install curl
   fi
 
   pushd .ci/docker
@@ -37,7 +37,7 @@ install_buck() {
   # --version doesn't say anything w.r.t its release version, i.e. 2024-02-15.
   # See D53878006 for more details.
   BUCK2=buck2-aarch64-apple-darwin.zst
-  wget -q "https://ossci-macos.s3.amazonaws.com/${BUCK2}"
+  curl -s "https://ossci-macos.s3.amazonaws.com/${BUCK2}" -o "${BUCK2}"
 
   zstd -d "${BUCK2}" -o buck2
 
