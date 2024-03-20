@@ -456,6 +456,10 @@
     <span class="n">LoweredBackendModule</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.pass_base</span> <span class="kn">import</span> <span class="n">ExportPass</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.program._fake_program</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_fake_program</span><span class="p">,</span>
+    <span class="n">update_to_real_program</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch._export.utils</span> <span class="kn">import</span> <span class="n">is_buffer</span><span class="p">,</span> <span class="n">is_lifted_tensor_constant</span><span class="p">,</span> <span class="n">is_param</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
 
@@ -771,8 +775,14 @@
 <span class="sd">    Returns:</span>
 <span class="sd">        ExportedProgram: The input program, with some portions targeted for delegation.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">copied_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
-    <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">copied_edge_program</span><span class="p">)</span>
+    <span class="c1"># Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.</span>
+    <span class="c1"># Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">get_fake_program</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">AssertionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No fake mode found for </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
+    <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">fake_edge_program</span><span class="p">)</span>
     <span class="n">tagged_exported_program</span> <span class="o">=</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">tagged_exported_program</span>
 
     <span class="c1"># Check that the partitioner did not modify the original graph</span>
@@ -788,6 +798,7 @@
         <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
     <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
 
+    <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
     <span class="n">tagged_graph_module</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
         <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">partitioner_result</span><span class="p">,</span> <span class="n">edge_program</span>
     <span class="p">)</span>
