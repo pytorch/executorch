@@ -6,6 +6,7 @@ python_unittest(
     # @autodeps-skip pybindings don't work well with autodeps
     name = "test_program",
     srcs = [
+        "test_fake_program.py",
         "test_program.py",
     ],
     deps = [
