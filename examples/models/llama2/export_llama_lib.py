@@ -22,9 +22,9 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
-from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.examples.models.llama2.llama_transformer import Transformer
+from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
