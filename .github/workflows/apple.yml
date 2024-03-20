@@ -104,10 +104,7 @@ jobs:
 
         # Bundle iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cd cmake-out && \
-          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" \
-          "${FRAMEWORK}.xcframework" \
-          ../LICENSE
+          cd cmake-out && zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
         ) done
 
         popd
