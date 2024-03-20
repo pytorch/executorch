@@ -12,11 +12,7 @@ from executorch.backends.arm.operators.node_visitor import (
 )
 from executorch.backends.arm.tosa_mapping import TosaArg
 from executorch.backends.arm.tosa_quant_utils import build_rescale_conv_output
-from executorch.backends.arm.tosa_utils import (
-    build_reshape,
-    getNodeArgs,
-    transpose_helper,
-)
+from executorch.backends.arm.tosa_utils import build_reshape, getNodeArgs
 
 from serializer.tosa_serializer import TosaOp
 
@@ -43,7 +39,6 @@ class Conv2dVisitor(NodeVisitor):
             raise RuntimeError(
                 f"ignoring input element is not currently supported, got a large stride {stride}"
             )
-
         return pad - mod_remainder
 
     def define_node(
@@ -58,12 +53,6 @@ class Conv2dVisitor(NodeVisitor):
 
         # Currently only int8 is supported in quantized types.
         actual_out_type = ts.DType.INT8 if is_quant_node else output.dtype
-
-        ## Transpose input tensor to NHWC_Order for TOSA
-        NHWC_Order = [0, 2, 3, 1]
-        input_transposed = transpose_helper(
-            tosa_graph, input, NHWC_Order, actual_out_type
-        )
 
         # Get the attributes of convolution.
         attr = ts.TosaSerializerAttribute()
@@ -108,93 +97,57 @@ class Conv2dVisitor(NodeVisitor):
                 name=bias_name,
             )
 
+        # The output type is int32 when input type is int8.
+        conv2d_output_name = output.name
+        if is_quant_node:
+            conv2d_res = tosa_graph.addIntermediate(output.shape, ts.DType.INT32)
+            conv2d_output_name = conv2d_res.name
+
         if group.number > 1:
             """Depthwise convolution case"""
             # Given input.shape is (N, Ci, H, W), and weight.shape is (Co, Ci/G, H, W)
             in_channels = input.shape[1]
             out_channels = weight.shape[0]
-
             # Reshape torch shape format of weight tensor to tosa required format.
             # https://www.mlplatform.org/tosa/tosa_spec.html#_depthwise_conv2d
             m_length = int(round(out_channels / in_channels))
             weight_post_shape = (
-                in_channels,
-                m_length,
                 weight.shape[2],
                 weight.shape[3],
+                in_channels,
+                m_length,
             )
 
             weight_reshaped = tosa_graph.addIntermediate(
                 weight_post_shape,
                 ts.DType.INT8 if is_quant_node else weight.dtype,
             )
-
             build_reshape(
                 tosa_graph, weight.name, weight_post_shape, weight_reshaped.name
             )
 
-            # Transpose weight to [KH, KW, C, M]
-            weight_HWCM_Order = [2, 3, 0, 1]
-            weight_transposed = transpose_helper(
-                tosa_graph,
-                weight_reshaped,
-                weight_HWCM_Order,
-                ts.DType.INT8 if is_quant_node else weight.dtype,
-            )
-
-            ## TOSA output shape is [N, H, W, C*M]
-            NHWO_Order = [0, 2, 3, 1]
-            out_shape_TOSA_Depthwise_CONV2D = [output.shape[i] for i in NHWO_Order]
-
-            conv2d_res = tosa_graph.addIntermediate(
-                out_shape_TOSA_Depthwise_CONV2D,
-                ts.DType.INT32 if is_quant_node else output.dtype,
-            )
             tosa_graph.addOperator(
                 TosaOp.Op().DEPTHWISE_CONV2D,
                 [
-                    input_transposed.name,
-                    weight_transposed.name,
+                    input.name,
+                    weight_reshaped.name,
                     bias.name,
                 ],
-                [conv2d_res.name],
+                [conv2d_output_name],
                 attr,
             )
         else:
             """Regular convolution case"""
-            # Transpose weight to [OC, H, W, IC]
-            weight_CHWC_Order = [0, 2, 3, 1]
-            weight_transposed = transpose_helper(
-                tosa_graph,
-                weight,
-                weight_CHWC_Order,
-                actual_out_type,
-            )
-
-            ## TOSA output shape is [NHWO]
-            NHWO_Order = [0, 2, 3, 1]
-            out_shape_TOSA_CONV2D = [output.shape[i] for i in NHWO_Order]
-
-            # The output type is int32 when input type is int8.
-            conv2d_res = tosa_graph.addIntermediate(
-                out_shape_TOSA_CONV2D,
-                ts.DType.INT32 if is_quant_node else output.dtype,
-            )
             tosa_graph.addOperator(
                 TosaOp.Op().CONV2D,
                 [
-                    input_transposed.name,
-                    weight_transposed.name,
+                    input.name,
+                    weight.name,
                     bias.name,
                 ],
-                [conv2d_res.name],
+                [conv2d_output_name],
                 attr,
             )
-
-        ## Torch output shape is [NOHW]
-        NOHW_Order = [0, 3, 1, 2]
-        attr_output_transpose = ts.TosaSerializerAttribute()
-        attr_output_transpose.TransposeAttribute(NOHW_Order)
 
         # For quantized convolution, rescale the output value back to the same
         # integer value domain of the next op. Otherwise return float32 output.
@@ -203,19 +156,12 @@ class Conv2dVisitor(NodeVisitor):
             _, input_scale, _, _, _, _ = getNodeArgs(node.args[0])
             _, weight_scale, _, _, _, _ = getNodeArgs(node.args[1])
             _, output_scale, _, _, _, _ = getNodeArgs(list(node.users)[0])
-
-            conv2d_res = build_rescale_conv_output(
+            build_rescale_conv_output(
                 tosa_graph,
                 conv2d_res,
+                output.name,
                 actual_out_type,
                 input_scale,
                 weight_scale,
                 output_scale,
             )
-
-        tosa_graph.addOperator(
-            TosaOp.Op().TRANSPOSE,
-            [conv2d_res.name],
-            [output.name],
-            attr_output_transpose,
-        )

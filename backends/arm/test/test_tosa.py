@@ -82,6 +82,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
 
     model.eval()
     if profile == TosaProfile.BI:
+        permute_memory_to_nhwc = model.permute_memory_to_nhwc
         # Quantize the model
         captured_model_graph_module = capture_pre_autograd_graph(
             model, copy.deepcopy(model.inputs[profile])
@@ -95,6 +96,7 @@ def prepare_model_and_ref(test_model, profile=TosaProfile.MI):
         prepared_model = prepare_pt2e(captured_model_graph_module, quantizer)
         prepared_model(*model.inputs[profile])
         model = convert_pt2e(prepared_model)
+        model.permute_memory_to_nhwc = permute_memory_to_nhwc
 
     model_outputs = model.forward(*model_inputs)
     return model, model_inputs, model_outputs

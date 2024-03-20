@@ -48,6 +48,7 @@ class ArmTester(Tester):
         inputs: Tuple[torch.Tensor],
         backend: ArmBackendSelector = ArmBackendSelector.TOSA,
         profile: TosaProfile = TosaProfile.BI,
+        permute_memory_to_nhwc: bool = False,
     ):
         """
         Args:
@@ -61,9 +62,13 @@ class ArmTester(Tester):
                     functional test, no numerical checks.
             profile (TosaProfile): The TOSA profile to use. Either
                 TosaProfile.BI or TosaProfile.MI
+            permute_memory_to_nhwc (bool) : flag for enabling the memory format
+                permutation to nhwc as required by TOSA
         """
         self.tosa_test_util = None
         self.is_quantized = profile == TosaProfile.BI
+        self.permute_memory_to_nhwc = permute_memory_to_nhwc
+
         if backend == ArmBackendSelector.TOSA:
             self.tosa_test_util = TosaTestUtils(profile=profile)
             # The spec below tiggers arm_backend.py to output two files:
@@ -71,10 +76,12 @@ class ArmTester(Tester):
             #   2) desc.json
             # Saved on disk in self.tosa_test_util.intermediate_path
             self.compile_spec = generate_tosa_compile_spec(
-                self.tosa_test_util.intermediate_path
+                self.permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
             )
         elif backend == ArmBackendSelector.ETHOS_U55:
-            self.compile_spec = generate_ethosu_compile_spec("ethos-u55-128")
+            self.compile_spec = generate_ethosu_compile_spec(
+                "ethos-u55-128", self.permute_memory_to_nhwc
+            )
         else:
             raise ValueError(f"Unknown backend: {backend}")
         super().__init__(model, inputs)
@@ -145,6 +152,7 @@ class ArmTester(Tester):
             params_input=(input_names, qp_input),
             param_output=(output_name, qp_output),
             inputs=inputs_to_run,
+            permute_memory_to_nhwc=self.permute_memory_to_nhwc,
         )
 
         return self
