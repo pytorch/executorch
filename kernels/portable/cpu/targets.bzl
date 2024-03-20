@@ -979,7 +979,10 @@ _ATEN_OPS = (
 )
 
 # Operators that are not listed in `functions.yaml` (i.e., operators listed in
-# `custom_ops.yaml`), which are not compatible with the core ATen operators.
+# `custom_ops.yaml` and `edge_dialect_ops.yaml`), which are not compatible
+# with the core ATen operators. Operator listed in edge_dialect_ops.yaml
+# should be added to _EDGE_DIALECT_OPS, others (i.e listed in custom_ops.yaml)
+# should be added to _CUSTOM_OPS.
 # Every entry here will be backed by a cxx_library target with the given name
 # and deps, as well as a similar `<name>_aten` target that uses at::Tensor and
 # related types.
@@ -987,6 +990,17 @@ _ATEN_OPS = (
 # Note that a single target (or single .cpp file) can't mix ATen and non-ATen
 # ops, and must be split. They can, however, share common code via a library dep
 # if necessary.
+_EDGE_DIALECT_OPS = (
+    op_target(
+        name = "op__to_dim_order_copy",
+        deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util",
+        ],
+        _aten_mode_deps = [
+            "//executorch/kernels/portable/cpu/util:copy_ops_util_aten",
+        ],
+    ),
+)
 _CUSTOM_OPS = (
     op_target(
         name = "op_allclose",
@@ -1008,8 +1022,11 @@ def define_common_targets(is_fbcode = False):
         define_op_target(is_aten_op = True, **op)
     for op in _CUSTOM_OPS:
         define_op_target(is_aten_op = False, **op)
+    for op in _EDGE_DIALECT_OPS:
+        define_op_target(is_aten_op = False, **op)
 
     custom_op_targets = [":{}".format(op["name"]) for op in _CUSTOM_OPS]
+    edge_dialect_op_targets = [":{}".format(op["name"]) for op in _EDGE_DIALECT_OPS]
 
     aten_op_targets = [":{}".format(op["name"]) for op in _ATEN_OPS]
     all_op_targets = custom_op_targets + aten_op_targets
@@ -1029,6 +1046,20 @@ def define_common_targets(is_fbcode = False):
         srcs = [],
         visibility = ["//executorch/kernels/portable/..."],
         exported_deps = [t + "_aten" for t in custom_op_targets],
+    )
+
+    runtime.cxx_library(
+        name = "edge_dialect_ops",
+        srcs = [],
+        visibility = ["//executorch/kernels/portable/..."],
+        exported_deps = edge_dialect_op_targets,
+    )
+
+    runtime.cxx_library(
+        name = "edge_dialect_ops_aten",
+        srcs = [],
+        visibility = ["//executorch/kernels/portable/..."],
+        exported_deps = [t + "_aten" for t in edge_dialect_op_targets],
     )
 
     # Only for use by op targets under //executorch. This API needs to be
