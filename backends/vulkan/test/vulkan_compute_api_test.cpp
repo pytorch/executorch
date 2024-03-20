@@ -484,10 +484,10 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
   }
 }
 
-#define CREATE_WEIGHT_TENSOR(name, sizes, val)                          \
+#define CREATE_WEIGHT_TENSOR(name, sizes, dtype, val)                   \
   std::vector<float> data_##name(api::utils::multiply_integers(sizes)); \
   std::fill(data_##name.begin(), data_##name.end(), val);               \
-  ValueRef name = graph.add_tensorref(sizes, api::kFloat, data_##name.data());
+  ValueRef name = graph.add_tensorref(sizes, dtype, data_##name.data());
 
 TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   GraphConfig config;
@@ -496,8 +496,8 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
   std::vector<int64_t> size_big = {8, 73, 62};
   std::vector<int64_t> size_small = {8, 73, 1};
 
-  CREATE_WEIGHT_TENSOR(w1, size_small, 3.5f);
-  CREATE_WEIGHT_TENSOR(w2, size_small, 3.0f);
+  CREATE_WEIGHT_TENSOR(w1, size_small, api::kFloat, 3.5f);
+  CREATE_WEIGHT_TENSOR(w2, size_small, api::kFloat, 3.0f);
 
   // Build graph
 
@@ -882,5 +882,97 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
     RUN_TESTS(float, api::kFloat)
     RUN_TESTS(float, api::kHalf)
   }
+#undef RUN_TESTS
+}
+
+//
+// Operator Smoke Tests
+//
+
+void test_binary_op(
+    std::string op_name,
+    std::vector<int64_t> sizes_big,
+    std::vector<int64_t> sizes_small,
+    api::ScalarType dtype,
+    api::GPUMemoryLayout memory_layout,
+    bool prepack = true) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  IOValueRef arg2{};
+
+  CREATE_WEIGHT_TENSOR(arg2_w, sizes_small, dtype, 2.5f);
+
+  // Build graph
+
+  IOValueRef arg1 = graph.add_input_tensor(sizes_big, dtype, memory_layout);
+
+  if (prepack) {
+    arg2.value = arg2_w;
+  } else {
+    arg2 = graph.add_input_tensor(sizes_small, dtype, memory_layout);
+  }
+
+  IOValueRef out;
+  out.value = graph.add_tensor(sizes_big, dtype, memory_layout);
+
+  std::stringstream ss;
+  ss << "aten.";
+  ss << op_name;
+  ss << ".Tensor";
+  VK_GET_OP_FN(ss.str())
+  (graph, {arg1.value, arg2.value, kDummyValueRef, out.value});
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_prepack();
+  graph.prepack();
+  graph.encode_execute();
+
+  for (int i = 1; i < 4; i++) {
+    float val_arg1 = i + 1.5;
+    float val_arg2 = prepack ? 2.5f : i - 3.5;
+
+    float val_out = val_arg1 + val_arg2;
+    if (op_name == "sub") {
+      val_out = val_arg1 - val_arg2;
+    }
+    if (op_name == "mul") {
+      val_out = val_arg1 * val_arg2;
+    }
+    if (op_name == "div") {
+      val_out = val_arg1 / val_arg2;
+    }
+
+    if (prepack) {
+      execute_graph_and_check_output(graph, {val_arg1}, {val_out});
+    } else {
+      execute_graph_and_check_output(graph, {val_arg1, val_arg2}, {val_out});
+    }
+  }
+}
+
+#define CALL_TEST_FN_FORALL_CONDITIONS(_)                             \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, false)    \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, false)   \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, false) \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED, true)     \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED, true)    \
+  _(api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED, true)
+
+TEST(VulkanComputeGraphOpsTest, add_smoke_test) {
+#define RUN_TESTS(dtype, layout, prepack)                                  \
+  test_binary_op("add", {17, 21}, {17, 21}, dtype, layout, prepack);       \
+  test_binary_op("add", {17, 21}, {1, 1}, dtype, layout, prepack);         \
+  test_binary_op("sub", {11, 22}, {11, 22}, dtype, layout, prepack);       \
+  test_binary_op("sub", {11, 22}, {11, 1}, dtype, layout, prepack);        \
+  test_binary_op("add", {7, 17, 17}, {7, 17, 17}, dtype, layout, prepack); \
+  test_binary_op("add", {7, 17, 17}, {7, 1, 17}, dtype, layout, prepack);  \
+  test_binary_op("sub", {9, 9, 7}, {9, 9, 7}, dtype, layout, prepack);     \
+  test_binary_op("sub", {9, 9, 7}, {9, 1, 1}, dtype, layout, prepack);
+
+  CALL_TEST_FN_FORALL_CONDITIONS(RUN_TESTS);
+
 #undef RUN_TESTS
 }

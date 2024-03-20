@@ -14,6 +14,67 @@ namespace at {
 namespace native {
 namespace vulkan {
 
+//
+// Tensor output size calculation functions
+//
+
+std::vector<int64_t> calculate_broadcasted_output_size(
+    const vTensor& t1,
+    const vTensor& t2) {
+  std::vector<int64_t> out_sizes(
+      std::max(t1.sizes().size(), t2.sizes().size()));
+
+  // Match the sizes in reverse because sizes are in NCHW order
+  for (int i = -1; i >= -out_sizes.size(); --i) {
+    out_sizes.at(out_sizes.size() + i) = std::max(
+        api::utils::val_at(i, t1.sizes()), api::utils::val_at(i, t2.sizes()));
+  }
+
+  return out_sizes;
+}
+
+//
+// Tensor property checking functions
+//
+
+bool check_same_memory_layout(const vTensor& t1, const vTensor& t2) {
+  return (t1.gpu_memory_layout() == t2.gpu_memory_layout());
+}
+
+bool check_same_memory_layout(
+    const vTensor& t1,
+    const vTensor& t2,
+    const vTensor& t3) {
+  if (t1.gpu_memory_layout() != t2.gpu_memory_layout()) {
+    return false;
+  }
+  return (t1.gpu_memory_layout() == t3.gpu_memory_layout());
+}
+
+bool check_broadcastable(const vTensor& t1, const vTensor& t2) {
+  size_t ndim = std::max(t1.sizes().size(), t2.sizes().size());
+
+  // Match the sizes in reverse because sizes are in NCHW order
+  for (int i = -1; i >= -ndim; --i) {
+    int64_t t1_size = api::utils::val_at(i, t1.sizes());
+    int64_t t2_size = api::utils::val_at(i, t2.sizes());
+    // If the sizes are not equal, one of them must be 1
+    if (t1_size != t2_size) {
+      if (t1_size > 1 && t2_size != 1) {
+        return false;
+      } else if (t2_size > 1 && t1_size != 1) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+//
+// Work Group Size Calculation Utilities
+//
+
 api::utils::uvec3 adaptive_work_group_size(
     const api::utils::uvec3& global_work_group) {
   api::utils::uvec3 local_group_size = {4, 4, 4};
@@ -29,14 +90,6 @@ api::utils::uvec3 adaptive_work_group_size(
     }
   }
   return local_group_size;
-}
-
-api::utils::ivec4 get_size_as_ivec4(const vTensor& t) {
-  return api::utils::make_ivec4(
-      {dim_at<Dim4D::Width>(t),
-       dim_at<Dim4D::Height>(t),
-       dim_at<Dim4D::Channel>(t),
-       dim_at<Dim4D::Batch>(t)});
 }
 
 } // namespace vulkan

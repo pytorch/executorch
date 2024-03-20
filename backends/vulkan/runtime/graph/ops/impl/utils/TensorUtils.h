@@ -16,10 +16,33 @@ namespace at {
 namespace native {
 namespace vulkan {
 
+//
+// Tensor output size calculation functions
+//
+
+std::vector<int64_t> calculate_broadcasted_output_size(
+    const vTensor& t1,
+    const vTensor& t2);
+
+//
+// Tensor property checking functions
+//
+
+bool check_same_memory_layout(const vTensor& t1, const vTensor& t2);
+
+bool check_same_memory_layout(
+    const vTensor& t1,
+    const vTensor& t2,
+    const vTensor& t3);
+
+bool check_broadcastable(const vTensor& t1, const vTensor& t2);
+
+//
+// Work Group Size Calculation Utilities
+//
+
 api::utils::uvec3 adaptive_work_group_size(
     const api::utils::uvec3& global_work_group);
-
-api::utils::ivec4 get_size_as_ivec4(const vTensor& t);
 
 } // namespace vulkan
 } // namespace native

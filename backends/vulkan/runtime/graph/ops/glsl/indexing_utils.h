@@ -24,6 +24,15 @@
 #define COORD_TO_POS_CHANNELS_PACKED(coord, sizes) \
   ivec3(coord.x, coord.y, (coord.z + coord.w * sizes.z) / 4)
 
+#define COORD_TO_POS_WIDTH_PACKED(coord, sizes) \
+  ivec3(coord.x / 4, coord.y, (coord.z + coord.w * sizes.z))
+
+#define COORD_TO_POS_HEIGHT_PACKED(coord, sizes) \
+  ivec3(coord.x, coord.y / 4, (coord.z + coord.w * sizes.z))
+
+#define COORD_TO_POS_CHANNELS_PACKED(coord, sizes) \
+  ivec3(coord.x, coord.y, (coord.z + coord.w * sizes.z) / 4)
+
 #define COORD_TO_BUFFER_IDX(coord, sizes)                  \
   coord.x + coord.y* sizes.x + coord.z* sizes.y* sizes.x + \
       coord.w* sizes.z* sizes.y* sizes.x;
