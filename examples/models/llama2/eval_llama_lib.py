@@ -11,36 +11,17 @@ from typing import Optional
 import lm_eval
 
 import torch
-import torch._dynamo.config
-import torch._inductor.config
-from sentencepiece import SentencePieceProcessor
-from torch import nn
-
-torch._dynamo.config.automatic_dynamic_shapes = True
-torch._inductor.config.triton.unique_kernel_names = True
-torch._inductor.config.epilogue_fusion = False
-torch._inductor.config.triton.cudagraphs = True
-torch._dynamo.config.cache_size_limit = 100000
-
 from lm_eval.evaluator import evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
 from lm_eval.tasks import get_task_dict
+from sentencepiece import SentencePieceProcessor
+from torch import nn
 
 from .builder import LlamaEdgeManager
 from .export_llama_lib import (
     _prepare_for_llama_export,
     build_args_parser as _build_args_parser,
 )
-
-
-def encode_tokens(tokenizer, string: str, bos: bool = True, device: str = "cpu"):
-    # if torch.cuda.is_available():
-    #     device = "cuda"
-
-    tokens = tokenizer.encode(string)
-    if bos:
-        tokens = [tokenizer.bos_id()] + tokens
-    return torch.tensor(tokens, dtype=torch.int, device=device)
 
 
 class GPTFastEvalWrapper(eval_wrapper):
@@ -81,7 +62,8 @@ class GPTFastEvalWrapper(eval_wrapper):
         return self._device
 
     def tok_encode(self, string: str, **kwargs):
-        encoded = encode_tokens(self._tokenizer, string, bos=True, device=self._device)
+        tokens = [self._tokenizer.bos_id()] + self._tokenizer.encode(string)
+        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
         # encoded is a pytorch tensor, but some internal logic in the
         # eval harness expects it to be a list instead
         # TODO: verify this for multi-batch as well
