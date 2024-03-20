@@ -13,7 +13,7 @@ import torch
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
-from executorch.exir import EdgeProgramManager, to_edge
+from executorch.exir import EdgeCompileConfig, EdgeProgramManager, to_edge
 from torch.export import Dim, export, ExportedProgram
 
 ctypes.CDLL("libvulkan.so.1")
@@ -26,6 +26,10 @@ from executorch.extension.pytree import tree_flatten
 
 
 class TestBackends(unittest.TestCase):
+    _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+        _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+    )
+
     def assert_outputs_equal(self, model_output, ref_output, atol=1e-03, rtol=1e-03):
         """
         Helper testing function that asserts that the model output and the reference output
@@ -65,7 +69,9 @@ class TestBackends(unittest.TestCase):
         program: ExportedProgram = export(
             model, sample_inputs, dynamic_shapes=dynamic_shapes
         )
-        edge_program: EdgeProgramManager = to_edge(program)
+        edge_program: EdgeProgramManager = to_edge(
+            program, compile_config=self._edge_compile_config
+        )
         edge_program = edge_program.to_backend(VulkanPartitioner())
 
         executorch_program = edge_program.to_executorch()
