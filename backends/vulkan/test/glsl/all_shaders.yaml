@@ -1,6 +1,13 @@
 binary_op_nobroadcast__test:
   parameter_names_with_default_values:
+    DTYPE: float
     OPERATOR: X + Y
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: "half"
+        SUFFIX: "half"
+      - VALUE: "float"
+        SUFFIX: "float"
   shader_variants:
     - NAME: binary_add_nobroadcast__test
       OPERATOR: X + Y
@@ -13,11 +20,10 @@ binary_op_nobroadcast__test:
     - NAME: binary_pow_nobroadcast__test
       OPERATOR: pow(X, Y)
 
-image_to_nchw__test:
+fill_texture__test:
   parameter_names_with_default_values:
-    NDIM: 3
     DTYPE: float
-    PACKING: CHANNELS_PACKED
+    NDIM: 3
   generate_variant_forall:
     DTYPE:
       - VALUE: "half"
@@ -25,18 +31,25 @@ image_to_nchw__test:
       - VALUE: "float"
         SUFFIX: "float"
   shader_variants:
-    - NAME: image3d_to_nchw__test_C_packed
+    - NAME: fill_texture__test
 
-nchw_to_image__test:
+idx_fill_texture:
   parameter_names_with_default_values:
-    NDIM: 3
     DTYPE: float
+    NDIM: 3
     PACKING: CHANNELS_PACKED
   generate_variant_forall:
+    PACKING:
+      - VALUE: "CHANNELS_PACKED"
+        SUFFIX: "C_packed"
+      - VALUE: "WIDTH_PACKED"
+        SUFFIX: "W_packed"
+      - VALUE: "HEIGHT_PACKED"
+        SUFFIX: "H_packed"
     DTYPE:
       - VALUE: "half"
         SUFFIX: "half"
       - VALUE: "float"
         SUFFIX: "float"
   shader_variants:
-    - NAME: nchw_to_image3d__test_C_packed
+    - NAME: idx_fill_texture

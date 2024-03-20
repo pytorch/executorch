@@ -63,6 +63,36 @@ class Runner {
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<Sampler> sampler_;
   bool shouldStop_{false};
+
+  struct TimeStamps {
+    // Scaling factor for timestamps - in this case, we use ms.
+    const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
+    // Time stamps for the different stages of the execution
+    // model_load_start_ms: Start of model loading.
+    long model_load_start_ms;
+    // model_load_end_ms: End of model loading.
+    long model_load_end_ms;
+    // inference_start_ms: Immediately after the model is loaded (or we check
+    // for model load), measure the inference time.
+    long inference_start_ms;
+    // prompt_eval_end_ms: Prompt array allocation and tokenization. Ends right
+    // before the inference loop starts
+    long prompt_eval_end_ms;
+    // first_token: Timestamp when the first generated token is emitted
+    long first_token_ms;
+    // inference_end_ms: End of inference/generation.
+    long inference_end_ms;
+    // Keep a running total of the time spent in sampling.
+    long aggregate_sampling_time_ms;
+
+    void printReport(
+        const int64_t& num_prompt_tokens,
+        const int64_t& num_generated_tokens);
+    const std::string toJsonString(
+        const int64_t& num_prompt_tokens,
+        const int64_t& num_generated_tokens);
+  };
+  TimeStamps timers_;
 };
 
 } // namespace torch::executor

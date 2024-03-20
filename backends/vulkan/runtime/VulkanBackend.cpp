@@ -127,6 +127,11 @@ class GraphBuilder {
     ref_mapping_[fb_id] = ref;
   }
 
+  void add_none_to_graph(const uint32_t fb_id) {
+    ValueRef ref = compute_graph_->add_none();
+    ref_mapping_[fb_id] = ref;
+  }
+
   template <typename T>
   typename std::enable_if<is_valid_scalar_type<T>::value, void>::type
   add_scalar_to_graph(const uint32_t fb_id, T value) {
@@ -161,6 +166,9 @@ class GraphBuilder {
         "Trying to add a value that has already been added to the graph.");
 
     switch (value->value_type()) {
+      case vkgraph::GraphTypes::Null:
+        add_none_to_graph(fb_id);
+        break;
       case vkgraph::GraphTypes::Int:
         add_scalar_to_graph(fb_id, value->value_as_Int()->int_val());
         break;

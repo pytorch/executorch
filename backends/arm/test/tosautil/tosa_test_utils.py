@@ -101,6 +101,7 @@ class TosaTestUtils:
         params_input: Tuple[List[str], List[QuantizationParams]],
         param_output: Tuple[str, QuantizationParams],
         inputs: Tuple[torch.Tensor],
+        permute_memory_to_nhwc: bool,
     ) -> torch.Tensor:
         """
         Run TOSA reference model using the tosa_refence_model program.
@@ -164,6 +165,11 @@ class TosaTestUtils:
             params_input[0], params_input[1], inputs
         ):
             data_np = data.detach().numpy()
+
+            if permute_memory_to_nhwc:
+                NHWC_Order = (0, 2, 3, 1)
+                data_np = np.transpose(data_np, NHWC_Order)
+
             if self.profile is TosaProfile.BI:
                 assert (
                     quant_param.node_name == input_name

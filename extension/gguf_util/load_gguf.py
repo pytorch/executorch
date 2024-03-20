@@ -78,7 +78,8 @@ def _build_model_args(metadata: dict[str, Any]) -> GGUFModelArgs:
             layer_norm_rms_epsilon=metadata[f"{arch}.attention.layer_norm_rms_epsilon"],
         ),
         rope=RopeArgs(
-            freq_base=metadata[f"{arch}.rope.freq_base"],
+            # default value from llama2 model definition
+            freq_base=metadata.get(f"{arch}.rope.freq_base", 1e4),
         ),
     )
 

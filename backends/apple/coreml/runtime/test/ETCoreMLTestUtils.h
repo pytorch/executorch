@@ -2,14 +2,14 @@
 // ETCoreMLTestUtils.h
 //
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <CoreML/CoreML.h>
-
 #import <ETCoreMLAssetManager.h>
 #import <ETCoreMLModel.h>
+#import <ETCoreMLModelAnalyzer.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -66,13 +66,32 @@ NS_ASSUME_NONNULL_BEGIN
 /// Creates inputs with repeated values for a `ETCoreMLModel`.
 ///
 /// @param model The model.
-/// @param repeatedValues An array of values, the size of the array must be equal to the inputs
-/// count.
+/// @param repeatedValues An array of values, the size of the array must be equal to the inputs count.
 /// @param error   On failure, error is filled with the failure information.
 /// @retval Model inputs with repeated values.
 + (nullable NSArray<MLMultiArray*>*)inputsForModel:(ETCoreMLModel*)model
                                     repeatedValues:(NSArray<NSNumber*>*)repeatedValues
                                              error:(NSError* __autoreleasing*)error;
+
+/// Creates input features with repeated values for a `ETCoreMLModel`.
+///
+/// @param model The model.
+/// @param repeatedValues An array of values, the size of the array must be equal to the inputs count.
+/// @param error   On failure, error is filled with the failure information.
+/// @retval Model inputs with repeated values.
++ (nullable id<MLFeatureProvider>)inputFeaturesForModel:(ETCoreMLModel*)model
+                                         repeatedValues:(NSArray<NSNumber*>*)repeatedValues
+                                                  error:(NSError* __autoreleasing*)error;
+
+/// Creates a `ETCoreMLModelAnalyzer`instance for analyzing (debugging and profiling) a CoreML model.
+///
+/// @param data The AOT data.
+/// @param dstURL The folder url that will be used for managing the assets.
+/// @param error   On failure, error is filled with the failure information.
+/// @retval An `ETCoreMLModelAnalyzer` instance if the creation succeeded otherwise `nil`.
++ (nullable ETCoreMLModelAnalyzer*)createAnalyzerWithAOTData:(NSData*)data
+                                                      dstURL:(NSURL*)dstURL
+                                                       error:(NSError* __autoreleasing*)error;
 
 @end
 
