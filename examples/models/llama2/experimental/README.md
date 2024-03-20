@@ -22,9 +22,15 @@ cmake --build . --config Release
 # prepare model
 python3 convert.py models/llama7b
 
-# quantize
-build/bin/quantize models/llama7b/ggml-model-f16.gguf models/llama7b/ggml-model-Q4_0.gguf Q4_0
+# quantize. Notice we use --pure to avoid Q6_K from showing up.
+build/bin/quantize --pure models/llama7b/ggml-model-f16.gguf models/llama7b/ggml-model-Q4_0.gguf Q4_0
 
 ```
 
 We want to load it back into a `torch.nn.Module` and run in eager mode. The way it works is through a Tensor subclass.
+
+
+## Generate Tokens in PyTorch Eager
+```bash
+python3 generate.py --prompt "Once upon a time" --gguf_file models/llama7b/ggml-model-Q4_0.gguf --tokenizer_path models/llama7b/tokenizer.model
+```
