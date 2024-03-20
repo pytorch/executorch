@@ -183,7 +183,8 @@ def materialze_broadcast_of_rope_freq_cis(
     dim0 = module.freqs_cos.size(0)
     dim1 = module.freqs_cos.size(1)
     assert (
-        module.layers[0].attention.n_local_kv_heads == module.layers[0].attention.n_local_heads
+        module.layers[0].attention.n_local_kv_heads
+        == module.layers[0].attention.n_local_heads
     ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
     num_heads = module.layers[0].attention.n_local_heads
     module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)

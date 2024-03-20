@@ -31,20 +31,6 @@ namespace util {
 
 constexpr size_t kKVDim = 4;
 
-template <class F>
-inline void parallel_for_single_threaded(
-    const int64_t begin,
-    const int64_t end,
-    const int64_t grain_size,
-    const F& f) {
-  torch::executor::set_thread_num(0);
-  for (int64_t i = begin; i < end; i += grain_size) {
-    int64_t task_begin = i;
-    int64_t task_end = std::min(task_begin + grain_size, end);
-    f(task_begin, task_end);
-  }
-}
-
 template <typename T>
 inline void _store(T* dst, ::executorch::vec::Vectorized<T> src) {
   src.store(dst);
@@ -495,13 +481,8 @@ void cpu_flash_attention(
       util::data_index_step(i, batchSize, j, num_head, k, qSlice);
     }
   };
-  if (kvSize > 0) {
-    torch::executor::parallel_for(
-        0, batchSize * num_head * qSlice, 1, compute_lambda);
-  } else {
-    util::parallel_for_single_threaded(
-        0, batchSize * num_head * qSlice, 1, compute_lambda);
-  }
+  torch::executor::parallel_for(
+      0, batchSize * num_head * qSlice, 1, compute_lambda);
 }
 
 bool validate_flash_attention_args(
