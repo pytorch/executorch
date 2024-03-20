@@ -63,17 +63,24 @@ locally to make sure that both `xplat` and `fbcode` are in sync with each other.
 
 ### Declare the operator in a YAML file
 
-We use yaml files to declare the ATen operators or custom operators being implemented by this kernel library.
+We use yaml files to declare the **ATen operators** or **custom operators** being implemented by this kernel library.
+
+- The operator is **ATen operator** if its overload (e.g., `op: add.out`)
+    appears in the core pytorch file `native_functions.yaml`
+    [`pytorch/aten/src/ATen/native/native_functions.yaml`](https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/native_functions.yaml).
+
+- The operator is **custom operator** operator overload does *not* appear in the core pytorch `native_functions.yaml`
+    [`pytorch/aten/src/ATen/native/native_functions.yaml`](https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/native_functions.yaml).
 
 Before implementing, the operator must be declared in exactly one of the
 operator YAML files:
 - [`//kernels/portable/functions.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/portable/functions.yaml)
-  - Add your entry here if your operator overload (e.g., `op: add.out`)
-    appears in the core pytorch file
-    [`pytorch/aten/src/ATen/native/native_functions.yaml`](https://github.com/pytorch/pytorch/blob/master/aten/src/ATen/native/native_functions.yaml).
+  - Add your entry here if your operator is **Aten operator**  (e.g., `op: add.out`).
   - Also add your entry to [`//kernels/aten/functions.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/aten/functions.yaml) for test coverage.
+- [`//kernels/portable/edge_dialect_ops.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/portable/edge_dialect_ops.yaml)
+  - Add your entry here if your operator is **custom operator**, *mandatory* to ExecuTorch in edge dialect, and model *agnostic*.
 - [`//kernels/portable/custom_ops.yaml`](https://github.com/pytorch/executorch/blob/main/kernels/portable/custom_ops.yaml)
-  - Add your entry here if your operator overload does *not* appear in the core pytorch `native_functions.yaml`.
+  - Add your entry here if your operator is **custom operator**, *optional* to ExecuTorch system and model *sensitive*.
 
 The next sections describe how to add a yaml entry.
 
