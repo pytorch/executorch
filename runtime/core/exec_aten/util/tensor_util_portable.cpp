@@ -55,7 +55,7 @@ bool tensor_has_valid_dim_order(torch::executor::Tensor t) {
 
 bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
   bool ret_val =
-      is_default_dim_order(t.dim_order().data(), t.dim_order().size()) ||
+      is_contiguous_dim_order(t.dim_order().data(), t.dim_order().size()) ||
       is_channels_last_dim_order(t.dim_order().data(), t.dim_order().size());
 
   if (!ret_val) {
