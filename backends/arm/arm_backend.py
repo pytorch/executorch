@@ -22,6 +22,7 @@ from executorch.backends.arm.tosa_quant_utils import is_quant_node
 from executorch.backends.arm.tosa_utils import (
     dbg_fail,
     dbg_tosa_dump,
+    is_consumer_node_depthwise_conv2d,
     is_permute_node_before_addmm,
 )
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
@@ -39,6 +40,7 @@ if TOSA_DBG_VERBOSE:
 
 def generate_ethosu_compile_spec(
     config: str,
+    permute_memory_to_nhwc: Optional[bool] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
     extra_flags: Optional[str] = None,
@@ -60,18 +62,24 @@ def generate_ethosu_compile_spec(
         CompileSpec("compile_flags", " ".join(compiler_flags).encode()),
     ]
 
+    if permute_memory_to_nhwc:
+        compile_spec.append(CompileSpec("permute_memory_format", "nhwc".encode()))
+
     return compile_spec
 
 
 def generate_tosa_compile_spec(
+    permute_memory_to_nhwc: Optional[bool] = None,
     output_path: Optional[str] = None,
 ) -> List[CompileSpec]:
     """
     Generate compile spec for TOSA flatbuffer output
     """
-    compile_spec = [
-        CompileSpec("output_format", "tosa".encode()),
-    ]
+
+    compile_spec = [CompileSpec("output_format", "tosa".encode())]
+
+    if permute_memory_to_nhwc:
+        compile_spec.append(CompileSpec("permute_memory_format", "nhwc".encode()))
 
     if output_path is not None:
         compile_spec.append(CompileSpec("debug_tosa_path", output_path.encode()))
@@ -93,6 +101,7 @@ class ArmBackend(BackendDetails):
         debug_output = False
         output_format = ""
         compile_flags = []
+        permute_memory_to_nhwc = False
         for spec in compile_spec:
             if spec.key == "debug_tosa_path":
                 path = spec.value.decode()
@@ -101,6 +110,10 @@ class ArmBackend(BackendDetails):
                 output_format = spec.value.decode()
             if spec.key == "compile_flags":
                 compile_flags.append(spec.value.decode())
+            if spec.key == "permute_memory_format":
+                memory_format = spec.value.decode()
+                if memory_format == "nhwc":
+                    permute_memory_to_nhwc = True
 
         # Check that the output format is set in the compile spec
         if not output_format:
@@ -126,6 +139,25 @@ class ArmBackend(BackendDetails):
 
                 # Convert output (this node itself)
                 output = TosaArg(node)
+
+                # TODO: fragile code for temporary fix, not all outputs will be
+                # rank 4
+                if permute_memory_to_nhwc and len(output.shape) == 4:
+                    # TODO: remove this if check
+                    # this is added because we need to align the quant node
+                    # output shape before the depthwise_conv2d node. The output
+                    # shape between TOSA conv2d and depthwise_conv2d are different.
+                    if (
+                        node.all_input_nodes[0].op
+                        == "placeholder"  # check its parent is a placeholder
+                        and is_quant_node(node)
+                        and is_consumer_node_depthwise_conv2d(node)
+                    ):
+                        NHWC_Order = [2, 3, 0, 1]
+                    else:
+                        NHWC_Order = [0, 2, 3, 1]
+                    output.shape = [output.shape[i] for i in NHWC_Order]
+
                 # Add output to TOSA graph
                 tosa_graph.currRegion.currBasicBlock.addTensor(
                     output.name,
@@ -139,13 +171,28 @@ class ArmBackend(BackendDetails):
 
                 # Visiting each Node
                 if node.target.__name__ in node_visitors:
-                    node_visitors[node.target.__name__].define_node(
-                        node, tosa_graph, inputs, output, is_quant_node(node)
-                    )
+                    if node.target.__name__ in [
+                        "aten.add.Tensor",
+                        "aten._native_batch_norm_legit_no_training.default",
+                    ]:
+                        node_visitors[node.target.__name__].define_node(
+                            node,
+                            tosa_graph,
+                            inputs,
+                            output,
+                            is_quant_node(node),
+                            permute_memory_to_nhwc,
+                        )
+                    else:
+                        node_visitors[node.target.__name__].define_node(
+                            node, tosa_graph, inputs, output, is_quant_node(node)
+                        )
                 else:
                     raise RuntimeError(f"Unknown operator {node.target}")
             elif node.op == "placeholder":
-                process_placeholder(node, tosa_graph, edge_program)
+                process_placeholder(
+                    node, tosa_graph, edge_program, permute_memory_to_nhwc
+                )
             elif node.op == "output":
                 for output in node.args[0]:
                     tosa_graph.addOutputTensor(
