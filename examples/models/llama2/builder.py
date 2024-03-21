@@ -200,7 +200,10 @@ class LlamaEdgeManager:
     def _get_dynamic_shape(self) -> Optional[Dict[str, Any]]:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            return {"tokens": {1: dim}, "input_pos": {0: dim}}
+            if self.use_sdpa_with_kv_cache:
+                return None
+            else:
+                return {"tokens": {1: dim}, "input_pos": {0: dim}}
         else:
             return {"tokens": {1: dim}}
 

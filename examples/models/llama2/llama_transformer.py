@@ -159,10 +159,21 @@ def apply_rotary_emb(
 
 class KVCache(nn.Module):
     def __init__(
-        self, max_batch_size, max_seq_length, n_heads, head_dim, dtype=torch.bfloat16
+        self,
+        max_batch_size,
+        max_seq_length,
+        n_heads,
+        head_dim,
+        transpose_cache,
+        dtype=torch.float32,
     ):
         super().__init__()
-        cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        if transpose_cache:
+            cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        else:
+            cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+
+        self.transpose_cache = transpose_cache
         self.register_buffer(
             "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
         )
@@ -173,7 +184,7 @@ class KVCache(nn.Module):
     def update(self, input_pos, k_val, v_val):
         # input_pos: [S], k_val: [B, H, S, D]
         assert input_pos.shape[0] == k_val.shape[2]
-
+        assert self.transpose_cache
         k_out = self.k_cache
         v_out = self.v_cache
         k_out[:, :, input_pos] = k_val
@@ -221,6 +232,7 @@ class Attention(nn.Module):
                 args.max_seq_len,
                 self.n_kv_heads,
                 self.head_dim,
+                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
             )
 
     def forward(
@@ -247,8 +259,9 @@ class Attention(nn.Module):
         v = v.transpose(1, 2)
 
         if self.use_kv_cache:
-            if not self.use_sdpa_with_kv_cache_op:
+            assert input_pos is not None
 
+            if not self.use_sdpa_with_kv_cache_op:
                 k, v = self.kv_cache.update(input_pos, k, v)
                 mask = self.mask[None, None, input_pos]
 
@@ -262,6 +275,25 @@ class Attention(nn.Module):
 
                 y = self.wo(y)
                 return y
+            else:
+                from .custom_ops.sdpa_with_kv_cache import sdpa_with_kv_cache  # noqa
+
+                q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+                k = k.transpose(1, 2)
+                v = v.transpose(1, 2)
+
+                output = torch.ops.llama.sdpa_with_kv_cache(
+                    q,
+                    k,
+                    v,
+                    self.kv_cache.k_cache,
+                    self.kv_cache.v_cache,
+                    input_pos[-1].item(),
+                    seqlen,
+                )
+                output = output.view(bsz, seqlen, -1)
+                output = self.wo(output)
+                return output
 
         # grouped multiquery attention: expand out keys and values
         k = k.repeat_interleave(self.n_rep, dim=1)
