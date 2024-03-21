@@ -118,7 +118,11 @@ inline void fill_vtensor(vTensor& vten, float val) {
   fill_vtensor(vten, vten_data);
 }
 
-void fill_vtensor(ComputeGraph& graph, const IOValueRef idx, float val);
+void fill_vtensor(
+    ComputeGraph& graph,
+    const IOValueRef idx,
+    float val,
+    bool iota = false);
 
 void extract_vtensor(vTensor& vten, std::vector<float>& data);
 

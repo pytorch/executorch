@@ -8,6 +8,8 @@ import ctypes
 import unittest
 from typing import Tuple
 
+import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
+
 import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -26,7 +28,9 @@ from executorch.extension.pytree import tree_flatten
 
 
 class TestBackends(unittest.TestCase):
-    def assert_outputs_equal(self, model_output, ref_output, atol=1e-03, rtol=1e-03):
+    def assert_outputs_equal(
+        self, model_output, ref_output, atol=1e-03, rtol=1e-03, first_output_only=False
+    ):
         """
         Helper testing function that asserts that the model output and the reference output
         are equal with some tolerance. Due to numerical differences between eager mode and
@@ -38,10 +42,17 @@ class TestBackends(unittest.TestCase):
         if isinstance(ref_output, tuple) or isinstance(ref_output, list):
             # Multiple outputs executor always returns tuple, even if there is one output
             self.assertTrue(len(ref_output) == len(model_output))
-            for i in range(len(ref_output)):
+            if first_output_only:
                 self.assertTrue(
-                    torch.allclose(model_output[i], ref_output[i], atol=atol, rtol=rtol)
+                    torch.allclose(model_output[0], ref_output[0], atol=atol, rtol=rtol)
                 )
+            else:
+                for i in range(len(ref_output)):
+                    self.assertTrue(
+                        torch.allclose(
+                            model_output[i], ref_output[i], atol=atol, rtol=rtol
+                        )
+                    )
         else:
             # If one output, eager returns tensor while executor tuple of size 1
             self.assertTrue(
@@ -56,49 +67,81 @@ class TestBackends(unittest.TestCase):
         rtol=1e-01,
         dynamic_shapes=None,
         test_inputs=None,
+        memory_layouts=None,
+        first_output_only=False,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-        program: ExportedProgram = export(
-            model, sample_inputs, dynamic_shapes=dynamic_shapes
-        )
-        edge_program: EdgeProgramManager = to_edge(program)
-        edge_program = edge_program.to_backend(VulkanPartitioner())
 
-        executorch_program = edge_program.to_executorch()
+        def run_test(memory_layout):
+            compile_options = {
+                "memory_layout_override": memory_layout,
+            }
+            program: ExportedProgram = export(
+                model, sample_inputs, dynamic_shapes=dynamic_shapes
+            )
+            edge_program: EdgeProgramManager = to_edge(program)
 
-        self.assertEqual(
-            executorch_program.executorch_program.execution_plan[0].delegates[0].id,
-            VulkanBackend.__name__,
-        )
+            edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
-        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
-        inputs_flattened, _ = tree_flatten(sample_inputs)
+            executorch_program = edge_program.to_executorch()
 
-        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
-        ref_output = model(*sample_inputs)
+            self.assertEqual(
+                executorch_program.executorch_program.execution_plan[0].delegates[0].id,
+                VulkanBackend.__name__,
+            )
 
-        self.assert_outputs_equal(model_output, ref_output, atol=atol, rtol=rtol)
+            executorch_module = _load_for_executorch_from_buffer(
+                executorch_program.buffer
+            )
+            inputs_flattened, _ = tree_flatten(sample_inputs)
 
-        if test_inputs is not None:
-            for test_input in test_inputs:
-                # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
-                test_inputs_flattened, _ = tree_flatten(test_input)
-                model_output = executorch_module.run_method(
-                    "forward", tuple(test_inputs_flattened)
-                )
-                ref_output = model(*test_input)
+            model_output = executorch_module.run_method(
+                "forward", tuple(inputs_flattened)
+            )
+            ref_output = model(*sample_inputs)
 
-                self.assert_outputs_equal(
-                    model_output, ref_output, atol=atol, rtol=rtol
-                )
+            self.assert_outputs_equal(
+                model_output,
+                ref_output,
+                atol=atol,
+                rtol=rtol,
+                first_output_only=first_output_only,
+            )
+
+            if test_inputs is not None:
+                for test_input in test_inputs:
+                    test_inputs_flattened, _ = tree_flatten(test_input)
+                    model_output = executorch_module.run_method(
+                        "forward", tuple(test_inputs_flattened)
+                    )
+                    ref_output = model(*test_input)
+
+                    self.assert_outputs_equal(
+                        model_output,
+                        ref_output,
+                        atol=atol,
+                        rtol=rtol,
+                        first_output_only=first_output_only,
+                    )
+
+        memory_layouts_to_test = [
+            vk_graph_schema.VkMemoryLayout.TENSOR_WIDTH_PACKED,
+            vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+        ]
+
+        if memory_layouts is not None:
+            memory_layouts_to_test = memory_layouts
+
+        for memory_layout in memory_layouts_to_test:
+            run_test(memory_layout)
 
     def test_vulkan_backend_add(self):
-        # This test is the simplest test by manually lowering some submodules, we can use paritioner for auto detecting lowerable parts
+        # This test is the simplest test by manually lowering some submodules, we can use paritioner
+        # for auto detecting lowerable parts.
         class AddModule(torch.nn.Module):
             def __init__(self):
                 super().__init__()
@@ -300,6 +343,41 @@ class TestBackends(unittest.TestCase):
                 return torch.relu(x)
 
         self.lower_clamp_module_and_test_output(ReLUModule())
+
+    def test_vulkan_backend_max_pool2d(self):
+        class MaxPool2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.max_pool = torch.nn.MaxPool2d(
+                    kernel_size=(2, 3),
+                    stride=(1, 1),
+                    padding=0,
+                    dilation=1,
+                    ceil_mode=False,
+                    return_indices=True,
+                )
+
+            def forward(self, x):
+                return self.max_pool(x)
+
+        max_pool2d_module = MaxPool2dModule()
+        sample_inputs = (torch.randn(5, 13, 55, 68),)
+
+        batch = Dim("batch", max=8)
+        dynamic_shapes = {"x": {0: batch}}
+        test_inputs = [
+            (torch.randn(3, 14, 15, 9),),
+            (torch.randn(1, 1, 4, 6),),
+            (torch.randn(5, 10, 50, 40),),
+        ]
+        self.lower_module_and_test_output(
+            max_pool2d_module,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            test_inputs=test_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+            first_output_only=True,
+        )
 
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):

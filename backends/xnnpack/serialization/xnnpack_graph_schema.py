@@ -381,12 +381,20 @@ class XNNDatatype(IntEnum):
     xnn_datatype_qcint32 = 7
     xnn_datatype_qcint4 = 8
     xnn_datatype_qdint8 = 9
+    xnn_datatype_qbint4 = 10
 
 
 @dataclass
 class PerChannelQuant:
     scale: List[float]
     channel_dim: int
+
+
+@dataclass
+class PerChannelGroupQuant:
+    scale: List[float]
+    channel_dim: int
+    group_size: int = 1
 
 
 @dataclass
@@ -400,7 +408,9 @@ class PerTensorQuant:
     zero_point: int
 
 
-XNNQuantParams = Union[PerChannelQuant, PerTensorQuant, PerTokenDynamicQuant]
+XNNQuantParams = Union[
+    PerChannelQuant, PerTensorQuant, PerTokenDynamicQuant, PerChannelGroupQuant
+]
 
 
 @dataclass

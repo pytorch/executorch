@@ -27,6 +27,8 @@ enum XNNDatatype : short {
   xnn_datatype_qcint4 = 8,
   /// Dynamically quantized 8-bit signed integer with per-batch quantization parameters.
   xnn_datatype_qdint8 = 9,
+  /// Quantized 4-bit signed integer with shared blockwise quantization parameters.
+  xnn_datatype_qbint4 = 10,
 }
 
 // type of quantization
@@ -34,11 +36,18 @@ union XNNQuantParams {
   PerChannelQuant,
   PerTensorQuant,
   PerTokenDynamicQuant,
+  PerChannelGroupQuant,
 }
 
 // Deprecated buffer abstraction, const data buffers do not belong in flatbuffer
 table Buffer {
   storage:[ubyte] (deprecated, force_align: 16);
+}
+
+table PerChannelGroupQuant {
+  scale:[float];
+  channel_dim:int;
+  group_size:int;
 }
 
 table PerChannelQuant {

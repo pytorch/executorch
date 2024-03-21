@@ -11,6 +11,7 @@ from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.llama2 import Llama2Model
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
@@ -56,11 +57,18 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-P",
-        "--ptq",
-        help="If specified, will do PTQ.",
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
         action="store_true",
         default=False,
+    )
+
+    parser.add_argument(
+        "-P",
+        "--ptq",
+        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
+        default="8a8w",
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.
@@ -89,7 +97,20 @@ if __name__ == "__main__":
 
     pte_filename = "dummy_llama2_qnn"
 
-    use_fp16 = False if args.ptq else True
+    if args.ptq == "8a8w":
+        quant_dtype = QuantDtype.use_8a8w
+    elif args.ptq == "16a16w":
+        quant_dtype = QuantDtype.use_16a16w
+    elif args.ptq == "16a4w":
+        quant_dtype = QuantDtype.use_16a4w
+    else:
+        raise AssertionError(
+            f"No support for quant type {args.ptq}. Support 8a8w, 16a16w and 16a4w."
+        )
+
+    if args.use_fp16:
+        quant_dtype = None
+
     build_executorch_binary(
         instance.get_eager_model().eval(),
         inputs,
@@ -97,7 +118,7 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         inputs,
         custom_annotations=(),
-        use_fp16=use_fp16,
+        quant_dtype=quant_dtype,
     )
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),

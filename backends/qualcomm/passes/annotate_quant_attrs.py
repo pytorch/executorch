@@ -7,11 +7,11 @@ import operator
 from typing import Any, Dict
 
 import torch
-from executorch.backends.qualcomm.builders.utils import set_parameter
+from executorch.backends.qualcomm.builders.utils import get_parameter, set_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
-from .utils import dq_ops, get_parameter, get_quant_attrs, q_ops
+from .utils import dq_ops, get_quant_attrs, q_ops
 
 
 class AnnotateQuantAttrs(ExportPass):

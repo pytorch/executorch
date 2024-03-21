@@ -5,7 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import operator
-from typing import final, List, Optional
+from typing import Any, Dict, final, List, Optional
+
+import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
 
 import torch
 from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
@@ -39,17 +41,37 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.relu.default,
             # Matrix multiplication operators
             exir_ops.edge.aten.mm.default,
+            # Pooling operators
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
             # Other
             operator.getitem,
         ]
         return supported
 
 
+def parse_compile_options(
+    compile_options: Optional[Dict[str, Any]] = None
+) -> List[CompileSpec]:
+    compile_specs = []
+    if compile_options is None:
+        return compile_specs
+
+    for key, value in compile_options.items():
+        if isinstance(
+            value, (vk_graph_schema.VkStorageType, vk_graph_schema.VkMemoryLayout)
+        ):
+            value_bytes = int(value).to_bytes(4, byteorder="little")
+            compile_specs.append(CompileSpec(key, value_bytes))
+        else:
+            raise RuntimeError(f"Invalid compile option {key} with type {type(value)}")
+
+    return compile_specs
+
+
 @final
 class VulkanPartitioner(Partitioner):
-    def __init__(self, compile_spec: Optional[List[CompileSpec]] = None) -> None:
-        if compile_spec is None:
-            compile_spec = []
+    def __init__(self, compile_options: Optional[Dict[str, Any]] = None) -> None:
+        compile_spec = parse_compile_options(compile_options)
         self.delegation_spec = DelegationSpec(VulkanBackend.__name__, compile_spec)
 
     def partition(self, exported_program: ExportedProgram) -> PartitionResult:
