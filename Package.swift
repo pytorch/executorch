@@ -20,6 +20,8 @@ let xnnpack_sha256 = "3fd6e4e1d9687eb25e2638bb3dfbc429b736cbf47e7ed769f1dbec6225
 struct Framework {
   let name: String
   let checksum: String
+  var frameworks: [String] = []
+  var libraries: [String] = []
 
   func target() -> Target {
     .binaryTarget(
@@ -28,12 +30,30 @@ struct Framework {
       checksum: checksum
     )
   }
+
+  func dependencies() -> Target {
+    .target(
+      name: "\(name)_dependencies",
+      dependencies: [.target(name: name)],
+      path: ".swift/\(name)",
+      linkerSettings:
+          frameworks.map { .linkedFramework($0) } +
+          libraries.map { .linkedLibrary($0) }
+    )
+  }
 }
 
 let frameworks = [
   Framework(
     name: "coreml_backend",
-    checksum: coreml_sha256
+    checksum: coreml_sha256,
+    frameworks: [
+      "Accelerate",
+      "CoreML",
+    ],
+    libraries: [
+      "sqlite3",
+    ]
   ),
   Framework(
     name: "executorch",
@@ -41,7 +61,12 @@ let frameworks = [
   ),
   Framework(
     name: "mps_backend",
-    checksum: mps_sha256
+    checksum: mps_sha256,
+    frameworks: [
+      "Metal",
+      "MetalPerformanceShaders",
+      "MetalPerformanceShadersGraph",
+    ]
   ),
   Framework(
     name: "portable_backend",
@@ -58,8 +83,6 @@ let package = Package(
   platforms: [
     .iOS(.v15),
   ],
-  products: frameworks.map { framework in
-    .library(name: framework.name, targets: [framework.name])
-  },
-  targets: frameworks.map { $0.target() }
+  products: frameworks.map { .library(name: $0.name, targets: ["\($0.name)_dependencies"]) },
+  targets: frameworks.flatMap { [$0.target(), $0.dependencies()] }
 )
