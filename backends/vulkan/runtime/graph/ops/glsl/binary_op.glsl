@@ -52,21 +52,21 @@ void main() {
   }
 
   ivec4 in_coord = out_coord_to_in_coord(coord, in_sizes.data);
-  vec4 in_texel = texelFetch(
+  ${VEC4_T[DTYPE]} in_texel = ${VEC4_T[DTYPE]}(texelFetch(
     image_in,
     COORD_TO_POS_${PACKING}(in_coord, in_sizes.data),
-    0);
+    0));
 
   ivec4 other_coord = out_coord_to_in_coord(coord, other_sizes.data);
-  vec4 other_texel = texelFetch(
+  ${VEC4_T[DTYPE]} other_texel = ${VEC4_T[DTYPE]}(texelFetch(
     image_other,
     COORD_TO_POS_${PACKING}(other_coord, other_sizes.data),
-    0);
+    0));
 
   // Detect broadcasting
   if (PACKED_DIM_${PACKING}(other_sizes.data) < PACKED_DIM_${PACKING}(in_sizes.data)) {
     other_texel = other_texel.xxxx;
   }
 
-  imageStore(image_out, pos, OP(in_texel, other_texel, alpha.data));
+  imageStore(image_out, pos, ${VEC4_T[DTYPE]}(OP(in_texel, other_texel, alpha.data)));
 }
