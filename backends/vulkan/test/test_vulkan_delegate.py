@@ -8,6 +8,8 @@ import ctypes
 import unittest
 from typing import Tuple
 
+import executorch.backends.vulkan.serialization.vulkan_graph_schema as vk_graph_schema
+
 import torch
 
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
@@ -56,46 +58,66 @@ class TestBackends(unittest.TestCase):
         rtol=1e-01,
         dynamic_shapes=None,
         test_inputs=None,
+        memory_layouts=None,
     ):
         """
         Helper testing function that takes a torch.nn.Module and lowers it to Vulkan with
         the given sample inputs. It then runs the lowered module and compares its
         outputs with the outputs of the eager module.
         """
-        program: ExportedProgram = export(
-            model, sample_inputs, dynamic_shapes=dynamic_shapes
-        )
-        edge_program: EdgeProgramManager = to_edge(program)
-        edge_program = edge_program.to_backend(VulkanPartitioner())
 
-        executorch_program = edge_program.to_executorch()
+        def run_test(memory_layout):
+            compile_options = {
+                "memory_layout_override": memory_layout,
+            }
+            program: ExportedProgram = export(
+                model, sample_inputs, dynamic_shapes=dynamic_shapes
+            )
+            edge_program: EdgeProgramManager = to_edge(program)
 
-        self.assertEqual(
-            executorch_program.executorch_program.execution_plan[0].delegates[0].id,
-            VulkanBackend.__name__,
-        )
+            edge_program = edge_program.to_backend(VulkanPartitioner(compile_options))
 
-        executorch_module = _load_for_executorch_from_buffer(executorch_program.buffer)
-        # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
-        inputs_flattened, _ = tree_flatten(sample_inputs)
+            executorch_program = edge_program.to_executorch()
 
-        model_output = executorch_module.run_method("forward", tuple(inputs_flattened))
-        ref_output = model(*sample_inputs)
+            self.assertEqual(
+                executorch_program.executorch_program.execution_plan[0].delegates[0].id,
+                VulkanBackend.__name__,
+            )
 
-        self.assert_outputs_equal(model_output, ref_output, atol=atol, rtol=rtol)
+            executorch_module = _load_for_executorch_from_buffer(
+                executorch_program.buffer
+            )
+            inputs_flattened, _ = tree_flatten(sample_inputs)
 
-        if test_inputs is not None:
-            for test_input in test_inputs:
-                # pyre-fixme[16]: Module `pytree` has no attribute `tree_flatten`.
-                test_inputs_flattened, _ = tree_flatten(test_input)
-                model_output = executorch_module.run_method(
-                    "forward", tuple(test_inputs_flattened)
-                )
-                ref_output = model(*test_input)
+            model_output = executorch_module.run_method(
+                "forward", tuple(inputs_flattened)
+            )
+            ref_output = model(*sample_inputs)
 
-                self.assert_outputs_equal(
-                    model_output, ref_output, atol=atol, rtol=rtol
-                )
+            self.assert_outputs_equal(model_output, ref_output, atol=atol, rtol=rtol)
+
+            if test_inputs is not None:
+                for test_input in test_inputs:
+                    test_inputs_flattened, _ = tree_flatten(test_input)
+                    model_output = executorch_module.run_method(
+                        "forward", tuple(test_inputs_flattened)
+                    )
+                    ref_output = model(*test_input)
+
+                    self.assert_outputs_equal(
+                        model_output, ref_output, atol=atol, rtol=rtol
+                    )
+
+        memory_layouts_to_test = [
+            vk_graph_schema.VkMemoryLayout.TENSOR_WIDTH_PACKED,
+            vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED,
+        ]
+
+        if memory_layouts is not None:
+            memory_layouts_to_test = memory_layouts
+
+        for memory_layout in memory_layouts_to_test:
+            run_test(memory_layout)
 
     def test_vulkan_backend_add(self):
         # This test is the simplest test by manually lowering some submodules, we can use paritioner for auto detecting lowerable parts
