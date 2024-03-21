@@ -779,8 +779,10 @@
     <span class="c1"># Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.</span>
     <span class="k">try</span><span class="p">:</span>
         <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">get_fake_program</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">AssertionError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No fake mode found for </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">logging</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Error in get_fake_program for graph </span><span class="si">{</span><span class="n">edge_program</span><span class="o">.</span><span class="n">graph_module</span><span class="si">}</span><span class="s2">, fallback to deepcopy: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
         <span class="n">fake_edge_program</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program</span><span class="p">)</span>
     <span class="n">partitioner_result</span> <span class="o">=</span> <span class="n">partitioner_instance</span><span class="p">(</span><span class="n">fake_edge_program</span><span class="p">)</span>
     <span class="n">tagged_exported_program</span> <span class="o">=</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">tagged_exported_program</span>
