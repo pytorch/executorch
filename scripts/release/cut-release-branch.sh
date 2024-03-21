@@ -7,10 +7,10 @@ to the right script.
 This script can be used to cut any branch on any repository
 
 For `pytorch/executorch` usage would be like:
-> DRY_RUN=disabled cut-release-branch.sh
+> DRY_RUN=disabled ./scripts/release/cut-release-branch.sh
 
 or to cut from main branch:
-> DRY_RUN=disabled GIT_BRANCH_TO_CUT_FROM=main cut-release-branch.sh
+> DRY_RUN=disabled GIT_BRANCH_TO_CUT_FROM=main ./scripts/release/cut-release-branch.sh
 '
 
 set -eou pipefail
