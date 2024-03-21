@@ -702,21 +702,21 @@ Tensor& flash_attention_kernel_out(
 
 /*
   Input params
-  @params[in]: q_projected: Projected query with query weights.
+  @param[in] q_projected Projected query with query weights.
   Format [n_layers, batch size, seq_len, num heads, head dim]
-  @params[in]: k_projected: Projected query with key weights.
+  @param[in] k_projected Projected query with key weights.
   Format [n_layers, batch size, seq_len, num heads, head dim]
-  @params[in]: v_projected: Projected query with value weights.
+  @param[in] v_projected Projected query with value weights.
   Format [n_layers, batch size, seq_len, num heads, head dim]
-  @params[in]: key_cache: Cache of previous k_projected.
+  @param[in] key_cache Cache of previous k_projected.
   Format [n_layers, batch size, max_seq_len, num heads, head dim]
-  @params[in]: key_cache: Cache of previous v_projected.
+  @param[in] key_cache Cache of previous v_projected.
   Format [n_layers, batch size, max_seq_len, num heads, head dim]
   ....
-  @params[in] layer_id: which layer this call belongs to.
+  @param[in] layer_id which layer this call belongs to.
   Used to updated appropriate entry of kv cache
-  @params[in]: start_pos: sequence position
-  @params[in]: seq_len: Seq length. e.g. seq_len dim of q_projected.
+  @param[in] start_pos sequence position
+  @param[in] seq_len Seq length. e.g. seq_len dim of q_projected.
 */
 Tensor& sdpa_with_kv_cache_out(
     RuntimeContext& ctx,
