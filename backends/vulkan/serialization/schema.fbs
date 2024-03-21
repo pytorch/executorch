@@ -19,6 +19,26 @@ enum VkDataType : byte {
   FLOAT32 = 5,
 }
 
+// Describes what kind of GPU resource should be used to represent a tensor. The
+// int values assigned to each entry must match the corresponding entry in
+// api::StorageType.
+enum VkStorageType : ubyte {
+  BUFFER = 0,
+  TEXTURE_3D = 1,
+  TEXTURE_2D = 2,
+  DEFAULT_STORAGE = 255,
+}
+
+// Describes how memory should be laid out in GPU memory. See the GPUMemoryLayout
+// enum class in PyTorch Vulkan for more details. The int values assigned to each
+// entry must match the corresponding entry in api::GPUMemoryLayout.
+enum VkMemoryLayout : ubyte {
+  TENSOR_WIDTH_PACKED = 0,
+  TENSOR_HEIGHT_PACKED = 1,
+  TENSOR_CHANNELS_PACKED = 2,
+  DEFAULT_LAYOUT = 255,
+}
+
 table VkTensor {
   // Type of the tensor elements.
   datatype:VkDataType;
@@ -28,6 +48,10 @@ table VkTensor {
   constant_id:int;
   // Index to the shared memory object. Negative indicates the tensor doesn't share memory.
   mem_obj_id:int;
+  // Storage type that should be used to represent this tensor
+  storage_type:VkStorageType = DEFAULT_STORAGE;
+  // Memory layout that should be used to represent this tensor
+  memory_layout:VkMemoryLayout = DEFAULT_LAYOUT;
 }
 
 table Null {}
@@ -103,6 +127,17 @@ table VkGraph {
   // Raw Objects (e.g. weight tensors and custom shaders)
   constants:[VkBytes];
   shaders:[VkBytes];
+
+  // Graph configuration
+  // As per flatbuffer BC/FC policy, new fields can be freely added to this
+  // section. It is recommended to provide default values, since older blobs
+  // without the field will be deserialized with the default value.
+
+  // Sets an override for the storage type and memory layout that will be used
+  // to represent a VkTensor if the VkTensor is not serialized with a particular
+  // storage type or memory layout setting
+  storage_type_override:VkStorageType = DEFAULT_STORAGE;
+  memory_layout_override:VkMemoryLayout = DEFAULT_LAYOUT;
 }
 
 root_type VkGraph;

@@ -22,6 +22,7 @@
 
 #include <cstdio>
 #include <cstdlib> /* strtol */
+#include <cstring>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -72,6 +73,62 @@ api::ScalarType get_scalar_type(const vkgraph::VkDataType& vk_datatype) {
   }
 }
 
+api::StorageType get_storage_type(
+    const vkgraph::VkStorageType& vk_storage_type) {
+  switch (vk_storage_type) {
+    case vkgraph::VkStorageType::BUFFER:
+      return api::StorageType::BUFFER;
+    case vkgraph::VkStorageType::TEXTURE_3D:
+      return api::StorageType::TEXTURE_3D;
+    case vkgraph::VkStorageType::TEXTURE_2D:
+      return api::StorageType::TEXTURE_2D;
+    default:
+      break;
+  }
+  return api::StorageType::UNKNOWN;
+}
+
+api::GPUMemoryLayout get_memory_layout(
+    const vkgraph::VkMemoryLayout& vk_memory_layout) {
+  switch (vk_memory_layout) {
+    case vkgraph::VkMemoryLayout::TENSOR_WIDTH_PACKED:
+      return api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+    case vkgraph::VkMemoryLayout::TENSOR_HEIGHT_PACKED:
+      return api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+    case vkgraph::VkMemoryLayout::TENSOR_CHANNELS_PACKED:
+      return api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+    default:
+      break;
+  }
+  VK_THROW("Invalid memory layout encountered!");
+}
+
+GraphConfig get_graph_config(ArrayRef<CompileSpec>& compile_specs) {
+  GraphConfig config = GraphConfig();
+
+  for (const CompileSpec& spec : compile_specs) {
+    const uint8_t* value_data = (const uint8_t*)spec.value.buffer;
+    const size_t value_size = spec.value.nbytes;
+    if (strcmp(spec.key, "storage_type_override") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(int32_t), "Unexpected value size!");
+      int value_as_int = static_cast<int>(GetUInt32LE(value_data));
+      api::StorageType storage_type =
+          static_cast<api::StorageType>(value_as_int);
+
+      config.setStorageTypeOverride(storage_type);
+    }
+    if (strcmp(spec.key, "memory_layout_override") == 0) {
+      ET_CHECK_MSG(value_size == sizeof(uint32_t), "Unexpected value size!");
+      uint32_t value_as_int = GetUInt32LE(value_data);
+      api::GPUMemoryLayout memory_layout =
+          static_cast<api::GPUMemoryLayout>(value_as_int);
+
+      config.setMemoryLayoutOverride(memory_layout);
+    }
+  }
+  return config;
+}
+
 class GraphBuilder {
   ComputeGraph* compute_graph_;
   VkGraphPtr flatbuffer_;
@@ -109,9 +166,18 @@ class GraphBuilder {
 
   void add_tensor_to_graph(const uint32_t fb_id, VkTensorPtr tensor_fb) {
     const api::ScalarType& dtype = get_scalar_type(tensor_fb->datatype());
+    api::StorageType storage_type =
+        tensor_fb->storage_type() == vkgraph::VkStorageType::DEFAULT_STORAGE
+        ? compute_graph_->suggested_storage_type()
+        : get_storage_type(tensor_fb->storage_type());
 
     UIntVector dims_fb = tensor_fb->dims();
     const std::vector<int64_t> dims_vector(dims_fb->cbegin(), dims_fb->cend());
+
+    api::GPUMemoryLayout memory_layout =
+        tensor_fb->memory_layout() == vkgraph::VkMemoryLayout::DEFAULT_LAYOUT
+        ? compute_graph_->suggested_memory_layout(dims_vector)
+        : get_memory_layout(tensor_fb->memory_layout());
 
     ValueRef ref;
     if (tensor_fb->constant_id() >= 0) {
@@ -121,7 +187,11 @@ class GraphBuilder {
       ref = compute_graph_->add_tensorref(dims_vector, dtype, tensor_data);
     } else {
       ref = compute_graph_->add_tensor(
-          dims_vector, dtype, tensor_fb->mem_obj_id());
+          dims_vector,
+          dtype,
+          storage_type,
+          memory_layout,
+          tensor_fb->mem_obj_id());
     }
 
     ref_mapping_[fb_id] = ref;
@@ -371,11 +441,11 @@ class VulkanBackend final : public PyTorchBackendInterface {
   Result<DelegateHandle*> init(
       BackendInitContext& context,
       FreeableBuffer* processed,
-      ArrayRef<CompileSpec>) const override {
+      ArrayRef<CompileSpec> compile_specs) const override {
     ComputeGraph* compute_graph = ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(
         context.get_runtime_allocator(), ComputeGraph);
 
-    new (compute_graph) ComputeGraph(GraphConfig());
+    new (compute_graph) ComputeGraph(get_graph_config(compile_specs));
 
     Error err = compileModel(processed->data(), compute_graph);
 
