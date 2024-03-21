@@ -396,6 +396,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-X", "--xnnpack", action="store_true")
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
+    parser.add_argument("--coreml", action="store_true")
 
     parser.add_argument(
         "--expand_rope_table",
@@ -575,6 +576,39 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
         partitioners[MPSPartitioner.__name__] = MPSPartitioner(compile_specs)
         modelname = f"mps_{modelname}"
+
+    if args.coreml:
+        assert (
+            args.use_kv_cache is True
+        ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`.
+            import coremltools as ct
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
+            from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`
+            from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+                CoreMLPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            )
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision(ct.precision.FLOAT16.value),
+            compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+        partitioners[CoreMLPartitioner.__name__] = CoreMLPartitioner(
+            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        )
+        modelname = f"coreml_{modelname}"
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
