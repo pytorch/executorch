@@ -77,6 +77,24 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   add_definitions(-DET_LOG_ENABLED=0)
 endif()
 
+# Configure log level. Must be one of debug, info, error, fatal.
+set(EXECUTORCH_LOG_LEVEL "Info" CACHE STRING
+      "Build with the given ET_MIN_LOG_LEVEL value")
+string(TOLOWER "${EXECUTORCH_LOG_LEVEL}" LOG_LEVEL_LOWER)
+if(LOG_LEVEL_LOWER STREQUAL "debug")
+  add_definitions(-DET_MIN_LOG_LEVEL=Debug)
+elseif(LOG_LEVEL_LOWER STREQUAL "info")
+  add_definitions(-DET_MIN_LOG_LEVEL=Info)
+elseif(LOG_LEVEL_LOWER STREQUAL "error")
+  add_definitions(-DET_MIN_LOG_LEVEL=Error)
+elseif(LOG_LEVEL_LOWER STREQUAL "fatal")
+  add_definitions(-DET_MIN_LOG_LEVEL=Fatal)
+else()
+  message(SEND_ERROR
+      "Unknown log level \"${EXECUTORCH_LOG_LEVEL}\". Expected one of Debug, " +
+      "Info, Error, or Fatal.")
+endif()
+
 option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
        "Build with ET_ENABLE_PROGRAM_VERIFICATION"
        ${_default_release_disabled_options})
