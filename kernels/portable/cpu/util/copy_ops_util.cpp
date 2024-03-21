@@ -886,11 +886,18 @@ void get_diagonal_copy_out_target_size(
 
   size_t diagonal_size = 0;
   if (offset >= 0) {
-    diagonal_size = std::min<size_t>(in.size(dim1), in.size(dim2) - offset);
+    if (in.size(dim2) <= offset) {
+      diagonal_size = 0;
+    } else {
+      diagonal_size = std::min<size_t>(in.size(dim1), in.size(dim2) - offset);
+    }
   } else {
-    diagonal_size = std::min<size_t>(in.size(dim1) + offset, in.size(dim2));
+    if (in.size(dim1) <= -offset) {
+      diagonal_size = 0;
+    } else {
+      diagonal_size = std::min<size_t>(in.size(dim1) + offset, in.size(dim2));
+    }
   }
-  diagonal_size = std::max<size_t>(diagonal_size, 0);
 
   size_t shift = 0;
   for (size_t d = 0; d < in.dim(); ++d) {
