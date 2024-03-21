@@ -142,8 +142,8 @@ the checkpoint format to avoid generating faulty models.
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
-        elif "int4" in str(checkpoint_path):
-            print("Using int4 weight-only quantization!")
+        elif "8da4w" in str(checkpoint_path):
+            print("Using int4 weight and int8 dynamic activation quantization!")
             from .quantize import Int8DynActInt4WeightQuantHandler
 
             simple_quantizer = Int8DynActInt4WeightQuantHandler(self.model_)
