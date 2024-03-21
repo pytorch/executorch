@@ -38,7 +38,9 @@ class GPTFastEvalWrapper(eval_wrapper):
         super().__init__()
         self._model = model
         self._tokenizer = tokenizer
-        self._device = torch.device("cpu")
+        self._device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu"),
+        )
         self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
 
     @property
@@ -153,12 +155,18 @@ def eval_llama(
     tokenizer = SentencePieceProcessor(model_file=str(args.tokenizer_path))
 
     # Evaluate the model
+    model = (
+        manager.model.eval().to(device="cuda")
+        if torch.cuda.is_available()
+        else manager.model.to(device="cpu")
+    )
     eval_results = eval(
-        manager.model.to(device="cpu"),
+        model,
         tokenizer,
         args.tasks,
         args.limit,
         args.max_seq_length,
     )
 
-    print("Results: ", eval_results)
+    for task, res in eval_results["results"].items():
+        print(f"{task}: {res}")
