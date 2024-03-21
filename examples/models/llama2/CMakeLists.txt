@@ -30,7 +30,7 @@ if(NOT CMAKE_CXX_STANDARD)
   # Can't set to 11 due to executor_runner.cpp make_unique
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+# set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -43,7 +43,7 @@ find_package(gflags REQUIRED PATHS
 #
 add_executable(llama_main main.cpp)
 if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
-  target_link_options(llama_main PRIVATE "LINKER:--gc-sections")
+  # target_link_options(llama_main PRIVATE "LINKER:--gc-sections")
 endif()
 
 # find `executorch` libraries
@@ -54,10 +54,9 @@ add_subdirectory(runner)
 
 # XNNPACK pthreadpool cpuinfo
 target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib)
+target_link_options_shared_lib(llama_main)
 target_link_options(
-  llama_main PUBLIC "SHELL:LINKER:--whole-archive \
-                    $<TARGET_FILE:portable_ops_lib> \
-                    LINKER:--no-whole-archive")
+  llama_main PUBLIC "SHELL:LINKER:-force_load,$<TARGET_FILE:portable_ops_lib>")
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
 # Print all summary

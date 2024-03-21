@@ -14,7 +14,6 @@
 #include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #endif
-
 DEFINE_string(
     model_path,
     "llama2.pte",
