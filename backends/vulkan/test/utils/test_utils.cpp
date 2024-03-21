@@ -172,9 +172,17 @@ void fill_vtensor(vTensor& vten, std::vector<float>& data) {
   }
 }
 
-void fill_vtensor(ComputeGraph& graph, const IOValueRef idx, float val) {
+void fill_vtensor(
+    ComputeGraph& graph,
+    const IOValueRef idx,
+    float val,
+    bool iota) {
   std::vector<float> data(graph.get_val(idx.value).toTensor().gpu_numel());
-  std::fill(data.begin(), data.end(), val);
+  if (iota) {
+    std::iota(data.begin(), data.end(), val);
+  } else {
+    std::fill(data.begin(), data.end(), val);
+  }
 
   graph.copy_into_staging(idx.staging, data.data(), data.size());
 }

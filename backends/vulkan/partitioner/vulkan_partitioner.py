@@ -41,6 +41,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.relu.default,
             # Matrix multiplication operators
             exir_ops.edge.aten.mm.default,
+            # Pooling operators
+            exir_ops.edge.aten.max_pool2d_with_indices.default,
             # Other
             operator.getitem,
         ]
