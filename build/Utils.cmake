@@ -1,8 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2024 Arm Limited and/or its affiliates.
-#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -34,6 +32,8 @@ function(executorch_print_configuration_summary)
   message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
   message(
     STATUS "  EXECUTORCH_ENABLE_LOGGING     : ${EXECUTORCH_ENABLE_LOGGING}")
+  message(
+    STATUS "  EXECUTORCH_LOG_LEVEL          : ${EXECUTORCH_LOG_LEVEL}")
   message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
                  "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}")
   message(
@@ -46,6 +46,8 @@ function(executorch_print_configuration_summary)
   )
   message(
     STATUS "  REGISTER_EXAMPLE_CUSTOM_OPS   : ${REGISTER_EXAMPLE_CUSTOM_OPS}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL : "
+                 "${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
