@@ -327,12 +327,6 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="checkpoint path",
     )
     parser.add_argument(
-        "-g",
-        "--group_size",
-        default=256,
-        help="Group size for weight quantization",
-    )
-    parser.add_argument(
         "--calibration_tasks",
         nargs="+",
         type=str,
@@ -401,7 +395,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
-    parser.add_argument("-G", "--groupsize", default=None, help="specify the groupsize")
+    parser.add_argument("-G", "--group_size", default=None, help="specify the group_size")
 
     parser.add_argument(
         "-d",
