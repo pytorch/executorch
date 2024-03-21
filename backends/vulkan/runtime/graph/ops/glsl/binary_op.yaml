@@ -23,6 +23,8 @@ binary_op:
         SUFFIX: half
       - VALUE: float
         SUFFIX: float
+      - VALUE: int
+        SUFFIX: int
   shader_variants:
     - NAME: binary_add
     - NAME: binary_sub
