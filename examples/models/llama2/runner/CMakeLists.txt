@@ -50,6 +50,6 @@ target_link_libraries(
   llama_runner PUBLIC executorch portable_kernels extension_module
                       extension_data_loader portable_ops_lib xnnpack_backend XNNPACK pthreadpool cpuinfo)
 target_link_options(
-  llama_main PUBLIC "SHELL:LINKER:-all_load,$<TARGET_FILE:xnnpack_backend>")
+  llama_runner PUBLIC "SHELL:LINKER:-force_load,$<TARGET_FILE:xnnpack_backend>")
 
 target_link_options_shared_lib(llama_runner)
