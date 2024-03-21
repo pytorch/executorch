@@ -248,6 +248,7 @@ class Conv2d(NodeVisitor):
 
         filter_node = node.args[1]
         filter_tensor = get_parameter(filter_node, self.edge_program)
+        # weight of pytorch OIHW, yet QNN is HWIO
         filter_axis_order = (2, 3, 1, 0)
         filter_tensor = filter_tensor.permute(dims=filter_axis_order).contiguous()
         filter_tensor_wrapper = self.define_tensor(

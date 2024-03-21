@@ -16,8 +16,10 @@ from executorch import exir
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.qnn_preprocess import QnnBackend
 from executorch.backends.qualcomm.quantizer.quantizer import (
+    get_16a4w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
     QnnQuantizer,
+    QuantDtype,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
@@ -55,6 +57,9 @@ class TestQNN(unittest.TestCase):
     image_dataset: Literal = ""
     pretrained_weight: Literal = ""
     online_prepare: bool = False
+    use_8a8w: str = "8a8w"
+    use_16a16w: str = "16a16w"
+    use_16a4w: str = "16a4w"
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -179,7 +184,7 @@ class TestQNN(unittest.TestCase):
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
         custom_quant_annotations: Tuple[Callable] = (),
-        use_16bit_quant: Optional[bool] = False,
+        quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
         m = torch._export.capture_pre_autograd_graph(module, inputs)
 
@@ -187,9 +192,17 @@ class TestQNN(unittest.TestCase):
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
         quantizer.set_per_channel_quant(is_conv_per_channel)
 
-        if use_16bit_quant:
+        if quant_dtype == QuantDtype.use_8a8w:
+            pass  # default setting
+        elif quant_dtype == QuantDtype.use_16a16w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
             quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+        elif quant_dtype == QuantDtype.use_16a4w:
+            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
+        else:
+            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
 
         prepared = prepare_pt2e(m, quantizer)
         prepared(*inputs)

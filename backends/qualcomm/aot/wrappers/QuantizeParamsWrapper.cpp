@@ -29,6 +29,33 @@ std::unique_ptr<QuantizeParamsWrapper> CreateQuantizationParamWrapper(
             quantization.axisScaleOffsetEncoding.axis, scale_offset);
   } else if (
       quantization.quantizationEncoding ==
+      QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET) {
+    std::vector<float> scales(
+        quantization.bwAxisScaleOffsetEncoding.scales,
+        quantization.bwAxisScaleOffsetEncoding.scales +
+            quantization.bwAxisScaleOffsetEncoding.numElements);
+    std::vector<int32_t> offsets(
+        quantization.bwAxisScaleOffsetEncoding.offsets,
+        quantization.bwAxisScaleOffsetEncoding.offsets +
+            quantization.bwAxisScaleOffsetEncoding.numElements);
+
+    quantize_param_wrapper =
+        std::make_unique<BwAxisScaleOffsetQuantizeParamsWrapper>(
+            quantization.bwAxisScaleOffsetEncoding.bitwidth,
+            quantization.bwAxisScaleOffsetEncoding.axis,
+            quantization.bwAxisScaleOffsetEncoding.numElements,
+            scales,
+            offsets);
+  } else if (
+      quantization.quantizationEncoding ==
+      QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET) {
+    quantize_param_wrapper =
+        std::make_unique<BwScaleOffsetQuantizeParamsWrapper>(
+            quantization.bwScaleOffsetEncoding.bitwidth,
+            quantization.bwScaleOffsetEncoding.scale,
+            quantization.bwScaleOffsetEncoding.offset);
+  } else if (
+      quantization.quantizationEncoding ==
       QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
     quantize_param_wrapper = std::make_unique<ScaleOffsetQuantizeParamsWrapper>(
         quantization.scaleOffsetEncoding.scale,

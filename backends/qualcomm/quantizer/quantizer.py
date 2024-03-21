@@ -3,6 +3,7 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+from enum import IntEnum, unique
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
@@ -35,9 +36,22 @@ from .utils import OP_ANNOTATOR, QuantizationConfig
 
 __all__ = [
     "QnnQuantizer",
-    "get_default_8bit_qnn_ptq_config",
+    "QuantDtype",
+    "get_16a4w_qnn_ptq_config",
     "get_default_16bit_qnn_ptq_config",
+    "get_default_8bit_qnn_ptq_config",
 ]
+
+
+@unique
+class QuantDtype(IntEnum):
+    """
+    bits of activation and bits of weight
+    """
+
+    use_16a16w = 0
+    use_16a4w = 1
+    use_8a8w = 2
 
 
 def _derived_bias_quant_spec(node: Node) -> DerivedQuantizationSpec:
@@ -112,20 +126,21 @@ def get_default_8bit_qnn_ptq_config() -> QuantizationConfig:
     return quantization_config
 
 
-def get_default_16bit_qnn_ptq_config() -> QuantizationConfig:
+# 4 bits quantization only supports specific ops.
+def get_16a4w_qnn_ptq_config() -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-20}
     act_quantization_spec = QuantizationSpec(
         dtype=torch.int32,
-        quant_min=0,
-        quant_max=65535,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
         qscheme=torch.per_tensor_affine,
         observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
-        dtype=torch.int16,
-        quant_min=-32767,
-        quant_max=32767,
+        dtype=torch.int8,
+        quant_min=-7,
+        quant_max=7,
         qscheme=torch.per_tensor_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
@@ -149,35 +164,78 @@ def get_default_16bit_qnn_ptq_config() -> QuantizationConfig:
     return quantization_config
 
 
+def get_default_16bit_qnn_ptq_config() -> QuantizationConfig:
+    extra_args: Dict[str, Any] = {"eps": 2**-20}
+    act_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.uint16).min,
+        quant_max=torch.iinfo(torch.uint16).max,
+        qscheme=torch.per_tensor_affine,
+        observer_or_fake_quant_ctr=MovingAverageMinMaxObserver.with_args(**extra_args),
+    )
+
+    weight_quantization_spec = QuantizationSpec(
+        dtype=torch.int16,
+        quant_min=torch.iinfo(torch.int16).min + 1,
+        quant_max=torch.iinfo(torch.int16).max,
+        qscheme=torch.per_tensor_symmetric,
+        ch_axis=0,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    # torch does not support uint16 quantization, use int32 to bypass
+    bias_quantization_spec = QuantizationSpec(
+        dtype=torch.int32,
+        quant_min=torch.iinfo(torch.int32).min,
+        quant_max=torch.iinfo(torch.int32).max,
+        qscheme=torch.per_tensor_symmetric,
+        observer_or_fake_quant_ctr=MinMaxObserver.with_args(**extra_args),
+    )
+
+    quantization_config = QuantizationConfig(
+        input_activation=act_quantization_spec,
+        output_activation=act_quantization_spec,
+        weight=weight_quantization_spec,
+        bias=bias_quantization_spec,
+    )
+
+    return quantization_config
+
+
 def get_ptq_per_channel_weight_config(
-    input_dtype=torch.uint8, weight_dtype=torch.int8
+    act_dtype=torch.uint8, weight_dtype=torch.int8
 ) -> QuantizationConfig:
     extra_args: Dict[str, Any] = {"eps": 2**-12}
 
-    supported_types = {
+    supported_act_types = {
         torch.uint8,
+        torch.uint16,
         torch.int8,
         torch.int16,
     }
+    # TODO accept "int4" temporally. Remove "int4" when torch support torch.int4 dtype
+    supported_weight_dtypes = {"int4", torch.int8, torch.int16}
     assert (
-        input_dtype in supported_types
-    ), f"input_dtype, {input_dtype} is not one of supported_types, {supported_types}"
-    assert (
-        weight_dtype in supported_types
-    ), f"weight_dtype, {input_dtype} is not one of supported_types, {supported_types}"
+        act_dtype in supported_act_types
+    ), f"act_dtype, {act_dtype} is not one of supported types, {supported_act_types}"
 
+    assert (
+        weight_dtype in supported_weight_dtypes
+    ), f"weight_dtype, {weight_dtype} is not one of supported types, {supported_weight_dtypes}"
+
+    # torch do not support uint16 quantization, use int32 to bypass
     act_quantization_spec = QuantizationSpec(
-        dtype=input_dtype,
-        quant_min=torch.iinfo(input_dtype).min,
-        quant_max=torch.iinfo(input_dtype).max,
+        dtype=torch.int32 if act_dtype == torch.uint16 else act_dtype,
+        quant_min=torch.iinfo(act_dtype).min,
+        quant_max=torch.iinfo(act_dtype).max,
         qscheme=torch.per_tensor_affine,
         observer_or_fake_quant_ctr=HistogramObserver.with_args(**extra_args),
     )
 
     weight_quantization_spec = QuantizationSpec(
-        dtype=weight_dtype,
-        quant_min=torch.iinfo(weight_dtype).min + 1,
-        quant_max=torch.iinfo(weight_dtype).max,
+        dtype=torch.int8 if weight_dtype == "int4" else weight_dtype,
+        quant_min=-7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).min + 1,
+        quant_max=7 if weight_dtype == "int4" else torch.iinfo(weight_dtype).max,
         qscheme=torch.per_channel_symmetric,
         ch_axis=0,
         observer_or_fake_quant_ctr=PerChannelMinMaxObserver.with_args(**extra_args),
@@ -200,53 +258,34 @@ class QnnQuantizer(Quantizer):
 
     def __init__(self):
         super().__init__()
-        self.enable_per_channel_conv_quant: bool = True
         self.bit8_quant_config: QuantizationConfig = get_default_8bit_qnn_ptq_config()
         self.bit16_quant_config: QuantizationConfig = get_default_16bit_qnn_ptq_config()
 
         self.bit8_quant_ops: Set[OpOverload] = self.SUPPORTED_OPS.copy()
         self.bit16_quant_ops: Set[OpOverload] = set()
 
-        self.discard_nodes: Set[str] = set()
         self.custom_quant_annotations: Sequence[Callable] = []
+        self.discard_nodes: Set[str] = set()
 
-    def set_per_channel_quant(self, enable: bool) -> None:
-        self.enable_per_channel_conv_quant = enable
+        self.enable_per_channel_conv_quant: bool = True
+        # the weight quantized for activation 8 bits and 16 bits
+        self.per_channel_weight_dtype: Dict = {
+            "8bit_act": torch.int8,
+            "16bit_act": torch.int16,
+        }
 
-    def set_bit8_op_quant_config(self, quantization_config: QuantizationConfig) -> None:
-        self.bit8_quant_config = quantization_config
+    def _annotate(self, gm: GraphModule) -> None:
+        for node in gm.graph.nodes:
+            if node.name in self.discard_nodes:
+                continue
 
-    def set_bit16_op_quant_config(
-        self, quantization_config: QuantizationConfig
-    ) -> None:
-        self.bit16_quant_config = quantization_config
+            quant_config = self._get_quant_config(node.target)
+            if quant_config:
+                OP_ANNOTATOR[node.target](node, quant_config)
 
-    def get_supported_ops(self) -> Set[OpOverload]:
-        return self.SUPPORTED_OPS
-
-    def add_discard_nodes(self, nodes: Sequence[str]) -> None:
-        self.discard_nodes = set(nodes)
-
-    def add_discard_ops(self, ops: Sequence[OpOverload]) -> None:
-        for op in ops:
-            if op in self.bit8_quant_ops:
-                self.bit8_quant_ops.remove(op)
-            if op in self.bit16_quant_ops:
-                self.bit16_quant_ops.remove(op)
-
-    def add_custom_quant_annotations(
-        self, custom_quant_annotations: Sequence[Callable]
-    ) -> None:
-        self.custom_quant_annotations = custom_quant_annotations
-
-    def add_16bit_quant_ops(self, ops: Set[OpOverload]) -> None:
-        for op in ops:
-            assert (
-                op in self.SUPPORTED_OPS
-            ), f"The annotation of op {op} is not implemented"
-
-            self.bit8_quant_ops.remove(op)
-            self.bit16_quant_ops.add(op)
+    def _annotate_custom_annotation(self, gm: GraphModule) -> None:
+        for annotation_func in self.custom_quant_annotations:
+            annotation_func(gm)
 
     def _get_quant_config(self, op: str | OpOverload) -> Optional[QuantizationConfig]:
         """
@@ -262,8 +301,12 @@ class QnnQuantizer(Quantizer):
             torch.ops.aten.conv2d.default,
         ]:
             if op in self.bit16_quant_ops:
-                return get_ptq_per_channel_weight_config(torch.int16, torch.int16)
-            return get_ptq_per_channel_weight_config()
+                return get_ptq_per_channel_weight_config(
+                    torch.uint16, self.per_channel_weight_dtype["16bit_act"]
+                )
+            return get_ptq_per_channel_weight_config(
+                weight_dtype=self.per_channel_weight_dtype["8bit_act"]
+            )
 
         if op in self.bit8_quant_ops:
             return self.bit8_quant_config
@@ -273,6 +316,61 @@ class QnnQuantizer(Quantizer):
 
         print(f"No quant config is implemented for op, {op}")
 
+    def add_16bit_quant_ops(self, ops: Set[OpOverload]) -> None:
+        for op in ops:
+            assert (
+                op in self.SUPPORTED_OPS
+            ), f"The annotation of op {op} is not implemented"
+
+            self.bit8_quant_ops.remove(op)
+            self.bit16_quant_ops.add(op)
+
+    def add_custom_quant_annotations(
+        self, custom_quant_annotations: Sequence[Callable]
+    ) -> None:
+        self.custom_quant_annotations = custom_quant_annotations
+
+    def add_discard_nodes(self, nodes: Sequence[str]) -> None:
+        self.discard_nodes = set(nodes)
+
+    def add_discard_ops(self, ops: Sequence[OpOverload]) -> None:
+        for op in ops:
+            if op in self.bit8_quant_ops:
+                self.bit8_quant_ops.remove(op)
+            if op in self.bit16_quant_ops:
+                self.bit16_quant_ops.remove(op)
+
+    def annotate(self, model: GraphModule) -> GraphModule:
+        self._annotate(model)
+        self._annotate_custom_annotation(model)
+
+        return model
+
+    def get_supported_ops(self) -> Set[OpOverload]:
+        return self.SUPPORTED_OPS
+
+    def set_bit16_op_quant_config(
+        self, quantization_config: QuantizationConfig
+    ) -> None:
+        self.bit16_quant_config = quantization_config
+
+    def set_bit8_op_quant_config(self, quantization_config: QuantizationConfig) -> None:
+        self.bit8_quant_config = quantization_config
+
+    def set_per_channel_weight_dtype(
+        self,
+        weight_dtype_for_8bit_act: Optional[str | torch.dtype] = None,
+        weight_dtype_for_16bit_act: Optional[str | torch.dtype] = None,
+    ) -> None:
+        # TODO accept temporally str type. Remove it when torch support torch.int4 dtype
+        if weight_dtype_for_8bit_act:
+            self.per_channel_weight_dtype["8bit_act"] = weight_dtype_for_8bit_act
+        if weight_dtype_for_16bit_act:
+            self.per_channel_weight_dtype["16bit_act"] = weight_dtype_for_16bit_act
+
+    def set_per_channel_quant(self, enable: bool) -> None:
+        self.enable_per_channel_conv_quant = enable
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         model = RemoveClone()(model).graph_module
         model = ReduceDynamicRange()(model).graph_module
@@ -280,25 +378,6 @@ class QnnQuantizer(Quantizer):
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
-
-        return model
-
-    def _annotate(self, gm: GraphModule) -> None:
-        for node in gm.graph.nodes:
-            if node.name in self.discard_nodes:
-                continue
-
-            quant_config = self._get_quant_config(node.target)
-            if quant_config:
-                OP_ANNOTATOR[node.target](node, quant_config)
-
-    def _annotate_custom_annotation(self, gm: GraphModule) -> None:
-        for annotation_func in self.custom_quant_annotations:
-            annotation_func(gm)
-
-    def annotate(self, model: GraphModule) -> GraphModule:
-        self._annotate(model)
-        self._annotate_custom_annotation(model)
 
         return model
 

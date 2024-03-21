@@ -10,7 +10,12 @@ import unittest
 from multiprocessing.connection import Listener
 
 import torch
-from executorch.backends.qualcomm.tests.utils import QnnPartitioner, TestQNN, to_backend
+from executorch.backends.qualcomm.tests.utils import (
+    QnnPartitioner,
+    QuantDtype,
+    TestQNN,
+    to_backend,
+)
 
 from executorch.backends.qualcomm.utils.utils import (
     canonicalize_program,
@@ -33,7 +38,6 @@ from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
-from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 from executorch.exir.backend.backend_api import disable_validation
 from executorch.exir.program._program import EdgeCompileConfig, ExirExportedProgram
 
@@ -479,6 +483,22 @@ class TestQNNQuantizedOperator(TestQNN):
             tensor_dump_output_path="",
         )
 
+    def test_qnn_backend_16a4w_conv2d(self):
+        module = Conv2DSingle()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a4w
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_16a4w_linear(self):
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a4w
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_arange(self):
         module = Arange(5)  # noqa: F405
         sample_input = (torch.randn(5),)
@@ -888,31 +908,10 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_residual_block(self):
-        module = ResidualBlockModule()  # noqa: F405
-        sample_input = (torch.randn(1, 32, 28, 28),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_backend_simple_model(self):
-        module = SimpleModel()  # noqa: F405
-        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_backend_view_permute_matmul(self):
-        module = ViewPermuteMatMul()  # noqa: F405
-        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
-        # check if requantization work
-        module = self.get_qdq_module(module, sample_input, use_16bit_quant=True)
-        self.lower_module_and_test_output(module, sample_input)
-
     def test_qnn_backend_example_models(self):
         instances = [
             {"module": DeepLabV3ResNet101Model(), "annotation": ()},
-            {"module": EdsrModel(), "annotation": (annotate_forward,)},
+            {"module": EdsrModel(), "annotation": ()},
             {"module": InceptionV3Model(), "annotation": ()},
             {"module": InceptionV4Model(), "annotation": ()},
             {"module": Llama2Model(), "annotation": ()},
@@ -953,6 +952,29 @@ class TestQNNQuantizedModel(TestQNN):
                     expected_partitions=expected_partitions[i],
                     assert_output_equal=False,
                 )
+
+    def test_qnn_backend_residual_block(self):
+        module = ResidualBlockModule()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_simple_model(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_view_permute_matmul(self):
+        module = ViewPermuteMatMul()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+        # check if requantization work
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a16w
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
 
 class TestQNNFloatingPointUtils(TestQNN):
@@ -1346,6 +1368,7 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
+            "--use_fp16",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -1377,7 +1400,6 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
-            "--ptq",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -1410,6 +1432,7 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
+            "--use_fp16",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -1450,7 +1473,6 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
-            "--ptq",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
