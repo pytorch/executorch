@@ -258,6 +258,7 @@ class TestConv2D(unittest.TestCase):
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
@@ -285,6 +286,7 @@ class TestConv2D(unittest.TestCase):
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
@@ -310,6 +312,7 @@ class TestConv2D(unittest.TestCase):
             .to_edge()
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
+            .check_not(["executorch_exir_dialects_edge__ops_aten_convolution_default"])
             .to_executorch()
         )
 

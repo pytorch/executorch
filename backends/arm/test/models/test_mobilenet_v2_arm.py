@@ -20,8 +20,6 @@ from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(42)
-
 
 class TestMobileNetV2(unittest.TestCase):
 
