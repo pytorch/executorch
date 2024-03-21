@@ -66,6 +66,8 @@ class Llama2Model(EagerModelBase):
             if "use_sdpa_with_kv_cache" in kwargs
             else False
         )
+
+        self.max_seq_len = kwargs["max_seq_len"] if "max_seq_len" in kwargs else 128
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
@@ -112,7 +114,7 @@ the checkpoint format to avoid generating faulty models.
                 )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
-        max_seq_len = 128
+        max_seq_len = self.max_seq_len
         max_batch_size = 1
         model_args: ModelArgs = ModelArgs(
             max_seq_len=max_seq_len,
