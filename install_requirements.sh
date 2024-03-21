@@ -49,12 +49,12 @@ done
 # models in executorch/examples/models.
 # The version in this file will be the correct version for the
 # corresponsing version of the repo.
-NIGHTLY_VERSION=dev20240312
+NIGHTLY_VERSION=dev20240321
 
-TORCH_VERSION=2.3.0.${NIGHTLY_VERSION}
+TORCH_VERSION=2.4.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
-TORCH_VISION_VERSION=0.18.0.${NIGHTLY_VERSION}
+TORCH_VISION_VERSION=0.19.0.${NIGHTLY_VERSION}
 pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
 
 TORCH_AUDIO_VERSION=2.2.0.${NIGHTLY_VERSION}
