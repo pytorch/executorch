@@ -25,9 +25,23 @@ inline ArrayRef<Tensor::SizesType> get_batch_sizes(const Tensor& tensor) {
 
 template <typename CTYPE, typename Norm>
 void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
+  if (out.numel() == 0) {
+    return;
+  }
+
+  CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+
+  // If the last dimension of x1 (which is equal to the last dimension of x2)
+  // has size 0, then the output is filled with 0s.
+  if (x1.numel() == 0) {
+    for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+      out_data[out_ix] = 0;
+    }
+    return;
+  }
+
   const CTYPE* x1_data = x1.const_data_ptr<CTYPE>();
   const CTYPE* x2_data = x2.const_data_ptr<CTYPE>();
-  CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
   const ArrayRef<Tensor::SizesType> x1_batch_sizes = get_batch_sizes(x1);
   const ArrayRef<Tensor::SizesType> x2_batch_sizes = get_batch_sizes(x2);

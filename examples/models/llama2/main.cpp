@@ -63,8 +63,10 @@ int32_t main(int32_t argc, char** argv) {
       : static_cast<uint32_t>(cpu_threads);
   ET_LOG(
       Info, "Resetting threadpool with num threads = %d", num_performant_cores);
-  torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
-      num_performant_cores);
+  if (num_performant_cores > 0) {
+    torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
+        num_performant_cores);
+  }
 #endif
   // create llama runner
   ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);

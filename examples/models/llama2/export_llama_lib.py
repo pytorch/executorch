@@ -22,6 +22,8 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+
+from executorch.examples.models.llama2.llama_transformer import Transformer
 from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
@@ -36,11 +38,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 
-from .quantize import (
-    EmbeddingOnlyInt8QuantHandler,
-    Int8DynActInt4WeightQuantHandler,
-    WeightOnlyInt8QuantHandler,
-)
+from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -174,6 +172,32 @@ def get_pt2e_quantizers(
     return quantizers
 
 
+def materialze_broadcast_of_rope_freq_cis(
+    module: torch.nn.Module,
+):
+    assert isinstance(module, Transformer)
+    assert module.freqs_cos.dim() == 2
+    dim0 = module.freqs_cos.size(0)
+    dim1 = module.freqs_cos.size(1)
+    assert (
+        module.layers[0].attention.n_local_kv_heads
+        == module.layers[0].attention.n_local_heads
+    ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
+    num_heads = module.layers[0].attention.n_local_heads
+    module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)
+    module.freqs_cos = module.freqs_cos.expand(dim0, num_heads, dim1).contiguous()
+    assert module.freqs_sin.dim() == 2
+    assert dim0 == module.freqs_sin.size(
+        0
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 0: {dim0} vs {module.freqs_sin.size(0)}"
+    assert dim1 == module.freqs_sin.size(
+        1
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
+    module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
+    module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
+    return module
+
+
 def quantize(
     model: torch.nn.Module,
     qmode: str,
@@ -214,7 +238,10 @@ def quantize(
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "8da4w":
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
-        model_int4 = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
+
+        model_int4 = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(
+            model
+        )
         print("quantized model:", model_int4)
         return model_int4
     elif qmode == "8da4w-gptq":
@@ -366,6 +393,14 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-X", "--xnnpack", action="store_true")
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
+    parser.add_argument("--coreml", action="store_true")
+
+    parser.add_argument(
+        "--expand_rope_table",
+        default=False,
+        action="store_true",
+        help="[Temp workaround] Expand sin/cos table in head dim to take vectorized path in optimized kernels.",
+    )
 
     parser.add_argument(
         "--generate_etrecord",
@@ -428,7 +463,9 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
     else:
-        dtype_override = DType["fp16"] if args.quantization_mode in ["8da4w", "8da4w-gptq"] else None
+        dtype_override = (
+            DType["fp16"] if args.quantization_mode in ["8da4w", "8da4w-gptq"] else None
+        )
 
     # source transforms
     transforms = []
@@ -461,6 +498,9 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
                 model, bitwidth=bitwidth, group_size=group_size
             ).quantized_model()
         )
+
+    if args.expand_rope_table:
+        transforms.append(materialze_broadcast_of_rope_freq_cis)
 
     return (
         load_llama_model(
@@ -535,6 +575,39 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
         partitioners[MPSPartitioner.__name__] = MPSPartitioner(compile_specs)
         modelname = f"mps_{modelname}"
+
+    if args.coreml:
+        assert (
+            args.use_kv_cache is True
+        ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`.
+            import coremltools as ct
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
+            from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`
+            from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+                CoreMLPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            )
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision(ct.precision.FLOAT16.value),
+            compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+        partitioners[CoreMLPartitioner.__name__] = CoreMLPartitioner(
+            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        )
+        modelname = f"coreml_{modelname}"
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:

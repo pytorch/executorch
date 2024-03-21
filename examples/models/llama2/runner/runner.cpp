@@ -438,12 +438,9 @@ void Runner::TimeStamps::printReport(
 
   ET_LOG(
       Info,
-      "\tSampling time over %" PRIu64
-      " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
       num_prompt_tokens + num_generated_tokens,
-      (double)aggregate_sampling_time_ms / SCALING_FACTOR_UNITS_PER_SECOND,
-      (num_prompt_tokens + num_generated_tokens) /
-          (double)aggregate_sampling_time_ms * SCALING_FACTOR_UNITS_PER_SECOND);
+      (double)aggregate_sampling_time_ms / SCALING_FACTOR_UNITS_PER_SECOND);
 }
 
 const std::string Runner::TimeStamps::toJsonString(

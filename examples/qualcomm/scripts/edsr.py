@@ -13,6 +13,7 @@ from multiprocessing.connection import Client
 import numpy as np
 import piq
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
@@ -90,66 +91,6 @@ def get_dataset(hr_dir: str, lr_dir: str, default_dataset: str, dataset_dir: str
     return SrDataset(hr_dir, lr_dir)
 
 
-def annotate_forward(gm: torch.fx.GraphModule) -> None:
-    """
-    This function is specific for EDSR. It constructs a nn module, which is
-    inherited from nn.conv2d.
-    The source_fn of the rewritten nn module turns out to be a string "forward"
-    """
-    import itertools
-
-    from executorch.backends.qualcomm.quantizer.quantizer import (
-        get_ptq_per_channel_weight_config,
-    )
-    from executorch.backends.qualcomm.quantizer.utils import (
-        _is_annotated,
-        QUANT_ANNOTATION_KEY,
-    )
-    from torch.ao.quantization.quantize_pt2e import QuantizationAnnotation
-    from torch.fx import Node
-    from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
-
-    conv_partitions = get_source_partitions(gm.graph, ["forward"])
-    conv_partitions = list(itertools.chain(*conv_partitions.values()))
-    quantization_config = get_ptq_per_channel_weight_config()
-    for conv_partition in conv_partitions:
-        if len(conv_partition.output_nodes) > 1:
-            raise ValueError("conv partition has more than one output node")
-        conv_node = conv_partition.output_nodes[0]
-        if (
-            conv_node.op != "call_function"
-            or conv_node.target != torch.ops.aten.conv2d.default
-        ):
-            raise ValueError(f"{conv_node} is not an aten conv2d operator")
-        # skip annotation if it is already annotated
-        if _is_annotated([conv_node]):
-            continue
-
-        input_qspec_map = {}
-        input_act = conv_node.args[0]
-        assert isinstance(input_act, Node)
-        input_spec = quantization_config.input_activation
-        input_qspec_map[input_act] = input_spec
-
-        weight = conv_node.args[1]
-        assert isinstance(weight, Node)
-        input_qspec_map[weight] = quantization_config.weight
-
-        if len(conv_node.args) > 2:
-            bias = conv_node.args[2]
-            if isinstance(bias, Node):
-                if callable(quantization_config.bias):
-                    input_qspec_map[bias] = quantization_config.bias(conv_node)
-                else:
-                    input_qspec_map[bias] = quantization_config.bias
-
-        conv_node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
-            input_qspec_map=input_qspec_map,
-            output_qspec=quantization_config.output_activation,
-            _annotated=True,
-        )
-
-
 if __name__ == "__main__":
     parser = setup_common_args_and_variables()
 
@@ -212,9 +153,9 @@ if __name__ == "__main__":
         args.model,
         f"{args.artifact}/{pte_filename}",
         [(input,) for input in inputs],
-        custom_annotations=(annotate_forward,),
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
+        quant_dtype=QuantDtype.use_8a8w,
     )
 
     if args.compile_only:
