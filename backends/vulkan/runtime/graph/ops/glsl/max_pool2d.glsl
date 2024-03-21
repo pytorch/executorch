@@ -59,19 +59,11 @@ void main() {
       if ((x >= 0 && x < in_extents.data.x) && (y >= 0 && y < in_extents.data.y)) {
         const vec4 cur_texel = texelFetch(image_in, ivec3(x, y, pos.z), 0);
 
-        const int cur_idx = x + int(in_extents.data.x) * y;
-        if (cur_texel.x > out_texel.x) {
-          idx_texel.x = cur_idx;
-        }
-        if (cur_texel.y > out_texel.y) {
-          idx_texel.y = cur_idx;
-        }
-        if (cur_texel.z > out_texel.z) {
-          idx_texel.z = cur_idx;
-        }
-        if (cur_texel.w > out_texel.w) {
-          idx_texel.w = cur_idx;
-        }
+        // Set idx if value is greatest in the pool; else, keep the existing idx.
+        ivec4 cur_idx = ivec4(x + int(in_extents.data.x) * y);
+        ivec4 mask = ivec4(greaterThan(cur_texel, out_texel));
+        idx_texel = ivec4(mix(idx_texel, cur_idx, mask));
+
         out_texel = max(cur_texel, out_texel);
       }
       else {

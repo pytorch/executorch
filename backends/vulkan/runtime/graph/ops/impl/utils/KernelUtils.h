@@ -31,24 +31,9 @@ int64_t calc_out_size(
     const int64_t stride,
     const int64_t padding,
     const int64_t dilation,
-    const bool ceil_mode) {
-  int64_t c = ceil_mode ? stride - 1 : 0;
-  int64_t out_size =
-      (in_size + 2 * padding - dilation * (kernel - 1) - 1 + c) / stride + 1;
-  if (ceil_mode && (out_size - 1) * stride >= in_size + padding) {
-    --out_size;
-  }
-  return out_size;
-}
+    const bool ceil_mode);
 
-api::utils::ivec2 normalize_wh(Value& v) {
-  if (v.isInt()) {
-    return api::utils::make_ivec2({v.toInt(), v.toInt()});
-  } else {
-    auto l = v.toIntList();
-    return api::utils::make_ivec2({l.at(1), l.at(0)});
-  }
-}
+api::utils::ivec2 normalize_wh(Value& v);
 
 } // namespace vulkan
 } // namespace native
