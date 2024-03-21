@@ -99,6 +99,8 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu:scalar_utils",
             "//executorch/kernels/optimized:libblas",
             "//executorch/kernels/optimized:libvec",
+            "//executorch/extension/parallel:thread_parallel",
+            "//executorch/backends/xnnpack/threadpool:threadpool",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         visibility = [
