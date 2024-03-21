@@ -170,7 +170,10 @@ the checkpoint format to avoid generating faulty models.
 
     def get_example_inputs(self):
         if self.use_kv_cache:
-            return self.get_example_inputs_kvcache()
+            if self.use_sdpa_with_kv_cache_op:
+                return self.get_example_inputs_kvcache_sdpa()
+            else:
+                return self.get_example_inputs_kvcache()
         else:
             return (
                 torch.tensor(
@@ -178,17 +181,23 @@ the checkpoint format to avoid generating faulty models.
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 
-    def get_example_inputs_kvcache(self):
-        cache_sizes = self.model_.get_cache_sizes()
-        cache_k = torch.zeros(cache_sizes, dtype=self.dtype)
-        cache_v = torch.zeros(cache_sizes, dtype=self.dtype)
+    # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
+    def get_example_inputs_kvcache_sdpa(self):
         return (
             torch.tensor(
                 [[1]], dtype=torch.long
             ),  # tokens, with kv cache our input token length is always just 1 token.
             torch.tensor(
-                0, dtype=torch.long
+                [0], dtype=torch.long
+            ),  # start_pos, what token of output are we on.)
+        )
+
+    def get_example_inputs_kvcache(self):
+        return (
+            torch.tensor(
+                [[1, 2, 3]], dtype=torch.long
+            ),  # tokens, with kv cache our input token length is always just 1 token.
+            torch.tensor(
+                [0, 1, 2], dtype=torch.long
             ),  # start_pos, what token of output are we on.
-            cache_k,  # key caches
-            cache_v,  # value caches
         )
