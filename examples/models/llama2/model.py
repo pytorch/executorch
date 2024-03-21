@@ -179,16 +179,11 @@ the checkpoint format to avoid generating faulty models.
             )
 
     def get_example_inputs_kvcache(self):
-        cache_sizes = self.model_.get_cache_sizes()
-        cache_k = torch.zeros(cache_sizes, dtype=self.dtype)
-        cache_v = torch.zeros(cache_sizes, dtype=self.dtype)
         return (
             torch.tensor(
-                [[1]], dtype=torch.long
+                [[1, 2, 3]], dtype=torch.long
             ),  # tokens, with kv cache our input token length is always just 1 token.
             torch.tensor(
-                0, dtype=torch.long
+                [0, 1, 2], dtype=torch.long
             ),  # start_pos, what token of output are we on.
-            cache_k,  # key caches
-            cache_v,  # value caches
         )
