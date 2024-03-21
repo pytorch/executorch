@@ -931,7 +931,6 @@ class ExecutorchProgramManager:
             delegate_alignment=backend_config.delegate_alignment,
         )
         self._buffer: Optional[bytes] = None
-        self.dump_executorch_program(True)
 
     @property
     def methods(self) -> Set[str]:
