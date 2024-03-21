@@ -43,6 +43,7 @@ class TestExampleDelegate(unittest.TestCase):
         CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
         EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
             _check_ir_validity=False,
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
 
         m = model.eval()
@@ -79,6 +80,7 @@ class TestExampleDelegate(unittest.TestCase):
         CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True)
         EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
             _check_ir_validity=False,
+            _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
         )
 
         m = model.eval()

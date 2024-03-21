@@ -66,19 +66,6 @@ def define_common_targets():
     )
 
     runtime.cxx_library(
-        name = "copy_ops_util",
-        srcs = ["copy_ops_util.cpp"],
-        exported_headers = [
-            "copy_ops_util.h",
-        ],
-        compiler_flags = ["-Wno-missing-prototypes"],
-        deps = [
-            "//executorch/runtime/kernel:kernel_includes",
-        ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
-    )
-
-    runtime.cxx_library(
         name = "distance_util",
         srcs = ["distance_util.cpp"],
         exported_headers = [
@@ -204,4 +191,19 @@ def define_common_targets():
             ],
             exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
             visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/quantized/..."],
+        )
+
+        runtime.cxx_library(
+            name = "copy_ops_util{}".format(suffix),
+            srcs = ["copy_ops_util.cpp"],
+            exported_headers = [
+                "copy_ops_util.h",
+            ],
+            compiler_flags = ["-Wno-missing-prototypes"],
+            deps = [
+                "//executorch/runtime/kernel:kernel_includes{}".format(suffix),
+                "//executorch/runtime/core/exec_aten/util:tensor_util{}".format(suffix),
+            ],
+            exported_preprocessor_flags = ["-DUSE_ATEN_LIB"] if aten_mode else [],
+            visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
         )
