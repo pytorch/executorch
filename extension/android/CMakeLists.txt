@@ -18,16 +18,27 @@ add_subdirectory(${EXECUTORCH_ROOT}/examples/third-party/fbjni
 
 if(CMAKE_TOOLCHAIN_ANDROID)
   add_library(executorch_jni SHARED jni/jni_layer.cpp)
-  target_link_libraries(
-    executorch_jni extension_data_loader extension_module
-    xnn_executor_runner_lib vulkan_executor_runner_lib fbjni)
+  target_link_libraries(executorch_jni extension_data_loader extension_module
+                        fbjni)
   if(EXECUTORCH_BUILD_QNN)
     target_link_libraries(executorch_jni qnn_executorch_backend)
+  endif()
+  if(EXECUTORCH_BUILD_XNNPACK)
+    target_link_libraries(executorch_jni xnn_executor_runner_lib)
+  endif()
+  if(EXECUTORCH_BUILD_VULKAN)
+    target_link_libraries(executorch_jni vulkan_executor_runner_lib)
   endif()
   target_compile_options(executorch_jni PUBLIC ${_common_compile_options})
 
   add_library(executorch_llama_jni SHARED jni/jni_layer_llama.cpp)
-  target_link_libraries(executorch_llama_jni fbjni llama_runner
-                        xnn_executor_runner_lib vulkan_executor_runner_lib)
+  target_link_libraries(executorch_llama_jni fbjni llama_runner)
+  if(EXECUTORCH_BUILD_XNNPACK)
+    target_link_libraries(executorch_llama_jni xnn_executor_runner_lib)
+  endif()
+  if(EXECUTORCH_BUILD_VULKAN)
+    target_link_libraries(executorch_llama_jni vulkan_executor_runner_lib)
+  endif()
+
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
 endif()
