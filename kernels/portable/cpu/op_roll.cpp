@@ -19,10 +19,9 @@ bool check_roll_args(
     IntArrayRef shifts,
     IntArrayRef dims,
     const Tensor& out) {
-  for (const auto& d : dims) {
-    if (in.dim() == 0) {
-      ET_LOG_AND_RETURN_IF_FALSE(d == 0 || d == -1);
-    } else {
+  ET_LOG_AND_RETURN_IF_FALSE(tensor_has_rank_greater_or_equal_to(in, 1));
+  if (in.numel() > 0) {
+    for (const auto& d : dims) {
       ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(d, in.dim()));
     }
   }
@@ -38,7 +37,8 @@ size_t unshift_flat_ix(size_t ix, const Tensor& in, IntArrayRef dim_shifts) {
 
   size_t shifted_coord[kTensorDimensionLimit];
   for (size_t d = 0; d < in.dim(); d++) {
-    shifted_coord[d] = (ix_coord[d] - dim_shifts[d]) % in.size(d);
+    shifted_coord[d] =
+        (ix_coord[d] + in.size(d) - dim_shifts[d] % in.size(d)) % in.size(d);
   }
 
   return coordinateToIndex(in, shifted_coord);
@@ -60,7 +60,9 @@ Tensor& roll_out(
   ET_KERNEL_CHECK(
       ctx, check_roll_args(in, shifts, dims, out), InvalidArgument, out);
 
-  constexpr auto name = "roll.out";
+  if (in.numel() == 0) {
+    return out;
+  }
 
   int64_t dim_shift_array[kTensorDimensionLimit];
   for (size_t i = 0; i < in.dim(); i++) {
@@ -74,7 +76,9 @@ Tensor& roll_out(
   size_t dim_shift_array_length = static_cast<size_t>(in.dim()); // NOLINT
   IntArrayRef dim_shifts(dim_shift_array, dim_shift_array_length);
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  constexpr auto name = "roll.out";
+
+  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 
