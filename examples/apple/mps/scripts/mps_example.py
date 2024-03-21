@@ -72,25 +72,50 @@ if __name__ == "__main__":
         help="Generate ETRecord metadata to link with runtime results (used for profiling)",
     )
 
+    parser.add_argument(
+        "--checkpoint",
+        required=False,
+        default=None,
+        help="checkpoing for llama model",
+    )
+
+    parser.add_argument(
+        "--params",
+        required=False,
+        default=None,
+        help="params for llama model",
+    )
+
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
         raise RuntimeError(f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}.")
 
+    model_config = {}
+    model_config["module_name"] = MODEL_NAME_TO_MODEL[args.model_name][0]
+    model_config["model_class_name"] = MODEL_NAME_TO_MODEL[args.model_name][1]
+
+    if args.model_name == "llama2":
+        if args.checkpoint:
+            model_config["checkpoint"] = args.checkpoint
+        if args.params:
+            model_config["params"] = args.params
+        model_config["use_kv_cache"] = True
+
     model, example_inputs, _ = EagerModelFactory.create_model(
-        *MODEL_NAME_TO_MODEL[args.model_name]
+        **model_config
     )
 
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
-    model = torch._export.capture_pre_autograd_graph(model, example_inputs)
-
-    edge: EdgeProgramManager = export_to_edge(
-        model,
-        example_inputs,
-        edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
-    )
+    with torch.no_grad():
+        model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+        edge: EdgeProgramManager = export_to_edge(
+            model,
+            example_inputs,
+            edge_compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
     edge_program_manager_copy = copy.deepcopy(edge)
 
     compile_specs = [CompileSpec("use_fp16", bytes([args.use_fp16]))]
