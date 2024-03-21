@@ -4,6 +4,14 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+
+# This file is responsible for reading a GGUF file and
+# converting to GGUFModelArgs and GGUFWeights, an intermediate
+# representation that can be used to construct the appropriate
+# checkpoint and nn.Module later on.
+#
+# TODO(mnachin): Move this file to torchao
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
