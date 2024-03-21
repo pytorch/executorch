@@ -140,12 +140,6 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--limit", type=int, default=5, help="number of samples to evalulate"
     )
-    parser.add_argument(
-        "--max_seq_length",
-        type=int,
-        default=100,
-        help="maximum length sequence to evaluate",
-    )
 
     return parser
 
