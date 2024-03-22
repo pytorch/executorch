@@ -41,6 +41,33 @@ class ArmBackendSelector(Enum):
     ETHOS_U55 = "ethos-u55"
 
 
+class Partition(Partition):
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        super().dump_artifact(path_to_dump)
+        from pprint import pformat
+
+        to_print = None
+        for spec in self.graph_module.lowered_module_0.compile_specs:
+            if spec.key == "output_format":
+                if spec.value == b"tosa":
+                    tosa_fb = self.graph_module.lowered_module_0.processed_bytes
+                    to_print = TosaTestUtils.dbg_tosa_fb_to_json(tosa_fb)
+                    to_print = pformat(to_print, compact=True, indent=1)
+                    to_print = f"\n TOSA deserialized: \n{to_print}"
+                elif spec.value == b"vela":
+                    vela_cmd_stream = self.graph_module.lowered_module_0.processed_bytes
+                    to_print = str(vela_cmd_stream)
+                    to_print = f"\n Vela command stream: \n{to_print}"
+                break
+        assert to_print is not None, "No TOSA nor Vela compile spec found"
+
+        if path_to_dump:
+            with open(path_to_dump, "a") as fp:
+                fp.write(to_print)
+        else:
+            print(to_print)
+
+
 class ArmTester(Tester):
     def __init__(
         self,
