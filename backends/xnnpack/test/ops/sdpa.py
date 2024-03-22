@@ -70,8 +70,7 @@ class TestSDPA(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(atol=atol, rtol=rtol)
+            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
         )
 
     def test_fp16_sdpa_mask2d(self):

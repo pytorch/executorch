@@ -731,9 +731,7 @@ class TestLinear(unittest.TestCase):
 
             tester.to_executorch()
             tester.serialize()
-            tester.run_method()
-            tester.compare_outputs(qtol=quant, atol=atol)
-            print("success")
+            tester.run_method_and_compare_outputs(qtol=quant, atol=atol)
 
     def _test_dqlinear(
         self,
@@ -779,5 +777,4 @@ class TestLinear(unittest.TestCase):
 
         tester.to_executorch()
         tester.serialize()
-        tester.run_method()
-        tester.compare_outputs(atol=5e-02)
+        tester.run_method_and_compare_outputs(atol=5e-02)

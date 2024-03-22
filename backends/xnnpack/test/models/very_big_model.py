@@ -39,6 +39,5 @@ class TestVeryBigModel(unittest.TestCase):
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
