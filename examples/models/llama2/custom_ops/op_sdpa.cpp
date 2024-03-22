@@ -14,12 +14,11 @@
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
 // @lint-ignore CLANGTIDY facebook-unused-include-check
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
-
+#include <executorch/extension/parallel/thread_parallel.h>
 #include <array>
 
 #ifdef ET_USE_THREADPOOL
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
-#include <executorch/extension/parallel/thread_parallel.h>
 #endif
 
 namespace torch {

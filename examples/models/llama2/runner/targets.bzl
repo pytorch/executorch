@@ -2,9 +2,9 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def _get_operator_lib(aten = False):
     if aten:
-        return ["//executorch/kernels/portable:generated_lib_aten",  "//executorch/examples/models/llama2/custom_ops:custom_ops"]
+        return ["//executorch/kernels/aten:generated_lib_aten"]
     elif runtime.is_oss:
-        return ["//executorch/kernels/portable:generated_lib"]
+        return ["//executorch/kernels/portable:generated_lib", "//executorch/examples/models/llama2/custom_ops:custom_ops"]
     else:
         return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops", "//executorch/examples/models/llama2/ops:generated_lib"]
 

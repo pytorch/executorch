@@ -43,7 +43,7 @@ endif()
 
 set(lib_list
     etdump bundled_program extension_data_loader ${FLATCC_LIB} mpsdelegate
-    qnn_executorch_backend portable_ops_lib extension_module
+    qnn_executorch_backend portable_ops_lib extension_module cpuinfo pthreadpool
 )
 foreach(lib ${lib_list})
     # Name of the variable which stores result of the find_library search

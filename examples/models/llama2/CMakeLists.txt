@@ -49,15 +49,24 @@ endif()
 # find `executorch` libraries
 find_package(executorch CONFIG REQUIRED)
 
+# custom ops library
+add_subdirectory(custom_ops)
+
 # llama_runner library
 add_subdirectory(runner)
 
+#target_link_libraries(llama_main ${EXECUTORCH_ROOT}/cmake-out/lib64/libcpuinfo.a)
+
 # XNNPACK pthreadpool cpuinfo
-target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib)
+target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib custom_ops_lib)
 target_link_options(
   llama_main PUBLIC "SHELL:LINKER:--whole-archive \
                     $<TARGET_FILE:portable_ops_lib> \
                     LINKER:--no-whole-archive")
+
+# Adding this causes a double registration, bc custom_ops_lib is part of target_link_libraries.
+# $<TARGET_FILE:custom_ops_lib> \
+
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
 # Print all summary
