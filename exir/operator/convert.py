@@ -41,6 +41,7 @@ _op_overload_to_schema_cache: Dict[OpOverload, FunctionSchema] = {}
 # existing case with cache miss.
 _func_to_out_variant_map: Dict[OpOverload, Optional[OpOverload]] = {}
 _out_variant_to_scratch_map: Dict[OpOverload, Optional[OpOverload]] = {}
+_mutable_to_out_variant_map: Dict[OpOverload, Optional[OpOverload]] = {}
 
 # We've found a functional and an out variant with the same name, but their
 # schemas mismatch. This map collects all of these cases and provides proper
@@ -135,9 +136,9 @@ def schema_to_opoverload(schema: FunctionSchema) -> OpOverload:
 
 def set_mapping_for_op(op: OpOverload) -> None:
     """
-    op can either be a functional op or out variant op.
+    op can either be a functional op, mutable op, or out variant op.
     This method is only called if
-    1. either op is a functiona op and it's missing in the _func_to_out_variant_map cache.
+    1. either op is a functional op and it's missing in the _func_to_out_variant_map cache.
     2. or op is a out variant op and it's missing in the _out_variant_to_scratch_map cache.
 
     Setup entries in _func_to_out_variant_map and _out_variant_to_scratch_map for all ops sharing the same
@@ -148,12 +149,16 @@ def set_mapping_for_op(op: OpOverload) -> None:
     assert native_schema.kind() in (
         SchemaKind.functional,
         SchemaKind.out,
+        SchemaKind.mutable,
     )
     assert not (
         native_schema.kind() == SchemaKind.functional and op in _func_to_out_variant_map
     )
     assert not (
         native_schema.kind() == SchemaKind.out and op in _out_variant_to_scratch_map
+    )
+    assert not (
+        native_schema.kind() == SchemaKind.mutable and op in _mutable_to_out_variant_map
     )
     qualified_opname = str(op._schema.name)
 
@@ -192,6 +197,7 @@ def set_mapping_for_op(op: OpOverload) -> None:
     for group_by_kind in group_by_signature.values():
         func_op_schema = group_by_kind.get(SchemaKind.functional)
         out_var_schema = group_by_kind.get(SchemaKind.out)
+        mutable_op_schema = group_by_kind.get(SchemaKind.mutable)
         scratch_schema = group_by_kind.get(SchemaKind.scratch)
 
         # update the map even if out_var_schema is None to cache the negative
@@ -216,6 +222,10 @@ def set_mapping_for_op(op: OpOverload) -> None:
             _out_variant_to_scratch_map[schema_to_opoverload(out_var_schema)] = (
                 schema_to_opoverload(scratch_schema) if scratch_schema else None
             )
+        if mutable_op_schema:
+            _mutable_to_out_variant_map[schema_to_opoverload(mutable_op_schema)] = (
+                schema_to_opoverload(out_var_schema) if out_var_schema else None
+            )
 
 
 def to_out_variant(op_overload: OpOverload) -> Tuple[OpOverload, Tuple[str]]:
@@ -223,23 +233,30 @@ def to_out_variant(op_overload: OpOverload) -> Tuple[OpOverload, Tuple[str]]:
     Convert the passed in OpOverload to its out variant. Raise an exception if
     on return the op_overload is not guaranteed to be an out variant.
 
-    If a conversion is found, return the out variant OpOverlaod alongwith the name of out
+    If a conversion is found, return the out variant OpOverload alongwith the name of out
     arguments.
     """
     schema = _get_overload_schema(op_overload)
     if schema.is_out_fn():  # pyre-ignore
-        return op_overload, get_out_args_from_schema(schema)  # pyre-ignore
+        return op_overload, get_out_args_from_schema(schema)  # pyre-ignore[6]
 
-    # should be a functional op here
+    # should be a functionalish op here
     assert (
-        schema.kind() == SchemaKind.functional  # pyre-ignore
-    ), f"Expect an functional op, but get {schema}"
+        schema.kind() == SchemaKind.functional  # pyre-ignore[16]
+        or schema.kind() == SchemaKind.mutable
+    ), f"Expect a functionalish op, but get {schema.kind()} {schema}"
 
-    if op_overload not in _func_to_out_variant_map:
+    if (
+        op_overload not in _func_to_out_variant_map
+        and op_overload not in _mutable_to_out_variant_map
+    ):
         # setup out_var
         set_mapping_for_op(op_overload)
 
-    out_var = _func_to_out_variant_map.get(op_overload)
+    if op_overload in _mutable_to_out_variant_map:
+        out_var = _mutable_to_out_variant_map[op_overload]
+    else:
+        out_var = _func_to_out_variant_map.get(op_overload)
 
     if not out_var:
         msg = f"Missing out variant for functional op: {schema} . Make sure you have loaded your custom operator library for compiler. E.g., custom_ops_generated_lib"

@@ -35,4 +35,8 @@ bool parallel_for(
     const int64_t grain_size,
     const std::function<void(int64_t, int64_t)>& f);
 
+int64_t get_thread_num();
+
+void set_thread_num(int64_t thread_num);
+
 } // namespace torch::executor

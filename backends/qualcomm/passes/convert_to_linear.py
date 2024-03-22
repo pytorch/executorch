@@ -19,7 +19,7 @@ from torch.fx.passes.utils.source_matcher_utils import (
     SourcePartition,
 )
 
-from .utils import dq_ops, q_ops
+from .utils import dq_ops, get_quant_attrs, q_ops
 
 
 class ConvertToLinear(ExportPass):
@@ -43,6 +43,7 @@ class ConvertToLinear(ExportPass):
 
     bmm_patterns = [
         {view_copy: 3, permute_copy: 1, expand_copy: 2, add: 1, bmm: 1},
+        {view_copy: 3, permute_copy: 1, expand_copy: 2, bmm: 1},
     ]
 
     mm_patterns = [
@@ -59,22 +60,6 @@ class ConvertToLinear(ExportPass):
         while cur_node not in inputs and cur_node.args:
             cur_node = cur_node.args[0]
         return cur_node
-
-    def _annotate_quant_attrs(
-        self, gm: torch.fx.GraphModule, node: torch.fx.Node, q_node: torch.fx.Node
-    ) -> torch.fx.Node:
-        quant_attr_keys = [arg.name for arg in q_node.target._schema.arguments][1:]
-        quant_attrs = dict.fromkeys(quant_attr_keys)
-
-        for i in range(1, len(q_node.args)):
-            attr_n = q_node.args[i]
-            value = attr_n
-            if type(attr_n) == torch.fx.node.Node:
-                value = getattr(gm, attr_n.target)
-            quant_attrs[quant_attr_keys[i - 1]] = value
-        quant_attrs["encoding"] = q_node.target
-        node.meta["quant_attrs"] = quant_attrs
-        return node
 
     def _convert_to_linear(
         self,
@@ -100,8 +85,8 @@ class ConvertToLinear(ExportPass):
 
         # qnn htp does not support keepdim, the view_copy(reshape) should exist for now
         if self._get_original_input(inputs, input_node).target in dq_ops:
-            input_node = self._annotate_quant_attrs(
-                gm, input_node, self._get_original_input(inputs, input_node).args[0]
+            input_node.meta["quant_attrs"] = get_quant_attrs(
+                gm, self._get_original_input(inputs, input_node).args[0]
             )
         args = [input_node, weight_node]
         if bias_node:
@@ -113,8 +98,8 @@ class ConvertToLinear(ExportPass):
             )
             linear_node.meta = fn_node.meta
             if list(output.users)[0].target in q_ops:
-                linear_node = self._annotate_quant_attrs(
-                    gm, linear_node, list(output.users)[0]
+                linear_node.meta["quant_attrs"] = get_quant_attrs(
+                    gm, list(output.users)[0]
                 )
             for user in fn_node.users.copy():
                 user.replace_input_with(fn_node, linear_node)
@@ -138,14 +123,18 @@ class ConvertToLinear(ExportPass):
 
     def _extract_bmm_ops(self, partitioned_nodes: List[edge_op]) -> List[torch.fx.Node]:
         bmm_node = [n for n in partitioned_nodes if n.target == self.bmm][0]
-        add_node = [n for n in partitioned_nodes if n.target == self.add][0]
+        add_node = [n for n in partitioned_nodes if n.target == self.add]
 
         # weight -> expand_copy -> view_copy -> input of bmm
         weight_node = bmm_node.args[1].args[0].args[0].args[0]
         # input -> expand_copy -> view_copy -> input of bmm
         input_node = bmm_node.args[0].args[0].args[0]
-        bias_node = add_node.args[1]
-        return [input_node, weight_node, bias_node]
+
+        ret = [input_node, weight_node, bmm_node]
+        if add_node:
+            bias_node = add_node[0].args[1]
+            ret += bias_node
+        return ret
 
     def _convert(self, graph_module: torch.fx.GraphModule):
         partitions = get_source_partitions(graph_module.graph, [torch.nn.Linear])

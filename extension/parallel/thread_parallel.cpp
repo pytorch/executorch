@@ -15,10 +15,22 @@
 
 namespace torch::executor {
 
+namespace {
+thread_local int64_t thread_num_ = 0;
+}
+
 using namespace torch::executorch::threadpool;
 
 inline int64_t divup(int64_t x, int64_t y) {
   return (x + y - 1) / y;
+}
+
+int64_t get_thread_num() {
+  return thread_num_;
+}
+
+void set_thread_num(int64_t thread_num) {
+  thread_num_ = thread_num;
 }
 
 inline std::tuple<int64_t, int64_t>
@@ -48,6 +60,7 @@ bool parallel_for(
       calc_num_tasks_and_chunk_size(begin, end, grain_size);
 
   auto task = [f, begin, end, chunk_size](size_t task_id) {
+    set_thread_num(task_id);
     int64_t local_start = begin + static_cast<int64_t>(task_id) * chunk_size;
     if (local_start < end) {
       int64_t local_end = std::min(end, (int64_t)(chunk_size + local_start));

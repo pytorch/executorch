@@ -22,6 +22,8 @@ from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPart
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
+
+from executorch.examples.models.llama2.llama_transformer import Transformer
 from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
@@ -172,6 +174,32 @@ def get_pt2e_quantizers(
         dynamic_quantizer.set_global(operator_config_dynamic)
         quantizers.append(dynamic_quantizer)
     return quantizers
+
+
+def materialze_broadcast_of_rope_freq_cis(
+    module: torch.nn.Module,
+):
+    assert isinstance(module, Transformer)
+    assert module.freqs_cos.dim() == 2
+    dim0 = module.freqs_cos.size(0)
+    dim1 = module.freqs_cos.size(1)
+    assert (
+        module.layers[0].attention.n_local_kv_heads
+        == module.layers[0].attention.n_local_heads
+    ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
+    num_heads = module.layers[0].attention.n_local_heads
+    module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)
+    module.freqs_cos = module.freqs_cos.expand(dim0, num_heads, dim1).contiguous()
+    assert module.freqs_sin.dim() == 2
+    assert dim0 == module.freqs_sin.size(
+        0
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 0: {dim0} vs {module.freqs_sin.size(0)}"
+    assert dim1 == module.freqs_sin.size(
+        1
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
+    module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
+    module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
+    return module
 
 
 def quantize(
@@ -363,11 +391,26 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Override the output filename of the saved pte model file.",
     )
 
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=128,
+        help="maximum length sequence to evaluate",
+    )
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
+    parser.add_argument("--coreml", action="store_true")
+
+    parser.add_argument(
+        "--expand_rope_table",
+        default=False,
+        action="store_true",
+        help="[Temp workaround] Expand sin/cos table in head dim to take vectorized path in optimized kernels.",
+    )
 
     parser.add_argument(
         "--generate_etrecord",
@@ -464,6 +507,9 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             ).quantized_model()
         )
 
+    if args.expand_rope_table:
+        transforms.append(materialze_broadcast_of_rope_freq_cis)
+
     return (
         load_llama_model(
             checkpoint=checkpoint_path,
@@ -472,6 +518,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
             verbose=args.verbose,
+            max_seq_len=args.max_seq_length,
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
@@ -537,6 +584,39 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
         partitioners[MPSPartitioner.__name__] = MPSPartitioner(compile_specs)
         modelname = f"mps_{modelname}"
+
+    if args.coreml:
+        assert (
+            args.use_kv_cache is True
+        ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`.
+            import coremltools as ct
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
+            from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`
+            from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+                CoreMLPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            )
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision(ct.precision.FLOAT16.value),
+            compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
+        )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+        partitioners[CoreMLPartitioner.__name__] = CoreMLPartitioner(
+            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        )
+        modelname = f"coreml_{modelname}"
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
