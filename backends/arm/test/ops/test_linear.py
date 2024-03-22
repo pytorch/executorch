@@ -6,29 +6,21 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import shutil
 import unittest
 
 from typing import Tuple
 
 import torch
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
 from parameterized import parameterized
 
-# TODO: fixme! These globs are a temporary workaround. Reasoning:
-# Running the jobs in _unittest.yml will not work since that environment don't
-# have the vela tool, nor the tosa_reference_model tool. Hence, we need a way to
-# run what we can in that env temporarily. Long term, vela and tosa_reference_model
-# should be installed in the CI env.
-TOSA_REF_MODEL_INSTALLED = shutil.which("tosa_reference_model")
-VELA_INSTALLED = shutil.which("vela")
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-seed = 42
-torch.manual_seed(seed)
+torch.manual_seed(42)
+
 test_data_suite = [
     # (test_name, test_data, out_features)
     (
@@ -130,7 +122,7 @@ class TestLinear(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
-        if TOSA_REF_MODEL_INSTALLED:
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
             logger.warning(
@@ -156,7 +148,7 @@ class TestLinear(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
-        if TOSA_REF_MODEL_INSTALLED:
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs(qtol=True)
         else:
             logger.warning(

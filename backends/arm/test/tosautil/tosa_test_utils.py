@@ -95,7 +95,6 @@ class TosaTestUtils:
         params_input: Tuple[List[str], List[QuantizationParams]],
         param_output: Tuple[str, QuantizationParams],
         inputs: Tuple[torch.Tensor],
-        permute_memory_to_nhwc: bool,
     ) -> torch.Tensor:
         """
         Run TOSA reference model using the tosa_refence_model program.
@@ -160,10 +159,6 @@ class TosaTestUtils:
         ):
             data_np = data.detach().numpy()
 
-            if permute_memory_to_nhwc:
-                NHWC_Order = (0, 2, 3, 1)
-                data_np = np.transpose(data_np, NHWC_Order)
-
             if self.profile is TosaProfile.BI:
                 assert (
                     quant_param.node_name == input_name
@@ -200,7 +195,7 @@ class TosaTestUtils:
             quant_param = param_output[1]
             assert (
                 quant_param is not None
-            ), "There are no qunatization parameters, check output parameters"
+            ), "There are no quantization parameters, check output parameters"
             tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
         # tosa_output is a numpy array, convert to torch tensor for comparison

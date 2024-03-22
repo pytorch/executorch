@@ -6,6 +6,8 @@
 from enum import Enum
 from typing import List, Optional, Tuple, Union
 
+import numpy as np
+
 import torch
 from executorch.backends.arm.arm_backend import (
     generate_ethosu_compile_spec,
@@ -103,11 +105,11 @@ class ArmTester(Tester):
             #   2) desc.json
             # Saved on disk in self.tosa_test_util.intermediate_path
             self.compile_spec = generate_tosa_compile_spec(
-                self.permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
+                permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
             )
         elif backend == ArmBackendSelector.ETHOS_U55:
             self.compile_spec = generate_ethosu_compile_spec(
-                "ethos-u55-128", self.permute_memory_to_nhwc
+                config="ethos-u55-128", permute_memory_to_nhwc=permute_memory_to_nhwc
             )
         else:
             raise ValueError(f"Unknown backend: {backend}")
@@ -172,14 +174,25 @@ class ArmTester(Tester):
             module_for_ref, inputs_to_run
         )
 
+        # Transpose input data which is on NCHW format to NHWC format,
+        if self.permute_memory_to_nhwc and len(inputs_to_run[0].shape) == 4:
+            NHWC_Order = (0, 2, 3, 1)
+            inputs_to_run = (np.transpose(inputs_to_run[0], NHWC_Order),)
+
         # Run the TOSA ref model to get the output tensor, which will be
         # compared to the torch output in compare_outputs()
-        self.stage_output = self.tosa_test_util.run_tosa_ref_model(
+        tosa_output = self.tosa_test_util.run_tosa_ref_model(
             params_input=(input_names, qp_input),
             param_output=(output_name, qp_output),
             inputs=inputs_to_run,
-            permute_memory_to_nhwc=self.permute_memory_to_nhwc,
         )
+
+        # Transpose back to NCHW format for comparison to torch output
+        if self.permute_memory_to_nhwc and len(tosa_output.shape) == 4:
+            NCHW_Order = (0, 3, 1, 2)
+            tosa_output = (np.transpose(tosa_output, NCHW_Order),)
+
+        self.stage_output = tosa_output
 
         return self
 
