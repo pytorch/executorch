@@ -49,11 +49,14 @@ endif()
 # find `executorch` libraries
 find_package(executorch CONFIG REQUIRED)
 
+# custom ops library
+add_subdirectory(custom_ops)
+
 # llama_runner library
 add_subdirectory(runner)
 
 # XNNPACK pthreadpool cpuinfo
-target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib)
+target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib pthreadpool custom_ops)
 target_link_options(
   llama_main PUBLIC "SHELL:LINKER:--whole-archive \
                     $<TARGET_FILE:portable_ops_lib> \

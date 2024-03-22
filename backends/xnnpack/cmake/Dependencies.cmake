@@ -20,15 +20,6 @@ set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
 add_subdirectory("${CPUINFO_SOURCE_DIR}")
 list(APPEND xnn_executor_runner_libs cpuinfo)
 
-# --- pthreadpool
-set(PTHREADPOOL_SOURCE_DIR "${THIRD_PARTY_ROOT}/pthreadpool")
-set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "")
-set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "")
-set(PTHREADPOOL_ALLOW_DEPRECATED_API ON CACHE BOOL "")
-add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-list(APPEND xnn_executor_runner_libs pthreadpool)
-
 # --- XNNPACK
 set(XNNPACK_SOURCE_DIR "${THIRD_PARTY_ROOT}/XNNPACK")
 set(XNNPACK_INCLUDE_DIR "${XNNPACK_SOURCE_DIR}/include")
