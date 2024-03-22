@@ -48,6 +48,9 @@ QnnManager::QnnManager(
     QNN_EXECUTORCH_LOG_INFO(
         "log_level: %s", EnumNameQnnExecuTorchLogLevel(options_->log_level()));
     QNN_EXECUTORCH_LOG_INFO(
+        "profile_level: %s",
+        EnumNameQnnExecuTorchProfileLevel(options_->profile_level()));
+    QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
     QNN_EXECUTORCH_LOG_INFO(
@@ -191,6 +194,20 @@ Error QnnManager::Execute(
     }
   }
 
+  return Error::Ok;
+}
+
+Error QnnManager::ProfileExecuteData(EventTracer* event_tracer) {
+  Qnn_ErrorHandle_t error = QNN_SUCCESS;
+  if (options_->profile_level() != QnnExecuTorchProfileLevel::kProfileOff) {
+    error =
+        backend_params_ptr_->qnn_graph_ptr_->ProfileExecuteData(event_tracer);
+    if (error != QNN_SUCCESS) {
+      QNN_EXECUTORCH_LOG_ERROR(
+          " Failed to profile. Error %d", QNN_GET_ERROR_CODE(error));
+      return Error::Internal;
+    }
+  }
   return Error::Ok;
 }
 

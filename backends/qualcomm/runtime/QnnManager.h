@@ -38,6 +38,8 @@ class QnnManager {
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
       std::vector<Qnn_Tensor_t>& output_tensor_structs);
 
+  Error ProfileExecuteData(EventTracer* event_tracer);
+
   void Destroy();
 
   bool IsAvailable();

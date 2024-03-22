@@ -43,6 +43,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
     QnnExecuTorchOptions,
+    QnnExecuTorchProfileLevel,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
     convert_to_flatbuffer,
@@ -186,6 +187,7 @@ def generate_qnn_executorch_compiler_spec(
     saver: bool = False,
     online_prepare: bool = False,
     tensor_dump_output_path: str = "",
+    profile: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -208,6 +210,9 @@ def generate_qnn_executorch_compiler_spec(
             outputs of each OP there in runtime. In ALL cases,
             we don't recommend to set this option. This option exist just
             for debugging some accuracy issues.
+        profile: Enable profile the performance of per operator.
+            Note that for now only support kProfileDetailed to
+            profile the performance of each operator with cycle unit.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -235,6 +240,13 @@ def generate_qnn_executorch_compiler_spec(
 
     if len(tensor_dump_output_path.strip()) != 0:
         qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
+
+    if profile:
+        qnn_executorch_options.profile_level = (
+            QnnExecuTorchProfileLevel.kProfileDetailed
+        )
+    else:
+        qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
 
     if (
         online_prepare

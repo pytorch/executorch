@@ -89,5 +89,7 @@ class QnnBackend(BackendDetails):
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()
-
-        return PreprocessResult(bytes(qnn_context_binary))
+        # For now, debug_handle_map is not used by QNN ExecuTorch
+        return PreprocessResult(
+            processed_bytes=bytes(qnn_context_binary), debug_handle_map={}
+        )

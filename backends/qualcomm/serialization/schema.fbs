@@ -129,6 +129,13 @@ enum QnnExecuTorchLogLevel: int {
   kLogLevelDebug,
 }
 
+/// Profiling level of the delegate and QNN backend.
+enum QnnExecuTorchProfileLevel: int {
+  kProfileOff = 0,
+  kProfileBasic,
+  kProfileDetailed,
+}
+
 /// QNN backends currently supported
 table QnnExecuTorchBackendOptions {
   /// The backend QNN library to open and execute the graph with. This is a
@@ -162,6 +169,9 @@ table QnnExecuTorchOptions {
   /// In ALL cases, we don't recommend to set this option.
   /// This option exist just for debugging some accuracy issues.
   tensor_dump_output_path:string;
+
+  /// Profiling level of the delegate and the backend. Default is off.
+  profile_level:QnnExecuTorchProfileLevel;
 }
 
 root_type QnnExecuTorchOptions;
