@@ -58,7 +58,8 @@ Tensor& prod_int_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      check_reduction_args_single_dim(in, dim, keepdim, dtype, out),
+      check_reduction_args_single_dim(
+          in, dim, keepdim, dtype, out, /*allow_empty_dim=*/true),
       InvalidArgument,
       out);
 

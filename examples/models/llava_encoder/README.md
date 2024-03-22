@@ -7,7 +7,8 @@ In this example, we initiate the process of running multi modality through Execu
 Note that this folder does not host the pretrained LLava model. 
 - To have Llava available, follow the [Install instructions](https://github.com/haotian-liu/LLaVA?tab=readme-ov-file#install) in the LLava github. Follow the licence in the specific repo when using L
 - Since the pytorch model version may not be updated, `cd executorch`, run `./install_requirements.sh`.
-- Run `python3 -m examples.portable.scripts.export --model_name="llava_encoder"`. The llava_encoder.pte file will be generated. 
+- Run `python3 -m examples.portable.scripts.export --model_name="llava_encoder"`. The llava_encoder.pte file will be generated.
+- Run `./cmake-out/executor_runner --model_path ./llava_encoder.pte` to verify the exported model with ExecuTorch runtime with portable kernels. Note that the portable kernels are not performance optimized. Please refer to other examples like those in llama2 folder for optimization. 
 
 ## TODO
 - Write the pipeline in cpp

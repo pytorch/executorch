@@ -4,8 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import copy
-
 import logging
 from dataclasses import dataclass
 from typing import Dict, final, List
@@ -86,7 +84,6 @@ class XnnpackBackend(BackendDetails):
         edge_program: ExportedProgram,
         compile_specs: List[CompileSpec],
     ) -> PreprocessResult:
-        ep = copy.deepcopy(edge_program)
         # Need to wrap EP here because xnnpack does addmm to linear
         # transforms. This makes resulting graph not aten compliant
         # as aten.linear is not a core aten op.
@@ -97,17 +94,17 @@ class XnnpackBackend(BackendDetails):
         # EdgeDialectVerifier, but disable it.
         # TODO (task link) to implement NullVerifier or something similar
         ep = ExportedProgram(
-            root=ep.graph_module,
-            graph=ep.graph,
-            graph_signature=ep.graph_signature,
-            state_dict=ep.state_dict,
-            range_constraints=ep.range_constraints,
-            module_call_graph=copy.deepcopy(ep.module_call_graph),
-            example_inputs=ep.example_inputs,
+            root=edge_program.graph_module,
+            graph=edge_program.graph,
+            graph_signature=edge_program.graph_signature,
+            state_dict=edge_program.state_dict,
+            range_constraints=edge_program.range_constraints,
+            module_call_graph=edge_program.module_call_graph,
+            example_inputs=edge_program.example_inputs,
             verifier=EXIREdgeDialectVerifier(
                 check_edge_ops=False, enable=False, class_only=True
             ),
-            constants=ep.constants,
+            constants=edge_program.constants,
         )
 
         passes = []

@@ -7,7 +7,7 @@
 import torch
 
 from examples.models.model_base import EagerModelBase
-from llava.eval.run_llava import eval_model, load_images, process_images
+from llava.eval.run_llava import load_images, process_images
 from llava.mm_utils import get_model_name_from_path
 
 from llava.model.builder import load_pretrained_model

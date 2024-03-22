@@ -52,7 +52,7 @@ flip_out(RuntimeContext& ctx, const Tensor& in, IntArrayRef dims, Tensor& out) {
     flip_dim_data[i] = false;
   }
   for (size_t i = 0; i < dims.size(); i++) {
-    const auto d = dims[i] < 0 ? dims[i] + in.dim() : dims[i];
+    const auto d = dims[i] < 0 ? dims[i] + nonzero_dim(in) : dims[i];
     flip_dim_data[d] = true;
   }
   size_t flip_dim_length = static_cast<size_t>(in.dim()); // NOLINT
@@ -60,7 +60,7 @@ flip_out(RuntimeContext& ctx, const Tensor& in, IntArrayRef dims, Tensor& out) {
 
   constexpr auto name = "flip.out";
 
-  ET_SWITCH_REAL_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
+  ET_SWITCH_REALHB_TYPES(in.scalar_type(), ctx, name, CTYPE, [&] {
     const CTYPE* in_data = in.const_data_ptr<CTYPE>();
     CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
 

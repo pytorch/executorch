@@ -17,8 +17,14 @@
 
 #include <array>
 
+#ifdef ET_USE_THREADPOOL
+#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#include <executorch/extension/parallel/thread_parallel.h>
+#endif
+
 namespace torch {
 namespace executor {
+
 namespace native {
 
 namespace util {
@@ -26,7 +32,7 @@ namespace util {
 constexpr size_t kKVDim = 4;
 
 template <typename T>
-inline void _store(T* dst, executorch::vec::Vectorized<T> src) {
+inline void _store(T* dst, ::executorch::vec::Vectorized<T> src) {
   src.store(dst);
 }
 
@@ -37,19 +43,6 @@ inline void _store(::Half* dst, at::vec::Vectorized<float> src) {
   res.store(dst, at::vec::Vectorized<float>::size());
 }
 */
-
-template <class F>
-inline void parallel_for(
-    const int64_t begin,
-    const int64_t end,
-    const int64_t grain_size,
-    const F& f) {
-  for (int64_t i = begin; i < end; i += grain_size) {
-    int64_t task_begin = i;
-    int64_t task_end = std::min(task_begin + grain_size, end);
-    f(task_begin, task_end);
-  }
-}
 
 template <typename T>
 inline T data_index_init(T offset) {
@@ -83,7 +76,7 @@ inline double calculate_scale(const Tensor& query, optional<double> scale) {
 }
 
 } // namespace util
-namespace vec = executorch::vec;
+namespace vec = ::executorch::vec;
 using Tensor = exec_aten::Tensor;
 
 namespace {
@@ -310,8 +303,12 @@ void cpu_flash_attention(
   int64_t qSplitSize = q_split_size > qSize ? qSize : q_split_size;
   int64_t kvSplitSize = kv_split_size > kvSize ? kvSize : kv_split_size;
   int64_t qSlice = (qSize - 1) / qSplitSize + 1;
-  // int64_t num_thread = at::get_num_threads();
-  int64_t num_thread = 1; // at::get_num_threads();
+#ifdef ET_USE_THREADPOOL
+  int64_t num_thread =
+      torch::executorch::threadpool::get_threadpool()->get_thread_count();
+#else
+  int64_t num_thread = 1;
+#endif
 
   // const auto dtype = query.scalar_type();
   // Following will be revisited in the future
@@ -346,149 +343,146 @@ void cpu_flash_attention(
   scalar_t* buf_reduced_data =
       is_reduced_type ? reinterpret_cast<scalar_t*>(buf_reduced) : nullptr;
 
-  util::parallel_for(
-      0, batchSize * num_head * qSlice, 1, [&](int64_t begin, int64_t end) {
-        int64_t i = 0, j = 0, k = 0;
-        util::data_index_init(begin, i, batchSize, j, num_head, k, qSlice);
-        int ompIdx = 0; // at::get_thread_num();
-        accum_t* buf_ptr = buf_data + ompIdx * size_per_thread;
-        accum_t* qk_data = buf_ptr;
-        accum_t* qk_max_data = qk_data + qSplitSize * kvSplitSize;
-        accum_t* qk_sum_data = qk_max_data + qSplitSize;
-        accum_t* dst_data = qk_sum_data + qSplitSize;
-        scalar_t* qk_reduced_data = is_reduced_type
-            ? buf_reduced_data + ompIdx * qSplitSize * kvSplitSize
-            : nullptr;
+  auto compute_lambda = [&](int64_t begin, int64_t end) {
+    int64_t i = 0, j = 0, k = 0;
+    util::data_index_init(begin, i, batchSize, j, num_head, k, qSlice);
+    int ompIdx = torch::executor::get_thread_num();
+    accum_t* buf_ptr = buf_data + ompIdx * size_per_thread;
+    accum_t* qk_data = buf_ptr;
+    accum_t* qk_max_data = qk_data + qSplitSize * kvSplitSize;
+    accum_t* qk_sum_data = qk_max_data + qSplitSize;
+    accum_t* dst_data = qk_sum_data + qSplitSize;
+    scalar_t* qk_reduced_data = is_reduced_type
+        ? buf_reduced_data + ompIdx * qSplitSize * kvSplitSize
+        : nullptr;
 
-        for (int64_t z = begin; z < end; z++) {
-          int64_t m = k * qSplitSize;
-          int64_t qBlockSize = std::min(qSplitSize, qSize - m);
-          // Initialize max and sum
-          fill_stub(
-              qk_max_data,
-              -std::numeric_limits<accum_t>::infinity(),
-              qBlockSize);
-          int64_t num_keys =
-              is_causal ? std::min(m + qBlockSize, kvSize) : kvSize;
-          for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
-            int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
-            // Calculate scale * q @ k.T
+    for (int64_t z = begin; z < end; z++) {
+      int64_t m = k * qSplitSize;
+      int64_t qBlockSize = std::min(qSplitSize, qSize - m);
+      // Initialize max and sum
+      fill_stub(
+          qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
+      int64_t num_keys = is_causal ? std::min(m + qBlockSize, kvSize) : kvSize;
+      for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
+        int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
+        // Calculate scale * q @ k.T
+        fill_stub(qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::Transpose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            kvBlockSize,
+            qBlockSize,
+            headSize,
+            static_cast<accum_t>(1),
+            k_data + i * kStrideB + j * kStrideH + n * kStrideN,
+            kStrideN,
+            q_data + i * qStrideB + j * qStrideH + m * qStrideM,
+            qStrideM,
+            static_cast<accum_t>(0),
+            qk_data,
+            kvBlockSize);
+        // Apply causal mask, fill unused with -inf
+        if (is_causal && num_keys - n <= kvSplitSize) {
+          for (int32_t row = 0; row < qBlockSize; ++row) {
+            int64_t last_col = m + row - n;
+            accum_t* row_ptr = qk_data + row * kvBlockSize;
             fill_stub(
-                qk_data, static_cast<accum_t>(0), qSplitSize * kvSplitSize);
-            executorch::cpublas::gemm(
-                executorch::cpublas::TransposeType::Transpose,
-                executorch::cpublas::TransposeType::NoTranspose,
-                kvBlockSize,
-                qBlockSize,
-                headSize,
-                static_cast<accum_t>(1),
-                k_data + i * kStrideB + j * kStrideH + n * kStrideN,
-                kStrideN,
-                q_data + i * qStrideB + j * qStrideH + m * qStrideM,
-                qStrideM,
-                static_cast<accum_t>(0),
-                qk_data,
-                kvBlockSize);
-            // Apply causal mask, fill unused with -inf
-            if (is_causal && num_keys - n <= kvSplitSize) {
-              for (int32_t row = 0; row < qBlockSize; ++row) {
-                int64_t last_col = m + row - n;
-                accum_t* row_ptr = qk_data + row * kvBlockSize;
-                fill_stub(
-                    row_ptr + last_col + 1,
-                    -std::numeric_limits<accum_t>::infinity(),
-                    kvBlockSize - last_col - 1);
-              }
-            }
-            // Update attention weights with attention mask
-            // And apply scaling factor
-            // qk <- qk * scaling + attn_mask
-            if (has_attn_mask) {
-              for (int64_t row = 0; row < qBlockSize; ++row) {
-                vec::map2<accum_t>(
-                    [scaling_factor](Vec x, Vec y) {
-                      return x * Vec(scaling_factor) + y;
-                    },
-                    qk_data + row * kvBlockSize,
-                    qk_data + row * kvBlockSize,
-                    mask_data + i * mStrideB + j * mStrideH +
-                        (m + row) * mStrideM + n,
-                    kvBlockSize);
-              }
-            }
-            // Update coefficients with Softmax
-            accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
-            for (int64_t row = 0; row < qBlockSize; ++row) {
-              if (has_attn_mask) {
-                // max per row
-                tmp_max = vec::reduce_all<accum_t>(
-                    [](Vec& x, Vec& y) { return vec::maximum(x, y); },
-                    qk_data + row * kvBlockSize,
-                    kvBlockSize);
-              } else {
-                // apply scaling factor and max per row in fusion
-                _mul_reduce_max_fusion_kernel(
-                    qk_data + row * kvBlockSize,
-                    scaling_factor,
-                    kvBlockSize,
-                    qk_data + row * kvBlockSize,
-                    tmp_max);
-              }
-              tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
-              // qk <- exp(qk - max) and sum per row
-              tmp_sum = tmp_max;
-              _exp_reduce_sum_fusion_kernel(
-                  qk_data + row * kvBlockSize,
-                  kvBlockSize,
-                  conditional_data_ptr(qk_data, qk_reduced_data) +
-                      row * kvBlockSize,
-                  tmp_sum);
-              // exp_tmp <- exp(max[row] - max)
-              exp_tmp = std::exp(qk_max_data[row] - tmp_max);
-              // sum[row] <- sum + exp_tmp * sum[row]
-              qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
-              // max[row] <- max
-              qk_max_data[row] = tmp_max;
-              // dst <- dst * exp_tmp
-              if (n > 0) {
-                vec::map<accum_t>(
-                    [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
-                    dst_data + row * headSize,
-                    dst_data + row * headSize,
-                    headSize);
-              }
-            }
-            // Calculate Softmax(q @ k.T) @ v
-            executorch::cpublas::gemm(
-                executorch::cpublas::TransposeType::NoTranspose,
-                executorch::cpublas::TransposeType::NoTranspose,
-                headSize,
-                qBlockSize,
-                kvBlockSize,
-                static_cast<accum_t>(1),
-                v_data + i * vStrideB + j * vStrideH + n * vStrideN,
-                vStrideN,
-                conditional_data_ptr(qk_data, qk_reduced_data),
-                kvBlockSize,
-                n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
-                dst_data,
-                headSize);
+                row_ptr + last_col + 1,
+                -std::numeric_limits<accum_t>::infinity(),
+                kvBlockSize - last_col - 1);
           }
-          // dst <- dst / sum[row]
-          // reorder MHA output with strides
+        }
+        // Update attention weights with attention mask
+        // And apply scaling factor
+        // qk <- qk * scaling + attn_mask
+        if (has_attn_mask) {
           for (int64_t row = 0; row < qBlockSize; ++row) {
-            accum_t sum_reciprocal = 1 / qk_sum_data[row];
-            vec::map<scalar_t>(
-                [sum_reciprocal](Vec x) { return x * Vec(sum_reciprocal); },
-                out_data + i * oStrideB + j * oStrideH + m * oStrideM +
-                    row * oStrideM,
+            vec::map2<accum_t>(
+                [scaling_factor](Vec x, Vec y) {
+                  return x * Vec(scaling_factor) + y;
+                },
+                qk_data + row * kvBlockSize,
+                qk_data + row * kvBlockSize,
+                mask_data + i * mStrideB + j * mStrideH + (m + row) * mStrideM +
+                    n,
+                kvBlockSize);
+          }
+        }
+        // Update coefficients with Softmax
+        accum_t tmp_max = 0, tmp_sum = 0, exp_tmp = 0;
+        for (int64_t row = 0; row < qBlockSize; ++row) {
+          if (has_attn_mask) {
+            // max per row
+            tmp_max = vec::reduce_all<accum_t>(
+                [](Vec& x, Vec& y) { return vec::maximum(x, y); },
+                qk_data + row * kvBlockSize,
+                kvBlockSize);
+          } else {
+            // apply scaling factor and max per row in fusion
+            _mul_reduce_max_fusion_kernel(
+                qk_data + row * kvBlockSize,
+                scaling_factor,
+                kvBlockSize,
+                qk_data + row * kvBlockSize,
+                tmp_max);
+          }
+          tmp_max = qk_max_data[row] > tmp_max ? qk_max_data[row] : tmp_max;
+          // qk <- exp(qk - max) and sum per row
+          tmp_sum = tmp_max;
+          _exp_reduce_sum_fusion_kernel(
+              qk_data + row * kvBlockSize,
+              kvBlockSize,
+              conditional_data_ptr(qk_data, qk_reduced_data) +
+                  row * kvBlockSize,
+              tmp_sum);
+          // exp_tmp <- exp(max[row] - max)
+          exp_tmp = std::exp(qk_max_data[row] - tmp_max);
+          // sum[row] <- sum + exp_tmp * sum[row]
+          qk_sum_data[row] = tmp_sum + exp_tmp * qk_sum_data[row];
+          // max[row] <- max
+          qk_max_data[row] = tmp_max;
+          // dst <- dst * exp_tmp
+          if (n > 0) {
+            vec::map<accum_t>(
+                [exp_tmp](Vec x) { return x * Vec(exp_tmp); },
+                dst_data + row * headSize,
                 dst_data + row * headSize,
                 headSize);
           }
-          // Move to the next query
-          util::data_index_step(i, batchSize, j, num_head, k, qSlice);
         }
-      });
+        // Calculate Softmax(q @ k.T) @ v
+        ::executorch::cpublas::gemm(
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            ::executorch::cpublas::TransposeType::NoTranspose,
+            headSize,
+            qBlockSize,
+            kvBlockSize,
+            static_cast<accum_t>(1),
+            v_data + i * vStrideB + j * vStrideH + n * vStrideN,
+            vStrideN,
+            conditional_data_ptr(qk_data, qk_reduced_data),
+            kvBlockSize,
+            n == 0 ? static_cast<accum_t>(0) : static_cast<accum_t>(1),
+            dst_data,
+            headSize);
+      }
+      // dst <- dst / sum[row]
+      // reorder MHA output with strides
+      for (int64_t row = 0; row < qBlockSize; ++row) {
+        accum_t sum_reciprocal = 1 / qk_sum_data[row];
+        vec::map<scalar_t>(
+            [sum_reciprocal](Vec x) { return x * Vec(sum_reciprocal); },
+            out_data + i * oStrideB + j * oStrideH + m * oStrideM +
+                row * oStrideM,
+            dst_data + row * headSize,
+            headSize);
+      }
+      // Move to the next query
+      util::data_index_step(i, batchSize, j, num_head, k, qSlice);
+    }
+  };
+  torch::executor::parallel_for(
+      0, batchSize * num_head * qSlice, 1, compute_lambda);
 }
 
 bool validate_flash_attention_args(
@@ -708,21 +702,21 @@ Tensor& flash_attention_kernel_out(
 
 /*
   Input params
-  @params[in]: q_projected: Projected query with query weights.
+  @param[in] q_projected Projected query with query weights.
   Format [n_layers, batch size, seq_len, num heads, head dim]
-  @params[in]: k_projected: Projected query with key weights.
+  @param[in] k_projected Projected query with key weights.
   Format [n_layers, batch size, seq_len, num heads, head dim]
-  @params[in]: v_projected: Projected query with value weights.
+  @param[in] v_projected Projected query with value weights.
   Format [n_layers, batch size, seq_len, num heads, head dim]
-  @params[in]: key_cache: Cache of previous k_projected.
+  @param[in] key_cache Cache of previous k_projected.
   Format [n_layers, batch size, max_seq_len, num heads, head dim]
-  @params[in]: key_cache: Cache of previous v_projected.
+  @param[in] key_cache Cache of previous v_projected.
   Format [n_layers, batch size, max_seq_len, num heads, head dim]
   ....
-  @params[in] layer_id: which layer this call belongs to.
+  @param[in] layer_id which layer this call belongs to.
   Used to updated appropriate entry of kv cache
-  @params[in]: start_pos: sequence position
-  @params[in]: seq_len: Seq length. e.g. seq_len dim of q_projected.
+  @param[in] start_pos sequence position
+  @param[in] seq_len Seq length. e.g. seq_len dim of q_projected.
 */
 Tensor& sdpa_with_kv_cache_out(
     RuntimeContext& ctx,

@@ -384,7 +384,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     auto modelAssetType = get_model_asset_type(inMemoryFS);
     ETCoreMLAsset *modelAsset = nil;
     // Write the model files.
-    if (modelAssetType == ModelAssetType::ModelPackage) {
+    if (modelAssetType == ModelAssetType::Model) {
         NSURL *modelURL = ::write_model_files(dstURL, self.fileManager, identifier, modelAssetType.value(), inMemoryFS, error);
         if (modelURL) {
             modelAsset = make_asset(modelURL,

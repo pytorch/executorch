@@ -11,15 +11,17 @@ import PackageDescription
 
 let url = "https://ossci-ios.s3.amazonaws.com/executorch"
 let version = "0.1.0"
-let coreml_sha256 = "1d2b8d2a5805a699eb39f347977894d3af5dfa763b298b926016550e9ffefda5"
-let executorch_sha256 = "39f19740a7c656d972e6082bae49583a6d4cc6396dea6ace2e4193688cef6225"
-let mps_sha256 = "866739b76baec70e603d331ff34ff9f028202fef69161f63a35d2e8a0cf502e9"
-let portable_sha256 = "6f761c0ae5651002e321bc6320604476ba0210f9383e535a2905cc1a74be55a3"
-let xnnpack_sha256 = "ef2cb2145a466a0a9e32489497c7f4880e4b582cea3883158b7ae24427d8ae7a"
+let coreml_sha256 = "786c6d621e402777fc254ee403558539585595afdecbf8df743ca4e298adebf1"
+let executorch_sha256 = "2ce568bd2704a5a7d7a0d4d6ed7df9e291f741b17f48767f0b3bc2a40ce797a8"
+let mps_sha256 = "7b5a7805346caa5899c614573cf0ce715e2552db8f42c8af6b353f7ebb73bdbe"
+let portable_sha256 = "52b7e86f02bf72eeaa3295b0612880376d5814cbe34898c805225ceef1d7bc6e"
+let xnnpack_sha256 = "3fd6e4e1d9687eb25e2638bb3dfbc429b736cbf47e7ed769f1dbec62254e4cdd"
 
 struct Framework {
   let name: String
   let checksum: String
+  var frameworks: [String] = []
+  var libraries: [String] = []
 
   func target() -> Target {
     .binaryTarget(
@@ -28,12 +30,30 @@ struct Framework {
       checksum: checksum
     )
   }
+
+  func dependencies() -> Target {
+    .target(
+      name: "\(name)_dependencies",
+      dependencies: [.target(name: name)],
+      path: ".swift/\(name)",
+      linkerSettings:
+          frameworks.map { .linkedFramework($0) } +
+          libraries.map { .linkedLibrary($0) }
+    )
+  }
 }
 
 let frameworks = [
   Framework(
     name: "coreml_backend",
-    checksum: coreml_sha256
+    checksum: coreml_sha256,
+    frameworks: [
+      "Accelerate",
+      "CoreML",
+    ],
+    libraries: [
+      "sqlite3",
+    ]
   ),
   Framework(
     name: "executorch",
@@ -41,7 +61,12 @@ let frameworks = [
   ),
   Framework(
     name: "mps_backend",
-    checksum: mps_sha256
+    checksum: mps_sha256,
+    frameworks: [
+      "Metal",
+      "MetalPerformanceShaders",
+      "MetalPerformanceShadersGraph",
+    ]
   ),
   Framework(
     name: "portable_backend",
@@ -58,8 +83,6 @@ let package = Package(
   platforms: [
     .iOS(.v15),
   ],
-  products: frameworks.map { framework in
-    .library(name: framework.name, targets: [framework.name])
-  },
-  targets: frameworks.map { $0.target() }
+  products: frameworks.map { .library(name: $0.name, targets: ["\($0.name)_dependencies"]) },
+  targets: frameworks.flatMap { [$0.target(), $0.dependencies()] }
 )

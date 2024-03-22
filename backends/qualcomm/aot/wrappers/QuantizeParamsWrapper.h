@@ -77,6 +77,117 @@ class UndefinedQuantizeParamsWrapper final : public QuantizeParamsWrapper {
   }
 };
 
+class BwAxisScaleOffsetQuantizeParamsWrapper final
+    : public QuantizeParamsWrapper {
+ public:
+  explicit BwAxisScaleOffsetQuantizeParamsWrapper(
+      std::uint32_t bitwidth,
+      std::int32_t axis,
+      std::uint32_t num_elements,
+      std::vector<float> scales,
+      std::vector<int32_t> offsets)
+      : QuantizeParamsWrapper(
+            QNN_DEFINITION_DEFINED,
+            QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET),
+        bitwidth_(bitwidth),
+        axis_(axis),
+        num_elements_(num_elements),
+        scales_(scales),
+        offsets_(offsets) {}
+
+  BwAxisScaleOffsetQuantizeParamsWrapper(
+      const BwAxisScaleOffsetQuantizeParamsWrapper& rhs)
+      : QuantizeParamsWrapper(
+            rhs.GetEncodingDefinition(),
+            rhs.GetQuantizationEncoding()),
+        bitwidth_(rhs.bitwidth_),
+        axis_(rhs.axis_),
+        num_elements_(rhs.num_elements_),
+        scales_(rhs.scales_),
+        offsets_(rhs.offsets_) {}
+  BwAxisScaleOffsetQuantizeParamsWrapper(
+      BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) = delete;
+  BwAxisScaleOffsetQuantizeParamsWrapper& operator=(
+      const BwAxisScaleOffsetQuantizeParamsWrapper& rhs) = delete;
+  BwAxisScaleOffsetQuantizeParamsWrapper& operator=(
+      BwAxisScaleOffsetQuantizeParamsWrapper&& rhs) = delete;
+
+  ~BwAxisScaleOffsetQuantizeParamsWrapper() override = default;
+
+  std::unique_ptr<QuantizeParamsWrapper> Clone() override {
+    return std::make_unique<BwAxisScaleOffsetQuantizeParamsWrapper>(*this);
+  }
+
+  Qnn_QuantizeParams_t CreateQuantizeParams() override {
+    Qnn_QuantizeParams_t rval;
+    rval.encodingDefinition = GetEncodingDefinition();
+    rval.quantizationEncoding = GetQuantizationEncoding();
+    rval.bwAxisScaleOffsetEncoding.bitwidth = bitwidth_;
+    rval.bwAxisScaleOffsetEncoding.axis = axis_;
+    rval.bwAxisScaleOffsetEncoding.numElements = num_elements_;
+    rval.bwAxisScaleOffsetEncoding.scales = scales_.data();
+    rval.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
+    return rval;
+  }
+
+ private:
+  std::uint32_t bitwidth_;
+  std::int32_t axis_;
+  std::uint32_t num_elements_;
+  std::vector<float> scales_;
+  std::vector<int32_t> offsets_;
+};
+
+class BwScaleOffsetQuantizeParamsWrapper final : public QuantizeParamsWrapper {
+ public:
+  explicit BwScaleOffsetQuantizeParamsWrapper(
+      std::uint32_t bitwidth,
+      float scale,
+      std::int32_t offset)
+      : QuantizeParamsWrapper(
+            QNN_DEFINITION_DEFINED,
+            QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET),
+        bitwidth_(bitwidth),
+        scale_(scale),
+        offset_(offset) {}
+
+  BwScaleOffsetQuantizeParamsWrapper(
+      const BwScaleOffsetQuantizeParamsWrapper& rhs)
+      : QuantizeParamsWrapper(
+            rhs.GetEncodingDefinition(),
+            rhs.GetQuantizationEncoding()),
+        bitwidth_(rhs.bitwidth_),
+        scale_(rhs.scale_),
+        offset_(rhs.offset_) {}
+  BwScaleOffsetQuantizeParamsWrapper(BwScaleOffsetQuantizeParamsWrapper&& rhs) =
+      delete;
+  BwScaleOffsetQuantizeParamsWrapper& operator=(
+      const BwScaleOffsetQuantizeParamsWrapper& rhs) = delete;
+  BwScaleOffsetQuantizeParamsWrapper& operator=(
+      BwScaleOffsetQuantizeParamsWrapper&& rhs) = delete;
+
+  ~BwScaleOffsetQuantizeParamsWrapper() override = default;
+
+  std::unique_ptr<QuantizeParamsWrapper> Clone() override {
+    return std::make_unique<BwScaleOffsetQuantizeParamsWrapper>(*this);
+  }
+
+  Qnn_QuantizeParams_t CreateQuantizeParams() override {
+    Qnn_QuantizeParams_t rval;
+    rval.encodingDefinition = GetEncodingDefinition();
+    rval.quantizationEncoding = GetQuantizationEncoding();
+    rval.bwScaleOffsetEncoding.bitwidth = bitwidth_;
+    rval.bwScaleOffsetEncoding.scale = scale_;
+    rval.bwScaleOffsetEncoding.offset = offset_;
+    return rval;
+  }
+
+ private:
+  std::uint32_t bitwidth_;
+  float scale_;
+  std::int32_t offset_;
+};
+
 class ScaleOffsetQuantizeParamsWrapper final : public QuantizeParamsWrapper {
  public:
   explicit ScaleOffsetQuantizeParamsWrapper(float scale, std::int32_t offset)
