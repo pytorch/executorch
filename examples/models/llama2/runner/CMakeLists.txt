@@ -43,7 +43,8 @@ if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID)
   # On Android we see duplicated registration when using shared lib
   add_library(llama_runner STATIC ${_llama_runner__srcs})
 else()
-  add_library(llama_runner SHARED ${_llama_runner__srcs})
+  add_library(llama_runner STATIC ${_llama_runner__srcs})
+  # add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
 target_link_libraries(
