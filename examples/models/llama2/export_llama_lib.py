@@ -204,7 +204,7 @@ def quantize(
     activation_dtype: Optional[DType],
     checkpoint_path: Optional[Path] = None,
     # following arguments only available when setting int4 quantization.
-    groupsize: int = 128,
+    group_size: int = 128,
     # following arguments only used for GPTQ
     calibration_tasks: Optional[list] = None,
     calibration_limit: int = 5,
@@ -255,7 +255,7 @@ def quantize(
             tokenizer,
             blocksize,
             percdamp,
-            groupsize,
+            group_size,
             calibration_tasks,
             calibration_limit,
             calibration_seq_length,
@@ -321,6 +321,25 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="checkpoint path",
     )
     parser.add_argument(
+        "--calibration_tasks",
+        nargs="+",
+        type=str,
+        default=[],
+        help="Tasks for GPTQ calibration",
+    )
+    parser.add_argument(
+        "--calibration_limit",
+        type=int,
+        default=5,
+        help="number of samples used for calibration",
+    )
+    parser.add_argument(
+        "--calibration_seq_length",
+        type=int,
+        default=2048,
+        help="Sequence length for GPTQ calibration",
+    )
+    parser.add_argument(
         "-t",
         "--tokenizer_path",
         default=None,
@@ -370,7 +389,9 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
-    parser.add_argument("-G", "--groupsize", default=None, help="specify the groupsize")
+    parser.add_argument(
+        "-G", "--group_size", default=None, help="group_size for weight quantization"
+    )
 
     parser.add_argument(
         "-d",
@@ -487,6 +508,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
                 tokenizer_path=(
                     Path(path) if (path := args.tokenizer_path) is not None else None
                 ),
+                group_size=args.group_size,
+                calibration_tasks=args.calibration_tasks,
+                calibration_limit=args.calibration_limit,
+                calibration_seq_length=args.calibration_seq_length,
             )
         )
 
