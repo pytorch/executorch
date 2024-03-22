@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 #
-# Simple CMake build system for selective build demo.
+# CMake build system for llama runner.
 #
 # ### Editing this file ###
 #
@@ -48,4 +48,4 @@ endif()
 
 target_link_libraries(
   llama_runner PUBLIC executorch portable_kernels extension_module
-                      extension_data_loader)
+                      extension_data_loader custom_ops)
