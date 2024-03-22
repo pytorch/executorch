@@ -86,16 +86,16 @@ class TensorImpl {
   TensorImpl() = delete;
 
   /**
-   * @param type: The type of the data (int, float, bool).
-   * @param dim: Number of dimensions, and the length of the `sizes` array.
-   * @param sizes: Sizes of the tensor at each dimension. Must contain `dim`
+   * @param type The type of the data (int, float, bool).
+   * @param dim Number of dimensions, and the length of the `sizes` array.
+   * @param sizes Sizes of the tensor at each dimension. Must contain `dim`
    *     entries.
-   * @param data: Pointer to the data, whose size is determined by `type`,
+   * @param data Pointer to the data, whose size is determined by `type`,
    *     `dim`, and `sizes`. The tensor will not own this memory.
-   * @param dim_order: Order in which dimensions are laid out in memory.
-   * @param strides: Strides of the tensor at each dimension. Must contain `dim`
+   * @param dim_order Order in which dimensions are laid out in memory.
+   * @param strides Strides of the tensor at each dimension. Must contain `dim`
    *     entries.
-   * @param dynamism: The mutability of the shape of the tensor.
+   * @param dynamism The mutability of the shape of the tensor.
    */
   TensorImpl(
       ScalarType type,

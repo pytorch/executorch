@@ -124,8 +124,8 @@ c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type) {
  * assumption , a strong one, that, such memory is arena allocated whose
  * lifetime is tied to model's lifetime, we assume that memory is not leaked as
  * it is freed when arean is freed.
- * @param[in] aten_tensor: Input at::Tensor
- * @param[in/out] mutable_et: ETensor whose underlying memory now will alias to
+ * @param[in] aten_tensor Input at::Tensor
+ * @param[in/out] mutable_et ETensor whose underlying memory now will alias to
  * aten_tensor
  */
 void alias_etensor_to_attensor(

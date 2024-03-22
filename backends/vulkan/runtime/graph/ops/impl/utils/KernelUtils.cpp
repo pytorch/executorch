@@ -28,13 +28,9 @@ int64_t calc_out_size(
   return out_size;
 }
 
-api::utils::ivec2 normalize_wh(Value& v) {
-  if (v.isInt()) {
-    return api::utils::make_ivec2({v.toInt(), v.toInt()});
-  } else {
-    auto l = v.toIntList();
-    return api::utils::make_ivec2({l.at(1), l.at(0)});
-  }
+api::utils::ivec2 reverse(ComputeGraph& graph, ValueRef vref) {
+  return api::utils::make_ivec2(
+      graph.get_val(vref).toIntList(), /*reverse=*/true);
 }
 
 } // namespace vulkan

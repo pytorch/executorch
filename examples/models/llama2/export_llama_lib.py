@@ -222,7 +222,7 @@ def quantize(
     Quantizes a model by converting all weights to int8.
     Args:
         model: A model to quantize.
-        qmode: quantization mode, e.g. int8, int4
+        qmode: quantization mode, e.g. int8, 8da4w, 8da4w-gptq
     Returns:
         A quantized model.
     """
@@ -240,13 +240,13 @@ def quantize(
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
-    elif qmode == "int4":
-        model_int4 = Int8DynActInt4WeightQuantHandler(
+    elif qmode == "8da4w":
+        model = Int8DynActInt4WeightQuantHandler(
             model,
             precision=torch_dtype,
         ).quantized_model()
-        print("quantized model:", model_int4)
-        return model_int4
+        print("quantized model:", model)
+        return model
     elif qmode == "8da4w-gptq":
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
@@ -315,7 +315,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "int4", "8da4w-gptq"],
+        choices=["int8", "8da4w", "8da4w-gptq"],
         help="type of quantization",
     )
 
@@ -389,6 +389,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--output_name",
         default=None,
         help="Override the output filename of the saved pte model file.",
+    )
+
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=128,
+        help="maximum length sequence to evaluate",
     )
 
     parser.add_argument("-2", "--fairseq2", action="store_true")
@@ -465,8 +472,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     # dtype override
     if args.dtype_override is not None:
         dtype_override = DType[args.dtype_override]
+    elif args.quantization_mode in ["8da4w", "8da4w-gptq"]:
+        dtype_override = DType["fp16"]
     else:
-        dtype_override = DType["fp16"] if args.quantization_mode == "int4" else None
+        dtype_override = None
 
     # source transforms
     transforms = []
@@ -511,6 +520,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
             verbose=args.verbose,
+            max_seq_len=args.max_seq_length,
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
@@ -539,7 +549,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     if args.xnnpack:
         # Following changes due to.
         # 1. We need dynamically quantized partitioner for both pt2e_quantize options
-        #    as well as "qmode int4" which is also dynamic quantizes linear layers.
+        #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
         # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
         partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
             XnnpackDynamicallyQuantizedPartitioner()

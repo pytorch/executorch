@@ -77,7 +77,6 @@ class ExecuteNode final {
   const api::utils::uvec3 global_workgroup_size_;
   const api::utils::uvec3 local_workgroup_size_;
   const std::vector<ArgGroup> args_;
-  // TODO(T180906457): allow re-computing param buffers.
   std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
