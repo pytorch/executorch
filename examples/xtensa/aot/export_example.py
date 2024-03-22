@@ -10,18 +10,18 @@ import logging
 
 from .meta_registrations import *  # noqa
 
-import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir import ExecutorchBackendConfig
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
-from ...portable.utils import export_to_edge, save_pte_program
+from ...portable.utils import save_pte_program
 
+from .compiler import export_to_edge
 from .quantizer import (
     QuantFusion,
     ReplacePT2DequantWithXtensaDequant,
     ReplacePT2QuantWithXtensaQuant,
-    XtensaQuantizer,
+    XtensaBaseQuantizer,
 )
 
 
@@ -29,28 +29,9 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-if __name__ == "__main__":
-    in_features = 32
-    out_features = 16
-    bias = True
-    shape = [64, in_features]
-
-    class QuantizedLinear(torch.nn.Module):
-        def __init__(self, in_features: int, out_features: int, bias: bool):
-            super().__init__()
-            self.output_linear = torch.nn.Linear(in_features, out_features, bias=bias)
-
-        def forward(self, x: torch.Tensor):
-            output_linear_out = self.output_linear(x)
-            return output_linear_out
-
-    model = QuantizedLinear(in_features, out_features, bias)
-    model.eval()
-
-    example_inputs = (torch.ones(shape),)
-
+def export_xtensa_model(model, example_inputs):
     # Quantizer
-    quantizer = XtensaQuantizer()
+    quantizer = XtensaBaseQuantizer()
 
     # Export
     model_exp = capture_pre_autograd_graph(model, example_inputs)
@@ -66,28 +47,17 @@ if __name__ == "__main__":
     patterns = [q.pattern for q in quantizer.quantizers]
     QuantFusion(patterns)(converted_model)
 
-    # pre-autograd export. eventually this will become torch.export
-    converted_model_exp = capture_pre_autograd_graph(converted_model, example_inputs)
+    # Get edge program (note: the name will change to export_to_xtensa in future PRs)
+    edge_prog_manager = export_to_edge(converted_model, example_inputs, pt2_quant=True)
 
-    converted_model_exp = torch.ao.quantization.move_exported_model_to_eval(
-        converted_model_exp
+    # Run a couple required passes for quant/dequant ops
+    xtensa_prog_manager = edge_prog_manager.transform(
+        [ReplacePT2QuantWithXtensaQuant(), ReplacePT2DequantWithXtensaDequant()]
     )
 
-    exec_prog = (
-        export_to_edge(
-            converted_model_exp,
-            example_inputs,
-            EdgeCompileConfig(
-                _check_ir_validity=False,
-            ),
-        )
-        .transform(
-            [ReplacePT2QuantWithXtensaQuant(), ReplacePT2DequantWithXtensaDequant()]
-        )
-        .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
-    )
+    exec_prog = xtensa_prog_manager.to_executorch(config=ExecutorchBackendConfig())
 
-    logging.info(f"Final exported graph:\n{exec_prog.exported_program().graph}")
+    logging.info(f"Final exported graph module:\n{exec_prog.exported_program().graph_module}")
 
     # Save the program as XtensaDemoModel.pte
     save_pte_program(exec_prog, "XtensaDemoModel")

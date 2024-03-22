@@ -26,7 +26,9 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_embedding.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp")
 add_library(aten_ops_xtensa ${_aten_ops__srcs})
@@ -34,8 +36,9 @@ target_link_libraries(aten_ops_xtensa PUBLIC executorch)
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "quantized_linear_out.cpp" "quantize_per_tensor.cpp"
-  "dequantize_per_tensor.cpp")
+  custom_ops "quantized_linear_out.cpp" "quantized_conv_out.cpp"
+  "quantized_relu.cpp" "quantized_layer_norm.cpp"
+  "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp")
 target_link_libraries(custom_ops PUBLIC executorch)
 target_link_libraries(custom_ops PRIVATE xtensa_kernels)
 

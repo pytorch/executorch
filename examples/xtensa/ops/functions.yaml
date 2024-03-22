@@ -11,20 +11,38 @@
 # by this file.
 
 
+# aten ops
 - op: add.out
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::add_out
+
+- op: embedding.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::embedding_out
 
 - op: full.out
   kernels:
     - arg_meta: null
       kernel_name: torch::executor::full_out
 
-- func: xtensa::quantized_linear_pt2.out(Tensor src, Tensor weight, Tensor bias, float src_scale, int src_zero_point, float weight_scale, int weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)
+- op: relu.out
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantized_linear_pt2_out
+      kernel_name: torch::executor::relu_out
+
+- op: view_copy.out
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::view_copy_out
+
+# custom ops
+- func: xtensa::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantize_per_tensor_out
 
 - func: xtensa::dequantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, ScalarType? out_dtype=None, Tensor(a!) out) -> Tensor(a!)
   variants: function
@@ -32,8 +50,17 @@
     - arg_meta: null
       kernel_name: impl::HiFi::dequantize_per_tensor_out
 
-- func: xtensa::quantize_per_tensor.out(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype, *, Tensor(a!) out) -> Tensor(a!)
-  variants: function
+- func: xtensa::quantized_conv.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)
   kernels:
     - arg_meta: null
-      kernel_name: impl::HiFi::quantize_per_tensor_out
+      kernel_name: impl::HiFi::quantized_conv_out
+
+- func: xtensa::quantized_linear.out(Tensor src, Tensor weight, Tensor bias, float src_scale, int src_zero_point, float weight_scale, int weight_zero_point, Tensor out_multiplier, Tensor out_shift, int out_zero_point, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_linear_out
+
+- func: xtensa::quantized_relu.out(Tensor X, Tensor X_zero_point, *, Tensor(a!) out) -> Tensor(a!)
+  kernels:
+    - arg_meta: null
+      kernel_name: impl::HiFi::quantized_relu_out

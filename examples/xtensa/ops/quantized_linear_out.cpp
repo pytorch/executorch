@@ -30,7 +30,7 @@ size_t getLeadingDims(const Tensor& tensor, int64_t dim) {
 }
 } // namespace linear_util
 
-void quantized_linear_pt2_out(
+void quantized_linear_out(
     RuntimeContext& ctx,
     const Tensor& src,
     const Tensor& weight,
