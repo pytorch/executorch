@@ -12,12 +12,18 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from executorch.codegen.tools.yaml_util import BlankLineDumper
-
 try:
     from yaml import CSafeLoader as Loader
 except ImportError:
     from yaml import SafeLoader as Loader  # type: ignore[misc]
+
+
+class BlankLineDumper(yaml.SafeDumper):
+    def write_line_break(self, data=None):
+        super().write_line_break(data)
+        # insert a new line between entries.
+        if len(self.indents) == 1:
+            super().write_line_break()
 
 
 def merge(functions_yaml_path: str, fallback_yaml_path: Optional[str], output_dir: str):
