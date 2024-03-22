@@ -61,7 +61,7 @@ target_link_options(
                     LINKER:--no-whole-archive")
 
 # XNNPACK pthreadpool cpuinfo
-if (TARGET xnnpack_backend)
+if(TARGET xnnpack_backend)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK pthreadpool cpuinfo)
   target_link_libraries(llama_main PUBLIC ${xnnpack_backend_libs})
   target_link_options(
