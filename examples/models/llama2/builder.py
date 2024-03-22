@@ -12,7 +12,7 @@ import json
 import logging
 from enum import Enum
 from json import JSONDecodeError
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -288,30 +288,18 @@ class LlamaEdgeManager:
             )
         return self
 
-    def to_backend(
-        self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
-    ) -> "LlamaEdgeManager":
+    def to_backend(self, partitioner: Optional[Partitioner]) -> "LlamaEdgeManager":
         """
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
         Args:
-            partitioner (Union[Partitioner, Dict[str, Partitioner]]): One or more
+            partitioner (Optional[Partitioner]): One or more
                 partitioner to be sent to EdgeManager.to_backend().
         """
         assert self.edge_manager is not None, "Need to run export_to_edge() first"
-        if isinstance(partitioner, dict):
-            for key, p in partitioner.items():
-                assert self.edge_manager is not None
-                self.edge_manager = self.edge_manager.to_backend(p)
-                if self.verbose:
-                    logging.info(
-                        print_delegated_graph(
-                            self.edge_manager.exported_program().graph_module
-                        )
-                    )
-                    logging.info(f"Applied partitioners: {key}")
-        elif isinstance(partitioner, Partitioner):
-            assert self.edge_manager is not None
+        if partitioner is None:
+            logging.info("No partitioner provided, passing...")
+        else:
             self.edge_manager = self.edge_manager.to_backend(partitioner)
             if self.verbose:
                 logging.info(
@@ -320,8 +308,6 @@ class LlamaEdgeManager:
                     )
                 )
                 logging.info(f"Applied partitioners: {partitioner}")
-        else:
-            logging.warning("Invalid partitioner, skipping...")
         return self
 
     def to_executorch(self) -> "LlamaEdgeManager":
