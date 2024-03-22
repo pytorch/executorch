@@ -472,6 +472,9 @@
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch._export.passes</span> <span class="kn">import</span> <span class="n">ReplaceViewOpsWithViewCopyOpsPass</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span> <span class="nn">torch.export._remove_auto_functionalized_pass</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">_get_updated_range_constraints</span><span class="p">,</span>
     <span class="n">ConstantArgument</span><span class="p">,</span>
@@ -1260,6 +1263,7 @@
 
         <span class="n">execution_programs</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">program</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">program</span> <span class="o">=</span> <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">gm</span><span class="p">,</span> <span class="n">new_signature</span> <span class="o">=</span> <span class="n">insert_write_back_for_buffers_pass</span><span class="p">(</span><span class="n">program</span><span class="p">)</span>
             <span class="n">new_gm</span> <span class="o">=</span> <span class="n">program</span><span class="o">.</span><span class="n">graph_module</span>
             <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
