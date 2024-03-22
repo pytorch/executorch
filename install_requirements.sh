@@ -77,3 +77,6 @@ pip install . --no-build-isolation -v
 
 # Install flatc dependency
 bash build/install_flatc.sh
+
+# Install torchao dependency
+pip install torchao-nightly
