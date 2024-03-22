@@ -335,7 +335,7 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--calibration_limit",
         type=int,
-        default=100,
+        default=5,
         help="number of samples used for calibration",
     )
     parser.add_argument(
