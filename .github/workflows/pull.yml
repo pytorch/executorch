@@ -90,7 +90,12 @@ jobs:
       matrix:
         dtype: [fp16, fp32]
         build-tool: [buck2, cmake]
-        qmode: [int8, qda4w, none]
+        qmode: [none, int8, 8da4w]
+        exclude:
+          - dtype: fp16
+            qmode: int8
+          - dtype: fp16
+            qmode: 8da4w
       fail-fast: false
     with:
       runner: linux.2xlarge
