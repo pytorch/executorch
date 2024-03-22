@@ -78,7 +78,12 @@ include(cmake/Dependencies.cmake)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
-target_link_libraries(xnnpack_backend PRIVATE ${xnnpack_third_party} executorch xnnpack_schema)
+target_link_libraries(xnnpack_backend
+                      PRIVATE
+                      ${xnnpack_third_party}
+                      executorch
+                      xnnpack_schema)
+
 target_include_directories(xnnpack_backend
                            PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
@@ -99,4 +104,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-install(TARGETS xnnpack_backend DESTINATION lib INCLUDES DESTINATION ${_common_include_directories})
+install(
+  TARGETS xnnpack_backend
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})
