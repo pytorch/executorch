@@ -37,16 +37,16 @@ void resize_max_pool2d_node(
   // Channel
   new_out_sizes.at(ndim - 3) = self.sizes().at(ndim - 3);
 
-  const auto kernel = normalize_wh(graph->get_val(extra_args[0]));
-  const auto stride = normalize_wh(graph->get_val(extra_args[1]));
-  const auto padding = normalize_wh(graph->get_val(extra_args[2]));
-  const auto dilation = normalize_wh(graph->get_val(extra_args[3]));
+  const auto kernel_size = reverse(*graph, extra_args[0]);
+  const auto stride = reverse(*graph, extra_args[1]);
+  const auto padding = reverse(*graph, extra_args[2]);
+  const auto dilation = reverse(*graph, extra_args[3]);
   const bool ceil_mode = graph->get_val(extra_args[4]).toBool();
 
   // Height
   new_out_sizes.at(ndim - 2) = calc_out_size(
       self.sizes().at(ndim - 2),
-      kernel.data[1],
+      kernel_size.data[1],
       stride.data[1],
       padding.data[1],
       dilation.data[1],
@@ -54,7 +54,7 @@ void resize_max_pool2d_node(
   // Width
   new_out_sizes.at(ndim - 1) = calc_out_size(
       self.sizes().at(ndim - 1),
-      kernel.data[0],
+      kernel_size.data[0],
       stride.data[0],
       padding.data[0],
       dilation.data[0],
@@ -77,7 +77,7 @@ void check_max_pool2d_args(const vTensor& in, const vTensor& out) {
 void add_max_pool2d_node(
     ComputeGraph& graph,
     const ValueRef in,
-    const ValueRef kernel,
+    const ValueRef kernel_size,
     const ValueRef stride,
     const ValueRef padding,
     const ValueRef dilation,
@@ -99,10 +99,10 @@ void add_max_pool2d_node(
   apply_dtype_suffix(kernel_name, t_out);
 
   KernelParams kernel_params{
-      normalize_wh(graph.get_val(kernel)),
-      normalize_wh(graph.get_val(stride)),
-      normalize_wh(graph.get_val(padding)),
-      normalize_wh(graph.get_val(dilation)),
+      reverse(graph, kernel_size),
+      reverse(graph, stride),
+      reverse(graph, padding),
+      reverse(graph, dilation),
   };
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -121,7 +121,7 @@ void add_max_pool2d_node(
       },
       // Resizing
       resize_max_pool2d_node,
-      {kernel, stride, padding, dilation, ceil_mode}));
+      {kernel_size, stride, padding, dilation, ceil_mode}));
 }
 
 void max_pool2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {

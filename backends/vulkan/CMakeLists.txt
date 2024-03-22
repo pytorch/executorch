@@ -116,8 +116,9 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   target_compile_options(vulkan_executor_runner PUBLIC ${VULKAN_CXX_FLAGS})
 
   add_library(vulkan_executor_runner_lib STATIC ${VULKAN_RUNNER_SRCS})
-  target_link_libraries(vulkan_executor_runner_lib ${_executor_runner_libs}
-                        vulkan_schema vulkan_backend)
+  target_link_libraries(
+    vulkan_executor_runner_lib ${_executor_runner_libs} vulkan_schema
+    vulkan_backend vulkan_api_lib ${VULKAN_STANDARD_OPS_LIBS})
   target_compile_options(vulkan_executor_runner_lib PUBLIC ${VULKAN_CXX_FLAGS})
 endif()
 
