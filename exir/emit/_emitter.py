@@ -1198,6 +1198,14 @@ class _Emitter(torch.fx.Interpreter):
             assert len(args) == 1
             return self._emit_spec(self.node.meta["spec"])
 
+        elif target == memory.view:
+            assert len(args) == 2
+
+            # A memory.view's base should already be emitted, so the
+            # memory.view's spec should dynamically reference its base's
+            # final state
+            return self._emit_spec(self.node.meta["spec"])
+
         elif target == memory.free:
             assert len(args) == 1
             # pyre-ignore

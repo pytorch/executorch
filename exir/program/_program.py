@@ -31,8 +31,14 @@ from executorch.exir.passes import (
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+from executorch.exir.passes.normalize_view_copy_base_pass import (
+    NormalizeViewCopyBasePass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
+from executorch.exir.passes.replace_view_copy_with_memory_view_pass import (
+    ReplaceViewCopyWithMemoryViewPass,
+)
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.print_program import pretty_print, print_program
 from executorch.exir.schema import Program
@@ -580,6 +586,23 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     return new_ep
 
 
+def memory_planning_passes(config: ExecutorchBackendConfig) -> List[PassType]:
+    if config.try_remove_view_copy:
+        # pyre-ignore
+        return [
+            NormalizeViewCopyBasePass(),
+            ReplaceViewCopyWithMemoryViewPass(),
+            config.to_out_var_pass,
+            config.memory_planning_pass,
+        ]
+    else:
+        # pyre-ignore
+        return [
+            config.to_out_var_pass,
+            config.memory_planning_pass,
+        ]
+
+
 def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]:
     # pyre-ignore
     passes: List[PassType] = [
@@ -591,8 +614,8 @@ def edge_to_executorch_passes(config: ExecutorchBackendConfig) -> List[PassType]
         EdgeToBackendOpsPass(),
         RemoveGraphAssertsPass(),
         config.sym_shape_eval_pass,
-        config.to_out_var_pass,
-    ]
+    ] + memory_planning_passes(config)
+
     return passes
 
 
@@ -835,6 +858,12 @@ class EdgeProgramManager:
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config):
+                if isinstance(p, ReplaceViewCopyWithMemoryViewPass):
+                    # This is similar to the hack in SpecPropPass
+                    # Ideally passes would work on ExportedPrograms, but today
+                    # they work on GraphModules
+                    p.set_program(program)
+
                 new_gm_res = p(new_gm)
                 assert new_gm_res is not None
                 new_gm = new_gm_res.graph_module
