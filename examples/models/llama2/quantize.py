@@ -13,7 +13,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .ops.quantized_ops import *  # noqa
 
-# TODO: move to correct place
 from torchao.quantization.quant_primitives import (
     get_group_qparams_symmetric,
     group_quantize_tensor_symmetric,
