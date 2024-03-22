@@ -13,6 +13,10 @@ from executorch.backends.arm.arm_backend import (
 )
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
+from executorch.backends.arm.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 
 from executorch.backends.arm.test.tosautil.tosa_test_utils import (
     QuantizationParams,
@@ -29,10 +33,6 @@ from executorch.backends.xnnpack.test.tester.tester import (
 )
 
 from executorch.exir import EdgeCompileConfig
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.export import ExportedProgram
 
 
@@ -115,9 +115,8 @@ class ArmTester(Tester):
 
     def quantize(self, quantize_stage: Optional[Quantize] = None):
         if quantize_stage is None:
-            # Using the XNNPACKQuantizer for now
             quantize_stage = Quantize(
-                XNNPACKQuantizer(),
+                ArmQuantizer(),
                 get_symmetric_quantization_config(is_per_channel=False),
             )
         return super().quantize(quantize_stage)

@@ -20,6 +20,10 @@ kend Architecture](#arm-backend-architecture). For examples of use see `executor
 - `tosa_mapping.py` - utilities for mapping edge dialect to TOSA
 - `tosa_quant_utils.py` - utilities for mapping quantization information to TOSA encoding
 
+Quantization:
+- `arm_quantizer.py` - Quantizer for Arm backend
+- `arm_quantizer_utils.py` - Utilities for quantization
+
 Runtime:
 - `runtime/ArmBackendEthosU.cpp` - The Arm backend implementation of the ExecuTorch runtime backend (PyTorchBackendInterface) for Ethos-U
 
