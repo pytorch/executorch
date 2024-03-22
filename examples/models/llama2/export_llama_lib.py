@@ -239,9 +239,7 @@ def quantize(
     elif qmode == "8da4w":
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(
-            model
-        )
+        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
         print("quantized model:", model)
         return model
     elif qmode == "8da4w-gptq":
