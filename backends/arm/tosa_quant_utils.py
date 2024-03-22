@@ -187,7 +187,14 @@ def build_rescale_from_int32(
 
 
 def build_rescale_conv_output(
-    tosa_fb, op, output_name, output_type, input_scale, weight_scale, output_scale
+    tosa_fb,
+    op,
+    output_name,
+    output_type,
+    input_scale,
+    weight_scale,
+    output_scale,
+    output_zp,
 ):
     # Only use double round if we are doing 32 bit scaling
     double_round = is_scale32(output_type)
@@ -204,7 +211,7 @@ def build_rescale_conv_output(
         output_type,
         op.shape,
         0,
-        0,
+        output_zp.number,
         double_round,
     )
     return
