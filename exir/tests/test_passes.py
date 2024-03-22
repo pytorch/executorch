@@ -1244,3 +1244,69 @@ class TestPasses(unittest.TestCase):
         #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%arg0_1, %aten_add_tensor_1), kwargs = {})
         #     return (copy__default, aten_add_tensor)
         self.assertEqual(count_copies(gm), 1)
+
+    def test_remove_redundant_view_copy_pass(self) -> None:
+        def is_view(node: torch.fx.Node) -> bool:
+            return node.op == "call_function" and node.target in (
+                torch.ops.aten.view_copy.default,
+                exir_ops.edge.aten.view_copy.default,
+                # before to_edge, the view_copy are view
+                # we include these to count n_views_before
+                torch.ops.aten.view.default,
+                exir_ops.edge.aten.view.default,
+            )
+
+        # Test chain
+        class ViewChain(torch.nn.Module):
+            def forward(self, x):
+                return x.reshape(30, 1).reshape(5, 6).reshape(2, 15).reshape(3, -1)
+
+        view_chain = ViewChain()
+
+        exported_program = export(view_chain, (torch.ones(30),))
+        n_views_before = 0
+        for node in exported_program.graph.nodes:
+            if is_view(node):
+                n_views_before += 1
+        self.assertEqual(n_views_before, 4)
+
+        edge_program_manager = to_edge(exported_program)
+        n_views_after = 0
+        for node in edge_program_manager.exported_program().graph.nodes:
+            if is_view(node):
+                n_views_after += 1
+                the_view_copy_node = node
+
+        self.assertEqual(n_views_after, 1)
+        self.assertEqual(the_view_copy_node.args[1], [3, -1])
+        self.assertEqual(
+            the_view_copy_node.target, exir_ops.edge.aten.view_copy.default
+        )
+
+        # Test branch
+        class ViewBranch(torch.nn.Module):
+            def forward(self, x):
+                x = x.reshape(30, 1)
+                y = torch.sum(x)
+                z = x.reshape(5, 6).reshape(2, 15).reshape(3, -1)
+                return z + y
+
+        view_branch = ViewBranch()
+        exported_program = export(view_branch, (torch.ones(30),))
+        n_views_before = 0
+        for node in exported_program.graph.nodes:
+            if is_view(node):
+                n_views_before += 1
+        self.assertEqual(n_views_before, 4)
+
+        edge_program_manager = to_edge(exported_program)
+        n_views_after = 0
+        for node in edge_program_manager.exported_program().graph.nodes:
+            if is_view(node):
+                n_views_after += 1
+                the_view_copy_node = node
+
+        # We keep the view on x (which is consumed by y)
+        # The 3 views on z are collapsed to 1 view
+        # In total, 2 view remain
+        self.assertEqual(n_views_after, 2)
