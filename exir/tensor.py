@@ -231,6 +231,7 @@ def memory_format_enum(memory_format: torch.memory_format) -> int:
     )
     table = {
         torch.contiguous_format: 0,
+        torch.preserve_format: 1,
     }
     return table[memory_format]
 

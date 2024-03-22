@@ -11,20 +11,44 @@ import argparse
 import logging
 
 import torch
-from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 
+from executorch.backends.arm.arm_backend import generate_ethosu_compile_spec
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
 
+from ..models import MODEL_NAME_TO_MODEL
+from ..models.model_factory import EagerModelFactory
 from ..portable.utils import export_to_edge, save_pte_program
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
-logging.basicConfig(level=logging.INFO, format=FORMAT)
+logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
-# TODO: When we have a more reliable quantization flow through to
-#       Vela, and use the models in their original form with a
-#       quantization step in our example. This will take the models
-#       from examples/models/ and quantize then export to delegate.
+# Quantize model if required using the standard export quantizaion flow.
+# For now we're using the xnnpack quantizer as this produces reasonable
+# output for our arithmetic behaviour.
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+    get_symmetric_quantization_config,
+    XNNPACKQuantizer,
+)
+
+
+def quantize(model, example_inputs):
+    """This is the official recommended flow for quantization in pytorch 2.0 export"""
+    logging.info("Quantizing Model...")
+    logging.debug(f"Original model: {model}")
+    quantizer = XNNPACKQuantizer()
+    # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
+    operator_config = get_symmetric_quantization_config(is_per_channel=False)
+    quantizer.set_global(operator_config)
+    m = prepare_pt2e(model, quantizer)
+    # calibration
+    m(*example_inputs)
+    m = convert_pt2e(m)
+    logging.debug(f"Quantized model: {m}")
+    # make sure we can export to flat buffer
+    return m
+
 
 # Two simple models
 class AddModule(torch.nn.Module):
@@ -92,7 +116,7 @@ if __name__ == "__main__":
         "-m",
         "--model_name",
         required=True,
-        help=f"Provide model name. Valid ones: {list(models.keys())}",
+        help=f"Provide model name. Valid ones: {set(list(models.keys())+list(MODEL_NAME_TO_MODEL.keys()))}",
     )
     parser.add_argument(
         "-d",
@@ -102,10 +126,22 @@ if __name__ == "__main__":
         default=False,
         help="Flag for producing ArmBackend delegated model",
     )
+    parser.add_argument(
+        "-q",
+        "--quantize",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Produce a quantized model",
+    )
 
     args = parser.parse_args()
 
-    if args.model_name not in models.keys():
+    # support models defined within this file or examples/models/ lists
+    if (
+        args.model_name not in models.keys()
+        and args.model_name not in MODEL_NAME_TO_MODEL.keys()
+    ):
         raise RuntimeError(f"Model {args.model_name} is not a valid name.")
 
     if (
@@ -115,13 +151,32 @@ if __name__ == "__main__":
     ):
         raise RuntimeError(f"Model {args.model_name} cannot be delegated.")
 
-    model = models[args.model_name]()
-    example_inputs = models[args.model_name].example_input
+    # 1. pick model from one of the supported lists
+    model = None
+    example_inputs = None
+
+    # 1.a. models in this file
+    if args.model_name in models.keys():
+        model = models[args.model_name]()
+        example_inputs = models[args.model_name].example_input
+    # 1.b. models in the examples/models/
+    # IFF the model is not in our local models
+    elif args.model_name in MODEL_NAME_TO_MODEL.keys():
+        logging.warning(
+            "Using a model from examples/models not all of these are currently supported"
+        )
+        model, example_inputs, _ = EagerModelFactory.create_model(
+            *MODEL_NAME_TO_MODEL[args.model_name]
+        )
 
     model = model.eval()
 
     # pre-autograd export. eventually this will become torch.export
     model = torch._export.capture_pre_autograd_graph(model, example_inputs)
+
+    # Quantize if required
+    if args.quantize:
+        model = quantize(model, example_inputs)
 
     edge = export_to_edge(
         model,
@@ -130,13 +185,13 @@ if __name__ == "__main__":
             _check_ir_validity=False,
         ),
     )
-    logging.info(f"Exported graph:\n{edge.exported_program().graph}")
+    logging.debug(f"Exported graph:\n{edge.exported_program().graph}")
 
     if args.delegate is True:
         edge = edge.to_backend(
             ArmPartitioner(generate_ethosu_compile_spec("ethos-u55-128"))
         )
-        logging.info(f"Lowered graph:\n{edge.exported_program().graph}")
+        logging.debug(f"Lowered graph:\n{edge.exported_program().graph}")
 
     exec_prog = edge.to_executorch(
         config=ExecutorchBackendConfig(extract_constant_segment=False)
@@ -145,4 +200,4 @@ if __name__ == "__main__":
     model_name = f"{args.model_name}" + (
         "_arm_delegate" if args.delegate is True else ""
     )
-    save_pte_program(exec_prog.buffer, model_name)
+    save_pte_program(exec_prog, model_name)

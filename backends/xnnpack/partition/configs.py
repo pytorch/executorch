@@ -137,10 +137,12 @@ SUPPORTED_IMPLICIT_Q_DQ_MODULES_SET = set(SUPPORTED_QUANT_MODULES)
 
 # Modules which support dynamic quantization
 # These already support dynamic shape.
-SUPPORTED_DYN_QUANT_MODULES = [
+SUPPORTED_DYN_QUANT_LINEAR_MODULES = [
     torch.nn.Linear,
     torch.nn.functional.linear,
 ]
+
+SUPPORTED_DYN_QUANT_MODULES = SUPPORTED_DYN_QUANT_LINEAR_MODULES
 
 # TODO delete this once we catch up to 100% of the supported op with dynamic shape support.
 # This is tobe used only during the transition when we may not want to partition all the

@@ -2,7 +2,7 @@
 // InMemoryFileSystemTests.mm
 //
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -57,7 +57,7 @@ std::shared_ptr<MemoryBuffer> to_memory_buffer(const T& value) {
     to_json(j, value);
     ss << j;
     auto text = ss.str();
-    return MemoryBuffer::make(static_cast<void *>(text.data()), text.size());
+    return MemoryBuffer::make_copy(static_cast<void *>(text.data()), text.size());
 }
 
 template <typename T>
@@ -70,6 +70,26 @@ T from_memory_buffer(const std::shared_ptr<MemoryBuffer>& buffer) {
     return result;
 }
 
+std::string generate_random_string(size_t length) {
+    static const char chars[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    std::string result;
+    result.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        result += chars[rand() % (sizeof(chars) - 1)];
+    }
+    
+    return result;
+}
+
+struct SerdeVerificationConfig {
+    InMemoryFileSystem::FileLoadOption file_load_option;
+    size_t alignment;
+    size_t n_files;
+    size_t file_base_length;
+};
 }
 
 @interface InMemoryFileSystemTests : XCTestCase
@@ -203,7 +223,9 @@ using namespace inmemoryfs;
     
     std::filesystem::path dirPath(dirURL.path.UTF8String);
     std::error_code error;
-    auto fs = InMemoryFileSystem::make(dirPath, error);
+    auto fs = InMemoryFileSystem::make_from_directory(dirPath,
+                                                      InMemoryFileSystem::FileLoadOption::Malloc,
+                                                      error);
     XCTAssertTrue(fs->is_directory({"dir1"}));
     XCTAssertTrue(fs->is_file({"dir1", "content.json"}));
     XCTAssertTrue(fs->is_directory({"dir2"}));
@@ -211,34 +233,108 @@ using namespace inmemoryfs;
     XCTAssertTrue([fm removeItemAtURL:dirURL error:&localError]);
 }
 
-- (void)testSerdes {
+- (void)_testSerdeWithConfig:(SerdeVerificationConfig)config {
+    NSURL *dirURL = [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:[NSUUID UUID].UUIDString];
+    NSFileManager *fm = [[NSFileManager alloc] init];
+    NSError *localError = nil;
+    XCTAssertTrue([fm createDirectoryAtURL:dirURL withIntermediateDirectories:NO attributes:@{} error:&localError]);
+
+    // Create content.
     std::error_code error;
-    std::shared_ptr<MemoryBuffer> serializedBuffer = nullptr;
-    Content content1("id1", "value1");
-    Content content2("id2", "value2");
+    std::vector<Content> fileContents;
+    fileContents.reserve(config.n_files);
     {
         auto fs = InMemoryFileSystem("test");
-        XCTAssertTrue(fs.make_directory({"dir1"}, InMemoryFileSystem::Attributes(), false, error));
-        std::shared_ptr<MemoryBuffer> buffer1 = to_memory_buffer(content1);
-        XCTAssertTrue(fs.make_file({"dir1", "content.json"}, buffer1, InMemoryFileSystem::Attributes(), false /*overwrite*/, error));
-        XCTAssertTrue(fs.make_directory({"dir2"}, InMemoryFileSystem::Attributes(), false, error));
-        std::shared_ptr<MemoryBuffer> buffer2 = to_memory_buffer(content2);
-        XCTAssertTrue(fs.make_file({"dir2", "content.json"}, buffer2, InMemoryFileSystem::Attributes(), false /*overwrite*/, error));
-        size_t length = inmemoryfs::get_serialization_size(fs, {}, 1);
-        std::vector<uint8_t> bytes;
-        bytes.resize(length);
-        serializedBuffer = MemoryBuffer::make(std::move(bytes));
-        auto memstream = MemoryOStream(serializedBuffer);
-        inmemoryfs::serialize(fs, {}, 1, memstream);
+        XCTAssertTrue(fs.make_directory({"dir"}, InMemoryFileSystem::Attributes(), false, error));
+        for (NSUInteger i = 0; i < config.n_files; i++) {
+            std::string name = "file_";
+            name.append(std::to_string(i));
+            Content content(name, generate_random_string(config.file_base_length * (i + 1)));
+            std::shared_ptr<MemoryBuffer> buffer = to_memory_buffer(content);
+            XCTAssertTrue(fs.make_file({"dir", name}, buffer, InMemoryFileSystem::Attributes(), false /*overwrite*/, error));
+            fileContents.emplace_back(std::move(content));
+        }
+        XCTAssertTrue(fs.write_item_to_disk({}, dirURL.path.UTF8String, true, error));
     }
     
+    // Verify serialization.
+    std::shared_ptr<MemoryBuffer> buffer = nullptr;
     {
         std::error_code error;
-        auto fs = inmemoryfs::make(serializedBuffer);
-        XCTAssertTrue(fs->is_directory({"dir1"}));
-        XCTAssertTrue(fs->is_directory({"dir2"}));
-        XCTAssertEqual(from_memory_buffer<Content>(fs->get_file_content({"dir1", "content.json"}, error)), content1);
-        XCTAssertEqual(from_memory_buffer<Content>(fs->get_file_content({"dir2", "content.json"}, error)), content2);
+        auto fs = InMemoryFileSystem::make_from_directory(dirURL.path.UTF8String,
+                                                          config.file_load_option,
+                                                          error);
+    
+        XCTAssertTrue(fs != nullptr);
+        size_t length = inmemoryfs::get_buffer_size_for_serialization(*fs, {}, config.alignment);
+        switch (config.file_load_option) {
+            case InMemoryFileSystem::FileLoadOption::LazyMMap: {
+                buffer = MemoryBuffer::make_using_mmap(length);
+                break;
+            }
+                
+            default:
+                buffer = MemoryBuffer::make_using_malloc(length);
+                break;
+        }
+        
+        XCTAssertTrue(inmemoryfs::serialize(*fs, {}, config.alignment, buffer->data(), error));
+    }
+    
+    // Verify de-serialization.
+    {
+        auto fs = inmemoryfs::make_from_buffer(buffer);
+        XCTAssertTrue(fs != nullptr);
+        XCTAssertTrue(fs->is_directory({"test", "dir"}));
+        for (const auto& content : fileContents) {
+            XCTAssertEqual(from_memory_buffer<Content>(fs->get_file_content({"test", "dir", content.identifier}, error)), content);
+        }
+    }
+    
+    [fm removeItemAtURL:dirURL error:nil];
+}
+
+- (void)testSerde {
+    std::vector<SerdeVerificationConfig> configs;
+    configs.emplace_back(SerdeVerificationConfig {
+        .file_load_option = InMemoryFileSystem::FileLoadOption::Malloc,
+        .n_files = 5,
+        .file_base_length = 100,
+        .alignment = 1,
+    });
+    configs.emplace_back(SerdeVerificationConfig {
+        .file_load_option = InMemoryFileSystem::FileLoadOption::Malloc,
+        .n_files = 5,
+        .file_base_length = 100,
+        .alignment = 64,
+    });
+    configs.emplace_back(SerdeVerificationConfig {
+        .file_load_option = InMemoryFileSystem::FileLoadOption::MMap,
+        .n_files = 5,
+        .file_base_length = 100,
+        .alignment = 1,
+    });
+    configs.emplace_back(SerdeVerificationConfig {
+        .file_load_option = InMemoryFileSystem::FileLoadOption::MMap,
+        .n_files = 5,
+        .file_base_length = 100,
+        .alignment = 64,
+    });
+    configs.emplace_back(SerdeVerificationConfig {
+        .file_load_option = InMemoryFileSystem::FileLoadOption::LazyMMap,
+        .n_files = 5,
+        .file_base_length = 100,
+        .alignment = (size_t)getpagesize(),
+    });
+    configs.emplace_back(SerdeVerificationConfig {
+        .file_load_option = InMemoryFileSystem::FileLoadOption::LazyMMap,
+        .n_files = 5,
+        .file_base_length = 100,
+        .alignment = 2 * (size_t)getpagesize(),
+    });
+   
+    for (const auto& config : configs) {
+        [self _testSerdeWithConfig:config];
     }
 }
 

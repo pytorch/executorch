@@ -100,6 +100,7 @@ class CMakeBuild(build_ext):
         cmake_prefix_path = os.environ.get("CMAKE_PREFIX_PATH", get_python_lib())
         cmake_args = [
             "-DEXECUTORCH_BUILD_PYBIND=ON",
+            "-DEXECUTORCH_BUILD_EXTENSION_AOT_UTIL=ON",
             "-DBUILD_SHARED_LIBS=ON",  # For flatcc
             f"-DBUCK2={buck}",
             f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
@@ -229,21 +230,25 @@ cmdclass = {
     "egg_info": CustomEggInfoCommand,
 }
 ext_modules = None
-if os.environ.get("EXECUTORCH_BUILD_PYBIND", None):
+if os.environ.get("EXECUTORCH_BUILD_PYBIND", "OFF") == "ON":
     cmdclass["build_ext"] = CMakeBuild
     ext_modules = [CMakeExtension("executorch.extension.pybindings.portable_lib")]
 
 setup(
     package_dir={
         "executorch/backends": "backends",
+        # TODO(mnachin T180504136): Do not put examples/models
+        # into core pip packages. Refactor out the necessary utils
+        # or core models files into a separate package.
+        "executorch/examples/models": "examples/models",
         "executorch/exir": "exir",
+        "executorch/extension": "extension",
         "executorch/schema": "schema",
         "executorch/sdk": "sdk",
-        "executorch/util": "util",
-        "executorch/extension": "extension",
         "executorch/sdk/bundled_program": "sdk/bundled_program",
-        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
+        "executorch/util": "util",
         "serializer": "backends/arm/third-party/serialization_lib/python/serializer",
+        "tosa": "backends/arm/third-party/serialization_lib/python/tosa",
     },
     cmdclass=cmdclass,
     ext_modules=ext_modules,

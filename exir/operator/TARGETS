@@ -36,11 +36,12 @@ python_library(
 )
 
 python_unittest(
-    name = "test_util",
+    name = "test_operator",
     srcs = [
-        "test/test_util.py",
+        "test/test_operator.py",
     ],
     deps = [
+        ":convert",
         ":util",
         "//caffe2:torch",
     ],

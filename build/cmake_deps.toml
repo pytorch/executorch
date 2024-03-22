@@ -31,7 +31,7 @@ filters = [
 buck_targets = [
   # //kernels/portable:operators would be more appropriate, but buck2 doesn't
   # think it has any "inputs" since its srcs list is empty.
-  "//kernels/portable:generated_lib_all_ops",
+  "//kernels/portable:generated_lib",
 ]
 filters = [
   ".cpp$",
@@ -101,6 +101,17 @@ deps = [
 [targets.extension_runner_util]
 buck_targets = [
   "//extension/runner_util:inputs",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
+
+[targets.extension_aot_util]
+buck_targets = [
+  "//extension/aot_util:aot_util",
 ]
 filters = [
   ".cpp$",
@@ -246,9 +257,10 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "extension_data_loader",
   "extension_module",
   "portable_kernels",
   "quantized_kernels",
   "xnnpack_backend",
 ]
-# ---------------------------------- LLama start ----------------------------------
+# ---------------------------------- LLama end ----------------------------------

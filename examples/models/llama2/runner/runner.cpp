@@ -14,6 +14,7 @@
 
 #include <ctime>
 #include <memory>
+#include <sstream>
 
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
@@ -161,8 +162,16 @@ Error Runner::generate(
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
-  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (!is_loaded()) {
+    timers_.model_load_start_ms = util::time_in_ms();
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+    timers_.model_load_end_ms = util::time_in_ms();
+  }
 
+  // First token time only measures the time it takes to encode the prompt and
+  // return a response token.
+
+  timers_.inference_start_ms = util::time_in_ms();
   shouldStop_ = false;
 
   // encode the (string) prompt into tokens sequence
@@ -179,6 +188,7 @@ Error Runner::generate(
       append_eos_ ? n_eos_ : 0,
       prompt_tokens,
       &num_prompt_tokens);
+
   for (int i = 0; i < num_prompt_tokens; i++) {
     ET_LOG(Info, "prompt_tokens[%d]: %d", i, prompt_tokens[i]);
   }
@@ -192,12 +202,9 @@ Error Runner::generate(
       "Sequence length exceeded - please increase the seq_len value passed to generate()");
 
   // start the main loop
-  long start =
-      0; // used to time our code, only initialized after first iteration
   int next; // will store the next token in the sequence
   int64_t pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
-  int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
   int k_cache_index = 0;
   int v_cache_index = 0;
@@ -255,6 +262,7 @@ Error Runner::generate(
               tokenizer_->decode(prompt_tokens[i - 1], prompt_tokens[i])));
     }
   }
+
   // create a 1xN int tensor with next as value
   while (pos < seq_len) {
     // ET_LOG(Info, "Generating step %d...", pos);
@@ -290,10 +298,14 @@ Error Runner::generate(
         outputs.size() > 0,
         "Expecting output to have at least one evalue. Got %zu",
         outputs.size());
-
+    if (pos == num_prompt_tokens) {
+      timers_.first_token_ms = util::time_in_ms();
+    } else if (pos == num_prompt_tokens - 1) {
+      timers_.prompt_eval_end_ms = util::time_in_ms();
+    }
     int32_t next_tok;
     exec_aten::Tensor logits_tensor = outputs.at(logits_index).toTensor();
-
+    long sample_start_time_ms = util::time_in_ms();
     switch (logits_tensor.scalar_type()) {
       case ScalarType::Float: {
         next_tok = logitsToToken<float>(logits_tensor, pos, 0);
@@ -309,6 +321,8 @@ Error Runner::generate(
             "Unsupported dtype output %hhd",
             static_cast<int8_t>(logits_tensor.scalar_type()));
     }
+    timers_.aggregate_sampling_time_ms +=
+        util::time_in_ms() - sample_start_time_ms;
 
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
@@ -340,21 +354,13 @@ Error Runner::generate(
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && next == eos_id_) {
-      eos_counter++;
-      if (eos_counter == n_eos_) {
-        ET_LOG(Info, "Reached to the end of generation");
-        break;
-      }
-    } else {
-      eos_counter = 0;
+      printf("\n");
+      ET_LOG(Info, "\nReached to the end of generation");
+      break;
     }
 
     token = next;
 
-    // init the timer here because the first iteration can be slower
-    if (start == 0) {
-      start = util::time_in_ms();
-    }
     if (use_kv_cache_) {
       // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
       memcpy(
@@ -367,21 +373,92 @@ Error Runner::generate(
           v_data.size());
     }
   }
+  timers_.inference_end_ms = util::time_in_ms();
   printf("\n");
 
   if (pos == seq_len) {
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
-  // report achieved tok/s (pos-1 because the timer starts after first
-  // iteration)
-  if (pos >= 1) {
-    long end = util::time_in_ms();
-    ET_LOG(
-        Info, "Achieved tok/s: %f\n", (pos - 1) / (double)(end - start) * 1000);
-  }
+
+  timers_.printReport(num_prompt_tokens, pos - num_prompt_tokens);
 
   delete[] prompt_tokens;
   return Error::Ok;
+}
+
+void Runner::TimeStamps::printReport(
+    const int64_t& num_prompt_tokens,
+    const int64_t& num_generated_tokens) {
+  printf(
+      "PyTorchObserver %s\n",
+      toJsonString(num_prompt_tokens, num_generated_tokens).c_str());
+
+  ET_LOG(
+      Info,
+      "\tPrompt Tokens: %" PRIu64 "    Generated Tokens: %" PRIu64,
+      num_prompt_tokens,
+      num_generated_tokens);
+
+  ET_LOG(
+      Info,
+      "\tModel Load Time:\t\t%f (seconds)",
+      ((double)(model_load_end_ms - model_load_start_ms) /
+       SCALING_FACTOR_UNITS_PER_SECOND));
+  double inference_time_ms = (double)(inference_end_ms - inference_start_ms);
+  ET_LOG(
+      Info,
+      "\tTotal inference time:\t\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      inference_time_ms / SCALING_FACTOR_UNITS_PER_SECOND,
+
+      (num_generated_tokens) / (double)(inference_end_ms - inference_start_ms) *
+          SCALING_FACTOR_UNITS_PER_SECOND);
+  double prompt_eval_time = (double)(prompt_eval_end_ms - inference_start_ms);
+  ET_LOG(
+      Info,
+      "\t\tPrompt evaluation:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      prompt_eval_time / SCALING_FACTOR_UNITS_PER_SECOND,
+      (num_prompt_tokens) / prompt_eval_time * SCALING_FACTOR_UNITS_PER_SECOND);
+
+  double eval_time = (double)(inference_end_ms - prompt_eval_end_ms);
+  ET_LOG(
+      Info,
+      "\t\tGenerated %" PRIu64
+      " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      num_generated_tokens,
+      eval_time / SCALING_FACTOR_UNITS_PER_SECOND,
+      num_generated_tokens / eval_time * SCALING_FACTOR_UNITS_PER_SECOND);
+
+  // Time to first token is measured from the start of inference, excluding
+  // model load time.
+  ET_LOG(
+      Info,
+      "\tTime to first generated token:\t%f (seconds)",
+      ((double)(first_token_ms - inference_start_ms) /
+       SCALING_FACTOR_UNITS_PER_SECOND));
+
+  ET_LOG(
+      Info,
+      "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
+      num_prompt_tokens + num_generated_tokens,
+      (double)aggregate_sampling_time_ms / SCALING_FACTOR_UNITS_PER_SECOND);
+}
+
+const std::string Runner::TimeStamps::toJsonString(
+    const int64_t& num_prompt_tokens,
+    const int64_t& num_generated_tokens) {
+  std::stringstream ss;
+  ss << "{\"prompt_tokens\":" << num_prompt_tokens << ","
+     << "\"generated_tokens\":" << num_generated_tokens << ","
+     << "\"model_load_start_ms\":" << model_load_start_ms << ","
+     << "\"model_load_end_ms\":" << model_load_end_ms << ","
+     << "\"inference_start_ms\":" << inference_start_ms << ","
+     << "\"inference_end_ms\":" << inference_end_ms << ","
+     << "\"prompt_eval_end_ms\":" << prompt_eval_end_ms << ","
+     << "\"first_token_ms\":" << first_token_ms << ","
+     << "\"aggregate_sampling_time_ms\":" << aggregate_sampling_time_ms << ","
+     << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
+     << SCALING_FACTOR_UNITS_PER_SECOND << "}";
+  return ss.str();
 }
 
 void Runner::stop() {

@@ -21,9 +21,11 @@ class I64toI32(ExportPass):
         meta_val = node.meta["val"]
         if isinstance(meta_val, tuple):
             node.meta["val"] = (
-                fake_tensor.to(torch.int32)
-                if fake_tensor.dtype == torch.int64
-                else fake_tensor
+                (
+                    fake_tensor.to(torch.int32)
+                    if fake_tensor.dtype == torch.int64
+                    else fake_tensor
+                )
                 for fake_tensor in meta_val
             )
         else:

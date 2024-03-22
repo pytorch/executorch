@@ -111,6 +111,67 @@ class Clamp(torch.nn.Module):
         return torch.clamp(x, max=0)
 
 
+class CompositeDelegateModule(torch.nn.Module):
+    def __init__(
+        self,
+        compiler_specs,
+        partitioner_type,
+        capture_method,
+        lowered_method,
+        quantize_method=None,
+    ) -> None:
+        super().__init__()
+        self.modules = [
+            Conv2DSequential(),
+            Conv2DSequential(),
+            Add(),
+            Relu(),
+        ]
+        self.sample_inputs = [
+            (torch.randn([1, 1, 3, 3]),),
+            (torch.randn([1, 1, 3, 3]),),
+            (torch.randn([1, 2, 3, 3]), torch.randn([1, 2, 3, 3])),
+            (torch.randn([1, 2, 3, 3]),),
+        ]
+        self.lowered_modules = []
+        for module, sample_input in zip(self.modules, self.sample_inputs):
+            partitioner = partitioner_type(compiler_specs)
+            if quantize_method:
+                module = quantize_method(module, sample_input)
+            edge_prog = capture_method(module, sample_input)
+            edge_prog.exported_program = lowered_method(
+                edge_prog.exported_program, partitioner
+            )
+            self.lowered_modules.append(
+                edge_prog.exported_program.graph_module._modules.get("lowered_module_0")
+            )
+
+    def forward(self, x, y):
+        x1 = self.lowered_modules[0](x)
+        x2 = self.lowered_modules[1](y)
+        x3 = self.lowered_modules[2](x1[0], x2[0])
+        x4 = self.lowered_modules[3](x3[0])
+        return x4[0]
+
+    def get_random_input(self):
+        return (torch.randn([1, 1, 3, 3]), torch.randn([1, 1, 3, 3]))
+
+    def get_reference_module(self):
+        class CompositeReferenceModule(torch.nn.Module):
+            def __init__(self, modules):
+                super().__init__()
+                self.modules = modules
+
+            def forward(self, x, y):
+                x1 = self.modules[0](x)
+                x2 = self.modules[1](y)
+                x3 = self.modules[2](x1, x2)
+                x4 = self.modules[3](x3)
+                return x4
+
+        return CompositeReferenceModule(self.modules)
+
+
 class Conv1DSequential(torch.nn.Module):
     def __init__(self):
         super().__init__()
@@ -169,6 +230,21 @@ class Conv2DSequential(torch.nn.Module):
 
     def forward(self, x):
         return self.second(self.first(x))
+
+
+class Conv2DSingle(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv = torch.nn.Conv2d(
+            in_channels=1,
+            out_channels=3,
+            kernel_size=(3, 3),
+            padding=1,
+            bias=True,
+        )
+
+    def forward(self, x):
+        return self.conv(x)
 
 
 class Conv2dAvgPool2d(torch.nn.Module):

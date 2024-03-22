@@ -26,9 +26,23 @@ readonly NC="\033[0m" # No Color
 
 # Prints the flatbuffers version of the git submodule.
 print_flatbuffers_version(){
-    pushd "${FLATBUFFERS_PATH}" > /dev/null
-    git describe --tags "$(git rev-list --tags --max-count=1)" | sed 's/^v//'
-    popd > /dev/null
+    local version_file="${FLATBUFFERS_PATH}/package.json"
+    local version
+    # Extract the version from the first line like `"version": "23.5.26",`
+    # First remove the final double quote, then remove everything
+    # before the now-final double quote.
+    version="$(
+        grep '"version"\s*:' "${version_file}" \
+        | head -1 \
+        | sed -e 's/"[^"]*$//' \
+        | sed -e 's/.*"//'
+        )"
+    if [[ ${version} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "${version}"
+    else
+        echo "ERROR: Bad version '${version}'; could not find version in ${version_file}" >&2
+        exit 1
+    fi
 }
 
 main() {

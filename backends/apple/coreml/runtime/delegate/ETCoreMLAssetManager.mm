@@ -1,21 +1,18 @@
 //
 // ETCoreMLAssetManager.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import "ETCoreMLAssetManager.h"
-
-#import <iostream>
-#import <sstream>
-
-#import <database.hpp>
-#import <json_key_value_store.hpp>
-#import <serde_json.h>
-
 #import <ETCoreMLAsset.h>
 #import <ETCoreMLLogging.h>
+#import <database.hpp>
+#import <iostream>
+#import <json_key_value_store.hpp>
+#import <serde_json.h>
+#import <sstream>
 
 namespace  {
 
@@ -264,7 +261,6 @@ get_assets_to_remove(ModelAssetsStore& store,
 
 @property (assign, readwrite, atomic) NSInteger estimatedSizeInBytes;
 @property (copy, readonly, nonatomic) NSURL *assetsDirectoryURL;
-@property (strong, readonly, nonatomic) NSFileManager *fileManager;
 @property (strong, readonly, nonatomic) dispatch_queue_t syncQueue;
 @property (strong, readonly, nonatomic) dispatch_queue_t trashQueue;
 @property (strong, readonly, nonatomic) NSMapTable<NSString *, ETCoreMLAsset *> *assetsInUseMap;

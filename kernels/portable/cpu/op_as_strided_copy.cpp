@@ -16,42 +16,9 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-namespace {
-
-/**
- * Copy input_data to output_data according to the stride and shape recursively
- */
-template <typename CTYPE_IN>
-void as_strided_copy(
-    CTYPE_IN* input_data,
-    CTYPE_IN* output_data,
-    Tensor& out,
-    ArrayRef<int64_t> size,
-    ArrayRef<int64_t> stride,
-    int64_t dim) {
-  // the last dimension, copy data
-  if (dim == size.size() - 1) {
-    for (size_t i = 0; i < size.at(dim); ++i) {
-      output_data[i] = *input_data;
-      input_data += stride.at(dim);
-    }
-    return;
-  }
-  size_t trailing_dims = getTrailingDims(out, dim);
-  // recursively set data for the next dimension
-  for (size_t i = 0; i < size.at(dim); ++i) {
-    as_strided_copy<CTYPE_IN>(
-        input_data, output_data, out, size, stride, dim + 1);
-    input_data += stride.at(dim);
-    output_data += trailing_dims;
-  }
-}
-
-} // namespace
-
 Tensor& as_strided_copy_out(
     RuntimeContext& ctx,
-    const Tensor& self,
+    const Tensor& in,
     ArrayRef<int64_t> size,
     ArrayRef<int64_t> stride,
     optional<int64_t> storage_offset,
@@ -60,7 +27,7 @@ Tensor& as_strided_copy_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      check_as_strided_copy_args(self, size, stride, storage_offset, out),
+      check_as_strided_copy_args(in, size, stride, storage_offset, out),
       InvalidArgument,
       out);
 
@@ -70,21 +37,14 @@ Tensor& as_strided_copy_out(
       InvalidArgument,
       out);
 
-  if (self.numel() == 0) {
+  if (in.numel() == 0) {
     return out;
   }
 
   size_t offset = storage_offset.has_value() ? storage_offset.value() : 0;
 
-  ET_SWITCH_ALL_TYPES(self.scalar_type(), ctx, __func__, CTYPE, [&] {
-    CTYPE* self_data = self.mutable_data_ptr<CTYPE>() + offset;
-    CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
-
-    if (size.empty()) {
-      out_data[0] = self_data[0];
-    } else {
-      as_strided_copy<CTYPE>(self_data, out_data, out, size, stride, 0);
-    }
+  ET_SWITCH_ALL_TYPES(in.scalar_type(), ctx, __func__, CTYPE, [&] {
+    as_strided_copy<CTYPE>(in, size, stride, offset, out);
   });
 
   return out;

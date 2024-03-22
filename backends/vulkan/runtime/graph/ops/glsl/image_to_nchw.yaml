@@ -1,0 +1,30 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+image_to_nchw:
+  parameter_names_with_default_values:
+    NDIM: 3
+    DTYPE: float
+    PACKING: CHANNELS_PACKED
+  generate_variant_forall:
+    PACKING:
+      - VALUE: CHANNELS_PACKED
+        SUFFIX: C_packed
+      - VALUE: WIDTH_PACKED
+        SUFFIX: W_packed
+      - VALUE: HEIGHT_PACKED
+        SUFFIX: H_packed
+    DTYPE:
+      - VALUE: half
+        SUFFIX: half
+      - VALUE: float
+        SUFFIX: float
+      - VALUE: int
+        SUFFIX: int
+  shader_variants:
+    - NAME: image3d_to_nchw
+    - NAME: image2d_to_nchw
+      NDIM: 2

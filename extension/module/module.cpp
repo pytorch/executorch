@@ -36,10 +36,12 @@ namespace torch::executor {
 
 Module::Module(
     const std::string& file_path,
-    const Module::MlockConfig mlock_config)
+    const Module::MlockConfig mlock_config,
+    std::unique_ptr<EventTracer> event_tracer)
     : file_path_(file_path),
       mlock_config_(mlock_config),
-      memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()) {
+      memory_allocator_(std::make_unique<util::MallocMemoryAllocator>()),
+      event_tracer_(std::move(event_tracer)) {
   runtime_init();
 }
 

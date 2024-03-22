@@ -16,11 +16,18 @@ import executorch.exir as exir
 import executorch.exir.schema as schema
 import executorch.exir.tests.models as models
 import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchProgramManager, to_edge
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExecutorchBackendConfig,
+    ExecutorchProgramManager,
+    to_edge,
+)
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import BackendDetails, PreprocessResult
+from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.emit import emit_program  # noqa
-from executorch.exir.passes.constant_prop_pass import constant_prop_pass
+from executorch.exir.error import InternalError
+from executorch.exir.passes import MemoryPlanningPass
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program  # noqa
 from executorch.exir.schema import (
@@ -42,6 +49,7 @@ from executorch.exir.schema import (
 )
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.models import Mul
+from executorch.extension.pybindings.aten_lib import _load_for_executorch_from_buffer
 from functorch.experimental import control_flow
 from torch import nn
 
@@ -212,14 +220,14 @@ class TestEmit(unittest.TestCase):
     def test_constant_output(self):
         class M(torch.nn.Module):
             def forward(self, x):
-                return [((1, 3, 1.2), True, [x + x, x * x])]
+                return [((1, 3, 1.2), True, [x + x, x * x], None)]
 
         ep = torch.export.export(M(), (torch.ones(2, 3),))
-        res = ep(torch.ones(2, 3))
+        res = ep.module()(torch.ones(2, 3))
         self.assertEqual(res[0][0], (1, 3, 1.2))
         program = to_edge(ep).to_executorch().executorch_program
         outputs = program.execution_plan[0].outputs
-        self.assertEqual(len(outputs), 6)
+        self.assertEqual(len(outputs), 7)
         self.assertEqual(program.execution_plan[0].values[outputs[0]].val.int_val, 1)
         self.assertEqual(program.execution_plan[0].values[outputs[1]].val.int_val, 3)
         self.assertEqual(
@@ -228,6 +236,7 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(
             program.execution_plan[0].values[outputs[3]].val.bool_val, True
         )
+        self.assertIsInstance(program.execution_plan[0].values[outputs[6]].val, Null)
 
     def test_int_list_input(self):
         class M(torch.nn.Module):
@@ -235,50 +244,12 @@ class TestEmit(unittest.TestCase):
                 return x + y, x + x, x + y + z
 
         ep = torch.export.export(M(), (torch.ones(2, 3), 2, True))
-        ep(torch.ones(2, 3), 2, True)
+        ep.module()(torch.ones(2, 3), 2, True)
         program = to_edge(ep).to_executorch().executorch_program
         inputs = program.execution_plan[0].inputs
         self.assertEqual(len(inputs), 3)
         self.assertEqual(program.execution_plan[0].values[inputs[1]].val.int_val, 2)
         self.assertEqual(program.execution_plan[0].values[inputs[2]].val.bool_val, True)
-
-    def test_buffers_with_perfect_alignment(self) -> None:
-        class Foo(torch.nn.Module):
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return torch.ones(100) + x + (torch.ones(100) * 2)
-
-        f = Foo()
-
-        program = to_edge(constant_prop_pass(export(f, (torch.randn(100),))))
-        program = program.to_executorch().executorch_program
-        self.assertEqual(len(program.constant_buffer), 2)
-        instructions = program.execution_plan[0].chains[0].instructions
-        values = program.execution_plan[0].values
-
-        # first arg to first torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[0], values, 0, 1, 800  # pyre-ignore[16]
-        )
-        # second arg to first torch_add is an input tensor
-        self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[1], values, 0, 1, 400  # pyre-ignore[16]
-        )
-        # output of first torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[1].instr_args.args[3], values, 0, 1, 1200  # pyre-ignore[16]
-        )
-        # first arg to second torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[0], values, 0, 1, 1200  # pyre-ignore[16]
-        )
-        # second arg to second torch_add is a input tensor
-        self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[1], values, 0, 1, 0  # pyre-ignore[16]
-        )
-        # output of second torch_add is a dynamic tensor
-        self.check_tensor_buffer_loc(
-            instructions[-1].instr_args.args[3], values, 0, 1, 400  # pyre-ignore[16]
-        )
 
     def test_inplace_ops(self) -> None:
         class Foo(torch.nn.Module):
@@ -835,6 +806,48 @@ class TestEmit(unittest.TestCase):
                 self.assertEqual(single_val.shape_dynamism, merged_val.shape_dynamism)
             else:
                 self.assertEqual(single_val, merged_val)
+
+    def test_emit_memory_format_valid(self) -> None:
+        class SimpleLinear(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                contiguous = x.to(
+                    dtype=torch.float32, memory_format=torch.contiguous_format
+                )
+                preserve = x.to(
+                    dtype=torch.float32, memory_format=torch.preserve_format
+                )
+                return contiguous + preserve
+
+        # Should succeed at exporting model with legal memory format (contiguous, preserve)
+        model = SimpleLinear()
+        inputs = (torch.ones(10, 5),)
+        try:
+            to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
+        except:
+            self.fail("Failed to export model with legal memory format")
+
+    def test_emit_memory_format_invalid(self) -> None:
+        class SimpleLinear(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return x.to(dtype=torch.float32, memory_format=torch.channels_last)
+
+        # Failure expected when exporting model with illegal memory format (channels_last)
+        model = SimpleLinear()
+        inputs = (torch.ones(10, 5, 2, 1),)
+        with self.assertRaises(InternalError):
+            to_edge(
+                export(model, inputs),
+                compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+            ).to_executorch()
 
     def test_emit_multiple_entry_points(self) -> None:
         class SimpleLinear(torch.nn.Module):
@@ -1393,3 +1406,86 @@ class TestEmit(unittest.TestCase):
         self.assertEqual(len(exec_plan.inputs), 1)
         self.assertEqual(len(program.constant_buffer), 2)
         self.assertEqual(len(program.constant_buffer[1].storage), 24)
+
+    def test_mutable_buffers(self) -> None:
+        def count_copies(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (
+                    node.target == torch.ops.aten.copy_
+                    or node.target == exir_ops.edge.aten.copy_.default
+                )
+                for node in gm.graph.nodes
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                y = x + self.state
+                self.state.add_(1)
+                return y
+
+        model = to_edge(
+            export(
+                MutableStateModule(),
+                (torch.zeros(1),),
+            )
+        )
+        model = model.to_executorch()
+        model.dump_executorch_program(True)
+        self.assertTrue(
+            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
+            .values[0]
+            .val.allocation_info
+            is not None
+        )
+        executorch_module = _load_for_executorch_from_buffer(model.buffer)
+        self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1))
+        self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1) + 1)
+
+    def test_mutable_buffers_without_memplanned_inputs(self) -> None:
+        def count_copies(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (
+                    node.target == torch.ops.aten.copy_
+                    or node.target == exir_ops.edge.aten.copy_.default
+                )
+                for node in gm.graph.nodes
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                y = x + self.state
+                self.state.add_(1)
+                return y
+
+        model = to_edge(
+            export(
+                MutableStateModule(),
+                (torch.zeros(1),),
+            )
+        )
+        model = model.to_executorch(
+            config=ExecutorchBackendConfig(
+                memory_planning_pass=MemoryPlanningPass(
+                    "greedy", alloc_graph_input=False
+                ),
+                sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
+            )
+        )
+        model.dump_executorch_program(True)
+        self.assertTrue(
+            model.executorch_program.execution_plan[0]  # pyre-ignore[16]
+            .values[0]
+            .val.allocation_info
+            is not None
+        )
+        executorch_module = _load_for_executorch_from_buffer(model.buffer)
+        self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1))
+        self.assertEqual(executorch_module(torch.zeros(1))[0], torch.zeros(1) + 1)

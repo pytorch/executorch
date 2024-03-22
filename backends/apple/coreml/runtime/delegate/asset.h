@@ -1,13 +1,14 @@
 //
 // ModelAsset.hpp
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
 #import <Foundation/Foundation.h>
 
 #import <numeric>
+#import <optional>
 #import <string>
 #import <vector>
 

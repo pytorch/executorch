@@ -37,7 +37,7 @@ def define_common_targets():
         ],
         preprocessor_flags = [
             # "-DENABLE_XNNPACK_PROFILING",
-        ] + ([] if runtime.is_oss else ["-DENABLE_DYNAMIC_QUANTIZATION"]),
+        ],
         deps = [
             third_party_dep("XNNPACK"),
             "//executorch/runtime/backend:interface",

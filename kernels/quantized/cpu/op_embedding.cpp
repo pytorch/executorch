@@ -37,30 +37,25 @@ void check_embedding_byte_args(
       weight.dim() == 2, "weight must be 2D but got() %zd dims", weight.dim());
 
   ET_CHECK_MSG(
-      weight_scales.dim() <= 2,
+      weight_scales.dim() == 1 || weight_scales.dim() == 2,
       "weight_scales must be 1D or 2D but got() %zd dims",
       weight_scales.dim());
 
-  auto weight_scales_size = weight_scales.size(0);
-
   ET_CHECK_MSG(
-      weight_scales_size == weight.size(0),
+      weight_scales.size(0) == weight.size(0),
       "Number of scales must be == weight.size(0)=%zd"
       ", but got %zd",
-      weight_scales_size,
+      weight_scales.size(0),
       weight.size(0));
 
-  if (weight_scales_size >= weight.size(0)) {
-    if (weight_scales.dim() == 2) {
-      auto num_groups = weight_scales.size(1);
-      auto remainder = weight.size(1) % num_groups;
-      ET_CHECK_MSG(
-          remainder == 0,
-          "Number of groups must divide weight.size(1)=%zd"
-          ", but got # of groups = %zd",
-          weight.size(1),
-          num_groups);
-    }
+  if (weight_scales.dim() == 2) {
+    auto num_groups = weight_scales.size(1);
+    ET_CHECK_MSG(
+        weight.size(1) % num_groups == 0,
+        "Number of groups must divide weight.size(1)=%zd"
+        ", but got # of groups = %zd",
+        weight.size(1),
+        num_groups);
   }
 
   ET_CHECK_MSG(
@@ -227,6 +222,65 @@ Tensor& quantized_embedding_byte_out(
     const int64_t weight_quant_min,
     const int64_t weight_quant_max,
     const Tensor& indices,
+    Tensor& out) {
+  ScalarType w_type = weight.scalar_type();
+  ScalarType out_type = out.scalar_type();
+
+  // TODO (jakeszwe): improve these to account for the size of out in relation
+  // to weight and indices accounting for a possible batch dimension
+  check_embedding_byte_args(
+      weight,
+      weight_scales,
+      opt_weight_zero_points,
+      weight_quant_min,
+      weight_quant_max,
+      indices,
+      out_type,
+      out);
+
+  constexpr auto name = "quantized_decomposed::embedding_byte.out";
+  ET_SWITCH_TWO_TYPES(Byte, Char, w_type, ctx, name, CTYPE_W, [&]() {
+    ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
+      embedding_byte_per_channel<CTYPE_W, CTYPE_OUT, CTYPE_OUT>(
+          weight, weight_scales, opt_weight_zero_points, indices, out);
+    });
+  });
+
+  return out;
+}
+
+Tensor& quantized_embedding_byte_out(
+    RuntimeContext& context,
+    const Tensor& weight,
+    const Tensor& weight_scales,
+    const optional<Tensor>& opt_weight_zero_points,
+    int64_t weight_quant_min,
+    int64_t weight_quant_max,
+    const Tensor& indices,
+    Tensor& out) {
+  // TODO(larryliu): Add a context arg to the real op function and remove this
+  // wrapper
+  (void)context;
+  resize_out_tensor(weight, indices, out);
+  return quantized_embedding_byte_out(
+      weight,
+      weight_scales,
+      opt_weight_zero_points,
+      weight_quant_min,
+      weight_quant_max,
+      indices,
+      out);
+}
+
+Tensor& quantized_embedding_byte_dtype_out(
+    // TODO Evaluate whether this name is appropriate for an operator that takes
+    // non quant input and returns fp output
+    const Tensor& weight,
+    const Tensor& weight_scales,
+    const optional<Tensor>& opt_weight_zero_points,
+    const int64_t weight_quant_min,
+    const int64_t weight_quant_max,
+    const Tensor& indices,
     exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO (jakeszwe): improve these to account for the size of out in relation
@@ -245,7 +299,7 @@ Tensor& quantized_embedding_byte_out(
   ScalarType params_type = weight_scales.scalar_type();
   ScalarType out_type = out.scalar_type();
 
-  constexpr auto name = "quantized_decomposed::embedding_byte.out";
+  constexpr auto name = "quantized_decomposed::embedding_byte.dtype_out";
   ET_SWITCH_TWO_TYPES(Byte, Char, weight_type, ctx, name, CTYPE_W, [&]() {
     ET_SWITCH_TWO_TYPES(Float, Half, params_type, ctx, name, CTYPE_P, [&]() {
       ET_SWITCH_TWO_TYPES(Float, Half, out_type, ctx, name, CTYPE_OUT, [&]() {
@@ -258,7 +312,7 @@ Tensor& quantized_embedding_byte_out(
   return out;
 }
 
-Tensor& quantized_embedding_byte_out(
+Tensor& quantized_embedding_byte_dtype_out(
     RuntimeContext& context,
     const Tensor& weight,
     const Tensor& weight_scales,
@@ -272,7 +326,7 @@ Tensor& quantized_embedding_byte_out(
   // wrapper
   (void)context;
   resize_out_tensor(weight, indices, out);
-  return quantized_embedding_byte_out(
+  return quantized_embedding_byte_dtype_out(
       weight,
       weight_scales,
       opt_weight_zero_points,

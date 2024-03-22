@@ -1,7 +1,7 @@
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def op_test(name, deps = [], aten_compatible = True, kernel_name = "portable", use_kernel_prefix = False):
+def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False):
     """Defines a cxx_test() for an "op_*_test.cpp" file.
 
     Args:
@@ -11,8 +11,6 @@ def op_test(name, deps = [], aten_compatible = True, kernel_name = "portable", u
             under //kernels/<kernel>/...; e.g., "op_add_test" will depend on
             "//kernels/portable/cpu:op_add".
         deps: Optional extra deps to add to the cxx_test().
-        aten_compatible: If True, the operator under test is ATen-compatible
-            (i.e., appears in `functions.yaml`).
         kernel_name: The name string as in //executorch/kernels/<kernel_name>.
         use_kernel_prefix: If True, the target name is
             <kernel>_op_<operator-group-name>_test. Used by common kernel testing.
@@ -51,6 +49,7 @@ def op_test(name, deps = [], aten_compatible = True, kernel_name = "portable", u
         deps = [
             "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
+            "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
             "//executorch/kernels/test:test_util" + aten_suffix,
         ] + generated_lib_and_op_deps + deps,
     )
@@ -84,6 +83,7 @@ def generated_op_test(name, op_impl_target, generated_lib_headers_target, suppor
         deps = [
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/kernels/test:test_util",
             op_impl_target,
             generated_lib_headers_target,

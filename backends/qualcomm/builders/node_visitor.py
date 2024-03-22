@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 from typing import Any, Dict, Tuple
 
 import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
@@ -38,16 +39,16 @@ QNN_TENSOR_TYPE_MAP = {
     float: PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_FLOAT_32,
 }
 
-PER_CHANNEL_ENCODING_MAPPING = {
-    exir_ops.edge.quantized_decomposed.quantize_per_channel.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
+PER_CHANNEL_ENCODING = {
+    exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
 }
 
-PER_TENSOR_ENCODING_MAPPING = {
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
-    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor: PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+PER_TENSOR_ENCODING = {
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+    exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
 }
 
 
@@ -57,10 +58,14 @@ class NodeVisitor:
     """
 
     def __init__(
-        self, external_ids, edge_program: torch.export.ExportedProgram
+        self,
+        external_ids,
+        edge_program: torch.export.ExportedProgram,
+        enable_tensor_dump,
     ) -> None:
         self.external_ids = external_ids or {}
         self.edge_program = edge_program
+        self.enable_tensor_dump = enable_tensor_dump
 
     def get_tensor(self, input_node, op_node, idx=None):
         """
@@ -83,6 +88,68 @@ class NodeVisitor:
             tensor = tensor.permute(dims=op_node.meta["axis_order"]).contiguous()
         return tensor
 
+    def make_qnn_per_channel_config(self, node: torch.fx.Node, quant_attrs: Dict):
+        quant_config = copy.deepcopy(quant_attrs)
+
+        scales = quant_attrs["scales"]
+        zero_points = quant_attrs["zero_points"]
+        assert len(scales) == len(
+            zero_points
+        ), f"Per channel encoding of node {node}, has different size for scales {len(scales)} and zero_points {len(zero_points)}"
+
+        scale_offset = []
+        for i in range(len(scales)):
+            # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
+            scale_offset.append(
+                PyQnnWrapper.Qnn_ScaleOffset_t(scales[i], -zero_points[i])
+            )
+
+        user_0 = list(node.users)[0]
+        # Memory layout of QNN conv weight always ends in Output. Like conv2d is HWIO
+        if (
+            "convolution" in user_0.target.__name__
+            and list(node.users)[0].args[1] == node
+        ):
+            quant_config["axis"] = 3
+
+        else:
+            quant_config["axis"] = quant_attrs["axis"]
+
+        quant_config["scale_offset"] = scale_offset
+        # special case for 4 bits
+        if (
+            quant_config["dtype"] == torch.int8
+            and quant_config["quant_max"] - quant_config["quant_min"] <= 15
+        ):
+            quant_config["bitwidth"] = 4
+            return (
+                PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET,
+                quant_config,
+            )
+        return (
+            PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET,
+            quant_config,
+        )
+
+    def make_qnn_per_tensor_config(self, quant_attrs: Dict):
+        quant_config = copy.deepcopy(quant_attrs)
+        # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
+        quant_config["offset"] = -quant_attrs["zero_point"]
+        # special case for 4 bits
+        if (
+            quant_config["dtype"] == torch.int8
+            and quant_config["quant_max"] - quant_config["quant_min"] <= 15
+        ):
+            quant_config["bitwidth"] = 4
+            return (
+                PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET,
+                quant_config,
+            )
+        return (
+            PyQnnWrapper.Qnn_QuantizationEncoding_t.QNN_QUANTIZATION_ENCODING_SCALE_OFFSET,
+            quant_config,
+        )
+
     def get_quant_encoding_conf(self, node: torch.fx.Node) -> Tuple[Any, Dict]:
         if not node.meta.get("quant_attrs", None):
             return (
@@ -95,66 +162,35 @@ class NodeVisitor:
             if "requantize" in node.meta
             else node.meta["quant_attrs"]
         )
-        encoding = quant_attrs["encoding"]
 
-        quant_config = {}
-        if encoding in PER_CHANNEL_ENCODING_MAPPING:
-            scales = quant_attrs["scales"]
-            zero_points = quant_attrs["zero_points"]
-            assert len(scales) == len(
-                zero_points
-            ), f"Per channel encoding of node {node}, has differnt size fo scales {len(scales)} and zero_points {len(zero_points)}"
+        if quant_attrs["encoding"] in PER_CHANNEL_ENCODING:
+            return self.make_qnn_per_channel_config(node, quant_attrs)
 
-            scale_offset = []
-            for i in range(len(scales)):
-                scale_offset.append(
-                    PyQnnWrapper.Qnn_ScaleOffset_t(scales[i], -zero_points[i])
-                )
-
-            user_0 = list(node.users)[0]
-            # Memory layout of QNN conv is NHW"C", need to set axis as 3
-            if (
-                type(user_0.target) != str
-                and user_0.target.__name__ in ["aten.convolution.default"]
-                and list(node.users)[0].args[1] == node
-            ):
-                quant_config["axis"] = 3
-            else:
-                quant_config["axis"] = quant_attrs["axis"]
-
-            quant_config["scale_offset"] = scale_offset
-            quant_config["quant_max"] = quant_attrs["quant_max"]
-            quant_config["quant_min"] = quant_attrs["quant_min"]
-            quant_config["dtype"] = quant_attrs["dtype"]
-            return PER_CHANNEL_ENCODING_MAPPING[encoding], quant_config
-
-        # per tensor situation
-        quant_config["scale"] = quant_attrs["scale"]
-        # check Qnn_ScaleOffset_t in QNN/include/QnnTypes.h
-        quant_config["offset"] = -quant_attrs["zero_point"]
-        # Distinguish what data type the node is
-        quant_config["quant_max"] = quant_attrs["quant_max"]
-        quant_config["quant_min"] = quant_attrs["quant_min"]
-        quant_config["dtype"] = quant_attrs["dtype"]
-        return PER_TENSOR_ENCODING_MAPPING[encoding], quant_config
+        return self.make_qnn_per_tensor_config(quant_attrs)
 
     def get_quant_tensor_value(
-        self, node: torch.fx.Node, tensor: torch.Tensor, dtype
+        self, tensor: torch.Tensor, quant_attrs: Dict, dtype, bitwidth
     ) -> torch.Tensor:
-        quant_attrs = node.meta["quant_attrs"]
-        encoding = quant_attrs["encoding"]
+        if quant_attrs["encoding"] in PER_TENSOR_ENCODING:
+            scale = quant_attrs["scale"]
+            zero_point = quant_attrs["zero_point"]
+        else:  # per channel case
+            scale = quant_attrs["scales"]
+            zero_point = quant_attrs["zero_points"]
 
-        if encoding in PER_CHANNEL_ENCODING_MAPPING:
-            scales = quant_attrs["scales"]
-            offsets = quant_attrs["zero_points"]
-            return tensor.div(scales).add(offsets).round().to(quant_attrs["dtype"])
+        # To bypass torch.uint16 quantization is not supported
+        dtype = (
+            torch.int32
+            if dtype == PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16
+            else quant_attrs["dtype"]
+        )
 
-        # per tensor situation
-        scale = quant_attrs["scale"]
-        offset = quant_attrs["zero_point"]
-        if dtype == PyQnnWrapper.Qnn_DataType_t.QNN_DATATYPE_UINT_16:
-            return tensor.div(scale).add(offset).round().to(torch.int32)
-        return tensor.div(scale).add(offset).round().to(quant_attrs["dtype"])
+        tensor = tensor.div(scale).add(zero_point).round().to(dtype)
+        # Make the backends access data correctly
+        if bitwidth == 4:
+            mask = torch.full(tensor.size(), 0x0F, dtype=torch.int8)
+            tensor = torch.bitwise_and(mask, tensor)
+        return tensor
 
     def get_tensor_type(
         self,
@@ -176,6 +212,9 @@ class NodeVisitor:
         if is_parameter(node, self.edge_program):
             return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC
 
+        # dump all tensor, set to app read
+        if self.enable_tensor_dump:
+            return PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_APP_READ
         return tensor_type
 
     def get_data_type(
@@ -250,13 +289,16 @@ class NodeVisitor:
 
         if node_name in nodes_to_wrappers:
             return nodes_to_wrappers[node_name]
+        tensor_name = node.name
+        if is_graph_output(node):
+            tensor_name = "output_" + tensor_name
         dims = [1] if len(tensor.size()) == 0 else tensor.size()
         tensor_type = self.get_tensor_type(node, tensor_type)
         quant_encoding, quant_configs = self.get_quant_encoding_conf(node)
         dtype = self.get_data_type(tensor, quant_configs, is_tensor)
         if isinstance(tensor, torch._subclasses.fake_tensor.FakeTensor):
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
-                node_name,
+                tensor_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
@@ -268,9 +310,14 @@ class NodeVisitor:
             )
         else:
             if quant_configs:
-                tensor = self.get_quant_tensor_value(node, tensor, dtype)
+                tensor = self.get_quant_tensor_value(
+                    tensor,
+                    node.meta["quant_attrs"],
+                    dtype,
+                    quant_configs.get("bitwidth"),
+                )
             tensor_wrapper = PyQnnWrapper.TensorWrapper(
-                node_name,
+                tensor_name,
                 tensor_type,
                 dtype,
                 quant_encoding,
@@ -373,6 +420,7 @@ def generate_node_to_external_map(
 
 def get_node_visitors(
     edge_program: torch.export.ExportedProgram,
+    enable_tensor_dump=False,
 ) -> Dict[str, NodeVisitor]:
     """Create a new class instance at runtime, and put them in a dict"""
     node_to_external_map = generate_node_to_external_map(edge_program)
@@ -381,5 +429,7 @@ def get_node_visitors(
         assert callable(
             visitor
         ), f"Expeting a callable class, but got {visitor} of type {type(visitor)}"
-        node_visitors[target] = visitor(node_to_external_map, edge_program)
+        node_visitors[target] = visitor(
+            node_to_external_map, edge_program, enable_tensor_dump
+        )
     return node_visitors

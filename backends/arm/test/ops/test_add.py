@@ -32,6 +32,7 @@ class TestSimpleAdd(unittest.TestCase):
     class Add(torch.nn.Module):
         def __init__(self):
             super().__init__()
+            self.permute_memory_to_nhwc = False
 
         def forward(self, x):
             return x + x
@@ -39,6 +40,7 @@ class TestSimpleAdd(unittest.TestCase):
     class Add2(torch.nn.Module):
         def __init__(self):
             super().__init__()
+            self.permute_memory_to_nhwc = False
 
         def forward(self, x, y):
             return x + y
@@ -52,6 +54,7 @@ class TestSimpleAdd(unittest.TestCase):
                 inputs=test_data,
                 profile=TosaProfile.MI,
                 backend=ArmBackendSelector.TOSA,
+                permute_memory_to_nhwc=False,
             )
             .export()
             .check_count({"torch.ops.aten.add.Tensor": 1})
@@ -77,6 +80,7 @@ class TestSimpleAdd(unittest.TestCase):
                 inputs=test_data,
                 profile=TosaProfile.BI,
                 backend=ArmBackendSelector.TOSA,
+                permute_memory_to_nhwc=False,
             )
             .quantize()
             .export()
@@ -88,7 +92,7 @@ class TestSimpleAdd(unittest.TestCase):
             .to_executorch()
         )
         if TOSA_REF_MODEL_INSTALLED:
-            tester.run_method().compare_outputs()
+            tester.run_method().compare_outputs(qtol=1)
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -118,8 +122,6 @@ class TestSimpleAdd(unittest.TestCase):
         test_data = (torch.randn(4, 4, 4),)
         self._test_add_tosa_MI_pipeline(self.Add(), test_data)
 
-    # TODO: Will this type of parametrization be supported? pytest seem
-    # have issue with it.
     @parameterized.expand(
         [
             (torch.ones(5),),  # test_data

@@ -9,6 +9,20 @@ oncall("executorch")
 define_common_targets()
 
 runtime.python_library(
+    name = "llama_transformer",
+    srcs = ["llama_transformer.py"],
+    _is_external_target = True,
+    base_module = "executorch.examples.models.llama2",
+    visibility = [
+        "//executorch/...",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/examples/models/llama2/custom_ops:llama_custom_ops_aot_lib",
+    ],
+)
+
+runtime.python_library(
     name = "llama2_model",
     srcs = [
         "__init__.py",
@@ -28,7 +42,7 @@ runtime.python_library(
     deps = [
         "//caffe2:torch",
         "//executorch/examples/models:model_base",
-        "//executorch/examples/models/llama2/custom_ops:llama_custom_ops_aot_lib",
+        "//executorch/examples/models/llama2:llama_transformer",
         "//executorch/examples/models/llama2/ops:quantized_aot_lib",
     ],
 )
@@ -50,9 +64,12 @@ runtime.python_binary(
 runtime.python_library(
     name = "export_library",
     srcs = [
+        "GPTQ.py",
         "builder.py",
         "export_llama.py",
         "export_llama_lib.py",
+        "model.py",
+        "quantize.py",
     ],
     _is_external_target = True,
     base_module = "executorch.examples.models.llama2",
@@ -65,10 +82,12 @@ runtime.python_library(
         "//executorch/backends/transforms:duplicate_dynamic_quant_chain",
         "//executorch/backends/xnnpack:xnnpack_backend",
         "//executorch/backends/xnnpack/partition:xnnpack_partitioner",
+        "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
         "//executorch/examples/portable:utils",
         "//executorch/exir:lib",
+        "//executorch/sdk/etrecord:etrecord",
         "//executorch/util:memory_profiler",
         "//executorch/util:python_profiler",
         # one definition has to be included in the user of the libarary
@@ -76,5 +95,6 @@ runtime.python_library(
         # "//executorch/extension/pybindings:aten_lib",
         # "//executorch/extension/pybindings:portable_lib",
         # "//executorch/extension/pybindings:portable_lib_plus_custom",
+        "fbsource//third-party/pypi/sentencepiece:sentencepiece",
     ],
 )

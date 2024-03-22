@@ -73,6 +73,8 @@ xnn_datatype getDataType(const DataType& data_type) {
       return xnn_datatype::xnn_datatype_qcint4;
     case DataType::xnn_datatype_qdint8:
       return xnn_datatype::xnn_datatype_qdint8;
+    case DataType::xnn_datatype_qbint4:
+      return xnn_datatype::xnn_datatype_qbint4;
     default:
       return xnn_datatype::xnn_datatype_invalid;
   }
@@ -149,8 +151,8 @@ Error defineTensor(
     ValuePtr value,
     GraphPtr flatbuffer_graph,
     const uint8_t* constant_data_ptr,
-    XNNExecutor* executor,
-    MemoryAllocator* runtime_allocator) {
+    std::vector<uint32_t>& input_ids,
+    std::vector<uint32_t>& output_ids) {
   const fb_xnnpack::XNNTensorValue* tensor_value = nullptr;
   const fb_xnnpack::XNNQuantizedTensorValue* qtensor_value = nullptr;
 
@@ -272,7 +274,6 @@ Error defineTensor(
               /*external_id=*/tensor_value->external_id(),
               /*flags=*/tensor_value->flags(),
               /*id_out=*/&float_id);
-          executor->addDynamicQinput(float_id);
 
           // Define dynamic conversion from float to qdint8
           status = xnn_define_convert(
@@ -344,6 +345,53 @@ Error defineTensor(
             /*id_out=*/&id);
         break;
       }
+      case fb_xnnpack::XNNQuantParams::PerChannelGroupQuant: {
+        xnn_datatype datatype = getDataType(tensor_value->datatype());
+        ET_CHECK_OR_RETURN_ERROR(
+            datatype == xnn_datatype::xnn_datatype_qbint4,
+            Internal,
+            "Unsupported datatype for per channel group quantization: %d",
+            datatype);
+        auto qparams = qtensor_value->quant_params_as_PerChannelGroupQuant();
+        size_t group_size = qparams->group_size();
+        size_t output_channels = tensor_value->dims()->Get(0);
+        size_t input_channels = tensor_value->dims()->Get(1);
+        ET_CHECK_OR_RETURN_ERROR(
+            qparams->scale()->size() ==
+                output_channels * input_channels / group_size,
+            Internal,
+            "scale size %zu != output channels %zu * group size %zu",
+            (size_t)qparams->scale()->size(),
+            output_channels,
+            group_size);
+        int32_t zero_point =
+            (datatype == xnn_datatype::xnn_datatype_qbint4 ? 8 : 0);
+        ET_LOG(
+            Debug,
+            "define quant tensor (per channel group): buffer_ptr: %p, scale.numel(): %u, channel_dim: %u, grpup_size: %zu, output_channels: %zu, dtype: %u, zero_point: %d, datatype: %d\n",
+            buffer_ptr,
+            qparams->scale()->size(),
+            qparams->channel_dim(),
+            group_size,
+            output_channels,
+            datatype,
+            zero_point,
+            datatype);
+        status = xnn_define_blockwise_quantized_tensor_value(
+            /*subgraph=*/subgraph_ptr,
+            /*datatype=*/datatype,
+            /*zero_point=*/zero_point,
+            /*scale=*/qparams->scale()->data(),
+            /*num_dims=*/tensor_value->num_dims(),
+            /*channel_dim=*/qparams->channel_dim(),
+            /*block_size=*/qparams->group_size(),
+            /*dims=*/dims_data.data(),
+            /*data=*/buffer_ptr,
+            /*external_id=*/tensor_value->external_id(),
+            /*flags=*/tensor_value->flags(),
+            /*id_out=*/&id);
+        break;
+      }
       case fb_xnnpack::XNNQuantParams::PerTokenDynamicQuant: {
         auto qparams = qtensor_value->quant_params_as_PerTokenDynamicQuant();
         ET_LOG(
@@ -391,10 +439,13 @@ Error defineTensor(
 
   // map serialized id to newly generated id
   remapped_ids.emplace(std::make_pair(tensor_value->id_out(), id));
-  // Append this external id to the arg list for execute(*args) to extract from
-  // as args[external_id]
-  if (tensor_value->external_id() != XNN_INVALID_VALUE_ID) {
-    executor->append_arg(tensor_value->external_id());
+
+  // Add external ids to either list of input or output ids
+  if (tensor_value->flags() & XNN_VALUE_FLAG_EXTERNAL_INPUT) {
+    input_ids.push_back(tensor_value->external_id());
+  }
+  if (tensor_value->flags() & XNN_VALUE_FLAG_EXTERNAL_OUTPUT) {
+    output_ids.push_back(tensor_value->external_id());
   }
 
   return Error::Ok;
@@ -1594,6 +1645,9 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
   // Invalid ids do not need to be remapped
   remapped_ids.emplace(XNN_INVALID_VALUE_ID, XNN_INVALID_VALUE_ID);
 
+  // External Ids for inputs and outputs
+  std::vector<uint32_t> input_ids;
+  std::vector<uint32_t> output_ids;
   Error err = Error::Ok;
   for (auto value : *flatbuffer_graph->xvalues()) {
     err = defineTensor(
@@ -1602,8 +1656,8 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
         value,
         flatbuffer_graph,
         constant_data,
-        executor,
-        runtime_allocator);
+        input_ids,
+        output_ids);
 
     if (err != Error::Ok) {
       return err;
@@ -1635,47 +1689,10 @@ __ET_NODISCARD Error XNNCompiler::compileModel(
       "XNN Runtime creation failed with code: %s",
       xnn_status_to_string(status));
 
-  executor->initialize(runtime_ptr); // NOLINT: runtime_ptr is non-null as
-                                     // error is checked above.
-
-  // HACK FOR FC/BC this is only to support old dq_datatype
-  if (executor->qinputs_.size() > 0) {
-    // qinputs_ is only set when using the old dq linear path. At which point
-    // We need to overide the input_ids_ This workse based off the assumption
-    // old dqlinear path will be single node single input delegate
-    for (uint32_t id : executor->qinputs_) {
-      executor->input_ids_.emplace_back(id);
-    }
-  } else {
-    for (auto old_id : *flatbuffer_graph->input_ids()) {
-      executor->input_ids_.emplace_back(remapped_ids.at(old_id));
-    }
-  }
-  // External ids need to be in order for wiring with args
-  std::sort(executor->input_ids_.begin(), executor->input_ids_.end());
-
-  for (auto old_id : *flatbuffer_graph->output_ids()) {
-    executor->output_ids_.emplace_back(remapped_ids.at(old_id));
-  }
-  // External ids need to be in order for wiring with args
-  std::sort(executor->output_ids_.begin(), executor->output_ids_.end());
-
-  if (!executor->qinputs_.empty() && flatbuffer_graph->xnodes()->size() > 0 &&
-      flatbuffer_graph->xnodes()->Get(0)->xnode_union_type() ==
-          fb_xnnpack::XNodeUnion::XNNFullyConnected) {
-#ifdef ENABLE_DYNAMIC_QUANTIZATION
-    // This delegate is for DQLinear which supports dynamic input shapes
-    if (executor->getNumInputs() < 1 || executor->getNumOutputs() != 1) {
-      ET_LOG(
-          Error,
-          "DQLinear should have at least one input and exactly one output");
-      return Error::NotSupported;
-    }
-#else
-    ET_LOG(Error, "DQ Linear is not supported");
-    return Error::NotSupported;
-#endif
-  }
+  err = executor->initialize( // NOLINT: runtime_ptr is non-null
+      runtime_ptr,
+      std::move(input_ids),
+      std::move(output_ids));
 
   return err;
 };

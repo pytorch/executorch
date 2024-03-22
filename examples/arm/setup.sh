@@ -215,7 +215,7 @@ function setup_vela() {
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
+        base_rev=b90666d9b43f4b5223bb4dcecdbee87b2ad757c2
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"

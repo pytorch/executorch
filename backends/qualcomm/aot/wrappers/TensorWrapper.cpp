@@ -121,6 +121,19 @@ Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
   return Error::Ok;
 }
 
+Error TensorWrapper::AllocateDataBuffer() {
+  char* static_data_buffer = new (std::nothrow) char[bytes_]; // NOLINT
+  if (static_data_buffer == nullptr) {
+    return Error::Internal;
+  }
+  owned_data_ = std::unique_ptr<char[]>(static_data_buffer);
+  QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
+  QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
+  QNN_VER_PTR(tensor_)->clientBuf.data = owned_data_.get();
+
+  return Error::Ok;
+}
+
 void TensorWrapper::UpdateQnnTensorMeta(const Qnn_Tensor_t& tensor_src) {
   QNN_VER_PTR(tensor_)->id = QNN_VER_PTR(tensor_src)->id;
 }

@@ -39,3 +39,11 @@ target_sources(qnn_executorch_logging
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/Logging.cpp
 )
+
+# utils
+target_sources(utils
+    PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/Utils.h
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/Utils.cpp
+)

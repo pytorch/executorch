@@ -12,6 +12,7 @@
 #include <limits>
 
 #include <executorch/kernels/portable/cpu/scalar_utils.h>
+#include <executorch/kernels/portable/cpu/util/broadcast_util.h>
 #include <executorch/kernels/portable/cpu/util/functional_util.h>
 #include <executorch/kernels/portable/cpu/util/math_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -154,6 +155,86 @@ Tensor& clamp_out(
           in.const_data_ptr<CTYPE_IN>(),
           out.mutable_data_ptr<CTYPE_OUT>(),
           in.numel());
+    });
+  });
+
+  return out;
+}
+
+Tensor& clamp_tensor_out(
+    RuntimeContext& ctx,
+    const Tensor& in,
+    const exec_aten::optional<Tensor>& min_opt,
+    const exec_aten::optional<Tensor>& max_opt,
+    Tensor& out) {
+  (void)ctx;
+
+  bool has_min = min_opt.has_value();
+  bool has_max = max_opt.has_value();
+
+  ET_KERNEL_CHECK_MSG(
+      ctx,
+      has_min || has_max,
+      InvalidArgument,
+      out,
+      "At least one of 'min' or 'max' must not be None");
+
+  const Tensor& min = has_min ? min_opt.value() : in;
+  const Tensor& max = has_max ? max_opt.value() : in;
+
+  ET_KERNEL_CHECK(
+      ctx,
+      resize_to_broadcast_target_size(in, min, max, out) == Error::Ok,
+      InvalidArgument,
+      out);
+
+  ScalarType in_type = in.scalar_type();
+  ScalarType min_type = min.scalar_type();
+  ScalarType max_type = max.scalar_type();
+  ScalarType common_type = in_type;
+  ScalarType out_type = out.scalar_type();
+
+  if (has_min) {
+    common_type = promoteTypes(common_type, min_type);
+  }
+  if (has_max) {
+    common_type = promoteTypes(common_type, max_type);
+  }
+
+  ET_KERNEL_CHECK(ctx, canCast(common_type, out_type), InvalidArgument, out);
+
+  constexpr auto name = "clamp.Tensor_out";
+
+  ET_SWITCH_REALB_TYPES(in_type, ctx, name, CTYPE_IN, [&]() {
+    ET_SWITCH_REALB_TYPES(min_type, ctx, name, CTYPE_MIN, [&]() {
+      ET_SWITCH_REALB_TYPES(max_type, ctx, name, CTYPE_MAX, [&]() {
+        ET_SWITCH_REALB_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
+          apply_ternary_elementwise_fn<
+              CTYPE_IN,
+              CTYPE_MIN,
+              CTYPE_MAX,
+              CTYPE_OUT>(
+              [has_min, has_max](
+                  const CTYPE_IN val_in,
+                  const CTYPE_MIN val_min,
+                  const CTYPE_MAX val_max) {
+                CTYPE_OUT val_out = static_cast<CTYPE_OUT>(val_in);
+                if (has_min) {
+                  val_out = utils::max_override(
+                      val_out, static_cast<CTYPE_OUT>(val_min));
+                }
+                if (has_max) {
+                  val_out = utils::min_override(
+                      val_out, static_cast<CTYPE_OUT>(val_max));
+                }
+                return val_out;
+              },
+              in,
+              min,
+              max,
+              out);
+        });
+      });
     });
   });
 

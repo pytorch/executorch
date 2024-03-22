@@ -34,6 +34,17 @@ class ThreadPool final {
 
   size_t get_thread_count() const;
 
+  /*
+   * Resets the threadpool by creating a new threadpool with requested # of
+   * threads. This is not a thread safe call. When calling this method, threads
+   * of the threadpool might be doing some work. Some other code may also be
+   * holding on to the threadpool pointer, that is no longer valid. This is a
+   * private API, which will later be replaced by something that allows creating
+   * of threadpool with requested size and use such a threadpool with backend
+   * delegates, custom ops or optimized lib.
+   */
+  bool _unsafe_reset_threadpool(uint32_t num_threads);
+
   // Run, in parallel, function fn(task_id) over task_id in range [0, range).
   // This function is blocking.  All input is processed by the time it returns.
   // NoThreadPoolGuard (see threadpool_guard.h) can used to disable

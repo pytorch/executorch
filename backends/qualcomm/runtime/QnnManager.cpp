@@ -6,10 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
+#include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 namespace torch {
 namespace executor {
 namespace qnn {
@@ -22,62 +24,53 @@ QnnManager::~QnnManager() {
 QnnManager::QnnManager(
     const QnnExecuTorchOptions* options,
     const QnnExecuTorchContextBinary& qnn_executorch_context_binary)
-    : backend_type_(options->backend_type()),
-      library_path_(options->library_path()->c_str()),
-      skel_library_dir_(options->skel_library_dir()->c_str()),
-      graph_name_(options->graph_name()->c_str()),
-      soc_info_(options->soc_info()),
-      htp_options_(options->htp_options()),
-      log_level_(options->log_level()),
-      qnn_context_blob_(qnn_executorch_context_binary),
-      qnn_loaded_backend_(library_path_),
-      online_prepare_(options->online_prepare()) {
-  if (log_level_ >= QnnExecuTorchLogLevel::kLogLevelInfo) {
-    QNN_EXECUTORCH_LOG_INFO(
-        "backend_type: %s",
-        EnumNameQnnExecuTorchBackendType(options->backend_type()));
-    QNN_EXECUTORCH_LOG_INFO("graph_name: %s", options->graph_name()->c_str());
-    QNN_EXECUTORCH_LOG_INFO(
-        "library_path: %s", options->library_path()->c_str());
-    QNN_EXECUTORCH_LOG_INFO(
-        "skel_library_dir: %s", options->skel_library_dir()->c_str());
-    QNN_EXECUTORCH_LOG_INFO(
-        "log_level: %s", EnumNameQnnExecuTorchLogLevel(options->log_level()));
+    : qnn_context_blob_(qnn_executorch_context_binary),
+      qnn_loaded_backend_(""),
+      // options' life cycle is decided by compiler specs which is
+      // kept by executorch runtime framework
+      // please pay attention to any potential seg fault
+      options_(options) {
+  QnnExecuTorchBackendType backend_type =
+      options->backend_options()->backend_type();
+  std::string library_path = options->library_path()->str();
+
+  if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
     QNN_EXECUTORCH_LOG_INFO(
         "soc_model in soc_info: %s",
-        EnumNameQcomChipset(options->soc_info()->soc_model()));
+        EnumNameQcomChipset(options_->soc_info()->soc_model()));
     QNN_EXECUTORCH_LOG_INFO(
-        "htp_arch in htp_info: %s",
-        EnumNameHtpArch(options->soc_info()->htp_info()->htp_arch()));
+        "backend_type: %s", EnumNameQnnExecuTorchBackendType(backend_type));
+    QNN_EXECUTORCH_LOG_INFO("graph_name: %s", options_->graph_name()->c_str());
+    QNN_EXECUTORCH_LOG_INFO("library_path: %s", library_path.c_str());
     QNN_EXECUTORCH_LOG_INFO(
-        "vtcm_size_in_mb in htp_info: %d",
-        options->soc_info()->htp_info()->vtcm_size_in_mb());
+        "tensor_dump_output_path: %s",
+        options_->tensor_dump_output_path()->c_str());
+    QNN_EXECUTORCH_LOG_INFO(
+        "log_level: %s", EnumNameQnnExecuTorchLogLevel(options_->log_level()));
     QNN_EXECUTORCH_LOG_INFO(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
     QNN_EXECUTORCH_LOG_INFO(
-        "Is on-device graph construction: %d", options->online_prepare());
+        "Is on-device graph construction: %d", options_->online_prepare());
   }
-  if (!skel_library_dir_.empty()) {
-    setenv("ADSP_LIBRARY_PATH", skel_library_dir_.c_str(), /*overwrite=*/1);
-  }
-  if (library_path_.empty()) {
-    switch (backend_type_) {
+
+  if (library_path.empty()) {
+    switch (backend_type) {
       case QnnExecuTorchBackendType::kHtpBackend:
-        library_path_ = htp_library_name_;
+        library_path = htp_library_name_;
         break;
       case QnnExecuTorchBackendType::kDspBackend:
-        library_path_ = dsp_library_name_;
+        library_path = dsp_library_name_;
         break;
       case QnnExecuTorchBackendType::kGpuBackend:
-        library_path_ = gpu_library_name_;
+        library_path = gpu_library_name_;
         break;
       default:
-        QNN_EXECUTORCH_LOG_ERROR("Unknown backend type: %s", backend_type_);
+        QNN_EXECUTORCH_LOG_ERROR("Unknown backend type: %d", backend_type);
         break;
     }
   }
-  qnn_loaded_backend_ = QnnImplementation(library_path_);
+  qnn_loaded_backend_ = QnnImplementation(library_path);
   backend_params_ptr_ = std::make_unique<BackendConfigParameters>();
 }
 
@@ -90,22 +83,15 @@ Error QnnManager::Init() {
   ET_CHECK_OR_RETURN_ERROR(
       LoadQnnLibrary() == Error::Ok, Internal, "Fail to load Qnn library");
   logger_ = std::make_unique<QnnLogger>(
-      qnn_loaded_backend_, LoggingCallback, log_level_);
+      qnn_loaded_backend_, LoggingCallback, options_->log_level());
   if (backend_params_ptr_->backend_init_state_ ==
       BackendInitializeState::UNINITIALIZED) {
     QNN_EXECUTORCH_LOG_INFO(
         "Initialize Qnn backend "
         "parameters for Qnn executorch backend type %d",
-        backend_type_);
+        options_->backend_options()->backend_type());
     backend_params_ptr_ = QnnBackendFactory().Create(
-        qnn_loaded_backend_,
-        logger_.get(),
-        log_level_,
-        qnn_context_blob_,
-        backend_type_,
-        graph_name_,
-        soc_info_,
-        htp_options_);
+        qnn_loaded_backend_, logger_.get(), qnn_context_blob_, options_);
     ET_CHECK_OR_RETURN_ERROR(
         backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
         Internal,
@@ -144,6 +130,9 @@ Error QnnManager::AllocateTensor() {
   for (auto& tensor : output_tensors) {
     std::shared_ptr<TensorWrapper> tensor_wrapper = CreateTensorWrapper(tensor);
     tensor_wrapper->UpdateQnnTensorMeta(tensor);
+    if (IsTensorDump()) {
+      tensor_wrapper->AllocateDataBuffer();
+    }
     output_tensors_.emplace_back(std::move(tensor_wrapper));
   }
   return Error::Ok;
@@ -153,6 +142,11 @@ Error QnnManager::AllocateTensor(
     std::vector<std::shared_ptr<TensorWrapper>>& inputs,
     std::vector<std::shared_ptr<TensorWrapper>>& outputs) {
   input_tensors_ = std::move(inputs);
+  for (auto& output_tensor : outputs) {
+    if (IsTensorDump()) {
+      output_tensor->AllocateDataBuffer();
+    }
+  }
   output_tensors_ = std::move(outputs);
   return Error::Ok;
 }
@@ -171,6 +165,32 @@ Error QnnManager::Execute(
     return Error::Internal;
   }
 
+  if (IsTensorDump()) {
+    // TODO: Need to handle the graph which is partitioned.
+    // Maybe we could use graph name.
+    std::string dir = options_->tensor_dump_output_path()->str() + "/Result/";
+    CreateDirectory(dir);
+    QNN_EXECUTORCH_LOG_INFO("Dump tensor to the path: %s", dir.c_str());
+    for (std::size_t out_idx = 0; out_idx < output_tensor_structs.size();
+         ++out_idx) {
+      const Qnn_Tensor_t& output_tensor = output_tensor_structs[out_idx];
+
+      std::string output_path =
+          dir + QNN_VER_PTR(output_tensor)->name + "_tensor.raw";
+
+      std::ofstream fout(output_path, std::ios::binary);
+      if (fout.fail()) {
+        QNN_EXECUTORCH_LOG_ERROR(
+            "Dump tensor name: %s Failed.", QNN_VER_PTR(output_tensor)->name);
+        return Error::Internal;
+      }
+
+      fout.write(
+          static_cast<const char*>(QNN_VER_PTR(output_tensor)->clientBuf.data),
+          QNN_VER_PTR(output_tensor)->clientBuf.dataSize);
+    }
+  }
+
   return Error::Ok;
 }
 
@@ -187,7 +207,7 @@ bool QnnManager::IsAvailable() {
 }
 
 bool QnnManager::IsOnlinePrepare() {
-  return online_prepare_;
+  return options_->online_prepare();
 }
 
 bool QnnManager::IsNodeSupportedByBackend(

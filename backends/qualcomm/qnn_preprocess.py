@@ -53,8 +53,11 @@ class QnnBackend(BackendDetails):
         pass_result = qnn_compiler_passes(edge_program.graph_module)
         assert pass_result is not None
 
+        enable_tensor_dump = qnn_manager.IsTensorDump()
         nodes_to_wrappers = {}
-        node_visitors = get_node_visitors(edge_program)
+        node_visitors = get_node_visitors(
+            edge_program, enable_tensor_dump=enable_tensor_dump
+        )
         py_op_wrapper_list = []
         for node in pass_result.graph_module.graph.nodes:
             if node.op == "call_function":

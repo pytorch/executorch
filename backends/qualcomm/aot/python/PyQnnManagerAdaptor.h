@@ -137,6 +137,10 @@ class PyQnnManager {
     return qnn_manager_->IsAvailable();
   }
 
+  bool IsTensorDump() {
+    return qnn_manager_->IsTensorDump();
+  }
+
  private:
   // Store the bytes object instead of a raw pointer so that this module will
   // keep the bytes alive.

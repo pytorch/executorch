@@ -27,6 +27,7 @@ def define_common_targets():
         ],
         exported_headers = ["repeat_util.h"],
         deps = [
+            "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:scalar_type_util",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
@@ -69,6 +70,19 @@ def define_common_targets():
         srcs = ["copy_ops_util.cpp"],
         exported_headers = [
             "copy_ops_util.h",
+        ],
+        compiler_flags = ["-Wno-missing-prototypes"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+    )
+
+    runtime.cxx_library(
+        name = "distance_util",
+        srcs = ["distance_util.cpp"],
+        exported_headers = [
+            "distance_util.h",
         ],
         compiler_flags = ["-Wno-missing-prototypes"],
         deps = [

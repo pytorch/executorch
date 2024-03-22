@@ -220,7 +220,7 @@ def serialize_tensor_meta(t: torch.Tensor) -> TensorMeta:
         requires_grad=t.requires_grad,
         device=Device(type=t.device.type, index=t.device.index),
         strides=[serialize_sym_int(s) for s in t.stride()],
-        storage_offset=0,
+        storage_offset=serialize_sym_int(0),
         layout=_TORCH_TO_SERIALIZE_LAYOUT[t.layout],
     )
 
@@ -644,7 +644,9 @@ class GraphModuleSerializer:
                     if a is None:
                         return OptionalTensorArgument.create(as_none=())
                     elif isinstance(a, torch.fx.Node):
-                        return OptionalTensorArgument.create(as_tensor=a.name)
+                        return OptionalTensorArgument.create(
+                            as_tensor=TensorArgument(name=a.name)
+                        )
                     else:
                         raise SerializeError(f"Unsupported list/tuple argument: {a}")
 
@@ -664,7 +666,9 @@ class GraphModuleSerializer:
                     if a is None:
                         return OptionalTensorArgument.create(as_none=())
                     elif isinstance(a, inductor_tensor_buffers):
-                        return OptionalTensorArgument.create(as_tensor=a.get_name())
+                        return OptionalTensorArgument.create(
+                            as_tensor=TensorArgument(name=a.get_name())
+                        )
                     else:
                         raise SerializeError(f"Unsupported list/tuple argument: {a}")
 
@@ -1728,9 +1732,9 @@ class ExportedProgramDeserializer:
             symbol_name_to_range,
             res.names_to_symbols,
         )
-        model_opset_version: Optional[
-            Dict[str, int]
-        ] = serialized_artifact.exported_program.opset_version  # pyre-ignore
+        model_opset_version: Optional[Dict[str, int]] = (
+            serialized_artifact.exported_program.opset_version  # pyre-ignore
+        )
         self._validate_model_opset_version(model_opset_version)
 
         upgrader = GraphModuleOpUpgrader(

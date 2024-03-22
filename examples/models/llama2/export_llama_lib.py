@@ -7,6 +7,7 @@
 # Example script for exporting Llama2 to flatbuffer
 
 import argparse
+import copy
 import logging
 import shlex
 from dataclasses import dataclass
@@ -17,11 +18,17 @@ from typing import List, Optional
 
 import pkg_resources
 import torch
+from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
-    XnnpackPartitioner,
 )
+
+from executorch.examples.models.llama2.llama_transformer import Transformer
+from executorch.exir.backend.backend_details import CompileSpec
+
+from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
+from sentencepiece import SentencePieceProcessor
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -29,13 +36,14 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     XNNPACKQuantizer,
 )
 
-from .builder import DType, load_llama_model, WeightType
+from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 
 from .quantize import (
     EmbeddingOnlyInt8QuantHandler,
     Int8DynActInt4WeightQuantHandler,
     WeightOnlyInt8QuantHandler,
 )
+
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -168,10 +176,47 @@ def get_pt2e_quantizers(
     return quantizers
 
 
+def materialze_broadcast_of_rope_freq_cis(
+    module: torch.nn.Module,
+):
+    assert isinstance(module, Transformer)
+    assert module.freqs_cos.dim() == 2
+    dim0 = module.freqs_cos.size(0)
+    dim1 = module.freqs_cos.size(1)
+    assert (
+        module.layers[0].attention.n_local_kv_heads
+        == module.layers[0].attention.n_local_heads
+    ), f"For rope freqs to be materialzed for broadcast q, k, v num heads must match. For q got {module.attention.n_kv_heads} for k got {module.attention.n_local_heads} and v got {module.attention.n_local_kv_heads}"
+    num_heads = module.layers[0].attention.n_local_heads
+    module.freqs_cos = module.freqs_cos.view(dim0, 1, dim1)
+    module.freqs_cos = module.freqs_cos.expand(dim0, num_heads, dim1).contiguous()
+    assert module.freqs_sin.dim() == 2
+    assert dim0 == module.freqs_sin.size(
+        0
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 0: {dim0} vs {module.freqs_sin.size(0)}"
+    assert dim1 == module.freqs_sin.size(
+        1
+    ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
+    module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
+    module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
+    return module
+
+
 def quantize(
     model: torch.nn.Module,
     qmode: str,
     activation_dtype: Optional[DType],
+    checkpoint_path: Optional[Path] = None,
+    # following arguments only available when setting int4 quantization.
+    groupsize: int = 128,
+    # following arguments only used for GPTQ
+    calibration_tasks: Optional[list] = None,
+    calibration_limit: int = 5,
+    calibration_seq_length: int = 100,
+    pad_calibration_inputs: bool = False,
+    percdamp: float = 0.01,
+    blocksize: int = 128,
+    tokenizer_path: Optional[Path] = None,
 ) -> torch.nn.Module:
     """
     Quantizes a model by converting all weights to int8.
@@ -186,15 +231,43 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
+    if checkpoint_path is None:
+        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+
+    if calibration_tasks is None:
+        calibration_tasks = ["wikitext"]
+
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "int4":
         model_int4 = Int8DynActInt4WeightQuantHandler(
-            model, activation_precision=torch_dtype
+            model,
+            precision=torch_dtype,
         ).quantized_model()
         print("quantized model:", model_int4)
         return model_int4
+    elif qmode == "8da4w-gptq":
+        from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
+
+        if tokenizer_path is None:
+            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        assert tokenizer_path.is_file(), tokenizer_path
+        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
+            model_file=str(tokenizer_path)
+        )
+        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
+            tokenizer,
+            blocksize,
+            percdamp,
+            groupsize,
+            calibration_tasks,
+            calibration_limit,
+            calibration_seq_length,
+            pad_calibration_inputs,
+        )
+        model = gptq_quantizer.quantize(model)
+        return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 
@@ -242,7 +315,7 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--quantization_mode",
         type=str,
         default=None,
-        choices=["int8", "int4"],
+        choices=["int8", "int4", "8da4w-gptq"],
         help="type of quantization",
     )
 
@@ -251,6 +324,12 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint",
         default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
+    )
+    parser.add_argument(
+        "-t",
+        "--tokenizer_path",
+        default=None,
+        help="tokenizer path (Note: .model not .bin)",
     )
     parser.add_argument(
         "-kv",
@@ -304,9 +383,42 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
     )
+
+    parser.add_argument(
+        "-n",
+        "--output_name",
+        default=None,
+        help="Override the output filename of the saved pte model file.",
+    )
+
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=128,
+        help="maximum length sequence to evaluate",
+    )
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
+    parser.add_argument("-V", "--vulkan", action="store_true")
+    parser.add_argument("--mps", action="store_true")
+    parser.add_argument("--coreml", action="store_true")
+
+    parser.add_argument(
+        "--expand_rope_table",
+        default=False,
+        action="store_true",
+        help="[Temp workaround] Expand sin/cos table in head dim to take vectorized path in optimized kernels.",
+    )
+
+    parser.add_argument(
+        "--generate_etrecord",
+        action="store_true",
+        required=False,
+        default=False,
+        help="Generate the ETRecord debug artifact.",
+    )
 
     return parser
 
@@ -342,7 +454,14 @@ def export_llama(modelname, args) -> str:
         return _export_llama(modelname, args)
 
 
-def _export_llama(modelname, args) -> str:  # noqa: C901
+def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
+    """
+    Helper function for export_llama. Loads the model from checkpoint and params,
+    and sets up a LlamaEdgeManager with initial transforms and dtype conversion.
+
+    Returns a LlamaEdgeManager prior to calling export_to_edge with quantizers
+    """
+
     # load model from checkpoint and params.json
     checkpoint_path = canonical_path(args.checkpoint)
     params_path = canonical_path(args.params)
@@ -362,7 +481,15 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"{modelname}_q"
         transforms.append(
             partial(
-                quantize, qmode=args.quantization_mode, activation_dtype=dtype_override
+                quantize,
+                qmode=args.quantization_mode,
+                activation_dtype=dtype_override,
+                checkpoint_path=(
+                    Path(path) if (path := args.checkpoint) is not None else None
+                ),
+                tokenizer_path=(
+                    Path(path) if (path := args.tokenizer_path) is not None else None
+                ),
             )
         )
 
@@ -380,9 +507,34 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             ).quantized_model()
         )
 
+    if args.expand_rope_table:
+        transforms.append(materialze_broadcast_of_rope_freq_cis)
+
+    return (
+        load_llama_model(
+            checkpoint=checkpoint_path,
+            params_path=params_path,
+            use_kv_cache=args.use_kv_cache,
+            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
+            weight_type=weight_type,
+            verbose=args.verbose,
+            max_seq_len=args.max_seq_length,
+        )
+        .set_output_dir(output_dir_path)
+        .set_metadata(args.metadata)
+        .source_transform(transforms)
+        .to_dtype(dtype_override)
+    )
+
+
+def _export_llama(modelname, args) -> str:  # noqa: C901
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
+
+    builder_exported_to_edge = _prepare_for_llama_export(
+        modelname, args
+    ).export_to_edge(quantizers)
 
     # to_backend
     partitioners = {}
@@ -393,32 +545,98 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
-        partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
+        # Following changes due to.
+        # 1. We need dynamically quantized partitioner for both pt2e_quantize options
+        #    as well as "qmode int4" which is also dynamic quantizes linear layers.
+        # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
+        partitioners[XnnpackDynamicallyQuantizedPartitioner.__name__] = (
+            XnnpackDynamicallyQuantizedPartitioner()
+        )
+        # partitioners[XnnpackPartitioner.__name__] = XnnpackPartitioner()
         modelname = f"xnnpack_{modelname}"
 
-    # TODO: remove this after xnnpack delegation is ready
-    if args.quantization_mode == "int4":
-        raise Exception(
-            "some quantized ops should be lowered to xnnpack, but xnnpack delegate is not ready yet"
-        )
+    if args.vulkan:
+        assert (
+            args.dtype_override is None
+        ), "Vulkan backend does not support non fp32 dtypes at the moment"
+        assert (
+            args.quantization_mode is None
+        ), "Vulkan backend does not support quantization at the moment"
 
-    builder = (
-        load_llama_model(
-            checkpoint=checkpoint_path,
-            params_path=params_path,
-            use_kv_cache=args.use_kv_cache,
-            use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
-            weight_type=weight_type,
-            verbose=args.verbose,
+        partitioners[VulkanPartitioner.__name__] = VulkanPartitioner()
+        modelname = f"vulkan_{modelname}"
+
+    if args.mps:
+        assert (
+            args.use_kv_cache is True
+        ), "MPS backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.mps.partition.mps_partitioner`.
+            from executorch.backends.apple.mps.partition.mps_partitioner import (
+                MPSPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the MPS backend follwing https://pytorch.org/executorch/main/build-run-mps.html"
+            )
+
+        compile_specs = [CompileSpec("use_fp16", bytes([True]))]
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        partitioners[MPSPartitioner.__name__] = MPSPartitioner(compile_specs)
+        modelname = f"mps_{modelname}"
+
+    if args.coreml:
+        assert (
+            args.use_kv_cache is True
+        ), "CoreML backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`.
+            import coremltools as ct
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.compiler`
+            from executorch.backends.apple.coreml.compiler import CoreMLBackend
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.apple.coreml.partition.coreml_partitioner`
+            from executorch.backends.apple.coreml.partition.coreml_partitioner import (
+                CoreMLPartitioner,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the CoreML backend follwing https://pytorch.org/executorch/main/build-run-coreml.html"
+            )
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
+        compile_specs = CoreMLBackend.generate_compile_specs(
+            compute_precision=ct.precision(ct.precision.FLOAT16.value),
+            compute_unit=ct.ComputeUnit[ct.ComputeUnit.ALL.name.upper()],
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )
-        .set_output_dir(output_dir_path)
-        .set_metadata(args.metadata)
-        .source_transform(transforms)
-        .to_dtype(dtype_override)
-        .export_to_edge(quantizers)
-        .to_backend(partitioners)
-        .to_executorch()
-    )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+        partitioners[CoreMLPartitioner.__name__] = CoreMLPartitioner(
+            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        )
+        modelname = f"coreml_{modelname}"
+
+    if args.generate_etrecord:
+        if not builder_exported_to_edge.edge_manager:
+            raise ValueError("Unable to generate etrecord due to missing edge manager.")
+
+        logging.info("Generating etrecord")
+        # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
+        edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
+
+        # Generate ETRecord
+        if edge_manager_copy:
+            generate_etrecord(
+                etrecord_path="etrecord.bin",
+                edge_dialect_program=edge_manager_copy,
+                executorch_program=builder.export_program,
+            )
+            logging.info("Generated etrecord.bin")
+    else:
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
@@ -426,7 +644,20 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     if builder.dtype == DType.fp16:
         modelname = f"{modelname}_h"
 
-    builder.save_to_pte(modelname)
-    output_file = f"{builder.output_dir}/{modelname}.pte"
+    if args.output_name:
+        modelname = args.output_name
+        if modelname.endswith(".pte"):
+            output_file = modelname
+            modelname = modelname[:-4]
+            print(f"modelname: {modelname}")
+            print(f"output_file: {output_file}")
+        else:
+            output_file = f"{builder.output_dir}/{modelname}.pte"
+            print(f"modelname: {modelname}")
+            print(f"output_file: {output_file}")
+    else:
+        output_file = f"{builder.output_dir}/{modelname}.pte"
+
+    builder.save_to_pte(output_file)
 
     return output_file

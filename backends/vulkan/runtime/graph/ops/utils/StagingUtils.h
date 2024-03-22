@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#ifdef USE_VULKAN_API
+
+#include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
+
+namespace at {
+namespace native {
+namespace vulkan {
+
+//
+// Functions to copy data into and out of a staging buffer
+//
+
+void copy_ptr_to_staging(
+    const void* src,
+    api::StorageBuffer& staging,
+    const size_t nbytes);
+void copy_staging_to_ptr(
+    api::StorageBuffer& staging,
+    void* dst,
+    const size_t nbytes);
+
+//
+// Functions to get shaders
+//
+
+api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst);
+api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src);
+
+} // namespace vulkan
+} // namespace native
+} // namespace at
+
+#endif /* USE_VULKAN_API */

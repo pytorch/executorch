@@ -55,6 +55,8 @@ div_out(RuntimeContext& ctx, const Tensor& a, const Tensor& b, Tensor& out) {
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
+
   ScalarType common_type = get_compute_type(a_type, b_type);
   ScalarType out_type = out.scalar_type();
 
@@ -99,6 +101,8 @@ Tensor& div_out_mode(
   ScalarType b_type = b.scalar_type();
   ScalarType common_type = get_compute_type(a_type, b_type);
   ScalarType out_type = out.scalar_type();
+
+  ET_KERNEL_CHECK(ctx, tensor_is_real_type(out), InvalidArgument, out);
 
   // Allow casting float -> integral here
   // non-bool -> bool is still disallowed
@@ -159,25 +163,21 @@ Tensor& div_scalar_out(
 
   ET_SWITCH_REAL_TYPES_AND(Bool, a_type, ctx, "div.Scalar_out", CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, "div.Scalar_out", CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(
-          common_type, ctx, "div.Scalar_out", CTYPE_IN, [&]() {
-            ET_SWITCH_FLOAT_TYPES(
-                out_type, ctx, "div.Scalar_out", CTYPE_OUT, [&]() {
-                  CTYPE_B b_val;
-                  utils::extract_scalar(b, &b_val);
-                  CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+      ET_SWITCH_FLOAT_TYPES(out_type, ctx, "div.Scalar_out", CTYPE, [&]() {
+        CTYPE_B b_val;
+        utils::extract_scalar(b, &b_val);
+        CTYPE b_casted = static_cast<CTYPE>(b_val);
 
-                  apply_unary_map_fn(
-                      [b_casted](const CTYPE_A val_a) {
-                        CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                        CTYPE_IN value = a_casted / b_casted;
-                        return static_cast<CTYPE_OUT>(value);
-                      },
-                      a.const_data_ptr<CTYPE_A>(),
-                      out.mutable_data_ptr<CTYPE_OUT>(),
-                      out.numel());
-                });
-          });
+        apply_unary_map_fn(
+            [b_casted](const CTYPE_A val_a) {
+              CTYPE a_casted = static_cast<CTYPE>(val_a);
+              CTYPE value = a_casted / b_casted;
+              return static_cast<CTYPE>(value);
+            },
+            a.const_data_ptr<CTYPE_A>(),
+            out.mutable_data_ptr<CTYPE>(),
+            out.numel());
+      });
     });
   });
 
@@ -202,7 +202,7 @@ Tensor& div_scalar_mode_out(
 
   ScalarType a_type = a.scalar_type();
   ScalarType b_type = utils::get_scalar_dtype(b);
-  ScalarType common_type = isFloatingType(a_type) ? a_type : ScalarType::Float;
+  ScalarType common_type = utils::promote_type_with_scalar(a_type, b);
   ScalarType out_type = out.scalar_type();
 
   ET_KERNEL_CHECK(ctx, common_type == out_type, InvalidArgument, out);
@@ -211,27 +211,25 @@ Tensor& div_scalar_mode_out(
 
   ET_SWITCH_REALB_TYPES(a_type, ctx, name, CTYPE_A, [&]() {
     ET_SWITCH_SCALAR_OBJ_TYPES(b_type, ctx, name, CTYPE_B, [&]() {
-      ET_SWITCH_FLOAT_TYPES(common_type, ctx, name, CTYPE_IN, [&]() {
-        ET_SWITCH_FLOAT_TYPES(out_type, ctx, name, CTYPE_OUT, [&]() {
-          CTYPE_B b_val;
-          utils::extract_scalar(b, &b_val);
-          CTYPE_IN b_casted = static_cast<CTYPE_IN>(b_val);
+      ET_SWITCH_REAL_TYPES(out_type, ctx, name, CTYPE, [&]() {
+        CTYPE_B b_val;
+        utils::extract_scalar(b, &b_val);
+        CTYPE b_casted = static_cast<CTYPE>(b_val);
 
-          apply_unary_map_fn(
-              [b_casted, mode](const CTYPE_A val_a) {
-                CTYPE_IN a_casted = static_cast<CTYPE_IN>(val_a);
-                CTYPE_IN value = a_casted / b_casted;
-                if (mode.has_value() && mode.value() == "trunc") {
-                  value = std::trunc(value);
-                } else if (mode.has_value() && mode.value() == "floor") {
-                  value = utils::floor_divide(a_casted, b_casted);
-                }
-                return static_cast<CTYPE_OUT>(value);
-              },
-              a.const_data_ptr<CTYPE_A>(),
-              out.mutable_data_ptr<CTYPE_OUT>(),
-              out.numel());
-        });
+        apply_unary_map_fn(
+            [b_casted, mode](const CTYPE_A val_a) {
+              CTYPE a_casted = static_cast<CTYPE>(val_a);
+              CTYPE value = a_casted / b_casted;
+              if (mode.has_value() && mode.value() == "trunc") {
+                value = std::trunc(value);
+              } else if (mode.has_value() && mode.value() == "floor") {
+                value = utils::floor_divide(a_casted, b_casted);
+              }
+              return value;
+            },
+            a.const_data_ptr<CTYPE_A>(),
+            out.mutable_data_ptr<CTYPE>(),
+            out.numel());
       });
     });
   });

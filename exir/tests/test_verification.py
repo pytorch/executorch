@@ -136,7 +136,7 @@ class TestVerification(unittest.TestCase):
         exec_prog = to_edge(export(model2, (inputs,))).to_executorch()
 
         exported_prog = exec_prog.exported_program()
-        res = exported_prog(inputs)[0]  # noqa
+        res = exported_prog.module()(inputs)[0]  # noqa
         # Verifiers are run internally in to_edge, export, and to_executorch.
         # If we make it this far then no errors were thrown in verification
 

@@ -25,7 +25,15 @@ void dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType>& out_dtype,
     Tensor& out) {
+  if (out_dtype.has_value()) {
+    ET_CHECK_MSG(
+        out_dtype.value() == ScalarType::Float,
+        "Expected out dtype to be Float but got %hhd",
+        out_dtype.value());
+  }
+
   float* out_data = out.mutable_data_ptr<float>();
   size_t numel = out.numel();
 

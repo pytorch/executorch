@@ -12,6 +12,38 @@
 
 namespace torch {
 namespace executor {
+namespace {
+
+/**
+ * Copy input_data to output_data according to the stride and shape recursively
+ */
+template <typename CTYPE>
+void _as_strided_copy(
+    CTYPE* input_data,
+    CTYPE* output_data,
+    Tensor& out,
+    ArrayRef<int64_t> size,
+    ArrayRef<int64_t> stride,
+    int64_t dim) {
+  // the last dimension, copy data
+  if (dim == size.size() - 1) {
+    for (size_t i = 0; i < size.at(dim); ++i) {
+      output_data[i] = *input_data;
+      input_data += stride.at(dim);
+    }
+    return;
+  }
+  size_t trailing_dims = getTrailingDims(out, dim);
+  // recursively set data for the next dimension
+  for (size_t i = 0; i < size.at(dim); ++i) {
+    _as_strided_copy<CTYPE>(
+        input_data, output_data, out, size, stride, dim + 1);
+    input_data += stride.at(dim);
+    output_data += trailing_dims;
+  }
+}
+
+} // namespace
 
 bool check_as_strided_copy_args(
     const Tensor& in,
@@ -19,6 +51,23 @@ bool check_as_strided_copy_args(
     ArrayRef<int64_t> stride,
     optional<int64_t> storage_offset,
     Tensor& out);
+
+template <typename CTYPE>
+void as_strided_copy(
+    const Tensor& in,
+    ArrayRef<int64_t> size,
+    ArrayRef<int64_t> stride,
+    int64_t offset,
+    Tensor& out) {
+  CTYPE* in_data = in.mutable_data_ptr<CTYPE>() + offset;
+  CTYPE* out_data = out.mutable_data_ptr<CTYPE>();
+
+  if (size.empty()) {
+    out_data[0] = in_data[0];
+  } else {
+    _as_strided_copy<CTYPE>(in_data, out_data, out, size, stride, 0);
+  }
+}
 
 bool check_cat_args(
     exec_aten::ArrayRef<Tensor> tensors,
@@ -164,6 +213,20 @@ bool get_view_copy_target_size(
     exec_aten::ArrayRef<int64_t> size_int64_t,
     int64_t dim,
     exec_aten::SizesType* out_sizes);
+
+bool check_diagonal_copy_args(
+    const Tensor& in,
+    int64_t dim1,
+    int64_t dim2,
+    Tensor& out);
+
+void get_diagonal_copy_out_target_size(
+    const Tensor& in,
+    int64_t offset,
+    int64_t dim1,
+    int64_t dim2,
+    exec_aten::SizesType* out_sizes,
+    size_t* out_ndim);
 
 } // namespace executor
 } // namespace torch

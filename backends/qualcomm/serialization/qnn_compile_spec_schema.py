@@ -75,23 +75,27 @@ class QnnExecuTorchHtpPdSession(IntEnum):
     kHtpSignedPd = 1
 
 
-@dataclass
-class QnnExecuTorchHtpBackendOptions:
-    performance_mode: QnnExecuTorchHtpPerformanceMode = (
-        QnnExecuTorchHtpPerformanceMode.kHtpDefault
-    )
-    precision: QnnExecuTorchHtpPrecision = QnnExecuTorchHtpPrecision.kHtpQuantized
-    pd_session: QnnExecuTorchHtpPdSession = QnnExecuTorchHtpPdSession.kHtpUnsignedPd
-    use_conv_hmx: bool = True
-    use_fold_relu: bool = True
-
-
 @unique
 class QnnExecuTorchBackendType(IntEnum):
     kUndefinedBackend = 0
     kGpuBackend = 1
     kHtpBackend = 2
     kDspBackend = 3
+
+
+@dataclass
+class QnnExecuTorchHtpBackendOptions:
+    max_sf_buf_size: int = 0
+    performance_mode: QnnExecuTorchHtpPerformanceMode = (
+        QnnExecuTorchHtpPerformanceMode.kHtpDefault
+    )
+    precision: QnnExecuTorchHtpPrecision = QnnExecuTorchHtpPrecision.kHtpQuantized
+    pd_session: QnnExecuTorchHtpPdSession = QnnExecuTorchHtpPdSession.kHtpUnsignedPd
+    skel_library_dir: str = ""
+    use_conv_hmx: bool = True
+    use_dlbc: bool = False
+    use_fold_relu: bool = True
+    use_multi_contexts: bool = False
 
 
 @unique
@@ -105,12 +109,17 @@ class QnnExecuTorchLogLevel(IntEnum):
 
 
 @dataclass
+class QnnExecuTorchBackendOptions:
+    backend_type: QnnExecuTorchBackendType
+    htp_options: QnnExecuTorchHtpBackendOptions
+
+
+@dataclass
 class QnnExecuTorchOptions:
-    backend_type: QnnExecuTorchBackendType = QnnExecuTorchBackendType.kUndefinedBackend
-    library_path: str = ""
-    skel_library_dir: str = ""
+    soc_info: SocInfo
+    backend_options: QnnExecuTorchBackendOptions
     graph_name: str = ""
+    library_path: str = ""
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
-    htp_options: QnnExecuTorchHtpBackendOptions = QnnExecuTorchHtpBackendOptions()
-    soc_info: SocInfo = SocInfo()
     online_prepare: bool = False
+    tensor_dump_output_path: str = ""

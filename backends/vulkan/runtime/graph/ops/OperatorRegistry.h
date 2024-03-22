@@ -15,44 +15,67 @@
 #include <functional>
 #include <unordered_map>
 
+#define VK_HAS_OP(name) ::at::native::vulkan::operator_registry().has_op(name)
+
+#define VK_GET_OP_FN(name) \
+  ::at::native::vulkan::operator_registry().get_op_fn(name)
+
+#define VK_REGISTER_OP(name, function)                   \
+  ::at::native::vulkan::operator_registry().register_op( \
+      #name,                                             \
+      std::bind(&function, std::placeholders::_1, std::placeholders::_2))
+
+#define REGISTER_OPERATORS                              \
+  static void register_ops();                           \
+  static const OperatorRegisterInit reg(&register_ops); \
+  static void register_ops()
+
 namespace at {
 namespace native {
 namespace vulkan {
 
-using OpFunction = const std::function<at::native::vulkan::ValueRef(
-    at::native::vulkan::ComputeGraph&,
-    const std::vector<at::native::vulkan::ValueRef>&)>; // TODO: Generalize to
-                                                        // support float,
-                                                        // int64_t.
-
-bool hasOpsFn(const std::string& name);
-
-OpFunction& getOpsFn(const std::string& name);
-
-// The Vulkan operator registry is a simplified version of
-// fbcode/executorch/runtime/kernel/operator_registry.h
-// that uses the C++ Standard Library.
-class OperatorRegistry {
- public:
-  static OperatorRegistry& getInstance();
-
-  bool hasOpsFn(const std::string& name);
-  OpFunction& getOpsFn(const std::string& name);
-
-  OperatorRegistry(const OperatorRegistry&) = delete;
-  OperatorRegistry(OperatorRegistry&&) = delete;
-  OperatorRegistry& operator=(const OperatorRegistry&) = delete;
-  OperatorRegistry& operator=(OperatorRegistry&&) = delete;
-
- private:
-  // TODO: Input string corresponds to target_name. We may need to pass kwargs.
+/*
+ * The Vulkan operator registry maps ATen operator names to their Vulkan
+ * delegate function implementation. It is a simplified version of
+ * executorch/runtime/kernel/operator_registry.h that uses the C++ Standard
+ * Library.
+ */
+class OperatorRegistry final {
+  using OpFunction =
+      const std::function<void(ComputeGraph&, const std::vector<ValueRef>&)>;
   using OpTable = std::unordered_map<std::string, OpFunction>;
-  // @lint-ignore CLANGTIDY facebook-hte-NonPodStaticDeclaration
-  static const OpTable kTable;
 
-  OperatorRegistry() = default;
-  ~OperatorRegistry() = default;
+  OpTable table_;
+
+ public:
+  /*
+   * Check if the registry has an operator registered under the given name
+   */
+  bool has_op(const std::string& name);
+
+  /*
+   * Given an operator name, return the Vulkan delegate function
+   */
+  OpFunction& get_op_fn(const std::string& name);
+
+  /*
+   * Register a function to a given operator name
+   */
+  void register_op(const std::string& name, OpFunction& fn);
 };
+
+class OperatorRegisterInit final {
+  using InitFn = void();
+
+ public:
+  explicit OperatorRegisterInit(InitFn* init_fn) {
+    init_fn();
+  }
+};
+
+// The Vulkan operator registry is global. It is retrieved using this function,
+// where it is declared as a static local variable.
+OperatorRegistry& operator_registry();
 
 } // namespace vulkan
 } // namespace native
