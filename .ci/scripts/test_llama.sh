@@ -12,7 +12,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
-PT2E_QUANTIZE=$4 # None or xnnpack_dynamic
+QMODE=$4 # int8 or 8da4w or none
+
 
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
@@ -29,8 +30,8 @@ if [[ -z "${DTYPE:-}" ]]; then
   exit 1
 fi
 
-if [[ -z "${PT2E_QUANTIZE:-}" ]]; then
-  echo "Missing pt2e_quantize, choose None or xnnpack_dynamic..."
+if [[ -z "${QMODE:-}" ]]; then
+  echo "Missing QMode, choose int8 or qda4w or none"
   exit 1
 fi
 
@@ -103,10 +104,23 @@ else
   exit 1
 fi
 
-# Export model.
-EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
-echo "Exporting ${EXPORTED_MODEL_NAME}"
-$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}" --pt2e_quantize "${PT2E_QUANTIZE}"
+# set quantization mode
+if [[ "${QMODE}" == "none" ]]; then
+  # Export model.
+  EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
+  echo "Exporting ${EXPORTED_MODEL_NAME}"
+  $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}"
+elif [[ "${QMODE}" == "int8" || "${QMODE}" == "8da4w" ]]; then
+  # Export model.
+  EXPORTED_MODEL_NAME="xnnpack_${EXPORTED_MODEL_NAME}_${QMODE}.pte"
+  echo "Exporting ${EXPORTED_MODEL_NAME}"
+  # Enable XNNPACK when QMODE is not None
+  $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}" -qmode "${QMODE}" -X
+else
+  echo "Unsupported qmode ${QMODE}"
+  exit 1
+fi
+
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
