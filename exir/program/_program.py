@@ -44,6 +44,9 @@ from executorch.exir.verification.verifier import (
 )
 from torch._export.passes import ReplaceViewOpsWithViewCopyOpsPass
 from torch.export import ExportedProgram
+from torch.export._remove_auto_functionalized_pass import (
+    unsafe_remove_auto_functionalized_pass,
+)
 from torch.export.exported_program import (
     _get_updated_range_constraints,
     ConstantArgument,
@@ -832,6 +835,7 @@ class EdgeProgramManager:
 
         execution_programs: Dict[str, ExportedProgram] = {}
         for name, program in self._edge_programs.items():
+            program = unsafe_remove_auto_functionalized_pass(program)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(config):

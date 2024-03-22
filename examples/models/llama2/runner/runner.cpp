@@ -210,50 +210,24 @@ Error Runner::generate(
   int64_t pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
   int logits_index = 0; // index of the logits tensor in the output
-  int k_cache_index = 0;
-  int v_cache_index = 0;
-  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
   std::vector<exec_aten::SizesType> input_shape = {1, 1};
-  std::vector<exec_aten::SizesType> pos_shape = {};
-  std::vector<uint8_t> k_data;
-  std::vector<uint8_t> v_data;
+  std::vector<exec_aten::SizesType> pos_shape = {1};
   std::vector<int64_t> token_data; // allocate space for the tokens
-  ScalarType dtype = static_cast<ScalarType>(
-      getMetadataHelper("get_dtype", (int64_t)ScalarType::Float));
+  std::vector<int64_t> pos_data; // allocate space for the tokens
 
   if (use_kv_cache_) {
     // set pos to 0, refill token by token
     pos = 0;
-    logits_index = 2;
-    k_cache_index = 0;
-    v_cache_index = 1;
-    // TODO(): Fix this by inspecting graph signature
-    if (use_sdpa_with_kv_cache_) {
-      logits_index = 0;
-      k_cache_index = 1;
-      v_cache_index = 2;
-    }
-    // initialize kv cache
-    size_t n_bytes = 1;
-    for (exec_aten::SizesType shape : kv_cache_shape) {
-      n_bytes *= shape;
-    }
-    n_bytes *= torch::executor::elementSize(dtype);
-
-    k_data.resize(n_bytes);
-    std::fill(k_data.begin(), k_data.end(), 0);
-    v_data.resize(n_bytes);
-    std::fill(v_data.begin(), v_data.end(), 0);
     token_data.resize(1);
+    pos_data.resize(seq_len);
   } else {
     // reserve data for tokens, notice the size is still 0.
     token_data.resize(seq_len);
   }
 
   // initialize tensor wrappers
-  ManagedTensor k_managed(k_data.data(), k_data.size(), kv_cache_shape, dtype);
-  ManagedTensor v_managed(v_data.data(), v_data.size(), kv_cache_shape, dtype);
-  ManagedTensor pos_managed(&pos, 0, {}, ScalarType::Long);
+  ManagedTensor pos_managed(
+      pos_data.data(), pos_data.size(), pos_shape, ScalarType::Long);
 
   // copy prompt tokens into data
   for (int i = 0; i <= pos; ++i) {
@@ -277,8 +251,6 @@ Error Runner::generate(
       input_shape[1] = 1;
       // inputs: [tokens, start_pos, k_cache, v_cache]
       inputs.emplace_back(pos_managed.get_aliasing_tensor());
-      inputs.emplace_back(k_managed.get_aliasing_tensor());
-      inputs.emplace_back(v_managed.get_aliasing_tensor());
     } else {
       // @lint-ignore CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
       token_data[pos] = token;
@@ -299,8 +271,8 @@ Error Runner::generate(
     std::vector<EValue> outputs = outputs_res.get();
     // Check the outputs.
     ET_CHECK_MSG(
-        outputs.size() > 0,
-        "Expecting output to have at least one evalue. Got %zu",
+        outputs.size() == 1 && outputs.at(0).isTensor(),
+        "Expecting output to have exactly 1 tensor output. Got %zu outputs.",
         outputs.size());
     if (pos == num_prompt_tokens) {
       timers_.first_token_ms = util::time_in_ms();
@@ -338,6 +310,9 @@ Error Runner::generate(
     }
     // ET_LOG(Info, "Output saved, next = %d", next);
     pos++;
+    if (use_kv_cache_) {
+      pos_data.at(0) = pos;
+    }
 
     // print the token as string, decode it with the Tokenizer object
     auto piece_res = tokenizer_->decode(token, next);
@@ -364,18 +339,6 @@ Error Runner::generate(
     }
 
     token = next;
-
-    if (use_kv_cache_) {
-      // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
-      memcpy(
-          k_data.data(),
-          outputs.at(k_cache_index).toTensor().const_data_ptr(),
-          k_data.size());
-      memcpy(
-          v_data.data(),
-          outputs.at(v_cache_index).toTensor().const_data_ptr(),
-          v_data.size());
-    }
   }
   timers_.inference_end_ms = util::time_in_ms();
   printf("\n");
