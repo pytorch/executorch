@@ -14,6 +14,7 @@
 
 #pragma once
 #include <type_traits>
+#include <vector>
 #if __cplusplus < 201703L
 #error "This header requires C++17"
 #endif
@@ -29,21 +30,62 @@ namespace executor {
 class KernelRuntimeContext; // Forward declaration
 using RuntimeContext = KernelRuntimeContext; // TODO(T147221312): Remove
 
+// Map types from ETen to ATen.
+// This is used to convert ETen arguments into ATen.
 template <typename T>
 struct type_map final {
   using type = T;
 };
 
-template <>
-struct type_map<torch::executor::Tensor&> final {
-  using type = at::Tensor&;
+// Const.
+template <typename T>
+struct type_map<const T> final {
+  using type = const typename type_map<T>::type;
 };
 
-template <>
-struct type_map<const torch::executor::Tensor&> final {
-  using type = const at::Tensor&;
+// Ref.
+template <typename T>
+struct type_map<T&> final {
+  using type = typename type_map<T>::type&;
 };
 
+// Const ref.
+template <typename T>
+struct type_map<const T&> final {
+  using type = const typename type_map<T>::type&;
+};
+
+// Tensor.
+template <>
+struct type_map<torch::executor::Tensor> final {
+  using type = at::Tensor;
+};
+
+// Optional.
+template <class T>
+struct type_map<torch::executor::optional<T>> final {
+  using type = c10::optional<typename type_map<T>::type>;
+};
+
+template <class T>
+struct type_map<torch::executor::optional<T>&> final {
+  using type = c10::optional<typename type_map<T>::type>&;
+};
+
+// ArrayRef.
+template <class T>
+struct type_map<torch::executor::ArrayRef<T>> final {
+  using type = at::ArrayRef<typename type_map<T>::type>;
+};
+
+template <typename T>
+struct remove_const_ref final {
+  using type = std::remove_const_t<std::remove_reference_t<T>>;
+};
+
+// Convert ATen->ETen: input args.
+// Convert ETen->ATen: output args.
+// Default argument conversions between ATen and ETen (scalars).
 template <typename F, typename T, typename Enable = void>
 struct type_convert final {
  public:
@@ -54,11 +96,7 @@ struct type_convert final {
   }
 };
 
-template <typename T>
-struct remove_const_ref final {
-  using type = std::remove_const_t<std::remove_reference_t<T>>;
-};
-
+// Tensors: ATen to ETen.
 template <class ATensor, class ETensor>
 struct type_convert<
     ATensor,
@@ -90,13 +128,22 @@ struct type_convert<
   }
 };
 
-template <>
-struct type_convert<torch::executor::Tensor&, at::Tensor&> final {
+// Tensors: ETen to ATen.
+template <class ETensor, class ATensor>
+struct type_convert<
+    ETensor,
+    ATensor,
+    std::enable_if_t<
+        std::is_same_v<typename remove_const_ref<ATensor>::type, at::Tensor> &&
+        std::is_same_v<
+            typename remove_const_ref<ETensor>::type,
+            torch::executor::Tensor>>>
+    final {
  public:
-  torch::executor::Tensor& val;
+  ETensor val;
   at::Tensor converted;
   std::vector<int64_t> sizes;
-  explicit type_convert(torch::executor::Tensor& value) : val(value) {
+  explicit type_convert(ETensor value) : val(value) {
     for (auto size : val.sizes()) {
       sizes.push_back(size);
     }
@@ -105,8 +152,84 @@ struct type_convert<torch::executor::Tensor&, at::Tensor&> final {
     converted =
         at::from_blob(val.mutable_data_ptr(), val.numel(), sizes, scalar_type);
   }
-  at::Tensor& call() {
+  ATensor call() {
     return converted;
+  }
+};
+
+// Optionals: ATen to ETen.
+template <class F, class T>
+struct type_convert<c10::optional<F>, torch::executor::optional<T>> final {
+ public:
+  c10::optional<F> val;
+  std::unique_ptr<struct type_convert<F, T>> convert_struct;
+  explicit type_convert(c10::optional<F> value) : val(value) {}
+  torch::executor::optional<T> call() {
+    if (val.has_value()) {
+      convert_struct = std::make_unique<struct type_convert<F, T>>(
+          type_convert<F, T>(val.value()));
+      return torch::executor::optional<T>(convert_struct->call());
+    } else {
+      return torch::executor::optional<T>();
+    }
+  }
+};
+
+// Optionals: ETen to ATen.
+template <class F, class T>
+struct type_convert<torch::executor::optional<F>, c10::optional<T>> final {
+ public:
+  torch::executor::optional<F> val;
+  std::unique_ptr<struct type_convert<F, T>> convert_struct;
+  explicit type_convert(torch::executor::optional<F> value) : val(value) {}
+  c10::optional<T> call() {
+    if (val.has_value()) {
+      convert_struct = std::make_unique<struct type_convert<F, T>>(
+          type_convert<F, T>(val.value()));
+      return c10::optional<T>(convert_struct->call());
+    } else {
+      return c10::optional<T>();
+    }
+  }
+};
+
+// ArrayRefs: ATen to ETen.
+template <class F, class T>
+struct type_convert<c10::ArrayRef<F>, torch::executor::ArrayRef<T>> final {
+ public:
+  c10::ArrayRef<F> val;
+  std::vector<T> converted;
+  std::vector<type_convert<F, T>> converters;
+  explicit type_convert(c10::ArrayRef<F> value) : val(value) {
+    for (int i = 0; i < val.size(); i++) {
+      converters.push_back(type_convert<F, T>(val[i]));
+    }
+  }
+  torch::executor::ArrayRef<T> call() {
+    for (int i = 0; i < val.size(); i++) {
+      converted.push_back(converters[i].call());
+    }
+    return torch::executor::ArrayRef<T>(converted.data(), converted.size());
+  }
+};
+
+// ArrayRefs: ETen to ATen.
+template <class F, class T>
+struct type_convert<torch::executor::ArrayRef<F>, c10::ArrayRef<T>> final {
+ public:
+  torch::executor::ArrayRef<F> val;
+  std::vector<T> converted;
+  std::vector<type_convert<F, T>> converters;
+  explicit type_convert(torch::executor::ArrayRef<F> value) : val(value) {
+    for (int i = 0; i < val.size(); i++) {
+      converters.push_back(type_convert<F, T>(val[i]));
+    }
+  }
+  c10::ArrayRef<T> call() {
+    for (int i = 0; i < val.size(); i++) {
+      converted.push_back(converters[i].call());
+    }
+    return c10::ArrayRef<T>(converted);
   }
 };
 
