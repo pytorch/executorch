@@ -44,5 +44,7 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 # Executorch (for runtime). Here select all ops in functions.yaml
 gen_selected_ops("" "${EXECUTORCH_SELECT_OPS_LIST}" "")
 generate_bindings_for_kernels(
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml "")
-gen_operators_lib("arm_portable_ops_lib" portable_kernels executorch)
+  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml)
+gen_operators_lib("arm_portable_ops_lib"
+  KERNEL_LIBS portable_kernels
+  DEPS executorch)

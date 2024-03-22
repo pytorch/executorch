@@ -51,9 +51,12 @@ target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 gen_selected_ops("" "" "ON")
 # Expect gen_selected_ops output file to be selected_operators.yaml
 generate_bindings_for_kernels(
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
-gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+gen_operators_lib(
+  "portable_ops_lib"
+  KERNEL_LIBS portable_kernels
+  DEPS executorch)
 
 target_compile_options(portable_ops_lib INTERFACE -DET_EVENT_TRACER_ENABLED)
 target_include_directories(

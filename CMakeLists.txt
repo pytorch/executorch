@@ -309,6 +309,9 @@ endif()
 # operators necessary for the models that will run.
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
 #
 # gflags: Commandline flag host library.
@@ -336,7 +339,7 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch portable_ops_lib gflags)
+  set(_executor_runner_libs executorch optimized_native_cpu_ops_lib gflags)
 
   # Generate lib to register quantized ops
   if(REGISTER_QUANTIZED_OPS)
