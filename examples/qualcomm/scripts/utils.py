@@ -55,6 +55,7 @@ class SimpleADB:
         self.host_id = host_id
         self.working_dir = Path(self.pte_path).parent.absolute()
         self.input_list_filename = "input_list.txt"
+        self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.output_folder = f"{self.workspace}/outputs"
         arch_table = {
             "SM8650": "75",
@@ -121,6 +122,7 @@ class SimpleADB:
                 f"--model_path {os.path.basename(self.pte_path)}",
                 f"--output_folder_path {self.output_folder}",
                 f"--input_list_path {self.input_list_filename}",
+                f"--etdump_path {self.etdump_path}",
             ]
         )
         qnn_executor_runner_cmds = " ".join(
@@ -135,6 +137,11 @@ class SimpleADB:
 
     def pull(self, output_path, callback=None):
         self._adb(["pull", "-a", f"{self.output_folder}", output_path])
+        if callback:
+            callback()
+
+    def pull_etdump(self, output_path, callback=None):
+        self._adb(["pull", f"{self.etdump_path}", output_path])
         if callback:
             callback()
 

@@ -176,7 +176,7 @@ Result<DelegateHandle*> QnnExecuTorchBackend::init(
 }
 
 Error QnnExecuTorchBackend::execute(
-    __ET_UNUSED BackendExecutionContext& context,
+    BackendExecutionContext& context,
     DelegateHandle* handle,
     EValue** args) const {
   QnnManager* qnn_manager = static_cast<QnnManager*>(handle);
@@ -211,6 +211,11 @@ Error QnnExecuTorchBackend::execute(
           Error::Ok,
       Internal,
       "Fail to execute graph");
+  ET_CHECK_OR_RETURN_ERROR(
+      qnn_manager->ProfileExecuteData(context.event_tracer()) == Error::Ok,
+      Internal,
+      "Fail to profile graph");
+
   return Error::Ok;
 }
 
