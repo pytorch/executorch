@@ -68,6 +68,7 @@ def load_llama_model(
     use_sdpa_with_kv_cache: bool = False,
     weight_type: WeightType = WeightType.LLAMA,
     verbose: bool = False,
+    max_seq_len: int = 128,
 ) -> "LlamaEdgeManager":
     """
     A helper util that builds a Llama2 model. It returns a LlamaEdgeManager that
@@ -87,6 +88,7 @@ def load_llama_model(
         use_kv_cache=use_kv_cache,
         use_sdpa_with_kv_cache=use_sdpa_with_kv_cache,
         fairseq2=weight_type == WeightType.FAIRSEQ2,
+        max_seq_len=max_seq_len,
     )
     state_dict = model.state_dict()
     dtype = state_dict[next(iter(state_dict))].dtype
