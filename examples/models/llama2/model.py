@@ -99,7 +99,7 @@ the checkpoint format to avoid generating faulty models.
             )
 
         # get checkpoint dtype
-        self.dtype = None
+        self.dtype = torch.float32
         if len(checkpoint) > 0:
             first = checkpoint[next(iter(checkpoint))]
             self.dtype = first.dtype
@@ -121,6 +121,7 @@ the checkpoint format to avoid generating faulty models.
             max_batch_size=max_batch_size,
             use_kv_cache=self.use_kv_cache,
             use_sdpa_with_kv_cache_op=self.use_sdpa_with_kv_cache_op,
+            dtype=self.dtype,
             **params,
         )
         if kwargs.get("fairseq2", False):
