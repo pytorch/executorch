@@ -38,11 +38,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 
-from .quantize import (
-    EmbeddingOnlyInt8QuantHandler,
-    Int8DynActInt4WeightQuantHandler,
-    WeightOnlyInt8QuantHandler,
-)
+from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -241,10 +237,9 @@ def quantize(
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "8da4w":
-        model = Int8DynActInt4WeightQuantHandler(
-            model,
-            precision=torch_dtype,
-        ).quantized_model()
+        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
         print("quantized model:", model)
         return model
     elif qmode == "8da4w-gptq":
