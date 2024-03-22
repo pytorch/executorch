@@ -30,7 +30,7 @@ layout(set = 0, binding = 4) uniform PRECISION restrict InExtents {
 in_extents;
 
 layout(set = 0, binding = 5) uniform PRECISION restrict Params {
-  ivec2 kernel;
+  ivec2 kernel_size;
   ivec2 stride;
   ivec2 padding;
   ivec2 dilation;
@@ -49,7 +49,7 @@ void main() {
   const ivec2 ipos = pos.xy * params.stride - params.padding;
 
   const ivec2 start = ipos;
-  const ivec2 end = ipos + params.kernel * params.dilation;
+  const ivec2 end = ipos + params.kernel_size * params.dilation;
 
   vec4 out_texel = vec4(FLT_MIN);
   ivec4 idx_texel = ivec4(0);
@@ -65,9 +65,6 @@ void main() {
         idx_texel = ivec4(mix(idx_texel, cur_idx, mask));
 
         out_texel = max(cur_texel, out_texel);
-      }
-      else {
-        out_texel = max(vec4(FLT_MIN), out_texel);
       }
     }
   }
