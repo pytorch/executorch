@@ -53,10 +53,14 @@ find_package(executorch CONFIG REQUIRED)
 add_subdirectory(runner)
 
 # XNNPACK pthreadpool cpuinfo
-target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib)
+target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib xnnpack_backend XNNPACK pthreadpool cpuinfo)
 target_link_options(
   llama_main PUBLIC "SHELL:LINKER:--whole-archive \
                     $<TARGET_FILE:portable_ops_lib> \
+                    LINKER:--no-whole-archive")
+target_link_options(
+  llama_main PUBLIC "SHELL:LINKER:--whole-archive \
+                    $<TARGET_FILE:xnnpack_backend> \
                     LINKER:--no-whole-archive")
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
