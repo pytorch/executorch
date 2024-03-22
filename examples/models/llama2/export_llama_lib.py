@@ -391,6 +391,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Override the output filename of the saved pte model file.",
     )
 
+    parser.add_argument(
+        "--max_seq_length",
+        type=int,
+        default=128,
+        help="maximum length sequence to evaluate",
+    )
+
     parser.add_argument("-2", "--fairseq2", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("-X", "--xnnpack", action="store_true")
@@ -511,6 +518,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
             weight_type=weight_type,
             verbose=args.verbose,
+            max_seq_len=args.max_seq_length,
         )
         .set_output_dir(output_dir_path)
         .set_metadata(args.metadata)
