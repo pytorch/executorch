@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/prim_ops/et_copy_index.h>
+#include <executorch/kernels/prim_ops/et_view.h>
 #include <executorch/runtime/core/evalue.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/operator_registry.h>
@@ -240,6 +241,8 @@ static Kernel prim_ops[] = {
 
     // executorch_prim::et_copy_index.tensor(tensor, tensor) -> tensor
     Kernel("executorch_prim::et_copy_index.tensor", &et_copy_index),
+    // executorch_prim::et_view.default(Tensor, int[]) -> Tensor
+    Kernel("executorch_prim::et_view.default", &et_view),
 
 };
 
