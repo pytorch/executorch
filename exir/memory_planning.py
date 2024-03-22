@@ -35,6 +35,16 @@ from torch.utils._pytree import tree_flatten
 
 REGISTERED_ALGOS: Dict[str, Callable[..., List[int]]] = {}
 
+SPECIAL_TARGETS = [  # pyre-ignore
+    memory.alloc,
+    memory.view,
+    operator.getitem,
+    torch.ops.higher_order.cond,
+    exir_while,
+    torch.ops.higher_order.map_impl,
+    executorch_call_delegate,
+]
+
 
 class Verifier:
     """
@@ -251,6 +261,19 @@ class Verifier:
                 graph_output_allocated == self.alloc_graph_output
             ), f"Misallocate graph output {graph_output_allocated} v.s. {self.alloc_graph_output}"
 
+    def verify_memory_view_are_memory_planned(self) -> None:
+        """
+        memory.view nodes should only exist if their base is memory planned.
+        """
+        for node in self.graph_module.graph.nodes:
+            if node.op == "call_function" and node.target == memory.view:
+                assert (
+                    node.meta["spec"].const or node.meta["spec"].mem_id is not None
+                ), "memory.view node is not const and has no mem_id."
+                assert (
+                    node.meta["spec"].const or node.meta["spec"].mem_offset is not None
+                ), "memory.view node is not const has no mem_offset."
+
 
 def register_algo(fn: Callable[..., List[int]]) -> Callable[..., List[int]]:
     algo_name = fn.__name__
@@ -393,16 +416,7 @@ def collect_specs_from_nodes(  # noqa: C901
 
         if do_assertion:
             internal_assert(
-                node.op in ("placeholder", "output")
-                or node.target
-                in [
-                    memory.alloc,
-                    operator.getitem,
-                    torch.ops.higher_order.cond,
-                    exir_while,
-                    torch.ops.higher_order.map_impl,
-                    executorch_call_delegate,
-                ],
+                node.op in ("placeholder", "output") or node.target in SPECIAL_TARGETS,
                 f"Unexpected op {node.op}, target {node.target}",
             )
         for spec in specs:
@@ -534,7 +548,13 @@ def get_node_tensor_specs(
     has no tensor specs.
     """
     # get tensor specs
-    specs = node.meta.get("spec")
+    if node.target == memory.view:
+        base = node.args[0]
+        assert isinstance(base, torch.fx.Node)
+        specs = base.meta.get("spec")
+    else:
+        specs = node.meta.get("spec")
+
     if isinstance(specs, TensorSpec):
         specs = [specs]
     if not isinstance(specs, (list, tuple)):
@@ -687,6 +707,24 @@ def get_input_specs(graph_module: fx.GraphModule) -> Set[TensorSpec]:
             for spec in tree_flatten(node.meta["spec"])[0]:
                 input_specs.add(spec)
     return input_specs
+
+
+def is_op_memory_planned(node: torch.fx.Node) -> bool:
+    """
+    Return true if this call function node is memory planned.
+    We are cautious in this function and are OK returning False even if a node
+    may be memory planned.
+    """
+    assert node.op == "call_function"
+    if node.target in SPECIAL_TARGETS:
+        # Assume nodes in SPECIAL_TARGETS are not memory planned,
+        # unless they are in the exceptions below
+        exceptions = [
+            executorch_call_delegate,
+        ]
+        return node.target in exceptions
+
+    return True
 
 
 def insert_calls_to_free(

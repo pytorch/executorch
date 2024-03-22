@@ -75,3 +75,8 @@ class ExecutorchBackendConfig:
     # be a power of 2. If not provided, uses the value in the schema file.
     delegate_alignment: Optional[int] = None
     sym_shape_eval_pass: PassType = HintBasedSymShapeEvalPass()
+
+    # If set to true, view_copy operations will be removed from the graph when safe
+    # Rather than be emitted as operators, they will be emitted as evalues that share
+    # the same underlying storage as their base
+    remove_view_copy: bool = True
