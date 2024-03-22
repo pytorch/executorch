@@ -14,8 +14,7 @@ from executorch.exir.passes.replace_aten_with_edge_pass import (
     should_lower_to_edge,
 )
 from torch import fx
-from torchao.quantization.quant_primitives import quantized_decomposed_lib
-
+from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
 
 __all__ = [
     "get_quant_patterns_and_replacements",
