@@ -170,10 +170,6 @@ option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
-if(NOT BUCK2)
-  set(BUCK2 buck2)
-endif()
-
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
@@ -189,6 +185,9 @@ set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 #
 
 if(NOT EXECUTORCH_SRCS_FILE)
+  # Find or download buck2 binary.
+  resolve_buck2()
+
   # A file wasn't provided. Run a script to extract the source lists from the
   # buck2 build system and write them to a file we can include.
   #
