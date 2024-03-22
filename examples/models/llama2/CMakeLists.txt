@@ -55,7 +55,8 @@ add_subdirectory(runner)
 # XNNPACK pthreadpool cpuinfo
 set(xnnpack_backend_libs xnnpack_backend XNNPACK pthreadpool cpuinfo)
 
-target_link_libraries(llama_main PUBLIC gflags llama_runner portable_ops_lib ${xnnpack_backend_libs})
+target_link_libraries(llama_main PUBLIC gflags llama_runner
+                      portable_ops_lib ${xnnpack_backend_libs})
 target_link_options(
   llama_main PUBLIC "SHELL:LINKER:--whole-archive \
                     $<TARGET_FILE:portable_ops_lib> \
