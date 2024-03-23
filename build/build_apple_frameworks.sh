@@ -20,12 +20,14 @@ IOS_DEPLOYMENT_TARGET="17.0"
 COREML=OFF
 MPS=OFF
 PORTABLE=OFF
+QUANTIZED=OFF
 XNNPACK=OFF
 HEADERS_PATH="include"
 EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
+QUANTIZED_FRAMEWORK="quantized_backend:libquantized_kernels.a,libquantized_ops_lib.a:"
 XNNPACK_FRAMEWORK="xnnpack_backend:libXNNPACK.a,libcpuinfo.a,libpthreadpool.a,libxnnpack_backend.a:"
 
 usage() {
@@ -43,6 +45,7 @@ usage() {
   echo "  --coreml             Include this flag to build the Core ML backend."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
   echo "  --portable           Include this flag to build the Portable backend."
+  echo "  --quantized          Include this flag to build the Quantized backend."
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
   echo
   echo "Example:"
@@ -61,8 +64,9 @@ for arg in "$@"; do
       --flatc=*) FLATC="${arg#*=}" ;;
       --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
-      --portable) PORTABLE=ON ;;
       --mps) MPS=ON ;;
+      --portable) PORTABLE=ON ;;
+      --quantized) QUANTIZED=ON ;;
       --xnnpack) XNNPACK=ON ;;
       *)
       if [[ -z "$SOURCE_ROOT_DIR" ]]; then
@@ -122,6 +126,7 @@ cmake_build() {
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
+        -DREGISTER_QUANTIZED_OPS=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         ${platform_flag:+-DIOS_PLATFORM=$platform_flag}
     cmake --build . --config $MODE
@@ -159,9 +164,10 @@ append_framework_flag() {
 }
 
 append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
-append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
 append_framework_flag "$COREML" "$COREML_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
+append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
+append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
 append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"
 
 "$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
