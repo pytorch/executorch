@@ -100,7 +100,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   #
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
-  target_link_libraries(xnn_executor_runner xnnpack_backend gflags)
+  target_link_libraries(xnn_executor_runner xnnpack_backend gflags portable_ops_lib)
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 
