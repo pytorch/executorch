@@ -54,6 +54,15 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+
+# --- pthreadpool
+set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "")
+set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "")
+set(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "")
+set(PTHREADPOOL_ALLOW_DEPRECATED_API ON CACHE BOOL "")
+add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example

@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 #
-# Simple CMake build system for selective build demo.
+# CMake build system for llama runner.
 #
 # ### Editing this file ###
 #
@@ -38,6 +38,8 @@ list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 target_include_directories(extension_module
                            INTERFACE ${_common_include_directories})
 
+target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
+
 if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID)
   # Building a share library on iOS requires code signing
   # On Android we see duplicated registration when using shared lib
@@ -48,4 +50,4 @@ endif()
 
 target_link_libraries(
   llama_runner PUBLIC executorch portable_kernels extension_module
-                      extension_data_loader)
+                      extension_data_loader custom_ops pthreadpool)

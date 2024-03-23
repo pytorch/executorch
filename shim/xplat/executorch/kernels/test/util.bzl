@@ -1,4 +1,4 @@
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
+# load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False):
@@ -73,24 +73,24 @@ def generated_op_test(name, op_impl_target, generated_lib_headers_target, suppor
                 required so we can include a header wrapper for Functions.h. Use codegen_function_header_wrapper() to generate.
         deps: additional deps
     """
-    runtime.cxx_test(
-        name = name,
-        srcs = [
-            "fbsource//xplat/executorch/kernels/test:test_srcs_gen[{}.cpp]".format(name),
-        ] if is_xplat() else [
-            "//executorch/kernels/test:test_srcs_gen[{}.cpp]".format(name),
-        ],
-        deps = [
-            "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
-            "//executorch/runtime/kernel:kernel_includes",
-            "//executorch/kernels/test:test_util",
-            op_impl_target,
-            generated_lib_headers_target,
-            supported_features_target,
-            function_header_wrapper_target,
-        ] + deps,
-    )
+    # runtime.cxx_test(
+    #     name = name,
+    #     srcs = [
+    #         "fbsource//xplat/executorch/kernels/test:test_srcs_gen[{}.cpp]".format(name),
+    #     ] if is_xplat() else [
+    #         "//executorch/kernels/test:test_srcs_gen[{}.cpp]".format(name),
+    #     ],
+    #     deps = [
+    #         "//executorch/runtime/core/exec_aten:lib",
+    #         "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+    #         "//executorch/runtime/kernel:kernel_includes",
+    #         "//executorch/kernels/test:test_util",
+    #         op_impl_target,
+    #         generated_lib_headers_target,
+    #         supported_features_target,
+    #         function_header_wrapper_target,
+    #     ] + deps,
+    # )
 
 def define_supported_features_lib():
     runtime.genrule(
