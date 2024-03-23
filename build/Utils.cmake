@@ -20,6 +20,19 @@
 # It should also be cmake-lint clean.
 #
 
+# Platform-specific definitions.
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+  set(arm64 ON)
+else()
+  set(arm64 OFF)
+endif()
+
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
+    set(x86 ON)
+else()
+    set(x86 OFF)
+endif()
+
 # Public function to print summary for all configurations. For new variables,
 # it's recommended to add them here.
 function(executorch_print_configuration_summary)
@@ -32,6 +45,8 @@ function(executorch_print_configuration_summary)
   message(STATUS "  BUCK2                         : ${BUCK2}")
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
   message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
+  message(STATUS "  X86                           : ${x86}")
+  message(STATUS "  ARM64                         : ${arm64}")
   message(
     STATUS "  EXECUTORCH_ENABLE_LOGGING     : ${EXECUTORCH_ENABLE_LOGGING}")
   message(
