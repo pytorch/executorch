@@ -1,0 +1,22 @@
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+
+oncall("executorch")
+
+runtime.python_library(
+    name = "vulkan_partitioner",
+    srcs = [
+        "vulkan_partitioner.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//executorch/backends/vulkan:vulkan_preprocess",
+        "//executorch/exir:delegate",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
+    ],
+)

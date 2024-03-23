@@ -11,18 +11,18 @@ This is a tutorial for setting up the Core ML backend.
 ```
 cd executorch
 
-./backends/apple/coreml/scripts/install_requirements.sh   
+./backends/apple/coreml/scripts/install_requirements.sh
 
-``` 
+```
 
-3. Run the example script to validate that the **Core ML** backend is set up correctly. 
+3. Run the example script to validate that the **Core ML** backend is set up correctly.
 
 ```
 cd executorch
 
 # Saves add_coreml_all.pte in the current directory if successful.
 
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name add 
+python3 -m examples.apple.coreml.scripts.export --model_name add
 
 ```
 
@@ -66,6 +66,6 @@ coreml_backend.xcframework
 - Accelerate.framework
 - CoreML.framework
 - libsqlite3.tbd
-``` 
+```
 
-6. The target could now run a **Core ML** delegated **Program**. 
+6. The target could now run a **Core ML** delegated **Program**.

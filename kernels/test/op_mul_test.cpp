@@ -23,121 +23,125 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::mul_outf(context, self, other, out);
-}
+class OpMulOutTest : public OperatorTest {
+ protected:
+  Tensor& op_mul_out(const Tensor& self, const Tensor& other, Tensor& out) {
+    return torch::executor::aten::mul_outf(context_, self, other, out);
+  }
 
-Tensor&
-op_mul_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::mul_outf(context, self, other, out);
-}
+  // Common testing for multipling two integer Tensors
+  template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
+  void test_mul() {
+    TensorFactory<DTYPE_A> tf_a;
+    TensorFactory<DTYPE_B> tf_b;
+    TensorFactory<DTYPE_OUT> tf_out;
+
+    const std::vector<int32_t> sizes = {2, 2};
+
+    // Destination for the mul.
+    Tensor out = tf_out.zeros(sizes);
+
+    // Multiply two tensors
+    op_mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.ones(sizes), out);
+    EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 2, 4, 8}));
+
+    op_mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.zeros(sizes), out);
+    EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{0, 0, 0, 0}));
+
+    op_mul_out(
+        tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
+        tf_b.make(sizes, /*data=*/{1, 2, 4, 8}),
+        out);
+    EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 4, 16, 64}));
+  }
+
+  template <ScalarType DTYPE_A, ScalarType DTYPE_B>
+  void test_mul_enumerate_out_types() {
+    test_mul<DTYPE_A, DTYPE_B, ScalarType::Half>();
+    test_mul<DTYPE_A, DTYPE_B, ScalarType::Float>();
+    test_mul<DTYPE_A, DTYPE_B, ScalarType::Double>();
+    // Integral out type is only allowed if both inputs are integral types
+    if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
+      test_mul<DTYPE_A, DTYPE_B, ScalarType::Int>();
+      test_mul<DTYPE_A, DTYPE_B, ScalarType::Long>();
+    }
+  }
+
+  template <ScalarType DTYPE_A>
+  void test_mul_enumerate_b_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_mul_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+
+  // Common testing for multipling two floating point Tensors
+  template <ScalarType DTYPE>
+  void test_floating_point_mul_out() {
+    TensorFactory<DTYPE> tf;
+
+    const std::vector<int32_t> sizes = {2, 2};
+
+    // Destination for the mul.
+    Tensor out = tf.zeros(sizes);
+
+    // Multiply two tensors
+    op_mul_out(
+        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes), out);
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}));
+
+    op_mul_out(
+        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.zeros(sizes), out);
+    EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.0, 0.0, 0.0, 0.0}));
+
+    op_mul_out(
+        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
+        tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
+        out);
+    EXPECT_TENSOR_CLOSE(
+        out, tf.make(sizes, /*data=*/{1.21, 4.84, 19.36, 77.44}));
+  }
+
+  void test_mul_enumerate_a_types() {
+#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
+  test_mul_enumerate_b_types<ScalarType::dtype>();
+
+    ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
+
+#undef ENUMERATE_TEST_ENTRY
+  }
+};
+
+class OpMulScalarOutTest : public OperatorTest {
+ protected:
+  Tensor&
+  op_mul_scalar_out(const Tensor& self, const Scalar& other, Tensor& out) {
+    return torch::executor::aten::mul_outf(context_, self, other, out);
+  }
+};
 
 //
 // Correctness Tests
 //
 
-// Common testing for multipling two integer Tensors
-template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
-void test_mul() {
-  TensorFactory<DTYPE_A> tf_a;
-  TensorFactory<DTYPE_B> tf_b;
-  TensorFactory<DTYPE_OUT> tf_out;
-
-  const std::vector<int32_t> sizes = {2, 2};
-
-  // Destination for the mul.
-  Tensor out = tf_out.zeros(sizes);
-
-  // Multiply two tensors
-  op_mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.ones(sizes), out);
-  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 2, 4, 8}));
-
-  op_mul_out(tf_a.make(sizes, /*data=*/{1, 2, 4, 8}), tf_b.zeros(sizes), out);
-  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{0, 0, 0, 0}));
-
-  op_mul_out(
-      tf_a.make(sizes, /*data=*/{1, 2, 4, 8}),
-      tf_b.make(sizes, /*data=*/{1, 2, 4, 8}),
-      out);
-  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, /*data=*/{1, 4, 16, 64}));
-}
-
-template <ScalarType DTYPE_A, ScalarType DTYPE_B>
-void test_mul_enumerate_out_types() {
-  test_mul<DTYPE_A, DTYPE_B, ScalarType::Half>();
-  test_mul<DTYPE_A, DTYPE_B, ScalarType::Float>();
-  test_mul<DTYPE_A, DTYPE_B, ScalarType::Double>();
-  // Integral out type is only allowed if both inputs are integral types
-  if (isIntegralType(DTYPE_A, false) && isIntegralType(DTYPE_B, false)) {
-    test_mul<DTYPE_A, DTYPE_B, ScalarType::Int>();
-    test_mul<DTYPE_A, DTYPE_B, ScalarType::Long>();
-  }
-}
-
-template <ScalarType DTYPE_A>
-void test_mul_enumerate_b_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_mul_enumerate_out_types<DTYPE_A, ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
-void test_mul_enumerate_a_types() {
-#define ENUMERATE_TEST_ENTRY(ctype, dtype) \
-  test_mul_enumerate_b_types<ScalarType::dtype>();
-
-  ET_FORALL_REAL_TYPES_AND(Half, ENUMERATE_TEST_ENTRY)
-
-#undef ENUMERATE_TEST_ENTRY
-}
-
 /**
- * Uses the function templates above to test all valid combinations of inputs
- * and output dtypes
- */
-TEST(OpMulOutKernelTest, AllRealDtypesSupported) {
+ * Uses the function templates above to test all valid combinations of
+ * inputs*and output dtypes*/
+TEST_F(OpMulOutTest, AllRealDtypesSupported) {
   test_mul_enumerate_a_types();
 }
 
-// Common testing for multipling two floating point Tensors
-template <ScalarType DTYPE>
-void test_floating_point_mul_out() {
-  TensorFactory<DTYPE> tf;
-
-  const std::vector<int32_t> sizes = {2, 2};
-
-  // Destination for the mul.
-  Tensor out = tf.zeros(sizes);
-
-  // Multiply two tensors
-  op_mul_out(
-      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.ones(sizes), out);
-  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}));
-
-  op_mul_out(
-      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}), tf.zeros(sizes), out);
-  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{0.0, 0.0, 0.0, 0.0}));
-
-  op_mul_out(
-      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
-      tf.make(sizes, /*data=*/{1.1, 2.2, 4.4, 8.8}),
-      out);
-  EXPECT_TENSOR_CLOSE(out, tf.make(sizes, /*data=*/{1.21, 4.84, 19.36, 77.44}));
-}
-
-TEST(OpMulOutKernelTest, FloatTensors) {
+TEST_F(OpMulOutTest, FloatTensors) {
   test_floating_point_mul_out<ScalarType::Float>();
 }
 
-TEST(OpMulOutKernelTest, DoubleTensors) {
+TEST_F(OpMulOutTest, DoubleTensors) {
   test_floating_point_mul_out<ScalarType::Double>();
 }
 
-TEST(OpMulOutKernelTest, BoolTensors) {
+TEST_F(OpMulOutTest, BoolTensors) {
   TensorFactory<ScalarType::Bool> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
@@ -162,7 +166,7 @@ TEST(OpMulOutKernelTest, BoolTensors) {
 }
 
 // Mismatched shape tests.
-TEST(OpMulOutKernelTest, MismatchedInputShapesDies) {
+TEST_F(OpMulOutTest, MismatchedInputShapesDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched shapes";
   }
@@ -178,11 +182,11 @@ TEST(OpMulOutKernelTest, MismatchedInputShapesDies) {
 
   // Multiplying the two mismatched tensors should cause an assertion and kill
   // the test process.
-  ET_EXPECT_KERNEL_FAILURE(op_mul_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mul_out(a, b, out));
 }
 
 // Broadcast tensor b's size to tensor a's size
-TEST(OpMulOutKernelTest, BroadcastA2BTest) {
+TEST_F(OpMulOutTest, BroadcastA2BTest) {
   TensorFactory<ScalarType::Int> tf_a;
 
   // a and b of different shapes
@@ -198,7 +202,7 @@ TEST(OpMulOutKernelTest, BroadcastA2BTest) {
 }
 
 // Broadcast tensor a's size to tensor b's size
-TEST(OpMulOutKernelTest, BroadcastB2ATest) {
+TEST_F(OpMulOutTest, BroadcastB2ATest) {
   TensorFactory<ScalarType::Int> tf_a;
 
   // a and b of different shapes
@@ -214,7 +218,7 @@ TEST(OpMulOutKernelTest, BroadcastB2ATest) {
 }
 
 // Broadcast tensor a and b's size to a new size c.
-TEST(OpMulOutKernelTest, BroadcastAB2CTest) {
+TEST_F(OpMulOutTest, BroadcastAB2CTest) {
   TensorFactory<ScalarType::Int> tf_a;
 
   // a and b of different shapes
@@ -230,7 +234,7 @@ TEST(OpMulOutKernelTest, BroadcastAB2CTest) {
       tf_a.make({2, 2, 2}, /*data=*/{1, 2, 2, 4, 3, 4, 6, 8}));
 }
 
-TEST(OpMaskedFillTest, ScalarInputBroadcastTest) {
+TEST_F(OpMulOutTest, ScalarInputBroadcastTest) {
   TensorFactory<ScalarType::Int> tf_a;
 
   // a is a 1d tensor and b is a scalar
@@ -245,7 +249,7 @@ TEST(OpMaskedFillTest, ScalarInputBroadcastTest) {
   EXPECT_TENSOR_CLOSE(op_mul_out(a, b, out), expected);
 }
 
-TEST(OpMulOutKernelTest, MismatchedOutputShapesDies) {
+TEST_F(OpMulOutTest, MismatchedOutputShapesDies) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen currently supports mismatched shapes";
   }
@@ -263,10 +267,10 @@ TEST(OpMulOutKernelTest, MismatchedOutputShapesDies) {
 
   // Multiplying the tensors into a mismatched output should cause an assertion
   // and kill the test process.
-  ET_EXPECT_KERNEL_FAILURE(op_mul_out(a, b, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_mul_out(a, b, out));
 }
 
-TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneAB) {
+TEST_F(OpMulOutTest, BroadcastDimSizeIsOneAB) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -292,7 +296,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulOutKernelTest, BroadcastDimSizeMissingAB) {
+TEST_F(OpMulOutTest, BroadcastDimSizeMissingAB) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -318,7 +322,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeMissingAB) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneBA) {
+TEST_F(OpMulOutTest, BroadcastDimSizeIsOneBA) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.9711773991584778, 0.8632034063339233});
@@ -344,7 +348,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeIsOneBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulOutKernelTest, BroadcastDimSizeMissingBA) {
+TEST_F(OpMulOutTest, BroadcastDimSizeMissingBA) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.9711773991584778, 0.8632034063339233});
@@ -370,7 +374,7 @@ TEST(OpMulOutKernelTest, BroadcastDimSizeMissingBA) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpMulOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -404,7 +408,7 @@ TEST(OpMulOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpMulOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -438,7 +442,7 @@ TEST(OpMulOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpMulOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -473,7 +477,7 @@ TEST(OpMulOutKernelTest, DynamicShapeUnbound) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpMulScalarOutKernelTest, SanityCheck) {
+TEST_F(OpMulScalarOutTest, SanityCheck) {
   TensorFactory<ScalarType::Bool> tf_a;
   TensorFactory<ScalarType::Float> tf_out;
 
@@ -487,7 +491,7 @@ TEST(OpMulScalarOutKernelTest, SanityCheck) {
   EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {2.3, 0.0, 2.3, 0.0}));
 }
 
-TEST(OpMulScalarOutKernelTest, OptimizedSanityCheck) {
+TEST_F(OpMulScalarOutTest, OptimizedSanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {2, 2};

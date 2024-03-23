@@ -1,7 +1,7 @@
 //
 // CoreMLBackendDelegateTests.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -96,31 +96,30 @@ std::vector<Span<uint8_t>> to_spans(std::vector<Buffer>& buffers) {
 }
 
 Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
-    MethodMeta method_meta = method.method_meta();
-    size_t num_inputs = method_meta.num_inputs();
-    std::vector<std::vector<uint8_t>> buffers;
-    for (size_t i = 0; i < num_inputs; i++) {
-        Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
-        if (!tensor_meta.ok()) {
-            ET_LOG(Info, "Skipping non-tensor input %zu", i);
-            continue;
-        }
-        Buffer buffer(tensor_meta->nbytes(), 1);
-        auto sizes = tensor_meta->sizes();
-        exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
-        exec_aten::Tensor tensor(&tensor_impl);
-        EValue input_value(std::move(tensor));
-        Error err = method.set_input(input_value, i);
-        if (err != Error::Ok) {
-            ET_LOG(Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
-            return err;
-        }
-        buffers.emplace_back(std::move(buffer));
-    }
-    
-    return buffers;
-}
+     MethodMeta method_meta = method.method_meta();
+     size_t num_inputs = method_meta.num_inputs();
+     std::vector<std::vector<uint8_t>> buffers;
+     for (size_t i = 0; i < num_inputs; i++) {
+         Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
+         if (!tensor_meta.ok()) {
+             ET_LOG(Info, "Skipping non-tensor input %zu", i);
+             continue;
+         }
+         Buffer buffer(tensor_meta->nbytes(), 1);
+         auto sizes = tensor_meta->sizes();
+         exec_aten::TensorImpl tensor_impl(tensor_meta->scalar_type(), std::size(sizes), const_cast<int *>(sizes.data()), buffer.data());
+         exec_aten::Tensor tensor(&tensor_impl);
+         EValue input_value(std::move(tensor));
+         Error err = method.set_input(input_value, i);
+         if (err != Error::Ok) {
+             ET_LOG(Error, "Failed to prepare input %zu: 0x%" PRIx32, i, (uint32_t)err);
+             return err;
+         }
+         buffers.emplace_back(std::move(buffer));
+     }
 
+     return buffers;
+ }
 }
 
 @interface CoreMLBackendDelegateTests : XCTestCase
@@ -171,7 +170,7 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
         MemoryManager memoryManger(&methodAllocator, &plannedAllocator);
         auto method = program->load_method(methodName.get().c_str(), &memoryManger);
         XCTAssert(method.ok());
-        auto inputBuffers = prepare_input_tensors(method.get());
+        auto inputs = ::prepare_input_tensors(method.get());
         auto status = method->execute();
         XCTAssertEqual(status, Error::Ok);
         auto outputs = methodAllocator.allocateList<EValue>(method->outputs_size());

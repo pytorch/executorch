@@ -35,6 +35,7 @@ executorch_call_delegate.fallthrough(torch._C.DispatchKey.AutocastCPU)
 
 LOWERED_BACKEND_MODULE_TYPE = "LoweredBackendModule"
 
+
 # pyre-ignore
 def trace_call_delegate(proxy_mode, func_overload, lowered_module, *args):
     # pyre-ignore

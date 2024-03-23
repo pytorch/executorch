@@ -667,9 +667,11 @@ def dynamo_trace(
                 aten_graph=aten_graph,
                 tracing_mode=tracing_mode,
                 assume_static_by_default=dynamo_config.assume_static_by_default,
-                decomposition_table=_default_decomposition_table(_use_old_decomp_table)
-                if aten_graph
-                else None,
+                decomposition_table=(
+                    _default_decomposition_table(_use_old_decomp_table)
+                    if aten_graph
+                    else None
+                ),
                 dynamic_shapes=dynamic_shapes,
             )(
                 *copy.deepcopy(args),

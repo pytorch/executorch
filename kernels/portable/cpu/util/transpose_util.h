@@ -38,19 +38,19 @@ namespace {
  * Increments an N dimensional index like x[0,0,0] to x[0, 0, 1] to x[0, 0, 2]
  * to x[0, 1, 0] to x[0, 1, 1] etc...
  *
- * @param index: An array of the same size as sizes. This stores the "counter"
+ * @param index An array of the same size as sizes. This stores the "counter"
  * being incremented.
  *
- * @param new_sizes: The output tensor dimensions. Allows us to compute the
+ * @param new_sizes The output tensor dimensions. Allows us to compute the
  * offset into the input tensor.
  *
- * @param non_one_indices: A list of indices into index that contain non-1
+ * @param non_one_indices A list of indices into index that contain non-1
  * dimension values. This allows us to eliminate an O(dim) factor from the
  * runtime in case many dimensions have a value of 1.
  *
- * @param new_strides: Strides corresponding to new_sizes.
+ * @param new_strides Strides corresponding to new_sizes.
  *
- * @param offset: The computed offset to index into the input tensor's memory
+ * @param offset The computed offset to index into the input tensor's memory
  * array.
  */
 inline void increment_index_and_offset(

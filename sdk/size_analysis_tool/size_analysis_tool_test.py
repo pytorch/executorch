@@ -108,7 +108,7 @@ class SizeAnalysisToolTest(unittest.TestCase):
         )
 
         for tensor in size_information["tensor_data"]:
-            for (k, v) in exepected_tensor_data[tensor["numel"]].items():
+            for k, v in exepected_tensor_data[tensor["numel"]].items():
                 self.assertEqual(tensor[k], v)
 
         # Two delegate blobs: sigmoid and conv2d

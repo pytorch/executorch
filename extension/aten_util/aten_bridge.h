@@ -26,16 +26,16 @@ torch::executor::ScalarType torchToExecuTorchScalarType(caffe2::TypeMeta type);
 c10::ScalarType execuTorchtoTorchScalarType(torch::executor::ScalarType type);
 
 /*
- * @param[in] aten_tensor: Input at::Tensor
- * @param[in/out] mutable_et: ETensor whose underlying memory now will alias to
+ * @param[in] aten_tensor Input at::Tensor
+ * @param[in,out] mutable_et ETensor whose underlying memory now will alias to
  * aten_tensor
  */
 void alias_etensor_to_attensor(at::Tensor& at, torch::executor::Tensor& et);
 
 /*
- * @param[in] et: ETensor whose underlying memory now will alias to returned
+ * @param[in] et ETensor whose underlying memory now will alias to returned
  * output tensor
- * @param[ret] aten_tensor: output at::Tensor
+ * @param[ret] aten_tensor output at::Tensor
  * Notes:
  * It is owned by the caller of alias_attensor_to_etensor.
  * Lifetime of tensor meta must be >= to that of the returned tensor since

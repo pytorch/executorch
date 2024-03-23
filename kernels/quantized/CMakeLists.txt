@@ -38,7 +38,8 @@ list(TRANSFORM _quantized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 # Executorch (for runtime). Here select all ops in quantized.yaml
 gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/quantized.yaml" "" "")
 # Expect gen_selected_ops output file to be selected_operators.yaml
-generate_bindings_for_kernels("" ${CMAKE_CURRENT_SOURCE_DIR}/quantized.yaml)
+generate_bindings_for_kernels(
+  CUSTOM_OPS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/quantized.yaml)
 message("Generated files ${gen_command_sources}")
 
 # Build a AOT library to register quantized ops into PyTorch.
@@ -55,4 +56,7 @@ target_compile_options(quantized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _quantized_kernels_srcs
 #
 # quantized_ops_lib: Register quantized ops kernels into Executorch runtime
-gen_operators_lib("quantized_ops_lib" quantized_kernels executorch)
+gen_operators_lib(
+  "quantized_ops_lib"
+  KERNEL_LIBS quantized_kernels
+  DEPS executorch)

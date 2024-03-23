@@ -32,6 +32,7 @@ def define_common_targets():
             "//executorch/examples/xnnpack/quantization:quant_utils",
             "//executorch/exir:lib",
             "//executorch/exir/backend:backend_api",
+            "//executorch/sdk:lib",
         ],
     )
 
@@ -44,6 +45,9 @@ def define_common_targets():
         deps = [
             ":xnnpack_aot_lib",
         ],
+        visibility = [
+            "@EXECUTORCH_CLIENTS",
+        ],
     )
 
     # executor_runner for XNNPACK Backend and portable kernels.
@@ -52,7 +56,7 @@ def define_common_targets():
         deps = [
             "//executorch/examples/portable/executor_runner:executor_runner_lib",
             "//executorch/backends/xnnpack:xnnpack_backend",
-            "//executorch/kernels/portable:generated_lib_all_ops",
+            "//executorch/kernels/portable:generated_lib",
         ],
         define_static_target = True,
         **get_oss_build_kwargs()

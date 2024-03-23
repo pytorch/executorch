@@ -11,7 +11,6 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnBackendCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnContextCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnDeviceCommon.h>
-#include <executorch/backends/qualcomm/runtime/backends/QnnFactory.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
@@ -19,6 +18,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpGraph.h>
+#include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <memory>
 namespace torch {
@@ -52,15 +52,13 @@ typedef struct BackendConfigParameters {
 
 } BackendConfigParameters;
 
-class QnnBackendFactory : public QnnFactory {
+class QnnBackendFactory {
  public:
   std::unique_ptr<BackendConfigParameters> Create(
       const QnnImplementation& implementation,
       QnnLogger* logger,
       const QnnExecuTorchContextBinary& qnn_context_blob,
-      const QnnExecuTorchBackendType& backend_type,
-      const std::string& graph_name,
-      const QnnExecuTorchHtpBackendOptions& htp_options);
+      const QnnExecuTorchOptions* options);
 };
 } // namespace qnn
 } // namespace executor

@@ -11,6 +11,7 @@
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
+#include <executorch/test/utils/DeathTest.h>
 
 #include <gtest/gtest.h>
 #include <cmath>
@@ -188,14 +189,16 @@ TEST(OpAllCloseTest, MismatchedInputShapesDeath) {
   TensorFactory<ScalarType::Bool> tf_bool;
   Tensor out = tf_bool.zeros(/*sizes=*/{1});
 
-  ET_EXPECT_KERNEL_FAILURE(allclose_out(
-      a,
-      b,
-      default_rtol,
-      default_atol,
-      /*equal_nan=*/false,
-      /*dummy_param=*/false,
-      out));
+  ET_EXPECT_DEATH(
+      allclose_out(
+          a,
+          b,
+          default_rtol,
+          default_atol,
+          /*equal_nan=*/false,
+          /*dummy_param=*/false,
+          out),
+      "");
 }
 
 TEST(OpAllCloseTest, MismatchedInputDtypesDeath) {
@@ -208,14 +211,16 @@ TEST(OpAllCloseTest, MismatchedInputDtypesDeath) {
   TensorFactory<ScalarType::Bool> tf_bool;
   Tensor out = tf_bool.zeros(/*sizes=*/{1});
 
-  ET_EXPECT_KERNEL_FAILURE(allclose_out(
-      a,
-      b,
-      default_rtol,
-      default_atol,
-      /*equal_nan=*/false,
-      /*dummy_param=*/false,
-      out));
+  ET_EXPECT_DEATH(
+      allclose_out(
+          a,
+          b,
+          default_rtol,
+          default_atol,
+          /*equal_nan=*/false,
+          /*dummy_param=*/false,
+          out),
+      "");
 }
 
 TEST(OpAllCloseTest, IncorrectOutputDtypeDeath) {
@@ -224,14 +229,16 @@ TEST(OpAllCloseTest, IncorrectOutputDtypeDeath) {
   Tensor b = tf_float.ones(/*sizes=*/{2, 2});
   Tensor out = tf_float.zeros(/*sizes=*/{1});
 
-  ET_EXPECT_KERNEL_FAILURE(allclose_out(
-      a,
-      b,
-      default_rtol,
-      default_atol,
-      /*equal_nan=*/false,
-      /*dummy_param=*/false,
-      out));
+  ET_EXPECT_DEATH(
+      allclose_out(
+          a,
+          b,
+          default_rtol,
+          default_atol,
+          /*equal_nan=*/false,
+          /*dummy_param=*/false,
+          out),
+      "");
 }
 
 TEST(OpAllCloseTest, IncorrectOutputShapeDeath) {
@@ -241,14 +248,16 @@ TEST(OpAllCloseTest, IncorrectOutputShapeDeath) {
   TensorFactory<ScalarType::Bool> tf_bool;
   Tensor out = tf_bool.zeros(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(allclose_out(
-      a,
-      b,
-      default_rtol,
-      default_atol,
-      /*equal_nan=*/false,
-      /*dummy_param=*/false,
-      out));
+  ET_EXPECT_DEATH(
+      allclose_out(
+          a,
+          b,
+          default_rtol,
+          default_atol,
+          /*equal_nan=*/false,
+          /*dummy_param=*/false,
+          out),
+      "");
 }
 
 TEST(OpAllCloseTest, FloatTensorsVaryWithinRelativeTolerance) {

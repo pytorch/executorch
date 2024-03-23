@@ -32,7 +32,7 @@ Tensor& any_all_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
       auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
       data_out[0] = static_cast<CTYPE_OUT>(false);
       for (auto i = 0; i < in.numel(); ++i) {
-        if (static_cast<CTYPE_OUT>(data_in[i])) {
+        if (static_cast<bool>(data_in[i])) {
           data_out[0] = static_cast<CTYPE_OUT>(true);
           break;
         }
@@ -57,11 +57,16 @@ Tensor& any_dims_out(
       InvalidArgument,
       out);
 
-  ET_KERNEL_CHECK(
-      ctx,
-      resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
-      InvalidArgument,
-      out);
+  if (dim_list.has_value() && dim_list.value().empty()) {
+    ET_KERNEL_CHECK(
+        ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
+  } else {
+    ET_KERNEL_CHECK(
+        ctx,
+        resize_reduction_out(in, dim_list, keepdim, out) == Error::Ok,
+        InvalidArgument,
+        out);
+  }
 
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
@@ -70,17 +75,25 @@ Tensor& any_dims_out(
   ET_SWITCH_REALHB_TYPES(in_type, ctx, name, CTYPE_IN, [&] {
     ET_SWITCH_TWO_TYPES(Bool, Byte, out_type, ctx, name, CTYPE_OUT, [&] {
       CTYPE_OUT* out_data = out.mutable_data_ptr<CTYPE_OUT>();
-      for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
-        CTYPE_OUT any = false;
-        if (in.numel() > 0) {
-          any = map_reduce_over_dim_list<CTYPE_IN, CTYPE_OUT>(
-              [](CTYPE_IN v) { return static_cast<bool>(v); },
-              [](CTYPE_OUT outv, CTYPE_OUT acc) { return acc || outv; },
-              in,
-              dim_list,
-              out_ix);
+      if (dim_list.has_value() && dim_list.value().empty()) {
+        const CTYPE_IN* in_data = in.const_data_ptr<CTYPE_IN>();
+        for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+          out_data[out_ix] =
+              static_cast<CTYPE_OUT>(static_cast<bool>(in_data[out_ix]));
         }
-        out_data[out_ix] = any;
+      } else {
+        for (size_t out_ix = 0; out_ix < out.numel(); ++out_ix) {
+          bool any = false;
+          if (in.numel() > 0) {
+            any = map_reduce_over_dim_list<CTYPE_IN, bool>(
+                [](CTYPE_IN v) { return static_cast<bool>(v); },
+                [](bool outv, bool acc) { return acc || outv; },
+                in,
+                dim_list,
+                out_ix);
+          }
+          out_data[out_ix] = static_cast<CTYPE_OUT>(any);
+        }
       }
     });
   });
@@ -98,7 +111,8 @@ Tensor& any_out(
 
   ET_KERNEL_CHECK(
       ctx,
-      check_reduction_args_single_dim(in, dim, keepdim, {}, out),
+      check_reduction_args_single_dim(
+          in, dim, keepdim, {}, out, /*allow_empty_dim*/ true),
       InvalidArgument,
       out);
 

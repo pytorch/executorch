@@ -127,9 +127,9 @@ class TestInspectorUtils(unittest.TestCase):
         self.assertEqual(find_populated_event(event), profile_event)
 
 
-def gen_mock_operator_graph_with_expected_map() -> Tuple[
-    OperatorGraph, Dict[int, OperatorNode]
-]:
+def gen_mock_operator_graph_with_expected_map() -> (
+    Tuple[OperatorGraph, Dict[int, OperatorNode]]
+):
     # Make a mock OperatorGraph instance for testing
     node_input = ValueNode("input")
     mapping = {}

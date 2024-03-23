@@ -41,6 +41,13 @@ target_sources(qnn_logger
     ${CMAKE_CURRENT_LIST_DIR}/QnnLogger.cpp
 )
 
+# qnn_profiler
+target_sources(qnn_profiler
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/QnnProfiler.h
+    ${CMAKE_CURRENT_LIST_DIR}/QnnProfiler.cpp
+)
+
 # qnn_device
 set(HOST_ARCHITECTURE
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}
@@ -54,9 +61,11 @@ target_sources(qnn_device
     ${CMAKE_CURRENT_LIST_DIR}/QnnDeviceCommon.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevice.cpp
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDevicePlatformInfoConfig.h
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpDeviceCustomConfig.h
     # When offline prepare context cache in x86 host
-    # we have to provide platform infomation to Qnn
+    # we have to provide platform infomation and SocModel to Qnn
     ${HOST_ARCHITECTURE}/HtpDevicePlatformInfoConfig.cpp
+    ${HOST_ARCHITECTURE}/HtpDeviceCustomConfig.cpp
 )
 
 # qnn_context
@@ -66,6 +75,9 @@ target_sources(qnn_context
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.h
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/QnnContextCommon.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContext.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpContextCustomConfig.h
+    ${HOST_ARCHITECTURE}/HtpContextCustomConfig.cpp
 )
 
 # qnn_backend_cache
@@ -101,7 +113,6 @@ target_sources(qnn_backend
 target_sources(qnn_factory
     PUBLIC
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.h
-    ${CMAKE_CURRENT_LIST_DIR}/QnnFactory.h
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendFactory.cpp
 )

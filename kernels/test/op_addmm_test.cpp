@@ -24,19 +24,51 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_addmm_out(
-    const Tensor& self,
-    const Tensor& mat1,
-    const Tensor& mat2,
-    const Scalar& beta,
-    const Scalar& alpha,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::addmm_outf(
-      context, self, mat1, mat2, beta, alpha, out);
-}
+class OpAddmmOutTest : public OperatorTest {
+ protected:
+  Tensor& op_addmm_out(
+      const Tensor& self,
+      const Tensor& mat1,
+      const Tensor& mat2,
+      const Scalar& beta,
+      const Scalar& alpha,
+      Tensor& out) {
+    return torch::executor::aten::addmm_outf(
+        context_, self, mat1, mat2, beta, alpha, out);
+  }
 
-TEST(OpAddmmOutTest, OutputDim) {
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
+      if (DTYPE == ScalarType::Half) {
+        GTEST_SKIP()
+            << "skip Half because torch::executor::aten::mm_out does not support Half";
+        return;
+      }
+    }
+
+    // matmul gives 4 * 2 * 3 = 24, α * 24 = 48, 48 + β * self = 51
+    Tensor self = tf.full({3, 5}, 1);
+    Tensor x = tf.full({3, 4}, 2);
+    Tensor y = tf.full({4, 5}, 3);
+
+    // Output shape should be (3, 5)
+    Tensor out = tf.zeros({3, 5});
+
+    Scalar alpha = Scalar(2.0);
+    Scalar beta = Scalar(3.0);
+
+    op_addmm_out(self, x, y, beta, alpha, out);
+
+    Tensor expected = tf.full({3, 5}, 51);
+
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+};
+
+TEST_F(OpAddmmOutTest, OutputDim) {
   TensorFactory<ScalarType::Int> tf;
 
   // 3 tensors with compatible dimensions: (3, 5), (3, 4) and (4, 5).
@@ -63,37 +95,7 @@ TEST(OpAddmmOutTest, OutputDim) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
-    if (DTYPE == ScalarType::Half) {
-      GTEST_SKIP()
-          << "skip Half because torch::executor::aten::mm_out does not support Half";
-      return;
-    }
-  }
-
-  // matmul gives 4 * 2 * 3 = 24, α * 24 = 48, 48 + β * self = 51
-  Tensor self = tf.full({3, 5}, 1);
-  Tensor x = tf.full({3, 4}, 2);
-  Tensor y = tf.full({4, 5}, 3);
-
-  // Output shape should be (3, 5)
-  Tensor out = tf.zeros({3, 5});
-
-  Scalar alpha = Scalar(2.0);
-  Scalar beta = Scalar(3.0);
-
-  op_addmm_out(self, x, y, beta, alpha, out);
-
-  Tensor expected = tf.full({3, 5}, 51);
-
-  EXPECT_TENSOR_EQ(out, expected);
-}
-
-TEST(OpAddmmOutTest, AllDtypesSupported) {
+TEST_F(OpAddmmOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Half, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -102,7 +104,7 @@ TEST(OpAddmmOutTest, AllDtypesSupported) {
   // for those types.
 }
 
-TEST(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
+TEST_F(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
   TensorFactory<ScalarType::Float> tf;
 
   // Empty input matrices
@@ -119,7 +121,7 @@ TEST(OpAddmmOutTest, EmptyInputWithEmptyOutTensorPasses) {
       op_addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
 }
 
-TEST(OpAddmmOutTest, FloatTensorDtypeAndIntScalarTypePasses) {
+TEST_F(OpAddmmOutTest, FloatTensorDtypeAndIntScalarTypePasses) {
   // case 1: Tensor dtype float, scalar type int
   TensorFactory<ScalarType::Float> tff;
   // matmul gives 4 * 2 * 3 = 24, α * 24 = 72, 72 + β * self = 74
@@ -136,7 +138,7 @@ TEST(OpAddmmOutTest, FloatTensorDtypeAndIntScalarTypePasses) {
       op_addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
 }
 
-TEST(OpAddmmOutTest, IntTensorDtypeAndFloatScalarTypePasses) {
+TEST_F(OpAddmmOutTest, IntTensorDtypeAndFloatScalarTypePasses) {
   // case 2: Tensor dtype int, scalar type loat
   TensorFactory<ScalarType::Int> tfi;
   // matmul gives 4 * 2 * 3 = 24, α * 24 = 72, 72 + β * self = 74
@@ -153,7 +155,7 @@ TEST(OpAddmmOutTest, IntTensorDtypeAndFloatScalarTypePasses) {
       op_addmm_out(self, x, y, Scalar(2.0), Scalar(3.0), out), expected);
 }
 
-TEST(OpAddmmOutTest, InfinityTensorAndFloatScalarTypePasses) {
+TEST_F(OpAddmmOutTest, InfinityTensorAndFloatScalarTypePasses) {
   // case 2: Tensor dtype int, scalar type loat
   TensorFactory<ScalarType::Float> tff;
 
@@ -170,7 +172,7 @@ TEST(OpAddmmOutTest, InfinityTensorAndFloatScalarTypePasses) {
       op_addmm_out(self, x, y, Scalar(2), Scalar(3), out), expected);
 }
 
-TEST(OpAddmmOutTest, MismatchedDimensionsDies) {
+TEST_F(OpAddmmOutTest, MismatchedDimensionsDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor self = tf.full({2, 2}, 3);
@@ -184,13 +186,13 @@ TEST(OpAddmmOutTest, MismatchedDimensionsDies) {
 
   Tensor expected = tf.full({2, 2}, 9);
   ET_EXPECT_KERNEL_FAILURE(
-      op_addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), out));
+      context_, op_addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), out));
 
   EXPECT_TENSOR_EQ(
       op_addmm_out(self, x, right_y, Scalar(1), Scalar(1), out), expected);
 }
 
-TEST(OpAddmmOutTest, MismatchedDimensionSizeDies) {
+TEST_F(OpAddmmOutTest, MismatchedDimensionSizeDies) {
   TensorFactory<ScalarType::Int> tf;
   Tensor self = tf.full({2, 2}, 3);
   Tensor x = tf.full({2, 2}, 3);
@@ -208,12 +210,14 @@ TEST(OpAddmmOutTest, MismatchedDimensionSizeDies) {
   }
 
   ET_EXPECT_KERNEL_FAILURE(
+      context_,
       op_addmm_out(self, x, right_y, Scalar(1), Scalar(1), wrong_out));
   ET_EXPECT_KERNEL_FAILURE(
+      context_,
       op_addmm_out(self, x, wrong_y, Scalar(1), Scalar(1), right_out));
 }
 
-TEST(OpAddmmOutTest, WrongOutShapeDies) {
+TEST_F(OpAddmmOutTest, WrongOutShapeDies) {
   TensorFactory<ScalarType::Int> tf;
   Tensor self = tf.ones({10, 4});
   Tensor x = tf.ones({10, 3});
@@ -229,14 +233,14 @@ TEST(OpAddmmOutTest, WrongOutShapeDies) {
   }
 
   ET_EXPECT_KERNEL_FAILURE(
-      op_addmm_out(self, x, y, Scalar(1), Scalar(1), wrong_out));
+      context_, op_addmm_out(self, x, y, Scalar(1), Scalar(1), wrong_out));
 
   EXPECT_TENSOR_EQ(
       op_addmm_out(self, x, y, Scalar(1), Scalar(1), right_out),
       tf.full({10, 4}, 4));
 }
 
-TEST(OpAddmmOutTest, BroadcastTest) {
+TEST_F(OpAddmmOutTest, BroadcastTest) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor self = tf.make({1}, {1});
@@ -249,7 +253,7 @@ TEST(OpAddmmOutTest, BroadcastTest) {
       op_addmm_out(self, x, y, Scalar(1), Scalar(1), out),
       tf.make({2, 2}, {8, 11, 16, 23}));
 }
-TEST(OpAddmmOutKernelTest, BroadcastDimSize1) {
+TEST_F(OpAddmmOutTest, BroadcastDimSize1) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.9937992691993713, 0.7011417150497437});
@@ -301,7 +305,7 @@ TEST(OpAddmmOutKernelTest, BroadcastDimSize1) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpAddmmOutKernelTest, BroadcastDimSizeMissing) {
+TEST_F(OpAddmmOutTest, BroadcastDimSizeMissing) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({2}, {0.9937992691993713, 0.7011417150497437});
@@ -353,7 +357,7 @@ TEST(OpAddmmOutKernelTest, BroadcastDimSizeMissing) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpAddmmOutKernelTest, BroadcastDimSizeIsOne) {
+TEST_F(OpAddmmOutTest, BroadcastDimSizeIsOne) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make({1, 2}, {0.9093303680419922, 0.37621551752090454});
@@ -405,7 +409,7 @@ TEST(OpAddmmOutKernelTest, BroadcastDimSizeIsOne) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpAddmmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpAddmmOutTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -465,7 +469,7 @@ TEST(OpAddmmOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpAddmmOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpAddmmOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -525,7 +529,7 @@ TEST(OpAddmmOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpAddmmOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpAddmmOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

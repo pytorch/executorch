@@ -33,6 +33,9 @@ from executorch.exir.passes import (
 )
 from executorch.exir.passes.constant_prop_pass import constant_prop_pass
 from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGeneratorPass
+from executorch.exir.passes.insert_write_back_for_buffers_pass import (
+    insert_write_back_for_buffers_pass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
@@ -1195,3 +1198,49 @@ class TestPasses(unittest.TestCase):
             error_msg,
         ):
             _ = constant_prop_pass(edge.exported_program())
+
+    def test_mutable_buffers(self) -> None:
+        def count_copies(gm: torch.fx.GraphModule) -> int:
+            return sum(
+                (node.target == torch.ops.aten.copy_.default) for node in gm.graph.nodes
+            )
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(1))
+
+            def forward(self, x):
+                y = x + self.state
+                self.state.add_(1)
+                return y
+
+        model = to_edge(
+            export(
+                MutableStateModule(),
+                (torch.zeros(1),),
+            )
+        )
+        self.assertEqual(count_copies(model.exported_program().graph_module), 0)
+        # Before
+        # graph():
+        #     %arg0_1 : [num_users=2] = placeholder[target=arg0_1]
+        #     %_lifted_tensor_constant1 : [num_users=1] = placeholder[target=_lifted_tensor_constant1]
+        #     %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+        #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg1_1, %arg0_1), kwargs = {})
+        #     %aten__to_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%_lifted_tensor_constant1,), kwargs = {dtype: torch.float32})
+        #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg0_1, %aten__to_copy_default), kwargs = {})
+        #     return (aten_add_tensor_1, aten_add_tensor)
+        gm, _ = insert_write_back_for_buffers_pass(model.exported_program())
+
+        # After
+        # graph():
+        #     %arg0_1 : [num_users=3] = placeholder[target=arg0_1]
+        #     %_lifted_tensor_constant1 : [num_users=1] = placeholder[target=_lifted_tensor_constant1]
+        #     %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+        #     %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg1_1, %arg0_1), kwargs = {})
+        #     %aten__to_copy_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten._to_copy.default](args = (%_lifted_tensor_constant1,), kwargs = {dtype: torch.float32})
+        #     %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg0_1, %aten__to_copy_default), kwargs = {})
+        #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%arg0_1, %aten_add_tensor_1), kwargs = {})
+        #     return (copy__default, aten_add_tensor)
+        self.assertEqual(count_copies(gm), 1)

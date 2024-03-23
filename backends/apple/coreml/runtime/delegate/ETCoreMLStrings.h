@@ -1,7 +1,7 @@
 //
 // ETCoreMLStrings.h
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -40,6 +40,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, copy, readonly, nonatomic) NSString* metadataFileRelativePath;
 /// The model package relative path in the AOT blob.
 @property (class, copy, readonly, nonatomic) NSString* modelFileRelativePath;
+/// The compiled model relative path in the AOT blob.
+@property (class, copy, readonly, nonatomic) NSString* compiledModelFileRelativePath;
 
 /// The default assets directory path.
 @property (class, copy, readonly, nonatomic, nullable) NSString* assetsDirectoryPath;
@@ -59,6 +61,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (class, copy, readonly, nonatomic) NSString* cpuAndNeuralEngineComputeUnitsName;
 /// All compute units name.
 @property (class, copy, readonly, nonatomic) NSString* allComputeUnitsName;
+
+/// The name of debug symbols in the manifest file of `mlpackage`.
+@property (class, copy, readonly, nonatomic, nullable) NSString* debugSymbols;
 
 @end
 

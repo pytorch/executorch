@@ -20,10 +20,14 @@ class HtpGraph : public QnnGraph {
  public:
   HtpGraph(
       const QnnImplementation& implementation,
+      QnnBackend* backend,
       QnnContext* context,
+      const QnnExecuTorchProfileLevel& profile_level,
       const std::string& graph_name,
-      const QnnExecuTorchHtpBackendOptions& htp_options)
-      : QnnGraph(implementation, context, graph_name),
+      const SocInfo* soc_info,
+      const QnnExecuTorchHtpBackendOptions* htp_options)
+      : QnnGraph(implementation, backend, context, profile_level, graph_name),
+        qcom_target_soc_info_(soc_info),
         htp_options_(htp_options) {
     htp_graph_custom_config_ =
         std::make_unique<HtpGraphCustomConfig>(htp_options, context);
@@ -36,7 +40,8 @@ class HtpGraph : public QnnGraph {
  private:
   std::vector<QnnGraph_Config_t> graph_config_;
   std::unique_ptr<HtpGraphCustomConfig> htp_graph_custom_config_;
-  [[maybe_unused]] QnnExecuTorchHtpBackendOptions htp_options_;
+  const SocInfo* qcom_target_soc_info_;
+  [[maybe_unused]] const QnnExecuTorchHtpBackendOptions* htp_options_;
 };
 } // namespace qnn
 } // namespace executor

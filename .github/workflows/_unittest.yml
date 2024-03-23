@@ -33,8 +33,11 @@ jobs:
         conda activate "${CONDA_ENV}"
 
         BUILD_TOOL=${{ matrix.build-tool }}
+
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python EXECUTORCH_BUILD_PYBIND=ON bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
         # Run pytest with coverage
         pytest -n auto --cov=./ --cov-report=xml
@@ -59,8 +62,13 @@ jobs:
         BUILD_TOOL=${{ matrix.build-tool }}
 
         bash .ci/scripts/setup-conda.sh
+
         # Setup MacOS dependencies as there is no Docker support on MacOS atm
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} EXECUTORCH_BUILD_PYBIND=ON bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        CMAKE_ARGS="-DEXECUTORCH_BUILD_COREML=ON -DEXECUTORCH_BUILD_MPS=ON -DEXECUTORCH_BUILD_XNNPACK=ON" \
+        ${CONDA_RUN} --no-capture-output \
+        .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
 
         # Run pytest with coverage
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml

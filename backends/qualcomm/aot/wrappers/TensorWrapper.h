@@ -35,6 +35,8 @@ class TensorWrapper {
 
   Error FillDataBuffer(const void* data, bool copy_data = false);
 
+  Error AllocateDataBuffer();
+
   // update qnn tensor meta
   // this function is used to recover metadata from QNN context binary.
   void UpdateQnnTensorMeta(const Qnn_Tensor_t& tensor_src);

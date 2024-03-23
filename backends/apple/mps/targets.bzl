@@ -50,6 +50,7 @@ def define_common_targets(is_xplat = False, platforms = []):
             "//executorch/test/...",
             "@EXECUTORCH_CLIENTS",
         ],
+        "link_whole": True,
     }
 
     if is_xplat:

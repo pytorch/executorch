@@ -462,6 +462,8 @@ bool check_slice_scatter_args(
     int64_t num_values,
     int64_t step,
     Tensor output) {
+  ET_LOG_AND_RETURN_IF_FALSE(input.dim() > 0);
+
   // Check dim. The dim planed to be selected on shall exist in input
   ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim, input.dim()));
 

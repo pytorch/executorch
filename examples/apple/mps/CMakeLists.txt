@@ -68,9 +68,12 @@ include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 gen_selected_ops("" "" "ON")
 generate_bindings_for_kernels(
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
-gen_operators_lib("portable_ops_lib" portable_kernels executorch)
+gen_operators_lib(
+  "portable_ops_lib"
+  KERNEL_LIBS portable_kernels
+  DEPS executorch)
 
 set(mps_executor_runner_libs "-framework Foundation"
                               "-weak_framework MetalPerformanceShaders"

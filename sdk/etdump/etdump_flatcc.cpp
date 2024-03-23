@@ -45,7 +45,7 @@ executorch_flatbuffer_ScalarType_enum_t get_flatbuffer_scalar_type(
       ET_CHECK_MSG(
           0,
           "This ScalarType = %hhd is not yet supported in ETDump",
-          tensor_scalar_type);
+          static_cast<char>(tensor_scalar_type));
   }
 }
 
@@ -475,7 +475,7 @@ void ETDumpGen::log_evalue(const EValue& evalue, LoggedEValueType evalue_type) {
       ET_CHECK_MSG(
           0,
           "This EValue type = %d is not yet supported for logging\n",
-          evalue.tag);
+          static_cast<int>(evalue.tag));
       break;
   }
 

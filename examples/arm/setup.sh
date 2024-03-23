@@ -201,7 +201,7 @@ function setup_tosa_reference_model() {
         n=1
     fi
 
-    make -j"$(n)"
+    make -j"${n}"
     cd reference_model
     tosa_bin_path=`pwd`
     echo "export PATH=\${PATH}:${tosa_bin_path}" >> "${setup_path_script}"
@@ -215,11 +215,21 @@ function setup_vela() {
     if [[ ! -e ethos-u-vela ]]; then
         git clone https://review.mlplatform.org/ml/ethos-u/ethos-u-vela
         repo_dir="${root_dir}/ethos-u-vela"
-        base_rev=00a15db3e1a188b25065d095152d701f4394cdc5
+        base_rev=b90666d9b43f4b5223bb4dcecdbee87b2ad757c2
         patch_repo
     fi
     cd "${root_dir}/ethos-u-vela"
-    pip3 install . --user
+
+    # different command for conda vs venv
+    VNV=$(python3 -c "import sys; print('venv') if (sys.prefix != sys.base_prefix) else print('not_venv')")
+    if [ ${VNV} == "venv" ]; then
+	pip install .
+    else
+       # if not venv, we need the site-path where the vela
+       vela_path=$(python -c "import site; print(site.USER_BASE+'/bin')")
+       echo "export PATH=\${PATH}:${vela_path}" >> ${setup_path_script}
+       pip install . --user
+    fi
 }
 
 ########

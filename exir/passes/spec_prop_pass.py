@@ -6,12 +6,14 @@
 
 # pyre-strict
 
-from typing import List
+from typing import List, Optional
 
 import torch
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.pass_base import ExportPass, NodeMetadata, ProxyValue
 from executorch.exir.tensor import TensorSpec
+from torch.export.exported_program import ExportGraphSignature
+from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 
 
@@ -23,6 +25,25 @@ def make_spec(x):
         return x
     else:
         return None
+
+
+def _is_mutable_buffer(
+    node: Node, graph_signature: Optional[ExportGraphSignature] = None
+) -> bool:
+    """
+    Check if the node is mutable buffer according to the provided graph signature.
+    """
+    # graph signature is None for memory planning passes not called from EdgeProgramManager, these paths are deprecated so mutable buffers are not supported on them.
+    if graph_signature is None:
+        return False
+    if node.op == "placeholder":
+        if isinstance(node.target, str):
+            if node.target in graph_signature.inputs_to_buffers:
+                fqn = graph_signature.inputs_to_buffers[node.target]
+                # if the buffer is mutated then record that
+                if fqn in graph_signature.buffers_to_mutate.values():
+                    return True
+    return False
 
 
 class SpecPropPass(ExportPass):
@@ -53,6 +74,10 @@ class SpecPropPass(ExportPass):
             spec = node.meta["spec"]
             if isinstance(node.target, str) and (
                 node.target in exported_program.graph_signature.inputs_to_parameters
+                or (
+                    node.target in exported_program.graph_signature.inputs_to_buffers
+                    and not _is_mutable_buffer(node, exported_program.graph_signature)
+                )
             ):
                 spec.const = True
 

@@ -28,7 +28,11 @@ from executorch.exir.lowered_backend_module import (
     LoweredBackendModule,
 )
 from executorch.exir.pass_base import ExportPass
-from torch._export.utils import is_buffer, is_param
+from executorch.exir.program._fake_program import (
+    get_fake_program,
+    update_to_real_program,
+)
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.export import ExportedProgram
 
 
@@ -161,12 +165,22 @@ def _get_node_list_with_same_tag(
             if node.op == "output":
                 raise RuntimeError(f"output node {node} should not be tagged")
             if node.op == "placeholder":
-                if not is_param(owning_program, node) and not is_buffer(
-                    owning_program, node
+                if (
+                    not is_param(owning_program, node)
+                    and not is_buffer(owning_program, node)
+                    and not is_lifted_tensor_constant(owning_program, node)
                 ):
                     raise RuntimeError(
-                        f"placeholder node for non-params and non-buffer should not be tagged: {node} "
+                        f"placeholder node for non-params, non-buffer, and non-tensor constants should not be tagged: {node} "
                     )
+                else:
+                    # check that the users all belong to the same tag
+                    for user in node.users:
+                        users_tag = user.meta.get("delegation_tag", None)
+                        if users_tag != tag:
+                            raise RuntimeError(
+                                f"constant data node ({node}) is tagged with ({tag}) but has user ({user}) which has tag ({users_tag})"
+                            )
             node_list.append(node)
     return node_list
 
@@ -206,7 +220,7 @@ def _partition_and_lower_one_graph_module(
         logging.debug(f"Partitioned graph module: {tagged_graph_module}")
 
         submodule_program = create_exported_program_from_submodule(
-            submodule, owning_program
+            submodule, owning_program, tag
         )
 
         lowered_submodule = to_backend(
@@ -217,9 +231,12 @@ def _partition_and_lower_one_graph_module(
 
         # call delegate args should only use user_inputs
         call_delegate_args = []
-        for inp in call_module_node.all_input_nodes:
-            if inp.name in submodule_program.graph_signature.user_inputs:
-                call_delegate_args.append(inp)
+        # Preserve input order as user_inputs
+        for inp_name in submodule_program.graph_signature.user_inputs:
+            for inp_node in call_module_node.all_input_nodes:
+                if inp_node.name == inp_name:
+                    call_delegate_args.append(inp_node)
+                    break
 
         # Replace the partitioned submodule with a lowered submodule
         # Add call_method node with function "forward"
@@ -250,7 +267,10 @@ def _partition_and_lower_one_graph_module(
                 # Delete the consumed buffers
                 buffer_name = toplevel_signature.inputs_to_buffers.pop(node.name)
                 toplevel_signature.buffers.remove(buffer_name)
-                owning_program.state_dict.pop(buffer_name)
+                if buffer_name in owning_program.state_dict:
+                    owning_program.state_dict.pop(buffer_name)
+                else:
+                    owning_program.constants.pop(buffer_name)
                 tagged_graph_module.graph.erase_node(node)
             elif node.name in toplevel_signature.inputs_to_parameters:
                 # Delete the consumed parameters
@@ -327,8 +347,16 @@ def _(
     Returns:
         ExportedProgram: The input program, with some portions targeted for delegation.
     """
-    copied_edge_program = copy.deepcopy(edge_program)
-    partitioner_result = partitioner_instance(copied_edge_program)
+    # Use fake program, with FakeTensors in the state dict, to avoid copying large constant values.
+    # Fall back to deepcopy if no fake mode is found. TODO(T182910699): Remove this fallback.
+    try:
+        fake_edge_program = get_fake_program(edge_program)
+    except Exception as e:
+        logging.warning(
+            f"Error in get_fake_program for graph {edge_program.graph_module}, fallback to deepcopy: {e}"
+        )
+        fake_edge_program = copy.deepcopy(edge_program)
+    partitioner_result = partitioner_instance(fake_edge_program)
     tagged_exported_program = partitioner_result.tagged_exported_program
 
     # Check that the partitioner did not modify the original graph
@@ -344,6 +372,7 @@ def _(
         partitioner_result.partition_tags is not None
     ), f"Partitioner {partitioner_instance} needs a `partition_tags` field containing a mapping of tags to delegate spec"
 
+    update_to_real_program(tagged_exported_program, edge_program)
     tagged_graph_module = _partition_and_lower(
         tagged_exported_program.graph_module, partitioner_result, edge_program
     )
@@ -351,7 +380,8 @@ def _(
     # TODO(angelayi): Update this signature in a less manual way (maybe through
     # retracing)
     new_signature, new_state_dict, new_constants = _get_new_signature(
-        edge_program, tagged_graph_module
+        edge_program,
+        tagged_graph_module,
     )
     return ExportedProgram(
         root=tagged_graph_module,

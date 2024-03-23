@@ -2,3 +2,5 @@
 ciflow_push_tags:
 - ciflow/nightly
 - ciflow/trunk
+- ciflow/binaries
+- ciflow/binaries/all

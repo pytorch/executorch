@@ -53,8 +53,7 @@ class ScalarParamWrapper final : public ParamWrapper {
         qnn_param_.scalarParam.floatValue = data_;
         break;
       default:
-        QNN_EXECUTORCH_LOG(
-            kLogLevelError,
+        QNN_EXECUTORCH_LOG_ERROR(
             "ScalarParamWrapper failed to assign scalarParam value - "
             "invalid datatype %d",
             data_type_);

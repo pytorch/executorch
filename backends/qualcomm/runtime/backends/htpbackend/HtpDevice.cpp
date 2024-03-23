@@ -9,6 +9,7 @@
 #include <executorch/backends/qualcomm/runtime/Logging.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
 
+#include "HTP/QnnHtpCommon.h"
 #include "Saver/QnnSaverCommon.h"
 
 namespace torch {
@@ -55,9 +56,8 @@ Error GetPerfInfra(
       qnn_interface.qnn_device_get_infrastructure(&device_infra);
 
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] HTP backend perf_infrastructure "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "HTP backend perf_infrastructure "
         "creation failed. Error %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
@@ -65,9 +65,8 @@ Error GetPerfInfra(
 
   auto* htp_infra = static_cast<QnnHtpDevice_Infrastructure_t*>(device_infra);
   if (htp_infra->infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] HTP infra type = %d, which is "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "HTP infra type = %d, which is "
         "not perf infra type.",
         htp_infra->infraType);
     return Error::Internal;
@@ -228,9 +227,8 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
       dcvs_v3.coreVoltageCornerMax = DCVS_VOLTAGE_VCORNER_NOM_PLUS;
       break;
     default:
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
-          "[Qnn ExecuTorch] Invalid performance profile "
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Invalid performance profile "
           "%d to set power configs",
           perf_mode);
       break;
@@ -270,9 +268,8 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
       rpc_polling_time.rpcPollingTimeConfig = kRpcPollingTimeLowPower;
       break;
     default:
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
-          "[Qnn ExecuTorch] Invalid performance profile "
+      QNN_EXECUTORCH_LOG_ERROR(
+          "Invalid performance profile "
           "%d to set power configs",
           perf_mode);
       break;
@@ -293,65 +290,66 @@ HtpDevice::~HtpDevice() {
   }
 }
 
-QnnHtpDevice_CustomConfig_t* HtpDevice::AllocDeviceCustomConfig() {
-  htp_device_config_.emplace_back(
-      std::make_unique<QnnHtpDevice_CustomConfig_t>());
-  htp_device_config_.back()->option = QNN_HTP_DEVICE_CONFIG_OPTION_UNKNOWN;
-  return htp_device_config_.back().get();
-}
-
 Error HtpDevice::MakeConfig(std::vector<const QnnDevice_Config_t*>& config) {
-  std::vector<QnnDevice_CustomConfig_t> ret;
+  std::vector<QnnDevice_CustomConfig_t> device_custom_config =
+      htp_device_custom_config_->CreateDeviceCustomConfig(
+          qcom_target_soc_info_);
   QnnHtpDevice_CustomConfig_t* p_custom_config = nullptr;
-  HtpInfo qcom_target_soc_info;
 
-  qcom_target_soc_info = GetHtpInfo(htp_options_.soc_model);
+  if (QNN_HTP_API_VERSION_MAJOR <= QNN_HTP_DEPRECATED_HTP_ARCH_VERSION_MAJOR &&
+      QNN_HTP_API_VERSION_MINOR <= QNN_HTP_DEPRECATED_HTP_ARCH_VERSION_MINOR) {
+    p_custom_config = htp_device_custom_config_->AllocDeviceCustomConfig();
+    p_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_ARCH;
+    p_custom_config->arch.deviceId = 0;
+    p_custom_config->arch.arch = static_cast<QnnHtpDevice_Arch_t>(
+        qcom_target_soc_info_->htp_info()->htp_arch());
+    device_custom_config.push_back(
+        static_cast<QnnDevice_CustomConfig_t>(p_custom_config));
+  }
 
-  p_custom_config = AllocDeviceCustomConfig();
-  p_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_ARCH;
-  p_custom_config->arch.deviceId = 0;
-  p_custom_config->arch.arch = qcom_target_soc_info.m_htpArch;
-  ret.push_back(static_cast<QnnDevice_CustomConfig_t>(p_custom_config));
-
-  switch (htp_options_.pd_session) {
-    case kHtpSignedPd:
-      p_custom_config = AllocDeviceCustomConfig();
+  switch (htp_options_->pd_session()) {
+    case QnnExecuTorchHtpPdSession::kHtpSignedPd:
+      p_custom_config = htp_device_custom_config_->AllocDeviceCustomConfig();
       p_custom_config->option = QNN_HTP_DEVICE_CONFIG_OPTION_SIGNEDPD;
       p_custom_config->useSignedProcessDomain.useSignedProcessDomain = true;
       p_custom_config->useSignedProcessDomain.deviceId = 0;
-      ret.push_back(static_cast<QnnDevice_CustomConfig_t>(p_custom_config));
+      device_custom_config.push_back(
+          static_cast<QnnDevice_CustomConfig_t>(p_custom_config));
       break;
-    case kHtpUnsignedPd:
+    case QnnExecuTorchHtpPdSession::kHtpUnsignedPd:
     default:
       break;
   }
 
   const std::vector<QnnDevice_PlatformInfo_t*>& device_platform_info =
       htp_device_platform_info_config_->CreateDevicePlatformInfo(
-          qcom_target_soc_info);
+          qcom_target_soc_info_);
 
-  uint32_t num_custom_configs = ret.size() + device_platform_info.size();
+  uint32_t num_custom_configs =
+      device_platform_info.size() + device_custom_config.size();
   device_config_.resize(num_custom_configs);
   // +1 for null terminated
   config.reserve(num_custom_configs + 1);
 
-  for (std::size_t i = 0; i < ret.size(); ++i) {
+  for (std::size_t i = 0; i < device_custom_config.size(); ++i) {
     device_config_[i].option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
-    device_config_[i].customConfig = ret[i];
+    device_config_[i].customConfig = device_custom_config[i];
     config.push_back(&device_config_[i]);
   }
 
   if (!device_platform_info.empty()) {
-    // Below codes use `Device_config_[ret.size()]` which imply the length of
-    // platform info can only be 1.
+    // Below codes use `Device_config_[device_custom_config.size()]` which imply
+    // the length of platform info can only be 1.
     ET_CHECK_OR_RETURN_ERROR(
         device_platform_info.size() == 1u,
         Internal,
-        "[QNN ExecuTorch] Error! Device platform info size != 1, got %zu",
+        "Error! Device platform info size != 1, got %zu",
         device_platform_info.size());
-    device_config_[ret.size()].option = QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
-    device_config_[ret.size()].hardwareInfo = device_platform_info.back();
-    config.push_back(&device_config_[ret.size()]);
+    device_config_[device_custom_config.size()].option =
+        QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
+    device_config_[device_custom_config.size()].hardwareInfo =
+        device_platform_info.back();
+    config.push_back(&device_config_[device_custom_config.size()]);
   }
 
   // null terminated
@@ -390,9 +388,8 @@ Error HtpDevice::AfterCreateDevice() {
         /*device_id=*/0, /*core_id=*/0, &powerconfig_client_id_);
 
     if (error != QNN_SUCCESS) {
-      QNN_EXECUTORCH_LOG(
-          kLogLevelError,
-          "[Qnn ExecuTorch] HTP backend unable to create "
+      QNN_EXECUTORCH_LOG_ERROR(
+          "HTP backend unable to create "
           "power config. Error %d",
           QNN_GET_ERROR_CODE(error));
       return Error::Internal;
@@ -401,7 +398,7 @@ Error HtpDevice::AfterCreateDevice() {
     // Set vector of PowerConfigs and map it to a vector of pointers.
     perf_power_configs_ = SetVotePowerConfig(
         powerconfig_client_id_,
-        htp_options_.performance_mode,
+        htp_options_->performance_mode(),
         PerformanceModeVoteType::kUpVote);
     perf_power_configs_ptr_ = ObtainNullTermPtrVector(perf_power_configs_);
 
@@ -417,7 +414,7 @@ Error HtpDevice::AfterCreateDevice() {
 
     // Set Rpc polling mode
     rpc_power_configs_ =
-        SetRpcPollingPowerConfig(htp_options_.performance_mode);
+        SetRpcPollingPowerConfig(htp_options_->performance_mode());
     rpc_power_configs_ptr_ = ObtainNullTermPtrVector(rpc_power_configs_);
 
     htp_perf_infra_->setPowerConfig(

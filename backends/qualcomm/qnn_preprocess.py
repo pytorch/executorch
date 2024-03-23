@@ -10,10 +10,9 @@ from typing import final, List
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
 
-from executorch.backends.qualcomm.passes.convert_addmm_back_to_linear import (
-    ConvertAddmmmmWithLinear,
-)
+from executorch.backends.qualcomm.passes.convert_to_linear import ConvertToLinear
 from executorch.backends.qualcomm.passes.insert_io_qdq import InsertIOQDQ
+from executorch.backends.qualcomm.passes.insert_requantize import InsertRequantize
 from executorch.backends.qualcomm.passes.layout_transform import LayoutTransform
 from executorch.backends.qualcomm.utils.utils import generate_qnn_executorch_option
 from executorch.exir.backend.backend_details import (
@@ -44,8 +43,9 @@ class QnnBackend(BackendDetails):
         # QNN Delegate Specific Passes
         qnn_compiler_passes = PassManager(
             passes=[
-                ConvertAddmmmmWithLinear(),
+                ConvertToLinear(),
                 InsertIOQDQ(edge_program),
+                InsertRequantize(edge_program, insert_requantize=True),
                 LayoutTransform(edge_program, insert_permute=True),
             ]
         )
@@ -53,8 +53,11 @@ class QnnBackend(BackendDetails):
         pass_result = qnn_compiler_passes(edge_program.graph_module)
         assert pass_result is not None
 
+        enable_tensor_dump = qnn_manager.IsTensorDump()
         nodes_to_wrappers = {}
-        node_visitors = get_node_visitors(edge_program)
+        node_visitors = get_node_visitors(
+            edge_program, enable_tensor_dump=enable_tensor_dump
+        )
         py_op_wrapper_list = []
         for node in pass_result.graph_module.graph.nodes:
             if node.op == "call_function":
@@ -86,5 +89,7 @@ class QnnBackend(BackendDetails):
         )
         assert len(qnn_context_binary) != 0, "Failed to generate Qnn context binary."
         qnn_manager.Destroy()
-
-        return PreprocessResult(bytes(qnn_context_binary))
+        # For now, debug_handle_map is not used by QNN ExecuTorch
+        return PreprocessResult(
+            processed_bytes=bytes(qnn_context_binary), debug_handle_map={}
+        )

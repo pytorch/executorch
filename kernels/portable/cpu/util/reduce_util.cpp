@@ -336,8 +336,6 @@ bool check_reduction_args(
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
   }
   ET_LOG_AND_RETURN_IF_FALSE(check_dim_list_is_valid(in, dim_list));
-  ET_LOG_AND_RETURN_IF_FALSE(
-      out.dim() == compute_reduced_out_dim(in, dim_list, keepdim));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 
@@ -353,7 +351,8 @@ bool check_reduction_args_single_dim(
     optional<int64_t> dim,
     bool keepdim,
     optional<ScalarType> dtype,
-    Tensor& out) {
+    Tensor& out,
+    bool allow_empty_dim) {
   if (dtype.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dtype.value() == out.scalar_type());
   }
@@ -366,11 +365,11 @@ bool check_reduction_args_single_dim(
 
   if (dim.has_value()) {
     ET_LOG_AND_RETURN_IF_FALSE(dim_is_valid(dim.value(), in.dim()));
-    ET_LOG_AND_RETURN_IF_FALSE(tensor_has_non_empty_dim(in, dim.value()));
+    if (!allow_empty_dim) {
+      ET_LOG_AND_RETURN_IF_FALSE(tensor_has_non_empty_dim(in, dim.value()));
+    }
   }
 
-  ET_LOG_AND_RETURN_IF_FALSE(
-      out.dim() == compute_reduced_out_dim(in, dim, keepdim));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(in));
   ET_LOG_AND_RETURN_IF_FALSE(tensor_is_default_or_channels_last_dim_order(out));
 

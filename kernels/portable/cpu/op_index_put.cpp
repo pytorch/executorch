@@ -131,8 +131,7 @@ Tensor& index_put_out(
           ctx,
           get_in_coord(
               in, indices, start, bc_ndim, dim_map, ix_map, x_coord, in_coord),
-          InvalidArgument,
-          out);
+          InvalidArgument, );
 
       in_ix = coordinateToIndex(in, in_coord);
 

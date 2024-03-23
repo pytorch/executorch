@@ -65,6 +65,21 @@ cd executorch
 
 Once this is done, you don't need to do it again until you pull from the upstream repo again, or if you modify any CMake-related files.
 
+### CMake Build Options
+
+The release build offers optimizations intended to improve performance and reduce binary size. It disables program verification and executorch logging, and adds optimizations flags.
+```bash
+-DCMAKE_BUILD_TYPE=Release
+```
+
+To further optimize the release build for size, use both:
+```bash
+-DCMAKE_BUILD_TYPE=Release \
+-DOPTIMIZE_SIZE=ON
+```
+
+See [CMakeLists.txt](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt)
+
 ## Build the runtime components
 
 Build all targets with
@@ -125,7 +140,7 @@ Assuming Android NDK is available, run:
 rm -rf cmake-android-out && mkdir cmake-android-out && cd cmake-android-out
 
 # point -DCMAKE_TOOLCHAIN_FILE to the location where ndk is installed
-# Run `which buck2`, if it returns empty (meaning the system doesn't know where buck2 is installed), pass in pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2
+# Run `which buck2`, if it returns empty (meaning the system doesn't know where buck2 is installed), pass in this flag `-DBUCK2=/path/to/buck2` pointing to buck2
 cmake -DCMAKE_TOOLCHAIN_FILE=/Users/{user_name}/Library/Android/sdk/ndk/25.2.9519653/build/cmake/android.toolchain.cmake  -DANDROID_ABI=arm64-v8a ..
 
 cd  ..

@@ -21,66 +21,82 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_bitwise_not_out(const Tensor& a, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::bitwise_not_outf(context, a, out);
-}
+class OpBitwiseNotOutTest : public OperatorTest {
+ protected:
+  Tensor& op_bitwise_not_out(const Tensor& a, Tensor& out) {
+    return torch::executor::aten::bitwise_not_outf(context_, a, out);
+  }
 
-// Common testing for bitwise_not operator
-template <ScalarType DTYPE>
-void test_bitwise_not_out() {
-  TensorFactory<DTYPE> tf;
+  // Common testing for bitwise_not operator
+  template <ScalarType DTYPE>
+  void test_bitwise_not_out() {
+    TensorFactory<DTYPE> tf;
 
-  const std::vector<int32_t> sizes = {2, 2};
+    const std::vector<int32_t> sizes = {2, 2};
 
-  // Destination for the bitwise_not operator.
-  Tensor out = tf.zeros(sizes);
+    // Destination for the bitwise_not operator.
+    Tensor out = tf.zeros(sizes);
 
-  // Check that it matches the expected output.
-  op_bitwise_not_out(tf.make(sizes, /*data=*/{0, -1, -2, 3}), out);
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-1, 0, 1, -4}));
-}
+    // Check that it matches the expected output.
+    op_bitwise_not_out(tf.make(sizes, /*data=*/{0, -1, -2, 3}), out);
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{-1, 0, 1, -4}));
+  }
 
-template <>
-void test_bitwise_not_out<ScalarType::Byte>() {
-  TensorFactory<ScalarType::Byte> tf;
+  template <>
+  void test_bitwise_not_out<ScalarType::Byte>() {
+    TensorFactory<ScalarType::Byte> tf;
 
-  const std::vector<int32_t> sizes = {2, 2};
+    const std::vector<int32_t> sizes = {2, 2};
 
-  // Destination for the bitwise_not operator.
-  Tensor out = tf.zeros(sizes);
+    // Destination for the bitwise_not operator.
+    Tensor out = tf.zeros(sizes);
 
-  // Check that it matches the expected output.
-  op_bitwise_not_out(tf.make(sizes, /*data=*/{0, 1, 2, 3}), out);
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{255, 254, 253, 252}));
-}
+    // Check that it matches the expected output.
+    op_bitwise_not_out(tf.make(sizes, /*data=*/{0, 1, 2, 3}), out);
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{255, 254, 253, 252}));
+  }
 
-template <>
-void test_bitwise_not_out<ScalarType::Bool>() {
-  TensorFactory<ScalarType::Bool> tf;
+  template <>
+  void test_bitwise_not_out<ScalarType::Bool>() {
+    TensorFactory<ScalarType::Bool> tf;
 
-  const std::vector<int32_t> sizes = {2, 2};
+    const std::vector<int32_t> sizes = {2, 2};
 
-  // Destination for the bitwise_not operator.
-  Tensor out = tf.zeros(sizes);
+    // Destination for the bitwise_not operator.
+    Tensor out = tf.zeros(sizes);
 
-  // Check that it matches the expected output.
-  op_bitwise_not_out(tf.make(sizes, /*data=*/{true, false, true, false}), out);
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, true}));
-}
+    // Check that it matches the expected output.
+    op_bitwise_not_out(
+        tf.make(sizes, /*data=*/{true, false, true, false}), out);
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{false, true, false, true}));
+  }
 
-TEST(OpBitwiseNotOutKernelTest, AllIntInputOutputSupport) {
+  // Unhandled output dtypes.
+  template <ScalarType DTYPE>
+  void test_bitwise_not_invalid_dtype_dies() {
+    TensorFactory<DTYPE> tf;
+
+    const std::vector<int32_t> sizes = {2, 5};
+
+    Tensor in = tf.ones(sizes);
+    Tensor out = tf.zeros(sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_bitwise_not_out(in, out));
+  }
+};
+
+TEST_F(OpBitwiseNotOutTest, AllIntInputOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) test_bitwise_not_out<ScalarType::dtype>();
   ET_FORALL_INT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpBitwiseNotOutKernelTest, BoolInputOutputSupport) {
+TEST_F(OpBitwiseNotOutTest, BoolInputOutputSupport) {
   test_bitwise_not_out<ScalarType::Bool>();
 }
 
 // Mismatched shape tests.
-TEST(OpBitwiseNotOutKernelTest, MismatchedShapesDies) {
+TEST_F(OpBitwiseNotOutTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -89,23 +105,10 @@ TEST(OpBitwiseNotOutKernelTest, MismatchedShapesDies) {
   Tensor a = tf.ones(/*sizes=*/{4});
   Tensor out = tf.ones(/*sizes=*/{2, 2});
 
-  ET_EXPECT_KERNEL_FAILURE(op_bitwise_not_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_bitwise_not_out(a, out));
 }
 
-// Unhandled output dtypes.
-template <ScalarType DTYPE>
-void test_bitwise_not_invalid_dtype_dies() {
-  TensorFactory<DTYPE> tf;
-
-  const std::vector<int32_t> sizes = {2, 5};
-
-  Tensor in = tf.ones(sizes);
-  Tensor out = tf.zeros(sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_bitwise_not_out(in, out));
-}
-
-TEST(OpBitwiseNotOutKernelTest, AllFloatInputDTypeDies) {
+TEST_F(OpBitwiseNotOutTest, AllFloatInputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_bitwise_not_invalid_dtype_dies<ScalarType::dtype>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
@@ -121,7 +124,7 @@ op = "op_bitwise_not_out"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpBitwiseNotOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpBitwiseNotOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -137,7 +140,7 @@ TEST(OpBitwiseNotOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpBitwiseNotOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpBitwiseNotOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   /* %python
   out_args = "{10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -153,7 +156,7 @@ TEST(OpBitwiseNotOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpBitwiseNotOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpBitwiseNotOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"

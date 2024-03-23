@@ -22,12 +22,15 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_permute_copy_out(const Tensor& self, IntArrayRef dims, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::permute_copy_outf(context, self, dims, out);
-}
+class OpPermuteCopyTest : public OperatorTest {
+ protected:
+  Tensor&
+  op_permute_copy_out(const Tensor& self, IntArrayRef dims, Tensor& out) {
+    return torch::executor::aten::permute_copy_outf(context_, self, dims, out);
+  }
+};
 
-TEST(OpPermuteCopyKernelTest, OneDPermute) {
+TEST_F(OpPermuteCopyTest, OneDPermute) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0};
@@ -42,7 +45,7 @@ TEST(OpPermuteCopyKernelTest, OneDPermute) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1, 2}));
 }
 
-TEST(OpPermuteCopyKernelTest, PermuteWithNoDataReorder) {
+TEST_F(OpPermuteCopyTest, PermuteWithNoDataReorder) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {1, 0, 2};
@@ -69,7 +72,7 @@ TEST(OpPermuteCopyKernelTest, PermuteWithNoDataReorder) {
   // clang-format on
 }
 
-TEST(OpPermuteCopyKernelTest, TwoDPermute) {
+TEST_F(OpPermuteCopyTest, TwoDPermute) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {1, 0};
@@ -97,7 +100,7 @@ TEST(OpPermuteCopyKernelTest, TwoDPermute) {
   // clang-format on
 }
 
-TEST(OpPermuteCopyKernelTest, ThreeDPermute) {
+TEST_F(OpPermuteCopyTest, ThreeDPermute) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {2, 0, 1};
@@ -131,7 +134,7 @@ TEST(OpPermuteCopyKernelTest, ThreeDPermute) {
   // clang-format on
 }
 
-TEST(OpPermuteCopyKernelTest, FourDPermute) {
+TEST_F(OpPermuteCopyTest, FourDPermute) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0, 3, 2, 1};
@@ -218,7 +221,7 @@ TEST(OpPermuteCopyKernelTest, FourDPermute) {
   // clang-format on
 }
 
-TEST(OpPermuteCopyKernelTest, FiveDPermute) {
+TEST_F(OpPermuteCopyTest, FiveDPermute) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {4, 3, 2, 1, 0};
@@ -298,7 +301,7 @@ TEST(OpPermuteCopyKernelTest, FiveDPermute) {
   // clang-format on
 }
 
-TEST(OpPermuteCopyKernelTest, AllDimensionsSizeOne) {
+TEST_F(OpPermuteCopyTest, AllDimensionsSizeOne) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {4, 3, 2, 1, 0};
@@ -313,7 +316,7 @@ TEST(OpPermuteCopyKernelTest, AllDimensionsSizeOne) {
   EXPECT_TENSOR_EQ(out, tf.make(sizes, {1}));
 }
 
-TEST(OpPermuteCopyKernelTest, DupeDimensionPos) {
+TEST_F(OpPermuteCopyTest, DupeDimensionPos) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0, 1, 1};
@@ -323,11 +326,13 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionPos) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
-      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_permute_copy_out(
+          t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
-TEST(OpPermuteCopyKernelTest, DupeDimensionPos2) {
+TEST_F(OpPermuteCopyTest, DupeDimensionPos2) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {1, 1, 1};
@@ -337,11 +342,13 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionPos2) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
-      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_permute_copy_out(
+          t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
-TEST(OpPermuteCopyKernelTest, DupeDimensionNeg) {
+TEST_F(OpPermuteCopyTest, DupeDimensionNeg) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0, 1, -2};
@@ -351,11 +358,13 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionNeg) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
-      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_permute_copy_out(
+          t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
-TEST(OpPermuteCopyKernelTest, DupeDimensionNeg2) {
+TEST_F(OpPermuteCopyTest, DupeDimensionNeg2) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0, 1, -5};
@@ -365,11 +374,13 @@ TEST(OpPermuteCopyKernelTest, DupeDimensionNeg2) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
-      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_permute_copy_out(
+          t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
-TEST(OpPermuteCopyKernelTest, MismatchDim) {
+TEST_F(OpPermuteCopyTest, MismatchDim) {
   TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int64_t> new_dim = {0, 1, 2};
@@ -379,8 +390,10 @@ TEST(OpPermuteCopyKernelTest, MismatchDim) {
 
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(op_permute_copy_out(
-      t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      op_permute_copy_out(
+          t_int, ArrayRef<int64_t>(new_dim.data(), new_dim.size()), out));
 }
 
 /* %python
@@ -396,7 +409,7 @@ opt_extra_params = "perm_aref,"
 dtype = "ScalarType::Int"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpPermuteCopyKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpPermuteCopyTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{4, 2, 3}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -417,7 +430,7 @@ TEST(OpPermuteCopyKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpPermuteCopyKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpPermuteCopyTest, DynamicShapeUpperBoundLargerThanExpected) {
   /* %python
   out_args = "{5, 5, 5}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -438,7 +451,7 @@ TEST(OpPermuteCopyKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpPermuteCopyKernelTest, DynamicShapeUnbound) {
+TEST_F(OpPermuteCopyTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape unbound not supported";
   }

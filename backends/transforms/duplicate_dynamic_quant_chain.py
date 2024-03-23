@@ -77,7 +77,7 @@ def _replicate_chose_qparam_nodes_for_q_dq(
                 )
             q_dq_pair.append((user, dq_node))
 
-    for (q_node, dq_node) in q_dq_pair:
+    for q_node, dq_node in q_dq_pair:
         with gm.graph.inserting_after(get_item_node_1):
             new_get_item_node_1 = gm.graph.node_copy(get_item_node_1)
             new_get_item_node_2 = gm.graph.node_copy(get_item_node_2)

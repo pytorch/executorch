@@ -1,0 +1,14 @@
+unary_op:
+  parameter_names_with_default_values:
+    OPERATOR: clamp(X, A, B)
+    NDIM: 3
+    DTYPE: float
+  generate_variant_forall:
+    DTYPE:
+      - VALUE: half
+        SUFFIX: half
+      - VALUE: float
+        SUFFIX: float
+  shader_variants:
+    - NAME: clamp
+      OPERATOR: clamp(X, A, B)

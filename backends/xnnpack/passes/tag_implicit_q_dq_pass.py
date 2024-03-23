@@ -78,10 +78,14 @@ class TagImplicitQDqPass(XNNPACKPass):
     def is_dynamically_quantized(self, node: torch.fx.Node) -> bool:
         return any(
             is_dequant(input_node)
-            and cast(
-                torch._ops.OpOverload, input_node.target
-            )._schema.schema.overload_name
-            == "tensor"
+            and (
+                cast(
+                    torch._ops.OpOverload, input_node.target
+                )._schema.schema.overload_name
+                == "tensor"
+                or input_node.target
+                == exir_ops.edge.quantized_decomposed.dequantize_per_token.default
+            )
             for input_node in node.all_input_nodes
         )
 

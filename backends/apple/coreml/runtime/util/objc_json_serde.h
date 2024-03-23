@@ -2,7 +2,7 @@
 //  objc_json_serde.h
 //  util
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -34,7 +34,7 @@ id to_json_object(const std::string& json_string);
 
 std::string to_json_string(id json_object);
 
-template <typename T, typename Enable = void> struct JSONSerde { };
+template <typename T, typename Enable = void> struct Converter { };
 
 template <typename T>
 using is_vector =
@@ -49,7 +49,7 @@ using is_unordered_map = std::is_same<std::decay_t<T>,
                                                          typename std::decay_t<T>::key_equal,
                                                          typename std::decay_t<T>::allocator_type>>;
 
-template <typename T> struct JSONSerde<T, typename std::enable_if<std::is_arithmetic_v<T>>::type> {
+template <typename T> struct Converter<T, typename std::enable_if<std::is_arithmetic_v<T>>::type> {
     template <typename U = T> static id to_json(U&& value) { return @(value); }
 
     static void from_json(id json_value, T& value) {
@@ -60,7 +60,7 @@ template <typename T> struct JSONSerde<T, typename std::enable_if<std::is_arithm
     }
 };
 
-template <typename T> struct JSONSerde<T, typename std::enable_if<std::is_same_v<T, std::string>>::type> {
+template <typename T> struct Converter<T, typename std::enable_if<std::is_same_v<T, std::string>>::type> {
     template <typename U = T> static id to_json(U&& value) { return @(value.c_str()); }
 
     static void from_json(id json_value, T& value) {
@@ -71,13 +71,13 @@ template <typename T> struct JSONSerde<T, typename std::enable_if<std::is_same_v
     }
 };
 
-template <typename T> struct JSONSerde<T, typename std::enable_if<is_vector<T>::value>::type> {
+template <typename T> struct Converter<T, typename std::enable_if<is_vector<T>::value>::type> {
     using value_type = typename T::value_type;
 
     template <typename U = T> static id to_json(U&& values) {
         NSMutableArray<id>* result = [NSMutableArray arrayWithCapacity:values.size()];
         for (auto it = values.begin(); it != values.end(); ++it) {
-            [result addObject:JSONSerde<value_type>::to_json(*it)];
+            [result addObject:Converter<value_type>::to_json(*it)];
         }
 
         return result;
@@ -87,13 +87,13 @@ template <typename T> struct JSONSerde<T, typename std::enable_if<is_vector<T>::
         NSArray<id>* json_values = SAFE_CAST(json_value, NSArray);
         for (id json_object in json_values) {
             value_type value;
-            JSONSerde<value_type>::from_json(json_object, value);
+            Converter<value_type>::from_json(json_object, value);
             values.emplace_back(std::move(value));
         }
     }
 };
 
-template <typename T> struct JSONSerde<T, std::enable_if_t<is_unordered_map<T>::value>> {
+template <typename T> struct Converter<T, std::enable_if_t<is_unordered_map<T>::value>> {
     using value_type = typename T::mapped_type;
     using key_type = typename T::key_type;
 
@@ -102,7 +102,7 @@ template <typename T> struct JSONSerde<T, std::enable_if_t<is_unordered_map<T>::
     template <typename U = T> static id to_json(U&& values) {
         NSMutableDictionary<NSString*, id>* result = [NSMutableDictionary dictionaryWithCapacity:values.size()];
         for (auto it = values.begin(); it != values.end(); ++it) {
-            result[@(it->first.c_str())] = JSONSerde<value_type>::to_json(it->second);
+            result[@(it->first.c_str())] = Converter<value_type>::to_json(it->second);
         }
 
         return result;
@@ -112,18 +112,18 @@ template <typename T> struct JSONSerde<T, std::enable_if_t<is_unordered_map<T>::
         NSDictionary<NSString*, id>* json_values = SAFE_CAST(json_value, NSDictionary);
         for (NSString* key in json_values) {
             value_type value;
-            JSONSerde<value_type>::from_json(json_values[key], value);
+            Converter<value_type>::from_json(json_values[key], value);
             values.emplace(std::string(key.UTF8String), std::move(value));
         }
     }
 };
 
 template <typename T> inline id to_json_value(T&& value) {
-    return JSONSerde<typename std::decay_t<T>>::to_json(std::forward<T>(value));
+    return Converter<typename std::decay_t<T>>::to_json(std::forward<T>(value));
 }
 
 template <typename T> void from_json_value(id json_value, T& value) {
-    return JSONSerde<T>::from_json(json_value, value);
+    return Converter<T>::from_json(json_value, value);
 }
 
 } // namespace serde

@@ -71,6 +71,12 @@ COPY ./requirements-lintrunner.txt requirements-lintrunner.txt
 RUN if [ -n "${LINTRUNNER}" ]; then bash ./install_linter.sh; fi
 RUN rm install_linter.sh utils.sh requirements-lintrunner.txt
 
+ARG ANDROID_NDK_VERSION
+# Install lintrunner if needed
+COPY ./common/install_android.sh install_android.sh
+RUN if [ -n "${ANDROID_NDK_VERSION}" ]; then bash ./install_android.sh; fi
+RUN rm install_android.sh
+
 ARG ARM_SDK
 COPY --chown=ci-user:ci-user ./arm /opt/arm
 # Set up ARM SDK if needed

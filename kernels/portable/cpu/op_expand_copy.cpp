@@ -90,7 +90,11 @@ Tensor& expand_copy_out(
   const auto repeats_size{map_expand_to_repeats(
       self_sizes, expand_sizes, repeats, kTensorDimensionLimit)};
 
-  repeat_tensor(self, {repeats, repeats_size}, out);
+  ET_KERNEL_CHECK(
+      ctx,
+      repeat_tensor(self, {repeats, repeats_size}, out) == Error::Ok,
+      InvalidArgument,
+      out);
 
   return out;
 }

@@ -117,7 +117,7 @@ def _remove_platform_specific_args(kwargs):
     """
     keys = []
     for key in kwargs:
-        if key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps"):
+        if key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps") or key.startswith("fbobjc"):
             keys.append(key)
     for key in keys:
         kwargs.pop(key)

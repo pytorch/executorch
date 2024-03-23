@@ -16,9 +16,8 @@ Error QnnSystemImplementation::Load() {
 
   void* lib_handle_ = dlopen(lib_path_.c_str(), RTLD_NOW | RTLD_LOCAL);
   if (lib_handle_ == nullptr) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] Cannot Open QNN library %s, with error: %s",
+    QNN_EXECUTORCH_LOG_ERROR(
+        "Cannot Open QNN library %s, with error: %s",
         lib_path_.c_str(),
         dlerror());
     return Error::Internal;
@@ -29,9 +28,8 @@ Error QnnSystemImplementation::Load() {
       reinterpret_cast<QnnSystemInterfaceGetProvidersFn*>(
           dlsym(lib_handle_, "QnnSystemInterface_getProviders"));
   if (get_providers == nullptr) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] QnnSystemImplementation::Load Cannot load symbol "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "QnnSystemImplementation::Load Cannot load symbol "
         "QnnSystemInterface_getProviders : %s",
         dlerror());
     return Error::Internal;
@@ -41,18 +39,16 @@ Error QnnSystemImplementation::Load() {
   const QnnSystemInterface_t** provider_list = nullptr;
   error = get_providers(&provider_list, &num_providers);
   if (error != QNN_SUCCESS) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] QnnSystemInterface failed to "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "QnnSystemInterface failed to "
         "get providers. Error %d",
         QNN_GET_ERROR_CODE(error));
     return Error::Internal;
   }
 
   if (num_providers != required_num_providers_) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelError,
-        "[Qnn ExecuTorch] QnnSystemInterface Num "
+    QNN_EXECUTORCH_LOG_ERROR(
+        "QnnSystemInterface Num "
         "Providers is %d instead of required %d",
         num_providers,
         required_num_providers_);
@@ -70,10 +66,8 @@ Error QnnSystemImplementation::Unload() {
 
   int dlclose_error = dlclose(lib_handle_);
   if (dlclose_error != 0) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelWarn,
-        "[Qnn ExecuTorch] Failed to close QnnSystem library with error %s",
-        dlerror());
+    QNN_EXECUTORCH_LOG_WARN(
+        "Failed to close QnnSystem library with error %s", dlerror());
     return Error::Internal;
   }
 
@@ -85,9 +79,8 @@ Error QnnSystemImplementation::Unload() {
 const QnnSystemInterface& QnnSystemImplementation::GetQnnSystemInterface()
     const {
   if (!qnn_sys_interface_.IsLoaded()) {
-    QNN_EXECUTORCH_LOG(
-        kLogLevelWarn,
-        "[Qnn ExecuTorch] GetQnnSystemInterface, returning a QNN interface "
+    QNN_EXECUTORCH_LOG_WARN(
+        "GetQnnSystemInterface, returning a QNN interface "
         "which is not loaded yet.");
   }
   return qnn_sys_interface_;

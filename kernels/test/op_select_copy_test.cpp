@@ -23,47 +23,98 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_select_copy_int_out(
-    const Tensor& self,
-    int64_t dim,
-    int64_t index,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::select_copy_outf(
-      context, self, dim, index, out);
-}
-
-namespace {
-
-// Run the test by selecting Tensor x on given dim and all available indexes on
-// that dimension
-void run_test_cases(
-    const Tensor& x,
-    ssize_t dim,
-    const std::vector<Tensor>& expected) {
-  // Generated out tensor sharing same size and dtype with expected tensor
-  TensorFactory<ScalarType::Double> tf;
-
-  const std::vector<int32_t> out_size(
-      expected[0].sizes().begin(), expected[0].sizes().end());
-  Tensor out = tf.ones(out_size);
-
-  for (ssize_t idx = 0; idx < x.size(dim); idx++) {
-    // Should always return the provided out Tensor.
-    // The ret shall meet the expectation.
-    Tensor ret = op_select_copy_int_out(x, dim, idx, out);
-    EXPECT_TENSOR_EQ(out, ret);
-    EXPECT_TENSOR_EQ(out, expected[idx]);
-
-    ret = op_select_copy_int_out(x, dim, /*index=*/idx - x.size(dim), out);
-    EXPECT_TENSOR_EQ(out, ret);
-
-    EXPECT_TENSOR_EQ(out, expected[idx]);
+class OpSelectCopyIntOutTest : public OperatorTest {
+ protected:
+  Tensor& op_select_copy_int_out(
+      const Tensor& self,
+      int64_t dim,
+      int64_t index,
+      Tensor& out) {
+    return torch::executor::aten::select_copy_outf(
+        context_, self, dim, index, out);
   }
-}
-} // namespace
 
-TEST(OpSelectCopyIntOutTest, SelectFrontDimAllIndexes) {
+  template <class CTYPE, exec_aten::ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+
+    // Based on the split defintion, if we split any dim()=3 and size(1)=2
+    // tensor along first dim to two tensors [ret_0, ret_1], the ret_0 and ret_1
+    // shall be equal to x[:, 0, :] and x[:, 1, :] e.g. x[i, 0, j] = ret_0[i, j]
+    // and x[i, 1, j] = ret_1[i, j] for any i in [-x.size(0), x.size(0)) and j
+    // in
+    // [-x.size(2), x.size(2))
+    // Therefore we design the following tensor x for test easily: it is a
+    // tensor formed by stacking tensors ones(3, 4) and zeros(3,4) along the
+    // first dim. So if we select the tensor along the first dim by the above
+    // rules, the ret_0 should be ones(3, 4) and ret_1 should be zeros(3, 4)
+
+    // clang-format off
+    Tensor x = tf.make(
+        {3, 2, 4},
+        {
+          // all ones below are from x,
+          // and all zeros are from y.
+          // [0, :, :]
+          1, 1, 1, 1, // [0, 0, :]
+          0, 0, 0, 0, // [0, 1, :]
+
+          // [1, :, :]
+          1, 1, 1, 1, // [1, 0, :]
+          0, 0, 0, 0, // [1, 1, :]
+
+          // [2, :, :]
+          1, 1, 1, 1, // [2, 0, :]
+          0, 0, 0, 0, // [2, 1, :]
+        });
+    // clang-format on
+
+    // Expected values for out_0 and ret_0 after the test are all ones(3, 4)
+    // based on the above rules. So here we set the default value of out_0 as
+    // zeros(3, 4) on purpose, to eliminate the influence to the final result
+    // from initial value. Same for out_1 and ret_1.
+
+    Tensor out_0 = tf.zeros({3, 4});
+    Tensor out_1 = tf.ones({3, 4});
+    Tensor ret_0 = op_select_copy_int_out(x, /*dim=*/1, /*index=*/0, out_0);
+    Tensor ret_1 = op_select_copy_int_out(x, /*dim=*/1, /*index=*/1, out_1);
+
+    EXPECT_TENSOR_EQ(ret_0, out_0);
+    EXPECT_TENSOR_EQ(ret_1, out_1);
+
+    EXPECT_TENSOR_EQ(ret_0, tf.ones({3, 4}));
+    EXPECT_TENSOR_EQ(ret_1, tf.zeros({3, 4}));
+  }
+
+  // Run the test by selecting Tensor x on given dim and all available indexes
+  // on that dimension
+  void run_test_cases(
+      const Tensor& x,
+      ssize_t dim,
+      const std::vector<Tensor>& expected) {
+    // Generated out tensor sharing same size and dtype with expected tensor
+    TensorFactory<ScalarType::Double> tf;
+
+    const std::vector<int32_t> out_size(
+        expected[0].sizes().begin(), expected[0].sizes().end());
+    Tensor out = tf.ones(out_size);
+
+    for (ssize_t idx = 0; idx < x.size(dim); idx++) {
+      // Should always return the provided out Tensor.
+      // The ret shall meet the expectation.
+      Tensor ret = op_select_copy_int_out(x, dim, idx, out);
+      EXPECT_TENSOR_EQ(out, ret);
+      EXPECT_TENSOR_EQ(out, expected[idx]);
+
+      ret = op_select_copy_int_out(x, dim, /*index=*/idx - x.size(dim), out);
+      EXPECT_TENSOR_EQ(out, ret);
+
+      EXPECT_TENSOR_EQ(out, expected[idx]);
+    }
+  }
+};
+
+TEST_F(OpSelectCopyIntOutTest, SelectFrontDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -117,7 +168,7 @@ TEST(OpSelectCopyIntOutTest, SelectFrontDimAllIndexes) {
   run_test_cases(x, /*dim=*/0, expected_rets);
 }
 
-TEST(OpSelectCopyIntOutTest, SelectMiddleDimAllIndexes) {
+TEST_F(OpSelectCopyIntOutTest, SelectMiddleDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -176,7 +227,7 @@ TEST(OpSelectCopyIntOutTest, SelectMiddleDimAllIndexes) {
   run_test_cases(x, /*dim=*/1, expected_rets);
 }
 
-TEST(OpSelectCopyIntOutTest, SelectEndDimAllIndexes) {
+TEST_F(OpSelectCopyIntOutTest, SelectEndDimAllIndexes) {
   TensorFactory<ScalarType::Double> tf;
 
   // clang-format off
@@ -245,58 +296,7 @@ TEST(OpSelectCopyIntOutTest, SelectEndDimAllIndexes) {
 
 /// A generic smoke test that works for any dtype that supports ones() and
 /// zeros().
-template <class CTYPE, exec_aten::ScalarType DTYPE>
-void test_dtype() {
-  TensorFactory<DTYPE> tf;
-
-  // Based on the split defintion, if we split any dim()=3 and size(1)=2 tensor
-  // along first dim to two tensors [ret_0, ret_1], the ret_0 and ret_1 shall
-  // be equal to x[:, 0, :] and x[:, 1, :] e.g. x[i, 0, j] = ret_0[i, j] and
-  // x[i, 1, j] = ret_1[i, j] for any i in [-x.size(0), x.size(0)) and j in
-  // [-x.size(2), x.size(2))
-  // Therefore we design the following tensor x for test easily: it is a tensor
-  // formed by stacking tensors ones(3, 4) and zeros(3,4) along the first dim.
-  // So if we select the tensor along the first dim by the above rules, the
-  // ret_0 should be ones(3, 4) and ret_1 should be zeros(3, 4)
-
-  // clang-format off
-  Tensor x = tf.make(
-      {3, 2, 4},
-      {
-        // all ones below are from x,
-        // and all zeros are from y.
-        // [0, :, :]
-        1, 1, 1, 1, // [0, 0, :]
-        0, 0, 0, 0, // [0, 1, :]
-
-        // [1, :, :]
-        1, 1, 1, 1, // [1, 0, :]
-        0, 0, 0, 0, // [1, 1, :]
-
-        // [2, :, :]
-        1, 1, 1, 1, // [2, 0, :]
-        0, 0, 0, 0, // [2, 1, :]
-      });
-  // clang-format on
-
-  // Expected values for out_0 and ret_0 after the test are all ones(3, 4) based
-  // on the above rules. So here we set the default value of out_0 as zeros(3,
-  // 4) on purpose, to eliminate the influence to the final result from initial
-  // value. Same for out_1 and ret_1.
-
-  Tensor out_0 = tf.zeros({3, 4});
-  Tensor out_1 = tf.ones({3, 4});
-  Tensor ret_0 = op_select_copy_int_out(x, /*dim=*/1, /*index=*/0, out_0);
-  Tensor ret_1 = op_select_copy_int_out(x, /*dim=*/1, /*index=*/1, out_1);
-
-  EXPECT_TENSOR_EQ(ret_0, out_0);
-  EXPECT_TENSOR_EQ(ret_1, out_1);
-
-  EXPECT_TENSOR_EQ(ret_0, tf.ones({3, 4}));
-  EXPECT_TENSOR_EQ(ret_1, tf.zeros({3, 4}));
-}
-
-TEST(OpSelectCopyIntOutTest, AllDtypesSupported) {
+TEST_F(OpSelectCopyIntOutTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
@@ -315,7 +315,7 @@ TEST(OpSelectCopyIntOutTest, AllDtypesSupported) {
 // In this test we are gonnna find if our select function support vector tensor
 // input and empty-size tensor output. Such combination is quite normal in real
 // world (e.g. select(torch.range(10), 0, 5, out) == tensor(5))
-TEST(OpSelectCopyIntOutTest, VectorInputSupported) {
+TEST_F(OpSelectCopyIntOutTest, VectorInputSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.make({10}, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
@@ -332,7 +332,7 @@ TEST(OpSelectCopyIntOutTest, VectorInputSupported) {
 
 // This test focuses on the support for empty tensor (dim() > 0) input and empty
 // tensor output
-TEST(OpSelectCopyIntOutTest, EmptyTensorNonZeroNDimsInputSupported) {
+TEST_F(OpSelectCopyIntOutTest, EmptyTensorNonZeroNDimsInputSupported) {
   TensorFactory<ScalarType::Int> tf;
 
   // Using empty tensors as input.
@@ -350,7 +350,7 @@ TEST(OpSelectCopyIntOutTest, EmptyTensorNonZeroNDimsInputSupported) {
 }
 
 // Apply select on dim() == 0 empty tensor input and empty tensor output
-TEST(OpSelectCopyIntOutTest, EmptyTensorZeroNDimsInputDies) {
+TEST_F(OpSelectCopyIntOutTest, EmptyTensorZeroNDimsInputDies) {
   TensorFactory<ScalarType::Int> tf;
 
   // Using empty tensors as input.
@@ -364,11 +364,11 @@ TEST(OpSelectCopyIntOutTest, EmptyTensorZeroNDimsInputDies) {
   // Expected failure when slicing on the dimension with length 0 since no space
   // on the dimension could be sliced. (out of bound error)
   ET_EXPECT_KERNEL_FAILURE(
-      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+      context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 ///////////////////////////////////////////////////////////////////////
 
-TEST(OpSelectCopyIntOutTest, DimOutOfBoundDies) {
+TEST_F(OpSelectCopyIntOutTest, DimOutOfBoundDies) {
   TensorFactory<ScalarType::Int> tf;
 
   Tensor x = tf.ones({1, 1, 1});
@@ -377,11 +377,12 @@ TEST(OpSelectCopyIntOutTest, DimOutOfBoundDies) {
   // Some invalid dim values.
   const std::vector<int32_t> invalid_dims = {3, 4, 5, -4, -5, -6};
   for (ssize_t dim : invalid_dims) {
-    ET_EXPECT_KERNEL_FAILURE(op_select_copy_int_out(x, dim, /*index=*/0, out));
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_select_copy_int_out(x, dim, /*index=*/0, out));
   }
 }
 
-TEST(OpSelectCopyIntOutTest, MismatchedDtypesDies) {
+TEST_F(OpSelectCopyIntOutTest, MismatchedDtypesDies) {
   TensorFactory<ScalarType::Int> tf_int;
   TensorFactory<ScalarType::Float> tf_float;
   Tensor x = tf_int.zeros({1, 2, 2});
@@ -390,10 +391,10 @@ TEST(OpSelectCopyIntOutTest, MismatchedDtypesDies) {
   Tensor out = tf_float.ones({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+      context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
-TEST(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
+TEST_F(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -405,10 +406,10 @@ TEST(OpSelectCopyIntOutTest, OutMatchNumelLackDimAtEndDies) {
   Tensor out = tf.ones({2, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+      context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
-TEST(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
+TEST_F(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -420,10 +421,10 @@ TEST(OpSelectCopyIntOutTest, OutMatchNumelExtraDimAtFrontDies) {
   Tensor out = tf.ones({1, 2});
 
   ET_EXPECT_KERNEL_FAILURE(
-      op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
+      context_, op_select_copy_int_out(x, /*dim=*/0, /*index=*/0, out));
 }
 
-TEST(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
+TEST_F(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle out with mismatched dimensions";
   }
@@ -435,7 +436,7 @@ TEST(OpSelectCopyIntOutTest, OutSizeMismatchDimDies) {
   Tensor out = tf.zeros({2, 4, 7});
 
   ET_EXPECT_KERNEL_FAILURE(
-      op_select_copy_int_out(x, /*dim=*/2, /*index=*/3, out));
+      context_, op_select_copy_int_out(x, /*dim=*/2, /*index=*/3, out));
 }
 
 /* %python
@@ -448,7 +449,7 @@ opt_extra_params = "1, 2,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpSelectCopyIntOutTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpSelectCopyIntOutTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{2, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -482,7 +483,7 @@ TEST(OpSelectCopyIntOutTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpSelectCopyIntOutTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpSelectCopyIntOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -519,7 +520,7 @@ TEST(OpSelectCopyIntOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpSelectCopyIntOutTest, DynamicShapeUnbound) {
+TEST_F(OpSelectCopyIntOutTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

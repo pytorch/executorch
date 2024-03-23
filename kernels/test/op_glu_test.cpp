@@ -22,52 +22,113 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_glu_out(const Tensor& self, int64_t dim, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::glu_outf(context, self, dim, out);
-}
+class OpGluOutTest : public OperatorTest {
+ protected:
+  Tensor& op_glu_out(const Tensor& self, int64_t dim, Tensor& out) {
+    return torch::executor::aten::glu_outf(context_, self, dim, out);
+  }
 
-// Common testing for glu operator
-template <ScalarType DTYPE, ScalarType OUT_DTYPE>
-void test_glu_out() {
-  TensorFactory<DTYPE> tf;
-  TensorFactory<OUT_DTYPE> tf_out;
+  // Common testing for glu operator
+  template <ScalarType DTYPE, ScalarType OUT_DTYPE>
+  void test_glu_out() {
+    TensorFactory<DTYPE> tf;
+    TensorFactory<OUT_DTYPE> tf_out;
 
-  const std::vector<int32_t> sizes = {4, 2};
-  const std::vector<int32_t> out_sizes_1 = {2, 2};
+    const std::vector<int32_t> sizes = {4, 2};
+    const std::vector<int32_t> out_sizes_1 = {2, 2};
 
-  // Valid input should give the expected output
-  Tensor in = tf.ones(sizes);
-  Tensor out = tf_out.zeros(out_sizes_1);
-  op_glu_out(in, 0, out);
-  EXPECT_TENSOR_CLOSE(
-      out,
-      tf_out.make(
-          out_sizes_1, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
-  const std::vector<int32_t> out_sizes_2 = {4, 1};
-  out = tf_out.zeros(out_sizes_2);
-  op_glu_out(in, 1, out);
-  EXPECT_TENSOR_CLOSE(
-      out,
-      tf_out.make(
-          out_sizes_2, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
-}
+    // Valid input should give the expected output
+    Tensor in = tf.ones(sizes);
+    Tensor out = tf_out.zeros(out_sizes_1);
+    op_glu_out(in, 0, out);
+    EXPECT_TENSOR_CLOSE(
+        out,
+        tf_out.make(
+            out_sizes_1, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
+    const std::vector<int32_t> out_sizes_2 = {4, 1};
+    out = tf_out.zeros(out_sizes_2);
+    op_glu_out(in, 1, out);
+    EXPECT_TENSOR_CLOSE(
+        out,
+        tf_out.make(
+            out_sizes_2, /*data=*/{0.731059, 0.731059, 0.731059, 0.731059}));
+  }
 
-TEST(OpGluOutKernelTest, AllInputFloatOutputSupport) {
+  // Mismatched shape tests.
+  template <ScalarType INPUT_DTYPE>
+  void test_glu_out_mismatched_shape() {
+    TensorFactory<INPUT_DTYPE> tf_in;
+
+    // Input tensor and out tensor dimension size mismatch
+    Tensor in = tf_in.zeros(/*sizes=*/{4, 4, 4});
+    Tensor out = tf_in.zeros(/*sizes=*/{2, 4, 2});
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_glu_out(in, 0, out));
+
+    out = tf_in.zeros(/*sizes=*/{4, 4, 4});
+    ET_EXPECT_KERNEL_FAILURE(context_, op_glu_out(in, 0, out));
+  }
+
+  // Invalid dimensions tests.
+  template <ScalarType INPUT_DTYPE>
+  void test_glu_out_invalid_dim() {
+    TensorFactory<INPUT_DTYPE> tf_in;
+    Tensor in = tf_in.zeros(/*sizes=*/{2, 2});
+    const std::vector<int32_t> out_sizes = {1, 2};
+    Tensor out = tf_in.zeros(out_sizes);
+
+    // Dim is not valid
+    ET_EXPECT_KERNEL_FAILURE(context_, op_glu_out(in, 3, out));
+
+    // Dim size is not even
+    in = tf_in.zeros(/*sizes=*/{3, 2});
+    ET_EXPECT_KERNEL_FAILURE(context_, op_glu_out(in, 0, out));
+  }
+
+  // Unhandled input dtypes.
+  template <ScalarType INPUT_DTYPE>
+  void test_div_invalid_input_dtype_dies() {
+    TensorFactory<INPUT_DTYPE> tf_in;
+    TensorFactory<ScalarType::Float> tf_float;
+
+    const std::vector<int32_t> sizes = {2, 2};
+    const std::vector<int32_t> out_sizes = {1, 2};
+    Tensor in = tf_in.ones(sizes);
+    Tensor out = tf_float.zeros(out_sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_glu_out(in, 0, out));
+  }
+
+  // Unhandled output dtypes.
+  template <ScalarType OUTPUT_DTYPE>
+  void test_div_invalid_output_dtype_dies() {
+    TensorFactory<ScalarType::Float> tf_float;
+    TensorFactory<OUTPUT_DTYPE> tf_out;
+
+    const std::vector<int32_t> sizes = {2, 2};
+    const std::vector<int32_t> out_sizes = {1, 2};
+    Tensor in = tf_float.ones(sizes);
+    Tensor out = tf_out.zeros(out_sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_glu_out(in, 0, out));
+  }
+};
+
+TEST_F(OpGluOutTest, AllInputFloatOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Float>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpGluOutKernelTest, AllInputDoubleOutputSupport) {
+TEST_F(OpGluOutTest, AllInputDoubleOutputSupport) {
 #define TEST_ENTRY(ctype, dtype) \
   test_glu_out<ScalarType::dtype, ScalarType::Double>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpGluOutKernelTest, InfinityAndNANTest) {
+TEST_F(OpGluOutTest, InfinityAndNANTest) {
   TensorFactory<ScalarType::Float> tf;
   const std::vector<int32_t> sizes = {4, 2};
   const std::vector<int32_t> out_sizes = {4, 1};
@@ -81,38 +142,7 @@ TEST(OpGluOutKernelTest, InfinityAndNANTest) {
           /*sizes=*/out_sizes, /*data=*/{INFINITY, -INFINITY, NAN, NAN}));
 }
 
-// Mismatched shape tests.
-template <ScalarType INPUT_DTYPE>
-void test_glu_out_mismatched_shape() {
-  TensorFactory<INPUT_DTYPE> tf_in;
-
-  // Input tensor and out tensor dimension size mismatch
-  Tensor in = tf_in.zeros(/*sizes=*/{4, 4, 4});
-  Tensor out = tf_in.zeros(/*sizes=*/{2, 4, 2});
-
-  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
-
-  out = tf_in.zeros(/*sizes=*/{4, 4, 4});
-  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
-}
-
-// Invalid dimensions tests.
-template <ScalarType INPUT_DTYPE>
-void test_glu_out_invalid_dim() {
-  TensorFactory<INPUT_DTYPE> tf_in;
-  Tensor in = tf_in.zeros(/*sizes=*/{2, 2});
-  const std::vector<int32_t> out_sizes = {1, 2};
-  Tensor out = tf_in.zeros(out_sizes);
-
-  // Dim is not valid
-  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 3, out));
-
-  // Dim size is not even
-  in = tf_in.zeros(/*sizes=*/{3, 2});
-  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
-}
-
-TEST(OpGluOutKernelTest, MismatchedShapesDies) {
+TEST_F(OpGluOutTest, MismatchedShapesDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -122,55 +152,27 @@ TEST(OpGluOutKernelTest, MismatchedShapesDies) {
 #undef TEST_ENTRY
 }
 
-TEST(OpGluOutKernelTest, InvalidDimDies) {
+TEST_F(OpGluOutTest, InvalidDimDies) {
 #define TEST_ENTRY(ctype, dtype) test_glu_out_invalid_dim<ScalarType::dtype>();
   ET_FORALL_FLOAT_TYPES(TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-// Unhandled input dtypes.
-template <ScalarType INPUT_DTYPE>
-void test_div_invalid_input_dtype_dies() {
-  TensorFactory<INPUT_DTYPE> tf_in;
-  TensorFactory<ScalarType::Float> tf_float;
-
-  const std::vector<int32_t> sizes = {2, 2};
-  const std::vector<int32_t> out_sizes = {1, 2};
-  Tensor in = tf_in.ones(sizes);
-  Tensor out = tf_float.zeros(out_sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
-}
-
-TEST(OpGluOutKernelTest, AllNonFloatInputDTypeDies) {
+TEST_F(OpGluOutTest, AllNonFloatInputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_div_invalid_input_dtype_dies<ScalarType::dtype>();
   ET_FORALL_INT_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-// Unhandled output dtypes.
-template <ScalarType OUTPUT_DTYPE>
-void test_div_invalid_output_dtype_dies() {
-  TensorFactory<ScalarType::Float> tf_float;
-  TensorFactory<OUTPUT_DTYPE> tf_out;
-
-  const std::vector<int32_t> sizes = {2, 2};
-  const std::vector<int32_t> out_sizes = {1, 2};
-  Tensor in = tf_float.ones(sizes);
-  Tensor out = tf_out.zeros(out_sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_glu_out(in, 0, out));
-}
-
-TEST(OpGluOutKernelTest, AllNonFloatOutputDTypeDies) {
+TEST_F(OpGluOutTest, AllNonFloatOutputDTypeDies) {
 #define TEST_ENTRY(ctype, dtype) \
   test_div_invalid_output_dtype_dies<ScalarType::dtype>();
   ET_FORALL_INT_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpGluOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpGluOutTest, DynamicShapeUpperBoundSameAsExpected) {
   GTEST_SKIP() << "Dynamic shape not supported";
   TensorFactory<ScalarType::Float> tf;
 
@@ -197,7 +199,7 @@ TEST(OpGluOutKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpGluOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpGluOutTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -223,7 +225,7 @@ TEST(OpGluOutKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpGluOutKernelTest, DynamicShapeUnbound) {
+TEST_F(OpGluOutTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

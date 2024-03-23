@@ -19,6 +19,7 @@ from executorch.exir.backend.partitioner import (
     PartitionResult,
 )
 from executorch.exir.backend.test.qnn_backend_demo import QnnBackend
+from executorch.exir.backend.utils import tag_constant_data
 from torch.export import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 
@@ -199,6 +200,7 @@ class HTAPartitionerMultiplePatternsDemo(Partitioner):
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+        tag_constant_data(exported_program)
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )
@@ -280,6 +282,7 @@ class HTAPartitionerOnePatternDemo(Partitioner):
                 delegation_tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = delegation_tag
                 partition_tags[delegation_tag] = self.delegation_spec
+        tag_constant_data(exported_program)
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags
         )

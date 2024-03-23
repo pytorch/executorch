@@ -19,12 +19,14 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_neg_out(const Tensor& self, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::neg_outf(context, self, out);
-}
+class OpNegTest : public OperatorTest {
+ protected:
+  Tensor& op_neg_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::neg_outf(context_, self, out);
+  }
+};
 
-TEST(OpNegTest, SanityCheck) {
+TEST_F(OpNegTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor in = tf.make({1, 7}, {-3.0, -2.5, -1.01, 0.0, 1.01, 2.5, 3.0});

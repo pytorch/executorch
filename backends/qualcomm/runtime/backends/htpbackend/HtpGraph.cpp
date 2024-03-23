@@ -12,11 +12,8 @@ namespace executor {
 namespace qnn {
 
 Error HtpGraph::MakeConfig(std::vector<const QnnGraph_Config_t*>& config) {
-  HtpInfo qcom_target_soc_info;
-  qcom_target_soc_info = GetHtpInfo(htp_options_.soc_model);
-
   const std::vector<QnnGraph_CustomConfig_t>& graph_custom_config =
-      htp_graph_custom_config_->CreateGraphCustomConfig(qcom_target_soc_info);
+      htp_graph_custom_config_->CreateGraphCustomConfig(qcom_target_soc_info_);
 
   uint32_t num_custom_configs = graph_custom_config.size();
   graph_config_.resize(num_custom_configs);

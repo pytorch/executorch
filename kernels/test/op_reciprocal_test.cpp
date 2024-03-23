@@ -20,12 +20,14 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_reciprocal_out(const Tensor& self, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::reciprocal_outf(context, self, out);
-}
+class OpReciprocalTest : public OperatorTest {
+ protected:
+  Tensor& op_reciprocal_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::reciprocal_outf(context_, self, out);
+  }
+};
 
-TEST(OpReciprocalTest, SanityCheck) {
+TEST_F(OpReciprocalTest, SanityCheck) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor in = tf.make({1, 7}, {-3.0, -2.99, -1.01, 0.0, 1.01, 2.99, 3.0});
@@ -40,7 +42,7 @@ TEST(OpReciprocalTest, SanityCheck) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST(OpReciprocalTest, HandleBoolInput) {
+TEST_F(OpReciprocalTest, HandleBoolInput) {
   TensorFactory<ScalarType::Bool> tf_bool;
   TensorFactory<ScalarType::Float> tf_float;
 
@@ -53,7 +55,7 @@ TEST(OpReciprocalTest, HandleBoolInput) {
   EXPECT_TENSOR_CLOSE(op_reciprocal_out(a, out), res);
 }
 
-TEST(OpReciprocalTest, HandleHalfInput) {
+TEST_F(OpReciprocalTest, HandleHalfInput) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "Test Half support only for ExecuTorch mode";
   }

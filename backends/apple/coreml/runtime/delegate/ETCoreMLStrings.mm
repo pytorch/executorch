@@ -1,7 +1,7 @@
 //
 // ETCoreMLStrings.mm
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -55,6 +55,11 @@
     return ETCoreMLModelFileRelativePath;
 }
 
++ (NSString *)compiledModelFileRelativePath {
+    static NSString * const ETCoreMLCompiledModelFileRelativePath = @"model.mlmodelc";
+    return ETCoreMLCompiledModelFileRelativePath;
+}
+
 + (NSString *)cpuComputeUnitName {
     static NSString * const ETCoreMLCPUComputeUnitName = @"cpu_only";
     return ETCoreMLCPUComputeUnitName;
@@ -66,7 +71,7 @@
 }
 
 + (NSString *)cpuAndNeuralEngineComputeUnitsName {
-    static NSString * const ETCoreMLCPUAndNeuralEngineComputeUnitsName = @"cpu_and_ane";
+    static NSString * const ETCoreMLCPUAndNeuralEngineComputeUnitsName = @"cpu_and_ne";
     return ETCoreMLCPUAndNeuralEngineComputeUnitsName;
 }
 
@@ -78,6 +83,11 @@
 + (NSString *)databaseName {
     static NSString * const ETCoreMLDatabaseName = @"assets.db";
     return ETCoreMLDatabaseName;
+}
+
++ (NSString *)debugSymbols {
+    static NSString * const ETCoreMLDebugSymbolsName = @"debugSymbols";
+    return ETCoreMLDebugSymbolsName;
 }
 
 + (nullable NSString *)assetsDirectoryPath {

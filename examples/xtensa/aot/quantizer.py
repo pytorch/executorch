@@ -46,6 +46,7 @@ def quantize_tensor_multiplier(
         result = RoundingRightShift(FixedPointMultiplication(int32_value,
                                     out_multiplier[i]), right_shift[i])
     """
+
     # This is identical to C++11 std::round(). The general python round rounds
     # down, and C++ rounds away from zero.
     def round_away_zero(f) -> int:

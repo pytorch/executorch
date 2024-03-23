@@ -21,6 +21,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from executorch.exir.backend.utils import tag_constant_data
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
 
@@ -137,6 +138,7 @@ class QnnPartitioner(Partitioner):
         partitions = self.generate_partitions(edge_program)
         if len(partitions) != 0:
             self.tag_nodes(partitions)
+            tag_constant_data(edge_program)
         for node in edge_program.graph_module.graph.nodes:
             if hasattr(node, "meta"):
                 # pop certain keys in meta for not affecting the passes in compilation

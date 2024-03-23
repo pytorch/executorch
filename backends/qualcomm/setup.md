@@ -114,6 +114,7 @@ cmake ../examples/qualcomm \
 
 cmake --build examples/qualcomm -j16
 ```
+**Note:** If you want to build for release, add `-DCMAKE_BUILD_TYPE=Release` to the `cmake` command options.
 
 You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
 

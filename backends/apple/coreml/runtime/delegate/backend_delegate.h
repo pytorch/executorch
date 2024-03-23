@@ -1,16 +1,20 @@
 //
 // backend_delegate.hpp
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
+#pragma once
+
+#include <model_logging_options.h>
 #include <system_error>
 #include <unordered_map>
 #include <vector>
 
 namespace executorchcoreml {
 
+class ModelEventLogger;
 class MultiArray;
 class Buffer;
 
@@ -80,10 +84,15 @@ public:
     ///
     /// @param handle The model handle.
     /// @param args The inputs and outputs to the model.
+    /// @param logging_options The model logging options.
+    /// @param event_logger The model event logger.
     /// @param error   On failure, error is filled with the failure information.
     /// @retval `true` if the execution succeeded otherwise `false`.
-    virtual bool
-    execute(Handle* handle, const std::vector<MultiArray>& args, std::error_code& error) const noexcept = 0;
+    virtual bool execute(Handle* handle,
+                         const std::vector<MultiArray>& args,
+                         const ModelLoggingOptions& logging_options,
+                         ModelEventLogger* event_logger,
+                         std::error_code& error) const noexcept = 0;
 
     /// Must return `true` if the delegate is available for execution otherwise
     /// `false`.

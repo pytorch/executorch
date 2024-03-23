@@ -14,6 +14,7 @@
 
 #include <ctime>
 #include <memory>
+#include <sstream>
 
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
@@ -68,6 +69,7 @@ Error Runner::load() {
   n_eos_ = getMetadataHelper<int64_t>("get_n_eos", 1);
   max_seq_len_ = getMetadataHelper<int64_t>("get_max_seq_len", 128);
   use_kv_cache_ = getMetadataHelper("use_kv_cache", false);
+  use_sdpa_with_kv_cache_ = getMetadataHelper("use_sdpa_with_kv_cache", false);
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
@@ -155,12 +157,21 @@ int32_t Runner::logitsToToken(
 
 Error Runner::generate(
     const std::string& prompt,
+    int32_t seq_len,
     std::function<void(const std::string&)> callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
-  ET_CHECK_OK_OR_RETURN_ERROR(load());
+  if (!is_loaded()) {
+    timers_.model_load_start_ms = util::time_in_ms();
+    ET_CHECK_OK_OR_RETURN_ERROR(load());
+    timers_.model_load_end_ms = util::time_in_ms();
+  }
 
+  // First token time only measures the time it takes to encode the prompt and
+  // return a response token.
+
+  timers_.inference_start_ms = util::time_in_ms();
   shouldStop_ = false;
 
   // encode the (string) prompt into tokens sequence
@@ -168,12 +179,16 @@ Error Runner::generate(
   // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
   int* prompt_tokens = new int[prompt.size() + 1 + n_bos_ + n_eos_];
 
+  // Set the sequence length to the max seq length if not provided
+  seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
+
   tokenizer_->encode(
       prompt.c_str(),
       n_bos_,
       append_eos_ ? n_eos_ : 0,
       prompt_tokens,
       &num_prompt_tokens);
+
   for (int i = 0; i < num_prompt_tokens; i++) {
     ET_LOG(Info, "prompt_tokens[%d]: %d", i, prompt_tokens[i]);
   }
@@ -182,46 +197,33 @@ Error Runner::generate(
       num_prompt_tokens < max_seq_len_,
       "Max seq length exceeded - please increase max seq len value in .../llama2/model.py");
 
+  ET_CHECK_MSG(
+      num_prompt_tokens < seq_len,
+      "Sequence length exceeded - please increase the seq_len value passed to generate()");
+
   // start the main loop
-  long start =
-      0; // used to time our code, only initialized after first iteration
   int next; // will store the next token in the sequence
   int64_t pos = num_prompt_tokens - 1; // position in the sequence
   int token = prompt_tokens[pos]; // prefill starts from 0 to num_prompt_tokens
-  int eos_counter = 0; // counter to capture EOS
   int logits_index = 0; // index of the logits tensor in the output
-  std::vector<exec_aten::SizesType> kv_cache_shape = getKVCacheShape();
   std::vector<exec_aten::SizesType> input_shape = {1, 1};
-  std::vector<exec_aten::SizesType> pos_shape = {};
-  std::vector<uint8_t> k_data;
-  std::vector<uint8_t> v_data;
+  std::vector<exec_aten::SizesType> pos_shape = {1};
   std::vector<int64_t> token_data; // allocate space for the tokens
-  ScalarType dtype = static_cast<ScalarType>(
-      getMetadataHelper("get_dtype", (int64_t)ScalarType::Float));
+  std::vector<int64_t> pos_data; // allocate space for the tokens
 
   if (use_kv_cache_) {
     // set pos to 0, refill token by token
     pos = 0;
-    logits_index = 2;
-    // initialize kv cache
-    size_t n_bytes = 1;
-    for (exec_aten::SizesType shape : kv_cache_shape) {
-      n_bytes *= shape;
-    }
-    n_bytes *= torch::executor::elementSize(dtype);
-
-    k_data.resize(n_bytes);
-    v_data.resize(n_bytes);
     token_data.resize(1);
+    pos_data.resize(seq_len);
   } else {
     // reserve data for tokens, notice the size is still 0.
-    token_data.resize(max_seq_len_);
+    token_data.resize(seq_len);
   }
 
   // initialize tensor wrappers
-  ManagedTensor k_managed(k_data.data(), k_data.size(), kv_cache_shape, dtype);
-  ManagedTensor v_managed(v_data.data(), v_data.size(), kv_cache_shape, dtype);
-  ManagedTensor pos_managed(&pos, 0, {}, ScalarType::Long);
+  ManagedTensor pos_managed(
+      pos_data.data(), pos_data.size(), pos_shape, ScalarType::Long);
 
   // copy prompt tokens into data
   for (int i = 0; i <= pos; ++i) {
@@ -234,8 +236,9 @@ Error Runner::generate(
               tokenizer_->decode(prompt_tokens[i - 1], prompt_tokens[i])));
     }
   }
+
   // create a 1xN int tensor with next as value
-  while (pos < max_seq_len_) {
+  while (pos < seq_len) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
     std::vector<EValue> inputs;
@@ -244,8 +247,6 @@ Error Runner::generate(
       input_shape[1] = 1;
       // inputs: [tokens, start_pos, k_cache, v_cache]
       inputs.emplace_back(pos_managed.get_aliasing_tensor());
-      inputs.emplace_back(k_managed.get_aliasing_tensor());
-      inputs.emplace_back(v_managed.get_aliasing_tensor());
     } else {
       // @lint-ignore CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
       token_data[pos] = token;
@@ -266,13 +267,17 @@ Error Runner::generate(
     std::vector<EValue> outputs = outputs_res.get();
     // Check the outputs.
     ET_CHECK_MSG(
-        outputs.size() > 0,
-        "Expecting output to have at least one evalue. Got %zu",
+        outputs.size() == 1 && outputs.at(0).isTensor(),
+        "Expecting output to have exactly 1 tensor output. Got %zu outputs.",
         outputs.size());
-
+    if (pos == num_prompt_tokens) {
+      timers_.first_token_ms = util::time_in_ms();
+    } else if (pos == num_prompt_tokens - 1) {
+      timers_.prompt_eval_end_ms = util::time_in_ms();
+    }
     int32_t next_tok;
     exec_aten::Tensor logits_tensor = outputs.at(logits_index).toTensor();
-
+    long sample_start_time_ms = util::time_in_ms();
     switch (logits_tensor.scalar_type()) {
       case ScalarType::Float: {
         next_tok = logitsToToken<float>(logits_tensor, pos, 0);
@@ -288,6 +293,8 @@ Error Runner::generate(
             "Unsupported dtype output %hhd",
             static_cast<int8_t>(logits_tensor.scalar_type()));
     }
+    timers_.aggregate_sampling_time_ms +=
+        util::time_in_ms() - sample_start_time_ms;
 
     // advance the state machine
     if (pos < num_prompt_tokens - 1) {
@@ -299,6 +306,9 @@ Error Runner::generate(
     }
     // ET_LOG(Info, "Output saved, next = %d", next);
     pos++;
+    if (use_kv_cache_) {
+      pos_data.at(0) = pos;
+    }
 
     // print the token as string, decode it with the Tokenizer object
     auto piece_res = tokenizer_->decode(token, next);
@@ -319,48 +329,99 @@ Error Runner::generate(
 
     // data-dependent terminating condition: we have n_eos_ number of EOS
     if (pos >= num_prompt_tokens && next == eos_id_) {
-      eos_counter++;
-      if (eos_counter == n_eos_) {
-        ET_LOG(Info, "Reached to the end of generation");
-        break;
-      }
-    } else {
-      eos_counter = 0;
+      printf("\n");
+      ET_LOG(Info, "\nReached to the end of generation");
+      break;
     }
 
     token = next;
-
-    // init the timer here because the first iteration can be slower
-    if (start == 0) {
-      start = util::time_in_ms();
-    }
-    if (use_kv_cache_) {
-      // outputs: [k_cache, v_cache, logits, k_cache, v_cache]
-      memcpy(
-          k_data.data(),
-          outputs.at(0).toTensor().const_data_ptr(),
-          k_data.size());
-      memcpy(
-          v_data.data(),
-          outputs.at(1).toTensor().const_data_ptr(),
-          v_data.size());
-    }
   }
+  timers_.inference_end_ms = util::time_in_ms();
   printf("\n");
 
-  if (pos == max_seq_len_) {
-    ET_LOG(Info, "Maximum sequence length reached!");
+  if (pos == seq_len) {
+    ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
-  // report achieved tok/s (pos-1 because the timer starts after first
-  // iteration)
-  if (pos >= 1) {
-    long end = util::time_in_ms();
-    ET_LOG(
-        Info, "Achieved tok/s: %f\n", (pos - 1) / (double)(end - start) * 1000);
-  }
+
+  timers_.printReport(num_prompt_tokens, pos - num_prompt_tokens);
 
   delete[] prompt_tokens;
   return Error::Ok;
+}
+
+void Runner::TimeStamps::printReport(
+    const int64_t& num_prompt_tokens,
+    const int64_t& num_generated_tokens) {
+  printf(
+      "PyTorchObserver %s\n",
+      toJsonString(num_prompt_tokens, num_generated_tokens).c_str());
+
+  ET_LOG(
+      Info,
+      "\tPrompt Tokens: %" PRIu64 "    Generated Tokens: %" PRIu64,
+      num_prompt_tokens,
+      num_generated_tokens);
+
+  ET_LOG(
+      Info,
+      "\tModel Load Time:\t\t%f (seconds)",
+      ((double)(model_load_end_ms - model_load_start_ms) /
+       SCALING_FACTOR_UNITS_PER_SECOND));
+  double inference_time_ms = (double)(inference_end_ms - inference_start_ms);
+  ET_LOG(
+      Info,
+      "\tTotal inference time:\t\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      inference_time_ms / SCALING_FACTOR_UNITS_PER_SECOND,
+
+      (num_generated_tokens) / (double)(inference_end_ms - inference_start_ms) *
+          SCALING_FACTOR_UNITS_PER_SECOND);
+  double prompt_eval_time = (double)(prompt_eval_end_ms - inference_start_ms);
+  ET_LOG(
+      Info,
+      "\t\tPrompt evaluation:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      prompt_eval_time / SCALING_FACTOR_UNITS_PER_SECOND,
+      (num_prompt_tokens) / prompt_eval_time * SCALING_FACTOR_UNITS_PER_SECOND);
+
+  double eval_time = (double)(inference_end_ms - prompt_eval_end_ms);
+  ET_LOG(
+      Info,
+      "\t\tGenerated %" PRIu64
+      " tokens:\t%f (seconds)\t\t Rate: \t%f (tokens/second)",
+      num_generated_tokens,
+      eval_time / SCALING_FACTOR_UNITS_PER_SECOND,
+      num_generated_tokens / eval_time * SCALING_FACTOR_UNITS_PER_SECOND);
+
+  // Time to first token is measured from the start of inference, excluding
+  // model load time.
+  ET_LOG(
+      Info,
+      "\tTime to first generated token:\t%f (seconds)",
+      ((double)(first_token_ms - inference_start_ms) /
+       SCALING_FACTOR_UNITS_PER_SECOND));
+
+  ET_LOG(
+      Info,
+      "\tSampling time over %" PRIu64 " tokens:\t%f (seconds)",
+      num_prompt_tokens + num_generated_tokens,
+      (double)aggregate_sampling_time_ms / SCALING_FACTOR_UNITS_PER_SECOND);
+}
+
+const std::string Runner::TimeStamps::toJsonString(
+    const int64_t& num_prompt_tokens,
+    const int64_t& num_generated_tokens) {
+  std::stringstream ss;
+  ss << "{\"prompt_tokens\":" << num_prompt_tokens << ","
+     << "\"generated_tokens\":" << num_generated_tokens << ","
+     << "\"model_load_start_ms\":" << model_load_start_ms << ","
+     << "\"model_load_end_ms\":" << model_load_end_ms << ","
+     << "\"inference_start_ms\":" << inference_start_ms << ","
+     << "\"inference_end_ms\":" << inference_end_ms << ","
+     << "\"prompt_eval_end_ms\":" << prompt_eval_end_ms << ","
+     << "\"first_token_ms\":" << first_token_ms << ","
+     << "\"aggregate_sampling_time_ms\":" << aggregate_sampling_time_ms << ","
+     << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
+     << SCALING_FACTOR_UNITS_PER_SECOND << "}";
+  return ss.str();
 }
 
 void Runner::stop() {

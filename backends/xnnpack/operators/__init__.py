@@ -16,6 +16,8 @@ from . import (  # noqa
     op_conv2d,
     op_dequantize_per_tensor,
     op_div,
+    op_dynamic_dequantize_ops,
+    op_dynamic_quantize_ops,
     op_elu,
     op_floor,
     op_hardswish,

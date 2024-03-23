@@ -40,5 +40,17 @@ void get_layer_norm_out_target_size(
     Tensor::SizesType* mean_rstd_sizes,
     size_t* mean_rstd_ndim);
 
+bool check_group_norm_args(
+    const Tensor& input,
+    const exec_aten::optional<Tensor>& weight,
+    const exec_aten::optional<Tensor>& bias,
+    int64_t N,
+    int64_t C,
+    int64_t HxW,
+    int64_t group,
+    Tensor& out,
+    Tensor& mean_out,
+    Tensor& rstd_out);
+
 } // namespace executor
 } // namespace torch

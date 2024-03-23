@@ -16,6 +16,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from executorch.exir.backend.utils import tag_constant_data
 from executorch.exir.dialects._ops import ops as exir_ops
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import CapabilityBasedPartitioner
@@ -44,11 +45,23 @@ class TOSASupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten._softmax.default,
             exir_ops.edge.aten.view_copy.default,
             exir_ops.edge.aten.clone.default,
+            exir_ops.edge.aten.mean.dim,
             operator.getitem,
             exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
             exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
         ]
+
+        supported &= self.is_node_supported_custom(node)
+
         return supported
+
+    def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
+        if node.target == exir_ops.edge.aten.mean.dim:
+            dim = node.args[1]
+            keep_dim = node.args[2]
+            if dim != [-1, -2] or keep_dim is False:
+                return False
+        return True
 
 
 @final
@@ -73,6 +86,8 @@ class ArmPartitioner(Partitioner):
                 tag = f"tag{partition.id}"
                 node.meta["delegation_tag"] = tag
                 partition_tags[tag] = self.delegation_spec
+
+        tag_constant_data(exported_program)
 
         return PartitionResult(
             tagged_exported_program=exported_program, partition_tags=partition_tags

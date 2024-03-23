@@ -135,17 +135,17 @@ def unlift_exported_program_lifted_states(
             if node.name in ep.graph_signature.inputs_to_buffers:
                 buffer_name = ep.graph_signature.inputs_to_buffers[node.name]
                 if buffer_name in param_buffer_name_to_corrected_name:
-                    inp_pos_to_param_buffer_name[
-                        count
-                    ] = param_buffer_name_to_corrected_name[buffer_name]
+                    inp_pos_to_param_buffer_name[count] = (
+                        param_buffer_name_to_corrected_name[buffer_name]
+                    )
                 else:
                     inp_pos_to_param_buffer_name[count] = buffer_name
             if node.name in ep.graph_signature.inputs_to_parameters:
                 param_name = ep.graph_signature.inputs_to_parameters[node.name]
                 if param_name in param_buffer_name_to_corrected_name:
-                    inp_pos_to_param_buffer_name[
-                        count
-                    ] = param_buffer_name_to_corrected_name[param_name]
+                    inp_pos_to_param_buffer_name[count] = (
+                        param_buffer_name_to_corrected_name[param_name]
+                    )
                 else:
                     inp_pos_to_param_buffer_name[count] = param_name
             count += 1

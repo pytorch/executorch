@@ -8,7 +8,6 @@
 #pragma once
 
 #include <executorch/backends/qualcomm/runtime/Logging.h>
-#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
 
@@ -28,6 +27,10 @@ class QnnBackend {
       : handle_(nullptr), implementation_(implementation), logger_(logger) {}
 
   virtual ~QnnBackend();
+  virtual bool IsProfileEventTypeParentOfNodeTime(
+      QnnProfile_EventType_t /*event_type*/) {
+    return false;
+  }
 
   Error Configure();
 

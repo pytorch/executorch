@@ -10,33 +10,26 @@ import shutil
 import subprocess
 import tempfile
 
-from collections import namedtuple
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
-from executorch.backends.arm.test.arm_tosa_reference import (
-    get_input_quantization_params,  # TODO: remove this dependecy
-    get_output_quantization_param,  # TODO: remove this dependecy
-    tosa_ref_dump_inputs,  # TODO: remove this dependecy
-)
 
 from executorch.backends.arm.test.test_models import TosaProfile
-from executorch.backends.xnnpack.test.tester.tester import Partition, ToEdge
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
 
 class QuantizationParams:
-    __slots__ = ["zps", "scales"]
+    __slots__ = ["node_name", "zp", "scale"]
 
-    def __init__(self, zps: Union[Dict, List[int]], scales: Union[Dict, List[float]]):
-        self.zps = zps
-        self.scales = scales
+    # todo: zps and scales can be per tensors or per channel => a list??
+    def __init__(self, node_name: str, zp: int, scale: float):
+        self.node_name = node_name  # not need I think, but good for error check
+        self.zp = zp
+        self.scale = scale
 
-
-Quantization = namedtuple("Quantization", ["input", "output"])
 
 """
 This class is used to work with TOSA artifacts.
@@ -55,124 +48,53 @@ class TosaTestUtils:
         )
         self.tosa_ref_model_path = tosa_ref_model_path or "tosa_reference_model"
         self.profile = profile or TosaProfile.MI
-        input_quant = QuantizationParams(zps={}, scales={})
-        output_quant = QuantizationParams(zps={}, scales={})
-        self.quantization = Quantization(input=input_quant, output=output_quant)
         assert os.path.exists(
             self.intermediate_path
         ), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
 
-    def dbg_dump_readble_tosa_file(self) -> None:
+    @staticmethod
+    def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
         """
-        This function is used to dump the TOSA buffer to a human readable
-        format, using flatc.
-        It requires the following files to be present on disk:
-        1) output.tosa (in self.intermediate_path, produced by arm_backend.py)
-        2) ./backends/arm/third-party/serialization_lib/schema/tosa.fbs.
-
-        It is used for debugging purposes.
-
-        Output from this is a file called output.json, located in
-        self.intermediate_path.
-
-        Todo:
-            * I'd prefer if this function didn't use files on disk...
-            * Check if we can move this function to dump_artificat() thingy...
+        This function is used to dump the TOSA flatbuffer to a human readable
+        format, using flatc. It is used for debugging purposes.
         """
 
-        tosa_input_file = self.intermediate_path + "/output.tosa"
+        tmp = tempfile.mkdtemp()
+        tosa_input_file = os.path.join(tmp, "output.tosa")
+        with open(tosa_input_file, "wb") as f:
+            f.write(tosa_fb)
+
         tosa_schema_file = (
             "./backends/arm/third-party/serialization_lib/schema/tosa.fbs"
         )
-
         assert os.path.exists(
             tosa_schema_file
         ), f"tosa_schema_file: {tosa_schema_file} does not exist"
-        assert os.path.exists(
-            tosa_input_file
-        ), f"tosa_input_file: {tosa_input_file} does not exist"
-        assert shutil.which("flatc") is not None
 
+        assert shutil.which("flatc") is not None
         cmd_flatc = [
             "flatc",
+            "--json",
+            "--strict-json",
             "-o",
-            self.intermediate_path,
+            tmp,
             "--raw-binary",
             "-t",
             tosa_schema_file,
             "--",
             tosa_input_file,
         ]
-        self._run_cmd(cmd_flatc)
-        return
+        TosaTestUtils._run_cmd(cmd_flatc)
+        with open(os.path.join(tmp, "output.json"), "r") as f:
+            json_out = json.load(f)
 
-    def convert_inputs_to_tosa(
-        self,
-        partition_stage: Partition,
-        toedge_stage: ToEdge,
-        inputs_to_run: Tuple[torch.Tensor],
-    ) -> List[Tuple[np.ndarray, str]]:
-        """
-        Convert input tensors to numpy and save them to disk as .npy files. The
-        TOSA reference model will use these files as input....
-
-        Args:
-        partition_stage (Partition): The partition stage.
-        toedge_stage (ToEdge): The toedge stage.
-        inputs_to_run (Tuple[torch.Tensor]): The input tensors to convert.
-
-        Returns:
-        List[Tuple[np.ndarray, str]]: A list of tuples, where each tuple contain
-            a numpy array and the name of the tensor.
-
-        Todo:
-            * I'd like to use some other common function instead of
-              get_input_quantization_params() and
-              get_output_quantization_param().
-            * I'd like to get rid of the call to tosa_ref_dump_inputs as well.
-              All this function is doing is to convert to numpy and save to disk
-        """
-
-        if self.profile == TosaProfile.BI:
-            # TODO: Unclear to me why we need to pass toedge_stage here. Ideally
-            # we shouldn't get the quantization params here at all, but rather
-            # from the Quantizer...
-            (
-                self.quantization.input.scales,
-                self.quantization.input.zps,
-            ) = get_input_quantization_params(toedge_stage)
-            (
-                self.quantization.output.scales,
-                self.quantization.output.zps,
-            ) = get_output_quantization_param(toedge_stage)
-
-            # TODO: I think it should be possible to get this input data from
-            # somewhere else. Why do I need to call this just to get a npy file,
-            # which is just a quantized version of the input..?
-            np_data_and_tensor_names = tosa_ref_dump_inputs(
-                partition_stage,
-                inputs_to_run,
-                self.intermediate_path,
-                self.quantization.input.scales,
-                self.quantization.input.zps,
-                self.profile,
-                save_on_disk=False,  # If True - this one produces arg0_1.npy, which is just a quant version of the input
-                # inputs_to_run -> convert to numpy -> do "manual" quantization -> save to arg0_1.npy (TODO: remove this comment)
-            )
-        else:
-            np_data_and_tensor_names = tosa_ref_dump_inputs(
-                partition_stage,
-                inputs_to_run,
-                self.intermediate_path,
-                {},
-                {},
-                save_on_disk=False,
-            )
-
-        return np_data_and_tensor_names
+        return json_out
 
     def run_tosa_ref_model(
-        self, tensor_names_and_inputs: List[Tuple[np.array, str]]
+        self,
+        params_input: Tuple[List[str], List[QuantizationParams]],
+        param_output: Tuple[str, QuantizationParams],
+        inputs: Tuple[torch.Tensor],
     ) -> torch.Tensor:
         """
         Run TOSA reference model using the tosa_refence_model program.
@@ -184,18 +106,20 @@ class TosaTestUtils:
 
         These two files are created by arm_backend.py as part of partition stage
 
-        3. An IFM file containing input data, saved as .npy. This file is
-           created by tosa_ref_dump_inputs()
-
         All these files are saved on disk in self.intermediate_path.
 
         Args:
-        tensor_names_and_inputs (List[Tuple[np.array, str]]): A list of tuples
-            where each tuple contains inputs (as numpy array) and the name of
-            the tensor.
+            params_input (Tuple[List[str], List[QuantizationParams]]): A tuple
+                containing a list of input node names and a list of their
+                quantization parameters (if model is quantized).
+            param_output (Tuple[str, QuantizationParams]): A tuple containing
+                the output node name and its quantization parameters (if
+                model is quantized).
+            inputs (Tuple[torch.Tensor]): The input data to run the TOSA
 
         Returns:
-        torch.Tensor: The output of the TOSA reference model, as a torch tensor.
+            torch.Tensor: The output of the TOSA reference model, as a torch
+                tensor.
 
         Here's a sample desc.json file:
         {
@@ -228,11 +152,27 @@ class TosaTestUtils:
         ), f"desc_file_path: {desc_file_path} does not exist"
 
         # Save the input data to disk as a .npy file, since that's what the TOSA
-        # reference model expects. Name of the file is must match the name in
+        # reference model expects. Name of the file must match the name in
         # desc.json, which is the tensor name from the graph + .npy
-        for tensor_name, data in tensor_names_and_inputs:
-            file_path = os.path.join(self.intermediate_path, tensor_name + ".npy")
-            np.save(file_path, data, allow_pickle=False)
+        for input_name, quant_param, data in zip(
+            params_input[0], params_input[1], inputs
+        ):
+            data_np = data.detach().numpy()
+
+            if self.profile is TosaProfile.BI:
+                assert (
+                    quant_param.node_name == input_name
+                ), "These quantization params do not match the input tensor name"
+                int8_max = np.iinfo(np.int8).max
+                int8_min = np.iinfo(np.int8).min
+                data_np = (
+                    ((data_np / np.float32(quant_param.scale)) + quant_param.zp)
+                    .round()
+                    .clip(int8_min, int8_max)
+                    .astype(np.int8)
+                )
+            file_path = os.path.join(self.intermediate_path, input_name + ".npy")
+            np.save(file_path, data_np, allow_pickle=False)
 
         # Run the TOSA reference model via command line, this will produce a
         # .npy file with the result (aka OFM).
@@ -240,7 +180,7 @@ class TosaTestUtils:
             shutil.which(self.tosa_ref_model_path) is not None
         ), f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
         cmd_ref_model = [self.tosa_ref_model_path, "--test_desc", desc_file_path]
-        self._run_cmd(cmd_ref_model)
+        TosaTestUtils._run_cmd(cmd_ref_model)
 
         # Load desc.json, just to get the name of the output file above
         with open(desc_file_path) as f:
@@ -252,19 +192,19 @@ class TosaTestUtils:
 
         if self.profile is TosaProfile.BI:
             # Need to dequant back to FP32 for comparison with torch output
-            assert self.quantization.output.scales is not None
-            assert self.quantization.output.zps is not None
-            tosa_ref_output = (
-                np.round(tosa_ref_output - self.quantization.output.zps)
-                * self.quantization.output.scales
-            )
+            quant_param = param_output[1]
+            assert (
+                quant_param is not None
+            ), "There are no quantization parameters, check output parameters"
+            tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
         # tosa_output is a numpy array, convert to torch tensor for comparison
         tosa_ref_output = torch.from_numpy(tosa_ref_output.astype("float32"))
 
         return tosa_ref_output
 
-    def _run_cmd(self, cmd: List[str]) -> None:
+    @staticmethod
+    def _run_cmd(cmd: List[str]) -> None:
         """
         Run a command and check for errors.
 

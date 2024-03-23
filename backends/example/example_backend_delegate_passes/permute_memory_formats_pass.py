@@ -127,9 +127,11 @@ class PermuteMemoryFormatsPass(ExportPass):
                             # if user is in to_dim_op_set, it means the user's arg is already set to_dim op
                             if user not in to_dim_op_set:
                                 user_new_arg = [
-                                    input_node_map[user_arg]
-                                    if user_arg in input_node_map
-                                    else user_arg
+                                    (
+                                        input_node_map[user_arg]
+                                        if user_arg in input_node_map
+                                        else user_arg
+                                    )
                                     for user_arg in user.args
                                 ]
                                 # Update input node's users arg

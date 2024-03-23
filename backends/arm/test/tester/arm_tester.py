@@ -4,7 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 from enum import Enum
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
+
+import numpy as np
 
 import torch
 from executorch.backends.arm.arm_backend import (
@@ -13,8 +15,13 @@ from executorch.backends.arm.arm_backend import (
 )
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
+from executorch.backends.arm.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 
 from executorch.backends.arm.test.tosautil.tosa_test_utils import (
+    QuantizationParams,
     TosaProfile,
     TosaTestUtils,
 )
@@ -28,15 +35,39 @@ from executorch.backends.xnnpack.test.tester.tester import (
 )
 
 from executorch.exir import EdgeCompileConfig
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
+from torch.export import ExportedProgram
 
 
 class ArmBackendSelector(Enum):
     TOSA = "tosa"
     ETHOS_U55 = "ethos-u55"
+
+
+class Partition(Partition):
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        super().dump_artifact(path_to_dump)
+        from pprint import pformat
+
+        to_print = None
+        for spec in self.graph_module.lowered_module_0.compile_specs:
+            if spec.key == "output_format":
+                if spec.value == b"tosa":
+                    tosa_fb = self.graph_module.lowered_module_0.processed_bytes
+                    to_print = TosaTestUtils.dbg_tosa_fb_to_json(tosa_fb)
+                    to_print = pformat(to_print, compact=True, indent=1)
+                    to_print = f"\n TOSA deserialized: \n{to_print}"
+                elif spec.value == b"vela":
+                    vela_cmd_stream = self.graph_module.lowered_module_0.processed_bytes
+                    to_print = str(vela_cmd_stream)
+                    to_print = f"\n Vela command stream: \n{to_print}"
+                break
+        assert to_print is not None, "No TOSA nor Vela compile spec found"
+
+        if path_to_dump:
+            with open(path_to_dump, "a") as fp:
+                fp.write(to_print)
+        else:
+            print(to_print)
 
 
 class ArmTester(Tester):
@@ -46,6 +77,7 @@ class ArmTester(Tester):
         inputs: Tuple[torch.Tensor],
         backend: ArmBackendSelector = ArmBackendSelector.TOSA,
         profile: TosaProfile = TosaProfile.BI,
+        permute_memory_to_nhwc: bool = False,
     ):
         """
         Args:
@@ -59,8 +91,13 @@ class ArmTester(Tester):
                     functional test, no numerical checks.
             profile (TosaProfile): The TOSA profile to use. Either
                 TosaProfile.BI or TosaProfile.MI
+            permute_memory_to_nhwc (bool) : flag for enabling the memory format
+                permutation to nhwc as required by TOSA
         """
         self.tosa_test_util = None
+        self.is_quantized = profile == TosaProfile.BI
+        self.permute_memory_to_nhwc = permute_memory_to_nhwc
+
         if backend == ArmBackendSelector.TOSA:
             self.tosa_test_util = TosaTestUtils(profile=profile)
             # The spec below tiggers arm_backend.py to output two files:
@@ -68,19 +105,20 @@ class ArmTester(Tester):
             #   2) desc.json
             # Saved on disk in self.tosa_test_util.intermediate_path
             self.compile_spec = generate_tosa_compile_spec(
-                self.tosa_test_util.intermediate_path
+                permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
             )
         elif backend == ArmBackendSelector.ETHOS_U55:
-            self.compile_spec = generate_ethosu_compile_spec("ethos-u55-128")
+            self.compile_spec = generate_ethosu_compile_spec(
+                config="ethos-u55-128", permute_memory_to_nhwc=permute_memory_to_nhwc
+            )
         else:
             raise ValueError(f"Unknown backend: {backend}")
         super().__init__(model, inputs)
 
     def quantize(self, quantize_stage: Optional[Quantize] = None):
         if quantize_stage is None:
-            # Using the XNNPACKQuantizer for now
             quantize_stage = Quantize(
-                XNNPACKQuantizer(),
+                ArmQuantizer(),
                 get_symmetric_quantization_config(is_per_channel=False),
             )
         return super().quantize(quantize_stage)
@@ -119,54 +157,133 @@ class ArmTester(Tester):
         ), "self.tosa_test_util is not initialized, cannot use run_method()"
         inputs_to_run = inputs or self.inputs
 
-        # TODO: we can't possible need to use all these stages??
-        export_stage = self.stages[
-            self.stage_name(Export)
-        ]  # this is what XNNpack use to get quant params
-        toedge_stage = self.stages[
-            self.stage_name(ToEdge)
-        ]  # this is what get_input_quantization_params use to get quant params
-        partition_stage = self.stages[
-            self.stage_name(Partition)
-        ]  # this is what tosa_ref_dump_inputs use....
+        export_stage = self.stages[self.stage_name(Export)]
 
-        # TODO: I'd prefer to use this TOSA buffer instead of output.tosa,
-        # generated by arm_backend.py. The issue is that we're still depending
-        # on desc.json, which is created from TosaSerializer class, not from
-        # the serialized TOSA buffer. Leave this here for review purposes.
-        # ts_serialized = self._get_serialized_tosa_buffer(  # unused
-        #     partition_stage.artifact
-        # )
+        (input_names, qp_input) = self._get_input_params(export_stage.artifact)
+        (output_name, qp_output) = self._get_output_param(export_stage.artifact)
 
-        # This is where the torch reference output is calculated and set
-        # TODO: This sets self.quantization_scale, which is duplicates
-        # self.tosa_test_util.quantization.output.scales (?). Fixme.
-        (
-            self.reference_output,
-            self.quantization_scale,
-        ) = self._calculate_reference_output(export_stage.artifact, inputs_to_run)
-
-        # Convert the torch inputs to something TOSA ref model can use
-        tensor_names_and_inputs_np = self.tosa_test_util.convert_inputs_to_tosa(
-            partition_stage.artifact, toedge_stage.artifact, inputs_to_run
+        # Calculate the reference output using the original module or the quant
+        # module. self.quantization_scale is used by compare_outputs() to
+        # calculate the tolerance
+        self.quantization_scale = None if qp_output is None else qp_output.scale
+        if self.is_quantized:
+            module_for_ref = self.stages[self.stage_name(Quantize)].artifact
+        else:
+            module_for_ref = self.original_module
+        self.reference_output = self._calculate_reference_output(
+            module_for_ref, inputs_to_run
         )
+
+        # Transpose input data which is on NCHW format to NHWC format,
+        if self.permute_memory_to_nhwc and len(inputs_to_run[0].shape) == 4:
+            NHWC_Order = (0, 2, 3, 1)
+            inputs_to_run = (np.transpose(inputs_to_run[0], NHWC_Order),)
 
         # Run the TOSA ref model to get the output tensor, which will be
         # compared to the torch output in compare_outputs()
-        self.stage_output = self.tosa_test_util.run_tosa_ref_model(
-            tensor_names_and_inputs_np
+        tosa_output = self.tosa_test_util.run_tosa_ref_model(
+            params_input=(input_names, qp_input),
+            param_output=(output_name, qp_output),
+            inputs=inputs_to_run,
         )
+
+        # Transpose back to NCHW format for comparison to torch output
+        if self.permute_memory_to_nhwc and len(tosa_output.shape) == 4:
+            NCHW_Order = (0, 3, 1, 2)
+            tosa_output = (np.transpose(tosa_output, NCHW_Order),)
+
+        self.stage_output = tosa_output
 
         return self
 
-    def _get_serialized_tosa_buffer(self, partition_stage: Partition) -> bytes:
+    def _get_input_params(
+        self, program: ExportedProgram
+    ) -> Tuple[str, Union[List[QuantizationParams], List[None]]]:
         """
-        This is just a prototype...
-        Todo:
-            * The "_0" indicates that there are many lowered modules. Loop it!
-            * There's probably a better way to get this buffer. An API? Yes,
-              it seems the serialize stage does this for you...
+        Get name and optionally quantization parameters for the inputs to this
+        model.
+
+        Args:
+            program (ExportedProgram): The program to get input parameters from
+        Returns:
+            Tuple[str, Optional[QuantizationParams]]: A tuple containing the
+                input node names and their quantization parameters.
         """
-        return partition_stage._edge_programs[
-            "forward"
-        ]._graph_module.lowered_module_0.processed_bytes
+        input_names = []
+        # E.g. bias and weights are 'placeholders' as well. This is used to
+        # get only the use inputs.
+        usr_inputs = program.graph_signature.user_inputs
+        for node in program.graph.nodes:
+            if node.op == "placeholder" and node.name in usr_inputs:
+                input_names.append(node.name)
+                continue
+
+        if self.is_quantized:
+            quant_params = []
+            for node in program.graph.nodes:
+                if (
+                    node.target
+                    == torch.ops.quantized_decomposed.quantize_per_tensor.default
+                    and node.args[0].name in input_names
+                ):
+                    qp = QuantizationParams(
+                        node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+                    )
+                    quant_params.append(qp)
+                    if len(quant_params) == len(
+                        input_names
+                    ):  # break early if we have all the inputs quantized parameters
+                        break
+            assert len(quant_params) != 0, "Quantization paramerters not found"
+            return (input_names, quant_params)
+        else:
+            return (input_names, len(input_names) * [None])  # return a list of None's
+
+    def _get_output_param(
+        self, program: ExportedProgram
+    ) -> Tuple[str, Union[QuantizationParams, None]]:
+        """
+        Get name and optionally quantization parameters for the inputs to this
+        model.
+
+        Args:
+            program (ExportedProgram): The program to get output parameters from.
+        Returns:
+            Tuple[str, Optional[QuantizationParams]]: A tuple containing the
+                output node name and its quantization parameters.
+        """
+        output_node = None
+        for node in program.graph.nodes:
+            if node.op == "output":
+                output_node = node
+                break
+
+        if self.is_quantized:
+            quant_params = None
+            for node in program.graph.nodes:
+                if (
+                    node.target
+                    == torch.ops.quantized_decomposed.dequantize_per_tensor.default
+                    and node == output_node.args[0][0]
+                ):
+                    quant_params = QuantizationParams(
+                        node_name=node.args[0].name, scale=node.args[1], zp=node.args[2]
+                    )
+                    break  # break early, there's only one output node
+            assert quant_params is not None, "Quantization paramerters not found"
+            return (output_node.name, quant_params)
+        else:
+            return (output_node.name, None)
+
+    @staticmethod
+    def _calculate_reference_output(
+        module: Union[torch.fx.GraphModule, torch.nn.Module], inputs
+    ) -> torch.Tensor:
+        """
+        Note: I'd prefer to use the base class method here, but since it use the
+        exported program, I can't. The partitioner stage clears the state_dict
+        of the exported program, which causes an issue when evaluating the
+        module.
+        """
+
+        return module.forward(*inputs)

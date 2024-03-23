@@ -9,6 +9,8 @@
 import argparse
 import logging
 
+import torch
+
 from executorch.exir.capture import EdgeCompileConfig, ExecutorchBackendConfig
 
 from ...models import MODEL_NAME_TO_MODEL
@@ -71,8 +73,9 @@ def main() -> None:
             dynamic_shapes=dynamic_shapes,
             backend_config=backend_config,
         )
-    save_pte_program(prog.buffer, args.model_name, args.output_dir)
+    save_pte_program(prog, args.model_name, args.output_dir)
 
 
 if __name__ == "__main__":
-    main()  # pragma: no cover
+    with torch.no_grad():
+        main()  # pragma: no cover

@@ -28,6 +28,8 @@ Tensor& logit_out(
   ET_KERNEL_CHECK(
       ctx, resize_tensor(out, in.sizes()) == Error::Ok, InvalidArgument, out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_floating_type(out), InvalidArgument, out);
+
   ScalarType in_type = in.scalar_type();
   ScalarType out_type = out.scalar_type();
   ET_SWITCH_REAL_TYPES_AND(Bool, in_type, ctx, "logit.out", CTYPE_IN, [&] {

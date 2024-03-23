@@ -1,7 +1,7 @@
 //
 // ETCoreMLAssetManager.h
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -116,6 +116,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// The trash directory URL, the assets before removal are moved to this directory. The directory
 /// contents are deleted asynchronously.
 @property (copy, readonly, nonatomic) NSURL* trashDirectoryURL;
+
+/// The file manager.
+@property (strong, readonly, nonatomic) NSFileManager* fileManager;
 
 @end
 

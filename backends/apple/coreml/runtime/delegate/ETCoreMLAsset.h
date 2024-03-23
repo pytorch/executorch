@@ -1,7 +1,7 @@
 //
 // ETCoreMLAsset.h
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -11,7 +11,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// Represents an asset on the filesystem. An asset is merely a directory with a unique identifier.
+/// Represents an asset on the filesystem.
 @interface ETCoreMLAsset : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
@@ -21,7 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// Constructs an `ETCoreMLAsset` instance from `ModelAsset`
 ///
 /// @param backingAsset The cpp asset.
-- (instancetype)initWithBackingAsset:(const executorchcoreml::Asset&)backingAsset NS_DESIGNATED_INITIALIZER;
+- (instancetype)initWithBackingAsset:(executorchcoreml::Asset)backingAsset NS_DESIGNATED_INITIALIZER;
 
 /// The unique identifier.
 @property (copy, readonly, nonatomic) NSString* identifier;
@@ -51,7 +51,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// @retval `YES` is the advisory read to all the files succeeded otherwise`NO`.
 - (BOOL)prewarmAndReturnError:(NSError* __autoreleasing*)error;
 
-/// Closes all the opened file handles by the `keepAliveAndReturnError` call.
+/// Closes all the file handles opened by the `keepAliveAndReturnError` call.
 - (void)close;
 
 @end

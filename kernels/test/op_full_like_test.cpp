@@ -7,6 +7,7 @@
  */
 
 #include <executorch/kernels/test/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/kernels/test/TestUtil.h>
 #include <executorch/kernels/test/supported_features.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -23,71 +24,74 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_full_like_out(
-    const Tensor& self,
-    const Scalar& fill_value,
-    optional<MemoryFormat> memory_format,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::full_like_outf(
-      context, self, fill_value, memory_format, out);
-}
+class OpFullLikeTest : public OperatorTest {
+ protected:
+  Tensor& op_full_like_out(
+      const Tensor& self,
+      const Scalar& fill_value,
+      optional<MemoryFormat> memory_format,
+      Tensor& out) {
+    return torch::executor::aten::full_like_outf(
+        context_, self, fill_value, memory_format, out);
+  }
 
-template <ScalarType DTYPE>
-void test_full_like_out() {
-  TensorFactory<DTYPE> tf;
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor in = tf.zeros(sizes);
-  Tensor out = tf.zeros(sizes);
-  Scalar value = 42;
-  MemoryFormat memory_format = MemoryFormat::Contiguous;
+  template <ScalarType DTYPE>
+  void test_full_like_out() {
+    TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+    Tensor in = tf.zeros(sizes);
+    Tensor out = tf.zeros(sizes);
+    Scalar value = 42;
+    MemoryFormat memory_format = MemoryFormat::Contiguous;
 
-  // Check that it matches the expected output.
-  op_full_like_out(in, value, memory_format, out);
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{42, 42, 42, 42}));
+    // Check that it matches the expected output.
+    op_full_like_out(in, value, memory_format, out);
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{42, 42, 42, 42}));
 
-  value = 1;
-  op_full_like_out(in, value, memory_format, out);
-  EXPECT_TENSOR_EQ(out, tf.ones(sizes));
-}
+    value = 1;
+    op_full_like_out(in, value, memory_format, out);
+    EXPECT_TENSOR_EQ(out, tf.ones(sizes));
+  }
 
-template <>
-void test_full_like_out<ScalarType::Bool>() {
-  TensorFactory<ScalarType::Bool> tf;
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor in = tf.zeros(sizes);
-  Tensor out = tf.zeros(sizes);
-  Scalar value = true;
-  MemoryFormat memory_format = MemoryFormat::Contiguous;
+  template <>
+  void test_full_like_out<ScalarType::Bool>() {
+    TensorFactory<ScalarType::Bool> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+    Tensor in = tf.zeros(sizes);
+    Tensor out = tf.zeros(sizes);
+    Scalar value = true;
+    MemoryFormat memory_format = MemoryFormat::Contiguous;
 
-  // Check that it matches the expected output.
-  op_full_like_out(in, value, memory_format, out);
-  EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
+    // Check that it matches the expected output.
+    op_full_like_out(in, value, memory_format, out);
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, /*data=*/{true, true, true, true}));
 
-  value = false;
-  op_full_like_out(in, value, memory_format, out);
-  EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
-}
+    value = false;
+    op_full_like_out(in, value, memory_format, out);
+    EXPECT_TENSOR_EQ(out, tf.zeros(sizes));
+  }
 
-TEST(OpFullLikeTest, AllRealOutputPasses) {
+  template <ScalarType DTYPE>
+  void test_full_like_out_mismatched_shape() {
+    TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 2};
+    Tensor in = tf.zeros(/*sizes=*/{2, 2});
+    Tensor out = tf.zeros(/*sizes=*/{4, 2});
+    Scalar value = 42;
+    MemoryFormat memory_format;
+
+    ET_EXPECT_KERNEL_FAILURE(
+        context_, op_full_like_out(in, value, memory_format, out));
+  }
+};
+
+TEST_F(OpFullLikeTest, AllRealOutputPasses) {
 #define TEST_ENTRY(ctype, dtype) test_full_like_out<ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-template <ScalarType DTYPE>
-void test_full_like_out_mismatched_shape() {
-  TensorFactory<DTYPE> tf;
-  const std::vector<int32_t> sizes = {2, 2};
-  Tensor in = tf.zeros(/*sizes=*/{2, 2});
-  Tensor out = tf.zeros(/*sizes=*/{4, 2});
-  Scalar value = 42;
-  MemoryFormat memory_format;
-
-  ET_EXPECT_DEATH(op_full_like_out(in, value, memory_format, out), "");
-}
-
-TEST(OpFullLikeTest, MismatchedShapeDies) {
+TEST_F(OpFullLikeTest, MismatchedShapeDies) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched shapes";
   }
@@ -97,7 +101,7 @@ TEST(OpFullLikeTest, MismatchedShapeDies) {
 #undef TEST_ENTRY
 }
 
-TEST(OpFullLikeTest, SimpleGeneratedCase) {
+TEST_F(OpFullLikeTest, SimpleGeneratedCase) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -126,7 +130,7 @@ TEST(OpFullLikeTest, SimpleGeneratedCase) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFullLikeTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpFullLikeTest, DynamicShapeUpperBoundSameAsExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -145,7 +149,7 @@ TEST(OpFullLikeTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFullLikeTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpFullLikeTest, DynamicShapeUpperBoundLargerThanExpected) {
   TensorFactory<ScalarType::Float> tf;
 
   Tensor x = tf.make(
@@ -164,7 +168,7 @@ TEST(OpFullLikeTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
 
-TEST(OpFullLikeTest, DynamicShapeUnbound) {
+TEST_F(OpFullLikeTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   TensorFactory<ScalarType::Float> tf;
 

@@ -1,14 +1,14 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbsource//xplat/executorch/kernels/test:util.bzl", "codegen_function_header_wrapper", "generated_op_test", "op_test")
 
-def _common_op_test(name, kernels, aten_compatible = True):
+def _common_op_test(name, kernels):
     """
     Defines test targets in format of <kernel>_op_<op-name>_test
     For ATen kernel testing, let's use portable functions.yaml for tested ops.
     """
     for kernel in kernels:
         deps = [":function_header_wrapper_{}".format(kernel)]
-        op_test(name, aten_compatible = aten_compatible, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
+        op_test(name, kernel_name = kernel, use_kernel_prefix = True, deps = deps)
 
 def make_example_generated_op_test_target():
     """
@@ -50,10 +50,12 @@ def define_common_targets(is_fbcode = False):
             fbcode_exported_deps = [
                 "//common/init:init",
                 "//common/gtest:gtest",
+                "//executorch/runtime/kernel:kernel_includes",
             ],
             xplat_exported_deps = [
                 "//xplat/folly:init_init",
                 "//third-party/googletest:gtest_main",
+                "//executorch/runtime/kernel:kernel_includes",
             ],
         )
 
@@ -181,6 +183,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_bitwise_xor_test", ["aten", "portable"])
     _common_op_test("op_bmm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_cat_test", ["aten", "portable"])
+    _common_op_test("op_cdist_forward_test", ["aten", "portable"])
     _common_op_test("op_ceil_test", ["aten", "portable"])
     _common_op_test("op_clamp_test", ["aten", "portable"])
     _common_op_test("op_clone_test", ["aten", "portable"])
@@ -191,6 +194,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_cosh_test", ["aten", "portable"])
     _common_op_test("op_cumsum_test", ["aten", "portable"])
     _common_op_test("op_detach_copy_test", ["aten", "portable"])
+    _common_op_test("op_diagonal_copy_test", ["aten", "portable"])
     _common_op_test("op_div_test", ["aten", "portable", "optimized"])
     _common_op_test("op_embedding_test", ["aten", "portable"])
     _common_op_test("op_empty_test", ["aten", "portable"])
@@ -200,6 +204,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_expand_copy_test", ["aten", "portable"])
     _common_op_test("op_expm1_test", ["aten", "portable"])
     _common_op_test("op_fill_test", ["aten", "portable"])
+    _common_op_test("op_flip_test", ["aten", "portable"])
     _common_op_test("op_floor_divide_test", ["aten", "portable"])
     _common_op_test("op_floor_test", ["aten", "portable"])
     _common_op_test("op_fmod_test", ["aten", "portable"])
@@ -240,11 +245,13 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_mul_test", ["aten", "portable", "optimized"])
     _common_op_test("op_pow_test", ["aten", "portable"])
     _common_op_test("op_native_batch_norm_test", ["aten", "portable"])
+    _common_op_test("op_native_group_norm_test", ["aten", "portable"])
     _common_op_test("op_native_layer_norm_test", ["aten", "portable", "optimized"])
     _common_op_test("op_ne_test", ["aten", "portable"])
     _common_op_test("op_neg_test", ["aten", "portable", "optimized"])
     _common_op_test("op_nonzero_test", ["aten", "portable"])
     _common_op_test("op_ones_test", ["aten", "portable"])
+    _common_op_test("op_pdist_forward_test", ["aten", "portable"])
     _common_op_test("op_permute_copy_test", ["aten", "portable"])
     _common_op_test("op_pixel_shuffle_test", ["aten", "portable"])
     _common_op_test("op_prod_test", ["aten", "portable"])
@@ -258,6 +265,7 @@ def define_common_targets(is_fbcode = False):
     _common_op_test("op_replication_pad1d_test", ["aten", "portable"])
     _common_op_test("op_replication_pad2d_test", ["aten", "portable"])
     _common_op_test("op_replication_pad3d_test", ["aten", "portable"])
+    _common_op_test("op_roll_test", ["aten", "portable"])
     _common_op_test("op_round_test", ["aten", "portable"])
     _common_op_test("op_rsqrt_test", ["aten", "portable"])
     _common_op_test("op_rsub_test", ["aten", "portable"])

@@ -1,7 +1,7 @@
 //
 // MLModel+Prewarm.m
 //
-// Copyright © 2023 Apple Inc. All rights reserved.
+// Copyright © 2024 Apple Inc. All rights reserved.
 //
 // Please refer to the license found in the LICENSE file in the root directory of the source tree.
 
@@ -47,7 +47,9 @@ id<MLFeatureProvider> _Nullable get_zeroed_inputs(MLModel *model, NSError * __au
         switch (feature_desc.type) {
             case MLFeatureTypeMultiArray: {
                 MLMultiArrayConstraint *constraint = feature_desc.multiArrayConstraint;
-                MLMultiArray *array = [MLMultiArray zeroedMultiArrayWithShape:constraint.shape dataType:constraint.dataType error:error];
+                MLMultiArray *array = [MLMultiArray zeroedMultiArrayWithShape:constraint.shape 
+                                                                     dataType:constraint.dataType
+                                                                        error:error];
                 MLFeatureValue *feature = (array != nil) ? [MLFeatureValue featureValueWithMultiArray:array] : nil;
                 if (!feature) {
                     return nil;

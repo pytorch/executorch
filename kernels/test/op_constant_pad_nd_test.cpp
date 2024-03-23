@@ -23,331 +23,333 @@ using exec_aten::Tensor;
 using torch::executor::testing::SupportedFeatures;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_constant_pad_nd_out(
-    const Tensor& self,
-    const IntArrayRef padding,
-    const Scalar& value,
-    Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::constant_pad_nd_outf(
-      context, self, padding, value, out);
-}
+class OpConstantPadNDOutTest : public OperatorTest {
+ protected:
+  Tensor& op_constant_pad_nd_out(
+      const Tensor& self,
+      const IntArrayRef padding,
+      const Scalar& value,
+      Tensor& out) {
+    return torch::executor::aten::constant_pad_nd_outf(
+        context_, self, padding, value, out);
+  }
 
-template <ScalarType DTYPE>
-void test_constant_pad_nd_out_dim2() {
-  TensorFactory<DTYPE> tf;
+  template <ScalarType DTYPE>
+  void test_constant_pad_nd_out_dim2() {
+    TensorFactory<DTYPE> tf;
 
-  const std::vector<int32_t> sizes = {2, 4, 4};
-  const std::vector<int32_t> sizes_out = {2, 4, 6};
-  const std::vector<int64_t> padding = {1, 1};
+    const std::vector<int32_t> sizes = {2, 4, 4};
+    const std::vector<int32_t> sizes_out = {2, 4, 6};
+    const std::vector<int64_t> padding = {1, 1};
 
-  // clang-format off
-  Tensor self = tf.make(
-      sizes,
-      {
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+    // clang-format off
+    Tensor self = tf.make(
+        sizes,
+        {
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
+    // clang-format off
+    Tensor expected = tf.make(
+        sizes_out,
+        {
+           7,  1,  2,  3,  4,  7,
+           7,  5,  6,  7,  8,  7,
+           7,  1,  2,  3,  4,  7,
+           7,  5,  6,  7,  8,  7,
+  
+           7,  1,  2,  3,  4,  7,
+           7,  5,  6,  7,  8,  7,
+           7,  1,  2,  3,  4,  7,
+           7,  5,  6,  7,  8,  7,
+        });
+    // clang-format on
 
-  // clang-format off
-  Tensor expected = tf.make(
-      sizes_out,
-      {
-         7,  1,  2,  3,  4,  7,
-         7,  5,  6,  7,  8,  7,
-         7,  1,  2,  3,  4,  7,
-         7,  5,  6,  7,  8,  7,
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor out = tf.zeros(sizes_out);
 
-         7,  1,  2,  3,  4,  7,
-         7,  5,  6,  7,  8,  7,
-         7,  1,  2,  3,  4,  7,
-         7,  5,  6,  7,  8,  7,
-      });
-  // clang-format on
+    // Valid input should give the expected output
+    op_constant_pad_nd_out(self, padding_ref, 7, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 
-  IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
-  Tensor out = tf.zeros(sizes_out);
+  template <ScalarType DTYPE>
+  void test_constant_pad_nd_out_dim1() {
+    TensorFactory<DTYPE> tf;
 
-  // Valid input should give the expected output
-  op_constant_pad_nd_out(self, padding_ref, 7, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
+    const std::vector<int32_t> sizes = {2, 4, 4};
+    const std::vector<int32_t> sizes_out = {2, 6, 4};
+    const std::vector<int64_t> padding = {0, 0, 2, 0};
 
-template <ScalarType DTYPE>
-void test_constant_pad_nd_out_dim1() {
-  TensorFactory<DTYPE> tf;
+    // clang-format off
+    Tensor self = tf.make(
+        sizes,
+        {
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-  const std::vector<int32_t> sizes = {2, 4, 4};
-  const std::vector<int32_t> sizes_out = {2, 6, 4};
-  const std::vector<int64_t> padding = {0, 0, 2, 0};
+    // clang-format off
+    Tensor expected = tf.make(
+        sizes_out,
+        {
+           7,  7,  7,  7,
+           7,  7,  7,  7,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           7,  7,  7,  7,
+           7,  7,  7,  7,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-  // clang-format off
-  Tensor self = tf.make(
-      sizes,
-      {
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor out = tf.zeros(sizes_out);
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
+    // Valid input should give the expected output
+    op_constant_pad_nd_out(self, padding_ref, 7, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 
-  // clang-format off
-  Tensor expected = tf.make(
-      sizes_out,
-      {
-         7,  7,  7,  7,
-         7,  7,  7,  7,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+  template <ScalarType DTYPE>
+  void test_constant_pad_nd_out_dim0() {
+    TensorFactory<DTYPE> tf;
 
-         7,  7,  7,  7,
-         7,  7,  7,  7,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
+    const std::vector<int32_t> sizes = {2, 4, 4};
+    const std::vector<int32_t> sizes_out = {3, 4, 4};
+    const std::vector<int64_t> padding = {0, 0, 0, 0, 1, 0};
 
-  IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
-  Tensor out = tf.zeros(sizes_out);
+    // clang-format off
+    Tensor self = tf.make(
+        sizes,
+        {
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-  // Valid input should give the expected output
-  op_constant_pad_nd_out(self, padding_ref, 7, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
+    // clang-format off
+    Tensor expected = tf.make(
+        sizes_out,
+        {
+           7,  7,  7,  7,
+           7,  7,  7,  7,
+           7,  7,  7,  7,
+           7,  7,  7,  7,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-template <ScalarType DTYPE>
-void test_constant_pad_nd_out_dim0() {
-  TensorFactory<DTYPE> tf;
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor out = tf.zeros(sizes_out);
 
-  const std::vector<int32_t> sizes = {2, 4, 4};
-  const std::vector<int32_t> sizes_out = {3, 4, 4};
-  const std::vector<int64_t> padding = {0, 0, 0, 0, 1, 0};
+    // Valid input should give the expected output
+    op_constant_pad_nd_out(self, padding_ref, 7, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 
-  // clang-format off
-  Tensor self = tf.make(
-      sizes,
-      {
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+  template <ScalarType DTYPE>
+  void test_constant_pad_nd_out_dim12() {
+    TensorFactory<DTYPE> tf;
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
+    const std::vector<int32_t> sizes = {2, 4, 4};
+    const std::vector<int32_t> sizes_out = {2, 6, 7};
+    const std::vector<int64_t> padding = {2, 1, 0, 2};
 
-  // clang-format off
-  Tensor expected = tf.make(
-      sizes_out,
-      {
-         7,  7,  7,  7,
-         7,  7,  7,  7,
-         7,  7,  7,  7,
-         7,  7,  7,  7,
+    // clang-format off
+    Tensor self = tf.make(
+        sizes,
+        {
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+    // clang-format off
+    Tensor expected = tf.make(
+        sizes_out,
+        {
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+  
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+        });
+    // clang-format on
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor out = tf.zeros(sizes_out);
 
-  IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
-  Tensor out = tf.zeros(sizes_out);
+    // Valid input should give the expected output
+    op_constant_pad_nd_out(self, padding_ref, 7, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 
-  // Valid input should give the expected output
-  op_constant_pad_nd_out(self, padding_ref, 7, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
+  template <ScalarType DTYPE>
+  void test_constant_pad_nd_out_dim02() {
+    TensorFactory<DTYPE> tf;
 
-template <ScalarType DTYPE>
-void test_constant_pad_nd_out_dim12() {
-  TensorFactory<DTYPE> tf;
+    const std::vector<int32_t> sizes = {2, 4, 4};
+    const std::vector<int32_t> sizes_out = {3, 4, 7};
+    const std::vector<int64_t> padding = {2, 1, 0, 0, 0, 1};
 
-  const std::vector<int32_t> sizes = {2, 4, 4};
-  const std::vector<int32_t> sizes_out = {2, 6, 7};
-  const std::vector<int64_t> padding = {2, 1, 0, 2};
+    // clang-format off
+    Tensor self = tf.make(
+        sizes,
+        {
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-  // clang-format off
-  Tensor self = tf.make(
-      sizes,
-      {
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+    // clang-format off
+    Tensor expected = tf.make(
+        sizes_out,
+        {
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+  
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+  
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+        });
+    // clang-format on
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor out = tf.zeros(sizes_out);
 
-  // clang-format off
-  Tensor expected = tf.make(
-      sizes_out,
-      {
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
+    // Valid input should give the expected output
+    op_constant_pad_nd_out(self, padding_ref, 7, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
 
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-      });
-  // clang-format on
+  template <ScalarType DTYPE>
+  void test_constant_pad_nd_out_dim012() {
+    TensorFactory<DTYPE> tf;
 
-  IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
-  Tensor out = tf.zeros(sizes_out);
+    const std::vector<int32_t> sizes = {2, 4, 4};
+    const std::vector<int32_t> sizes_out = {3, 5, 7};
+    const std::vector<int64_t> padding = {2, 1, 1, 0, 0, 1};
 
-  // Valid input should give the expected output
-  op_constant_pad_nd_out(self, padding_ref, 7, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
+    // clang-format off
+    Tensor self = tf.make(
+        sizes,
+        {
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+  
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+           1,  2,  3,  4,
+           5,  6,  7,  8,
+        });
+    // clang-format on
 
-template <ScalarType DTYPE>
-void test_constant_pad_nd_out_dim02() {
-  TensorFactory<DTYPE> tf;
+    // clang-format off
+    Tensor expected = tf.make(
+        sizes_out,
+        {
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+  
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+           7,  7,  1,  2,  3,  4,  7,
+           7,  7,  5,  6,  7,  8,  7,
+  
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+           7,  7,  7,  7,  7,  7,  7,
+        });
+    // clang-format on
 
-  const std::vector<int32_t> sizes = {2, 4, 4};
-  const std::vector<int32_t> sizes_out = {3, 4, 7};
-  const std::vector<int64_t> padding = {2, 1, 0, 0, 0, 1};
+    IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
+    Tensor out = tf.zeros(sizes_out);
 
-  // clang-format off
-  Tensor self = tf.make(
-      sizes,
-      {
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
+    // Valid input should give the expected output
+    op_constant_pad_nd_out(self, padding_ref, 7, out);
+    EXPECT_TENSOR_CLOSE(out, expected);
+  }
+};
 
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
-
-  // clang-format off
-  Tensor expected = tf.make(
-      sizes_out,
-      {
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-      });
-  // clang-format on
-
-  IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
-  Tensor out = tf.zeros(sizes_out);
-
-  // Valid input should give the expected output
-  op_constant_pad_nd_out(self, padding_ref, 7, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
-
-template <ScalarType DTYPE>
-void test_constant_pad_nd_out_dim012() {
-  TensorFactory<DTYPE> tf;
-
-  const std::vector<int32_t> sizes = {2, 4, 4};
-  const std::vector<int32_t> sizes_out = {3, 5, 7};
-  const std::vector<int64_t> padding = {2, 1, 1, 0, 0, 1};
-
-  // clang-format off
-  Tensor self = tf.make(
-      sizes,
-      {
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-         1,  2,  3,  4,
-         5,  6,  7,  8,
-      });
-  // clang-format on
-
-  // clang-format off
-  Tensor expected = tf.make(
-      sizes_out,
-      {
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-         7,  7,  1,  2,  3,  4,  7,
-         7,  7,  5,  6,  7,  8,  7,
-
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-         7,  7,  7,  7,  7,  7,  7,
-      });
-  // clang-format on
-
-  IntArrayRef padding_ref = IntArrayRef(padding.data(), padding.size());
-  Tensor out = tf.zeros(sizes_out);
-
-  // Valid input should give the expected output
-  op_constant_pad_nd_out(self, padding_ref, 7, out);
-  EXPECT_TENSOR_CLOSE(out, expected);
-}
-
-TEST(OpConstantPadNDOutKernelTest, TestPadDim2) {
+TEST_F(OpConstantPadNDOutTest, TestPadDim2) {
 #define TEST_ENTRY(ctype, dtype) \
   test_constant_pad_nd_out_dim2<ScalarType::dtype>();
 
@@ -355,7 +357,7 @@ TEST(OpConstantPadNDOutKernelTest, TestPadDim2) {
 #undef TEST_ENTRY
 }
 
-TEST(OpConstantPadNDOutKernelTest, TestPadDim1) {
+TEST_F(OpConstantPadNDOutTest, TestPadDim1) {
 #define TEST_ENTRY(ctype, dtype) \
   test_constant_pad_nd_out_dim1<ScalarType::dtype>();
 
@@ -363,7 +365,7 @@ TEST(OpConstantPadNDOutKernelTest, TestPadDim1) {
 #undef TEST_ENTRY
 }
 
-TEST(OpConstantPadNDOutKernelTest, TestPadDim0) {
+TEST_F(OpConstantPadNDOutTest, TestPadDim0) {
 #define TEST_ENTRY(ctype, dtype) \
   test_constant_pad_nd_out_dim0<ScalarType::dtype>();
 
@@ -371,7 +373,7 @@ TEST(OpConstantPadNDOutKernelTest, TestPadDim0) {
 #undef TEST_ENTRY
 }
 
-TEST(OpConstantPadNDOutKernelTest, TestPadDim1And2) {
+TEST_F(OpConstantPadNDOutTest, TestPadDim1And2) {
 #define TEST_ENTRY(ctype, dtype) \
   test_constant_pad_nd_out_dim12<ScalarType::dtype>();
 
@@ -379,7 +381,7 @@ TEST(OpConstantPadNDOutKernelTest, TestPadDim1And2) {
 #undef TEST_ENTRY
 }
 
-TEST(OpConstantPadNDOutKernelTest, TestPadDim0And2) {
+TEST_F(OpConstantPadNDOutTest, TestPadDim0And2) {
 #define TEST_ENTRY(ctype, dtype) \
   test_constant_pad_nd_out_dim02<ScalarType::dtype>();
 
@@ -387,7 +389,7 @@ TEST(OpConstantPadNDOutKernelTest, TestPadDim0And2) {
 #undef TEST_ENTRY
 }
 
-TEST(OpConstantPadNDOutKernelTest, TestPadDim0And1And2) {
+TEST_F(OpConstantPadNDOutTest, TestPadDim0And1And2) {
 #define TEST_ENTRY(ctype, dtype) \
   test_constant_pad_nd_out_dim012<ScalarType::dtype>();
 
@@ -395,7 +397,7 @@ TEST(OpConstantPadNDOutKernelTest, TestPadDim0And1And2) {
 #undef TEST_ENTRY
 }
 
-TEST(OpConstantPadNDOutKernelTest, DifferentInputOutputTypesFail) {
+TEST_F(OpConstantPadNDOutTest, DifferentInputOutputTypesFail) {
   TensorFactory<ScalarType::Float> tf;
   TensorFactory<ScalarType::Double> tf_out;
 
@@ -408,10 +410,11 @@ TEST(OpConstantPadNDOutKernelTest, DifferentInputOutputTypesFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf_out.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
-TEST(OpConstantPadNDOutKernelTest, OddNumberOfPaddingElementsFail) {
+TEST_F(OpConstantPadNDOutTest, OddNumberOfPaddingElementsFail) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {1, 4, 4};
@@ -423,10 +426,11 @@ TEST(OpConstantPadNDOutKernelTest, OddNumberOfPaddingElementsFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
-TEST(OpConstantPadNDOutKernelTest, TooManyPaddingElementsFail) {
+TEST_F(OpConstantPadNDOutTest, TooManyPaddingElementsFail) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {1, 4, 4};
@@ -438,10 +442,11 @@ TEST(OpConstantPadNDOutKernelTest, TooManyPaddingElementsFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }
 
-TEST(OpConstantPadNDOutKernelTest, IncorrectOutputShapeFail) {
+TEST_F(OpConstantPadNDOutTest, IncorrectOutputShapeFail) {
   if (SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle reshape output";
   }
@@ -457,5 +462,6 @@ TEST(OpConstantPadNDOutKernelTest, IncorrectOutputShapeFail) {
   Tensor self = tf.ones(sizes);
   Tensor out = tf.zeros(sizes_out);
 
-  ET_EXPECT_KERNEL_FAILURE(op_constant_pad_nd_out(self, padding_ref, 0, out));
+  ET_EXPECT_KERNEL_FAILURE(
+      context_, op_constant_pad_nd_out(self, padding_ref, 0, out));
 }

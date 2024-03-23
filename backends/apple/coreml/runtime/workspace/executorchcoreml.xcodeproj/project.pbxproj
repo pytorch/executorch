@@ -7,9 +7,50 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C945E8E02B997ECE009C3FAC /* ETCoreMLModelProfiler.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */; };
+		C945E8E12B997ECE009C3FAC /* ETCoreMLModelAnalyzer.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D42B997ECD009C3FAC /* ETCoreMLModelAnalyzer.mm */; };
+		C945E8E22B997ECE009C3FAC /* program_path.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D52B997ECD009C3FAC /* program_path.mm */; };
+		C945E8E32B997ECE009C3FAC /* ETCoreMLModelStructurePath.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D62B997ECD009C3FAC /* ETCoreMLModelStructurePath.mm */; };
+		C945E8E42B997ECE009C3FAC /* model_event_logger_impl.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D82B997ECD009C3FAC /* model_event_logger_impl.mm */; };
+		C945E8E52B997ECE009C3FAC /* ETCoreMLOperationProfilingInfo.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8D92B997ECD009C3FAC /* ETCoreMLOperationProfilingInfo.mm */; };
+		C945E8E62B997ECE009C3FAC /* ETCoreMLPair.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8DA2B997ECD009C3FAC /* ETCoreMLPair.mm */; };
+		C945E8E72B997ECE009C3FAC /* model_package_info.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8DE2B997ECE009C3FAC /* model_package_info.mm */; };
+		C945E8E82B997ECE009C3FAC /* ETCoreMLModelDebugger.mm in Sources */ = {isa = PBXBuildFile; fileRef = C945E8DF2B997ECE009C3FAC /* ETCoreMLModelDebugger.mm */; };
+		C945E92C2B997EEE009C3FAC /* ClassConfidenceThresholding.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8EB2B997EEC009C3FAC /* ClassConfidenceThresholding.pb.cc */; };
+		C945E92D2B997EEE009C3FAC /* ArrayFeatureExtractor.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8ED2B997EEC009C3FAC /* ArrayFeatureExtractor.pb.cc */; };
+		C945E92E2B997EEE009C3FAC /* CustomModel.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8EE2B997EEC009C3FAC /* CustomModel.pb.cc */; };
+		C945E92F2B997EEE009C3FAC /* CategoricalMapping.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8EF2B997EEC009C3FAC /* CategoricalMapping.pb.cc */; };
+		C945E9302B997EEE009C3FAC /* WordTagger.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8F02B997EED009C3FAC /* WordTagger.pb.cc */; };
+		C945E9312B997EEE009C3FAC /* DataStructures.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8F22B997EED009C3FAC /* DataStructures.pb.cc */; };
+		C945E9322B997EEE009C3FAC /* AudioFeaturePrint.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8F52B997EED009C3FAC /* AudioFeaturePrint.pb.cc */; };
+		C945E9332B997EEE009C3FAC /* GLMRegressor.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8F62B997EED009C3FAC /* GLMRegressor.pb.cc */; };
+		C945E9342B997EEE009C3FAC /* NeuralNetwork.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8F92B997EED009C3FAC /* NeuralNetwork.pb.cc */; };
+		C945E9352B997EEE009C3FAC /* TreeEnsemble.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8FB2B997EED009C3FAC /* TreeEnsemble.pb.cc */; };
+		C945E9362B997EEE009C3FAC /* Identity.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8FD2B997EED009C3FAC /* Identity.pb.cc */; };
+		C945E9372B997EEE009C3FAC /* FeatureTypes.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E8FF2B997EED009C3FAC /* FeatureTypes.pb.cc */; };
+		C945E9382B997EEE009C3FAC /* Imputer.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9012B997EED009C3FAC /* Imputer.pb.cc */; };
+		C945E9392B997EEE009C3FAC /* Scaler.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9052B997EED009C3FAC /* Scaler.pb.cc */; };
+		C945E93A2B997EEE009C3FAC /* MIL.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9092B997EED009C3FAC /* MIL.pb.cc */; };
+		C945E93B2B997EEE009C3FAC /* Gazetteer.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E90A2B997EED009C3FAC /* Gazetteer.pb.cc */; };
+		C945E93C2B997EEE009C3FAC /* NearestNeighbors.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E90B2B997EED009C3FAC /* NearestNeighbors.pb.cc */; };
+		C945E93D2B997EEE009C3FAC /* TextClassifier.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E90C2B997EED009C3FAC /* TextClassifier.pb.cc */; };
+		C945E93E2B997EEE009C3FAC /* Model.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E90F2B997EED009C3FAC /* Model.pb.cc */; };
+		C945E93F2B997EEE009C3FAC /* Parameters.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9112B997EEE009C3FAC /* Parameters.pb.cc */; };
+		C945E9402B997EEE009C3FAC /* OneHotEncoder.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9132B997EEE009C3FAC /* OneHotEncoder.pb.cc */; };
+		C945E9412B997EEE009C3FAC /* SVM.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9152B997EEE009C3FAC /* SVM.pb.cc */; };
+		C945E9422B997EEE009C3FAC /* FeatureVectorizer.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9172B997EEE009C3FAC /* FeatureVectorizer.pb.cc */; };
+		C945E9432B997EEE009C3FAC /* VisionFeaturePrint.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9182B997EEE009C3FAC /* VisionFeaturePrint.pb.cc */; };
+		C945E9442B997EEE009C3FAC /* DictVectorizer.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9192B997EEE009C3FAC /* DictVectorizer.pb.cc */; };
+		C945E9452B997EEE009C3FAC /* BayesianProbitRegressor.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E91F2B997EEE009C3FAC /* BayesianProbitRegressor.pb.cc */; };
+		C945E9462B997EEE009C3FAC /* NonMaximumSuppression.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9202B997EEE009C3FAC /* NonMaximumSuppression.pb.cc */; };
+		C945E9472B997EEE009C3FAC /* SoundAnalysisPreprocessing.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9232B997EEE009C3FAC /* SoundAnalysisPreprocessing.pb.cc */; };
+		C945E9482B997EEE009C3FAC /* ItemSimilarityRecommender.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9252B997EEE009C3FAC /* ItemSimilarityRecommender.pb.cc */; };
+		C945E9492B997EEE009C3FAC /* GLMClassifier.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9262B997EEE009C3FAC /* GLMClassifier.pb.cc */; };
+		C945E94A2B997EEE009C3FAC /* LinkedModel.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9272B997EEE009C3FAC /* LinkedModel.pb.cc */; };
+		C945E94B2B997EEE009C3FAC /* Normalizer.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E9292B997EEE009C3FAC /* Normalizer.pb.cc */; };
+		C945E94C2B997EEE009C3FAC /* WordEmbedding.pb.cc in Sources */ = {isa = PBXBuildFile; fileRef = C945E92B2B997EEE009C3FAC /* WordEmbedding.pb.cc */; };
 		C94BC6492AD5EB400067A63B /* coreml_backend_delegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */; };
 		C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560922AABF992005F8126 /* CoreML.framework */; };
-		C94D50DA2ABD7B6600AF47FD /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C965608D2AABF72A005F8126 /* libexecutorch.a */; };
 		C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF062A9FD16F001CC178 /* database.cpp */; };
 		C94D50E72ABDF80D00AF47FD /* sqlite_error.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF092A9FD16F001CC178 /* sqlite_error.cpp */; };
 		C94D50E82ABDF81100AF47FD /* key_value_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DF052A9FD16E001CC178 /* key_value_store.cpp */; };
@@ -32,6 +73,9 @@
 		C94D510C2ABDF84F00AF47FD /* serde_json.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9D3DFB02AA123E9001CC178 /* serde_json.mm */; };
 		C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560942AABFDCE005F8126 /* libsqlite3.tbd */; };
 		C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C96560902AABF982005F8126 /* Accelerate.framework */; };
+		C95578FB2B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.mm in Sources */ = {isa = PBXBuildFile; fileRef = C95578FA2B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.mm */; };
+		C95578FE2B8CB63B0066AEAD /* ETCoreMLModelLoader.mm in Sources */ = {isa = PBXBuildFile; fileRef = C95578FD2B8CB63B0066AEAD /* ETCoreMLModelLoader.mm */; };
+		C962271B2B984FB9002D13B7 /* ETCoreMLModelDebuggerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C962271A2B984FB9002D13B7 /* ETCoreMLModelDebuggerTests.mm */; };
 		C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */ = {isa = PBXBuildFile; fileRef = C97716B32AEA1F9900FC0DAC /* inmemory_filesystem_utils.mm */; };
 		C97716D52AF41B2E00FC0DAC /* json_key_value_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C97716D42AF41B2E00FC0DAC /* json_key_value_store.cpp */; };
 		C97716DA2AF44CFA00FC0DAC /* json_util.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C97716D82AF44CFA00FC0DAC /* json_util.cpp */; };
@@ -42,6 +86,11 @@
 		C98551A12AD2542D009143F9 /* mv3_coreml_all.bin in Resources */ = {isa = PBXBuildFile; fileRef = C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */; };
 		C98551A22AD2542D009143F9 /* mul_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C985519C2AD2542D009143F9 /* mul_coreml_all.pte */; };
 		C98551A32AD2542D009143F9 /* add_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = C985519D2AD2542D009143F9 /* add_coreml_all.pte */; };
+		C99883862B95AD7D000953A3 /* libprotobuf-lite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C99883852B95AD7D000953A3 /* libprotobuf-lite.a */; };
+		C99883882B964413000953A3 /* libexecutorch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C99883872B964413000953A3 /* libexecutorch.a */; };
+		C998838D2B96841D000953A3 /* ETCoreMLModelStructurePathTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C998838C2B96841D000953A3 /* ETCoreMLModelStructurePathTests.mm */; };
+		C998838F2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C998838E2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm */; };
+		C99883922B96BEED000953A3 /* ETCoreMLModelCompiler.mm in Sources */ = {isa = PBXBuildFile; fileRef = C99883912B96BEED000953A3 /* ETCoreMLModelCompiler.mm */; };
 		C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7862AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm */; };
 		C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */; };
 		C9E7D7912AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7892AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm */; };
@@ -66,6 +115,90 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C945E8CD2B997ECD009C3FAC /* ETCoreMLModelProfiler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelProfiler.h; path = ../sdk/ETCoreMLModelProfiler.h; sourceTree = "<group>"; };
+		C945E8CE2B997ECD009C3FAC /* ETCoreMLModelAnalyzer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelAnalyzer.h; path = ../sdk/ETCoreMLModelAnalyzer.h; sourceTree = "<group>"; };
+		C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelProfiler.mm; path = ../sdk/ETCoreMLModelProfiler.mm; sourceTree = "<group>"; };
+		C945E8D02B997ECD009C3FAC /* ETCoreMLModelStructurePath.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelStructurePath.h; path = ../sdk/ETCoreMLModelStructurePath.h; sourceTree = "<group>"; };
+		C945E8D12B997ECD009C3FAC /* ETCoreMLOperationProfilingInfo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLOperationProfilingInfo.h; path = ../sdk/ETCoreMLOperationProfilingInfo.h; sourceTree = "<group>"; };
+		C945E8D22B997ECD009C3FAC /* program_path.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = program_path.h; path = ../sdk/program_path.h; sourceTree = "<group>"; };
+		C945E8D32B997ECD009C3FAC /* ETCoreMLModelDebugger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelDebugger.h; path = ../sdk/ETCoreMLModelDebugger.h; sourceTree = "<group>"; };
+		C945E8D42B997ECD009C3FAC /* ETCoreMLModelAnalyzer.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelAnalyzer.mm; path = ../sdk/ETCoreMLModelAnalyzer.mm; sourceTree = "<group>"; };
+		C945E8D52B997ECD009C3FAC /* program_path.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = program_path.mm; path = ../sdk/program_path.mm; sourceTree = "<group>"; };
+		C945E8D62B997ECD009C3FAC /* ETCoreMLModelStructurePath.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelStructurePath.mm; path = ../sdk/ETCoreMLModelStructurePath.mm; sourceTree = "<group>"; };
+		C945E8D82B997ECD009C3FAC /* model_event_logger_impl.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = model_event_logger_impl.mm; path = ../sdk/model_event_logger_impl.mm; sourceTree = "<group>"; };
+		C945E8D92B997ECD009C3FAC /* ETCoreMLOperationProfilingInfo.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLOperationProfilingInfo.mm; path = ../sdk/ETCoreMLOperationProfilingInfo.mm; sourceTree = "<group>"; };
+		C945E8DA2B997ECD009C3FAC /* ETCoreMLPair.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLPair.mm; path = ../sdk/ETCoreMLPair.mm; sourceTree = "<group>"; };
+		C945E8DB2B997ECE009C3FAC /* hash_util.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = hash_util.h; path = ../sdk/hash_util.h; sourceTree = "<group>"; };
+		C945E8DC2B997ECE009C3FAC /* ETCoreMLPair.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLPair.h; path = ../sdk/ETCoreMLPair.h; sourceTree = "<group>"; };
+		C945E8DD2B997ECE009C3FAC /* model_package_info.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = model_package_info.h; path = ../sdk/model_package_info.h; sourceTree = "<group>"; };
+		C945E8DE2B997ECE009C3FAC /* model_package_info.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = model_package_info.mm; path = ../sdk/model_package_info.mm; sourceTree = "<group>"; };
+		C945E8DF2B997ECE009C3FAC /* ETCoreMLModelDebugger.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelDebugger.mm; path = ../sdk/ETCoreMLModelDebugger.mm; sourceTree = "<group>"; };
+		C945E8EA2B997EEC009C3FAC /* Imputer.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Imputer.pb.h; path = ../sdk/format/Imputer.pb.h; sourceTree = "<group>"; };
+		C945E8EB2B997EEC009C3FAC /* ClassConfidenceThresholding.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ClassConfidenceThresholding.pb.cc; path = ../sdk/format/ClassConfidenceThresholding.pb.cc; sourceTree = "<group>"; };
+		C945E8EC2B997EEC009C3FAC /* FeatureTypes.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = FeatureTypes.pb.h; path = ../sdk/format/FeatureTypes.pb.h; sourceTree = "<group>"; };
+		C945E8ED2B997EEC009C3FAC /* ArrayFeatureExtractor.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ArrayFeatureExtractor.pb.cc; path = ../sdk/format/ArrayFeatureExtractor.pb.cc; sourceTree = "<group>"; };
+		C945E8EE2B997EEC009C3FAC /* CustomModel.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = CustomModel.pb.cc; path = ../sdk/format/CustomModel.pb.cc; sourceTree = "<group>"; };
+		C945E8EF2B997EEC009C3FAC /* CategoricalMapping.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = CategoricalMapping.pb.cc; path = ../sdk/format/CategoricalMapping.pb.cc; sourceTree = "<group>"; };
+		C945E8F02B997EED009C3FAC /* WordTagger.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = WordTagger.pb.cc; path = ../sdk/format/WordTagger.pb.cc; sourceTree = "<group>"; };
+		C945E8F12B997EED009C3FAC /* DataStructures.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DataStructures.pb.h; path = ../sdk/format/DataStructures.pb.h; sourceTree = "<group>"; };
+		C945E8F22B997EED009C3FAC /* DataStructures.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = DataStructures.pb.cc; path = ../sdk/format/DataStructures.pb.cc; sourceTree = "<group>"; };
+		C945E8F32B997EED009C3FAC /* LinkedModel.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = LinkedModel.pb.h; path = ../sdk/format/LinkedModel.pb.h; sourceTree = "<group>"; };
+		C945E8F42B997EED009C3FAC /* Normalizer.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Normalizer.pb.h; path = ../sdk/format/Normalizer.pb.h; sourceTree = "<group>"; };
+		C945E8F52B997EED009C3FAC /* AudioFeaturePrint.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = AudioFeaturePrint.pb.cc; path = ../sdk/format/AudioFeaturePrint.pb.cc; sourceTree = "<group>"; };
+		C945E8F62B997EED009C3FAC /* GLMRegressor.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = GLMRegressor.pb.cc; path = ../sdk/format/GLMRegressor.pb.cc; sourceTree = "<group>"; };
+		C945E8F72B997EED009C3FAC /* Identity.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Identity.pb.h; path = ../sdk/format/Identity.pb.h; sourceTree = "<group>"; };
+		C945E8F82B997EED009C3FAC /* FeatureVectorizer.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = FeatureVectorizer.pb.h; path = ../sdk/format/FeatureVectorizer.pb.h; sourceTree = "<group>"; };
+		C945E8F92B997EED009C3FAC /* NeuralNetwork.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = NeuralNetwork.pb.cc; path = ../sdk/format/NeuralNetwork.pb.cc; sourceTree = "<group>"; };
+		C945E8FA2B997EED009C3FAC /* OneHotEncoder.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = OneHotEncoder.pb.h; path = ../sdk/format/OneHotEncoder.pb.h; sourceTree = "<group>"; };
+		C945E8FB2B997EED009C3FAC /* TreeEnsemble.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TreeEnsemble.pb.cc; path = ../sdk/format/TreeEnsemble.pb.cc; sourceTree = "<group>"; };
+		C945E8FC2B997EED009C3FAC /* WordTagger.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = WordTagger.pb.h; path = ../sdk/format/WordTagger.pb.h; sourceTree = "<group>"; };
+		C945E8FD2B997EED009C3FAC /* Identity.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Identity.pb.cc; path = ../sdk/format/Identity.pb.cc; sourceTree = "<group>"; };
+		C945E8FE2B997EED009C3FAC /* DictVectorizer.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = DictVectorizer.pb.h; path = ../sdk/format/DictVectorizer.pb.h; sourceTree = "<group>"; };
+		C945E8FF2B997EED009C3FAC /* FeatureTypes.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = FeatureTypes.pb.cc; path = ../sdk/format/FeatureTypes.pb.cc; sourceTree = "<group>"; };
+		C945E9002B997EED009C3FAC /* NonMaximumSuppression.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = NonMaximumSuppression.pb.h; path = ../sdk/format/NonMaximumSuppression.pb.h; sourceTree = "<group>"; };
+		C945E9012B997EED009C3FAC /* Imputer.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Imputer.pb.cc; path = ../sdk/format/Imputer.pb.cc; sourceTree = "<group>"; };
+		C945E9022B997EED009C3FAC /* AudioFeaturePrint.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = AudioFeaturePrint.pb.h; path = ../sdk/format/AudioFeaturePrint.pb.h; sourceTree = "<group>"; };
+		C945E9032B997EED009C3FAC /* SoundAnalysisPreprocessing.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SoundAnalysisPreprocessing.pb.h; path = ../sdk/format/SoundAnalysisPreprocessing.pb.h; sourceTree = "<group>"; };
+		C945E9042B997EED009C3FAC /* Model.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Model.pb.h; path = ../sdk/format/Model.pb.h; sourceTree = "<group>"; };
+		C945E9052B997EED009C3FAC /* Scaler.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Scaler.pb.cc; path = ../sdk/format/Scaler.pb.cc; sourceTree = "<group>"; };
+		C945E9062B997EED009C3FAC /* BayesianProbitRegressor.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = BayesianProbitRegressor.pb.h; path = ../sdk/format/BayesianProbitRegressor.pb.h; sourceTree = "<group>"; };
+		C945E9072B997EED009C3FAC /* TextClassifier.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TextClassifier.pb.h; path = ../sdk/format/TextClassifier.pb.h; sourceTree = "<group>"; };
+		C945E9082B997EED009C3FAC /* MIL.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = MIL.pb.h; path = ../sdk/format/MIL.pb.h; sourceTree = "<group>"; };
+		C945E9092B997EED009C3FAC /* MIL.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = MIL.pb.cc; path = ../sdk/format/MIL.pb.cc; sourceTree = "<group>"; };
+		C945E90A2B997EED009C3FAC /* Gazetteer.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Gazetteer.pb.cc; path = ../sdk/format/Gazetteer.pb.cc; sourceTree = "<group>"; };
+		C945E90B2B997EED009C3FAC /* NearestNeighbors.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = NearestNeighbors.pb.cc; path = ../sdk/format/NearestNeighbors.pb.cc; sourceTree = "<group>"; };
+		C945E90C2B997EED009C3FAC /* TextClassifier.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = TextClassifier.pb.cc; path = ../sdk/format/TextClassifier.pb.cc; sourceTree = "<group>"; };
+		C945E90D2B997EED009C3FAC /* VisionFeaturePrint.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = VisionFeaturePrint.pb.h; path = ../sdk/format/VisionFeaturePrint.pb.h; sourceTree = "<group>"; };
+		C945E90E2B997EED009C3FAC /* Gazetteer.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Gazetteer.pb.h; path = ../sdk/format/Gazetteer.pb.h; sourceTree = "<group>"; };
+		C945E90F2B997EED009C3FAC /* Model.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Model.pb.cc; path = ../sdk/format/Model.pb.cc; sourceTree = "<group>"; };
+		C945E9102B997EED009C3FAC /* ArrayFeatureExtractor.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ArrayFeatureExtractor.pb.h; path = ../sdk/format/ArrayFeatureExtractor.pb.h; sourceTree = "<group>"; };
+		C945E9112B997EEE009C3FAC /* Parameters.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Parameters.pb.cc; path = ../sdk/format/Parameters.pb.cc; sourceTree = "<group>"; };
+		C945E9122B997EEE009C3FAC /* CategoricalMapping.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CategoricalMapping.pb.h; path = ../sdk/format/CategoricalMapping.pb.h; sourceTree = "<group>"; };
+		C945E9132B997EEE009C3FAC /* OneHotEncoder.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = OneHotEncoder.pb.cc; path = ../sdk/format/OneHotEncoder.pb.cc; sourceTree = "<group>"; };
+		C945E9142B997EEE009C3FAC /* Parameters.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Parameters.pb.h; path = ../sdk/format/Parameters.pb.h; sourceTree = "<group>"; };
+		C945E9152B997EEE009C3FAC /* SVM.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SVM.pb.cc; path = ../sdk/format/SVM.pb.cc; sourceTree = "<group>"; };
+		C945E9162B997EEE009C3FAC /* SVM.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = SVM.pb.h; path = ../sdk/format/SVM.pb.h; sourceTree = "<group>"; };
+		C945E9172B997EEE009C3FAC /* FeatureVectorizer.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = FeatureVectorizer.pb.cc; path = ../sdk/format/FeatureVectorizer.pb.cc; sourceTree = "<group>"; };
+		C945E9182B997EEE009C3FAC /* VisionFeaturePrint.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = VisionFeaturePrint.pb.cc; path = ../sdk/format/VisionFeaturePrint.pb.cc; sourceTree = "<group>"; };
+		C945E9192B997EEE009C3FAC /* DictVectorizer.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = DictVectorizer.pb.cc; path = ../sdk/format/DictVectorizer.pb.cc; sourceTree = "<group>"; };
+		C945E91A2B997EEE009C3FAC /* NeuralNetwork.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = NeuralNetwork.pb.h; path = ../sdk/format/NeuralNetwork.pb.h; sourceTree = "<group>"; };
+		C945E91B2B997EEE009C3FAC /* GLMRegressor.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = GLMRegressor.pb.h; path = ../sdk/format/GLMRegressor.pb.h; sourceTree = "<group>"; };
+		C945E91C2B997EEE009C3FAC /* GLMClassifier.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = GLMClassifier.pb.h; path = ../sdk/format/GLMClassifier.pb.h; sourceTree = "<group>"; };
+		C945E91D2B997EEE009C3FAC /* TreeEnsemble.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = TreeEnsemble.pb.h; path = ../sdk/format/TreeEnsemble.pb.h; sourceTree = "<group>"; };
+		C945E91E2B997EEE009C3FAC /* WordEmbedding.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = WordEmbedding.pb.h; path = ../sdk/format/WordEmbedding.pb.h; sourceTree = "<group>"; };
+		C945E91F2B997EEE009C3FAC /* BayesianProbitRegressor.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = BayesianProbitRegressor.pb.cc; path = ../sdk/format/BayesianProbitRegressor.pb.cc; sourceTree = "<group>"; };
+		C945E9202B997EEE009C3FAC /* NonMaximumSuppression.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = NonMaximumSuppression.pb.cc; path = ../sdk/format/NonMaximumSuppression.pb.cc; sourceTree = "<group>"; };
+		C945E9212B997EEE009C3FAC /* CustomModel.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CustomModel.pb.h; path = ../sdk/format/CustomModel.pb.h; sourceTree = "<group>"; };
+		C945E9222B997EEE009C3FAC /* Scaler.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = Scaler.pb.h; path = ../sdk/format/Scaler.pb.h; sourceTree = "<group>"; };
+		C945E9232B997EEE009C3FAC /* SoundAnalysisPreprocessing.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = SoundAnalysisPreprocessing.pb.cc; path = ../sdk/format/SoundAnalysisPreprocessing.pb.cc; sourceTree = "<group>"; };
+		C945E9242B997EEE009C3FAC /* NearestNeighbors.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = NearestNeighbors.pb.h; path = ../sdk/format/NearestNeighbors.pb.h; sourceTree = "<group>"; };
+		C945E9252B997EEE009C3FAC /* ItemSimilarityRecommender.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = ItemSimilarityRecommender.pb.cc; path = ../sdk/format/ItemSimilarityRecommender.pb.cc; sourceTree = "<group>"; };
+		C945E9262B997EEE009C3FAC /* GLMClassifier.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = GLMClassifier.pb.cc; path = ../sdk/format/GLMClassifier.pb.cc; sourceTree = "<group>"; };
+		C945E9272B997EEE009C3FAC /* LinkedModel.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = LinkedModel.pb.cc; path = ../sdk/format/LinkedModel.pb.cc; sourceTree = "<group>"; };
+		C945E9282B997EEE009C3FAC /* ItemSimilarityRecommender.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ItemSimilarityRecommender.pb.h; path = ../sdk/format/ItemSimilarityRecommender.pb.h; sourceTree = "<group>"; };
+		C945E9292B997EEE009C3FAC /* Normalizer.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = Normalizer.pb.cc; path = ../sdk/format/Normalizer.pb.cc; sourceTree = "<group>"; };
+		C945E92A2B997EEE009C3FAC /* ClassConfidenceThresholding.pb.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ClassConfidenceThresholding.pb.h; path = ../sdk/format/ClassConfidenceThresholding.pb.h; sourceTree = "<group>"; };
+		C945E92B2B997EEE009C3FAC /* WordEmbedding.pb.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = WordEmbedding.pb.cc; path = ../sdk/format/WordEmbedding.pb.cc; sourceTree = "<group>"; };
 		C94BC6482AD5EB400067A63B /* coreml_backend_delegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = coreml_backend_delegate.mm; path = ../delegate/coreml_backend_delegate.mm; sourceTree = "<group>"; };
 		C95266352A7E06460016283E /* ETCoreMLModelManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelManager.h; path = ../delegate/ETCoreMLModelManager.h; sourceTree = "<group>"; };
 		C95266362A7E06460016283E /* ETCoreMLModel.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModel.mm; path = ../delegate/ETCoreMLModel.mm; sourceTree = "<group>"; };
@@ -85,9 +218,14 @@
 		C95266502A7F818A0016283E /* backend_delegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = backend_delegate.h; path = ../delegate/backend_delegate.h; sourceTree = "<group>"; };
 		C952665D2A8012400016283E /* ETCoreMLStrings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLStrings.h; path = ../delegate/ETCoreMLStrings.h; sourceTree = "<group>"; };
 		C952665E2A8012400016283E /* ETCoreMLStrings.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLStrings.mm; path = ../delegate/ETCoreMLStrings.mm; sourceTree = "<group>"; };
-		C96560792AABD1DF005F8126 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
-		C965607B2AABD1E5005F8126 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
-		C965607D2AABD1EA005F8126 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS17.0.sdk/usr/lib/libsqlite3.tbd; sourceTree = DEVELOPER_DIR; };
+		C95578F82B8C472D0066AEAD /* ETCoreMLModelExecutor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelExecutor.h; path = ../delegate/ETCoreMLModelExecutor.h; sourceTree = "<group>"; };
+		C95578F92B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLDefaultModelExecutor.h; path = ../delegate/ETCoreMLDefaultModelExecutor.h; sourceTree = "<group>"; };
+		C95578FA2B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLDefaultModelExecutor.mm; path = ../delegate/ETCoreMLDefaultModelExecutor.mm; sourceTree = "<group>"; };
+		C95578FC2B8CB63B0066AEAD /* ETCoreMLModelLoader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelLoader.h; path = ../delegate/ETCoreMLModelLoader.h; sourceTree = "<group>"; };
+		C95578FD2B8CB63B0066AEAD /* ETCoreMLModelLoader.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelLoader.mm; path = ../delegate/ETCoreMLModelLoader.mm; sourceTree = "<group>"; };
+		C95578FF2B8CC4490066AEAD /* model_logging_options.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = model_logging_options.h; path = ../delegate/model_logging_options.h; sourceTree = "<group>"; };
+		C96227162B97B767002D13B7 /* model_event_logger.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = model_event_logger.h; path = ../delegate/model_event_logger.h; sourceTree = "<group>"; };
+		C962271A2B984FB9002D13B7 /* ETCoreMLModelDebuggerTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelDebuggerTests.mm; path = ../test/ETCoreMLModelDebuggerTests.mm; sourceTree = "<group>"; };
 		C965608D2AABF72A005F8126 /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = ../libraries/libexecutorch.a; sourceTree = "<group>"; };
 		C96560902AABF982005F8126 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/Accelerate.framework; sourceTree = DEVELOPER_DIR; };
 		C96560922AABF992005F8126 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX14.0.sdk/System/Library/Frameworks/CoreML.framework; sourceTree = DEVELOPER_DIR; };
@@ -114,6 +252,15 @@
 		C985519B2AD2542D009143F9 /* mv3_coreml_all.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; name = mv3_coreml_all.bin; path = ../test/models/mv3_coreml_all.bin; sourceTree = "<group>"; };
 		C985519C2AD2542D009143F9 /* mul_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = mul_coreml_all.pte; path = ../test/models/mul_coreml_all.pte; sourceTree = "<group>"; };
 		C985519D2AD2542D009143F9 /* add_coreml_all.pte */ = {isa = PBXFileReference; lastKnownFileType = file; name = add_coreml_all.pte; path = ../test/models/add_coreml_all.pte; sourceTree = "<group>"; };
+		C988D69E2B998D8400979CF6 /* model_event_logger_impl.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = model_event_logger_impl.h; path = ../sdk/model_event_logger_impl.h; sourceTree = "<group>"; };
+		C99883202B92D220000953A3 /* ETCoreMLComputeUnits.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLComputeUnits.h; path = ../delegate/ETCoreMLComputeUnits.h; sourceTree = "<group>"; };
+		C99883852B95AD7D000953A3 /* libprotobuf-lite.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libprotobuf-lite.a"; path = "../libraries/libprotobuf-lite.a"; sourceTree = "<group>"; };
+		C99883872B964413000953A3 /* libexecutorch.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch.a; path = ../libraries/libexecutorch.a; sourceTree = "<group>"; };
+		C998838C2B96841D000953A3 /* ETCoreMLModelStructurePathTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelStructurePathTests.mm; path = ../test/ETCoreMLModelStructurePathTests.mm; sourceTree = "<group>"; };
+		C998838E2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelProfilerTests.mm; path = ../test/ETCoreMLModelProfilerTests.mm; sourceTree = "<group>"; };
+		C99883902B96BEED000953A3 /* ETCoreMLModelCompiler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLModelCompiler.h; path = ../delegate/ETCoreMLModelCompiler.h; sourceTree = "<group>"; };
+		C99883912B96BEED000953A3 /* ETCoreMLModelCompiler.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelCompiler.mm; path = ../delegate/ETCoreMLModelCompiler.mm; sourceTree = "<group>"; };
+		C988D6FB2B9BA94000979CF6 /* range.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; name = range.hpp; path = ../inmemoryfs/range.hpp; sourceTree = "<group>"; };
 		C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAssetManager.mm; path = ../delegate/ETCoreMLAssetManager.mm; sourceTree = "<group>"; };
 		C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAssetManager.h; path = ../delegate/ETCoreMLAssetManager.h; sourceTree = "<group>"; };
 		C9D3DF002A9FD16E001CC178 /* statement.hpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.h; name = statement.hpp; path = ../kvstore/statement.hpp; sourceTree = "<group>"; };
@@ -130,7 +277,7 @@
 		C9D3DFAF2AA12097001CC178 /* asset.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = asset.h; path = ../delegate/asset.h; sourceTree = "<group>"; };
 		C9D3DFB02AA123E9001CC178 /* serde_json.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = serde_json.mm; path = ../delegate/serde_json.mm; sourceTree = "<group>"; };
 		C9D3DFB12AA123E9001CC178 /* serde_json.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = serde_json.h; path = ../delegate/serde_json.h; sourceTree = "<group>"; };
-		C9D3DFB22AA12683001CC178 /* metadata.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = metadata.h; path = ../delegate/metadata.h; sourceTree = "<group>"; };
+		C9D3DFB22AA12683001CC178 /* model_metadata.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = model_metadata.h; path = ../delegate/model_metadata.h; sourceTree = "<group>"; };
 		C9D3DFB52AA183BC001CC178 /* ETCoreMLAsset.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ETCoreMLAsset.h; path = ../delegate/ETCoreMLAsset.h; sourceTree = "<group>"; };
 		C9D3DFB62AA183BC001CC178 /* ETCoreMLAsset.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLAsset.mm; path = ../delegate/ETCoreMLAsset.mm; sourceTree = "<group>"; };
 		C9D3DFBC2AA84FC6001CC178 /* asset.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = asset.mm; path = ../delegate/asset.mm; sourceTree = "<group>"; };
@@ -146,8 +293,10 @@
 		C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = ETCoreMLModelManagerTests.mm; path = ../test/ETCoreMLModelManagerTests.mm; sourceTree = "<group>"; };
 		C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = KeyValueStoreTests.mm; path = ../test/KeyValueStoreTests.mm; sourceTree = "<group>"; };
 		C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = CoreMLBackendDelegateTests.mm; path = ../test/CoreMLBackendDelegateTests.mm; sourceTree = "<group>"; };
-		C9E7D7A92AB5081600CCAE5D /* libgflags_nothreads.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libgflags_nothreads.a; path = ../libraries/libgflags_nothreads.a; sourceTree = "<group>"; };
 		C9E7D7AB2AB55AC100CCAE5D /* com.apple.executorchcoreml_config.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = com.apple.executorchcoreml_config.plist; path = ../delegate/com.apple.executorchcoreml_config.plist; sourceTree = "<group>"; };
+		C9EA3DB22B71A2B200B7D7BD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
+		C9EA3FDE2B73EEA000B7D7BD /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
+		C9EA3FE52B73EF6300B7D7BD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -158,16 +307,118 @@
 				C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */,
 				C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */,
-				C94D50DA2ABD7B6600AF47FD /* libexecutorch.a in Frameworks */,
+				C99883862B95AD7D000953A3 /* libprotobuf-lite.a in Frameworks */,
+				C99883882B964413000953A3 /* libexecutorch.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C945E8CC2B997EB2009C3FAC /* sdk */ = {
+			isa = PBXGroup;
+			children = (
+				C945E8E92B997EDB009C3FAC /* format */,
+				C945E8CE2B997ECD009C3FAC /* ETCoreMLModelAnalyzer.h */,
+				C945E8D42B997ECD009C3FAC /* ETCoreMLModelAnalyzer.mm */,
+				C945E8D32B997ECD009C3FAC /* ETCoreMLModelDebugger.h */,
+				C945E8DF2B997ECE009C3FAC /* ETCoreMLModelDebugger.mm */,
+				C945E8CD2B997ECD009C3FAC /* ETCoreMLModelProfiler.h */,
+				C945E8CF2B997ECD009C3FAC /* ETCoreMLModelProfiler.mm */,
+				C945E8D02B997ECD009C3FAC /* ETCoreMLModelStructurePath.h */,
+				C945E8D62B997ECD009C3FAC /* ETCoreMLModelStructurePath.mm */,
+				C945E8D12B997ECD009C3FAC /* ETCoreMLOperationProfilingInfo.h */,
+				C945E8D92B997ECD009C3FAC /* ETCoreMLOperationProfilingInfo.mm */,
+				C945E8DC2B997ECE009C3FAC /* ETCoreMLPair.h */,
+				C945E8DA2B997ECD009C3FAC /* ETCoreMLPair.mm */,
+				C945E8DB2B997ECE009C3FAC /* hash_util.h */,
+				C988D69E2B998D8400979CF6 /* model_event_logger_impl.h */,
+				C945E8D82B997ECD009C3FAC /* model_event_logger_impl.mm */,
+				C945E8DD2B997ECE009C3FAC /* model_package_info.h */,
+				C945E8DE2B997ECE009C3FAC /* model_package_info.mm */,
+				C945E8D22B997ECD009C3FAC /* program_path.h */,
+				C945E8D52B997ECD009C3FAC /* program_path.mm */,
+			);
+			name = sdk;
+			sourceTree = "<group>";
+		};
+		C945E8E92B997EDB009C3FAC /* format */ = {
+			isa = PBXGroup;
+			children = (
+				C945E8ED2B997EEC009C3FAC /* ArrayFeatureExtractor.pb.cc */,
+				C945E9102B997EED009C3FAC /* ArrayFeatureExtractor.pb.h */,
+				C945E8F52B997EED009C3FAC /* AudioFeaturePrint.pb.cc */,
+				C945E9022B997EED009C3FAC /* AudioFeaturePrint.pb.h */,
+				C945E91F2B997EEE009C3FAC /* BayesianProbitRegressor.pb.cc */,
+				C945E9062B997EED009C3FAC /* BayesianProbitRegressor.pb.h */,
+				C945E8EF2B997EEC009C3FAC /* CategoricalMapping.pb.cc */,
+				C945E9122B997EEE009C3FAC /* CategoricalMapping.pb.h */,
+				C945E8EB2B997EEC009C3FAC /* ClassConfidenceThresholding.pb.cc */,
+				C945E92A2B997EEE009C3FAC /* ClassConfidenceThresholding.pb.h */,
+				C945E8EE2B997EEC009C3FAC /* CustomModel.pb.cc */,
+				C945E9212B997EEE009C3FAC /* CustomModel.pb.h */,
+				C945E8F22B997EED009C3FAC /* DataStructures.pb.cc */,
+				C945E8F12B997EED009C3FAC /* DataStructures.pb.h */,
+				C945E9192B997EEE009C3FAC /* DictVectorizer.pb.cc */,
+				C945E8FE2B997EED009C3FAC /* DictVectorizer.pb.h */,
+				C945E8FF2B997EED009C3FAC /* FeatureTypes.pb.cc */,
+				C945E8EC2B997EEC009C3FAC /* FeatureTypes.pb.h */,
+				C945E9172B997EEE009C3FAC /* FeatureVectorizer.pb.cc */,
+				C945E8F82B997EED009C3FAC /* FeatureVectorizer.pb.h */,
+				C945E90A2B997EED009C3FAC /* Gazetteer.pb.cc */,
+				C945E90E2B997EED009C3FAC /* Gazetteer.pb.h */,
+				C945E9262B997EEE009C3FAC /* GLMClassifier.pb.cc */,
+				C945E91C2B997EEE009C3FAC /* GLMClassifier.pb.h */,
+				C945E8F62B997EED009C3FAC /* GLMRegressor.pb.cc */,
+				C945E91B2B997EEE009C3FAC /* GLMRegressor.pb.h */,
+				C945E8FD2B997EED009C3FAC /* Identity.pb.cc */,
+				C945E8F72B997EED009C3FAC /* Identity.pb.h */,
+				C945E9012B997EED009C3FAC /* Imputer.pb.cc */,
+				C945E8EA2B997EEC009C3FAC /* Imputer.pb.h */,
+				C945E9252B997EEE009C3FAC /* ItemSimilarityRecommender.pb.cc */,
+				C945E9282B997EEE009C3FAC /* ItemSimilarityRecommender.pb.h */,
+				C945E9272B997EEE009C3FAC /* LinkedModel.pb.cc */,
+				C945E8F32B997EED009C3FAC /* LinkedModel.pb.h */,
+				C945E9092B997EED009C3FAC /* MIL.pb.cc */,
+				C945E9082B997EED009C3FAC /* MIL.pb.h */,
+				C945E90F2B997EED009C3FAC /* Model.pb.cc */,
+				C945E9042B997EED009C3FAC /* Model.pb.h */,
+				C945E90B2B997EED009C3FAC /* NearestNeighbors.pb.cc */,
+				C945E9242B997EEE009C3FAC /* NearestNeighbors.pb.h */,
+				C945E8F92B997EED009C3FAC /* NeuralNetwork.pb.cc */,
+				C945E91A2B997EEE009C3FAC /* NeuralNetwork.pb.h */,
+				C945E9202B997EEE009C3FAC /* NonMaximumSuppression.pb.cc */,
+				C945E9002B997EED009C3FAC /* NonMaximumSuppression.pb.h */,
+				C945E9292B997EEE009C3FAC /* Normalizer.pb.cc */,
+				C945E8F42B997EED009C3FAC /* Normalizer.pb.h */,
+				C945E9132B997EEE009C3FAC /* OneHotEncoder.pb.cc */,
+				C945E8FA2B997EED009C3FAC /* OneHotEncoder.pb.h */,
+				C945E9112B997EEE009C3FAC /* Parameters.pb.cc */,
+				C945E9142B997EEE009C3FAC /* Parameters.pb.h */,
+				C945E9052B997EED009C3FAC /* Scaler.pb.cc */,
+				C945E9222B997EEE009C3FAC /* Scaler.pb.h */,
+				C945E9232B997EEE009C3FAC /* SoundAnalysisPreprocessing.pb.cc */,
+				C945E9032B997EED009C3FAC /* SoundAnalysisPreprocessing.pb.h */,
+				C945E9152B997EEE009C3FAC /* SVM.pb.cc */,
+				C945E9162B997EEE009C3FAC /* SVM.pb.h */,
+				C945E90C2B997EED009C3FAC /* TextClassifier.pb.cc */,
+				C945E9072B997EED009C3FAC /* TextClassifier.pb.h */,
+				C945E8FB2B997EED009C3FAC /* TreeEnsemble.pb.cc */,
+				C945E91D2B997EEE009C3FAC /* TreeEnsemble.pb.h */,
+				C945E9182B997EEE009C3FAC /* VisionFeaturePrint.pb.cc */,
+				C945E90D2B997EED009C3FAC /* VisionFeaturePrint.pb.h */,
+				C945E92B2B997EEE009C3FAC /* WordEmbedding.pb.cc */,
+				C945E91E2B997EEE009C3FAC /* WordEmbedding.pb.h */,
+				C945E8F02B997EED009C3FAC /* WordTagger.pb.cc */,
+				C945E8FC2B997EED009C3FAC /* WordTagger.pb.h */,
+			);
+			name = format;
+			sourceTree = "<group>";
+		};
 		C95266222A7E05FB0016283E = {
 			isa = PBXGroup;
 			children = (
+				C945E8CC2B997EB2009C3FAC /* sdk */,
 				C97716D72AF44BCA00FC0DAC /* util */,
 				C9E7D7AE2AB6C0C000CCAE5D /* models */,
 				C9E7D7852AB3F99A00CCAE5D /* test */,
@@ -199,15 +450,25 @@
 				C952664F2A7F818A0016283E /* backend_delegate.mm */,
 				C9D3DF812A9FF394001CC178 /* multiarray.h */,
 				C96560B12AAF7CC2005F8126 /* multiarray.mm */,
-				C9D3DFB22AA12683001CC178 /* metadata.h */,
+				C9D3DFB22AA12683001CC178 /* model_metadata.h */,
+				C95578FF2B8CC4490066AEAD /* model_logging_options.h */,
+				C96227162B97B767002D13B7 /* model_event_logger.h */,
 				C9D3DFB52AA183BC001CC178 /* ETCoreMLAsset.h */,
 				C9D3DFB62AA183BC001CC178 /* ETCoreMLAsset.mm */,
 				C952663A2A7E06460016283E /* ETCoreMLModel.h */,
 				C95266362A7E06460016283E /* ETCoreMLModel.mm */,
 				C9D3DED62A9FCFC4001CC178 /* ETCoreMLAssetManager.h */,
 				C9D3DED52A9FCFC4001CC178 /* ETCoreMLAssetManager.mm */,
+				C99883202B92D220000953A3 /* ETCoreMLComputeUnits.h */,
+				C95578FC2B8CB63B0066AEAD /* ETCoreMLModelLoader.h */,
+				C95578FD2B8CB63B0066AEAD /* ETCoreMLModelLoader.mm */,
+				C99883902B96BEED000953A3 /* ETCoreMLModelCompiler.h */,
+				C99883912B96BEED000953A3 /* ETCoreMLModelCompiler.mm */,
 				C95266352A7E06460016283E /* ETCoreMLModelManager.h */,
 				C95266372A7E06460016283E /* ETCoreMLModelManager.mm */,
+				C95578F82B8C472D0066AEAD /* ETCoreMLModelExecutor.h */,
+				C95578F92B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.h */,
+				C95578FA2B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.mm */,
 				C952665D2A8012400016283E /* ETCoreMLStrings.h */,
 				C952665E2A8012400016283E /* ETCoreMLStrings.mm */,
 				C95266382A7E06460016283E /* ETCoreMLLogging.h */,
@@ -225,6 +486,7 @@
 		C952663F2A7E065F0016283E /* inmemoryfs */ = {
 			isa = PBXGroup;
 			children = (
+				C988D6FB2B9BA94000979CF6 /* range.hpp */,
 				C95266442A7E06760016283E /* inmemory_filesystem.hpp */,
 				C95266452A7E06760016283E /* inmemory_filesystem.cpp */,
 				C97716B12AE9BBBA00FC0DAC /* inmemory_filesystem_utils.hpp */,
@@ -246,10 +508,11 @@
 		C952664C2A7E06B50016283E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				C9E7D7A92AB5081600CCAE5D /* libgflags_nothreads.a */,
-				C965607D2AABD1EA005F8126 /* libsqlite3.tbd */,
-				C965607B2AABD1E5005F8126 /* CoreML.framework */,
-				C96560792AABD1DF005F8126 /* Accelerate.framework */,
+				C99883852B95AD7D000953A3 /* libprotobuf-lite.a */,
+				C9EA3FE52B73EF6300B7D7BD /* Accelerate.framework */,
+				C9EA3FDE2B73EEA000B7D7BD /* libsqlite3.tbd */,
+				C9EA3DB22B71A2B200B7D7BD /* CoreML.framework */,
+				C99883872B964413000953A3 /* libexecutorch.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -301,13 +564,16 @@
 				C9E7D78C2AB3F9BF00CCAE5D /* BackendDelegateTests.mm */,
 				C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */,
 				C9E7D78A2AB3F9BF00CCAE5D /* DatabaseTests.mm */,
+				C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */,
+				C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */,
 				C9E7D78B2AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm */,
 				C9E7D7892AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm */,
-				C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */,
 				C9E7D7872AB3F9BF00CCAE5D /* ETCoreMLTestUtils.h */,
 				C9E7D7862AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm */,
-				C9E7D7882AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm */,
-				C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */,
+				C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */,
+				C998838C2B96841D000953A3 /* ETCoreMLModelStructurePathTests.mm */,
+				C998838E2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm */,
+				C962271A2B984FB9002D13B7 /* ETCoreMLModelDebuggerTests.mm */,
 			);
 			name = test;
 			sourceTree = "<group>";
@@ -401,39 +667,87 @@
 			buildActionMask = 2147483647;
 			files = (
 				C94D50E72ABDF80D00AF47FD /* sqlite_error.cpp in Sources */,
+				C945E93C2B997EEE009C3FAC /* NearestNeighbors.pb.cc in Sources */,
 				C94D50FC2ABDF83500AF47FD /* ETCoreMLAsset.mm in Sources */,
+				C99883922B96BEED000953A3 /* ETCoreMLModelCompiler.mm in Sources */,
+				C945E9422B997EEE009C3FAC /* FeatureVectorizer.pb.cc in Sources */,
 				C94D51062ABDF84400AF47FD /* ETCoreMLLogging.mm in Sources */,
 				C97716D52AF41B2E00FC0DAC /* json_key_value_store.cpp in Sources */,
+				C998838F2B96999F000953A3 /* ETCoreMLModelProfilerTests.mm in Sources */,
+				C945E9342B997EEE009C3FAC /* NeuralNetwork.pb.cc in Sources */,
+				C945E92D2B997EEE009C3FAC /* ArrayFeatureExtractor.pb.cc in Sources */,
+				C945E93B2B997EEE009C3FAC /* Gazetteer.pb.cc in Sources */,
+				C945E8E02B997ECE009C3FAC /* ETCoreMLModelProfiler.mm in Sources */,
 				C94D50F22ABDF82200AF47FD /* reversed_memory_stream.cpp in Sources */,
 				C94D51022ABDF83E00AF47FD /* ETCoreMLModelManager.mm in Sources */,
 				C94D50F42ABDF82500AF47FD /* asset.mm in Sources */,
 				C97716DA2AF44CFA00FC0DAC /* json_util.cpp in Sources */,
+				C945E93F2B997EEE009C3FAC /* Parameters.pb.cc in Sources */,
 				C94D51042ABDF84100AF47FD /* ETCoreMLStrings.mm in Sources */,
 				C9E7D7932AB3F9BF00CCAE5D /* ETCoreMLAssetManagerTests.mm in Sources */,
+				C945E8E42B997ECE009C3FAC /* model_event_logger_impl.mm in Sources */,
+				C945E9472B997EEE009C3FAC /* SoundAnalysisPreprocessing.pb.cc in Sources */,
 				C97716B52AEA21B600FC0DAC /* inmemory_filesystem_utils.mm in Sources */,
 				C9E7D7922AB3F9BF00CCAE5D /* DatabaseTests.mm in Sources */,
+				C945E9432B997EEE009C3FAC /* VisionFeaturePrint.pb.cc in Sources */,
+				C945E9442B997EEE009C3FAC /* DictVectorizer.pb.cc in Sources */,
+				C95578FB2B8C5D050066AEAD /* ETCoreMLDefaultModelExecutor.mm in Sources */,
 				C9E7D7902AB3F9BF00CCAE5D /* InMemoryFileSystemTests.mm in Sources */,
 				C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */,
 				C94D50E52ABDF80A00AF47FD /* database.cpp in Sources */,
+				C945E8E72B997ECE009C3FAC /* model_package_info.mm in Sources */,
+				C945E9302B997EEE009C3FAC /* WordTagger.pb.cc in Sources */,
 				C97716DD2AF44E7B00FC0DAC /* objc_json_serde.mm in Sources */,
+				C945E9482B997EEE009C3FAC /* ItemSimilarityRecommender.pb.cc in Sources */,
 				C94D51082ABDF84800AF47FD /* MLModel_Prewarm.mm in Sources */,
 				C94D50F02ABDF81F00AF47FD /* memory_stream.cpp in Sources */,
 				C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */,
 				C94BC6492AD5EB400067A63B /* coreml_backend_delegate.mm in Sources */,
+				C945E93D2B997EEE009C3FAC /* TextClassifier.pb.cc in Sources */,
+				C945E92C2B997EEE009C3FAC /* ClassConfidenceThresholding.pb.cc in Sources */,
 				C9E7D78F2AB3F9BF00CCAE5D /* ETCoreMLTestUtils.mm in Sources */,
+				C945E93A2B997EEE009C3FAC /* MIL.pb.cc in Sources */,
 				C94D51002ABDF83C00AF47FD /* ETCoreMLAssetManager.mm in Sources */,
+				C945E93E2B997EEE009C3FAC /* Model.pb.cc in Sources */,
+				C945E9362B997EEE009C3FAC /* Identity.pb.cc in Sources */,
 				C94D50EE2ABDF81B00AF47FD /* memory_buffer.cpp in Sources */,
+				C945E8E32B997ECE009C3FAC /* ETCoreMLModelStructurePath.mm in Sources */,
+				C945E8E82B997ECE009C3FAC /* ETCoreMLModelDebugger.mm in Sources */,
 				C94D50FE2ABDF83800AF47FD /* ETCoreMLModel.mm in Sources */,
 				C94D510A2ABDF84B00AF47FD /* MLMultiArray_Copy.mm in Sources */,
+				C945E8E22B997ECE009C3FAC /* program_path.mm in Sources */,
 				C94D510C2ABDF84F00AF47FD /* serde_json.mm in Sources */,
+				C945E9352B997EEE009C3FAC /* TreeEnsemble.pb.cc in Sources */,
 				C9E7D7912AB3F9BF00CCAE5D /* ETCoreMLAssetTests.mm in Sources */,
+				C945E9492B997EEE009C3FAC /* GLMClassifier.pb.cc in Sources */,
+				C945E8E62B997ECE009C3FAC /* ETCoreMLPair.mm in Sources */,
+				C945E9372B997EEE009C3FAC /* FeatureTypes.pb.cc in Sources */,
+				C945E9402B997EEE009C3FAC /* OneHotEncoder.pb.cc in Sources */,
 				C94D50E82ABDF81100AF47FD /* key_value_store.cpp in Sources */,
+				C945E9452B997EEE009C3FAC /* BayesianProbitRegressor.pb.cc in Sources */,
+				C945E8E52B997ECE009C3FAC /* ETCoreMLOperationProfilingInfo.mm in Sources */,
+				C945E9312B997EEE009C3FAC /* DataStructures.pb.cc in Sources */,
+				C945E94A2B997EEE009C3FAC /* LinkedModel.pb.cc in Sources */,
+				C945E92E2B997EEE009C3FAC /* CustomModel.pb.cc in Sources */,
 				C9E7D7942AB3F9BF00CCAE5D /* BackendDelegateTests.mm in Sources */,
+				C945E9392B997EEE009C3FAC /* Scaler.pb.cc in Sources */,
 				C94D50F62ABDF82900AF47FD /* backend_delegate.mm in Sources */,
+				C945E9322B997EEE009C3FAC /* AudioFeaturePrint.pb.cc in Sources */,
+				C962271B2B984FB9002D13B7 /* ETCoreMLModelDebuggerTests.mm in Sources */,
+				C945E94C2B997EEE009C3FAC /* WordEmbedding.pb.cc in Sources */,
 				C94D50EA2ABDF81400AF47FD /* statement.cpp in Sources */,
+				C945E8E12B997ECE009C3FAC /* ETCoreMLModelAnalyzer.mm in Sources */,
 				C94D50ED2ABDF81900AF47FD /* inmemory_filesystem.cpp in Sources */,
+				C945E94B2B997EEE009C3FAC /* Normalizer.pb.cc in Sources */,
 				C94D50FA2ABDF83200AF47FD /* multiarray.mm in Sources */,
 				C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */,
+				C945E9382B997EEE009C3FAC /* Imputer.pb.cc in Sources */,
+				C945E92F2B997EEE009C3FAC /* CategoricalMapping.pb.cc in Sources */,
+				C95578FE2B8CB63B0066AEAD /* ETCoreMLModelLoader.mm in Sources */,
+				C998838D2B96841D000953A3 /* ETCoreMLModelStructurePathTests.mm in Sources */,
+				C945E9332B997EEE009C3FAC /* GLMRegressor.pb.cc in Sources */,
+				C945E9412B997EEE009C3FAC /* SVM.pb.cc in Sources */,
+				C945E9462B997EEE009C3FAC /* NonMaximumSuppression.pb.cc in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -569,8 +883,10 @@
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
 					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
 					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";
@@ -598,8 +914,10 @@
 					"$(SRCROOT)/../kvstore",
 					"$(SRCROOT)/../inmemoryfs",
 					"$(SRCROOT)/../include",
+					"$(SRCROOT)/../sdk",
 					"$(SRCROOT)/../util",
 					"$(SRCROOT)/../../third-party/nlohmann_json/single_include/nlohmann",
+					"$(SRCROOT)/../../third-party/coremltools/deps/protobuf/src",
 				);
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/../libraries";

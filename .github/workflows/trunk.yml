@@ -137,27 +137,31 @@ jobs:
         # Test selective build
         PYTHON_EXECUTABLE=python bash examples/portable/scripts/test_demo_backend_delegation.sh "${BUILD_TOOL}"
 
-  # TODO(Jerry-Ge): Enable this back https://github.com/pytorch/executorch/issues/1947
-  # test-arm-backend-delegation:
-  #   name: test-arm-backend-delegation
-  #   uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-  #   with:
-  #     runner: linux.2xlarge
-  #     docker-image: executorch-ubuntu-22.04-arm-sdk
-  #     submodules: 'true'
-  #     ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  #     script: |
-  #       # The generic Linux job chooses to use base env, not the one setup by the image
-  #       CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
-  #       conda activate "${CONDA_ENV}"
+  test-arm-backend-delegation:
+    name: test-arm-backend-delegation
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-arm-sdk
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
 
-  #       source .ci/scripts/utils.sh
-  #       install_flatc_from_source
-  #       install_executorch
+        source .ci/scripts/utils.sh
+        install_flatc_from_source
+        install_executorch
 
-  #       # Test selective build
-  #       source /opt/arm-sdk/setup_path.sh
-  #       PYTHON_EXECUTABLE=python bash examples/arm/run.sh /opt/arm-sdk buck2
+        # Setup arm example environment (including TOSA tools)
+        git config --global user.email "github_executorch@arm.com"
+        git config --global user.name "Github Executorch"
+        bash examples/arm/setup.sh --i-agree-to-the-contained-eula
+
+        # Test ethos-u delegate examples with run.sh
+        source examples/arm/ethos-u-scratch/setup_path.sh
+        PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/ buck2
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
@@ -176,13 +180,16 @@ jobs:
         install_flatc_from_source
         install_executorch
 
+        # Setup arm example environment (including TOSA tools)
         git config --global user.email "github_executorch@arm.com"
         git config --global user.name "Github Executorch"
         bash examples/arm/setup.sh --i-agree-to-the-contained-eula
 
-        source /opt/arm-sdk/setup_path.sh
+        # Test tosa_reference flow
+        source examples/arm/ethos-u-scratch/setup_path.sh
         PYTHON_EXECUTABLE=python bash backends/arm/test/run_tosa_reference.sh
 
+        # Run Arm specific unit-tests
         # Run pytest only on specified folders. These test should migrate into
         # the _unittest.yml once that test env is fixed
         pytest -c /dev/null -v -n auto --cov=./ --cov-report=xml backends/arm/test/ops/ backends/arm/test/models

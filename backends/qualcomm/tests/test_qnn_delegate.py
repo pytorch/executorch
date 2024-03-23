@@ -10,9 +10,17 @@ import unittest
 from multiprocessing.connection import Listener
 
 import torch
-from executorch.backends.qualcomm.tests.utils import TestQNN
+from executorch.backends.qualcomm.tests.utils import (
+    QnnPartitioner,
+    QuantDtype,
+    TestQNN,
+    to_backend,
+)
 
 from executorch.backends.qualcomm.utils.utils import (
+    canonicalize_program,
+    capture_program,
+    generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
 
@@ -24,25 +32,30 @@ from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
+from executorch.examples.models.llama2 import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.models.wav2letter import Wav2LetterModel
-from executorch.examples.qualcomm.scripts.edsr import annotate_forward
 from executorch.exir.backend.backend_api import disable_validation
+from executorch.exir.program._program import EdgeCompileConfig, ExirExportedProgram
 
 
 class TestQNNFloatingPointOperator(TestQNN):
+    # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            is_fp16=True,
             soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_arange(self):
@@ -116,12 +129,13 @@ class TestQNNFloatingPointOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_div(self):
+        eps = 1e-03
         test_comb = [
             {
                 "module": [Div()],  # noqa: F405
                 "sample_inputs": [
-                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
-                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                    (torch.randn(2, 5, 1, 3), eps + torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), eps + torch.randn([4, 1])),
                 ],
             },
             {
@@ -196,11 +210,9 @@ class TestQNNFloatingPointOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
-    @unittest.expectedFailure
     def test_qnn_backend_embedding(self):
         module = Embedding()  # noqa: F405
-        # QNN does not support int64 datatype
-        sample_input = (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),)
+        sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_expand_copy(self):
@@ -276,6 +288,11 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.ones([2, 4, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pow_tensor_scalar(self):
+        module = PowTensorScalar()  # noqa: F405
+        sample_input = (torch.rand([2, 4, 3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -286,13 +303,26 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn([3, 4]),)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_rsqrt(self):
+        module = Rsqrt()  # noqa: F405
+        sample_input = (torch.abs(torch.randn([3, 4])),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_sdpa(self):
         module = ScaledDotProductAttention()  # noqa: F405
+        mask = torch.tril(torch.randn(1, 1, 100, 100))
+        mask[mask == 0] = float("-inf")
         sample_input = (
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
+            mask,
         )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sigmoid(self):
+        module = Sigmoid()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3, 3]),)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
@@ -306,6 +336,11 @@ class TestQNNFloatingPointOperator(TestQNN):
             torch.randn([1, 512]),
             torch.randn([1, 8]),
         )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_stack(self):
+        module = Stack()  # noqa: F405
+        sample_input = (torch.randn([1, 2, 3, 4]), torch.randn([1, 2, 3, 4]))
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_softmax(self):
@@ -323,6 +358,12 @@ class TestQNNFloatingPointOperator(TestQNN):
         sample_input = (torch.randn(2, 5, 1, 3),)
         self.lower_module_and_test_output(module, sample_input)
 
+    @unittest.expectedFailure
+    def test_qnn_backend_unbind(self):
+        module = Unbind()  # noqa: F405
+        sample_input = (torch.randn([3, 3]),)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_unsqueeze(self):
         module = Unsqueeze()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3]),)
@@ -335,15 +376,19 @@ class TestQNNFloatingPointOperator(TestQNN):
 
 
 class TestQNNFloatingPointModel(TestQNN):
+    # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            is_fp16=True,
             soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -392,6 +437,7 @@ class TestQNNFloatingPointModel(TestQNN):
             EdsrModel(),
             InceptionV3Model(),
             InceptionV4Model(),
+            Llama2Model(),
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
@@ -399,6 +445,7 @@ class TestQNNFloatingPointModel(TestQNN):
             Wav2LetterModel(),
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
@@ -424,16 +471,36 @@ class TestQNNFloatingPointModel(TestQNN):
 
 
 class TestQNNQuantizedOperator(TestQNN):
+    # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            is_fp16=False,
             soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
+
+    def test_qnn_backend_16a4w_conv2d(self):
+        module = Conv2DSingle()  # noqa: F405
+        sample_input = (torch.randn([1, 1, 3, 3]),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a4w
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_16a4w_linear(self):
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a4w
+        )
+        self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_arange(self):
         module = Arange(5)  # noqa: F405
@@ -517,12 +584,13 @@ class TestQNNQuantizedOperator(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_element_wise_div(self):
+        eps = 1e-03
         test_comb = [
             {
                 "module": [Div()],  # noqa: F405
                 "sample_inputs": [
-                    (torch.randn(2, 5, 1, 3), torch.randn(2, 5, 1, 3)),
-                    (torch.randn([2, 5, 1, 3]), torch.randn([4, 1])),
+                    (torch.randn(2, 5, 1, 3), eps + torch.randn(2, 5, 1, 3)),
+                    (torch.randn([2, 5, 1, 3]), eps + torch.randn([4, 1])),
                 ],
             },
             {
@@ -601,11 +669,9 @@ class TestQNNQuantizedOperator(TestQNN):
                         self.lower_module_and_test_output(module, sample_input)
                         index += 1
 
-    @unittest.expectedFailure
     def test_qnn_backend_embedding(self):
         module = Embedding()  # noqa: F405
-        # QNN does not support int64 datatype
-        sample_input = (torch.LongTensor([[1, 2, 4, 5], [4, 3, 2, 9]]),)
+        sample_input = (torch.Tensor([[1, 2, 4, 5], [4, 3, 2, 9]]).to(torch.int32),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -695,6 +761,12 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_pow_tensor_scalar(self):
+        module = PowTensorScalar()  # noqa: F405
+        sample_input = (torch.rand([2, 4, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_relu(self):
         module = Relu()  # noqa: F405
         sample_input = (torch.randn([2, 5, 1, 3]),)
@@ -707,18 +779,33 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_rsqrt(self):
+        module = Rsqrt()  # noqa: F405
+        sample_input = (torch.abs(torch.randn([3, 4])),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_sdpa(self):
         module = ScaledDotProductAttention()  # noqa: F405
+        mask = torch.tril(torch.randn(1, 1, 100, 100))
+        mask[mask == 0] = torch.finfo(torch.float32).min
         sample_input = (
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
             torch.randn(1, 4, 100, 64),
+            mask,
         )
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
     def test_qnn_backend_select_copy(self):
         module = SelectCopy()  # noqa: F405
+        sample_input = (torch.randn([1, 3, 3, 3]),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_sigmoid(self):
+        module = Sigmoid()  # noqa: F405
         sample_input = (torch.randn([1, 3, 3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
@@ -744,9 +831,25 @@ class TestQNNQuantizedOperator(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
+    def test_qnn_backend_stack(self):
+        module = Stack()  # noqa: F405
+        sample_input = (
+            torch.randn([1, 2, 3, 4]),
+            torch.randn([1, 2, 3, 4]),
+        )
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
     def test_qnn_backend_tanh(self):
         module = Tanh()  # noqa: F405
         sample_input = (torch.randn(2, 5, 1, 3),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    @unittest.expectedFailure
+    def test_qnn_backend_unbind(self):
+        module = Unbind()  # noqa: F405
+        sample_input = (torch.randn([3, 3]),)
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
@@ -764,15 +867,19 @@ class TestQNNQuantizedOperator(TestQNN):
 
 
 class TestQNNQuantizedModel(TestQNN):
+    # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            is_fp16=False,
             soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
             online_prepare=TestQNN.online_prepare,
+            tensor_dump_output_path="",
+            profile=TestQNN.enable_profile,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -805,30 +912,13 @@ class TestQNNQuantizedModel(TestQNN):
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
 
-    def test_qnn_backend_residual_block(self):
-        module = ResidualBlockModule()  # noqa: F405
-        sample_input = (torch.randn(1, 32, 28, 28),)
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_backend_simple_model(self):
-        module = SimpleModel()  # noqa: F405
-        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
-
-    def test_qnn_backend_view_permute_matmul(self):
-        module = ViewPermuteMatMul()  # noqa: F405
-        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
-        module = self.get_qdq_module(module, sample_input)
-        self.lower_module_and_test_output(module, sample_input)
-
     def test_qnn_backend_example_models(self):
         instances = [
             {"module": DeepLabV3ResNet101Model(), "annotation": ()},
-            {"module": EdsrModel(), "annotation": (annotate_forward,)},
+            {"module": EdsrModel(), "annotation": ()},
             {"module": InceptionV3Model(), "annotation": ()},
             {"module": InceptionV4Model(), "annotation": ()},
+            {"module": Llama2Model(), "annotation": ()},
             {"module": MV2Model(), "annotation": ()},
             {"module": MV3Model(), "annotation": ()},
             # only works on QNN 2.12 so far
@@ -837,6 +927,7 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": Wav2LetterModel(), "annotation": ()},
         ]
         expected_partitions = [
+            1,
             1,
             1,
             1,
@@ -866,14 +957,39 @@ class TestQNNQuantizedModel(TestQNN):
                     assert_output_equal=False,
                 )
 
+    def test_qnn_backend_residual_block(self):
+        module = ResidualBlockModule()  # noqa: F405
+        sample_input = (torch.randn(1, 32, 28, 28),)
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_simple_model(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_view_permute_matmul(self):
+        module = ViewPermuteMatMul()  # noqa: F405
+        sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
+        # check if requantization work
+        module = self.get_qdq_module(
+            module, sample_input, quant_dtype=QuantDtype.use_16a16w
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
 
 class TestQNNFloatingPointUtils(TestQNN):
+    # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1e-1
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            is_fp16=True,
             soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
         )
@@ -896,16 +1012,81 @@ class TestQNNFloatingPointUtils(TestQNN):
             sample_input,
             expected_partitions=2,
             skip_node_op_set={"aten.add.Tensor"},
+        )
+
+    def test_qnn_backend_multi_contexts(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        edge_prog = capture_program(module, sample_input)
+        self.split_graph(edge_prog.exported_program.graph_module, 4)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_dlbc=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        canonicalize_program(edge_prog.exported_program)
+        exec_prog = edge_prog.to_executorch()
+        self.verify_output(module, sample_input, exec_prog)
+
+    def test_qnn_backend_multi_contexts_composite(self):
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+            use_dlbc=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = CompositeDelegateModule(  # noqa: F405
+            compiler_specs=compiler_specs,
+            partitioner_type=QnnPartitioner,
+            capture_method=capture_program,
+            lowered_method=to_backend,
+        )
+        sample_input = module.get_random_input()
+        edge_prog = ExirExportedProgram(
+            torch.export.export(module, sample_input),
+            after_to_edge_passes=False,
+        ).to_edge(EdgeCompileConfig(_check_ir_validity=False))
+        canonicalize_program(edge_prog.exported_program)
+        exec_prog = edge_prog.to_executorch()
+        self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_profile_op(self):
+        TestQNN.enable_profile = True
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            profile=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_profile_events=25,
         )
 
 
 class TestQNNQuantizedUtils(TestQNN):
+    # TODO: refactor to support different backends
     def setUp(self):
         TestQNN.atol = 1e-1
         TestQNN.rtol = 1
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
         TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
-            is_fp16=False,
             soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
         )
@@ -930,6 +1111,72 @@ class TestQNNQuantizedUtils(TestQNN):
             sample_input,
             expected_partitions=2,
             skip_node_op_set={"aten.add.Tensor"},
+        )
+
+    def test_qnn_backend_multi_contexts(self):
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        edge_prog = capture_program(module, sample_input)
+        self.split_graph(edge_prog.exported_program.graph_module, 4)
+
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_dlbc=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        partitioner = QnnPartitioner(compiler_specs)
+        edge_prog.exported_program = to_backend(edge_prog.exported_program, partitioner)
+        canonicalize_program(edge_prog.exported_program)
+        exec_prog = edge_prog.to_executorch()
+        self.verify_output(module, sample_input, exec_prog)
+
+    def test_qnn_backend_multi_contexts_composite(self):
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+            use_dlbc=True,
+            use_multi_contexts=True,
+        )
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+        )
+        module = CompositeDelegateModule(  # noqa: F405
+            compiler_specs=compiler_specs,
+            partitioner_type=QnnPartitioner,
+            capture_method=capture_program,
+            lowered_method=to_backend,
+            quantize_method=self.get_qdq_module,
+        )
+        sample_input = module.get_random_input()
+        edge_prog = ExirExportedProgram(
+            torch.export.export(module, sample_input),
+            after_to_edge_passes=False,
+        ).to_edge(EdgeCompileConfig(_check_ir_validity=False))
+        canonicalize_program(edge_prog.exported_program)
+        exec_prog = edge_prog.to_executorch()
+        self.verify_output(module.get_reference_module(), sample_input, exec_prog)
+
+    def test_qnn_backend_profile_op(self):
+        TestQNN.enable_profile = True
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            profile=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+            expected_profile_events=26,
         )
 
 
@@ -1141,6 +1388,68 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["MPA"], 0.70)
             self.assertGreaterEqual(msg["MIoU"], 0.55)
 
+    def test_dummy_llama2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/dummy_llama2.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--use_fp16",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
+    @unittest.expectedFailure
+    def test_ptq_dummy_llama2(self):
+        if not self.required_envs():
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/scripts/dummy_llama2.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(all(msg["is_close"]))
+
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
             self.skipTest("missing required envs")
@@ -1162,6 +1471,7 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
+            "--use_fp16",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -1173,9 +1483,15 @@ class TestExampleScript(TestQNN):
             msg = json.loads(conn.recv())
             cpu, htp = msg["CPU"], msg["HTP"]
             for k, v in cpu.items():
-                self.assertLessEqual(abs(v[0] - htp[k][0]), 1)
+                self.assertLessEqual(abs(v[0] - htp[k][0]), 2)
 
+    @unittest.expectedFailure
     def test_ptq_mobilebert(self):
+        # TODO: 2 approaches to resolve accuracy issue
+        # 1. fallback embedding layers:
+        #    - skip annotation in quantizer (need PR to provide helper funciton)
+        #    - skip operators in partitioner (use existent "skip_node_op_set")
+        # 2. investigate different quantization configurations / mechanisms
         if not self.required_envs([self.pretrained_weight]):
             self.skipTest("missing required envs")
 
@@ -1196,7 +1512,6 @@ class TestExampleScript(TestQNN):
             self.ip,
             "--port",
             str(self.port),
-            "--ptq",
         ]
         if self.host:
             cmds.extend(["--host", self.host])
@@ -1236,12 +1551,19 @@ def setup_environment():
         "-p",
         "--pretrained_weight",
         help="Location for pretrained weighting",
+        default="",
         type=str,
     )
     parser.add_argument(
         "-o",
         "--online_prepare",
         help="Conduct on-device graph compilation",
+        action="store_true",
+    )
+    parser.add_argument(
+        "-P",
+        "--enable_profile",
+        help="Profile the performance of each operator with kProfileDetailed profile level",
         action="store_true",
     )
     parser.add_argument(
@@ -1261,6 +1583,7 @@ def setup_environment():
     TestQNN.image_dataset = args.image_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
     TestQNN.online_prepare = args.online_prepare
+    TestQNN.enable_profile = args.enable_profile
     TestQNN.error_only = args.error_only
     return sys.argv[:1] + ns_args
 

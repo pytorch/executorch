@@ -1,5 +1,5 @@
-load("@fbsource//tools/build_defs:selects.bzl", "selects")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 load(
     "@fbsource//xplat/executorch/kernels/optimized:lib_defs.bzl",
     "get_vec_android_preprocessor_flags",
@@ -124,3 +124,7 @@ def define_op_target(name, deps):
         name = name,
         deps = deps,
     )
+
+def is_op_disabled(name):
+    # All ops are enabled for internal builds.
+    return False

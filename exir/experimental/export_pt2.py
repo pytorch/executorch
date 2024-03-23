@@ -141,6 +141,7 @@ def trace(root: Callable[..., Value], concrete_args: Tuple[Value, ...]) -> Trace
         concrete_args,
         CaptureConfig(enable_functionalization=False),
     ).graph_module
+
     # TODO convert torchdynamo guards to our own guards
     def _convert_dynamo_guard_to_exir_guard(
         dynamo_guard: DynamoGuard,

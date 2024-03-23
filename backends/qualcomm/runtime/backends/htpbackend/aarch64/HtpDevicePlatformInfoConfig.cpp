@@ -11,7 +11,7 @@ namespace executor {
 namespace qnn {
 std::vector<QnnDevice_PlatformInfo_t*>
 HtpDevicePlatformInfoConfig::CreateDevicePlatformInfo(
-    const HtpInfo& /*qcom_target_soc_info*/) {
+    const SocInfo* /*qcom_target_soc_info*/) {
   return {};
 }
 } // namespace qnn

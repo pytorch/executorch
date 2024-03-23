@@ -68,7 +68,7 @@ the exported model to a specific location where the Demo App will pick them up:
 ```bash
 python3 -m examples.portable.scripts.export --model_name="mv3"
 python3 -m examples.xnnpack.aot_compiler --delegate --model_name="mv3"
-python3 -m examples.apple.coreml.scripts.export_and_delegate --model_name="mv3"
+python3 -m examples.apple.coreml.scripts.export --model_name="mv3"
 python3 -m examples.apple.mps.scripts.mps_example --model_name="mv3"
 
 mkdir -p examples/demo-apps/apple_ios/ExecuTorchDemo/ExecuTorchDemo/Resources/Models/MobileNet/

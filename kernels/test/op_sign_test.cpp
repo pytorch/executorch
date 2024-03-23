@@ -20,12 +20,14 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_sign_out(const Tensor& self, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::sign_outf(context, self, out);
-}
+class OpSignTest : public OperatorTest {
+ protected:
+  Tensor& op_sign_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::sign_outf(context_, self, out);
+  }
+};
 
-TEST(OpSignTest, ETSanityCheckFloat) {
+TEST_F(OpSignTest, ETSanityCheckFloat) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen returns 0 on NAN input";
   }
@@ -41,7 +43,7 @@ TEST(OpSignTest, ETSanityCheckFloat) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST(OpSignTest, ATenSanityCheckFloat) {
+TEST_F(OpSignTest, ATenSanityCheckFloat) {
   if (!torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ET returns NAN on NAN input";
   }
@@ -57,7 +59,7 @@ TEST(OpSignTest, ATenSanityCheckFloat) {
   EXPECT_TENSOR_CLOSE(out, expected);
 }
 
-TEST(OpSignTest, SanityCheckBool) {
+TEST_F(OpSignTest, SanityCheckBool) {
   TensorFactory<ScalarType::Bool> tf;
 
   Tensor in = tf.make({1, 6}, {false, true, false, false, true, true});

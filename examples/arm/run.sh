@@ -105,7 +105,7 @@ function build_executorch_runner() {
     cd ${script_dir}/executor_runner
     cmake -DCMAKE_TOOLCHAIN_FILE=${toolchain_cmake} \
 	  -DTARGET_CPU=cortex-m55 \
-	  -B build \
+	  -B cmake-out \
 	  -DETHOS_SDK_PATH:PATH=${ethos_u_root_dir} \
 	  -DET_DIR_PATH:PATH=${et_root_dir}         \
 	  -DET_BUILD_DIR_PATH:PATH=${et_build_dir}  \
@@ -114,9 +114,9 @@ function build_executorch_runner() {
     echo "[${FUNCNAME[0]}] Configured CMAKE"
 
     n=$(nproc)
-    cmake --build build -- -j"$((n - 5))" arm_executor_runner
+    cmake --build cmake-out -- -j"$((n - 5))" arm_executor_runner
     echo "[${FUNCNAME[0]}] Generated baremetal elf file:"
-    find build -name "arm_executor_runner"
+    find cmake-out -name "arm_executor_runner"
 }
 
 # Execute the executor_runner on FVP Simulator

@@ -30,7 +30,7 @@
 	url = https://github.com/Maratyszcza/FXdiv.git
 [submodule "backends/xnnpack/third-party/XNNPACK"]
 	path = backends/xnnpack/third-party/XNNPACK
-	url = https://github.com/google/XNNPACK.git
+	url = https://github.com/digantdesai/XNNPACK.git
 [submodule "backends/arm/third-party/serialization_lib"]
 	path = backends/arm/third-party/serialization_lib
 	url = https://review.mlplatform.org/tosa/serialization_lib
@@ -46,3 +46,16 @@
 [submodule "backends/arm/third-party/ethos-u-core-driver"]
 	path = backends/arm/third-party/ethos-u-core-driver
 	url = https://review.mlplatform.org/ml/ethos-u/ethos-u-core-driver
+[submodule "backends/vulkan/third-party/VulkanMemoryAllocator"]
+	path = backends/vulkan/third-party/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+[submodule "backends/vulkan/third-party/volk"]
+	path = backends/vulkan/third-party/volk
+	url = https://github.com/zeux/volk
+[submodule "backends/vulkan/third-party/Vulkan-Headers"]
+	path = backends/vulkan/third-party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "third-party/lm-evaluation-harness"]
+	path = third-party/lm-evaluation-harness
+	url = https://github.com/EleutherAI/lm-evaluation-harness
+	branch = v0.4.1

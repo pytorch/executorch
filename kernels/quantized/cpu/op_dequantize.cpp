@@ -33,6 +33,7 @@ void check_dequantize_per_tensor_args(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType>& out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       input.scalar_type() == ScalarType::Byte ||
@@ -47,10 +48,11 @@ void check_dequantize_per_tensor_args(
       "input.scalar_type() %" PRId8 " is not matching dtype argumenta:",
       static_cast<int8_t>(input.scalar_type()));
 
-  ET_CHECK_MSG(
-      out.scalar_type() == ScalarType::Float,
-      "out.scalar_type() %" PRId8 " is not supported:",
-      static_cast<int8_t>(out.scalar_type()));
+  if (out_dtype.has_value()) {
+    ET_CHECK_MSG(
+        out.scalar_type() == out_dtype.value(),
+        "output_dtype must match the dtype of the out tensor");
+  }
 
   ET_CHECK_MSG(
       quant_min <= quant_max,
@@ -77,13 +79,15 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   torch::executor::Error err = resize_tensor(out, input.sizes());
   ET_CHECK_MSG(
       err == torch::executor::Error::Ok,
       "Failed to resize out Tensor in dequantize_per_tensor_out");
 
-  check_dequantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  check_dequantize_per_tensor_args(
+      input, quant_min, quant_max, dtype, out_dtype, out);
 
   // calculate the dequantized output, cast scale to float to match fbgemm
   // behavior
@@ -128,6 +132,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   ET_CHECK_MSG(
       scale.scalar_type() == ScalarType::Double,
@@ -153,6 +158,7 @@ Tensor& dequantize_per_tensor_tensor_args_out(
       quant_min,
       quant_max,
       dtype,
+      out_dtype,
       out);
   return out;
 }
@@ -160,11 +166,12 @@ Tensor& dequantize_per_tensor_tensor_args_out(
 Tensor& dequantize_per_channel_out(
     const Tensor& input,
     const Tensor& scale,
-    const Tensor& zero_point,
+    const optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   torch::executor::Error err = resize_tensor(out, input.sizes());
 
@@ -194,18 +201,22 @@ Tensor& dequantize_per_channel_out(
       ssize_t(scale.numel()),
       ssize_t(input.size(axis)));
 
-  ET_CHECK_MSG(
-      zero_point.scalar_type() == ScalarType::Long,
-      "zero_point.scalar_type() %" PRId8 " is not integer type",
-      static_cast<int8_t>(zero_point.scalar_type()));
+  if (opt_zero_points.has_value()) {
+    auto zero_point = opt_zero_points.value();
+    ET_CHECK_MSG(
+        zero_point.scalar_type() == ScalarType::Long,
+        "zero_point.scalar_type() %" PRId8 " is not integer type",
+        static_cast<int8_t>(zero_point.scalar_type()));
 
-  ET_CHECK_MSG(
-      zero_point.numel() == input.size(axis),
-      "zero_point.numel() %zd != input.size(axis) %zd",
-      ssize_t(zero_point.numel()),
-      ssize_t(input.size(axis)));
+    ET_CHECK_MSG(
+        zero_point.numel() == input.size(axis),
+        "zero_point.numel() %zd != input.size(axis) %zd",
+        ssize_t(zero_point.numel()),
+        ssize_t(input.size(axis)));
+  }
 
-  check_dequantize_per_tensor_args(input, quant_min, quant_max, dtype, out);
+  check_dequantize_per_tensor_args(
+      input, quant_min, quant_max, dtype, out_dtype, out);
 
   // a list contains all dimensions except axis
   int64_t dims[input.dim() - 1];
@@ -217,7 +228,12 @@ Tensor& dequantize_per_channel_out(
     }
   }
   const double* scale_data = scale.const_data_ptr<double>();
-  const int64_t* zero_point_data = zero_point.const_data_ptr<int64_t>();
+  const int64_t* zero_point_data;
+  if (opt_zero_points.has_value()) {
+    zero_point_data = opt_zero_points.value().const_data_ptr<int64_t>();
+  } else {
+    zero_point_data = nullptr;
+  }
 
   exec_aten::optional<exec_aten::ArrayRef<int64_t>> optional_dim_list{
       exec_aten::ArrayRef<int64_t>{dims, size_t(input.dim() - 1)}};
@@ -234,7 +250,10 @@ Tensor& dequantize_per_channel_out(
   case ScalarType::out_dtype:                                                  \
     for (size_t channel_ix = 0; channel_ix < input.size(axis); ++channel_ix) { \
       double _scale = scale_data[channel_ix];                                  \
-      int64_t _zero_point = zero_point_data[channel_ix];                       \
+      int64_t _zero_point = 0;                                                 \
+      if (zero_point_data != nullptr) {                                        \
+        _zero_point = zero_point_data[channel_ix];                             \
+      }                                                                        \
       apply_over_dim_list(                                                     \
           [input, out, _scale, _zero_point](size_t in_ix) {                    \
             out.mutable_data_ptr<CTYPE_OUT>()[in_ix] = static_cast<CTYPE_OUT>( \
@@ -276,15 +295,24 @@ Tensor& dequantize_per_channel_out(
     RuntimeContext& context,
     const Tensor& input,
     const Tensor& scale,
-    const Tensor& zero_point,
+    const optional<Tensor>& opt_zero_points,
     int64_t axis,
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   (void)context;
   return dequantize_per_channel_out(
-      input, scale, zero_point, axis, quant_min, quant_max, dtype, out);
+      input,
+      scale,
+      opt_zero_points,
+      axis,
+      quant_min,
+      quant_max,
+      dtype,
+      out_dtype,
+      out);
 }
 
 Tensor& dequantize_per_tensor_out(
@@ -295,12 +323,13 @@ Tensor& dequantize_per_tensor_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   (void)context;
   return dequantize_per_tensor_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out);
+      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
 }
 
 Tensor& dequantize_per_tensor_tensor_args_out(
@@ -311,12 +340,13 @@ Tensor& dequantize_per_tensor_tensor_args_out(
     int64_t quant_min,
     int64_t quant_max,
     ScalarType dtype,
+    exec_aten::optional<ScalarType> out_dtype,
     Tensor& out) {
   // TODO(larryliu): Add a context arg to the real op function and remove this
   // wrapper
   (void)context;
   return dequantize_per_tensor_tensor_args_out(
-      input, scale, zero_point, quant_min, quant_max, dtype, out);
+      input, scale, zero_point, quant_min, quant_max, dtype, out_dtype, out);
 }
 
 } // namespace native

@@ -23,10 +23,17 @@ Result<BufferCleanup> prepare_input_tensors(Method& method) {
   void** inputs = (void**)malloc(num_inputs * sizeof(void*));
 
   for (size_t i = 0; i < num_inputs; i++) {
+    auto tag = method_meta.input_tag(i);
+    if (!tag.ok()) {
+      return tag.error();
+    }
+    if (tag.get() != Tag::Tensor) {
+      ET_LOG(Debug, "Skipping non-tensor input %zu", i);
+      continue;
+    }
     Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(i);
     if (!tensor_meta.ok()) {
-      ET_LOG(Info, "Skipping non-tensor input %zu", i);
-      continue;
+      return tensor_meta.error();
     }
     // This input is a tensor. Allocate a buffer for it.
     void* data_ptr = malloc(tensor_meta->nbytes());

@@ -12,67 +12,130 @@ Please refer to fbcode/caffe2/executorch/backends/vulkan/serialization/schema/sc
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import List
-
-
-class VkDatatype(IntEnum):
-    vk_datatype_fp32 = 0
+from typing import List, Union
 
 
 @dataclass
-class Buffer:
-    storage: bytes
+class OperatorCall:
+    name: str
+    args: List[int]
+
+
+class VkDataType(IntEnum):
+    BOOL = 0
+    UINT8 = 1
+    INT8 = 2
+    INT32 = 3
+    FLOAT16 = 4
+    FLOAT32 = 5
+
+
+class VkStorageType(IntEnum):
+    BUFFER = 0
+    TEXTURE_3D = 1
+    TEXTURE_2D = 2
+    DEFAULT_STORAGE = 255
+
+
+class VkMemoryLayout(IntEnum):
+    TENSOR_WIDTH_PACKED = 0
+    TENSOR_HEIGHT_PACKED = 1
+    TENSOR_CHANNELS_PACKED = 2
+    DEFAULT_LAYOUT = 255
 
 
 @dataclass
 class VkTensor:
-    datatype: VkDatatype
+    datatype: VkDataType
     dims: List[int]
-    constant_buffer_idx: int
+    constant_id: int
     mem_obj_id: int
+    storage_type: VkStorageType = VkStorageType.DEFAULT_STORAGE
+    memory_layout: VkMemoryLayout = VkMemoryLayout.DEFAULT_LAYOUT
 
 
 @dataclass
-class VkScalar:
+class Null:
     pass
 
 
 @dataclass
+class Int:
+    int_val: int
+
+
+@dataclass
+class Bool:
+    bool_val: bool
+
+
+@dataclass
+class Double:
+    double_val: float
+
+
+@dataclass
+class IntList:
+    items: List[int]
+
+
+@dataclass
+class DoubleList:
+    items: List[float]
+
+
+@dataclass
+class BoolList:
+    items: List[bool]
+
+
+@dataclass
+class ValueList:
+    items: List[int]
+
+
+@dataclass
+class String:
+    string_val: str
+
+
+GraphTypes = Union[
+    Null,
+    Int,
+    Double,
+    Bool,
+    VkTensor,
+    IntList,
+    BoolList,
+    DoubleList,
+    ValueList,
+    String,
+]
+
+
+@dataclass
 class VkValue:
-    value: VkTensor
-
-
-class VkArithmeticOpType(IntEnum):
-    vk_arithmetic_op_type_add = 0
-    vk_arithmetic_op_type_sub = 1
-    vk_arithmetic_op_type_mul = 2
-    vk_arithmetic_op_type_div = 3
-    vk_arithmetic_op_type_floor_div = 4
-    vk_arithmetic_op_type_pow = 5
+    value: "GraphTypes"
 
 
 @dataclass
-class VkArithmeticNode:
-    input1_id: int
-    input2_id: int
-    output_id: int
-    op_type: VkArithmeticOpType
-    flags: int
-
-
-@dataclass
-class VkNode:
-    node: VkArithmeticNode
-    debug_handle: int
+class VkBytes:
+    offset: int
+    length: int
 
 
 @dataclass
 class VkGraph:
     version: str
-    vknodes: List[VkNode]
-    vkvalues: List[VkValue]
+
+    chain: List[OperatorCall]
+    values: List[VkValue]
 
     input_ids: List[int]
     output_ids: List[int]
 
-    constant_buffer: List[Buffer]
+    constants: List[VkBytes]
+    shaders: List[VkBytes]
+
+    storage_type_override: VkStorageType = VkStorageType.DEFAULT_STORAGE
+    memory_layout_override: VkMemoryLayout = VkMemoryLayout.DEFAULT_LAYOUT

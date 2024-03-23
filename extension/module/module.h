@@ -44,7 +44,8 @@ class Module final {
    */
   explicit Module(
       const std::string& file_path,
-      const MlockConfig mlock_config = MlockConfig::UseMlock);
+      const MlockConfig mlock_config = MlockConfig::UseMlock,
+      std::unique_ptr<EventTracer> event_tracer = nullptr);
 
   /**
    * Constructs an instance with the provided data loader and memory allocator.

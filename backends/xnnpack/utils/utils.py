@@ -17,7 +17,15 @@ from executorch.backends.xnnpack.utils.configs import (
 from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from torch._export.utils import get_buffer, get_param, is_buffer, is_param
+from torch._export.utils import (
+    get_buffer,
+    get_lifted_tensor_constant,
+    get_param,
+    is_buffer,
+    is_lifted_tensor_constant,
+    is_param,
+)
+
 
 ### XNNPACK Capture ###
 def capture_graph_for_xnnpack(
@@ -82,7 +90,10 @@ def is_get_attr_node(node: torch.fx.Node) -> bool:
 
 def is_param_node(exp_prog: ExportedProgram, node: torch.fx.Node) -> bool:
     return (
-        is_get_attr_node(node) or is_param(exp_prog, node) or is_buffer(exp_prog, node)
+        is_get_attr_node(node)
+        or is_param(exp_prog, node)
+        or is_buffer(exp_prog, node)
+        or is_lifted_tensor_constant(exp_prog, node)
     )
 
 
@@ -95,6 +106,8 @@ def get_param_tensor(
         return get_param(exp_prog, node)
     elif is_buffer(exp_prog, node):
         return get_buffer(exp_prog, node)
+    elif is_lifted_tensor_constant(exp_prog, node):
+        return get_lifted_tensor_constant(exp_prog, node)
     elif is_get_attr_node(node):
         # This is a hack to support both lifted and unlifted graph
         try:
@@ -102,3 +115,16 @@ def get_param_tensor(
         except AttributeError:
             return getattr(exp_prog.graph_module, node.target)
     raise RuntimeError(f"unsupported param type, {node.op}.")
+
+
+def get_source_fn(node: torch.fx.Node) -> Optional[torch.fx.Node]:
+    """
+    Returns the source fn of the given node, return None if something goes wrong
+    """
+    if (
+        node.op != "call_function"
+        or (source_fn_st := node.meta.get("source_fn_stack", None)) is None
+    ):
+        return None
+    source_fn = source_fn_st[-1]
+    return source_fn[1]

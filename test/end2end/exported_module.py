@@ -121,9 +121,11 @@ class ExportedModule:
         # Generate inputs to use while tracing.
         trace_inputs_method = "get_upper_bound_inputs"
         get_trace_inputs = get_inputs_adapter(
-            getattr(eager_module, trace_inputs_method)
-            if hasattr(eager_module, trace_inputs_method)
-            else eager_module.get_random_inputs,
+            (
+                getattr(eager_module, trace_inputs_method)
+                if hasattr(eager_module, trace_inputs_method)
+                else eager_module.get_random_inputs
+            ),
             # all exported methods must have the same signature so just pick the first one.
             methods[0],
         )
@@ -158,9 +160,11 @@ class ExportedModule:
             exported_methods[method_name] = export(
                 eager_module,
                 method_input,
-                dynamic_shapes=method_name_to_dynamic_shapes[method_name]
-                if method_name_to_dynamic_shapes
-                else None,
+                dynamic_shapes=(
+                    method_name_to_dynamic_shapes[method_name]
+                    if method_name_to_dynamic_shapes
+                    else None
+                ),
             )
 
         exec_prog = to_edge(

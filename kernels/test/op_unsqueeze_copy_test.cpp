@@ -23,107 +23,106 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_unsqueeze_copy_out(const Tensor& self, int64_t dim, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::unsqueeze_copy_outf(context, self, dim, out);
-}
-
-namespace {
-
-// generate size of output based on input size and dim to be unsqueezed on.
-std::vector<int32_t> generate_size_out(
-#ifdef USE_ATEN_LIB
-    const c10::IntArrayRef& size_in,
-#else
-    const exec_aten::ArrayRef<int32_t>& size_in,
-#endif
-    int64_t dim) {
-  std::vector<int32_t> size_out(size_in.size() + 1);
-
-  // Support python-style negative indexing.
-  if (dim < 0) {
-    // Since we do not have out.dim() directly, calculate it from the input.
-    dim += size_in.size() + 1;
+class OpUnsqueezeTest : public OperatorTest {
+ protected:
+  Tensor& op_unsqueeze_copy_out(const Tensor& self, int64_t dim, Tensor& out) {
+    return torch::executor::aten::unsqueeze_copy_outf(context_, self, dim, out);
   }
-  EXPECT_GE(dim, 0);
-  EXPECT_LT(dim, size_in.size() + 1);
 
-  for (int32_t i = 0; i <= size_in.size(); i++) {
-    if (i < dim) {
-      size_out[i] = size_in[i];
-    } else if (i > dim) {
-      size_out[i] = size_in[i - 1];
-    } else { // i == dim
-      size_out[dim] = 1;
+  template <class CTYPE, ScalarType DTYPE>
+  void run_unsqueeze_test_cases(
+      const Tensor& input,
+      const std::vector<int64_t>& dims) {
+    TensorFactory<DTYPE> tf;
+
+    // DEBUG
+    et_pal_init();
+
+    for (int64_t dim : dims) {
+      std::vector<int32_t> size_out = generate_size_out(input.sizes(), dim);
+      Tensor out = tf.ones(size_out);
+      Tensor ret = op_unsqueeze_copy_out(input, dim, out);
+
+      // The following is just a check against itself.
+      EXPECT_TENSOR_EQ(out, ret);
+      EXPECT_TENSOR_DATA_EQ(input, out);
     }
   }
 
-  return size_out;
-}
+  // test if op_unsqueeze_copy_out works well under all kinds of legal input
+  // type.
+  template <class CTYPE, ScalarType DTYPE>
+  void test_dtype() {
+    TensorFactory<DTYPE> tf;
+    Tensor input = tf.make(/*sizes=*/{2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
 
-template <class CTYPE, ScalarType DTYPE>
-void run_unsqueeze_test_cases(
-    const Tensor& input,
-    const std::vector<int64_t>& dims) {
-  TensorFactory<DTYPE> tf;
+    // All valid dims given the shape of the input
+    // Legal dim for unsqueeze should be in [-(input.dim()+1), input.dim()]
+    // Here input.dim == 2, so the range of legal dim for unsqueeze is [-3, 2]
+    std::vector<int64_t> dims = {-3, -2, -1, 0, 1, 2};
 
-  // DEBUG
-  et_pal_init();
-
-  for (int64_t dim : dims) {
-    std::vector<int32_t> size_out = generate_size_out(input.sizes(), dim);
-    Tensor out = tf.ones(size_out);
-    Tensor ret = op_unsqueeze_copy_out(input, dim, out);
-
-    // The following is just a check against itself.
-    EXPECT_TENSOR_EQ(out, ret);
-    EXPECT_TENSOR_DATA_EQ(input, out);
+    run_unsqueeze_test_cases<CTYPE, DTYPE>(input, dims);
   }
-}
 
-} // namespace
+  template <class CTYPE, ScalarType DTYPE>
+  void test_empty_input() {
+    TensorFactory<DTYPE> tf;
+    Tensor input = tf.make(/*sizes=*/{3, 0, 1, 2}, /*data=*/{});
+
+    // All valid dims given the shape of the input
+    // Legal dim for unsqueeze should be in [-(input.dim()+1), input.dim()]
+    // Here input.dim == 4, so the range of legal dim for unsqueeze is [-5, 4]
+    std::vector<int64_t> dims = {-5, -4, -3, -2, -1, 0, 1, 2, 3, 4};
+
+    run_unsqueeze_test_cases<CTYPE, DTYPE>(input, dims);
+  }
+
+  // generate size of output based on input size and dim to be unsqueezed on.
+  std::vector<int32_t> generate_size_out(
+#ifdef USE_ATEN_LIB
+      const c10::IntArrayRef& size_in,
+#else
+      const exec_aten::ArrayRef<int32_t>& size_in,
+#endif
+      int64_t dim) {
+    std::vector<int32_t> size_out(size_in.size() + 1);
+
+    // Support python-style negative indexing.
+    if (dim < 0) {
+      // Since we do not have out.dim() directly, calculate it from the input.
+      dim += size_in.size() + 1;
+    }
+    EXPECT_GE(dim, 0);
+    EXPECT_LT(dim, size_in.size() + 1);
+
+    for (int32_t i = 0; i <= size_in.size(); i++) {
+      if (i < dim) {
+        size_out[i] = size_in[i];
+      } else if (i > dim) {
+        size_out[i] = size_in[i - 1];
+      } else { // i == dim
+        size_out[dim] = 1;
+      }
+    }
+
+    return size_out;
+  }
+};
 
 // regular test for op_unsqueeze_copy_out
-// test if op_unsqueeze_copy_out works well under all kinds of legal input type.
-template <class CTYPE, ScalarType DTYPE>
-void test_dtype() {
-  TensorFactory<DTYPE> tf;
-  Tensor input = tf.make(/*sizes=*/{2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
-
-  // All valid dims given the shape of the input
-  // Legal dim for unsqueeze should be in [-(input.dim()+1), input.dim()]
-  // Here input.dim == 2, so the range of legal dim for unsqueeze is [-3, 2]
-  std::vector<int64_t> dims = {-3, -2, -1, 0, 1, 2};
-
-  run_unsqueeze_test_cases<CTYPE, DTYPE>(input, dims);
-}
-
-TEST(OpUnsqueezeTest, AllDtypesSupported) {
+TEST_F(OpUnsqueezeTest, AllDtypesSupported) {
 #define TEST_ENTRY(ctype, dtype) test_dtype<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-template <class CTYPE, ScalarType DTYPE>
-void test_empty_input() {
-  TensorFactory<DTYPE> tf;
-  Tensor input = tf.make(/*sizes=*/{3, 0, 1, 2}, /*data=*/{});
-
-  // All valid dims given the shape of the input
-  // Legal dim for unsqueeze should be in [-(input.dim()+1), input.dim()]
-  // Here input.dim == 4, so the range of legal dim for unsqueeze is [-5, 4]
-  std::vector<int64_t> dims = {-5, -4, -3, -2, -1, 0, 1, 2, 3, 4};
-
-  run_unsqueeze_test_cases<CTYPE, DTYPE>(input, dims);
-}
-
-TEST(OpUnsqueezeTest, EmptyInputSupported) {
+TEST_F(OpUnsqueezeTest, EmptyInputSupported) {
 #define TEST_ENTRY(ctype, dtype) test_empty_input<ctype, ScalarType::dtype>();
   ET_FORALL_REAL_TYPES_AND(Bool, TEST_ENTRY);
 #undef TEST_ENTRY
 }
 
-TEST(OpUnsqueezeTest, InputOutputMismatchedSizesDie) {
+TEST_F(OpUnsqueezeTest, InputOutputMismatchedSizesDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
   }
@@ -134,12 +133,12 @@ TEST(OpUnsqueezeTest, InputOutputMismatchedSizesDie) {
 
   // unsqueese input on dim 1 should get tensor(3, 1, 1, 2)
   Tensor out = tf.ones(/*sizes=*/{3, 1, 1, 1});
-  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
   out = tf.ones(/*sizes=*/{3, 1, 1, 2, 1});
-  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
 }
 
-TEST(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
+TEST_F(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel can handle mismatched sizes";
   }
@@ -149,20 +148,20 @@ TEST(OpUnsqueezeTest, DimOutputMismatchedSizesDie) {
   int64_t dim = 2;
 
   // The size of output should be [3,1,1,2], not [3,1,2,1], since dim=2 not 3
-  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
 }
 
-TEST(OpUnsqueezeTest, MismatchedTypesDie) {
+TEST_F(OpUnsqueezeTest, MismatchedTypesDie) {
   TensorFactory<ScalarType::Int> tf_in;
   TensorFactory<ScalarType::Double> tf_out;
   Tensor input = tf_in.make(/*sizes=*/{3, 1, 2}, /*data=*/{1, 2, 3, 4, 5, 6});
   Tensor out = tf_out.ones(/*sizes=*/{3, 1, 2, 1});
   int64_t dim = 3;
 
-  ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
 }
 
-TEST(OpUnsqueezeTest, DimOutOfRangeDies) {
+TEST_F(OpUnsqueezeTest, DimOutOfRangeDies) {
   TensorFactory<ScalarType::Int> tf;
   Tensor input = tf.make(/*sizes=*/{1, 1, 1}, /*data=*/{1});
   Tensor out = tf.ones(/*sizes=*/{1, 1, 1, 1});
@@ -178,12 +177,13 @@ TEST(OpUnsqueezeTest, DimOutOfRangeDies) {
   }
 
   for (auto dim : illegal_dims) {
-    ET_EXPECT_KERNEL_FAILURE(op_unsqueeze_copy_out(input, dim, out));
+    ET_LOG(Info, "Checking dim %ld", dim);
+    ET_EXPECT_KERNEL_FAILURE(context_, op_unsqueeze_copy_out(input, dim, out));
   }
 }
 
 #ifndef USE_ATEN_LIB
-TEST(OpUnsqueezeTest, UpperBoundOutTensor) {
+TEST_F(OpUnsqueezeTest, UpperBoundOutTensor) {
   TensorFactory<ScalarType::Float> tf;
   Tensor input = tf.make(/*sizes=*/{2, 4}, /*data=*/{0, 1, 1, 1, 0, 1, 0, 1});
   Tensor out =
@@ -229,7 +229,7 @@ opt_extra_params = "1,"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpUnsqueezeTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpUnsqueezeTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{2, 1, 4}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -263,7 +263,7 @@ TEST(OpUnsqueezeTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpUnsqueezeTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpUnsqueezeTest, DynamicShapeUpperBoundLargerThanExpected) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }
@@ -300,7 +300,7 @@ TEST(OpUnsqueezeTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpUnsqueezeTest, DynamicShapeUnbound) {
+TEST_F(OpUnsqueezeTest, DynamicShapeUnbound) {
   if (!torch::executor::testing::SupportedFeatures::get()->output_resize) {
     GTEST_SKIP() << "Dynamic shape not supported";
   }

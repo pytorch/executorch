@@ -42,7 +42,7 @@ def eval_upper_bound(maybe_symint: Union[int, torch.SymInt]) -> Optional[int]:
     var_range: ValueRanges = bound_sympy(expr, shape_env.var_to_range)
     upper_bound = var_range.upper
     if isinstance(upper_bound, sympy.Integer):
-        concrete_upper = int(var_range.upper)  # pyre-ignore
+        concrete_upper = int(var_range.upper)
         assert isinstance(
             concrete_upper, int
         ), f"Expect upper bound to be a concrete int but got {concrete_upper}"

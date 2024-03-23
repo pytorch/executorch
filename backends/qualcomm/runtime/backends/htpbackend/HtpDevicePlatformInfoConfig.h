@@ -7,8 +7,7 @@
  */
 #pragma once
 
-#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
-#include <executorch/backends/qualcomm/runtime/Utils.h>
+#include <executorch/backends/qualcomm/schema_generated.h>
 
 #include <memory>
 #include <vector>
@@ -17,13 +16,14 @@
 namespace torch {
 namespace executor {
 namespace qnn {
+using namespace qnn_delegate;
 class HtpDevicePlatformInfoConfig {
  public:
   explicit HtpDevicePlatformInfoConfig(
-      const QnnExecuTorchHtpBackendOptions& htp_options)
+      const QnnExecuTorchHtpBackendOptions* htp_options)
       : htp_options_(htp_options) {}
   std::vector<QnnDevice_PlatformInfo_t*> CreateDevicePlatformInfo(
-      const HtpInfo& qcom_target_soc_info);
+      const SocInfo* qcom_target_soc_info);
 
  private:
   QnnDevice_PlatformInfo_t* AllocDevicePlatformInfo() {
@@ -55,7 +55,7 @@ class HtpDevicePlatformInfoConfig {
     return htp_device_info_extension_.back().get();
   }
 
-  [[maybe_unused]] QnnExecuTorchHtpBackendOptions htp_options_;
+  [[maybe_unused]] const QnnExecuTorchHtpBackendOptions* htp_options_;
 
   std::vector<std::unique_ptr<QnnDevice_PlatformInfo_t>> htp_platform_info_;
   std::vector<std::unique_ptr<QnnDevice_HardwareDeviceInfo_t>>

@@ -50,9 +50,6 @@ def define_common_targets():
         ],
         visibility = [
             "//executorch/runtime/core/exec_aten/util/...",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:tag",
+            "//executorch/kernels/...",
         ],
     )

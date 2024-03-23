@@ -29,3 +29,17 @@ class MV2Model(EagerModelBase):
     def get_example_inputs(self):
         tensor_size = (1, 3, 224, 224)
         return (torch.randn(tensor_size),)
+
+
+class MV2UntrainedModel(EagerModelBase):
+    def __init__(self):
+        pass
+
+    def get_eager_model(self) -> torch.nn.Module:
+        # pyre-ignore
+        mv2 = mobilenet_v2()
+        return mv2
+
+    def get_example_inputs(self):
+        tensor_size = (1, 3, 224, 224)
+        return (torch.randn(tensor_size),)

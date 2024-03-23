@@ -23,26 +23,58 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_scalar_tensor_out(const Scalar& s, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::scalar_tensor_outf(context, s, out);
-}
+class OpScalarTensorOutTest : public OperatorTest {
+ protected:
+  Tensor& op_scalar_tensor_out(const Scalar& s, Tensor& out) {
+    return torch::executor::aten::scalar_tensor_outf(context_, s, out);
+  }
 
-template <typename CTYPE, ScalarType DTYPE>
-void test_scalar_tensor_out_0d(CTYPE value) {
-  TensorFactory<DTYPE> tf;
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_scalar_tensor_out_0d(CTYPE value) {
+    TensorFactory<DTYPE> tf;
 
-  std::vector<int32_t> sizes{};
-  Tensor expected = tf.make(sizes, /*data=*/{value});
+    std::vector<int32_t> sizes{};
+    Tensor expected = tf.make(sizes, /*data=*/{value});
 
-  Tensor out = tf.ones(sizes);
-  op_scalar_tensor_out(value, out);
+    Tensor out = tf.ones(sizes);
+    op_scalar_tensor_out(value, out);
 
-  EXPECT_TENSOR_EQ(out, expected);
-}
+    EXPECT_TENSOR_EQ(out, expected);
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_scalar_tensor_out_1d(CTYPE value) {
+    TensorFactory<DTYPE> tf;
+
+    std::vector<int32_t> sizes{1};
+    Tensor out = tf.ones(sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_scalar_tensor_out(value, out));
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_scalar_tensor_out_2d(CTYPE value) {
+    TensorFactory<DTYPE> tf;
+
+    std::vector<int32_t> sizes{1, 1};
+    Tensor out = tf.ones(sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_scalar_tensor_out(value, out));
+  }
+
+  template <typename CTYPE, ScalarType DTYPE>
+  void test_scalar_tensor_out_3d(CTYPE value) {
+    TensorFactory<DTYPE> tf;
+
+    std::vector<int32_t> sizes{1, 1, 1};
+    Tensor out = tf.ones(sizes);
+
+    ET_EXPECT_KERNEL_FAILURE(context_, op_scalar_tensor_out(value, out));
+  }
+};
 
 #define GENERATE_TEST_0D(ctype, dtype)                      \
-  TEST(OpScalarTensorOutKernelTest, dtype##TensorsDim0) {   \
+  TEST_F(OpScalarTensorOutTest, dtype##TensorsDim0) {       \
     test_scalar_tensor_out_0d<ctype, ScalarType::dtype>(4); \
     test_scalar_tensor_out_0d<ctype, ScalarType::dtype>(8); \
     test_scalar_tensor_out_0d<ctype, ScalarType::dtype>(9); \
@@ -50,38 +82,8 @@ void test_scalar_tensor_out_0d(CTYPE value) {
 
 ET_FORALL_REAL_TYPES(GENERATE_TEST_0D)
 
-template <typename CTYPE, ScalarType DTYPE>
-void test_scalar_tensor_out_1d(CTYPE value) {
-  TensorFactory<DTYPE> tf;
-
-  std::vector<int32_t> sizes{1};
-  Tensor out = tf.ones(sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(value, out));
-}
-
-template <typename CTYPE, ScalarType DTYPE>
-void test_scalar_tensor_out_2d(CTYPE value) {
-  TensorFactory<DTYPE> tf;
-
-  std::vector<int32_t> sizes{1, 1};
-  Tensor out = tf.ones(sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(value, out));
-}
-
-template <typename CTYPE, ScalarType DTYPE>
-void test_scalar_tensor_out_3d(CTYPE value) {
-  TensorFactory<DTYPE> tf;
-
-  std::vector<int32_t> sizes{1, 1, 1};
-  Tensor out = tf.ones(sizes);
-
-  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(value, out));
-}
-
 #define GENERATE_TEST(ctype, dtype)                                    \
-  TEST(OpScalarTensorOutKernelTest, dtype##Tensors) {                  \
+  TEST_F(OpScalarTensorOutTest, dtype##Tensors) {                      \
     if (torch::executor::testing::SupportedFeatures::get()->is_aten) { \
       GTEST_SKIP() << "ATen kernel resizes output to shape {}";        \
     }                                                                  \
@@ -98,7 +100,7 @@ void test_scalar_tensor_out_3d(CTYPE value) {
 
 ET_FORALL_REAL_TYPES(GENERATE_TEST)
 
-TEST(OpScalarTensorOutKernelTest, InvalidOutShapeFails) {
+TEST_F(OpScalarTensorOutTest, InvalidOutShapeFails) {
   if (torch::executor::testing::SupportedFeatures::get()->is_aten) {
     GTEST_SKIP() << "ATen kernel will reshape output";
   }
@@ -107,5 +109,5 @@ TEST(OpScalarTensorOutKernelTest, InvalidOutShapeFails) {
   std::vector<int32_t> sizes{1, 2, 1};
 
   Tensor out = tf.ones(sizes);
-  ET_EXPECT_KERNEL_FAILURE(op_scalar_tensor_out(7, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_scalar_tensor_out(7, out));
 }

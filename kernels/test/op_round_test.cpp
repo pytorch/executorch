@@ -20,68 +20,71 @@ using exec_aten::ScalarType;
 using exec_aten::Tensor;
 using torch::executor::testing::TensorFactory;
 
-Tensor& op_round_out(const Tensor& self, Tensor& out) {
-  exec_aten::RuntimeContext context{};
-  return torch::executor::aten::round_outf(context, self, out);
-}
+class OpRoundTest : public OperatorTest {
+ protected:
+  Tensor& op_round_out(const Tensor& self, Tensor& out) {
+    return torch::executor::aten::round_outf(context_, self, out);
+  }
 
-// Common testing for round on two floating point Tensors.
-template <ScalarType DTYPE>
-void test_round_execution_floats() {
-  TensorFactory<DTYPE> tf;
+  // Common testing for round on two floating point Tensors.
+  template <ScalarType DTYPE>
+  void test_round_execution_floats() {
+    TensorFactory<DTYPE> tf;
 
-  const std::vector<int32_t> sizes = {11};
+    const std::vector<int32_t> sizes = {11};
 
-  Tensor in = tf.make(
-      sizes, /*data=*/{1.5, -1.5, 0, 1.5, 2.5, 3.5, 4.5, 1.4, -1.4, 1.7, -1.7});
+    Tensor in = tf.make(
+        sizes,
+        /*data=*/{1.5, -1.5, 0, 1.5, 2.5, 3.5, 4.5, 1.4, -1.4, 1.7, -1.7});
 
-  // Destination for the round.
-  Tensor out = tf.zeros(sizes);
+    // Destination for the round.
+    Tensor out = tf.zeros(sizes);
 
-  // Run round.
-  op_round_out(in, out);
+    // Run round.
+    op_round_out(in, out);
 
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_EQ(
-      out,
-      tf.make(
-          sizes,
-          /*data=*/
-          {2.0, -2.0, 0.0, 2.0, 2.0, 4.0, 4.0, 1.0, -1.0, 2.0, -2.0}));
-}
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(
+        out,
+        tf.make(
+            sizes,
+            /*data=*/
+            {2.0, -2.0, 0.0, 2.0, 2.0, 4.0, 4.0, 1.0, -1.0, 2.0, -2.0}));
+  }
 
-template <ScalarType DTYPE>
-void test_round_execution_ints() {
-  TensorFactory<DTYPE> tf;
+  template <ScalarType DTYPE>
+  void test_round_execution_ints() {
+    TensorFactory<DTYPE> tf;
 
-  const std::vector<int32_t> sizes = {6};
+    const std::vector<int32_t> sizes = {6};
 
-  Tensor in = tf.make(sizes, /*data=*/{-1, 2, 0, 3, 0, -5});
+    Tensor in = tf.make(sizes, /*data=*/{-1, 2, 0, 3, 0, -5});
 
-  // Destination for the round.
-  Tensor out = tf.zeros(sizes);
+    // Destination for the round.
+    Tensor out = tf.zeros(sizes);
 
-  // Run round.
-  op_round_out(in, out);
+    // Run round.
+    op_round_out(in, out);
 
-  // Check that it matches the expected output.
-  EXPECT_TENSOR_EQ(
-      out,
-      tf.make(
-          sizes,
-          /*data=*/
-          {-1, 2, 0, 3, 0, -5}));
-}
+    // Check that it matches the expected output.
+    EXPECT_TENSOR_EQ(
+        out,
+        tf.make(
+            sizes,
+            /*data=*/
+            {-1, 2, 0, 3, 0, -5}));
+  }
+};
 
-TEST(OpRoundKernelTest, FloatTensors) {
+TEST_F(OpRoundTest, FloatTensors) {
   test_round_execution_floats<ScalarType::Float>();
 }
 
-TEST(OpRoundKernelTest, DoubleTensors) {
+TEST_F(OpRoundTest, DoubleTensors) {
   test_round_execution_floats<ScalarType::Double>();
 }
 
-TEST(OpRoundKernelTest, ByteTensors) {
+TEST_F(OpRoundTest, ByteTensors) {
   TensorFactory<ScalarType::Byte> tf;
 
   const std::vector<int32_t> sizes = {6};
@@ -103,23 +106,23 @@ TEST(OpRoundKernelTest, ByteTensors) {
           {1, 2, 0, 3, 0, 5}));
 }
 
-TEST(OpRoundKernelTest, CharTensors) {
+TEST_F(OpRoundTest, CharTensors) {
   test_round_execution_ints<ScalarType::Char>();
 }
 
-TEST(OpRoundKernelTest, ShortTensors) {
+TEST_F(OpRoundTest, ShortTensors) {
   test_round_execution_ints<ScalarType::Short>();
 }
 
-TEST(OpRoundKernelTest, IntTensors) {
+TEST_F(OpRoundTest, IntTensors) {
   test_round_execution_ints<ScalarType::Int>();
 }
 
-TEST(OpRoundKernelTest, LongTensors) {
+TEST_F(OpRoundTest, LongTensors) {
   test_round_execution_ints<ScalarType::Long>();
 }
 
-TEST(OpRoundKernelTest, InfAndNanPreserved) {
+TEST_F(OpRoundTest, InfAndNanPreserved) {
   TensorFactory<ScalarType::Float> tf;
 
   const std::vector<int32_t> sizes = {7};
@@ -150,7 +153,7 @@ TEST(OpRoundKernelTest, InfAndNanPreserved) {
            0.0}));
 }
 
-TEST(OpRoundKernelTest, UnhandledDtypeDies) {
+TEST_F(OpRoundTest, UnhandledDtypeDies) {
   // round() doesn't handle Bool.
   TensorFactory<ScalarType::Bool> tf;
 
@@ -161,7 +164,7 @@ TEST(OpRoundKernelTest, UnhandledDtypeDies) {
   // Destination for the round.
   Tensor out = tf.zeros(sizes);
 
-  ET_EXPECT_KERNEL_FAILURE(op_round_out(a, out));
+  ET_EXPECT_KERNEL_FAILURE(context_, op_round_out(a, out));
 }
 
 /* %python
@@ -173,7 +176,7 @@ op = "op_round_out"
 dtype = "ScalarType::Float"
 check = "EXPECT_TENSOR_EQ" */
 
-TEST(OpRoundKernelTest, DynamicShapeUpperBoundSameAsExpected) {
+TEST_F(OpRoundTest, DynamicShapeUpperBoundSameAsExpected) {
   /* %python
   out_args = "{3, 2}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -196,7 +199,7 @@ TEST(OpRoundKernelTest, DynamicShapeUpperBoundSameAsExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpRoundKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
+TEST_F(OpRoundTest, DynamicShapeUpperBoundLargerThanExpected) {
   /* %python
   out_args = "{10, 10}, torch::executor::TensorShapeDynamism::DYNAMIC_BOUND"
   %rewrite(unary_op) */
@@ -219,7 +222,7 @@ TEST(OpRoundKernelTest, DynamicShapeUpperBoundLargerThanExpected) {
   EXPECT_TENSOR_EQ(out, expected);
 }
 
-TEST(OpRoundKernelTest, DynamicShapeUnbound) {
+TEST_F(OpRoundTest, DynamicShapeUnbound) {
   GTEST_SKIP() << "Dynamic shape unbound not supported";
   /* %python
   out_args = "{1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND"

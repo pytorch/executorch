@@ -404,6 +404,10 @@ std::tuple<CTYPE_OUT, long> map_reduce_over_dim(
   CTYPE_OUT acc_val = map_fun(in_data[init_index]);
   long acc_ix = 0;
 
+  if (in.numel() == 1) {
+    return std::tuple<CTYPE_OUT, long>{acc_val, acc_ix};
+  }
+
   apply_over_dim(
       [&acc_val, &acc_ix, reduce_fun, map_fun, in_data](
           const size_t in_ix, const size_t dim_ix) {
@@ -468,6 +472,10 @@ CTYPE_OUT map_reduce_over_dim_list(
 
   const CTYPE_IN* const in_data = in.const_data_ptr<CTYPE_IN>();
   CTYPE_OUT acc_val = map_fun(in_data[init_index]);
+
+  if (in.numel() == 1) {
+    return acc_val;
+  }
 
   apply_over_dim_list(
       [&acc_val, reduce_fun, map_fun, in_data](const size_t in_ix) {
@@ -609,7 +617,8 @@ bool check_reduction_args_single_dim(
     optional<int64_t> dim,
     bool keepdim,
     optional<ScalarType> dtype,
-    Tensor& out);
+    Tensor& out,
+    bool allow_empty_dim = false);
 
 bool check_mean_dim_args(
     const Tensor& in,

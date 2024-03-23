@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+from executorch.exir.program._fake_program import get_fake_program
 from executorch.exir.program._program import (
     _to_edge,
     edge_to_executorch_passes,
@@ -13,9 +14,6 @@ from executorch.exir.program._program import (
     ExecutorchProgram,
     ExecutorchProgramManager,
     ExirExportedProgram,
-    multi_method_program_to_executorch,
-    MultiMethodExecutorchProgram,
-    MultiMethodExirExportedProgram,
     to_edge,
 )
 
@@ -25,9 +23,8 @@ __all__ = [
     "_to_edge",
     "to_edge",
     "edge_to_executorch_passes",
-    "MultiMethodExirExportedProgram",
-    "MultiMethodExecutorchProgram",
-    "multi_method_program_to_executorch",
     "EdgeProgramManager",
     "ExecutorchProgramManager",
+    "get_fake_program",
+    "get_real_program",
 ]

@@ -16,9 +16,19 @@ QNN_uint16 = "uint16"
 
 
 @dataclass(init=False, frozen=True)
-class OpTranspose:
-    op_name: str = "Transpose"
-    param_perm: str = "perm"
+class OpBatchnorm:
+    op_name: str = "Batchnorm"
+
+
+@dataclass(init=False, frozen=True)
+class OpCast:
+    op_name: str = "Cast"
+
+
+@dataclass(init=False, frozen=True)
+class OpConcat:
+    op_name: str = "Concat"
+    param_axis: str = "axis"
 
 
 @dataclass(init=False, frozen=True)
@@ -31,6 +41,18 @@ class OpConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpDepthToSpace:
+    op_name: str = "DepthToSpace"
+    param_block_size: str = "block_size"
+    param_mode: str = "mode"
+
+    @unique
+    class Mode(IntEnum):
+        DCR = 0
+        CRD = 1
+
+
+@dataclass(init=False, frozen=True)
 class OpDepthWiseConv2d:
     op_name: str = "DepthWiseConv2d"
     param_stride: str = "stride"
@@ -39,23 +61,13 @@ class OpDepthWiseConv2d:
 
 
 @dataclass(init=False, frozen=True)
+class OpDequantize:
+    op_name: str = "Dequantize"
+
+
+@dataclass(init=False, frozen=True)
 class OpElementWiseAdd:
     op_name: str = "ElementWiseAdd"
-
-
-@dataclass(init=False, frozen=True)
-class OpElementWiseMultiply:
-    op_name: str = "ElementWiseMultiply"
-
-
-@dataclass(init=False, frozen=True)
-class OpElementWiseSubtract:
-    op_name = "ElementWiseSubtract"
-
-
-@dataclass(init=False, frozen=True)
-class OpElementWiseDivide:
-    op_name: str = "ElementWiseDivide"
 
 
 @dataclass(init=False, frozen=True)
@@ -64,48 +76,28 @@ class OpElementWiseCeil:
 
 
 @dataclass(init=False, frozen=True)
-class OpRelu:
-    op_name: str = "Relu"
+class OpElementWiseDivide:
+    op_name: str = "ElementWiseDivide"
 
 
 @dataclass(init=False, frozen=True)
-class OpReluMinMax:
-    op_name: str = "ReluMinMax"
-    param_min_value: str = "min_value"
-    param_max_value: str = "max_value"
+class OpElementWiseMultiply:
+    op_name: str = "ElementWiseMultiply"
 
 
 @dataclass(init=False, frozen=True)
-class OpReduceMean:
-    op_name: str = "ReduceMean"
-    param_axes: str = "axes"
-    param_keep_dims: str = "keep_dims"
+class OpElementWisePower:
+    op_name: str = "ElementWisePower"
 
 
 @dataclass(init=False, frozen=True)
-class OpFullyConnected:
-    op_name: str = "FullyConnected"
-    param_keep_dims: str = "keep_dims"
+class OpElementWiseRsqrt:
+    op_name: str = "ElementWiseRsqrt"
 
 
 @dataclass(init=False, frozen=True)
-class OpBatchnorm:
-    op_name: str = "Batchnorm"
-
-
-@dataclass(init=False, frozen=True)
-class OpReshape:
-    op_name: str = "Reshape"
-
-
-@dataclass(init=False, frozen=True)
-class OpStridedSlice:
-    op_name: str = "StridedSlice"
-    param_ranges: str = "ranges"
-    param_begin_mask: str = "begin_mask"
-    param_end_mask: str = "end_mask"
-    param_shrink_axes: str = "shrink_axes"
-    param_new_axes_mask: str = "new_axes_mask"
+class OpElementWiseSubtract:
+    op_name = "ElementWiseSubtract"
 
 
 @dataclass(init=False, frozen=True)
@@ -115,67 +107,32 @@ class OpExpandDims:
 
 
 @dataclass(init=False, frozen=True)
-class OpConcat:
-    op_name: str = "Concat"
+class OpFullyConnected:
+    op_name: str = "FullyConnected"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpGather:
+    op_name: str = "Gather"
     param_axis: str = "axis"
 
 
 @dataclass(init=False, frozen=True)
-class OpPoolMax2d:
-    op_name: str = "PoolMax2d"
-    param_filter_size: str = "filter_size"
-    param_stride: str = "stride"
-    param_pad_amount: str = "pad_amount"
-    param_rounding_mode: str = "rounding_mode"
-
-    @unique
-    class RoundingMode(IntEnum):
-        FLOOR = 0
-        CEIL = 1
+class OpGelu:
+    op_name: str = "Gelu"
 
 
 @dataclass(init=False, frozen=True)
-class OpPoolAvg2d:
-    op_name: str = "PoolAvg2d"
-    param_filter_size: str = "filter_size"
-    param_stride: str = "stride"
-    param_pad_amount: str = "pad_amount"
-    param_count_pad_for_edges: str = "count_pad_for_edges"
-    param_rounding_mode: str = "rounding_mode"
-
-    @unique
-    class RoundingMode(IntEnum):
-        FLOOR = 0
-        CEIL = 1
+class OpHardSwish:
+    op_name: str = "HardSwish"
 
 
 @dataclass(init=False, frozen=True)
-class OpQuantize:
-    op_name: str = "Quantize"
-
-
-@dataclass(init=False, frozen=True)
-class OpDequantize:
-    op_name: str = "Dequantize"
-
-
-@dataclass(init=False, frozen=True)
-class OpCast:
-    op_name: str = "Cast"
-
-
-@dataclass(init=False, frozen=True)
-class OpResizeBilinear:
-    op_name: str = "ResizeBilinear"
-    param_align_corners: str = "align_corners"
-    param_half_pixel_centers: str = "half_pixel_centers"
-
-
-@dataclass(init=False, frozen=True)
-class OpSoftmax:
-    op_name: str = "Softmax"
-    param_axis: str = "axis"
-    param_beta: str = "beta"
+class OpLayerNorm:
+    op_name: str = "LayerNorm"
+    param_epsilon = "epsilon"
+    param_axes = "axes"
 
 
 @dataclass(init=False, frozen=True)
@@ -183,6 +140,19 @@ class OpLogSoftmax:
     op_name: str = "LogSoftmax"
     param_axis: str = "axis"
     param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpMatMul:
+    op_name: str = "MatMul"
+    param_transpose_in0: str = "transpose_in0"
+    param_transpose_in1: str = "transpose_in1"
+
+
+@dataclass(init=False, frozen=True)
+class OpPack:
+    op_name: str = "Pack"
+    param_axis: str = "axis"
 
 
 @dataclass(init=False, frozen=True)
@@ -201,16 +171,100 @@ class OpPad:
 
 
 @dataclass(init=False, frozen=True)
-class OpMatMul:
-    op_name: str = "MatMul"
-    param_transpose_in0: str = "transpose_in0"
-    param_transpose_in1: str = "transpose_in1"
+class OpPoolAvg2d:
+    op_name: str = "PoolAvg2d"
+    param_filter_size: str = "filter_size"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_count_pad_for_edges: str = "count_pad_for_edges"
+    param_rounding_mode: str = "rounding_mode"
+
+    @unique
+    class RoundingMode(IntEnum):
+        FLOOR = 0
+        CEIL = 1
 
 
 @dataclass(init=False, frozen=True)
-class OpGather:
-    op_name: str = "Gather"
+class OpPoolMax2d:
+    op_name: str = "PoolMax2d"
+    param_filter_size: str = "filter_size"
+    param_stride: str = "stride"
+    param_pad_amount: str = "pad_amount"
+    param_rounding_mode: str = "rounding_mode"
+
+    @unique
+    class RoundingMode(IntEnum):
+        FLOOR = 0
+        CEIL = 1
+
+
+@dataclass(init=False, frozen=True)
+class OpQuantize:
+    op_name: str = "Quantize"
+
+
+@dataclass(init=False, frozen=True)
+class OpReduceMean:
+    op_name: str = "ReduceMean"
+    param_axes: str = "axes"
+    param_keep_dims: str = "keep_dims"
+
+
+@dataclass(init=False, frozen=True)
+class OpRelu:
+    op_name: str = "Relu"
+
+
+@dataclass(init=False, frozen=True)
+class OpReluMinMax:
+    op_name: str = "ReluMinMax"
+    param_min_value: str = "min_value"
+    param_max_value: str = "max_value"
+
+
+@dataclass(init=False, frozen=True)
+class OpReshape:
+    op_name: str = "Reshape"
+
+
+@dataclass(init=False, frozen=True)
+class OpResizeBilinear:
+    op_name: str = "ResizeBilinear"
+    param_align_corners: str = "align_corners"
+    param_half_pixel_centers: str = "half_pixel_centers"
+
+
+@dataclass(init=False, frozen=True)
+class OpSigmoid:
+    op_name: str = "Sigmoid"
+
+
+@dataclass(init=False, frozen=True)
+class OpSoftmax:
+    op_name: str = "Softmax"
     param_axis: str = "axis"
+    param_beta: str = "beta"
+
+
+@dataclass(init=False, frozen=True)
+class OpSqueeze:
+    op_name: str = "Squeeze"
+
+
+@dataclass(init=False, frozen=True)
+class OpStridedSlice:
+    op_name: str = "StridedSlice"
+    param_ranges: str = "ranges"
+    param_begin_mask: str = "begin_mask"
+    param_end_mask: str = "end_mask"
+    param_shrink_axes: str = "shrink_axes"
+    param_new_axes_mask: str = "new_axes_mask"
+
+
+@dataclass(init=False, frozen=True)
+class OpTanh:
+    op_name: str = "Tanh"
 
 
 @dataclass(init=False, frozen=True)
@@ -220,39 +274,6 @@ class OpTile:
 
 
 @dataclass(init=False, frozen=True)
-class OpHardSwish:
-    op_name: str = "HardSwish"
-
-
-@dataclass(init=False, frozen=True)
-class OpDepthToSpace:
-    op_name: str = "DepthToSpace"
-    param_block_size: str = "block_size"
-    param_mode: str = "mode"
-
-    @unique
-    class Mode(IntEnum):
-        DCR = 0
-        CRD = 1
-
-
-@dataclass(init=False, frozen=True)
-class OpTanh:
-    op_name: str = "Tanh"
-
-
-@dataclass(init=False, frozen=True)
-class OpLayerNorm:
-    op_name: str = "LayerNorm"
-    param_epsilon = "epsilon"
-    param_axes = "axes"
-
-
-@dataclass(init=False, frozen=True)
-class OpGelu:
-    op_name: str = "Gelu"
-
-
-@dataclass(init=False, frozen=True)
-class OpSqueeze:
-    op_name: str = "Squeeze"
+class OpTranspose:
+    op_name: str = "Transpose"
+    param_perm: str = "perm"

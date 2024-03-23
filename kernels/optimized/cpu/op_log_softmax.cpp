@@ -132,10 +132,17 @@ Tensor& opt_log_softmax_out(
     Tensor& out) {
   (void)context;
 
-  check_log_softmax_args(self, dim, half_to_float, out);
+  ET_KERNEL_CHECK(
+      context,
+      check_log_softmax_args(self, dim, half_to_float, out),
+      InvalidArgument,
+      out);
 
   ET_KERNEL_CHECK(
-      ctx, resize_tensor(out, self.sizes()) == Error::Ok, InvalidArgument, out);
+      context,
+      resize_tensor(out, self.sizes()) == Error::Ok,
+      InvalidArgument,
+      out);
 
   dim = dim < 0 ? dim + nonzero_dim(self) : dim;
 

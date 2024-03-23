@@ -15,6 +15,7 @@
 		C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51632ACFCBC500AF47FD /* CoreML.framework */; };
 		C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51652ACFCBCB00AF47FD /* Accelerate.framework */; };
 		C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */; };
+		C988D69D2B998CDE00979CF6 /* libprotobuf-lite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -39,6 +40,7 @@
 		C94D51632ACFCBC500AF47FD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		C94D51652ACFCBCB00AF47FD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoremldelegate.a; path = libraries/libcoremldelegate.a; sourceTree = "<group>"; };
+		C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libprotobuf-lite.a"; path = "libraries/libprotobuf-lite.a"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -50,6 +52,7 @@
 				38626BB42B225A560059413D /* libflatccrt.a in Frameworks */,
 				C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */,
 				C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */,
+				C988D69D2B998CDE00979CF6 /* libprotobuf-lite.a in Frameworks */,
 				C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */,
 				C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */,
@@ -79,6 +82,7 @@
 		C94D51602ACFCBBA00AF47FD /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */,
 				38626BB32B225A560059413D /* libflatccrt.a */,
 				38626BAF2B21C98F0059413D /* libetdump.a */,
 				C94D51652ACFCBCB00AF47FD /* Accelerate.framework */,

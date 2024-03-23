@@ -1,4 +1,4 @@
-# Copyright 2023 Arm Limited and/or its affiliates.
+# Copyright 2023-2024 Arm Limited and/or its affiliates.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
@@ -22,6 +22,16 @@ class BatchNormVisitor(NodeVisitor):
     def __init__(self, *args):
         super().__init__(*args)
 
+    # For BatchNorm2D, mean and var are calculated over the channel dimension
+    # But TOSA doesn't allow subtraction of inputs with different ranks
+    # Need to augment the shapes to match the ranks with activations
+    def augment_shape_rank(self, input, permute_memory_to_nhwc):
+        return (
+            (1, 1, 1) + input.shape
+            if permute_memory_to_nhwc
+            else ((1,) + input.shape + (1, 1))
+        )
+
     def define_node(
         self,
         node: torch.fx.Node,
@@ -29,12 +39,12 @@ class BatchNormVisitor(NodeVisitor):
         inputs: List[TosaArg],
         output: TosaArg,
         is_quant_node: bool,
+        permute_memory_to_nhwc: bool,
     ) -> None:
         # Decompose batch norm into sequence
         (activations, _, _, running_mean, running_var, momentum, epsilon) = inputs
 
         input_dtype = activations.dtype
-        input_shape = activations.shape
 
         assert (
             0.1 == momentum.number
@@ -49,11 +59,14 @@ class BatchNormVisitor(NodeVisitor):
 
         # Reshape mean to match rank of activations
         mean_reshaped_res = promote_shape(
-            tosa_graph, running_mean, (1,) + running_mean.shape + (1, 1), input_dtype
+            tosa_graph,
+            running_mean,
+            self.augment_shape_rank(running_mean, permute_memory_to_nhwc),
+            input_dtype,
         )
 
         # Subtract mean
-        int1 = tosa_graph.addIntermediate(input_shape, input_dtype)
+        int1 = tosa_graph.addIntermediate(output.shape, input_dtype)
         tosa_graph.addOperator(
             TosaOp.Op().SUB,
             [activations.name, mean_reshaped_res.name],
@@ -73,14 +86,16 @@ class BatchNormVisitor(NodeVisitor):
 
         # Reshape variable to match rank of activations
         var_reshaped_res = promote_shape(
-            tosa_graph, int3, (1,) + running_var.shape + (1, 1), input_dtype
+            tosa_graph,
+            int3,
+            self.augment_shape_rank(running_var, permute_memory_to_nhwc),
+            input_dtype,
         )
 
         attr_mul = ts.TosaSerializerAttribute()
         attr_mul.MulAttribute(0)
 
         # Multiple shifted activations with reciprocal variance
-        # int4 = tosa_fb.addIntermediate( input_shape, input_dtype )
         tosa_graph.addOperator(
             TosaOp.Op().MUL, [int1.name, var_reshaped_res.name], [output.name], attr_mul
         )

@@ -33,7 +33,7 @@ class QnnContext {
   virtual ~QnnContext();
   Error Configure();
 
-  Qnn_ContextHandle_t GetHandle() {
+  Qnn_ContextHandle_t GetHandle() const {
     return handle_;
   }
 
@@ -56,6 +56,9 @@ class QnnContext {
 
  protected:
   virtual Error MakeConfig(std::vector<const QnnContext_Config_t*>& config) {
+    return Error::Ok;
+  };
+  virtual Error AfterConfigure() {
     return Error::Ok;
   };
 

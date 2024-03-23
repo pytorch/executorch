@@ -1,5 +1,13 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
+def _get_operator_lib(aten = False):
+    if aten:
+        return ["//executorch/kernels/aten:generated_lib_aten"]
+    elif runtime.is_oss:
+        return ["//executorch/kernels/portable:generated_lib"]
+    else:
+        return ["//executorch/configurations:optimized_native_cpu_ops", "//executorch/examples/models/llama2/custom_ops:custom_ops", "//executorch/examples/models/llama2/ops:generated_lib"]
+
 def define_common_targets():
     for aten in (True, False):
         aten_suffix = "_aten" if aten else ""
@@ -27,9 +35,12 @@ def define_common_targets():
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
-                "//executorch/kernels/portable:" + ("generated_lib_aten" if aten else "generated_lib_all_ops"),
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-            ],
+            ] + (_get_operator_lib(aten)) + ([
+                # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
+                # Therefore enable it explicitly for now to avoid failing tests
+                "//executorch/backends/vulkan:vulkan_backend_lib",
+            ] if native.read_config("llama", "use_vulkan", "0") == "1" else []),
             external_deps = [
                 "libtorch",
             ] if aten else [],

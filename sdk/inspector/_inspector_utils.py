@@ -174,7 +174,7 @@ def verify_debug_data_equivalence(
         new_data
     ), "Unequal debug data length encountered. Expected to be equal."
 
-    for (output_a, output_b) in zip(existing_data, new_data):
+    for output_a, output_b in zip(existing_data, new_data):
         assert isinstance(
             output_a, type(output_b)
         ), "Debug Data Types are different. Expected to be equal."

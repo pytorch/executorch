@@ -77,6 +77,26 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
   add_definitions(-DET_LOG_ENABLED=0)
 endif()
 
+# Configure log level. Must be one of debug, info, error, fatal.
+set(EXECUTORCH_LOG_LEVEL
+    "Info"
+    CACHE STRING "Build with the given ET_MIN_LOG_LEVEL value")
+string(TOLOWER "${EXECUTORCH_LOG_LEVEL}" LOG_LEVEL_LOWER)
+if(LOG_LEVEL_LOWER STREQUAL "debug")
+  add_definitions(-DET_MIN_LOG_LEVEL=Debug)
+elseif(LOG_LEVEL_LOWER STREQUAL "info")
+  add_definitions(-DET_MIN_LOG_LEVEL=Info)
+elseif(LOG_LEVEL_LOWER STREQUAL "error")
+  add_definitions(-DET_MIN_LOG_LEVEL=Error)
+elseif(LOG_LEVEL_LOWER STREQUAL "fatal")
+  add_definitions(-DET_MIN_LOG_LEVEL=Fatal)
+else()
+  message(
+    SEND_ERROR
+      "Unknown log level \"${EXECUTORCH_LOG_LEVEL}\". Expected one of Debug, "
+      + "Info, Error, or Fatal.")
+endif()
+
 option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
        "Build with ET_ENABLE_PROGRAM_VERIFICATION"
        ${_default_release_disabled_options})
@@ -87,52 +107,66 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
-option(EXECUTORCH_ENABLE_EVENT_TRACER
-       "Build with ET_EVENT_TRACER_ENABLED=ON"
+option(EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED=ON"
        OFF)
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-# -O2: Moderate opt. -ffunction-sections -fdata-sections: breaks function and
-# data into sections so they can be properly gc'd. -s: strip symbol.
-# -fno-exceptions -fno-rtti: disables exceptions and runtime type.
+# -ffunction-sections -fdata-sections: breaks function and data into sections so
+# they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
+# disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
-    "-O2 -ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
+    "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
   set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
 endif()
+
+option(OPTIMIZE_SIZE "Build executorch runtime optimizing for binary size" OFF)
+if(OPTIMIZE_SIZE)
+  # -Os: Optimize for size
+  set(CMAKE_CXX_FLAGS_RELEASE "-Os ${CMAKE_CXX_FLAGS_RELEASE}")
+else()
+  # -O2: Moderate opt.
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 ${CMAKE_CXX_FLAGS_RELEASE}")
+endif()
+
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
-# Option to register quantized ops with quantized kernels. See
-# kernels/quantized/CMakeLists.txt
-option(REGISTER_QUANTIZED_OPS
-       "Register quantized ops defined in kernels/quantized/" OFF)
+option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
-option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
+option(EXECUTORCH_BUILD_ARM_BAREMETAL
+       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 
-# Build xnn_executor_runner which depends on XNNPACK
-option(EXECUTORCH_BUILD_XNNPACK
-       "Build xnn_executor_runner which depends on XNNPACK" OFF)
+option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_SDK
-       "Build the ExecuTorch SDK library and the SDK example runner.")
+option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT Util extension" OFF)
 
-# Build mps_executor_runner which depends on MPSGraph framework
-option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
-# Build dataloader extension library
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-       "Build the extension/data_loader directory" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
-# Build module extension library
-option(EXECUTORCH_BUILD_EXTENSION_MODULE
-       "Build the extension/module directory" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
+       OFF)
 
-# Build the runner_util extension library
-option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
-       "Build the extension/runner_util directory" OFF)
+option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
+
+option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
+
+option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
+
+option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
+
+option(REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
+
+option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
+
+option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
+
+option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
+
+option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -188,6 +222,13 @@ else()
   set(CMAKE_TOOLCHAIN_IOS OFF)
 endif()
 
+# Detect if an Android toolchain is set.
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*android\.toolchain\.cmake$")
+  set(CMAKE_TOOLCHAIN_ANDROID ON)
+else()
+  set(CMAKE_TOOLCHAIN_ANDROID OFF)
+endif()
+
 # EXECUTORCH_BUILD_HOST_TARGETS: Option to control the building of host-only
 # tools like `flatc`, along with example executables like `executor_runner` and
 # libraries that it uses, like `gflags`. Disabling this can be helpful when
@@ -211,11 +252,21 @@ if(EXECUTORCH_BUILD_FLATC)
     )
   endif()
   set(FLATC_EXECUTABLE flatc)
-  option(FLATBUFFERS_BUILD_FLATC "" ON)
-  option(FLATBUFFERS_BUILD_FLATHASH "" OFF)
-  option(FLATBUFFERS_BUILD_FLATLIB "" OFF)
-  option(FLATBUFFERS_BUILD_TESTS "" OFF)
-  option(FLATBUFFERS_INSTALL "" OFF)
+  set(FLATBUFFERS_BUILD_FLATC
+      ON
+      CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATHASH
+      OFF
+      CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATLIB
+      OFF
+      CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_TESTS
+      OFF
+      CACHE BOOL "")
+  set(FLATBUFFERS_INSTALL
+      OFF
+      CACHE BOOL "")
   add_subdirectory(third-party/flatbuffers)
 endif()
 if(NOT FLATC_EXECUTABLE)
@@ -262,6 +313,13 @@ endif()
 # operators necessary for the models that will run.
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
+
+if(REGISTER_QUANTIZED_OPS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
+endif()
 
 #
 # gflags: Commandline flag host library.
@@ -289,11 +347,10 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch portable_ops_lib gflags)
+  set(_executor_runner_libs executorch optimized_native_cpu_ops_lib gflags)
 
   # Generate lib to register quantized ops
   if(REGISTER_QUANTIZED_OPS)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
@@ -305,9 +362,9 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-# Add Android JNI subdirectory
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
+# Add googletest if any test targets should be built
+if(EXECUTORCH_BUILD_GTESTS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
 endif()
 
 if(EXECUTORCH_BUILD_SDK)
@@ -315,6 +372,10 @@ if(EXECUTORCH_BUILD_SDK)
       ON
       CACHE BOOL "EXECUTORCH_BUILD_EXTENSION_DATA_LOADER" FORCE)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_APPLE)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/apple)
 endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -329,19 +390,27 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
-option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
+if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
+endif()
+
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
-option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
+if(EXECUTORCH_BUILD_VULKAN)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
+endif()
+
+if(EXECUTORCH_BUILD_ANDROID_JNI)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
+endif()
+
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
 
-# Build Arm Baremetal backend
-option(EXECUTORCH_BUILD_ARM_BAREMETAL
-       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
@@ -350,37 +419,30 @@ if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
 endif()
 
-# Build CoreML backend
-option(EXECUTORCH_BUILD_COREML "Build the backends/apple/coreml directory" OFF)
 if(EXECUTORCH_BUILD_COREML)
-  # CoreML delegate library can only be built with iOS toolchain
-  if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS\.)|(ios\.toolchain\.)cmake$")
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
-  else()
-    message(
-      FATAL_ERROR "executorch: Building CoreML delegate requires iOS toolchain")
-  endif()
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
 endif()
 
-# Build pybind
-option(EXECUTORCH_BUILD_PYBIND "Build pybindings" OFF)
 if(EXECUTORCH_BUILD_PYBIND)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
-  if(PYBIND_LINK_COREML)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
+  if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/data_loader)
+  endif()
+
+  if(NOT EXECUTORCH_BUILD_SDK)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/sdk)
+  endif()
+
+  if(EXECUTORCH_BUILD_COREML)
     set(PYBIND_LINK_COREML "coremldelegate")
   endif()
 
-  if(PYBIND_LINK_MPS)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
+  if(EXECUTORCH_BUILD_MPS)
     set(PYBIND_LINK_MPS "mpsdelegate")
   endif()
 
-  if(PYBIND_LINK_XNNPACK)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
+  if(EXECUTORCH_BUILD_XNNPACK)
     set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
 
@@ -398,8 +460,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     util
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
-  )
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp)
   target_include_directories(util PUBLIC ${_common_include_directories}
                                          ${TORCH_INCLUDE_DIRS})
   target_compile_options(util PUBLIC ${_pybind_compile_options})
@@ -411,23 +472,23 @@ if(EXECUTORCH_BUILD_PYBIND)
                              PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
-  target_link_libraries(portable_lib
-    PUBLIC
-      ${TORCH_PYTHON_LIBRARY}
-      bundled_program
-      etdump
-      executorch
-      extension_data_loader
-      flatcc
-      portable_ops_lib
-      util
-      ${PYBIND_LINK_COREML}
-      ${PYBIND_LINK_MPS}
-      ${PYBIND_LINK_XNNPACK}
-  )
+  target_link_libraries(
+    portable_lib
+    PUBLIC ${TORCH_PYTHON_LIBRARY}
+           bundled_program
+           etdump
+           executorch
+           extension_data_loader
+           portable_ops_lib
+           util
+           torch
+           ${PYBIND_LINK_COREML}
+           ${PYBIND_LINK_MPS}
+           ${PYBIND_LINK_XNNPACK})
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)
 endif()
+
 # Print all summary
 executorch_print_configuration_summary()

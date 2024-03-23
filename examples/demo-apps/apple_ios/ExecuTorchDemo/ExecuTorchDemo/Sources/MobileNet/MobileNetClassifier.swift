@@ -6,8 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+import ExecuTorch
 import ImageClassification
 import UIKit
+
+import os.log
 
 public enum MobileNetClassifierError: Error {
   case inputPointer
@@ -43,6 +46,16 @@ public class MobileNetClassifier: ImageClassification {
     mobileNetClassifier = ETMobileNetClassifier(filePath: modelFilePath)
     rawDataBuffer = [UInt8](repeating: 0, count: Int(Self.cropSize * Self.cropSize) * 4)
     normalizedBuffer = [Float](repeating: 0, count: rawDataBuffer.count / 4 * 3)
+
+    #if DEBUG
+    Log.shared.add(sink: self)
+    #endif
+  }
+
+  deinit {
+    #if DEBUG
+    Log.shared.remove(sink: self)
+    #endif
   }
 
   public func classify(image: UIImage) throws -> [Classification] {
@@ -133,3 +146,24 @@ public class MobileNetClassifier: ImageClassification {
     return expInput.map { $0 / sumExpInput }
   }
 }
+
+#if DEBUG
+extension MobileNetClassifier: LogSink {
+  public func log(level: LogLevel, timestamp: TimeInterval, filename: String, line: UInt, message: String) {
+    let logMessage = "executorch:\(filename):\(line) \(message)"
+
+    switch level {
+    case .debug:
+      os_log(.debug, "%{public}@", logMessage)
+    case .info:
+      os_log(.info, "%{public}@", logMessage)
+    case .error:
+      os_log(.error, "%{public}@", logMessage)
+    case .fatal:
+      os_log(.fault, "%{public}@", logMessage)
+    default:
+      os_log("%{public}@", logMessage)
+    }
+  }
+}
+#endif

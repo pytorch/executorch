@@ -7,11 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		031B92ED2ACF214B00D4EBE0 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */; };
-		031B92EF2ACF214F00D4EBE0 /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
-		031B92F12ACF215400D4EBE0 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
 		031B92F72ACF2A5400D4EBE0 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
-		031B930F2ACFE0EC00D4EBE0 /* executorch.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */; };
 		032C01A52AC22B16002955E1 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018B2AC22B16002955E1 /* App.swift */; };
 		032C01A72AC22B16002955E1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C018D2AC22B16002955E1 /* ContentView.swift */; };
 		032C01B72AC329B6002955E1 /* CustomViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032C01B62AC329B6002955E1 /* CustomViews.swift */; };
@@ -20,18 +16,9 @@
 		032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */; };
 		032C02032AC47CFB002955E1 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		032C02082AC47CFB002955E1 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
-		0332E0A12AD9001400B7D462 /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
-		0332E0A22AD9001A00B7D462 /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
-		0332E0A32AD9001D00B7D462 /* portable_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */; };
-		0332E0A42AD9002000B7D462 /* xnnpack_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */; };
-		0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */; };
-		0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */; };
 		036834D52ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
 		036834D62ACB710D00BA100F /* mv3.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D42ACB710D00BA100F /* mv3.pte */; };
 		036834D82ACB893700BA100F /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
-		03AD23EB2AD12360001FF45B /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931F2AD1008A00D4EBE0 /* Metal.framework */; };
-		03AD23EC2AD12363001FF45B /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */; };
-		03AD23ED2AD12366001FF45B /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */; };
 		03C818192AC671980084CC29 /* Samoyed.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C818182AC671980084CC29 /* Samoyed.jpg */; };
 		03C8181D2AC69C280084CC29 /* Arctic fox.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181C2AC69C280084CC29 /* Arctic fox.jpg */; };
 		03C8181F2AC69DFF0084CC29 /* hot pot.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 03C8181E2AC69DFF0084CC29 /* hot pot.jpg */; };
@@ -45,15 +32,16 @@
 		03C818482AC7BF470084CC29 /* imagenet_classes.txt in Resources */ = {isa = PBXBuildFile; fileRef = 032C02012AC47CFB002955E1 /* imagenet_classes.txt */; };
 		03C8184A2AC7BF470084CC29 /* mv3_xnnpack_fp32.pte in Resources */ = {isa = PBXBuildFile; fileRef = 032C01FC2AC47CFB002955E1 /* mv3_xnnpack_fp32.pte */; };
 		03C8DC7C2AE2533C0064384A /* mv3_coreml_all.pte in Resources */ = {isa = PBXBuildFile; fileRef = 036834D72ACB893700BA100F /* mv3_coreml_all.pte */; };
-		03C8DC7D2AE253490064384A /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */; };
-		03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92EE2ACF214F00D4EBE0 /* CoreML.framework */; };
-		03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */; };
-		03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */; };
-		03D494DE2B5B7AD400FCF524 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931F2AD1008A00D4EBE0 /* Metal.framework */; };
-		03D494DF2B5B7AD600FCF524 /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */; };
-		03D494E02B5B7AD900FCF524 /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */; };
-		03D494E12B5B7AE100FCF524 /* mps_backend.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03AD23EE2AD12556001FF45B /* mps_backend.xcframework */; };
 		03D494E22B5B7AE900FCF524 /* mv3_mps.pte in Resources */ = {isa = PBXBuildFile; fileRef = 031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */; };
+		03D76BF12BAD297E0040FD82 /* coreml_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF02BAD297E0040FD82 /* coreml_backend */; };
+		03D76BF32BAD297E0040FD82 /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF22BAD297E0040FD82 /* executorch */; };
+		03D76BF52BAD297E0040FD82 /* mps_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF42BAD297E0040FD82 /* mps_backend */; };
+		03D76BF72BAD297E0040FD82 /* portable_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF62BAD297E0040FD82 /* portable_backend */; };
+		03D76BF92BAD297E0040FD82 /* xnnpack_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BF82BAD297E0040FD82 /* xnnpack_backend */; };
+		03D76BFB2BAD29B60040FD82 /* coreml_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFA2BAD29B60040FD82 /* coreml_backend */; };
+		03D76BFD2BAD29B60040FD82 /* mps_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFC2BAD29B60040FD82 /* mps_backend */; };
+		03D76BFF2BAD29B60040FD82 /* portable_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76BFE2BAD29B60040FD82 /* portable_backend */; };
+		03D76C012BAD29B60040FD82 /* xnnpack_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03D76C002BAD29B60040FD82 /* xnnpack_backend */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,17 +83,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
-		031B92EE2ACF214F00D4EBE0 /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
-		031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		031B92F62ACF2A5400D4EBE0 /* mv3_mps.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3_mps.pte; sourceTree = "<group>"; };
-		031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = portable_backend.xcframework; sourceTree = "<group>"; };
-		031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = xnnpack_backend.xcframework; sourceTree = "<group>"; };
-		031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = executorch.xcframework; sourceTree = "<group>"; };
-		031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = coreml_backend.xcframework; sourceTree = "<group>"; };
-		031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = SDKROOT; };
-		031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShadersGraph.framework; path = System/Library/Frameworks/MetalPerformanceShadersGraph.framework; sourceTree = SDKROOT; };
-		031B931F2AD1008A00D4EBE0 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		032C016F2AC228E6002955E1 /* ExecuTorchDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ExecuTorchDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		032C018A2AC22B16002955E1 /* MobileNetClassifier.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MobileNetClassifier.swift; sourceTree = "<group>"; };
 		032C018B2AC22B16002955E1 /* App.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -120,7 +98,6 @@
 		032C02012AC47CFB002955E1 /* imagenet_classes.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = imagenet_classes.txt; sourceTree = "<group>"; };
 		036834D42ACB710D00BA100F /* mv3.pte */ = {isa = PBXFileReference; lastKnownFileType = file; path = mv3.pte; sourceTree = "<group>"; };
 		036834D72ACB893700BA100F /* mv3_coreml_all.pte */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = mv3_coreml_all.pte; sourceTree = "<group>"; };
-		03AD23EE2AD12556001FF45B /* mps_backend.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = mps_backend.xcframework; sourceTree = "<group>"; };
 		03C8180A2AC66FC30084CC29 /* MobileNetClassifierTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MobileNetClassifierTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		03C818182AC671980084CC29 /* Samoyed.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = Samoyed.jpg; sourceTree = "<group>"; };
 		03C8181C2AC69C280084CC29 /* Arctic fox.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "Arctic fox.jpg"; sourceTree = "<group>"; };
@@ -137,17 +114,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				031B92ED2ACF214B00D4EBE0 /* Accelerate.framework in Frameworks */,
-				031B92EF2ACF214F00D4EBE0 /* CoreML.framework in Frameworks */,
-				0332E0A42AD9002000B7D462 /* xnnpack_backend.xcframework in Frameworks */,
-				0332E0A12AD9001400B7D462 /* coreml_backend.xcframework in Frameworks */,
-				03AD23ED2AD12366001FF45B /* MetalPerformanceShadersGraph.framework in Frameworks */,
-				03AD23EB2AD12360001FF45B /* Metal.framework in Frameworks */,
-				0332E0A32AD9001D00B7D462 /* portable_backend.xcframework in Frameworks */,
-				0332E0A22AD9001A00B7D462 /* mps_backend.xcframework in Frameworks */,
+				03D76BF72BAD297E0040FD82 /* portable_backend in Frameworks */,
+				03D76BF52BAD297E0040FD82 /* mps_backend in Frameworks */,
+				03D76BF92BAD297E0040FD82 /* xnnpack_backend in Frameworks */,
 				032C01EC2AC34CAC002955E1 /* libMobileNetClassifier.a in Frameworks */,
-				03AD23EC2AD12363001FF45B /* MetalPerformanceShaders.framework in Frameworks */,
-				031B92F12ACF215400D4EBE0 /* libsqlite3.tbd in Frameworks */,
+				03D76BF12BAD297E0040FD82 /* coreml_backend in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -155,8 +126,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03D76BF32BAD297E0040FD82 /* executorch in Frameworks */,
 				03C818472AC7A1190084CC29 /* libImageClassification.a in Frameworks */,
-				031B930F2ACFE0EC00D4EBE0 /* executorch.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -164,17 +135,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				03C8DC7F2AE253510064384A /* libsqlite3.tbd in Frameworks */,
-				03D494DF2B5B7AD600FCF524 /* MetalPerformanceShaders.framework in Frameworks */,
-				0332E0A62AD9002B00B7D462 /* portable_backend.xcframework in Frameworks */,
-				03D494E02B5B7AD900FCF524 /* MetalPerformanceShadersGraph.framework in Frameworks */,
-				03C8DC802AE253550064384A /* coreml_backend.xcframework in Frameworks */,
-				03C8DC7D2AE253490064384A /* Accelerate.framework in Frameworks */,
-				03D494E12B5B7AE100FCF524 /* mps_backend.xcframework in Frameworks */,
-				03C8DC7E2AE2534D0064384A /* CoreML.framework in Frameworks */,
-				0332E0A52AD9002900B7D462 /* xnnpack_backend.xcframework in Frameworks */,
-				03D494DE2B5B7AD400FCF524 /* Metal.framework in Frameworks */,
+				03D76BFF2BAD29B60040FD82 /* portable_backend in Frameworks */,
+				03D76BFD2BAD29B60040FD82 /* mps_backend in Frameworks */,
+				03D76C012BAD29B60040FD82 /* xnnpack_backend in Frameworks */,
 				03C818282AC760650084CC29 /* libMobileNetClassifier.a in Frameworks */,
+				03D76BFB2BAD29B60040FD82 /* coreml_backend in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -193,7 +158,6 @@
 			children = (
 				032C01712AC228E6002955E1 /* ExecuTorchDemo */,
 				032C01702AC228E6002955E1 /* Products */,
-				032C01E52AC34826002955E1 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -281,25 +245,6 @@
 			path = MobileNet;
 			sourceTree = "<group>";
 		};
-		032C01E52AC34826002955E1 /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				031B92EC2ACF214B00D4EBE0 /* Accelerate.framework */,
-				031B92EE2ACF214F00D4EBE0 /* CoreML.framework */,
-				031B931F2AD1008A00D4EBE0 /* Metal.framework */,
-				031B93172AD0FFB700D4EBE0 /* MetalPerformanceShaders.framework */,
-				031B931B2AD0FFEC00D4EBE0 /* MetalPerformanceShadersGraph.framework */,
-				031B92F02ACF215400D4EBE0 /* libsqlite3.tbd */,
-				031B93102ACFE51000D4EBE0 /* coreml_backend.xcframework */,
-				031B930C2ACFE0EC00D4EBE0 /* executorch.xcframework */,
-				03AD23EE2AD12556001FF45B /* mps_backend.xcframework */,
-				031B930A2ACFE0EC00D4EBE0 /* portable_backend.xcframework */,
-				031B930B2ACFE0EC00D4EBE0 /* xnnpack_backend.xcframework */,
-			);
-			name = Frameworks;
-			path = ExecuTorchDemo/Frameworks;
-			sourceTree = "<group>";
-		};
 		03C818132AC6707F0084CC29 /* Test */ = {
 			isa = PBXGroup;
 			children = (
@@ -343,6 +288,12 @@
 				032C01EB2AC34CA8002955E1 /* PBXTargetDependency */,
 			);
 			name = App;
+			packageProductDependencies = (
+				03D76BF02BAD297E0040FD82 /* coreml_backend */,
+				03D76BF42BAD297E0040FD82 /* mps_backend */,
+				03D76BF62BAD297E0040FD82 /* portable_backend */,
+				03D76BF82BAD297E0040FD82 /* xnnpack_backend */,
+			);
 			productName = ExecuTorchDemo;
 			productReference = 032C016F2AC228E6002955E1 /* ExecuTorchDemo.app */;
 			productType = "com.apple.product-type.application";
@@ -361,6 +312,9 @@
 				03C818462AC7A0DB0084CC29 /* PBXTargetDependency */,
 			);
 			name = MobileNetClassifier;
+			packageProductDependencies = (
+				03D76BF22BAD297E0040FD82 /* executorch */,
+			);
 			productName = TorchModule;
 			productReference = 032C01CB2AC34632002955E1 /* libMobileNetClassifier.a */;
 			productType = "com.apple.product-type.library.static";
@@ -378,6 +332,12 @@
 			dependencies = (
 			);
 			name = MobileNetClassifierTest;
+			packageProductDependencies = (
+				03D76BFA2BAD29B60040FD82 /* coreml_backend */,
+				03D76BFC2BAD29B60040FD82 /* mps_backend */,
+				03D76BFE2BAD29B60040FD82 /* portable_backend */,
+				03D76C002BAD29B60040FD82 /* xnnpack_backend */,
+			);
 			productName = ExecuTorchDemoTests;
 			productReference = 03C8180A2AC66FC30084CC29 /* MobileNetClassifierTest.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -431,6 +391,9 @@
 				Base,
 			);
 			mainGroup = 032C01662AC228E5002955E1;
+			packageReferences = (
+				03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */,
+			);
 			productRefGroup = 032C01702AC228E6002955E1 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -532,7 +495,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
@@ -583,8 +545,6 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"-lc++",
@@ -601,7 +561,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
@@ -646,8 +605,6 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
 				OTHER_LDFLAGS = (
 					"-lc++",
 					"-all_load",
@@ -662,7 +619,10 @@
 		032C017E2AC228E7002955E1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
@@ -671,13 +631,10 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -687,7 +644,10 @@
 		032C017F2AC228E7002955E1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
@@ -696,13 +656,10 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.demo;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -739,7 +696,6 @@
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
@@ -754,7 +710,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -823,6 +778,65 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pytorch/executorch";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		03D76BF02BAD297E0040FD82 /* coreml_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = coreml_backend;
+		};
+		03D76BF22BAD297E0040FD82 /* executorch */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch;
+		};
+		03D76BF42BAD297E0040FD82 /* mps_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = mps_backend;
+		};
+		03D76BF62BAD297E0040FD82 /* portable_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = portable_backend;
+		};
+		03D76BF82BAD297E0040FD82 /* xnnpack_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = xnnpack_backend;
+		};
+		03D76BFA2BAD29B60040FD82 /* coreml_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = coreml_backend;
+		};
+		03D76BFC2BAD29B60040FD82 /* mps_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = mps_backend;
+		};
+		03D76BFE2BAD29B60040FD82 /* portable_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = portable_backend;
+		};
+		03D76C002BAD29B60040FD82 /* xnnpack_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03D76BEF2BAD297E0040FD82 /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = xnnpack_backend;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 032C01672AC228E5002955E1 /* Project object */;
 }

@@ -18,6 +18,7 @@ from executorch.exir.backend.partitioner import (
     Partitioner,
     PartitionResult,
 )
+from executorch.exir.backend.utils import tag_constant_data
 from torch.export.exported_program import ExportedProgram
 from torch.fx.passes.infra.partitioner import Partition
 from torch.fx.passes.operator_support import OperatorSupportBase
@@ -77,6 +78,7 @@ class MPSPartitioner(Partitioner):
         partitions = self.generate_partitions(edge_program=edge_program)
         if self.check_partitions(partitions):
             self.tag_nodes(partitions)
+            tag_constant_data(edge_program)
         x = PartitionResult(
             tagged_exported_program=edge_program, partition_tags=self.partition_tags
         )

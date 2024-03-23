@@ -21,14 +21,16 @@ class I64toI32(ExportPass):
         meta_val = node.meta["val"]
         if isinstance(meta_val, tuple):
             node.meta["val"] = (
-                fake_tensor.to(torch.int32)
-                if fake_tensor.dtype == torch.int64
-                else fake_tensor
+                (
+                    fake_tensor.to(torch.int32)
+                    if fake_tensor.dtype == torch.int64
+                    else fake_tensor
+                )
                 for fake_tensor in meta_val
             )
         else:
             if meta_val.dtype == torch.int64:
-                node.meta["val"] = meta_val.to(torch.int32)
+                node.meta["val"] = meta_val.to(torch.float)
 
     def _cast_to_int32(self, graph_module: torch.fx.GraphModule):
         for n in graph_module.graph.nodes:
