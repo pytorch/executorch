@@ -72,26 +72,18 @@ target_include_directories(
   xnnpack_schema INTERFACE ${_xnnpack_schema__include_dir}
                            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
-set(xnn_executor_runner_libs ${_executor_runner_libs} xnnpack_schema)
-
-list(TRANSFORM _xnnpack_dynamic_quant_utils__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(xnnpack_dynamic_quant_utils ${_xnnpack_dynamic_quant_utils__srcs})
-set_target_properties(xnnpack_dynamic_quant_utils PROPERTIES LINKER_LANGUAGE
-                                                             CXX)
-target_include_directories(xnnpack_dynamic_quant_utils
-                           PUBLIC ${_common_include_directories})
-target_compile_options(xnnpack_dynamic_quant_utils
-                       PUBLIC ${_common_compile_options})
-
-if(ENABLE_DYNAMIC_QUANTIZATION)
-  list(APPEND xnn_executor_runner_libs xnnpack_dynamic_quant_utils)
-endif()
+set(xnnpack_third_party)
 
 include(cmake/Dependencies.cmake)
 
 list(TRANSFORM _xnnpack_backend__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(xnnpack_backend ${_xnnpack_backend__srcs})
-target_link_libraries(xnnpack_backend PRIVATE ${xnn_executor_runner_libs})
+add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
+target_link_libraries(xnnpack_backend
+                      PRIVATE
+                      ${xnnpack_third_party}
+                      executorch
+                      xnnpack_schema)
+
 target_include_directories(xnnpack_backend
                            PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
@@ -108,11 +100,12 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   #
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
-  target_link_libraries(xnn_executor_runner ${xnn_executor_runner_libs})
+  target_link_libraries(xnn_executor_runner xnnpack_backend gflags)
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
-
-  add_library(xnn_executor_runner_lib STATIC ${_xnn_executor_runner__srcs})
-  target_link_libraries(xnn_executor_runner_lib ${xnn_executor_runner_libs})
-  target_compile_options(xnn_executor_runner_lib
-                         PUBLIC ${_common_compile_options})
 endif()
+
+install(
+  TARGETS xnnpack_backend
+  DESTINATION lib
+  INCLUDES
+  DESTINATION ${_common_include_directories})
