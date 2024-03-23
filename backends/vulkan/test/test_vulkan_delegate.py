@@ -379,6 +379,36 @@ class TestBackends(unittest.TestCase):
             first_output_only=True,
         )
 
+    def test_vulkan_backend_abs(self):
+        class AbsModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.abs(x)
+
+        self.lower_clamp_module_and_test_output(AbsModule())
+
+    def test_vulkan_backend_sigmoid(self):
+        class SigmoidModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sigmoid(x)
+
+        self.lower_clamp_module_and_test_output(SigmoidModule())
+
+    def test_vulkan_backend_tanh(self):
+        class TanhModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.tanh(x)
+
+        self.lower_clamp_module_and_test_output(TanhModule())
+
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
