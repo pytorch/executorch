@@ -12,6 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
+PT2E_QUANTIZE=$4 # None or xnnpack_dynamic
 
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
@@ -25,6 +26,11 @@ fi
 
 if [[ -z "${DTYPE:-}" ]]; then
   echo "Missing dtype, choose fp16 or fp32, exiting..."
+  exit 1
+fi
+
+if [[ -z "${PT2E_QUANTIZE:-}" ]]; then
+  echo "Missing pt2e_quantize, choose None or xnnpack_dynamic..."
   exit 1
 fi
 
@@ -47,6 +53,7 @@ cmake_install_executorch_libraries() {
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Release
@@ -99,7 +106,7 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}"
+$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}" --pt2e_quantize "${PT2E_QUANTIZE}"
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"
