@@ -42,7 +42,11 @@ target_link_libraries(custom_ops PRIVATE xtensa_kernels)
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
 gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/functions.yaml" "" "")
-generate_bindings_for_kernels(${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml "")
+generate_bindings_for_kernels(
+  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml)
 message("Generated files ${gen_command_sources}")
 
-gen_operators_lib("xtensa_ops_lib" custom_ops aten_ops_xtensa)
+gen_operators_lib(
+  "xtensa_ops_lib"
+  KERNEL_LIBS custom_ops
+  DEPS aten_ops_xtensa)

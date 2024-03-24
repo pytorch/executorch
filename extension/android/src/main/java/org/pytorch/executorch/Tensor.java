@@ -362,7 +362,9 @@ public abstract class Tensor {
     return Arrays.copyOf(shape, shape.length);
   }
 
-  /** @return data type of this tensor. */
+  /**
+   * @return data type of this tensor.
+   */
   public abstract DType dtype();
 
   // Called from native
@@ -646,6 +648,7 @@ public abstract class Tensor {
         numel,
         Arrays.toString(shape));
   }
+
   // endregion checks
 
   // Called from native
