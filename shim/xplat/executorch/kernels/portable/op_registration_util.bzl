@@ -117,6 +117,7 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
             "//executorch/kernels/quantized/test/...",
             "//executorch/kernels/optimized/test/...",
             "//executorch/kernels/test/...",
+            "//executorch/...",
             "@EXECUTORCH_CLIENTS",
         ],
         fbandroid_platform_deps = android_deps,
