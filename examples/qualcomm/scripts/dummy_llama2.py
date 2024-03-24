@@ -7,7 +7,6 @@
 import json
 import os
 import re
-import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -72,6 +71,20 @@ if __name__ == "__main__":
         default="8a8w",
     )
 
+    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
+    # So maybe it's fine to just use the environment.
+    if "QNN_SDK_ROOT" not in os.environ:
+        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
+    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+
+    if "LD_LIBRARY_PATH" not in os.environ:
+        print(
+            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
+            "not found happen, please follow setup.md to set environment."
+        )
+    else:
+        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
+
     args = parser.parse_args()
 
     # ensure the working directory exist.
@@ -107,10 +120,6 @@ if __name__ == "__main__":
         custom_annotations=(),
         quant_dtype=quant_dtype,
     )
-
-    if args.compile_only:
-        sys.exit(0)
-
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         artifact_path=f"{args.build_folder}",
