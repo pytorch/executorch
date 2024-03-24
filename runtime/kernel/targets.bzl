@@ -8,38 +8,47 @@ def define_common_targets():
     """
 
     max_kernel_num = native.read_config("executorch", "max_kernel_num", None)
-    runtime.cxx_library(
-        name = "operator_registry",
-        srcs = ["operator_registry.cpp"],
-        exported_headers = ["operator_registry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:evalue",
-        ],
-        preprocessor_flags = ["-DMAX_KERNEL_NUM=" + max_kernel_num] if max_kernel_num != None else [],
-    )
-
-    runtime.cxx_library(
-        name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY",
-        srcs = ["operator_registry.cpp"],
-        exported_headers = ["operator_registry.h"],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        exported_deps = [
-            "//executorch/runtime/core:core",
-            "//executorch/runtime/core:evalue",
-        ],
-        preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
-    )
 
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
+
+        runtime.cxx_library(
+            name = "operator_registry" + aten_suffix,
+            srcs = ["operator_registry.cpp"],
+            exported_headers = ["operator_registry.h"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                "//executorch/kernels/portable:generated_lib_edge_dialect_ops" + aten_suffix + "_headers",
+                "//executorch/kernels/portable/cpu:op__to_dim_order_copy" + aten_suffix,
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue",
+            ],
+            preprocessor_flags = ["-DMAX_KERNEL_NUM=" + max_kernel_num] if max_kernel_num != None else [],
+        )
+
+        runtime.cxx_library(
+            name = "operator_registry_MAX_NUM_KERNELS_TEST_ONLY" + aten_suffix,
+            srcs = ["operator_registry.cpp"],
+            exported_headers = ["operator_registry.h"],
+            visibility = [
+                "//executorch/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+            deps = [
+                "//executorch/kernels/portable:generated_lib_edge_dialect_ops" + aten_suffix + "_headers",
+                "//executorch/kernels/portable/cpu:op__to_dim_order_copy" + aten_suffix,
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue",
+            ],
+            preprocessor_flags = ["-DMAX_KERNEL_NUM=1"],
+        )
 
         runtime.cxx_library(
             name = "kernel_runtime_context" + aten_suffix,

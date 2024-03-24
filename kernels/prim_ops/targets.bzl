@@ -38,7 +38,7 @@ def define_common_targets():
             deps = [
                 ":et_copy_index" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
-                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
             ],
         )

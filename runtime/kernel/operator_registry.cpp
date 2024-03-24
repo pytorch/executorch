@@ -14,6 +14,12 @@
 
 #include <executorch/runtime/platform/assert.h>
 
+#include <executorch/kernels/portable/NativeFunctions.h> // Declares the operator
+#include <executorch/runtime/core/evalue.h>
+#include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/kernel/operator_registry.h>
+#include <executorch/runtime/platform/profiler.h>
+
 namespace torch {
 namespace executor {
 
@@ -131,6 +137,65 @@ void make_kernel_key_string(ArrayRef<TensorMeta> key, char* buf) {
   }
 }
 
+// This function is used to register edge dialect kernels on demand.
+// edge dialect ops required by every ET model in edge dialect. To avoid
+// duplicated registration and ET biniary size regression, we lazy register them
+// on demand.
+bool register_edge_dialect_ops_on_demand(const char* name);
+
+bool register_edge_dialect_ops_on_demand(const char* name) {
+  if (strcmp(name, "dim_order_ops::_to_dim_order_copy.out") == 0) {
+    using KernelArrayRef =
+        ::torch::executor::ArrayRef<::torch::executor::Kernel>;
+
+    static Kernel kernels_to_register[] = {
+
+        Kernel(
+            "dim_order_ops::_to_dim_order_copy.out",
+            [](torch::executor::KernelRuntimeContext& context, EValue** stack) {
+              EValue& self = *stack[0];
+              EValue& non_blocking = *stack[1];
+              EValue& dim_order = *stack[2];
+              EValue& out = *stack[3];
+              const exec_aten::Tensor& self_base = self.to<exec_aten::Tensor>();
+              bool non_blocking_base = non_blocking.to<bool>();
+
+              exec_aten::optional<exec_aten::ArrayRef<int64_t>>
+                  dim_order_opt_out =
+                      dim_order.toOptional<exec_aten::ArrayRef<int64_t>>();
+
+              exec_aten::Tensor& out_base = out.to<exec_aten::Tensor>();
+
+#ifdef USE_ATEN_LIB
+              torch::executor::native::_to_dim_order_copy_out(
+                  self_base, non_blocking_base, dim_order_opt_out, out_base);
+#else
+              torch::executor::native::_to_dim_order_copy_out(
+                  context,
+                  self_base,
+                  non_blocking_base,
+                  dim_order_opt_out,
+                  out_base);
+#endif
+            }), // Generated kernels
+    };
+
+    // Explicitly convert to ArrayRef, so that the API can take an empty C array
+    // of Kernels.
+    static KernelArrayRef kernel_array_ref(
+        kernels_to_register,
+        kernels_to_register + sizeof(kernels_to_register) / sizeof(Kernel));
+
+    // Return value not used. Keep the static variable assignment to register
+    // kernels in static initialization time.
+    static auto success_with_kernel_reg = register_kernels(kernel_array_ref);
+    if (success_with_kernel_reg == Error::Ok) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool OperatorRegistry::hasOpsFn(
     const char* name,
     ArrayRef<TensorMeta> meta_list) {
@@ -147,7 +212,7 @@ bool OperatorRegistry::hasOpsFn(
     }
   }
 
-  return false;
+  return register_edge_dialect_ops_on_demand(name);
 }
 
 const OpFunction& getOpsFn(const char* name, ArrayRef<TensorMeta> kernel_key) {
@@ -172,8 +237,16 @@ const OpFunction& OperatorRegistry::getOpsFn(
       }
     }
   }
+
   if (fallback_idx != -1) {
     return this->kernels_[fallback_idx].op_;
+  }
+
+  // If no kernel is found, check whether if it is a edge dialect operator, and
+  // register the kernel on demand.
+  bool registered = register_edge_dialect_ops_on_demand(name);
+  if (registered) {
+    return getOpsFn(name, meta_list);
   }
   ET_CHECK_MSG(false, "kernel '%s' not found.", name);
   ET_LOG_TENSOR_META(meta_list);
