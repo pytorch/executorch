@@ -70,7 +70,7 @@ def define_common_targets(is_fbcode = False):
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
-                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
                 "//executorch/runtime/platform:platform",
             ],
         )

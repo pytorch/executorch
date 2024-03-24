@@ -32,6 +32,30 @@ def define_common_targets():
         ],
     )
 
+    runtime.cxx_library(
+        name = "edge_dialect_operators",
+        srcs = [],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/kernels/portable/cpu:edge_dialect_ops",
+        ],
+    )
+
+    runtime.cxx_library(
+        name = "edge_dialect_operators_aten",
+        srcs = [],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_deps = [
+            "//executorch/kernels/portable/cpu:edge_dialect_ops_aten",
+        ],
+    )
+
     runtime.export_file(
         name = "functions.yaml",
         visibility = [
@@ -58,6 +82,14 @@ def define_common_targets():
         ],
     )
 
+    runtime.export_file(
+        name = "edge_dialect_ops.yaml",
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
     et_operator_library(
         name = "executorch_aten_ops",
         ops_schema_yaml_target = "//executorch/kernels/portable:functions.yaml",
@@ -71,6 +103,16 @@ def define_common_targets():
     et_operator_library(
         name = "executorch_custom_ops",
         ops_schema_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
+        define_static_targets = True,
+        visibility = [
+            "//executorch/codegen/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+    )
+
+    et_operator_library(
+        name = "executorch_edge_dialect_ops",
+        ops_schema_yaml_target = "//executorch/kernels/portable:edge_dialect_ops.yaml",
         define_static_targets = True,
         visibility = [
             "//executorch/codegen/...",
@@ -98,7 +140,9 @@ def define_common_targets():
             ":executorch_aten_ops",
             ":executorch_custom_ops",
         ],
-        kernel_deps = ["//executorch/kernels/portable:operators"],
+        kernel_deps = [
+            "//executorch/kernels/portable:operators",
+        ],
         **generated_lib_common_args
     )
 
@@ -113,6 +157,38 @@ def define_common_targets():
             "//executorch/kernels/portable:operators_aten",
         ],
         custom_ops_yaml_target = "//executorch/kernels/portable:custom_ops.yaml",
+        aten_mode = True,
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        define_static_targets = True,
+    )
+
+    executorch_generated_lib(
+        name = "generated_lib_edge_dialect_ops",
+        deps = [
+            ":executorch_edge_dialect_ops",
+            ":edge_dialect_operators",
+        ],
+        custom_ops_yaml_target = "//executorch/kernels/portable:edge_dialect_ops.yaml",
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        define_static_targets = True,
+    )
+
+    executorch_generated_lib(
+        name = "generated_lib_edge_dialect_ops_aten",
+        deps = [
+            ":executorch_edge_dialect_ops",
+            ":edge_dialect_operators_aten",
+        ],
+        custom_ops_aten_kernel_deps = [
+            ":edge_dialect_operators_aten",
+        ],
+        custom_ops_yaml_target = "//executorch/kernels/portable:edge_dialect_ops.yaml",
         aten_mode = True,
         visibility = [
             "//executorch/...",

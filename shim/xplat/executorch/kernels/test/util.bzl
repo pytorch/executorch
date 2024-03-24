@@ -1,7 +1,7 @@
 load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
-def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False):
+def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False, is_edge_dialect_op = False):
     """Defines a cxx_test() for an "op_*_test.cpp" file.
 
     Args:
@@ -28,9 +28,17 @@ def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False
     else:
         generated_lib_and_op_deps = [
             "//executorch/kernels/{}/cpu:{}".format(kernel_name, op_root),
-            "//executorch/kernels/{}:generated_lib_headers".format(kernel_name),
             "//executorch/kernels/{}/test:supported_features".format(kernel_name),
         ]
+        if is_edge_dialect_op:
+            generated_lib_and_op_deps.append(
+                "//executorch/kernels/{}:generated_lib_edge_dialect_ops_headers".format(kernel_name),
+            )
+
+        else:
+            generated_lib_and_op_deps.append(
+                "//executorch/kernels/{}:generated_lib_headers".format(kernel_name),
+            )
 
     name_prefix = ""
     aten_suffix = ""
