@@ -511,9 +511,7 @@ def _get_aten_to_edge_passes(config: EdgeCompileConfig):
         [] if config._skip_type_promotion else [RemoveMixedTypeOperators()]
     )
 
-    post_op_replace_passes = (
-        [] if config._skip_dim_order else [MemoryFormatOpsPass()]
-    ) + base_post_op_replace_passes
+    post_op_replace_passes = base_post_op_replace_passes
 
     return pre_op_replace_passes, post_op_replace_passes
 
@@ -556,6 +554,10 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
         new_gm_res = OpReplacePass()(new_gm)
         assert new_gm_res is not None
         new_gm = new_gm_res.graph_module
+        if not config._skip_dim_order:
+            new_gm_res = MemoryFormatOpsPass()(new_gm)
+            assert new_gm_res is not None
+            new_gm = new_gm_res.graph_module
 
     for p in post_op_replace_passes:
         new_gm_res = p(new_gm)
@@ -576,6 +578,7 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
             check_edge_ops=config._use_edge_ops,
             enable=config._check_ir_validity,
             class_only=True,
+            dim_order=not config._skip_dim_order,
         ),
         constants=new_ep.exported_program.constants,
     )
@@ -646,6 +649,8 @@ def to_edge(
         passes.extend(pre_op_replace_passes)
         if config._use_edge_ops:
             passes.append(OpReplacePass())
+            if not config._skip_dim_order:
+                passes.append(MemoryFormatOpsPass())
 
         gm = program.graph_module
         for p in passes:
@@ -665,6 +670,7 @@ def to_edge(
                 check_edge_ops=config._use_edge_ops,
                 enable=config._check_ir_validity,
                 class_only=True,
+                dim_order=not config._skip_dim_order,
             ),
             constants=program.constants,
         )
@@ -703,6 +709,7 @@ class EdgeProgramManager:
                 EXIREdgeDialectVerifier(
                     check_edge_ops=config._use_edge_ops,
                     enable=config._check_ir_validity,
+                    dim_order=not config._skip_dim_order,
                 )(program.graph_module)
             except ExportError as e:
                 logging.info(f"Input program {name} is not in aten dialect.")
@@ -735,7 +742,8 @@ class EdgeProgramManager:
         self,
         passes: Union[Sequence[PassType], Dict[str, Sequence[PassType]]],
         check_ir_validity: bool = True,
-        # We should also probably add check_edge_ops here as well
+        check_edge_ops: bool = True,
+        dim_order: bool = True,
     ) -> "EdgeProgramManager":
         """
         Transforms the program according to the provided passes.
@@ -757,18 +765,22 @@ class EdgeProgramManager:
             for name, program in self._edge_programs.items():
                 if name in passes.keys():
                     new_programs[name] = _transform(program, *passes[name])
-                    EXIREdgeDialectVerifier(enable=check_ir_validity)(
-                        new_programs[name].graph_module
-                    )
+                    EXIREdgeDialectVerifier(
+                        enable=check_ir_validity,
+                        check_edge_ops=check_edge_ops,
+                        dim_order=dim_order,
+                    )(new_programs[name].graph_module)
                 else:
                     new_programs[name] = copy.deepcopy(program)
 
         else:  # apply passes to every method
             for name, program in self._edge_programs.items():
                 new_programs[name] = _transform(program, *passes)
-                EXIREdgeDialectVerifier(enable=check_ir_validity)(
-                    new_programs[name].graph_module
-                )
+                EXIREdgeDialectVerifier(
+                    enable=check_ir_validity,
+                    check_edge_ops=check_edge_ops,
+                    dim_order=dim_order,
+                )(new_programs[name].graph_module)
         config = EdgeCompileConfig(_check_ir_validity=check_ir_validity)
         return EdgeProgramManager(
             new_programs, copy.deepcopy(self._config_methods), config
