@@ -87,8 +87,8 @@ message("Generated files ${gen_command_sources}")
 if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   set(custom_ops_kernel_sources
       ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2.cpp # register my_ops::mul4
-      ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register
-      # my_ops::mul4.out)
+      ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register my_ops::mul4.out
+  )
   gen_custom_ops_aot_lib("custom_ops_aot_lib" "${custom_ops_kernel_sources}")
   target_include_directories(custom_ops_aot_lib
                              PUBLIC ${_common_include_directories})
