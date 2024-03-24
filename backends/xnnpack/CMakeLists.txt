@@ -87,6 +87,10 @@ target_link_libraries(xnnpack_backend
 target_include_directories(xnnpack_backend
                            PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
+target_include_directories(xnnpack_backend PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/third-party/pthreadpool/include)
+target_include_directories(xnnpack_backend PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include)
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
 
@@ -101,7 +105,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
   target_link_libraries(xnn_executor_runner
-                        xnnpack_backend gflags portable_ops_lib)
+                        xnnpack_backend gflags portable_ops_lib threadpool cpuinfo)
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 

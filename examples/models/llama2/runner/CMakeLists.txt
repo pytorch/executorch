@@ -48,4 +48,4 @@ endif()
 
 target_link_libraries(
   llama_runner PUBLIC executorch portable_kernels extension_module
-                      extension_data_loader)
+                      extension_data_loader custom_ops)
