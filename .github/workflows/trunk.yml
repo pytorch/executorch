@@ -248,9 +248,9 @@ jobs:
         # see if we can import the module successfully
         python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
 
-  test-llama-runner-linux:
-    name: test-llama-runner-linux
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+  test-llama-runner-mac:
+    name: test-llama-runner-mac
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
     strategy:
       matrix:
         dtype: [fp32]
@@ -273,7 +273,8 @@ jobs:
         MODE=${{ matrix.mode }}
 
         # Setup executorch
-        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
