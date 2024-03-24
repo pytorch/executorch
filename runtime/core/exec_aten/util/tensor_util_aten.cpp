@@ -77,6 +77,77 @@ inline bool tensor_is_default_or_channels_last_dim_order(at::Tensor t) {
   return ret_val;
 }
 
+bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim(),
+      "Two tensors should have same number of dim order, but got %" PRId64 " vs. %" PRId64 ".",
+      a.dim(),
+      b.dim());
+
+  exec_aten::DimOrderType a_dim_order[kTensorDimensionLimit];
+  exec_aten::DimOrderType b_dim_order[kTensorDimensionLimit];
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(a, a_dim_order, a.dim()) == Error::Ok,
+      "Failed to retrieve dim order from first input tensor!");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(b, b_dim_order, b.dim()) == Error::Ok,
+      "Failed to retrieve dim order from second input tensor!");
+
+  for (size_t i = 0; i < a.dim(); i++) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        a_dim_order[i] == b_dim_order[i],
+        "a.dim_order[%zu] should be equal to b.dim_order[%zu], "
+        "but now is %d and %d.",
+        i,
+        i,
+        a_dim_order[i],
+        b_dim_order[i]);
+  }
+
+  return true;
+}
+
+bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b,
+    const exec_aten::Tensor& c) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim() && b.dim() == c.dim(),
+      "Three tensors should have same number of dim order, but got %" PRId64 ", %" PRId64 ", and %" PRId64 ".",
+      a.dim(),
+      b.dim(),
+      c.dim());
+
+  exec_aten::DimOrderType a_dim_order[kTensorDimensionLimit];
+  exec_aten::DimOrderType b_dim_order[kTensorDimensionLimit];
+  exec_aten::DimOrderType c_dim_order[kTensorDimensionLimit];
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(a, a_dim_order, a.dim()) == Error::Ok,
+      "Failed to retrieve dim order from first input tensor!");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(b, b_dim_order, b.dim()) == Error::Ok,
+      "Failed to retrieve dim order from second input tensor!");
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      get_dim_order(c, c_dim_order, c.dim()) == Error::Ok,
+      "Failed to retrieve dim order from third input tensor!");
+
+  for (size_t i = 0; i < a.dim(); i++) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        a_dim_order[i] == b_dim_order[i] && b_dim_order[i] == c_dim_order[i],
+        "a.dim_order[%zu], b.dim_order[%zu], and c.dim_order[%zu] should be equal, "
+        "but got %d, %d, and %d.",
+        i,
+        i,
+        i,
+        a_dim_order[i],
+        b_dim_order[i],
+        c_dim_order[i]);
+  }
+  return true;
+}
+
 namespace internal {
 
 Error share_tensor_data(const at::Tensor& t_dst, const at::Tensor& t_src) {

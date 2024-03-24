@@ -73,6 +73,60 @@ bool tensor_is_default_or_channels_last_dim_order(torch::executor::Tensor t) {
   return ret_val;
 }
 
+bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim(),
+      "Two tensors should have same number of dim order, but got %zu vs. %zu.",
+      a.dim(),
+      b.dim());
+
+  const auto a_dim_order = a.dim_order();
+  const auto b_dim_order = b.dim_order();
+  for (size_t i = 0; i < a.dim(); i++) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        a_dim_order[i] == b_dim_order[i],
+        "a.dim_order[%zu] should be equal to b.dim_order[%zu], "
+        "but now is %d and %d.",
+        i,
+        i,
+        a_dim_order[i],
+        b_dim_order[i]);
+  }
+
+  return true;
+}
+
+bool tensors_have_same_dim_order(
+    const exec_aten::Tensor& a,
+    const exec_aten::Tensor& b,
+    const exec_aten::Tensor& c) {
+  ET_LOG_MSG_AND_RETURN_IF_FALSE(
+      a.dim() == b.dim() && b.dim() == c.dim(),
+      "Three tensors should have same number of dim order, but got %zu, %zu, and %zu.",
+      a.dim(),
+      b.dim(),
+      c.dim());
+
+  const auto a_dim_order = a.dim_order();
+  const auto b_dim_order = b.dim_order();
+  const auto c_dim_order = c.dim_order();
+  for (size_t i = 0; i < a.dim(); i++) {
+    ET_LOG_MSG_AND_RETURN_IF_FALSE(
+        a_dim_order[i] == b_dim_order[i] && b_dim_order[i] == c_dim_order[i],
+        "a.dim_order[%zu], b.dim_order[%zu], and c.dim_order[%zu] should be equal, "
+        "but got %d, %d, and %d.",
+        i,
+        i,
+        i,
+        a_dim_order[i],
+        b_dim_order[i],
+        c_dim_order[i]);
+  }
+  return true;
+}
+
 namespace internal {
 
 Error share_tensor_data(
