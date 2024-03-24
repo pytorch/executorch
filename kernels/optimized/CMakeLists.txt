@@ -30,23 +30,8 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
-# Set platform-specific definitions.
-if(arm64)
-  list(APPEND _common_compile_options -DET_BUILD_WITH_BLAS)
-elseif(x86)
-  # TODO(T183193812) Enable once sleef is built in OSS.
-  # list(APPEND _common_compile_options -DCPU_CAPABILITY_AVX2)
-endif()
-
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
-
-# Build cpublas.
-list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(cpublas ${_optimized_cpublas__srcs})
-target_link_libraries(cpublas PRIVATE executorch)
-target_compile_options(cpublas PUBLIC ${_common_compile_options})
-
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in optimized.yaml
@@ -59,7 +44,7 @@ message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
-target_link_libraries(optimized_kernels PRIVATE executorch cpublas)
+target_link_libraries(optimized_kernels PRIVATE executorch)
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
 #
