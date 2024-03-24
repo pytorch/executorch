@@ -1055,7 +1055,12 @@ class TestQNNFloatingPointUtils(TestQNN):
         edge_prog = ExirExportedProgram(
             torch.export.export(module, sample_input),
             after_to_edge_passes=False,
-        ).to_edge(EdgeCompileConfig(_check_ir_validity=False))
+        ).to_edge(
+            EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+            )
+        )
         canonicalize_program(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)
@@ -1156,7 +1161,12 @@ class TestQNNQuantizedUtils(TestQNN):
         edge_prog = ExirExportedProgram(
             torch.export.export(module, sample_input),
             after_to_edge_passes=False,
-        ).to_edge(EdgeCompileConfig(_check_ir_validity=False))
+        ).to_edge(
+            EdgeCompileConfig(
+                _check_ir_validity=False,
+                _skip_dim_order=True,  # TODO(T182928844): Delegate dim order op to backend.
+            )
+        )
         canonicalize_program(edge_prog.exported_program)
         exec_prog = edge_prog.to_executorch()
         self.verify_output(module.get_reference_module(), sample_input, exec_prog)

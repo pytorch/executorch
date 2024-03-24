@@ -87,6 +87,11 @@ test_data_suite = [
 
 
 class TestLinear(unittest.TestCase):
+
+     _edge_compile_config: EdgeCompileConfig = EdgeCompileConfig(
+        _skip_dim_order=True, # TODO(T182928844): Delegate dim order op to backend.
+    )
+
     class Linear(torch.nn.Module):
         def __init__(
             self,
@@ -117,7 +122,7 @@ class TestLinear(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.addmm.default": 1})
             .check_not(["torch.ops.quantized_decomposed"])
-            .to_edge()
+            .to_edge(config=self._edge_compile_config)
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -143,7 +148,7 @@ class TestLinear(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.addmm.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
+            .to_edge(config=self._edge_compile_config)
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
@@ -169,7 +174,7 @@ class TestLinear(unittest.TestCase):
             .export()
             .check_count({"torch.ops.aten.addmm.default": 1})
             .check(["torch.ops.quantized_decomposed"])
-            .to_edge()
+            .to_edge(config=self._edge_compile_config)
             .partition()
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
