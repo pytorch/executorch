@@ -9,9 +9,9 @@
 # `examples/portable/custom_ops/custom_ops_1.cpp`. We also have it registered
 # into EXIR in `examples/portable/custom_ops/custom_ops_1.py`. This
 # CMakeLists.txt runs a script to generate wrapper code based on the operator
-# kernel binding defined in `examples/portable/custom_ops/custom_ops.yaml`.
-# Then creates a library that contains both binding wrapper and the
-# implementation source file. This library can be linked into ExecuTorch binary
+# kernel binding defined in `examples/portable/custom_ops/custom_ops.yaml`. Then
+# creates a library that contains both binding wrapper and the implementation
+# source file. This library can be linked into ExecuTorch binary
 # (`executor_runner` in this example) and it is ready to run models containing
 # that custom op.
 cmake_minimum_required(VERSION 3.19)
@@ -43,9 +43,8 @@ set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 find_package(executorch CONFIG REQUIRED)
-find_package(
-  gflags REQUIRED PATHS ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party
-)
+find_package(gflags REQUIRED PATHS
+             ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party)
 
 target_include_directories(executorch INTERFACE ${_common_include_directories})
 
@@ -63,15 +62,12 @@ option(
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-set(
-  EXECUTORCH_SRCS_FILE
-  "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake"
-)
+set(EXECUTORCH_SRCS_FILE
+    "${CMAKE_CURRENT_BINARY_DIR}/../../../executorch_srcs.cmake")
 
 extract_sources(${EXECUTORCH_SRCS_FILE})
 
 include(${EXECUTORCH_SRCS_FILE})
-
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime).
@@ -81,8 +77,8 @@ elseif(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
   gen_selected_ops("" "my_ops::mul4.out" "")
 endif()
 # Expect gen_selected_ops output file to be selected_operators.yaml
-generate_bindings_for_kernels(
-  CUSTOM_OPS_YAML ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
+generate_bindings_for_kernels(CUSTOM_OPS_YAML
+                              ${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml)
 message("Generated files ${gen_command_sources}")
 
 # Prepare for C++ libraries.
@@ -93,7 +89,6 @@ if(REGISTER_EXAMPLE_CUSTOM_OP EQUAL 2)
       ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2.cpp # register my_ops::mul4
       ${CMAKE_CURRENT_LIST_DIR}/custom_ops_2_out.cpp # register
       # my_ops::mul4.out)
-  )
   gen_custom_ops_aot_lib("custom_ops_aot_lib" "${custom_ops_kernel_sources}")
   target_include_directories(custom_ops_aot_lib
                              PUBLIC ${_common_include_directories})
@@ -110,15 +105,12 @@ add_library(custom_kernels ${kernel_sources})
 target_link_libraries(custom_kernels PRIVATE executorch)
 target_compile_options(custom_kernels PUBLIC ${_common_compile_options})
 
-gen_operators_lib(
-  "custom_ops_lib"
-  KERNEL_LIBS custom_kernels
-  DEPS executorch)
+gen_operators_lib("custom_ops_lib" KERNEL_LIBS custom_kernels DEPS executorch)
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 add_executable(custom_ops_executor_runner ${_executor_runner__srcs})
-target_link_libraries(custom_ops_executor_runner
-                      custom_ops_lib executorch gflags)
+target_link_libraries(custom_ops_executor_runner custom_ops_lib executorch
+                      gflags)
 target_compile_options(custom_ops_executor_runner
                        PUBLIC ${_common_compile_options})
