@@ -577,7 +577,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     if args.vulkan:
         assert (
-            args.dtype_override is None
+            args.dtype_override == "fp32" or args.dtype_override is None
         ), "Vulkan backend does not support non fp32 dtypes at the moment"
         assert (
             args.quantization_mode is None
