@@ -451,8 +451,8 @@ class NodeVisitor:
 
     @staticmethod
     def find_aot_util_path() -> str:
-        # Look for .so installed by wheel (OSS).
-        rel_path = "executorch/extension/pybindings/libaot_util.so"
+        # Look for .so installed by wheel (OSS). TODO(gjcomer) Improve this.
+        rel_path = "executorch/extension/aot_util/libaot_util.so"
         for sys_path in sys.path:
             so_path = Path(sys_path) / rel_path
             if so_path.exists():
