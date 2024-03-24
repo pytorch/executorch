@@ -204,7 +204,7 @@ def quantize(
     activation_dtype: Optional[DType],
     checkpoint_path: Optional[Path] = None,
     # following arguments only available when setting int4 quantization.
-    groupsize: int = 128,
+    group_size: int = 128,
     # following arguments only used for GPTQ
     calibration_tasks: Optional[list] = None,
     calibration_limit: int = 5,
@@ -255,7 +255,7 @@ def quantize(
             tokenizer,
             blocksize,
             percdamp,
-            groupsize,
+            group_size,
             calibration_tasks,
             calibration_limit,
             calibration_seq_length,
@@ -290,9 +290,9 @@ def build_args_parser() -> argparse.ArgumentParser:
     ckpt_dir = f"{Path(__file__).absolute().parent.as_posix()}"
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--output-dir", default=".", help="output directory")
-    parser.add_argument(
-        "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
-    )
+    # parser.add_argument(
+    #     "-q", "--quantized_ckpt", default=None, help="quantized checkpoint file"
+    # )
     parser.add_argument(
         "-E",
         "--embedding-quantize",
@@ -319,6 +319,25 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--checkpoint",
         default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
+    )
+    parser.add_argument(
+        "--calibration_tasks",
+        nargs="+",
+        type=str,
+        default=[],
+        help="Tasks for GPTQ calibration",
+    )
+    parser.add_argument(
+        "--calibration_limit",
+        type=int,
+        default=5,
+        help="number of samples used for calibration",
+    )
+    parser.add_argument(
+        "--calibration_seq_length",
+        type=int,
+        default=2048,
+        help="Sequence length for GPTQ calibration",
     )
     parser.add_argument(
         "-t",
@@ -370,13 +389,17 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=None,
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
-    parser.add_argument("-G", "--groupsize", default=None, help="specify the groupsize")
+    parser.add_argument(
+        "-G", "--group_size", default=None, help="group_size for weight quantization"
+    )
 
     parser.add_argument(
         "-d",
         "--dtype-override",
-        default=None,
-        help="Override the dtype of the model (default is the checkpoint dtype). Options: fp16, fp32",
+        default="fp32",
+        type=str,
+        choices=["fp32"],
+        help="Override the dtype of the model (default is the checkpoint dtype). Options: fp32",
     )
 
     parser.add_argument(
@@ -474,7 +497,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
 
     # source transforms
     transforms = []
-    if args.quantized_ckpt or args.quantization_mode:
+    if args.quantization_mode:
         modelname = f"{modelname}_q"
         transforms.append(
             partial(
@@ -487,6 +510,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
                 tokenizer_path=(
                     Path(path) if (path := args.tokenizer_path) is not None else None
                 ),
+                group_size=args.group_size,
+                calibration_tasks=args.calibration_tasks,
+                calibration_limit=args.calibration_limit,
+                calibration_seq_length=args.calibration_seq_length,
             )
         )
 
@@ -550,7 +577,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
     if args.vulkan:
         assert (
-            args.dtype_override is None
+            args.dtype_override == "fp32" or args.dtype_override is None
         ), "Vulkan backend does not support non fp32 dtypes at the moment"
         assert (
             args.quantization_mode is None

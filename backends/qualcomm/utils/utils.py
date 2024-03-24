@@ -86,26 +86,10 @@ def canonicalize_program(prog: ExportedProgram):
             )
 
 
-def capture_program(
-    module: torch.nn.Module,
-    inputs: Tuple[torch.Tensor],
-) -> exir.ExirExportedProgram:
-    # TODO: should switch to torch.export.export & custom deomposition
-    #       to reduce maintaining effort.
-    exir_exported_program = exir.capture(
-        module,
-        inputs,
-        qnn_capture_config(),
-    )
-    # We choose call_operator by target in ConvertBinaryOpsWithScalar
-    # because it is the same source_fn_stack for MultiheadAttention
-    exir_exported_program.transform(ConvertBinaryOpsWithScalar())
-    ex_prog = exir_exported_program.to_edge(qnn_edge_config())
-
+def _transform(edge_program: ExportedProgram) -> None:
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
-    edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
     RecomposePixelShuffle()(graph_module)
@@ -121,6 +105,24 @@ def capture_program(
     FoldQDQ()(graph_module)
     InsertRequantize(edge_program)(graph_module)
     LayoutTransform(edge_program)(graph_module)
+
+
+def capture_program(
+    module: torch.nn.Module,
+    inputs: Tuple[torch.Tensor],
+) -> exir.ExirExportedProgram:
+    # TODO: should switch to torch.export.export & custom deomposition
+    #       to reduce maintaining effort.
+    exir_exported_program = exir.capture(
+        module,
+        inputs,
+        qnn_capture_config(),
+    )
+    # We choose call_operator by target in ConvertBinaryOpsWithScalar
+    # because it is the same source_fn_stack for MultiheadAttention
+    exir_exported_program.transform(ConvertBinaryOpsWithScalar())
+    ex_prog = exir_exported_program.to_edge(qnn_edge_config())
+    _transform(ex_prog.exported_program)
     return ex_prog
 
 

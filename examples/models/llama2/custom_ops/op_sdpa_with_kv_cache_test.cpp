@@ -22,9 +22,8 @@ exec_aten::Tensor op_sdpa_with_kv_cache(
     const exec_aten::Tensor& query,
     const exec_aten::Tensor& key,
     const exec_aten::Tensor& value,
-    const exec_aten::Tensor& key_cache,
-    const exec_aten::Tensor& value_cache,
-    const int64_t layer_id,
+    exec_aten::Tensor& key_cache,
+    exec_aten::Tensor& value_cache,
     const int64_t start_pos,
     const int64_t seq_len,
     const exec_aten::optional<exec_aten::Tensor>& attn_mask,
@@ -40,7 +39,6 @@ exec_aten::Tensor op_sdpa_with_kv_cache(
       value,
       key_cache,
       value_cache,
-      layer_id,
       start_pos,
       seq_len,
       attn_mask,
@@ -57,15 +55,15 @@ SDPA with cache is equivalent of the following code
 # k cache, v cache = (num layers, batch size, max seq length, num heads, head
 dim) # attn_mask = [max seq length, max seq length]
 
-def sdpa_with_cache(q, k, v, k_cache, v_cache, layer_id, start_pos, attn_mask):
+def sdpa_with_cache(q, k, v, k_cache, v_cache, start_pos, attn_mask):
     attn_mask = attn_mask[start_pos].view((1, -1))
     q = q.transpose(1, 2)
-    k_cache[layer_id, :, start_pos] = k
-    v_cache[layer_id, :, start_pos] = v
+    k_cache[:, start_pos] = k
+    v_cache[:, start_pos] = v
     k = k.transpose(1, 2)
     v = v.transpose(1, 2)
-    sliced_k_cache = k_cache[layer_id]
-    sliced_v_cache = v_cache[layer_id]
+    sliced_k_cache = k_cache
+    sliced_v_cache = v_cache
     sliced_k_cache = sliced_k_cache.transpose(1, 2)
     sliced_v_cache = sliced_v_cache.transpose(1, 2)
     out = F.scaled_dot_product_attention(q, sliced_k_cache, sliced_v_cache,
@@ -141,8 +139,12 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
        0.2814,
        0.7886,
        0.5895});
-  exec_aten::Tensor key_cache = tfFloat.zeros({3, 1, 5, 4, 4});
-  exec_aten::Tensor value_cache = tfFloat.zeros({3, 1, 5, 4, 4});
+  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor key_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
   exec_aten::optional<exec_aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
@@ -174,9 +176,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       0,
       1,
       attn_mask,
@@ -210,9 +211,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      2,
+      key_cache_2,
+      value_cache_2,
       0,
       1,
       attn_mask,
@@ -246,9 +246,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       1,
       1,
       attn_mask,
@@ -282,9 +281,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      1,
+      key_cache_1,
+      value_cache_1,
       1,
       1,
       attn_mask,
@@ -318,9 +316,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      1,
+      key_cache_1,
+      value_cache_1,
       2,
       1,
       attn_mask,
@@ -354,9 +351,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      2,
+      key_cache_2,
+      value_cache_2,
       2,
       1,
       attn_mask,
@@ -385,8 +381,12 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
                      0.3278, 0.6532, 0.3958, 0.9147, 0.2036, 0.2018, 0.2018,
                      0.9497, 0.6666, 0.9811, 0.0874, 0.0041, 0.1088, 0.1637,
                      0.7025, 0.6790, 0.9155, 0.2418, 0.1591, 0.7653, 0.2979});
-  exec_aten::Tensor key_cache = tfFloat.zeros({3, 1, 8, 7, 4});
-  exec_aten::Tensor value_cache = tfFloat.zeros({3, 1, 8, 7, 4});
+  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 8, 7, 4});
+  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 8, 7, 4});
+  exec_aten::Tensor key_cache_1 = tfFloat.zeros({1, 8, 7, 4});
+  exec_aten::Tensor value_cache_1 = tfFloat.zeros({1, 8, 7, 4});
+  exec_aten::Tensor key_cache_2 = tfFloat.zeros({1, 8, 7, 4});
+  exec_aten::Tensor value_cache_2 = tfFloat.zeros({1, 8, 7, 4});
   exec_aten::optional<exec_aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
@@ -405,9 +405,8 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       0,
       1,
       attn_mask,
@@ -428,9 +427,8 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      2,
+      key_cache_2,
+      value_cache_2,
       0,
       1,
       attn_mask,
@@ -451,9 +449,8 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       1,
       1,
       attn_mask,
@@ -474,9 +471,8 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      1,
+      key_cache_1,
+      value_cache_1,
       1,
       1,
       attn_mask,
@@ -497,9 +493,8 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      1,
+      key_cache_1,
+      value_cache_1,
       2,
       1,
       attn_mask,
@@ -520,9 +515,8 @@ TEST(OpScaledDotProductAttentionTest, LargerTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      2,
+      key_cache_2,
+      value_cache_2,
       2,
       1,
       attn_mask,
@@ -591,8 +585,12 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
        0.7886,
        0.5895});
   exec_aten::Tensor attn_mask = tfFloat.make({1, 1}, {0});
-  exec_aten::Tensor key_cache = tfFloat.zeros({3, 1, 5, 4, 4});
-  exec_aten::Tensor value_cache = tfFloat.zeros({3, 1, 5, 4, 4});
+  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor key_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor value_cache_1 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor key_cache_2 = tfFloat.zeros({1, 5, 4, 4});
+  exec_aten::Tensor value_cache_2 = tfFloat.zeros({1, 5, 4, 4});
   double dropout_p = 0;
   bool is_causal = false;
   exec_aten::optional<double> scale;
@@ -623,9 +621,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       0,
       1,
       attn_mask,
@@ -659,9 +656,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      2,
+      key_cache_2,
+      value_cache_2,
       0,
       1,
       attn_mask,
@@ -696,9 +692,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       1,
       1,
       attn_mask,
@@ -732,9 +727,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      1,
+      key_cache_1,
+      value_cache_1,
       1,
       1,
       attn_mask,
@@ -769,9 +763,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      1,
+      key_cache_1,
+      value_cache_1,
       2,
       1,
       attn_mask,
@@ -805,9 +798,8 @@ TEST(OpScaledDotProductAttentionTest, BasicTestWithAttnMask) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      2,
+      key_cache_2,
+      value_cache_2,
       2,
       1,
       attn_mask,
@@ -840,8 +832,9 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
        0.0975, 0.8920, 0.5081, 0.6053, 0.2981, 0.2660, 0.5824, 0.6849,
        0.6121, 0.2590, 0.9854, 0.4264, 0.1938, 0.2661, 0.9922, 0.5000});
 
-  exec_aten::Tensor key_cache = tfFloat.zeros({3, 1, 5, 8, 4});
-  exec_aten::Tensor value_cache = tfFloat.zeros({3, 1, 5, 8, 4});
+  exec_aten::Tensor key_cache_0 = tfFloat.zeros({1, 5, 8, 4});
+  exec_aten::Tensor value_cache_0 = tfFloat.zeros({1, 5, 8, 4});
+
   exec_aten::optional<exec_aten::Tensor> attn_mask;
   double dropout_p = 0;
   bool is_causal = false;
@@ -861,9 +854,8 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       0,
       1,
       attn_mask,
@@ -903,9 +895,8 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       1,
       1,
       attn_mask,
@@ -945,9 +936,8 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       2,
       1,
       attn_mask,
@@ -987,9 +977,8 @@ TEST(OpScaledDotProductAttentionTest, SequenceTest) {
       query,
       key,
       value,
-      key_cache,
-      value_cache,
-      0,
+      key_cache_0,
+      value_cache_0,
       3,
       1,
       attn_mask,

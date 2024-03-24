@@ -99,9 +99,13 @@ gen_selected_ops(
   "${EXECUTORCH_SELECT_OPS_LIST}"
   "${EXECUTORCH_SELECT_ALL_OPS}")
 
-generate_bindings_for_kernels(${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-                              "${_custom_ops_yaml}")
-gen_operators_lib("select_build_lib" ${_kernel_lib} executorch)
+generate_bindings_for_kernels(
+  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+  CUSTOM_OPS_YAML "${_custom_ops_yaml}")
+gen_operators_lib(
+  "select_build_lib"
+  KERNEL_LIBS ${_kernel_lib}
+  DEPS executorch)
 
 list(TRANSFORM _executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 

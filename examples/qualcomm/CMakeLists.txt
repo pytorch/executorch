@@ -58,9 +58,11 @@ set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 gen_selected_ops("" "" "ON")
 generate_bindings_for_kernels(
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
-gen_operators_lib("full_portable_ops_lib" portable_kernels executorch)
+gen_operators_lib("full_portable_ops_lib"
+  KERNEL_LIBS portable_kernels
+  DEPS executorch)
 target_compile_options(full_portable_ops_lib
     INTERFACE
     -DET_EVENT_TRACER_ENABLED
