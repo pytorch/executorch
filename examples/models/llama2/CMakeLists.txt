@@ -55,19 +55,14 @@ add_subdirectory(runner)
 
 target_link_libraries(llama_main PUBLIC gflags llama_runner
                       portable_ops_lib)
-target_link_options(
-  llama_main PUBLIC "SHELL:LINKER:--whole-archive \
-                    $<TARGET_FILE:portable_ops_lib> \
-                    LINKER:--no-whole-archive")
+target_link_options_shared_lib(portable_ops_lib)
+target_link_options_shared_lib(executorch)
 
 # XNNPACK pthreadpool cpuinfo
 if(TARGET xnnpack_backend)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK pthreadpool cpuinfo)
   target_link_libraries(llama_main PUBLIC ${xnnpack_backend_libs})
-  target_link_options(
-    llama_main PUBLIC "SHELL:LINKER:--whole-archive \
-                      $<TARGET_FILE:xnnpack_backend> \
-                      LINKER:--no-whole-archive")
+  target_link_options_shared_lib(xnnpack_backend)
 endif()
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 

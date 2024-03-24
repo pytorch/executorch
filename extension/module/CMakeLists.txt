@@ -12,12 +12,12 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Source root directory for executorch.
-if(NOT EXECUTORCH_ROOT)
+if(NOT EƒXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
 list(TRANSFORM _extension_module__srcs PREPEND "${EXECUTORCH_ROOT}/")
-if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID)
+if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID OR APPLE)
   # Building a share library on iOS requires code signing
   # On Android we see duplicated registration when using shared lib
   add_library(extension_module STATIC ${_extension_module__srcs})
