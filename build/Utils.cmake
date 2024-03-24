@@ -73,7 +73,9 @@ function(executorch_print_configuration_summary)
   message(
     STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}")
   message(
-    STATUS "  REGISTER_QUANTIZED_OPS             : ${REGISTER_QUANTIZED_OPS}")
+    STATUS "  EXECUTORCH_REGISTER_OPTIMIZED_OPS      : ${EXECUTORCH_REGISTER_OPTIMIZED_OPS}")
+  message(
+    STATUS "  EXECUTORCH_REGISTER_QUANTIZED_OPS      : ${EXECUTORCH_REGISTER_QUANTIZED_OPS}")
   message(
     STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}")
   message(

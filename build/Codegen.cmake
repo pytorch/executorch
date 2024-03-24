@@ -138,7 +138,7 @@ function(gen_operators_lib lib_name)
       ${CMAKE_CURRENT_BINARY_DIR}/NativeFunctions.h)
   target_link_libraries(${lib_name} PRIVATE ${GEN_DEPS})
   if(GEN_KERNEL_LIBS)
-    target_link_libraries(${lib_name} PRIVATE ${GEN_KERNEL_LIBS})
+    target_link_libraries(${lib_name} PUBLIC ${GEN_KERNEL_LIBS})
   endif()
 
   target_link_options_shared_lib(${lib_name})
