@@ -106,7 +106,10 @@ Result<at::Tensor> parseTensor(
     Result<void*> data_ptr = getTensorDataPtr(
         s_tensor, program, tensor.nbytes(), memory_manager->planned_memory());
     if (!data_ptr.ok()) {
-      ET_LOG(Error, "getTensorDataPtr() failed: 0x%" PRIx32, data_ptr.error());
+      ET_LOG(
+          Error,
+          "getTensorDataPtr() failed: 0x%" PRIx32,
+          static_cast<uint32_t>(data_ptr.error()));
       return data_ptr.error();
     }
     tensor.unsafeGetTensorImpl()->unsafe_storage().set_data_ptr(

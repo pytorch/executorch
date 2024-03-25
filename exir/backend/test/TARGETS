@@ -67,6 +67,7 @@ python_library(
         "//caffe2:torch",
         "//executorch/exir:lib",
         "//executorch/exir/backend:partitioner",
+        "//executorch/exir/backend:utils",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
     ],
 )
@@ -283,6 +284,9 @@ python_unittest(
     srcs = [
         "test_partitioner.py",
     ],
+    preload_deps = [
+        "//executorch/exir/backend/test/demos/rpc:executor_backend_register",
+    ],
     deps = [
         "//caffe2:torch",
         "//executorch/exir:lib",
@@ -295,6 +299,19 @@ python_unittest(
         "//executorch/exir/dialects:lib",
         "//executorch/exir/tests:models",
         "//executorch/extension/pybindings:portable_lib",  # @manual
+        "//executorch/extension/pytree:pylib",
         "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
+)
+
+python_unittest(
+    name = "test_passes",
+    srcs = [
+        "test_passes.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+        "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
     ],
 )

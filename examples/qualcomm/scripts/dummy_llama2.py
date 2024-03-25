@@ -7,6 +7,7 @@
 import json
 import os
 import re
+import sys
 from multiprocessing.connection import Client
 
 import numpy as np
@@ -71,26 +72,34 @@ if __name__ == "__main__":
         default="8a8w",
     )
 
-    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
-    # So maybe it's fine to just use the environment.
-    if "QNN_SDK_ROOT" not in os.environ:
-        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
-    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+    parser.add_argument(
+        "--checkpoint",
+        help="Pass llama2 checkpoint.",
+        default=False,
+    )
 
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
+    parser.add_argument(
+        "--params",
+        help="Pass llama2 params json file.",
+        default=False,
+    )
 
     args = parser.parse_args()
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    instance = Llama2Model(use_kv_cache=args.use_kv_cache)
+    if args.params and args.checkpoint:
+        instance = Llama2Model(
+            use_kv_cache=args.use_kv_cache,
+            checkpoint=args.checkpoint,
+            params=args.params,
+        )
+    else:
+        instance = Llama2Model(
+            use_kv_cache=args.use_kv_cache,
+        )
+
     inputs, input_list = create_device_inputs(
         instance.get_example_inputs(), args.use_kv_cache
     )
@@ -120,6 +129,10 @@ if __name__ == "__main__":
         custom_annotations=(),
         quant_dtype=quant_dtype,
     )
+
+    if args.compile_only:
+        sys.exit(0)
+
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         artifact_path=f"{args.build_folder}",

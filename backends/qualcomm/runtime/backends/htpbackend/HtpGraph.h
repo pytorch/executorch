@@ -20,11 +20,13 @@ class HtpGraph : public QnnGraph {
  public:
   HtpGraph(
       const QnnImplementation& implementation,
+      QnnBackend* backend,
       QnnContext* context,
+      const QnnExecuTorchProfileLevel& profile_level,
       const std::string& graph_name,
       const SocInfo* soc_info,
       const QnnExecuTorchHtpBackendOptions* htp_options)
-      : QnnGraph(implementation, context, graph_name),
+      : QnnGraph(implementation, backend, context, profile_level, graph_name),
         qcom_target_soc_info_(soc_info),
         htp_options_(htp_options) {
     htp_graph_custom_config_ =

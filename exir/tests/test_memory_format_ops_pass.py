@@ -10,6 +10,11 @@ from typing import Any, Tuple
 
 import torch
 from executorch.exir import EdgeCompileConfig, to_edge
+
+from executorch.exir.dim_order_utils import (
+    is_channel_last_dim_order,
+    is_contiguous_dim_order,
+)
 from torch.export import export
 from torch.testing import FileCheck
 
@@ -22,15 +27,6 @@ class MemoryFormatTestSet:
 
 
 class TestMemoryFormatOpsPass(unittest.TestCase):
-    def is_channel_last(self, x: torch.Tensor):
-        # This is a heuristic to determine if the input tensor is in NHWC (channel last)
-        # due to we do not have a good way to infer the dimension order or the memory format
-        # of the input tensor. Please not this function is specific for contiguous tensors
-        # whose dim(1) is channel one only, other types of tensors may not work well
-        # due to different channel configuration and memory arrangement.
-
-        return x.stride(1) == 1
-
     def memory_format_test_runner(self, test_set: MemoryFormatTestSet):
         aten_op_str = "torch.ops.aten._to_copy.default"
         edge_op_str = "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
@@ -60,13 +56,13 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
         actual = epm.exported_program().module()(*test_set.sample_input)
         self.assertTrue(torch.allclose(actual, expected))
         self.assertEqual(
-            self.is_channel_last(actual),
-            self.is_channel_last(expected),
+            is_channel_last_dim_order(actual),
+            is_channel_last_dim_order(expected),
         )
         if test_set.target_memory_format == torch.channels_last:
-            self.assertTrue(self.is_channel_last(actual))
+            self.assertTrue(is_channel_last_dim_order(actual))
         elif test_set.target_memory_format == torch.contiguous_format:
-            self.assertFalse(self.is_channel_last(actual))
+            self.assertTrue(is_contiguous_dim_order(actual))
         else:
             raise RuntimeError("Unknown memory format")
 

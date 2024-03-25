@@ -29,14 +29,14 @@ bool validate_dim_order(const DimOrderType* dim_order, const size_t dims) {
 } // namespace
 
 /**
- * Check if a given dim_order array is equivalent to the default dim order of
+ * Check if a given dim_order array is equivalent to the contiguous dim order of
  * {0, 1, 2, 3, ...}
  *
  * @param[in] dim_order pointer to dim_order array
  * @param[in] dims length of the dim_order array
  */
 template <typename DimOrderType>
-inline bool is_default_dim_order(
+inline bool is_contiguous_dim_order(
     const DimOrderType* dim_order,
     const size_t dims) {
   for (int i = 0; i < dims; ++i) {

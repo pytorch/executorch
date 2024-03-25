@@ -27,7 +27,8 @@ Tensor& full_like_out(
   if (memory_format.has_value()) {
     ET_KERNEL_CHECK_MSG(
         ctx,
-        memory_format.value() == MemoryFormat::Contiguous,
+        memory_format.value() == MemoryFormat::Contiguous ||
+            memory_format.value() == MemoryFormat::Preserve,
         InvalidArgument,
         out,
         "memory_format must be contiguous");

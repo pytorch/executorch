@@ -6,6 +6,8 @@
 from enum import Enum
 from typing import List, Optional, Tuple, Union
 
+import numpy as np
+
 import torch
 from executorch.backends.arm.arm_backend import (
     generate_ethosu_compile_spec,
@@ -13,6 +15,10 @@ from executorch.backends.arm.arm_backend import (
 )
 
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
+from executorch.backends.arm.arm_quantizer import (
+    ArmQuantizer,
+    get_symmetric_quantization_config,
+)
 
 from executorch.backends.arm.test.tosautil.tosa_test_utils import (
     QuantizationParams,
@@ -29,16 +35,39 @@ from executorch.backends.xnnpack.test.tester.tester import (
 )
 
 from executorch.exir import EdgeCompileConfig
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
-    get_symmetric_quantization_config,
-    XNNPACKQuantizer,
-)
 from torch.export import ExportedProgram
 
 
 class ArmBackendSelector(Enum):
     TOSA = "tosa"
     ETHOS_U55 = "ethos-u55"
+
+
+class Partition(Partition):
+    def dump_artifact(self, path_to_dump: Optional[str]):
+        super().dump_artifact(path_to_dump)
+        from pprint import pformat
+
+        to_print = None
+        for spec in self.graph_module.lowered_module_0.compile_specs:
+            if spec.key == "output_format":
+                if spec.value == b"tosa":
+                    tosa_fb = self.graph_module.lowered_module_0.processed_bytes
+                    to_print = TosaTestUtils.dbg_tosa_fb_to_json(tosa_fb)
+                    to_print = pformat(to_print, compact=True, indent=1)
+                    to_print = f"\n TOSA deserialized: \n{to_print}"
+                elif spec.value == b"vela":
+                    vela_cmd_stream = self.graph_module.lowered_module_0.processed_bytes
+                    to_print = str(vela_cmd_stream)
+                    to_print = f"\n Vela command stream: \n{to_print}"
+                break
+        assert to_print is not None, "No TOSA nor Vela compile spec found"
+
+        if path_to_dump:
+            with open(path_to_dump, "a") as fp:
+                fp.write(to_print)
+        else:
+            print(to_print)
 
 
 class ArmTester(Tester):
@@ -76,11 +105,11 @@ class ArmTester(Tester):
             #   2) desc.json
             # Saved on disk in self.tosa_test_util.intermediate_path
             self.compile_spec = generate_tosa_compile_spec(
-                self.permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
+                permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
             )
         elif backend == ArmBackendSelector.ETHOS_U55:
             self.compile_spec = generate_ethosu_compile_spec(
-                "ethos-u55-128", self.permute_memory_to_nhwc
+                config="ethos-u55-128", permute_memory_to_nhwc=permute_memory_to_nhwc
             )
         else:
             raise ValueError(f"Unknown backend: {backend}")
@@ -88,9 +117,8 @@ class ArmTester(Tester):
 
     def quantize(self, quantize_stage: Optional[Quantize] = None):
         if quantize_stage is None:
-            # Using the XNNPACKQuantizer for now
             quantize_stage = Quantize(
-                XNNPACKQuantizer(),
+                ArmQuantizer(),
                 get_symmetric_quantization_config(is_per_channel=False),
             )
         return super().quantize(quantize_stage)
@@ -146,14 +174,25 @@ class ArmTester(Tester):
             module_for_ref, inputs_to_run
         )
 
+        # Transpose input data which is on NCHW format to NHWC format,
+        if self.permute_memory_to_nhwc and len(inputs_to_run[0].shape) == 4:
+            NHWC_Order = (0, 2, 3, 1)
+            inputs_to_run = (np.transpose(inputs_to_run[0], NHWC_Order),)
+
         # Run the TOSA ref model to get the output tensor, which will be
         # compared to the torch output in compare_outputs()
-        self.stage_output = self.tosa_test_util.run_tosa_ref_model(
+        tosa_output = self.tosa_test_util.run_tosa_ref_model(
             params_input=(input_names, qp_input),
             param_output=(output_name, qp_output),
             inputs=inputs_to_run,
-            permute_memory_to_nhwc=self.permute_memory_to_nhwc,
         )
+
+        # Transpose back to NCHW format for comparison to torch output
+        if self.permute_memory_to_nhwc and len(tosa_output.shape) == 4:
+            NCHW_Order = (0, 3, 1, 2)
+            tosa_output = (np.transpose(tosa_output, NCHW_Order),)
+
+        self.stage_output = tosa_output
 
         return self
 

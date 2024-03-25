@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 import collections
+import copy
 import os
 import tempfile
 import unittest
@@ -32,6 +33,8 @@ from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
 from executorch.exir.program._program import ExecutorchProgram
+from executorch.sdk import generate_etrecord
+from executorch.sdk.inspector import Inspector
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -56,6 +59,7 @@ class TestQNN(unittest.TestCase):
     artifact_dir: Literal = ""
     image_dataset: Literal = ""
     pretrained_weight: Literal = ""
+    enable_profile: bool = False
     online_prepare: bool = False
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
@@ -108,6 +112,8 @@ class TestQNN(unittest.TestCase):
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
         executorch_prog: ExecutorchProgram,
+        etrecord_path: str,
+        expected_profile_events: int,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (
@@ -123,6 +129,7 @@ class TestQNN(unittest.TestCase):
 
             device_output_dir = f"{tmp_dir}/outputs"
             device_outputs = []
+            etdump_path = f"{tmp_dir}/etdump.etdp"
 
             def post_process():
                 for i, f in enumerate(os.listdir(device_output_dir)):
@@ -130,6 +137,12 @@ class TestQNN(unittest.TestCase):
                     output = np.fromfile(filename, dtype=ref_outputs[i].numpy().dtype)
                     output = torch.from_numpy(output).reshape(ref_outputs[i].shape)
                     device_outputs.append(output)
+
+            def validate_profile():
+                inspector = Inspector(etdump_path=etdump_path, etrecord=etrecord_path)
+                self.assertTrue(
+                    len(inspector.to_dataframe().index) == expected_profile_events
+                )
 
             adb = SimpleADB(
                 qnn_sdk=os.getenv("QNN_SDK_ROOT"),
@@ -146,11 +159,15 @@ class TestQNN(unittest.TestCase):
             adb.pull(output_path=tmp_dir, callback=post_process)
             self._assert_outputs_equal(device_outputs, ref_outputs)
 
+            if expected_profile_events != -1:
+                adb.pull_etdump(etdump_path, callback=validate_profile)
+
     def lower_module_and_test_output(
         self,
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
         expected_partitions: int = 1,
+        expected_profile_events: int = -1,
         assert_output_equal: bool = True,
         skip_node_id_set: set = None,
         skip_node_op_set: set = None,
@@ -159,6 +176,10 @@ class TestQNN(unittest.TestCase):
             self.compiler_specs, skip_node_id_set, skip_node_op_set
         )
         delegated_program = capture_program(module, sample_inputs)
+
+        # this is needed for the ETRecord as lowering modifies the graph in-place
+        edge_copy = copy.deepcopy(delegated_program)
+
         delegated_program.exported_program = to_backend(
             delegated_program.exported_program, qnn_partitioner
         )
@@ -175,9 +196,15 @@ class TestQNN(unittest.TestCase):
                 QnnBackend.__name__,
             )
 
+        etrecord_path = "etrecord.bin"
+        if self.enable_profile:
+            generate_etrecord(etrecord_path, edge_copy, exec_prog)
+
         # Check numerics
-        if assert_output_equal:
-            self.verify_output(module, sample_inputs, exec_prog)
+        if assert_output_equal or expected_profile_events != -1:
+            self.verify_output(
+                module, sample_inputs, exec_prog, etrecord_path, expected_profile_events
+            )
 
     def get_qdq_module(
         self,

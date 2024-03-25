@@ -93,7 +93,7 @@ class Module final {
     THROW_IF_ERROR(
         program.error(),
         "loading program failed with error: 0x%" PRIx32,
-        program.error());
+        static_cast<uint32_t>(program.error()));
     program_ = std::make_unique<Program>(std::move(program.get()));
 
     // Figure out the size of each non_const layer we need to support every
@@ -137,7 +137,7 @@ class Module final {
           method.error(),
           "loading method %s failed with error 0x%" PRIx32,
           name,
-          method.error());
+          static_cast<uint32_t>(method.error()));
       methods_.insert(
           {std::string(name),
            std::make_unique<Method>(std::move(method.get()))});
@@ -164,7 +164,7 @@ class Module final {
         set_inputs_status,
         "method->set_inputs() for method '%s' failed with error 0x%" PRIx32,
         method_name.c_str(),
-        set_inputs_status);
+        static_cast<uint32_t>(set_inputs_status));
 
 #ifdef USE_ATEN_LIB
     // [TLS handling] This is to workaround an assertion failure
@@ -196,7 +196,7 @@ class Module final {
           ET_LOG(
               Error,
               "ignoring error from set_output_data_ptr(): 0x%" PRIx32,
-              output_status);
+              static_cast<uint32_t>(output_status));
         }
       }
     }
@@ -204,7 +204,7 @@ class Module final {
     THROW_IF_ERROR(
         execute_status,
         "method->execute() failed with error 0x%" PRIx32,
-        execute_status);
+        static_cast<uint32_t>(execute_status));
     // process outputs
     std::vector<EValue> result(method->outputs_size());
 
@@ -214,7 +214,7 @@ class Module final {
         get_outputs_status,
         "method->get_outputs() for method '%s' failed with error 0x%" PRIx32,
         method_name.c_str(),
-        get_outputs_status);
+        static_cast<uint32_t>(get_outputs_status));
 
     return result;
   }
@@ -312,7 +312,7 @@ inline std::unique_ptr<Module> load_from_file(
       res.error(),
       "Failed to create MmapDataLoader from file %s, error: 0x:%" PRIx32,
       path.c_str(),
-      res.error());
+      static_cast<uint32_t>(res.error()));
 
   auto loader = std::make_unique<MmapDataLoader>(std::move(res.get()));
   return std::make_unique<Module>(
@@ -502,7 +502,7 @@ struct PyModule final {
             "Tensor meta doesn't exist for output %zu, error is 0x%" PRIx32
             ", skipping allocating storage",
             i,
-            output_tensor_meta.error());
+            static_cast<uint32_t>(output_tensor_meta.error()));
         output_storage_spans[i] = Span<uint8_t>();
         continue;
       }
@@ -586,7 +586,9 @@ struct PyModule final {
     Error status = bundled_program::LoadBundledInput(
         module_->get_method(method_name), bundled_program_ptr, testset_idx);
     THROW_IF_ERROR(
-        status, "LoadBundledInput failed with status %" PRIu32, status);
+        status,
+        "LoadBundledInput failed with status %" PRIu32,
+        static_cast<uint32_t>(status));
   }
 
   void verify_result_with_bundled_expected_output(
@@ -603,7 +605,9 @@ struct PyModule final {
         rtol,
         atol);
     THROW_IF_ERROR(
-        status, "Result verification failed with status %" PRIu32, status);
+        status,
+        "Result verification failed with status %" PRIu32,
+        static_cast<uint32_t>(status));
   }
 
   void plan_execute(const string method_name) {
@@ -611,7 +615,7 @@ struct PyModule final {
     THROW_IF_ERROR(
         status,
         "executing execution plan for method 'forward' failed with error: 0x%" PRIx32,
-        status);
+        static_cast<uint32_t>(status));
   }
 
  private:

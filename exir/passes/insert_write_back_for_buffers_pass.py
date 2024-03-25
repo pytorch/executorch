@@ -88,12 +88,6 @@ def insert_write_back_for_buffers_pass(
         for in_spec in ep.graph_signature.input_specs
     ]
 
-    # Grab the mutable buffer nodes in the outputs
-    mutated_outputs: List[Optional[str]] = [
-        out_spec.target if out_spec.kind in (OutputKind.BUFFER_MUTATION,) else None
-        for out_spec in ep.graph_signature.output_specs
-    ]
-
     input_name_to_node: Dict[str, torch.fx.Node] = {}
 
     placeholder_nodes = [node for node in gm.graph.nodes if node.op == "placeholder"]
@@ -102,6 +96,20 @@ def insert_write_back_for_buffers_pass(
     for input_node, lifted_node in zip(placeholder_nodes, lifted_inputs):
         if lifted_node is not None:
             input_name_to_node[lifted_node] = input_node
+
+    # Grab the mutable buffer nodes in the outputs,
+    mutated_outputs: List[Optional[str]] = [
+        (
+            out_spec.target
+            if out_spec.kind in (OutputKind.BUFFER_MUTATION,)
+            and out_spec.arg.name
+            not in {
+                val.name for val in input_name_to_node.values()
+            }  # if the output arg is the input value then all operations on it are in-place so theres no need to add a copy_ node
+            else None
+        )
+        for out_spec in ep.graph_signature.output_specs
+    ]
 
     # insert the copy ops and update the outputs
     buffer_output_nodes = _insert_copy(gm, mutated_outputs, input_name_to_node)

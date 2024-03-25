@@ -91,7 +91,7 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                                       configuration:(MLModelConfiguration *)configuration
                                        assetManager:(ETCoreMLAssetManager *)assetManager
                                               error:(NSError * __autoreleasing *)error {
-    if (![modelAsset keepAliveAndReturnError:error]) {
+    if (modelAsset && ![modelAsset keepAliveAndReturnError:error]) {
         return nil;
     }
     
@@ -123,11 +123,6 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                          modelAsset.contentURL.path);
     }
     
-    ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithCompiledModelAsset:model.asset
-                                                                                    outputNames:model.orderedOutputNames
-                                                                                  configuration:configuration
-                                                                                          error:error];
-    
     self = [super init];
     if (self) {
         _model = model;
@@ -136,7 +131,6 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
         _configuration = configuration;
         _pathToSymbolNameMap = pathToSymbolNameMap;
         _executor = [[ETCoreMLDefaultModelExecutor alloc] initWithModel:model];
-        _profiler = profiler;
     }
     
     return self;
@@ -147,12 +141,22 @@ NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_path_to_s
                                                  eventLogger:(const executorchcoreml::ModelEventLogger *)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
     if (self.profiler == nil) {
+        ETCoreMLModelProfiler *profiler = [[ETCoreMLModelProfiler alloc] initWithCompiledModelAsset:self.model.asset
+                                                                                        outputNames:self.model.orderedOutputNames
+                                                                                      configuration:self.configuration
+                                                                                              error:error];
+        self.profiler = profiler;
+    }
+       
+    
+    if (!self.profiler) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorModelProfilingNotSupported,
                                       "%@: Model profiling is only available for macOS >= 14.4, iOS >= 17.4, tvOS >= 17.4 and watchOS >= 10.4.",
                                       NSStringFromClass(ETCoreMLModelAnalyzer.class));
         return nil;
     }
+    
     NSArray<MLMultiArray *> *modelOutputs = nil;
     NSArray<ETCoreMLModelStructurePath *> *operationPaths = self.profiler.operationPaths;
     ETCoreMLModelProfilingResult *profilingInfos = [self.profiler profilingInfoForOperationsAtPaths:operationPaths

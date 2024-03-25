@@ -292,8 +292,8 @@ class TensorFactory {
    *     size of this vector must be equal to the product of the elements of
    *     `sizes`.
    * @param[in] dim_order The dim order describing how tensor memory is laid
-   * out. If empty or not specificed, the function will use a default dim order
-   * of {0, 1, 2, 3, ...}
+   * out. If empty or not specificed, the function will use a contiguous dim
+   * order of {0, 1, 2, 3, ...}
    *
    * @return A new Tensor with the specified shape and data.
    */
@@ -706,8 +706,8 @@ class TensorFactory {
    *     size of this vector must be equal to the product of the elements of
    *     `sizes`.
    * @param[in] dim_order The dim order describing how tensor memory is laid
-   * out. If empty or not specificed, the function will use a default dim order
-   * of {0, 1, 2, 3, ...}
+   * out. If empty or not specificed, the function will use a contiguous dim
+   * order of {0, 1, 2, 3, ...}
    *
    * @return A new Tensor with the specified shape and data.
    */

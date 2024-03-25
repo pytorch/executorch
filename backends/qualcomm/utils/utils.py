@@ -38,6 +38,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
     QnnExecuTorchOptions,
+    QnnExecuTorchProfileLevel,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
     convert_to_flatbuffer,
@@ -96,6 +97,24 @@ def get_decomp_table() -> Dict[torch._ops.OperatorBase, Callable]:
     return source_decompositions
 
 
+def _transform(edge_program: ExportedProgram) -> None:
+    # currently ExirExportedProgram.transform does not accept
+    # changes of input number which was caused by FoldQDQ
+    # apply passes one by one here to avoid IR capture failure
+    graph_module = edge_program.graph_module
+    RemoveClone()(graph_module)
+    ConvertToLinear()(graph_module)
+    ConvertBmmToMatmul()(graph_module)
+    ConvertInterpolateWithUpsample2D()(graph_module)
+    I64toI32(edge_program)(graph_module)
+    AnnotateQuantAttrs(edge_program)(graph_module)
+    AnnotateAndQuantScalar(edge_program)(graph_module)
+    AnnotateDecomposed(edge_program)(graph_module)
+    FoldQDQ()(graph_module)
+    InsertRequantize(edge_program)(graph_module)
+    LayoutTransform(edge_program)(graph_module)
+
+
 def capture_program(
     module: torch.nn.Module,
     inputs: Tuple[torch.Tensor],
@@ -110,23 +129,7 @@ def capture_program(
     core_ep = ExirExportedProgram(decomposed_ep, False)
     core_ep.transform(ConvertBinaryOpsWithScalar())
     edge_ep = core_ep.to_edge(qnn_edge_config())
-
-    # currently ExirExportedProgram.transform does not accept
-    # changes of input number which was caused by FoldQDQ
-    # apply passes one by one here to avoid IR capture failure
-    edge_program = edge_ep.exported_program
-    graph_module = edge_program.graph_module
-    RemoveClone()(graph_module)
-    ConvertToLinear()(graph_module)
-    ConvertBmmToMatmul()(graph_module)
-    ConvertInterpolateWithUpsample2D()(graph_module)
-    I64toI32(edge_program)(graph_module)
-    AnnotateQuantAttrs(edge_program)(graph_module)
-    AnnotateAndQuantScalar(edge_program)(graph_module)
-    AnnotateDecomposed(edge_program)(graph_module)
-    FoldQDQ()(graph_module)
-    InsertRequantize(edge_program)(graph_module)
-    LayoutTransform(edge_program)(graph_module)
+    _transform(edge_ep.exported_program)
     return edge_ep
 
 
@@ -193,6 +196,7 @@ def generate_qnn_executorch_compiler_spec(
     saver: bool = False,
     online_prepare: bool = False,
     tensor_dump_output_path: str = "",
+    profile: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -215,6 +219,9 @@ def generate_qnn_executorch_compiler_spec(
             outputs of each OP there in runtime. In ALL cases,
             we don't recommend to set this option. This option exist just
             for debugging some accuracy issues.
+        profile: Enable profile the performance of per operator.
+            Note that for now only support kProfileDetailed to
+            profile the performance of each operator with cycle unit.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -242,6 +249,13 @@ def generate_qnn_executorch_compiler_spec(
 
     if len(tensor_dump_output_path.strip()) != 0:
         qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
+
+    if profile:
+        qnn_executorch_options.profile_level = (
+            QnnExecuTorchProfileLevel.kProfileDetailed
+        )
+    else:
+        qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
 
     if (
         online_prepare
