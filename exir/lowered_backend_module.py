@@ -483,10 +483,22 @@ def _get_new_signature(  # noqa: C901
             elif is_tagged:
                 input_specs.append(orig_input_spec)
 
-                if orig_input_spec.kind in (InputKind.PARAMETER, InputKind.BUFFER):
+                if orig_input_spec.kind == InputKind.PARAMETER:
                     new_state_dict[orig_input_spec.target] = (
                         original_program.state_dict[orig_input_spec.target]
                     )
+                elif (
+                    orig_input_spec.kind == InputKind.BUFFER
+                    and orig_input_spec.persistent
+                ):
+                    new_state_dict[orig_input_spec.target] = (
+                        original_program.state_dict[orig_input_spec.target]
+                    )
+                elif orig_input_spec.kind == InputKind.BUFFER:
+                    assert not orig_input_spec.persistent
+                    new_constants[orig_input_spec.target] = original_program.constants[
+                        orig_input_spec.target
+                    ]
                 elif orig_input_spec.kind in (
                     InputKind.CONSTANT_TENSOR,
                     InputKind.CUSTOM_OBJ,
