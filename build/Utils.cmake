@@ -33,43 +33,27 @@ function(executorch_print_configuration_summary)
   message(
     STATUS
       "  EXECUTORCH_ENABLE_LOGGING              : ${EXECUTORCH_ENABLE_LOGGING}")
-  message(
-    STATUS
-      "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : ${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}"
-  )
+  message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
+                 "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}")
   message(
     STATUS "  EXECUTORCH_LOG_LEVEL                   : ${EXECUTORCH_LOG_LEVEL}")
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_ANDROID_JNI           : ${EXECUTORCH_BUILD_ANDROID_JNI}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_ARM_BAREMETAL         : ${EXECUTORCH_BUILD_ARM_BAREMETAL}"
-  )
+  message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
+                 "${EXECUTORCH_BUILD_ANDROID_JNI}")
+  message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
+                 "${EXECUTORCH_BUILD_ARM_BAREMETAL}")
   message(
     STATUS
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}")
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : ${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL    : ${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : ${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_EXTENSION_MODULE      : ${EXECUTORCH_BUILD_EXTENSION_MODULE}"
-  )
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : ${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}"
-  )
+  message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
+                 "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL    : "
+                 "${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
+                 "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_MODULE}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
+                 "${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}")
   message(
     STATUS
       "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}")
@@ -79,10 +63,8 @@ function(executorch_print_configuration_summary)
   message(
     STATUS
       "  EXECUTORCH_BUILD_GTESTS                : ${EXECUTORCH_BUILD_GTESTS}")
-  message(
-    STATUS
-      "  EXECUTORCH_BUILD_HOST_TARGETS          : ${EXECUTORCH_BUILD_HOST_TARGETS}"
-  )
+  message(STATUS "  EXECUTORCH_BUILD_HOST_TARGETS          : "
+                 "${EXECUTORCH_BUILD_HOST_TARGETS}")
   message(
     STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}")
   message(
@@ -91,9 +73,7 @@ function(executorch_print_configuration_summary)
   message(
     STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}")
   message(
-    STATUS
-      "  REGISTER_QUANTIZED_OPS             : ${REGISTER_QUANTIZED_OPS}"
-  )
+    STATUS "  REGISTER_QUANTIZED_OPS             : ${REGISTER_QUANTIZED_OPS}")
   message(
     STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}")
   message(
