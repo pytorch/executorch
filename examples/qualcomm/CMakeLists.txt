@@ -100,7 +100,7 @@ target_link_libraries(qnn_executor_runner
     qnn_executorch_backend
     full_portable_ops_lib
     etdump
-    ${FLATCC_LIB}
+    ${FLATCCRT_LIB}
     gflags
 )
 target_compile_options(qnn_executor_runner

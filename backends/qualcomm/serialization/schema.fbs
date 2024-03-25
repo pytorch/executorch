@@ -172,6 +172,9 @@ table QnnExecuTorchOptions {
 
   /// Profiling level of the delegate and the backend. Default is off.
   profile_level:QnnExecuTorchProfileLevel;
+  
+  /// Enables usage of shared buffer between application and backend for graph I/O.
+  shared_buffer:bool;
 }
 
 root_type QnnExecuTorchOptions;

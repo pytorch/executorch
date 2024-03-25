@@ -109,6 +109,14 @@ target_sources(qnn_backend
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.cpp
 )
 
+# qnn_mem_manager
+target_sources(qnn_mem_manager
+    PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/QnnMemManager.h
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/QnnMemManager.cpp
+)
+
 # qnn_factory
 target_sources(qnn_factory
     PUBLIC

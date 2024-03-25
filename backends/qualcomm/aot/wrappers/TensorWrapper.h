@@ -59,15 +59,37 @@ class TensorWrapper {
     return QNN_VER_PTR(tensor_)->type == QNN_TENSOR_TYPE_STATIC;
   };
 
-  const void* GetStaticTensorData() const {
-    return QNN_VER_PTR(tensor_)->clientBuf.data;
+  std::uint32_t* GetDims() const {
+    return QNN_VER_PTR(tensor_)->dimensions;
+  };
+
+  Qnn_DataType_t GetDataType() const {
+    return QNN_VER_PTR(tensor_)->dataType;
+  };
+
+  Qnn_MemHandle_t const GetMemHandle() {
+    return QNN_VER_PTR(tensor_)->memHandle;
+  };
+
+  Qnn_TensorMemType_t GetMemType() const {
+    return QNN_VER_PTR(tensor_)->memType;
   };
 
   std::string GetName() const {
     return qnn_tensor_name_;
   };
 
+  std::uint32_t GetRank() const {
+    return QNN_VER_PTR(tensor_)->rank;
+  };
+
+  const void* GetStaticTensorData() const {
+    return QNN_VER_PTR(tensor_)->clientBuf.data;
+  };
+
   Error SetName(const std::string& name);
+
+  Error SetMemHandle(Qnn_MemHandle_t mem_handle);
 
  private:
   // need this to handle QNN_TENSOR_ERROR_NAME_HASH_COLLISION
