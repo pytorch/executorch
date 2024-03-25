@@ -444,7 +444,10 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.compile_spec_schema</span> <span class="kn">import</span> <span class="n">CompileSpec</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir.backend.partitioner</span> <span class="kn">import</span> <span class="n">Partitioner</span><span class="p">,</span> <span class="n">PartitionResult</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">is_identical_graph</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">,</span>
+    <span class="n">is_identical_graph</span><span class="p">,</span>
+<span class="p">)</span>
 
 <span class="kn">from</span> <span class="nn">executorch.exir.delegate</span> <span class="kn">import</span> <span class="n">executorch_call_delegate</span><span class="p">,</span> <span class="n">get_lowered_module_name</span>
 
@@ -588,6 +591,7 @@
 <span class="sd">    Return a list of nodes with the same tag.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">node_list</span> <span class="o">=</span> <span class="p">[]</span>
+
     <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">tagged_graph_module</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;delegation_tag&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="n">tag</span><span class="p">:</span>
             <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;output&quot;</span><span class="p">:</span>
@@ -801,6 +805,10 @@
     <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Partitioner </span><span class="si">{</span><span class="n">partitioner_instance</span><span class="si">}</span><span class="s2"> needs a `partition_tags` field containing a mapping of tags to delegate spec&quot;</span>
 
     <span class="n">update_to_real_program</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">tag</span><span class="p">,</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">partitioner_result</span><span class="o">.</span><span class="n">partition_tags</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="n">_maybe_duplicate_constant_nodes</span><span class="p">(</span><span class="n">tagged_exported_program</span><span class="p">,</span> <span class="n">tag</span><span class="p">,</span> <span class="n">edge_program</span><span class="p">)</span>
+
     <span class="n">tagged_graph_module</span> <span class="o">=</span> <span class="n">_partition_and_lower</span><span class="p">(</span>
         <span class="n">tagged_exported_program</span><span class="o">.</span><span class="n">graph_module</span><span class="p">,</span> <span class="n">partitioner_result</span><span class="p">,</span> <span class="n">edge_program</span>
     <span class="p">)</span>
