@@ -186,6 +186,9 @@ python_unittest(
     srcs = [
         "test_lowered_backend_module.py",
     ],
+    preload_deps = [
+        "//executorch/runtime/executor/test:test_backend_compiler_lib",
+    ],
     supports_static_listing = True,
     deps = [
         "fbsource//third-party/pypi/hypothesis:hypothesis",
@@ -200,7 +203,6 @@ python_unittest(
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/kernels/portable:custom_ops_generated_lib",
         "//executorch/kernels/quantized:custom_ops_generated_lib",
-        "//executorch/runtime/executor/test:test_backend_compiler_lib",
     ],
 )
 
