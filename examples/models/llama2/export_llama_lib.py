@@ -28,7 +28,7 @@ from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
-from sentencepiece import SentencePieceProcessor
+from sentencepiece import SentencePieceProcessor  # noqa
 from torch.ao.quantization.quantizer import Quantizer
 from torch.ao.quantization.quantizer.embedding_quantizer import EmbeddingQuantizer
 from torch.ao.quantization.quantizer.xnnpack_quantizer import (
@@ -225,7 +225,7 @@ def quantize(
     if activation_dtype is not None:
         torch_dtype = activation_dtype.to_torch_dtype()
     else:
-        torch_dtype = torch.float16
+        torch_dtype = torch.float16  # noqa
 
     if checkpoint_path is None:
         checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
@@ -237,32 +237,40 @@ def quantize(
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "8da4w":
-        from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+        raise Exception("8da4w quantization is not currently supported yet.")
+        # TODO: re-enable 8da4w quantization by uncommenting the following lines
+        # once we can depend on torchao
 
-        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
-        print("quantized model:", model)
-        return model
+        # from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
+
+        # model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
+        # print("quantized model:", model)
+        # return model
     elif qmode == "8da4w-gptq":
-        from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
+        raise Exception("8da4w-gptq quantization is not currently supported yet.")
+        # TODO: re-enable 8da4w-gptq quantization by uncommenting the following lines
+        # once we can depend on torchao
 
-        if tokenizer_path is None:
-            tokenizer_path = checkpoint_path.parent / "tokenizer.model"
-        assert tokenizer_path.is_file(), tokenizer_path
-        tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
-            model_file=str(tokenizer_path)
-        )
-        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
-            tokenizer,
-            blocksize,
-            percdamp,
-            group_size,
-            calibration_tasks,
-            calibration_limit,
-            calibration_seq_length,
-            pad_calibration_inputs,
-        )
-        model = gptq_quantizer.quantize(model)
-        return model
+        # from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
+
+        # if tokenizer_path is None:
+        #     tokenizer_path = checkpoint_path.parent / "tokenizer.model"
+        # assert tokenizer_path.is_file(), tokenizer_path
+        # tokenizer = SentencePieceProcessor(
+        #     model_file=str(tokenizer_path)
+        # )
+        # gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
+        #     tokenizer,
+        #     blocksize,
+        #     percdamp,
+        #     group_size,
+        #     calibration_tasks,
+        #     calibration_limit,
+        #     calibration_seq_length,
+        #     pad_calibration_inputs,
+        # )
+        # model = gptq_quantizer.quantize(model)
+        # return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
 

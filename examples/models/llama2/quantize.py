@@ -13,12 +13,89 @@ import torch.nn as nn
 import torch.nn.functional as F
 from .ops.quantized_ops import *  # noqa
 
-from torchao.quantization.quant_primitives import (
-    get_group_qparams_symmetric,
-    group_quantize_tensor_symmetric,
-    pack_scales_and_zeros,
-    per_token_dynamic_quant,
-)
+
+def get_group_qparams_symmetric(w, n_bit=4, groupsize=128, precision=torch.float32):
+    # needed for GPTQ with padding
+    if groupsize > w.shape[-1]:
+        groupsize = w.shape[-1]
+    assert groupsize > 1
+    assert w.shape[-1] % groupsize == 0
+    assert w.dim() == 2
+
+    to_quant = w.reshape(-1, groupsize)
+    assert torch.isnan(to_quant).sum() == 0
+
+    max_val = to_quant.amax(dim=1, keepdim=True)
+    min_val = to_quant.amin(dim=1, keepdim=True)
+    min_val_neg = torch.min(min_val, torch.zeros_like(min_val))
+    max_val_pos = torch.max(max_val, torch.zeros_like(max_val))
+
+    max_val_abs = torch.max(-min_val_neg, max_val_pos)
+    max_int = 2 ** (n_bit - 1) - 1
+    min_int = -(2 ** (n_bit - 1))
+
+    scales = max_val_abs / (float(max_int - min_int) / 2)
+    scales = torch.max(scales, torch.full_like(scales, torch.finfo(torch.float32).eps))
+    # TODO: make sure abs(scales) is not too small?
+    zeros = torch.full_like(scales, 0)
+    return scales.to(precision).reshape(w.shape[0], -1), zeros.to(precision).reshape(
+        w.shape[0], -1
+    )
+
+
+def pack_scales_and_zeros(scales, zeros, precision=torch.float16):
+    assert scales.shape == zeros.shape
+    assert scales.dtype == precision
+    assert zeros.dtype == precision
+    return (
+        torch.cat(
+            [
+                scales.reshape(scales.size(0), scales.size(1), 1),
+                zeros.reshape(zeros.size(0), zeros.size(1), 1),
+            ],
+            2,
+        )
+        .transpose(0, 1)
+        .contiguous()
+    )
+
+
+def group_quantize_tensor_symmetric(
+    w, n_bit=4, group_size=128, precision=torch.float32
+):
+    scales, zeros = get_group_qparams_symmetric(w, n_bit, group_size, precision)
+    n_bit = 4
+    max_int = 2 ** (n_bit - 1) - 1
+    min_int = -(2 ** (n_bit - 1))
+    # TODO: currently we don't know how to express torch.int4, we'll
+    # add torch.int4 to core later
+    w_int8 = torch.ops.quantized_decomposed.quantize_per_channel_group(
+        w, scales, zeros, min_int, max_int, torch.int8, group_size
+    )
+
+    return w_int8, scales, zeros
+
+
+def per_token_dynamic_quant(input: torch.Tensor) -> torch.Tensor:
+    orig_dtype = input.dtype
+    # TODO: we may need to make the choose_qparams op configurable
+    (
+        scales,
+        zero_points,
+    ) = torch.ops.quantized_decomposed.choose_qparams_per_token_asymmetric(
+        input, torch.int8
+    )
+
+    # TODO: get these from torch.int8
+    quant_min = -128
+    quant_max = 127
+    input = torch.ops.quantized_decomposed.quantize_per_token(
+        input, scales, zero_points, quant_min, quant_max, torch.int8
+    )
+    input = torch.ops.quantized_decomposed.dequantize_per_token(
+        input, scales, zero_points, quant_min, quant_max, torch.int8, orig_dtype
+    )
+    return input
 
 
 try:
