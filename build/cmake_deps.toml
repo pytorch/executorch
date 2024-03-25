@@ -274,6 +274,21 @@ filters = [
 ]
 # ---------------------------------- Vulkan end -----------------------------------
 # ---------------------------------- LLama start ----------------------------------
+[targets.custom_ops]
+buck_targets = [
+  "//examples/models/llama2/custom_ops:custom_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+  # Exclude blas, since it's built as a separate target.
+  # "^kernels/optimized/blas",
+]
+deps = [
+  "executorch",
+]
 
 [targets.llama_runner]
 buck_targets = [
@@ -286,6 +301,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "custom_ops",
   "executorch",
   "extension_data_loader",
   "extension_module",
