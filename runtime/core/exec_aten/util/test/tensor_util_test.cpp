@@ -14,8 +14,6 @@
 #include <cmath>
 #include <limits>
 
-#include <gtest/gtest.h>
-
 using namespace ::testing;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
@@ -550,4 +548,79 @@ TEST_F(TensorUtilTest, ResizeZeroDimTensor) {
 
   EXPECT_EQ(resize_tensor(a, {}), Error::Ok);
   EXPECT_EQ(a.dim(), 0);
+}
+
+TEST_F(TensorUtilTest, SameDimOrderContiguous) {
+  using namespace torch::executor;
+  // Three different tensors with the same shape and same dim order
+  // ([0, 1, 2, 3]), but different dtypes and contents.
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.ones(sizes);
+  Tensor b = tf_int_.zeros(sizes);
+  Tensor c = tf_float_.full(sizes, 0.1);
+
+  // The tensors have the same dim order, should pass the following checks.
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b, c));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, c, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(c, a, b));
+}
+
+TEST_F(TensorUtilTest, SameDimOrderChannelsLast) {
+  using namespace torch::executor;
+  // Three different tensors with the same shape and same dim order
+  // ([0, 2, 3, 1]), but different dtypes and contents.
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.full_channels_last(sizes, 1);
+  Tensor b = tf_int_.full_channels_last(sizes, 0);
+  Tensor c = tf_float_.full_channels_last(sizes, 0.1);
+
+  // The tensors have the same dim order, should pass the following checks.
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(a, b, c));
+  EXPECT_TRUE(tensors_have_same_dim_order(b, c, a));
+  EXPECT_TRUE(tensors_have_same_dim_order(c, a, b));
+}
+
+TEST_F(TensorUtilTest, DifferentShapes) {
+  using namespace torch::executor;
+  // Three different tensors different shapes, where a and c have the same dim
+  // order ([0, 1, 2, 3]) while b has the different one ([0, 1, 2]), although
+  // they are all contiguous memory format.
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.ones({3, 5, 2, 1});
+  Tensor b = tf_int_.ones({3, 5, 2});
+  Tensor c = tf_float_.ones({1, 3, 5, 2});
+
+  // Not the same dim order.
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b));
+  EXPECT_FALSE(tensors_have_same_dim_order(b, c));
+
+  // Same dim order, but different shapes.
+  EXPECT_TRUE(tensors_have_same_dim_order(a, c));
+
+  // Test with a mismatching tensor in all positions, where the other two agree.
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b, c));
+}
+
+TEST_F(TensorUtilTest, SameShapesDifferentDimOrder) {
+  using namespace torch::executor;
+  // Three different tensors with the same shape but different dtypes and
+  // contents, where b and c have the same dim order ([0, 2, 3, 1]) while a is
+  // different ([0, 1, 2, 3]).
+  std::vector<int32_t> sizes = {3, 5, 2, 1};
+  Tensor a = tf_byte_.ones(sizes);
+  Tensor b = tf_int_.full_channels_last(sizes, 0);
+  Tensor c = tf_float_.full_channels_last(sizes, 0.1);
+
+  // Not the same dim order. Chec
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b));
+  EXPECT_FALSE(tensors_have_same_dim_order(b, a));
+
+  // Test with a mismatching tensor in all positions, where the other two agree.
+  EXPECT_FALSE(tensors_have_same_dim_order(a, b, c));
+  EXPECT_FALSE(tensors_have_same_dim_order(a, c, b));
+  EXPECT_FALSE(tensors_have_same_dim_order(c, b, a));
 }

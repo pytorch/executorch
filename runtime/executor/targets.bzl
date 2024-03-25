@@ -64,11 +64,12 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
+                # "//executorch/kernels/portable:generated_lib_edge_dialect_ops" + aten_suffix,
                 "//executorch/runtime/backend:interface",
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/runtime/core:core",
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
-                "//executorch/runtime/kernel:operator_registry",
+                "//executorch/runtime/kernel:operator_registry" + aten_suffix,
                 "//executorch/runtime/platform:platform",
                 "//executorch/schema:extended_header",
                 "//executorch/schema:program",

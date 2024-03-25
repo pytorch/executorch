@@ -38,6 +38,25 @@ def _check_tensors_are_contiguous(gm: GraphModule) -> None:
                 )
 
 
+def _check_using_dim_order(gm: GraphModule, dim_order: bool) -> None:
+    edge_to_op_str = "executorch_exir_dialects_edge__ops_aten__to_copy_default"
+    edge_to_dim_order_op_str = (
+        "executorch_exir_dialects_edge__ops_dim_order_ops__to_dim_order_copy_default"
+    )
+
+    # check op strings
+    if dim_order:
+        if edge_to_op_str in gm.code:
+            raise SpecViolationError(
+                f"{edge_to_op_str} should not be used in dim_order mode"
+            )
+    else:
+        if edge_to_dim_order_op_str in gm.code:
+            raise SpecViolationError(
+                f"{edge_to_dim_order_op_str} should not be used in non-dim_order mode"
+            )
+
+
 class EXIRATenDialectVerifierBase(Verifier):
     dialect = "OLD_EXIR_ATEN_DISABLED"
 
@@ -72,6 +91,7 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
                 "boltnn_nimble",
                 "nimble",
                 "quantized",
+                "dim_order_ops",
             ) or op in (
                 torch.ops.aten.mkldnn_rnn_layer.default,
                 torch.ops.aten._upsample_bilinear2d_aa.default,
@@ -138,6 +158,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
     check_edge_ops: bool = True,
     enable: bool = True,
     class_only: bool = False,
+    dim_order: bool = True,
 ):
     class _EXIREdgeDialectVerifier(Verifier):
         dialect = "EDGE"
@@ -151,6 +172,8 @@ def EXIREdgeDialectVerifier(  # noqa: C901
                 self.check_valid_op = self.check_valid_edge_op
             else:
                 self.check_valid_op = self.check_valid_aten_op
+
+            self.dim_order = dim_order
 
         def allowed_getattr_types(self) -> Tuple[Type[Any], ...]:
             return (
@@ -186,6 +209,7 @@ def EXIREdgeDialectVerifier(  # noqa: C901
             if self.check_edge_ops:
                 _check_tensors_are_contiguous(gm)
                 _check_tensor_args_matching_op_allowed_dtype(gm)
+                _check_using_dim_order(gm, self.dim_order)
 
         def is_valid(self, gm: GraphModule) -> bool:
             try:
