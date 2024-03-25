@@ -41,7 +41,8 @@ find_package(gflags REQUIRED PATHS
 #
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
-add_executable(llama_main main.cpp)
+add_executable(llama_main main.cpp
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/cpuinfo_utils.cpp)
 if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
   target_link_options(llama_main PRIVATE "LINKER:--gc-sections")
 endif()
@@ -56,6 +57,10 @@ add_subdirectory(custom_ops)
 add_subdirectory(runner)
 
 
+target_include_directories(llama_main PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/cpuinfo/include)
+target_include_directories(llama_main PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/pthreadpool/include)
 target_link_libraries(llama_main PUBLIC gflags llama_runner
                       portable_ops_lib custom_ops_lib)
 target_link_options(
@@ -82,7 +87,8 @@ if(TARGET vulkan_backend)
                       LINKER:--no-whole-archive")
 endif()
 
-target_compile_options(llama_main PUBLIC ${_common_compile_options})
+target_compile_options(llama_main PUBLIC ${_common_compile_options}
+-DET_USE_THREADPOOL)
 
 # Print all summary
 executorch_print_configuration_summary()
