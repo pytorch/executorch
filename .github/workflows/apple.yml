@@ -90,7 +90,7 @@ jobs:
 
         # Build iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --coreml --mps --portable --quantized --xnnpack
+        build/build_apple_frameworks.sh --coreml --mps --optimized --portable --quantized --xnnpack
 
         # Bundle iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
