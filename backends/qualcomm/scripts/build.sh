@@ -66,16 +66,20 @@ if [ "$BUILD_AARCH64" = true ]; then
     fi
 
     cd $BUILD_ROOT
+    # If we build debug type, we need to change flatcc to flatcc_d
     cmake .. \
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DEXECUTORCH_BUILD_QNN=ON \
+        -DEXECUTORCH_BUILD_SDK=ON \
+        -DFLATCC_TEST=OFF \
+        -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
         -DANDROID_ABI='arm64-v8a' \
         -DANDROID_NATIVE_API_LEVEL=23 \
         -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
         -DBUCK2=$BUCK2 \
-	-B$BUILD_ROOT
+        -B$BUILD_ROOT
 
     cmake --build $BUILD_ROOT -j16 --target install
 

@@ -136,6 +136,7 @@ public class EValue {
     iv.mData = tensor;
     return iv;
   }
+
   /** Creates a new {@code EValue} of type {@code bool}. */
   @DoNotStrip
   public static EValue from(boolean value) {

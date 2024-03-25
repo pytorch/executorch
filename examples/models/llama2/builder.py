@@ -12,7 +12,7 @@ import json
 import logging
 from enum import Enum
 from json import JSONDecodeError
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -179,15 +179,6 @@ class LlamaEdgeManager:
             logging.info(f"model.to {torch_dtype}")
             self.model = self.model.to(dtype=torch_dtype)
             self.dtype = dtype_override
-
-        # convert kv cache to dtype as well. This should be removed after mutable buffer is supported.
-        # assuming the kv cache are the last 2 tensors in the example inputs
-        if self.use_kv_cache:
-            dtype = torch.float16 if self.dtype == DType.fp16 else torch.float32
-            example_inputs = list(self.example_inputs[:-2]) + [
-                cache.to(dtype) for cache in self.example_inputs[-2:]
-            ]
-            self.example_inputs = tuple(example_inputs)
         return self
 
     def source_transform(
@@ -209,11 +200,15 @@ class LlamaEdgeManager:
         return self
 
     def _get_dynamic_shape(self) -> Optional[Dict[str, Any]]:
-        if self.use_kv_cache:
-            return None
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
-        dynamic_shape = {"tokens": {1: dim}}
-        return dynamic_shape
+        if self.use_kv_cache:
+            if self.use_sdpa_with_kv_cache:
+                return None
+            else:
+                # return {"tokens": {1: dim}, "input_pos": {0: dim}} TODO update xnnpack to be able to handle dynamic shape kv cache
+                return None
+        else:
+            return {"tokens": {1: dim}}
 
     def _get_edge_config(self) -> EdgeCompileConfig:
         edge_config = EdgeCompileConfig(
@@ -288,30 +283,18 @@ class LlamaEdgeManager:
             )
         return self
 
-    def to_backend(
-        self, partitioner: Union[Partitioner, Dict[str, Partitioner]]
-    ) -> "LlamaEdgeManager":
+    def to_backend(self, partitioner: Optional[Partitioner]) -> "LlamaEdgeManager":
         """
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
         Args:
-            partitioner (Union[Partitioner, Dict[str, Partitioner]]): One or more
+            partitioner (Optional[Partitioner]): One or more
                 partitioner to be sent to EdgeManager.to_backend().
         """
         assert self.edge_manager is not None, "Need to run export_to_edge() first"
-        if isinstance(partitioner, dict):
-            for key, p in partitioner.items():
-                assert self.edge_manager is not None
-                self.edge_manager = self.edge_manager.to_backend(p)
-                if self.verbose:
-                    logging.info(
-                        print_delegated_graph(
-                            self.edge_manager.exported_program().graph_module
-                        )
-                    )
-                    logging.info(f"Applied partitioners: {key}")
-        elif isinstance(partitioner, Partitioner):
-            assert self.edge_manager is not None
+        if partitioner is None:
+            logging.info("No partitioner provided, passing...")
+        else:
             self.edge_manager = self.edge_manager.to_backend(partitioner)
             if self.verbose:
                 logging.info(
@@ -320,8 +303,6 @@ class LlamaEdgeManager:
                     )
                 )
                 logging.info(f"Applied partitioners: {partitioner}")
-        else:
-            logging.warning("Invalid partitioner, skipping...")
         return self
 
     def to_executorch(self) -> "LlamaEdgeManager":

@@ -1,0 +1,19 @@
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+}
+
+
+task makeJar(type: Jar) {
+    compileJava {
+        excludes = ['**/TensorImageUtils.java']
+    }
+    dependencies {
+        implementation 'com.facebook.fbjni:fbjni-java-only:0.2.2'
+        implementation 'com.facebook.soloader:nativeloader:0.10.5'
+    }
+}
+

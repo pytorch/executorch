@@ -1,8 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+#
+# Utility functions for ArmQuantizer
+#
 
 import itertools
 import operator
@@ -18,7 +23,7 @@ from torch.ao.quantization.pt2e.graph_utils import find_sequential_partitions
 from torch.ao.quantization.pt2e.utils import (
     _conv1d_bn_example_inputs,
     _conv2d_bn_example_inputs,
-    get_aten_graph_module,
+    _get_aten_graph_module_for_pattern,
 )
 from torch.ao.quantization.quantizer import (
     QuantizationAnnotation,
@@ -62,9 +67,7 @@ class QuantizationConfig:
 
 
 OperatorPatternType = List[Callable]
-OperatorPatternType.__module__ = (
-    "torch.ao.quantization.quantizer.xnnpack_quantizer_utils"
-)
+OperatorPatternType.__module__ = "executorch.backends.arm.arm_quantizer_utils"
 
 AnnotatorType = Callable[
     [
@@ -475,7 +478,7 @@ def _do_annotate_conv_bn(
     # Match against all conv dimensions and cuda variants
     for (conv_fn, example_inputs), is_cuda, relu_is_inplace in combinations:
         pattern = _get_pattern(conv_fn, relu_is_inplace, has_relu)
-        pattern = get_aten_graph_module(pattern, example_inputs, is_cuda)
+        pattern = _get_aten_graph_module_for_pattern(pattern, example_inputs, is_cuda)
         pattern.graph.eliminate_dead_code()
         pattern.recompile()
         matcher = SubgraphMatcherWithNameNodeMap(pattern, ignore_literals=True)
@@ -604,7 +607,7 @@ def _annotate_max_pool2d(
                 maxpool_node = n
         assert (
             maxpool_node is not None
-        ), "XNNPACKQuantizer only works with torch.ops.aten.max_pool2d.default, "
+        ), "ArmQuantizer only works with torch.ops.aten.max_pool2d.default, "
         "please make sure you are exporting the model correctly"
         if _is_annotated([output_node, maxpool_node]):  # type: ignore[list-item]
             continue

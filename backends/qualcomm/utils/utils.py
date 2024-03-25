@@ -43,6 +43,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QnnExecuTorchHtpPrecision,
     QnnExecuTorchLogLevel,
     QnnExecuTorchOptions,
+    QnnExecuTorchProfileLevel,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_serialize import (
     convert_to_flatbuffer,
@@ -85,26 +86,10 @@ def canonicalize_program(prog: ExportedProgram):
             )
 
 
-def capture_program(
-    module: torch.nn.Module,
-    inputs: Tuple[torch.Tensor],
-) -> exir.ExirExportedProgram:
-    # TODO: should switch to torch.export.export & custom deomposition
-    #       to reduce maintaining effort.
-    exir_exported_program = exir.capture(
-        module,
-        inputs,
-        qnn_capture_config(),
-    )
-    # We choose call_operator by target in ConvertBinaryOpsWithScalar
-    # because it is the same source_fn_stack for MultiheadAttention
-    exir_exported_program.transform(ConvertBinaryOpsWithScalar())
-    ex_prog = exir_exported_program.to_edge(qnn_edge_config())
-
+def _transform(edge_program: ExportedProgram) -> None:
     # currently ExirExportedProgram.transform does not accept
     # changes of input number which was caused by FoldQDQ
     # apply passes one by one here to avoid IR capture failure
-    edge_program = ex_prog.exported_program
     graph_module = edge_program.graph_module
     RemoveClone()(graph_module)
     RecomposePixelShuffle()(graph_module)
@@ -120,6 +105,24 @@ def capture_program(
     FoldQDQ()(graph_module)
     InsertRequantize(edge_program)(graph_module)
     LayoutTransform(edge_program)(graph_module)
+
+
+def capture_program(
+    module: torch.nn.Module,
+    inputs: Tuple[torch.Tensor],
+) -> exir.ExirExportedProgram:
+    # TODO: should switch to torch.export.export & custom deomposition
+    #       to reduce maintaining effort.
+    exir_exported_program = exir.capture(
+        module,
+        inputs,
+        qnn_capture_config(),
+    )
+    # We choose call_operator by target in ConvertBinaryOpsWithScalar
+    # because it is the same source_fn_stack for MultiheadAttention
+    exir_exported_program.transform(ConvertBinaryOpsWithScalar())
+    ex_prog = exir_exported_program.to_edge(qnn_edge_config())
+    _transform(ex_prog.exported_program)
     return ex_prog
 
 
@@ -186,6 +189,8 @@ def generate_qnn_executorch_compiler_spec(
     saver: bool = False,
     online_prepare: bool = False,
     tensor_dump_output_path: str = "",
+    profile: bool = False,
+    shared_buffer: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -208,6 +213,11 @@ def generate_qnn_executorch_compiler_spec(
             outputs of each OP there in runtime. In ALL cases,
             we don't recommend to set this option. This option exist just
             for debugging some accuracy issues.
+        profile: Enable profile the performance of per operator.
+            Note that for now only support kProfileDetailed to
+            profile the performance of each operator with cycle unit.
+        shared_buffer: Enables usage of shared buffer between application
+            and backend for graph I/O.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -235,6 +245,16 @@ def generate_qnn_executorch_compiler_spec(
 
     if len(tensor_dump_output_path.strip()) != 0:
         qnn_executorch_options.tensor_dump_output_path = tensor_dump_output_path
+
+    if profile:
+        qnn_executorch_options.profile_level = (
+            QnnExecuTorchProfileLevel.kProfileDetailed
+        )
+    else:
+        qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
+
+    if shared_buffer:
+        qnn_executorch_options.shared_buffer = True
 
     if (
         online_prepare

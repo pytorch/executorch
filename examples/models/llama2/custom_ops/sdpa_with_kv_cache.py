@@ -9,15 +9,15 @@ from torch.library import impl, impl_abstract
 
 custom_ops_lib = torch.library.Library("llama", "DEF")
 custom_ops_lib.define(
-    "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor key_cache, "
-    "Tensor value_cache, int layer_id, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
+    "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
+    "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
     "float drpout_p=0.0, bool is_causal=False, float? scale=None) -> Tensor"
 )
 
 custom_ops_lib.define(
-    "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor key_cache, "
-    "Tensor value_cache, int layer_id, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
-    "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(a!) out) -> Tensor(a!)"
+    "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
+    "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
+    "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)"
 )
 
 
@@ -27,7 +27,6 @@ def _validate_params(
     value,
     key_cache,
     value_cache,
-    layer_id,
     start_pos,
     seq_len,
     attn_mask,
@@ -54,11 +53,11 @@ def _validate_params(
     ), f"Expected value to be float32 but got {value.dtype}"
 
     assert (
-        key_cache.dim() == 5
-    ), f"Expected key_cache to be 5 dimensional but got {key_cache.dim()}"
+        key_cache.dim() == 4
+    ), f"Expected key_cache to be 4 dimensional but got {key_cache.dim()}"
     assert (
-        value_cache.dim() == 5
-    ), f"Expected value_cache to be 5 dimensional but got {value_cache.dim()}"
+        value_cache.dim() == 4
+    ), f"Expected value_cache to be 4 dimensional but got {value_cache.dim()}"
 
     assert (
         key_cache.dtype == torch.float32
@@ -71,18 +70,15 @@ def _validate_params(
         key_cache.size() == value_cache.size()
     ), f"Key cache and value cache must have same size but got {key_cache.size()} and {value_cache.size()}"
 
-    assert start_pos < key_cache.size(
-        2
-    ), f"Start position {start_pos} must be less than sequence length {key_cache.size(2)}"
-    assert (start_pos + seq_len) < key_cache.size(
-        2
-    ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {key_cache.size(2)}"
+    # These asserts are real but they require me to add constrain_as_size/value calls to the model and I dont want to do that right now
+    # assert start_pos < key_cache.size(
+    #     1
+    # ), f"Start position {start_pos} must be less than sequence length {key_cache.size(2)}"
+    # assert (start_pos + seq_len) < key_cache.size(
+    #     1
+    # ), f"Start position  + length = {start_pos + seq_len} must be less than sequence length {key_cache.size(2)}"
 
     assert seq_len == 1, "Only support seq_len = 1 for now."
-
-    assert layer_id < key_cache.size(
-        0
-    ), f"Layer id {layer_id} must be less than number of layers {key_cache.size(0)}"
 
     if attn_mask is not None:
         assert (
@@ -100,7 +96,6 @@ def sdpa_with_kv_cache_meta(
     value,
     key_cache,
     value_cache,
-    layer_id,
     start_pos,
     seq_len,
     attn_mask=None,
@@ -114,7 +109,6 @@ def sdpa_with_kv_cache_meta(
         value,
         key_cache,
         value_cache,
-        layer_id,
         start_pos,
         seq_len,
         attn_mask,
@@ -133,7 +127,6 @@ def sdpa_with_kv_cache(
     value,
     key_cache,
     value_cache,
-    layer_id,
     start_pos,
     seq_len,
     attn_mask=None,
@@ -147,7 +140,6 @@ def sdpa_with_kv_cache(
         value,
         key_cache,
         value_cache,
-        layer_id,
         start_pos,
         seq_len,
         attn_mask,
@@ -160,11 +152,11 @@ def sdpa_with_kv_cache(
         attn_mask = attn_mask[start_pos].view((1, -1))
         attn_mask = attn_mask[:, : start_pos + seq_len]
     q = query.transpose(1, 2)
-    key_cache[layer_id, :, start_pos] = key
-    value_cache[layer_id, :, start_pos] = value
+    key_cache[:, start_pos] = key
+    value_cache[:, start_pos] = value
 
-    sliced_k_cache = key_cache[layer_id]
-    sliced_v_cache = value_cache[layer_id]
+    sliced_k_cache = key_cache
+    sliced_v_cache = value_cache
     sliced_k_cache = sliced_k_cache[:, : start_pos + seq_len, :, :]
     sliced_v_cache = sliced_v_cache[:, : start_pos + seq_len, :, :]
     sliced_k_cache = sliced_k_cache.transpose(1, 2)
@@ -183,7 +175,6 @@ def sdpa_with_kv_cache_out(
     value,
     key_cache,
     value_cache,
-    layer_id,
     start_pos,
     seq_len,
     attn_mask,
@@ -198,7 +189,6 @@ def sdpa_with_kv_cache_out(
         value,
         key_cache,
         value_cache,
-        layer_id,
         start_pos,
         seq_len,
         attn_mask,

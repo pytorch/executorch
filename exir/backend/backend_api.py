@@ -16,7 +16,10 @@ from executorch.exir.backend.backend_details import BackendDetails, PreprocessRe
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
-from executorch.exir.backend.utils import is_identical_graph
+from executorch.exir.backend.utils import (
+    _maybe_duplicate_constant_nodes,
+    is_identical_graph,
+)
 
 from executorch.exir.delegate import executorch_call_delegate, get_lowered_module_name
 
@@ -160,6 +163,7 @@ def _get_node_list_with_same_tag(
     Return a list of nodes with the same tag.
     """
     node_list = []
+
     for node in tagged_graph_module.graph.nodes:
         if node.meta.get("delegation_tag", "") == tag:
             if node.op == "output":
@@ -373,6 +377,10 @@ def _(
     ), f"Partitioner {partitioner_instance} needs a `partition_tags` field containing a mapping of tags to delegate spec"
 
     update_to_real_program(tagged_exported_program, edge_program)
+
+    for tag, _ in partitioner_result.partition_tags.items():
+        _maybe_duplicate_constant_nodes(tagged_exported_program, tag, edge_program)
+
     tagged_graph_module = _partition_and_lower(
         tagged_exported_program.graph_module, partitioner_result, edge_program
     )

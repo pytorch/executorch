@@ -23,9 +23,14 @@ if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 endif()
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Debug)
+endif()
+
 # Find prebuilt libraries. executorch package should contain
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
+target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
 find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
@@ -53,9 +58,15 @@ set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 gen_selected_ops("" "" "ON")
 generate_bindings_for_kernels(
-  ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml ""
+  FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
 )
-gen_operators_lib("full_portable_ops_lib" portable_kernels executorch)
+gen_operators_lib("full_portable_ops_lib"
+  KERNEL_LIBS portable_kernels
+  DEPS executorch)
+target_compile_options(full_portable_ops_lib
+    INTERFACE
+    -DET_EVENT_TRACER_ENABLED
+)
 target_include_directories(full_portable_ops_lib
     PUBLIC
     ${_common_include_directories}
@@ -88,6 +99,8 @@ target_include_directories(qnn_executor_runner
 target_link_libraries(qnn_executor_runner
     qnn_executorch_backend
     full_portable_ops_lib
+    etdump
+    ${FLATCCRT_LIB}
     gflags
 )
 target_compile_options(qnn_executor_runner

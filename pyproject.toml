@@ -21,7 +21,6 @@ dependencies=[
   "sympy",
   "tabulate",
   "tomli",
-  "torchao-nightly",
   "zstd",
 ]
 

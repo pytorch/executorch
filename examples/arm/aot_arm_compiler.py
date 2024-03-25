@@ -23,21 +23,20 @@ from ..portable.utils import export_to_edge, save_pte_program
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.WARNING, format=FORMAT)
 
-# Quantize model if required using the standard export quantizaion flow.
-# For now we're using the xnnpack quantizer as this produces reasonable
-# output for our arithmetic behaviour.
-from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
-from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+from executorch.backends.arm.arm_quantizer import (
+    ArmQuantizer,
     get_symmetric_quantization_config,
-    XNNPACKQuantizer,
 )
+
+# Quantize model if required using the standard export quantizaion flow.
+from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
 def quantize(model, example_inputs):
     """This is the official recommended flow for quantization in pytorch 2.0 export"""
     logging.info("Quantizing Model...")
     logging.debug(f"Original model: {model}")
-    quantizer = XNNPACKQuantizer()
+    quantizer = ArmQuantizer()
     # if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel
     operator_config = get_symmetric_quantization_config(is_per_channel=False)
     quantizer.set_global(operator_config)

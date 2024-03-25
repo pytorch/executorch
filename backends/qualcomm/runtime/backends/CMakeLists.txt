@@ -41,6 +41,13 @@ target_sources(qnn_logger
     ${CMAKE_CURRENT_LIST_DIR}/QnnLogger.cpp
 )
 
+# qnn_profiler
+target_sources(qnn_profiler
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/QnnProfiler.h
+    ${CMAKE_CURRENT_LIST_DIR}/QnnProfiler.cpp
+)
+
 # qnn_device
 set(HOST_ARCHITECTURE
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/${CMAKE_SYSTEM_PROCESSOR}
@@ -100,6 +107,14 @@ target_sources(qnn_backend
     ${CMAKE_CURRENT_LIST_DIR}/htpbackend/HtpBackend.h
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/QnnBackendCommon.cpp
+)
+
+# qnn_mem_manager
+target_sources(qnn_mem_manager
+    PUBLIC
+    ${CMAKE_CURRENT_LIST_DIR}/QnnMemManager.h
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/QnnMemManager.cpp
 )
 
 # qnn_factory
