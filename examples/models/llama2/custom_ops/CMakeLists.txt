@@ -66,7 +66,8 @@ target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
 target_link_libraries(custom_ops PRIVATE ${custom_ops_libs})
 
-target_compile_options(custom_ops PUBLIC ${_common_compile_options})
+target_compile_options(custom_ops PUBLIC ${_common_compile_options}
+-DET_USE_THREADPOOL)
 
 # Build a library for _custom_ops_srcs
 #
