@@ -47,10 +47,12 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
-set(llama_runner_deps executorch extension_module extension_data_loader)
+set(llama_runner_deps executorch extension_module extension_data_loader
+  custom_ops)
 
 target_link_libraries(
   llama_runner PUBLIC ${llama_runner_deps})
 
 target_include_directories(llama_runner
-                           INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT})
+                           INTERFACE ${_common_include_directories}
+                           ${EXECUTORCH_ROOT})
