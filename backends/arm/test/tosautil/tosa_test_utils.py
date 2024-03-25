@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -52,56 +52,49 @@ class TosaTestUtils:
             self.intermediate_path
         ), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
 
-    def dbg_dump_readble_tosa_file(self) -> None:
+    @staticmethod
+    def dbg_tosa_fb_to_json(tosa_fb: bytes) -> Dict:
         """
-        This function is used to dump the TOSA buffer to a human readable
-        format, using flatc.
-        It requires the following files to be present on disk:
-        1) output.tosa (in self.intermediate_path, produced by arm_backend.py)
-        2) ./backends/arm/third-party/serialization_lib/schema/tosa.fbs.
-
-        It is used for debugging purposes.
-
-        Output from this is a file called output.json, located in
-        self.intermediate_path.
-
-        Todo:
-            * I'd prefer if this function didn't use files on disk...
-            * Check if we can move this function to dump_artificat() thingy...
+        This function is used to dump the TOSA flatbuffer to a human readable
+        format, using flatc. It is used for debugging purposes.
         """
 
-        tosa_input_file = self.intermediate_path + "/output.tosa"
+        tmp = tempfile.mkdtemp()
+        tosa_input_file = os.path.join(tmp, "output.tosa")
+        with open(tosa_input_file, "wb") as f:
+            f.write(tosa_fb)
+
         tosa_schema_file = (
             "./backends/arm/third-party/serialization_lib/schema/tosa.fbs"
         )
-
         assert os.path.exists(
             tosa_schema_file
         ), f"tosa_schema_file: {tosa_schema_file} does not exist"
-        assert os.path.exists(
-            tosa_input_file
-        ), f"tosa_input_file: {tosa_input_file} does not exist"
-        assert shutil.which("flatc") is not None
 
+        assert shutil.which("flatc") is not None
         cmd_flatc = [
             "flatc",
+            "--json",
+            "--strict-json",
             "-o",
-            self.intermediate_path,
+            tmp,
             "--raw-binary",
             "-t",
             tosa_schema_file,
             "--",
             tosa_input_file,
         ]
-        self._run_cmd(cmd_flatc)
-        return
+        TosaTestUtils._run_cmd(cmd_flatc)
+        with open(os.path.join(tmp, "output.json"), "r") as f:
+            json_out = json.load(f)
+
+        return json_out
 
     def run_tosa_ref_model(
         self,
         params_input: Tuple[List[str], List[QuantizationParams]],
         param_output: Tuple[str, QuantizationParams],
         inputs: Tuple[torch.Tensor],
-        permute_memory_to_nhwc: bool,
     ) -> torch.Tensor:
         """
         Run TOSA reference model using the tosa_refence_model program.
@@ -166,10 +159,6 @@ class TosaTestUtils:
         ):
             data_np = data.detach().numpy()
 
-            if permute_memory_to_nhwc:
-                NHWC_Order = (0, 2, 3, 1)
-                data_np = np.transpose(data_np, NHWC_Order)
-
             if self.profile is TosaProfile.BI:
                 assert (
                     quant_param.node_name == input_name
@@ -191,7 +180,7 @@ class TosaTestUtils:
             shutil.which(self.tosa_ref_model_path) is not None
         ), f"tosa_reference_model tool not found, did you run examples/arm/setup.sh? Path: {self.tosa_ref_model_path}"
         cmd_ref_model = [self.tosa_ref_model_path, "--test_desc", desc_file_path]
-        self._run_cmd(cmd_ref_model)
+        TosaTestUtils._run_cmd(cmd_ref_model)
 
         # Load desc.json, just to get the name of the output file above
         with open(desc_file_path) as f:
@@ -206,7 +195,7 @@ class TosaTestUtils:
             quant_param = param_output[1]
             assert (
                 quant_param is not None
-            ), "There are no qunatization parameters, check output parameters"
+            ), "There are no quantization parameters, check output parameters"
             tosa_ref_output = (tosa_ref_output - quant_param.zp) * quant_param.scale
 
         # tosa_output is a numpy array, convert to torch tensor for comparison
@@ -214,7 +203,8 @@ class TosaTestUtils:
 
         return tosa_ref_output
 
-    def _run_cmd(self, cmd: List[str]) -> None:
+    @staticmethod
+    def _run_cmd(cmd: List[str]) -> None:
         """
         Run a command and check for errors.
 

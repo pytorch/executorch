@@ -11,6 +11,7 @@ from typing import Optional
 import lm_eval
 
 import torch
+from lm_eval.api.model import LM
 from lm_eval.evaluator import evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
 from lm_eval.tasks import get_task_dict
@@ -26,7 +27,7 @@ from .export_llama_lib import (
 
 class GPTFastEvalWrapper(eval_wrapper):
     """
-    A wrapper class for GPTFast, providing integration with the lm-evaluation-harness library.
+    A wrapper class based on GPTFast, providing integration with the lm-evaluation-harness library.
     """
 
     def __init__(
@@ -38,7 +39,9 @@ class GPTFastEvalWrapper(eval_wrapper):
         super().__init__()
         self._model = model
         self._tokenizer = tokenizer
-        self._device = torch.device("cpu")
+        self._device = (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
         self._max_seq_length = 2048 if max_seq_length is None else max_seq_length
 
     @property
@@ -83,21 +86,17 @@ class GPTFastEvalWrapper(eval_wrapper):
 
 @torch.no_grad()
 def eval(
-    model: nn.Module,
-    tokenizer,
+    eval_wrapper: LM,
     tasks: Optional[list] = None,
     limit: Optional[int] = None,
-    max_seq_length: Optional[int] = None,
 ) -> dict:
     """
     Evaluates a language model on a specified task using the lm-evaluation-harness library.
 
     Args:
-        model (nn.Module): The pre-trained language model to evaluate.
-        tokenizer: The tokenizer to use for encoding/decoding text.
+        eval_wrapper (LM): A LM wrapper class compatible with lm-evaluation-harness evaluation
         task (str): The name of the evaluation task to perform.
         limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
-        max_seq_length (Optional[int]): The maximum sequence length allowed for input text.
 
     Returns:
         eval_results (dict): A dictionary of evaluation results for the specified task(s).
@@ -106,23 +105,44 @@ def eval(
     if tasks is None:
         tasks = ["wikitext"]
 
-    model_eval_wrapper = GPTFastEvalWrapper(
-        model,
-        tokenizer,
-        max_seq_length,
-    )
-
     if "hendrycks_test" in tasks:
         tasks.remove("hendrycks_test")
         tasks += list(lm_eval.tasks.hendrycks_test.create_all_tasks().keys())
     task_dict = get_task_dict(tasks)
 
     eval_results = evaluate(
-        model_eval_wrapper,
+        eval_wrapper,
         task_dict,
         limit=limit,
     )
     return eval_results
+
+
+def gen_eval_wrapper(
+    model_name: str,
+    args: argparse.ArgumentParser,
+) -> LM:
+    """
+    Generates a wrapper interface around the provided model and tokenizer for
+    the lm-evaluation-harness library.
+
+    Returns:
+        eval_wrapper (LM): A wrapper interface for the lm-evaluation-harness library.
+    """
+    tokenizer = SentencePieceProcessor(model_file=str(args.tokenizer_path))
+
+    # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
+    manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
+    model = (
+        manager.model.eval().to(device="cuda")
+        if torch.cuda.is_available()
+        else manager.model.to(device="cpu")
+    )
+    return GPTFastEvalWrapper(
+        model=model,
+        tokenizer=tokenizer,
+        max_seq_length=args.max_seq_length,
+    )
 
 
 def build_args_parser() -> argparse.ArgumentParser:
@@ -148,17 +168,15 @@ def eval_llama(
     model_name: str,
     args: argparse.ArgumentParser,
 ) -> None:
-    # Get a pre-lowering/to_edge LlamaEdgeManager instance
-    manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
-    tokenizer = SentencePieceProcessor(model_file=str(args.tokenizer_path))
+    # Generate the eval wrapper
+    eval_wrapper = gen_eval_wrapper(model_name, args)
 
     # Evaluate the model
     eval_results = eval(
-        manager.model.to(device="cpu"),
-        tokenizer,
+        eval_wrapper,
         args.tasks,
         args.limit,
-        args.max_seq_length,
     )
 
-    print("Results: ", eval_results)
+    for task, res in eval_results["results"].items():
+        print(f"{task}: {res}")

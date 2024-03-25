@@ -78,8 +78,9 @@ if(NOT EXECUTORCH_ENABLE_LOGGING)
 endif()
 
 # Configure log level. Must be one of debug, info, error, fatal.
-set(EXECUTORCH_LOG_LEVEL "Info" CACHE STRING
-      "Build with the given ET_MIN_LOG_LEVEL value")
+set(EXECUTORCH_LOG_LEVEL
+    "Info"
+    CACHE STRING "Build with the given ET_MIN_LOG_LEVEL value")
 string(TOLOWER "${EXECUTORCH_LOG_LEVEL}" LOG_LEVEL_LOWER)
 if(LOG_LEVEL_LOWER STREQUAL "debug")
   add_definitions(-DET_MIN_LOG_LEVEL=Debug)
@@ -90,9 +91,10 @@ elseif(LOG_LEVEL_LOWER STREQUAL "error")
 elseif(LOG_LEVEL_LOWER STREQUAL "fatal")
   add_definitions(-DET_MIN_LOG_LEVEL=Fatal)
 else()
-  message(SEND_ERROR
-      "Unknown log level \"${EXECUTORCH_LOG_LEVEL}\". Expected one of Debug, " +
-      "Info, Error, or Fatal.")
+  message(
+    SEND_ERROR
+      "Unknown log level \"${EXECUTORCH_LOG_LEVEL}\". Expected one of Debug, "
+      + "Info, Error, or Fatal.")
 endif()
 
 option(EXECUTORCH_ENABLE_PROGRAM_VERIFICATION
@@ -105,16 +107,15 @@ if(NOT EXECUTORCH_ENABLE_PROGRAM_VERIFICATION)
   add_definitions(-DET_ENABLE_PROGRAM_VERIFICATION=0)
 endif()
 
-option(EXECUTORCH_ENABLE_EVENT_TRACER
-       "Build with ET_EVENT_TRACER_ENABLED=ON"
+option(EXECUTORCH_ENABLE_EVENT_TRACER "Build with ET_EVENT_TRACER_ENABLED=ON"
        OFF)
 if(EXECUTORCH_ENABLE_EVENT_TRACER)
   add_definitions(-DET_EVENT_TRACER_ENABLED)
 endif()
 
-# -ffunction-sections -fdata-sections: breaks function and
-# data into sections so they can be properly gc'd. -s: strip symbol.
-# -fno-exceptions -fno-rtti: disables exceptions and runtime type.
+# -ffunction-sections -fdata-sections: breaks function and data into sections so
+# they can be properly gc'd. -s: strip symbol. -fno-exceptions -fno-rtti:
+# disables exceptions and runtime type.
 set(CMAKE_CXX_FLAGS_RELEASE
     "-ffunction-sections -fdata-sections -fno-exceptions -fno-rtti")
 if(NOT APPLE)
@@ -132,47 +133,40 @@ endif()
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 
-# Option to register quantized ops with quantized kernels. See
-# kernels/quantized/CMakeLists.txt
-option(REGISTER_QUANTIZED_OPS
-       "Register quantized ops defined in kernels/quantized/" OFF)
+option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 
-option(EXECUTORCH_BUILD_SIZE_TEST "Whether to build size test" OFF)
+option(EXECUTORCH_BUILD_ARM_BAREMETAL
+       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 
-# Build xnn_executor_runner which depends on XNNPACK
-option(EXECUTORCH_BUILD_XNNPACK
-       "Build xnn_executor_runner which depends on XNNPACK" OFF)
+option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-# Build the vulkan delegate along with the vulkan executor_runner
-option(EXECUTORCH_BUILD_VULKAN
-       "Build the Vulkan delegate and the Vulkan executor_runner" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT Util extension" OFF)
 
-option(EXECUTORCH_BUILD_SDK
-       "Build the ExecuTorch SDK library and the SDK example runner.")
-
-# Build mps_executor_runner which depends on MPSGraph framework
-option(EXECUTORCH_BUILD_MPS "Build mps_executor_runner which depends on MPS"
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
-# Build dataloader extension library
-option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER
-       "Build the extension/data_loader directory" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE "Build the Module extension" OFF)
 
-# Build module extension library
-option(EXECUTORCH_BUILD_EXTENSION_MODULE
-       "Build the extension/module directory" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL "Build the Runner Util extension"
+       OFF)
 
-# Build the runner_util extension library
-option(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL
-       "Build the extension/runner_util directory" OFF)
+option(EXECUTORCH_BUILD_GTESTS "Build googletest based test binaries" OFF)
 
-# Build test binaries that rely on googletest
-option(EXECUTORCH_BUILD_GTESTS
-       "Build googletest based test binaries" OFF)
+option(EXECUTORCH_BUILD_MPS "Build the MPS backend" OFF)
 
-# Build the AOT util extension library
-option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL
-       "Build the extension/aot_util directory" OFF)
+option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
+
+option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
+
+option(REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
+
+option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
+
+option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
+
+option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
+
+option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
 if(NOT BUCK2)
   set(BUCK2 buck2)
@@ -258,11 +252,21 @@ if(EXECUTORCH_BUILD_FLATC)
     )
   endif()
   set(FLATC_EXECUTABLE flatc)
-  set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "")
-  set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "")
-  set(FLATBUFFERS_BUILD_FLATLIB OFF CACHE BOOL "")
-  set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "")
-  set(FLATBUFFERS_INSTALL OFF CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATC
+      ON
+      CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATHASH
+      OFF
+      CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_FLATLIB
+      OFF
+      CACHE BOOL "")
+  set(FLATBUFFERS_BUILD_TESTS
+      OFF
+      CACHE BOOL "")
+  set(FLATBUFFERS_INSTALL
+      OFF
+      CACHE BOOL "")
   add_subdirectory(third-party/flatbuffers)
 endif()
 if(NOT FLATC_EXECUTABLE)
@@ -309,6 +313,13 @@ endif()
 # operators necessary for the models that will run.
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
+
+if(REGISTER_QUANTIZED_OPS)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
+endif()
 
 #
 # gflags: Commandline flag host library.
@@ -336,11 +347,10 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch portable_ops_lib gflags)
+  set(_executor_runner_libs executorch optimized_native_cpu_ops_lib gflags)
 
   # Generate lib to register quantized ops
   if(REGISTER_QUANTIZED_OPS)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
@@ -384,7 +394,6 @@ if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
 endif()
 
-option(EXECUTORCH_BUILD_XNNPACK "Build the backends/xnnpack directory" OFF)
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
@@ -393,36 +402,28 @@ if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
-option(EXECUTORCH_BUILD_ANDROID_JNI "Build Android JNI" OFF)
 if(EXECUTORCH_BUILD_ANDROID_JNI)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
-option(EXECUTORCH_BUILD_QNN "Build the backends/qualcomm directory" OFF)
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
 
-option(EXECUTORCH_BUILD_ARM_BAREMETAL
-       "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 if(EXECUTORCH_BUILD_ARM_BAREMETAL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/arm)
 endif()
 
-option(EXECUTORCH_BUILD_MPS "Build the MPS Backend" OFF)
 if(EXECUTORCH_BUILD_MPS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/mps)
 endif()
 
-option(EXECUTORCH_BUILD_COREML "Build the Core ML Backend" OFF)
 if(EXECUTORCH_BUILD_COREML)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/apple/coreml)
 endif()
 
-option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 if(EXECUTORCH_BUILD_PYBIND)
-
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/pybind11)
 
   if(NOT EXECUTORCH_BUILD_EXTENSION_DATA_LOADER)
@@ -459,8 +460,7 @@ if(EXECUTORCH_BUILD_PYBIND)
     util
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/evalue_util/print_evalue.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/extension/aten_util/aten_bridge.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp
-  )
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/read_file.cpp)
   target_include_directories(util PUBLIC ${_common_include_directories}
                                          ${TORCH_INCLUDE_DIRS})
   target_compile_options(util PUBLIC ${_pybind_compile_options})
@@ -472,20 +472,19 @@ if(EXECUTORCH_BUILD_PYBIND)
                              PUBLIC EXECUTORCH_PYTHON_MODULE_NAME=portable_lib)
   target_include_directories(portable_lib PRIVATE ${TORCH_INCLUDE_DIRS})
   target_compile_options(portable_lib PUBLIC ${_pybind_compile_options})
-  target_link_libraries(portable_lib
-    PUBLIC
-      ${TORCH_PYTHON_LIBRARY}
-      bundled_program
-      etdump
-      executorch
-      extension_data_loader
-      portable_ops_lib
-      util
-      torch
-      ${PYBIND_LINK_COREML}
-      ${PYBIND_LINK_MPS}
-      ${PYBIND_LINK_XNNPACK}
-  )
+  target_link_libraries(
+    portable_lib
+    PUBLIC ${TORCH_PYTHON_LIBRARY}
+           bundled_program
+           etdump
+           executorch
+           extension_data_loader
+           portable_ops_lib
+           util
+           torch
+           ${PYBIND_LINK_COREML}
+           ${PYBIND_LINK_MPS}
+           ${PYBIND_LINK_XNNPACK})
 
   install(TARGETS portable_lib
           LIBRARY DESTINATION executorch/extension/pybindings)

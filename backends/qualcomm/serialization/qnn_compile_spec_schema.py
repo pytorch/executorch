@@ -108,6 +108,13 @@ class QnnExecuTorchLogLevel(IntEnum):
     kLogLevelDebug = 5
 
 
+@unique
+class QnnExecuTorchProfileLevel(IntEnum):
+    kProfileOff = 0
+    kProfileBasic = 1
+    kProfileDetailed = 2
+
+
 @dataclass
 class QnnExecuTorchBackendOptions:
     backend_type: QnnExecuTorchBackendType
@@ -123,3 +130,5 @@ class QnnExecuTorchOptions:
     log_level: QnnExecuTorchLogLevel = QnnExecuTorchLogLevel.kLogOff
     online_prepare: bool = False
     tensor_dump_output_path: str = ""
+    profile_level: QnnExecuTorchProfileLevel = QnnExecuTorchProfileLevel.kProfileOff
+    shared_buffer: bool = False

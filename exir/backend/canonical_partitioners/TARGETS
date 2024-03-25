@@ -19,3 +19,20 @@ runtime.python_library(
         "//executorch/exir/backend:partitioner",
     ],
 )
+
+runtime.python_library(
+    name = "duplicate_constant_node_pass",
+    srcs = [
+        "duplicate_constant_node_pass.py",
+    ],
+    visibility = [
+        "//executorch/...",
+        "//executorch/exir/backend/...",
+        "//executorch/test/...",
+        "@EXECUTORCH_CLIENTS",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir/backend:partitioner",
+    ],
+)

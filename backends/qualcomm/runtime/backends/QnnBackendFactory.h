@@ -14,6 +14,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnMemManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
@@ -33,6 +34,7 @@ typedef struct BackendConfigParameters {
   std::unique_ptr<QnnContext> qnn_context_ptr_;
   std::unique_ptr<QnnDevice> qnn_device_ptr_;
   std::unique_ptr<QnnGraph> qnn_graph_ptr_;
+  std::unique_ptr<QnnMemManager> qnn_mem_manager_ptr_;
 
   // Default ctor
   BackendConfigParameters()
@@ -40,10 +42,12 @@ typedef struct BackendConfigParameters {
         backend_init_state_(BackendInitializeState::UNINITIALIZED),
         qnn_context_ptr_(nullptr),
         qnn_device_ptr_(nullptr),
-        qnn_graph_ptr_(nullptr) {}
+        qnn_graph_ptr_(nullptr),
+        qnn_mem_manager_ptr_(nullptr) {}
   // Default dtor
   ~BackendConfigParameters() {
     qnn_graph_ptr_.reset();
+    qnn_mem_manager_ptr_.reset();
     qnn_context_ptr_.reset();
     qnn_device_ptr_.reset();
     qnn_backend_ptr_.reset();

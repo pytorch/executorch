@@ -315,7 +315,7 @@
 #define ET_CHECK_DEFAULT_OR_CHANNELSLAST_DIMORDER(t__)           \
   ({                                                             \
     ET_CHECK_MSG(                                                \
-        is_default_dim_order(                                    \
+        is_contiguous_dim_order(                                 \
             t__.dim_order().data(), t__.dim_order().size()) ||   \
             is_channels_last_dim_order(                          \
                 t__.dim_order().data(), t__.dim_order().size()), \

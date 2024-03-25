@@ -1,8 +1,13 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
+#
+# Quantizer for Arm backend
+#
 
 from __future__ import annotations
 
@@ -14,6 +19,15 @@ from typing import Any, Callable, Dict, List, Optional, Set
 import torch
 import torch._dynamo as torchdynamo
 import torch.nn.functional as F
+
+from executorch.backends.arm.arm_quantizer_utils import (
+    _convert_scalars_to_attrs,
+    OP_TO_ANNOTATOR,
+    OperatorConfig,
+    OperatorPatternType,
+    propagate_annotation,
+    QuantizationConfig,
+)
 from torch.ao.quantization.fake_quantize import (
     FakeQuantize,
     FusedMovingAvgObsFakeQuantize,
@@ -31,20 +45,11 @@ from torch.ao.quantization.qconfig import _ObserverOrFakeQuantizeConstructor
 
 from torch.ao.quantization.quantizer import QuantizationSpec, Quantizer
 
-from torch.ao.quantization.quantizer.xnnpack_quantizer_utils import (
-    _convert_scalars_to_attrs,
-    OP_TO_ANNOTATOR,
-    OperatorConfig,
-    OperatorPatternType,
-    propagate_annotation,
-    QuantizationConfig,
-)
-
 from torch.fx import Node
 
 
 __all__ = [
-    "XNNPACKQuantizer",
+    "ArmQuantizer",
     "get_symmetric_quantization_config",
 ]
 
@@ -260,7 +265,7 @@ def _get_not_module_type_or_name_filter(
     return not_module_type_or_name_filter
 
 
-class XNNPACKQuantizer(Quantizer):
+class ArmQuantizer(Quantizer):
     supported_config_and_operators = _get_supported_config_and_operators()
     STATIC_QAT_ONLY_OPS = [
         "conv_bn_relu",
@@ -325,7 +330,7 @@ class XNNPACKQuantizer(Quantizer):
                 return ops
         return []
 
-    def set_global(self, quantization_config: QuantizationConfig) -> XNNPACKQuantizer:
+    def set_global(self, quantization_config: QuantizationConfig) -> ArmQuantizer:
         self.global_config = quantization_config
         return self
 
@@ -333,7 +338,7 @@ class XNNPACKQuantizer(Quantizer):
         self,
         operator_type: torch._ops.OpOverloadPacket,
         quantization_config: QuantizationConfig,
-    ) -> XNNPACKQuantizer:
+    ) -> ArmQuantizer:
         self.operator_type_config[operator_type] = quantization_config
         return self
 

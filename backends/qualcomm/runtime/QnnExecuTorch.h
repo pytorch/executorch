@@ -8,8 +8,10 @@
 #pragma once
 
 #ifdef __cplusplus
+#include <cstddef>
 #include <cstdint>
 #else
+#include <stddef.h>
 #include <stdint.h>
 #endif
 
@@ -30,6 +32,16 @@ typedef struct {
     0,              /*nbytes*/           \
   }
 // clang-format on
+
+/// Allocate specific tensors (usually graph inputs and outputs) on shared
+/// memory. Users are responsible to allocate "enough" tensor bytes, and set
+/// alignment as MemoryAllocator::kDefaultAlignment.
+/// See runtime/core/memory_allocator.h. The function returns a valid pointer
+/// if allocation is successful.
+void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment);
+
+/// Free the allocated shared memory.
+void QnnExecuTorchFreeCustomMem(void* buffer_ptr);
 
 #ifdef __cplusplus
 }

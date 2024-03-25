@@ -1,35 +1,35 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# Copyright 2023-2024 Arm Limited and/or its affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
 import logging
-import shutil
 import unittest
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 import torch
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
 from parameterized import parameterized
 
-# TODO: fixme! These globs are a temporary workaround. Reasoning:
-# Running the jobs in _unittest.yml will not work since that environment don't
-# have the vela tool, nor the tosa_reference_model tool. Hence, we need a way to
-# run what we can in that env temporarily. Long term, vela and tosa_reference_model
-# should be installed in the CI env.
-TOSA_REF_MODEL_INSTALLED = shutil.which("tosa_reference_model")
-VELA_INSTALLED = shutil.which("vela")
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+torch.manual_seed(42)
 
 
 class TestSimpleAdd(unittest.TestCase):
     class Add(torch.nn.Module):
+        test_parameters = [
+            (torch.ones(5),),
+            (3 * torch.ones(8),),
+            (10 * torch.randn(8),),
+        ]
+
         def __init__(self):
             super().__init__()
             self.permute_memory_to_nhwc = False
@@ -38,6 +38,13 @@ class TestSimpleAdd(unittest.TestCase):
             return x + x
 
     class Add2(torch.nn.Module):
+        test_parameters = [
+            (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 4)),
+            (torch.randn(1, 1, 4, 4), torch.ones(1, 1, 4, 1)),
+            (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+            (10000 * torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1)),
+        ]
+
         def __init__(self):
             super().__init__()
             self.permute_memory_to_nhwc = False
@@ -64,7 +71,7 @@ class TestSimpleAdd(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
-        if TOSA_REF_MODEL_INSTALLED:
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
             logger.warning(
@@ -91,7 +98,8 @@ class TestSimpleAdd(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
         )
-        if TOSA_REF_MODEL_INSTALLED:
+
+        if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs(qtol=1)
         else:
             logger.warning(
@@ -118,40 +126,40 @@ class TestSimpleAdd(unittest.TestCase):
             .to_executorch()
         )
 
-    def test_add_tosa_MI(self):
-        test_data = (torch.randn(4, 4, 4),)
+    @parameterized.expand(Add.test_parameters)
+    def test_add_tosa_MI(self, test_data: torch.Tensor):
+        test_data = (test_data,)
         self._test_add_tosa_MI_pipeline(self.Add(), test_data)
 
-    @parameterized.expand(
-        [
-            (torch.ones(5),),  # test_data
-            (3 * torch.ones(8),),
-        ]
-    )
-    def test_add_tosa_BI(self, test_data: Optional[Tuple[torch.Tensor]]):
+    @parameterized.expand(Add.test_parameters)
+    def test_add_tosa_BI(self, test_data: torch.Tensor):
         test_data = (test_data,)
         self._test_add_tosa_BI_pipeline(self.Add(), test_data)
 
+    @parameterized.expand(Add.test_parameters)
     @unittest.skipIf(
-        not VELA_INSTALLED,
+        not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",
     )
-    def test_add_u55_BI(self):
-        test_data = (3 * torch.ones(5),)
+    def test_add_u55_BI(self, test_data: torch.Tensor):
+        test_data = (test_data,)
         self._test_add_u55_BI_pipeline(self.Add(), test_data)
 
-    def test_add2_tosa_MI(self):
-        test_data = (torch.randn(1, 1, 4, 4), torch.randn(1, 1, 4, 1))
+    @parameterized.expand(Add2.test_parameters)
+    def test_add2_tosa_MI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
         self._test_add_tosa_MI_pipeline(self.Add2(), test_data)
 
-    def test_add2_tosa_BI(self):
-        test_data = (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 1))
+    @parameterized.expand(Add2.test_parameters)
+    def test_add2_tosa_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
         self._test_add_tosa_BI_pipeline(self.Add2(), test_data)
 
+    @parameterized.expand(Add2.test_parameters)
     @unittest.skipIf(
-        not VELA_INSTALLED,
+        not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",
     )
-    def test_add2_u55_BI(self):
-        test_data = (torch.ones(1, 1, 4, 4), torch.ones(1, 1, 4, 1))
+    def test_add2_u55_BI(self, operand1: torch.Tensor, operand2: torch.Tensor):
+        test_data = (operand1, operand2)
         self._test_add_u55_BI_pipeline(self.Add2(), test_data)

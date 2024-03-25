@@ -27,6 +27,10 @@ class QnnBackend {
       : handle_(nullptr), implementation_(implementation), logger_(logger) {}
 
   virtual ~QnnBackend();
+  virtual bool IsProfileEventTypeParentOfNodeTime(
+      QnnProfile_EventType_t /*event_type*/) {
+    return false;
+  }
 
   Error Configure();
 
