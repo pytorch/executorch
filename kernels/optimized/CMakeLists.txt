@@ -46,7 +46,7 @@ include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 # Build cpublas.
 list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
-add_library(cpublas ${_optimized_cpublas__srcs})
+add_library(cpublas STATIC ${_optimized_cpublas__srcs})
 target_link_libraries(cpublas PRIVATE executorch eigen_blas)
 target_compile_options(cpublas PUBLIC ${_common_compile_options})
 
@@ -73,3 +73,5 @@ gen_operators_lib(
   DEPS executorch)
 
 install(TARGETS optimized_kernels optimized_ops_lib DESTINATION lib)
+
+install(TARGETS cpublas DESTINATION lib)
