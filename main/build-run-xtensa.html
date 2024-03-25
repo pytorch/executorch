@@ -578,15 +578,22 @@ In order to run the CMake build, you need the path to the following:</p>
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
 <span class="c1"># prebuild and install executorch library</span>
 cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_HOST_TARGETS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-out<span class="w"> </span>.
 
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j8<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Debug
 <span class="c1"># build xtensa runner</span>
 cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>../examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span>&lt;path_to_executorch&gt;/cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DMODEL_PATH<span class="o">=</span>&lt;path_to_program_file_generated_in_previous_step&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DNXP_SDK_ROOT_DIR<span class="o">=</span>&lt;path_to_nxp_sdk_root&gt;<span class="w"> </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
