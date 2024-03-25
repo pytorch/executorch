@@ -283,7 +283,9 @@ class LlamaEdgeManager:
             )
         return self
 
-    def to_backend(self, partitioner: Optional[Partitioner]) -> "LlamaEdgeManager":
+    def to_backend(
+        self, partitioners: Optional[List[Partitioner]]
+    ) -> "LlamaEdgeManager":
         """
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
@@ -291,18 +293,26 @@ class LlamaEdgeManager:
             partitioner (Optional[Partitioner]): One or more
                 partitioner to be sent to EdgeManager.to_backend().
         """
-        assert self.edge_manager is not None, "Need to run export_to_edge() first"
-        if partitioner is None:
+        if partitioners is None:
             logging.info("No partitioner provided, passing...")
         else:
-            self.edge_manager = self.edge_manager.to_backend(partitioner)
-            if self.verbose:
-                logging.info(
-                    print_delegated_graph(
-                        self.edge_manager.exported_program().graph_module
-                    )
-                )
-                logging.info(f"Applied partitioners: {partitioner}")
+            for partitioner in partitioners:
+                if partitioner is not None:
+                    assert (
+                        self.edge_manager is not None
+                    ), "Need to run export_to_edge() first"
+                    self.edge_manager = self.edge_manager.to_backend(partitioner)
+                    if self.verbose:
+                        logging.info(
+                            print_delegated_graph(
+                                self.edge_manager.exported_program().graph_module
+                            )
+                        )
+                        logging.info(f"Applied partitioners: {partitioner}")
+                else:
+                    logging.info("No partitioner provided, passing...")
+                    continue
+
         return self
 
     def to_executorch(self) -> "LlamaEdgeManager":
