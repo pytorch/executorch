@@ -59,3 +59,6 @@
 	path = third-party/lm-evaluation-harness
 	url = https://github.com/EleutherAI/lm-evaluation-harness
 	branch = v0.4.1
+[submodule "kernels/optimized/third-party/eigen"]
+	path = kernels/optimized/third-party/eigen
+	url = https://gitlab.com/libeigen/eigen.git
