@@ -246,9 +246,7 @@ def _maybe_duplicate_constant_nodes(
     copied_nodes = set()
     for candidate_node in candidate_nodes:
         # Both tagged exported program and the owning program need to go through the same duplication pass
-        copied_nodes = copied_nodes.union(
-            duplicate_constant_node(tagged_exported_program, candidate_node)
-        )
+        copied_nodes = duplicate_constant_node(tagged_exported_program, candidate_node)
         duplicate_constant_node(owning_program, candidate_node)
     candidate_node_with_copies = candidate_nodes.union(copied_nodes)
     _assign_new_tag(tagged_exported_program, candidate_node_with_copies)
