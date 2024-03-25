@@ -32,9 +32,9 @@ test_buck2_select_ops_in_list() {
     ${PYTHON_EXECUTABLE} -m examples.portable.scripts.export --model_name="add_mul"
 
     echo "Running selective build test"
-    # set max_kernel_num=17: 14 primops, add, mul
+    # set max_kernel_num=18: 16 primops, add, mul
     $BUCK run //examples/selective_build:selective_build_test \
-        --config=executorch.max_kernel_num=17 \
+        --config=executorch.max_kernel_num=18 \
         --config=executorch.select_ops=list \
         -- --model_path=./add_mul.pte
 
@@ -100,11 +100,11 @@ test_cmake_select_ops_in_list() {
 
     local example_dir=examples/selective_build
     local build_dir=cmake-out/${example_dir}
-    # set MAX_KERNEL_NUM=17: 14 primops, add, mul
+    # set MAX_KERNEL_NUM=18: 16 primops, add, mul
     rm -rf ${build_dir}
     retry cmake -DBUCK2="$BUCK" \
             -DCMAKE_BUILD_TYPE=Release \
-            -DMAX_KERNEL_NUM=17 \
+            -DMAX_KERNEL_NUM=18 \
             -DEXECUTORCH_SELECT_OPS_LIST="aten::convolution.out,\
 aten::_native_batch_norm_legit_no_training.out,aten::hardtanh.out,aten::add.out,\
 aten::mean.out,aten::view_copy.out,aten::permute_copy.out,aten::addmm.out,\

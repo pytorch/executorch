@@ -265,16 +265,24 @@ class TestEmit(unittest.TestCase):
         edge = to_edge(export(f, inputs))
 
         removed_ops = ["aten::relu_", "aten::view"]
-        expected_ops = ["aten::sin", "aten::relu", "aten::max", "aten::view_copy"]
+        expected_ops = [
+            "aten::sin",
+            "aten::relu",
+            "aten::max",
+            "executorch_prim::et_view",  # aten::view_copy if ExecutorchBackendConfig.remove_view_copy = False
+        ]
 
         for opname in removed_ops:
             self.assertEqual(
                 self.count_node(edge.exported_program().graph_module, opname), 0
             )
         for opname in expected_ops:
-            self.assertTrue(
-                self.count_node(edge.exported_program().graph_module, opname) >= 1
-            )
+            if (
+                opname != "executorch_prim::et_view"
+            ):  # et_view appears as call_function with target = memory.view in graph
+                self.assertTrue(
+                    self.count_node(edge.exported_program().graph_module, opname) >= 1
+                )
 
         program = edge.to_executorch().executorch_program
         for opname in removed_ops:

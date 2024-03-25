@@ -42,6 +42,9 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
 from executorch.exir.passes.memory_format_ops_pass import MemoryFormatOpsPass
 from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_transpose_pass import NormalizeTransposePass
+from executorch.exir.passes.normalize_view_copy_base_pass import (
+    NormalizeViewCopyBasePass,
+)
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.remove_noop_pass import RemoveNoopPass
 from executorch.exir.passes.replace_aten_with_edge_pass import OpReplacePass
@@ -49,7 +52,16 @@ from executorch.exir.passes.replace_broken_ops_with_function_ops_pass import (
     ReplaceBrokenOpsWithFunctionalOpsPass,
 )
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
+from executorch.exir.passes.replace_select_copy_with_view_copy_pass import (
+    ReplaceSelectCopyWithViewCopyPass,
+)
+from executorch.exir.passes.replace_squeeze_copy_with_view_copy_pass import (
+    ReplaceSqueezeCopyWithViewCopyPass,
+)
 from executorch.exir.passes.replace_sym_size_op_pass import ReplaceSymSizeOpPass
+from executorch.exir.passes.replace_unsqueeze_copy_with_view_copy_pass import (
+    ReplaceUnsqueezeCopyWithViewCopyPass,
+)
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_shape_eval_pass import HintBasedSymShapeEvalPass
@@ -248,6 +260,7 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     # we won't see it in the input graph to the to_out_variant pass, unless
     # it's retraced after running to_out_variant with the first trace.
     memory.alloc,
+    memory.view,
     executorch_call_delegate,
     torch.ops.aten.copy_.default,
 }
@@ -481,6 +494,14 @@ base_pre_op_replace_passes: List[Callable[[torch.nn.Module], PassResult]] = Pass
         ScalarToTensorPass(),
         SymToTensorPass(),
         RemoveNoopPass(),
+        # Replace view_copy-like ops with view_copy ops prior to view_copy
+        # optimizations
+        ReplaceSqueezeCopyWithViewCopyPass(),
+        ReplaceUnsqueezeCopyWithViewCopyPass(),
+        ReplaceSelectCopyWithViewCopyPass(),
+        # Running NormalizeViewCopyBasePass + dead code elimination
+        # removes redundant view_copy nodes
+        NormalizeViewCopyBasePass(),
     ]
 ).passes
 
