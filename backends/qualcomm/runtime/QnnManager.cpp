@@ -6,9 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <executorch/backends/qualcomm/runtime/QnnManager.h>
+#include <executorch/backends/qualcomm/runtime/SharedBuffer.h>
 #include <executorch/backends/qualcomm/runtime/Utils.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
-
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -54,7 +54,9 @@ QnnManager::QnnManager(
         "the size of qnn context binary: %d",
         qnn_executorch_context_binary.nbytes);
     QNN_EXECUTORCH_LOG_INFO(
-        "Is on-device graph construction: %d", options_->online_prepare());
+        "Is on-device graph construction: %d", options->online_prepare());
+    QNN_EXECUTORCH_LOG_INFO(
+        "Enable shared buffer: %d", options->shared_buffer());
   }
 
   if (library_path.empty()) {
@@ -80,6 +82,53 @@ QnnManager::QnnManager(
 Error QnnManager::LoadQnnLibrary() {
   Error ret = qnn_loaded_backend_.Load(nullptr);
   return ret;
+}
+
+Error QnnManager::RegisterMem(
+    void* data_ptr,
+    const std::shared_ptr<TensorWrapper>& tensor_wrapper) {
+  SharedBuffer& shared_buffer_manager = SharedBuffer::GetSharedBufferManager();
+  // Not enable shared buffer
+  if (!options_->shared_buffer())
+    return Error::Internal;
+
+  if (backend_params_ptr_->qnn_mem_manager_ptr_ == nullptr) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Backend %s doesn't supported shared buffer.",
+        EnumNameQnnExecuTorchBackendType(
+            options_->backend_options()->backend_type()));
+    return Error::Internal;
+  }
+
+  if (!shared_buffer_manager.IsAllocated(data_ptr)) {
+    // It means two scenarios here:
+    // 1. the input and output partitioned graph
+    // 2. Actually, user doesn't allocate shared buffer with
+    // QnnExecuTorchAllocCustomMem API
+    return Error::Internal;
+  } else if (backend_params_ptr_->qnn_mem_manager_ptr_->IsRegistered(
+                 tensor_wrapper->GetMemHandle())) {
+    if (options_->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo)
+      QNN_EXECUTORCH_LOG_INFO(
+          "Tensor name %s has been registered shared memory.",
+          tensor_wrapper->GetName().c_str());
+    return Error::Ok;
+  }
+
+  int32_t mem_fd = SharedBuffer::GetSharedBufferManager().MemToFd(data_ptr);
+  if (mem_fd == -1) {
+    QNN_EXECUTORCH_LOG_WARN(
+        "Tensor name %s is failed to get file descriptor.",
+        tensor_wrapper->GetName().c_str());
+    return Error::Internal;
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      backend_params_ptr_->qnn_mem_manager_ptr_->RegisterMem(
+          tensor_wrapper, mem_fd) == Error::Ok,
+      Internal,
+      "Fail to register to shared memory.");
+
+  return Error::Ok;
 }
 
 Error QnnManager::Init() {
@@ -219,14 +268,6 @@ void QnnManager::Destroy() {
   qnn_loaded_backend_.TerminateAllBackends();
 }
 
-bool QnnManager::IsAvailable() {
-  return true;
-}
-
-bool QnnManager::IsOnlinePrepare() {
-  return options_->online_prepare();
-}
-
 bool QnnManager::IsNodeSupportedByBackend(
     std::vector<std::shared_ptr<OpWrapper>>& op_wrappers) {
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
@@ -329,3 +370,14 @@ Error QnnManager::Compile(
 } // namespace qnn
 } // namespace executor
 } // namespace torch
+void* QnnExecuTorchAllocCustomMem(size_t bytes, size_t alignment) {
+  using torch::executor::qnn::SharedBuffer;
+  void* buffer_ptr =
+      SharedBuffer::GetSharedBufferManager().AllocMem(bytes, alignment);
+  return buffer_ptr;
+}
+
+void QnnExecuTorchFreeCustomMem(void* buffer_ptr) {
+  using torch::executor::qnn::SharedBuffer;
+  SharedBuffer::GetSharedBufferManager().FreeMem(buffer_ptr);
+}

@@ -72,12 +72,34 @@ if __name__ == "__main__":
         default="8a8w",
     )
 
+    parser.add_argument(
+        "--checkpoint",
+        help="Pass llama2 checkpoint.",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--params",
+        help="Pass llama2 params json file.",
+        default=False,
+    )
+
     args = parser.parse_args()
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    instance = Llama2Model(use_kv_cache=args.use_kv_cache)
+    if args.params and args.checkpoint:
+        instance = Llama2Model(
+            use_kv_cache=args.use_kv_cache,
+            checkpoint=args.checkpoint,
+            params=args.params,
+        )
+    else:
+        instance = Llama2Model(
+            use_kv_cache=args.use_kv_cache,
+        )
+
     inputs, input_list = create_device_inputs(
         instance.get_example_inputs(), args.use_kv_cache
     )
@@ -106,6 +128,7 @@ if __name__ == "__main__":
         inputs,
         custom_annotations=(),
         quant_dtype=quant_dtype,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
@@ -119,6 +142,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()
