@@ -17,7 +17,10 @@
  * Currently we assume that the outputs are all fp32 tensors.
  */
 
+#include <executorch/backends/qualcomm/runtime/QnnExecuTorch.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
+#include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
@@ -25,6 +28,7 @@
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <executorch/util/util.h>
+
 #include <gflags/gflags.h>
 
 #include <fstream>
@@ -47,13 +51,54 @@ DEFINE_string(
 DEFINE_string(input_list_path, "input_list.txt", "Model input list path.");
 DEFINE_int32(iteration, 1, "Iterations of inference.");
 DEFINE_int32(warm_up, 0, "Pre-run before inference.");
+DEFINE_bool(
+    shared_buffer,
+    false,
+    "Specifies to use shared buffers for zero-copy usecase between the application and device/co-processor associated with the backend.");
 
 DEFINE_string(
     etdump_path,
     "etdump.etdp",
     "If etdump generation is enabled an etdump will be written out to this path");
 using namespace torch::executor;
+using torch::executor::MemoryAllocator;
 using torch::executor::util::FileDataLoader;
+
+class CustomMemory {
+ public:
+  CustomMemory(bool shared_buffer) : shared_buffer_(shared_buffer){};
+  bool Allocate(size_t bytes, size_t alignment) {
+    if (shared_buffer_) {
+      ptr_ = QnnExecuTorchAllocCustomMem(bytes, alignment);
+    } else {
+      input_data_.resize(bytes);
+      ptr_ = input_data_.data();
+    }
+    return ptr_ != nullptr;
+  }
+
+  ~CustomMemory() {
+    if (shared_buffer_) {
+      if (ptr_ != nullptr) {
+        QnnExecuTorchFreeCustomMem(ptr_);
+      }
+    }
+  }
+
+  void* GetPtr() {
+    return ptr_;
+  }
+
+  CustomMemory(const CustomMemory&) = delete;
+  CustomMemory(CustomMemory&&) = delete;
+  CustomMemory& operator=(const CustomMemory&) = delete;
+  CustomMemory& operator=(CustomMemory&&) = delete;
+
+ private:
+  bool shared_buffer_{false};
+  void* ptr_{nullptr};
+  std::vector<char> input_data_;
+};
 
 int main(int argc, char** argv) {
   runtime_init();
@@ -167,10 +212,58 @@ int main(int argc, char** argv) {
   ET_LOG(Info, "Method loaded.");
 
   // Prepare the inputs.
-  // Use ones-initialized inputs.
-  auto inputs = util::PrepareInputTensors(*method);
+  // Allocate data memory for inputs and outputs
+  std::vector<std::unique_ptr<CustomMemory>> in_custom_mem;
+  std::vector<std::unique_ptr<CustomMemory>> out_custom_mem;
+  in_custom_mem.reserve(method->inputs_size());
+  out_custom_mem.reserve(method->outputs_size());
+
+  for (int input_index = 0; input_index < method->inputs_size();
+       ++input_index) {
+    MethodMeta method_meta = method->method_meta();
+    Result<TensorInfo> tensor_meta = method_meta.input_tensor_meta(input_index);
+    in_custom_mem.push_back(
+        std::make_unique<CustomMemory>(FLAGS_shared_buffer));
+    std::unique_ptr<CustomMemory>& custom_mem_ptr = in_custom_mem.back();
+    ET_CHECK_MSG(
+        custom_mem_ptr->Allocate(
+            tensor_meta->nbytes(), MemoryAllocator::kDefaultAlignment),
+        "Failed to allocate custom memory. tensor index: %d, bytes: %zu",
+        input_index,
+        tensor_meta->nbytes());
+    TensorImpl impl = TensorImpl(
+        tensor_meta->scalar_type(),
+        /*dim=*/tensor_meta->sizes().size(),
+        const_cast<TensorImpl::SizesType*>(tensor_meta->sizes().data()),
+        custom_mem_ptr->GetPtr(),
+        const_cast<TensorImpl::DimOrderType*>(tensor_meta->dim_order().data()));
+    Error ret = method->set_input(Tensor(&impl), input_index);
+    ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
+  }
+  for (int output_index = 0; output_index < method->outputs_size();
+       ++output_index) {
+    const exec_aten::Tensor& t = method->get_output(output_index).toTensor();
+    out_custom_mem.push_back(
+        std::make_unique<CustomMemory>(FLAGS_shared_buffer));
+    std::unique_ptr<CustomMemory>& custom_mem_ptr = out_custom_mem.back();
+    ET_CHECK_MSG(
+        custom_mem_ptr->Allocate(
+            t.nbytes(), MemoryAllocator::kDefaultAlignment),
+        "Failed to allocate custom memory. tensor index: %d, bytes: %zu",
+        output_index,
+        t.nbytes());
+    Error ret = method->set_output_data_ptr(
+        custom_mem_ptr->GetPtr(), t.nbytes(), output_index);
+    if (ret != Error::Ok) {
+      // This can error if the outputs are already pre-allocated. Ignore
+      // this error because it doesn't affect correctness, but log it.
+      ET_LOG(
+          Error, "ignoring error from set_output_data_ptr(): 0x%" PRIx32, ret);
+    }
+  }
   ET_LOG(Info, "Inputs prepared.");
 
+  // Fill in data for input
   std::ifstream input_list(FLAGS_input_list_path);
   if (input_list.is_open()) {
     size_t num_inputs = method->inputs_size();
@@ -205,31 +298,38 @@ int main(int argc, char** argv) {
           input_files.size());
 
       for (int input_index = 0; input_index < num_inputs; ++input_index) {
-        exec_aten::Tensor& t = method->mutable_input(input_index).toTensor();
-        std::vector<char> input_data(t.nbytes());
+        MethodMeta method_meta = method->method_meta();
+        Result<TensorInfo> tensor_meta =
+            method_meta.input_tensor_meta(input_index);
+
         std::ifstream fin(input_files[input_index], std::ios::binary);
         fin.seekg(0, fin.end);
         size_t file_size = fin.tellg();
 
         ET_CHECK_MSG(
-            file_size == t.nbytes(),
+            file_size == tensor_meta->nbytes(),
             "Input(%d) size mismatch. file bytes: %zu, tensor bytes: %zu",
             input_index,
             file_size,
-            t.nbytes());
+            tensor_meta->nbytes());
 
         fin.seekg(0, fin.beg);
-        fin.read(input_data.data(), file_size);
+        fin.read(
+            static_cast<char*>(in_custom_mem[input_index]->GetPtr()),
+            file_size);
         fin.close();
 
-        std::vector<TensorImpl::SizesType> sizes(t.dim());
-        for (int i = 0; i < sizes.size(); ++i) {
-          sizes[i] = t.sizes().data()[i];
-        }
-
-        auto t_impl = TensorImpl(
-            t.scalar_type(), t.dim(), sizes.data(), input_data.data());
-        Error ret = method->set_input(EValue(Tensor(&t_impl)), input_index);
+        // For pre-allocated use case, we need to call set_input
+        // to copy data for the input tensors since they doesn't
+        // share the data with in_custom_mem.
+        TensorImpl impl = TensorImpl(
+            tensor_meta->scalar_type(),
+            /*dim=*/tensor_meta->sizes().size(),
+            const_cast<TensorImpl::SizesType*>(tensor_meta->sizes().data()),
+            in_custom_mem[input_index]->GetPtr(),
+            const_cast<TensorImpl::DimOrderType*>(
+                tensor_meta->dim_order().data()));
+        Error ret = method->set_input(Tensor(&impl), input_index);
         ET_CHECK_MSG(ret == Error::Ok, "Failed to set input tensor: %d", ret);
       }
 
@@ -313,21 +413,5 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Model executed successfully.");
   }
 
-  // Dump the etdump data containing profiling/debugging data to the specified
-  // file.
-  etdump_result result = etdump_gen.get_etdump_data();
-  if (result.buf != nullptr && result.size > 0) {
-    ET_LOG(
-        Info,
-        "Write etdump to %s, Size = %zu",
-        FLAGS_etdump_path.c_str(),
-        result.size);
-    FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
-    fwrite((uint8_t*)result.buf, 1, result.size, f);
-    fclose(f);
-    free(result.buf);
-  }
-
-  util::FreeInputs(inputs);
   return 0;
 }

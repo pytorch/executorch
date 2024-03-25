@@ -47,3 +47,10 @@ target_sources(utils
     PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/Utils.cpp
 )
+
+# shared_buffer
+target_sources(shared_buffer
+    PRIVATE
+    ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.h
+    ${CMAKE_CURRENT_LIST_DIR}/SharedBuffer.cpp
+)
