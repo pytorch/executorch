@@ -422,6 +422,11 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("-V", "--vulkan", action="store_true")
     parser.add_argument("--mps", action="store_true")
     parser.add_argument("--coreml", action="store_true")
+    parser.add_argument(
+        "--qnn",
+        action="store_true",
+        help="Delegate llama2 to qnn backend (Qualcomm), please use it --kv_cahce=True",
+    )
 
     parser.add_argument(
         "--expand_rope_table",
@@ -555,6 +560,28 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
+    if args.qnn:
+        assert (
+            args.quantization_mode is None
+        ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
+        try:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.quantizer.quantizer`
+            from executorch.backends.qualcomm.quantizer.quantizer import QnnQuantizer
+
+            # reset quantizers and pt2e_quant_params from xnnpack backend
+            pt2e_quant_params = None
+            quantizers = []
+        except ImportError:
+            raise ImportError(
+                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+            )
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+        qnn_quantizer = QnnQuantizer()
+        # more custom quantization are supported including 16a4w etc. default to 8bit quantized
+        custom_annotations = ()
+        qnn_quantizer.add_custom_quant_annotations(custom_annotations)
+        quantizers.append(qnn_quantizer)
 
     builder_exported_to_edge = _prepare_for_llama_export(
         modelname, args
@@ -637,6 +664,50 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
         )
         modelname = f"coreml_{modelname}"
+
+    if args.qnn:
+        assert (
+            args.use_kv_cache is True
+        ), "Qualcomm backend currently only supports static shape and use_kv_cache=True is the only way to support it at the moment"
+        try:
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.partition.qnn_partitioner`
+            from executorch.backends.qualcomm.partition.qnn_partitioner import (
+                QnnPartitioner,
+            )
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.serialization.qnn_compile_spec_schema`
+            from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
+                QcomChipset,
+            )
+
+            # pyre-ignore: Undefined import [21]: Could not find a module corresponding to import `executorch.backends.qualcomm.utils.utils`
+            from executorch.backends.qualcomm.utils.utils import (
+                _transform,
+                generate_htp_compiler_spec,
+                generate_qnn_executorch_compiler_spec,
+            )
+        except ImportError:
+            raise ImportError(
+                "Please install the Qualcomm backend follwing https://pytorch.org/executorch/main/build-run-qualcomm.html"
+            )
+
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+        partitioner = QnnPartitioner(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+            generate_qnn_executorch_compiler_spec(
+                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+                soc_model=QcomChipset.SM8650,  # default to SM8650
+                backend_options=backend_options,
+                debug=False,
+                saver=False,
+            ),
+            skip_node_id_set={},
+            skip_node_op_set={},
+        )
+        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+        _transform(builder_exported_to_edge.export_program())
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
