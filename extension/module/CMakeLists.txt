@@ -17,7 +17,7 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 list(TRANSFORM _extension_module__srcs PREPEND "${EXECUTORCH_ROOT}/")
-if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID)
+if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID OR APPLE)
   # Building a share library on iOS requires code signing
   # On Android we see duplicated registration when using shared lib
   add_library(extension_module STATIC ${_extension_module__srcs})

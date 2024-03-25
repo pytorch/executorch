@@ -459,8 +459,7 @@ if(EXECUTORCH_BUILD_PYBIND)
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
-  find_library(TORCH_PYTHON_LIBRARY torch_python
-               PATHS "${TORCH_INSTALL_PREFIX}/lib")
+  find_library(TORCH_PYTHON_LIBRARY torch_python)
 
   # compile options for pybind
 

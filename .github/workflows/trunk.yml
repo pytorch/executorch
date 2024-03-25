@@ -215,3 +215,67 @@ jobs:
         # Build and test coreml delegate
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/build_all.sh
         popd
+
+  test-pybind-build-macos:
+    name: test-pybind-build-macos
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: macos-13-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        WORKSPACE=$(pwd)
+        pushd "${WORKSPACE}/pytorch/executorch"
+        bash .ci/scripts/setup-conda.sh
+
+        # build module for executorch.extension.pybindings.portable_lib
+        BUILD_TOOL=${{ matrix.build-tool }}
+
+        CMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())') \
+        GITHUB_RUNNER=1 \
+        ${CONDA_RUN} \
+        PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_PYBIND=ON \
+        bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        # see if we can import the module successfully
+        python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
+
+  test-llama-runner-mac:
+    name: test-llama-runner-mac
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    strategy:
+      matrix:
+        dtype: [fp32]
+        build-tool: [buck2, cmake]
+        mode: [portable, xnnpack]
+      fail-fast: false
+    with:
+      runner: macos-13-xlarge
+      python-version: '3.11'
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 900
+      script: |
+        WORKSPACE=$(pwd)
+        pushd "${WORKSPACE}/pytorch/executorch"
+        bash .ci/scripts/setup-conda.sh
+
+        DTYPE=${{ matrix.dtype }}
+        BUILD_TOOL=${{ matrix.build-tool }}
+        MODE=${{ matrix.mode }}
+
+        # Setup executorch
+        PYTHON_EXECUTABLE=python bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
+
+        # Install requirements for export_llama
+        PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
+        # Test llama2
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
