@@ -32,6 +32,7 @@ from executorch.backends.qualcomm.utils.utils import (
 )
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -46,6 +47,7 @@ class SimpleADB:
         soc_model,
         host_id=None,
         error_only=False,
+        shared_buffer=False,
     ):
         self.qnn_sdk = qnn_sdk
         self.artifact_path = artifact_path
@@ -65,6 +67,7 @@ class SimpleADB:
         }
         self.soc_model = arch_table[soc_model]
         self.error_only = error_only
+        self.shared_buffer = shared_buffer
 
     def _adb(self, cmd):
         if not self.host_id:
@@ -123,6 +126,7 @@ class SimpleADB:
                 f"--output_folder_path {self.output_folder}",
                 f"--input_list_path {self.input_list_filename}",
                 f"--etdump_path {self.etdump_path}",
+                "--shared_buffer" if self.shared_buffer else "",
             ]
         )
         qnn_executor_runner_cmds = " ".join(
@@ -157,6 +161,7 @@ def build_executorch_binary(
     skip_node_id_set=None,
     skip_node_op_set=None,
     quant_dtype: Optional[QuantDtype] = None,
+    shared_buffer=False,
 ):
     if quant_dtype:
         quantizer = QnnQuantizer()
@@ -202,6 +207,7 @@ def build_executorch_binary(
             backend_options=backend_options,
             debug=False,
             saver=False,
+            shared_buffer=shared_buffer,
         ),
         skip_node_id_set,
         skip_node_op_set,
@@ -209,7 +215,18 @@ def build_executorch_binary(
     edge_prog.exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
     edge_prog.exported_program.graph_module.graph.print_tabular()
     exec_prog = edge_prog.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_constant_segment=False,
+            # For shared buffer, user must pass the memory address
+            # which is allocated by RPC memory to executor runner.
+            # Therefore, won't want to pre-allocate
+            # by memory manager in runtime.
+            memory_planning_pass=MemoryPlanningPass(
+                memory_planning_algo="greedy",
+                alloc_graph_input=not shared_buffer,
+                alloc_graph_output=not shared_buffer,
+            ),
+        )
     )
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
@@ -336,6 +353,13 @@ def setup_common_args_and_variables():
         "--device",
         help="serial number for android device communicated via ADB.",
         type=str,
+    )
+
+    parser.add_argument(
+        "-z",
+        "--shared_buffer",
+        help="Enables usage of shared buffer between application and backend for graph I/O.",
+        action="store_true",
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

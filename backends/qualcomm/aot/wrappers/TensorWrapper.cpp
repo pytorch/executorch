@@ -105,6 +105,7 @@ TensorWrapper::TensorWrapper(
 
 Error TensorWrapper::FillDataBuffer(const void* data, bool copy_data) {
   if (data != nullptr) {
+    QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_RAW;
     QNN_VER_PTR(tensor_)->clientBuf.dataSize = bytes_;
     if (copy_data) {
       owned_data_ = std::make_unique<char[]>(bytes_);
@@ -141,6 +142,12 @@ void TensorWrapper::UpdateQnnTensorMeta(const Qnn_Tensor_t& tensor_src) {
 Error TensorWrapper::SetName(const std::string& name) {
   qnn_tensor_name_ = name;
   QNN_VER_PTR(tensor_)->name = qnn_tensor_name_.c_str();
+  return Error::Ok;
+}
+
+Error TensorWrapper::SetMemHandle(Qnn_MemHandle_t mem_handle) {
+  QNN_VER_PTR(tensor_)->memType = QNN_TENSORMEMTYPE_MEMHANDLE;
+  QNN_VER_PTR(tensor_)->memHandle = mem_handle;
   return Error::Ok;
 }
 
