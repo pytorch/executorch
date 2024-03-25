@@ -75,6 +75,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "portable_kernels",
 ]
 
 [targets.program_schema]
