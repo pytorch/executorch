@@ -11,11 +11,12 @@ import PackageDescription
 
 let url = "https://ossci-ios.s3.amazonaws.com/executorch"
 let version = "0.1.0"
-let coreml_sha256 = "786c6d621e402777fc254ee403558539585595afdecbf8df743ca4e298adebf1"
-let executorch_sha256 = "2ce568bd2704a5a7d7a0d4d6ed7df9e291f741b17f48767f0b3bc2a40ce797a8"
-let mps_sha256 = "7b5a7805346caa5899c614573cf0ce715e2552db8f42c8af6b353f7ebb73bdbe"
-let portable_sha256 = "52b7e86f02bf72eeaa3295b0612880376d5814cbe34898c805225ceef1d7bc6e"
-let xnnpack_sha256 = "3fd6e4e1d9687eb25e2638bb3dfbc429b736cbf47e7ed769f1dbec62254e4cdd"
+let coreml_sha256 = "1f0432ee5782eab259ce9e3007415006be152c27ce530c1ef8a79bca940c6a32"
+let executorch_sha256 = "bf1ea573338bd30e90433bfb93db5d713aa7ecc351579ee7432f57fec329441b"
+let mps_sha256 = "df851be40444509f622ed155b787073aaba7643669eda36b6b3eb902e29b43a6"
+let portable_sha256 = "f183c5934491047b04130304466357959ae65e99b0b482a8a3372676ef817777"
+let quantized_sha256 = "bf79625d32161ac1892e172ec69e83a94b60ea400c8fa32bf4c4e85c7d338e8a"
+let xnnpack_sha256 = "85ab60d6a29fcebaf7aac1eb775ef96c1d87d1fa104458d0efdc681b7ea6b558"
 
 struct Framework {
   let name: String
@@ -71,6 +72,10 @@ let frameworks = [
   Framework(
     name: "portable_backend",
     checksum: portable_sha256
+  ),
+  Framework(
+    name: "quantized_backend",
+    checksum: quantized_sha256
   ),
   Framework(
     name: "xnnpack_backend",
