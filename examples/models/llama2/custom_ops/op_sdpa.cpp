@@ -517,22 +517,22 @@ bool validate_flash_attention_args(
       "Attention mask must be a 2D tensor");
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      is_contiguous_dim_order(query.dim_order().data(), query.dim()),
-      "key cache must be in contiguous dim order");
+      is_default_dim_order(query.dim_order().data(), query.dim()),
+      "key cache must be in default dim order");
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      is_contiguous_dim_order(key.dim_order().data(), key.dim()),
-      "value cache must be in contiguous dim order");
+      is_default_dim_order(key.dim_order().data(), key.dim()),
+      "value cache must be in default dim order");
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      is_contiguous_dim_order(value.dim_order().data(), value.dim()),
-      "value cache must be in contiguous dim order");
+      is_default_dim_order(value.dim_order().data(), value.dim()),
+      "value cache must be in default dim order");
 
   if (attn_mask.has_value()) {
     ET_LOG_MSG_AND_RETURN_IF_FALSE(
-        is_contiguous_dim_order(
+        is_default_dim_order(
             attn_mask.value().dim_order().data(), attn_mask.value().dim()),
-        "value cache must be in contiguous dim order");
+        "value cache must be in default dim order");
   }
 
   return true;
@@ -577,14 +577,14 @@ bool validate_cache_params(
       seq_length,
       v_cache.size(2));
 
-  // Make sure they are in contiguous dim order
+  // Make sure they are in default dim order
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      is_contiguous_dim_order(k_cache.dim_order().data(), k_cache.dim()),
-      "key cache must be in contiguous dim order");
+      is_default_dim_order(k_cache.dim_order().data(), k_cache.dim()),
+      "key cache must be in default dim order");
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      is_contiguous_dim_order(v_cache.dim_order().data(), v_cache.dim()),
-      "value cache must be in contiguous dim order");
+      is_default_dim_order(v_cache.dim_order().data(), v_cache.dim()),
+      "value cache must be in default dim order");
 
   return true;
 }
@@ -601,9 +601,9 @@ void update_cache(
       "projected_value must have batch size of 1");
   ET_CHECK_MSG(cache.size(0) == 1, "cache must have batch size of 1");
   ET_CHECK_MSG(
-      is_contiguous_dim_order(
+      is_default_dim_order(
           projected_value.dim_order().data(), projected_value.dim()),
-      "projected value must be in contiguous dim order");
+      "projected value must be in default dim order");
   const void* projected_value_data = projected_value.const_data_ptr();
   void* cache_data = cache.mutable_data_ptr();
 
