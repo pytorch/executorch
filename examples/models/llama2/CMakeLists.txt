@@ -69,6 +69,16 @@ if(TARGET xnnpack_backend)
                       $<TARGET_FILE:xnnpack_backend> \
                       LINKER:--no-whole-archive")
 endif()
+
+# Vulkan backend
+if(TARGET vulkan_backend)
+  target_link_libraries(llama_main PUBLIC vulkan_backend)
+  target_link_options(
+    llama_main PUBLIC "SHELL:LINKER:--whole-archive \
+                      $<TARGET_FILE:vulkan_backend> \
+                      LINKER:--no-whole-archive")
+endif()
+
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
 # Print all summary
