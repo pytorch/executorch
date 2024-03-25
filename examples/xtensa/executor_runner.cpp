@@ -27,12 +27,12 @@
 #include <vector>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
+#include <executorch/extension/runner_util/inputs.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program.h>
 #include <executorch/runtime/platform/log.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/runtime/platform/runtime.h>
-#include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[18 * 1024U]; // 4 MB
 
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
   }
 
   ET_LOG(Info, "Method loaded.");
-  torch::executor::util::PrepareInputTensors(*method);
+  torch::executor::util::prepare_input_tensors(*method);
   ET_LOG(Info, "Starting the model execution...");
 
   Error status = method->execute();
