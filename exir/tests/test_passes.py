@@ -36,13 +36,21 @@ from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGenera
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+from executorch.exir.passes.normalize_view_copy_base_pass import (
+    NormalizeViewCopyBasePass,
+)
+
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
+from executorch.exir.passes.replace_view_copy_with_view_pass import (
+    ReplaceViewCopyWithViewPass,
+)
 from executorch.exir.passes.scalar_to_tensor_pass import ScalarToTensorPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from executorch.exir.passes.sym_to_tensor_pass import SymToTensorPass
 from executorch.exir.program._program import lift_constant_tensor_pass
+from executorch.exir.schema import TensorShapeDynamism
 from executorch.exir.tensor import TensorSpec
 from executorch.exir.tests.common import register_additional_test_aten_ops
 from executorch.exir.tests.control_flow_models import FTCondDeadCode, FTMapBasic
@@ -1244,3 +1252,212 @@ class TestPasses(unittest.TestCase):
         #     %copy__default : [num_users=1] = call_function[target=torch.ops.aten.copy_.default](args = (%arg0_1, %aten_add_tensor_1), kwargs = {})
         #     return (copy__default, aten_add_tensor)
         self.assertEqual(count_copies(gm), 1)
+
+    def test_remove_redundant_view_copy_pass(self) -> None:
+        def is_view(node: torch.fx.Node) -> bool:
+            return node.op == "call_function" and node.target in (
+                torch.ops.aten.view_copy.default,
+                exir_ops.edge.aten.view_copy.default,
+                # before to_edge, the view_copy are view
+                # we include these to count n_views_before
+                torch.ops.aten.view.default,
+                exir_ops.edge.aten.view.default,
+            )
+
+        # Test chain
+        class ViewChain(torch.nn.Module):
+            def forward(self, x):
+                return x.reshape(30, 1).reshape(5, 6).reshape(2, 15).reshape(3, -1)
+
+        view_chain = ViewChain()
+
+        exported_program = export(view_chain, (torch.ones(30),))
+        n_views_before = 0
+        for node in exported_program.graph.nodes:
+            if is_view(node):
+                n_views_before += 1
+        self.assertEqual(n_views_before, 4)
+
+        edge_program_manager = to_edge(exported_program)
+        n_views_after = 0
+        for node in edge_program_manager.exported_program().graph.nodes:
+            if is_view(node):
+                n_views_after += 1
+                the_view_copy_node = node
+
+        self.assertEqual(n_views_after, 1)
+        self.assertEqual(the_view_copy_node.args[1], [3, -1])
+        self.assertEqual(
+            the_view_copy_node.target, exir_ops.edge.aten.view_copy.default
+        )
+
+        # Test branch
+        class ViewBranch(torch.nn.Module):
+            def forward(self, x):
+                x = x.reshape(30, 1)
+                y = torch.sum(x)
+                z = x.reshape(5, 6).reshape(2, 15).reshape(3, -1)
+                return z + y
+
+        view_branch = ViewBranch()
+        exported_program = export(view_branch, (torch.ones(30),))
+        n_views_before = 0
+        for node in exported_program.graph.nodes:
+            if is_view(node):
+                n_views_before += 1
+        self.assertEqual(n_views_before, 4)
+
+        edge_program_manager = to_edge(exported_program)
+        n_views_after = 0
+        for node in edge_program_manager.exported_program().graph.nodes:
+            if is_view(node):
+                n_views_after += 1
+                the_view_copy_node = node
+
+        # We keep the view on x (which is consumed by y)
+        # The 3 views on z are collapsed to 1 view
+        # In total, 2 view remain
+        self.assertEqual(n_views_after, 2)
+
+    def test_normalize_view_copy_base_pass(self) -> None:
+
+        class ViewChain(torch.nn.Module):
+            def forward(self, x):
+                x = torch.ops.aten.view_copy.default(x, [30, 1])
+                x = torch.ops.aten.view_copy.default(x, [5, 6])
+                x = torch.ops.aten.view_copy.default(x, [2, 15])
+                x = torch.ops.aten.view_copy.default(x, [3, -1])
+                return x
+
+        def is_view_copy(node: torch.fx.Node) -> bool:
+            return (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.view_copy.default
+            )
+
+        gm = export(ViewChain(), (torch.ones(30),)).graph_module
+
+        # Check before transformation
+        n_view_copy_before = 0
+        n_view_copy_bases_before = 0
+        for node in gm.graph.nodes:
+            if is_view_copy(node):
+                n_view_copy_before += 1
+                base = node.args[0]
+                if is_view_copy(base):
+                    n_view_copy_bases_before += 1
+
+        self.assertEqual(n_view_copy_before, 4)
+        self.assertEqual(n_view_copy_bases_before, 3)
+
+        # Do transformation
+        p = NormalizeViewCopyBasePass()
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+        # Check after transformation
+        n_view_copy_after = 0
+        n_view_copy_bases_after = 0
+        for node in gm.graph.nodes:
+            if is_view_copy(node):
+                n_view_copy_after += 1
+                base = node.args[0]
+                if is_view_copy(base):
+                    n_view_copy_bases_after += 1
+
+        self.assertEqual(n_view_copy_after, 4)
+        self.assertEqual(n_view_copy_bases_after, 0)
+
+    def test_replace_view_copy_with_view_pass(self) -> None:  # noqa: C901
+
+        # Helper functions
+        def is_view_copy(node: torch.fx.Node) -> bool:
+            return (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.view_copy.default
+            )
+
+        def is_memory_view(node: torch.fx.Node) -> bool:
+            return node.op == "call_function" and node.target == memory.view
+
+        # Test example set up
+        class TestViewCopies(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.parameter = torch.nn.Parameter(torch.ones(1))
+
+            def forward(self, x):
+                o1 = torch.ops.aten.view_copy.default(
+                    self.parameter, [1]
+                )  # replaceable parameter
+                o2 = torch.ops.aten.view_copy.default(x, [1])  # replaceable user input
+                o3 = torch.ops.aten.view_copy.default(
+                    torch.ops.aten.relu.default(x), [1]
+                )  # replaceable dynamic unbound
+                o4 = torch.ops.aten.view_copy.default(
+                    torch.ops.aten.gelu.default(x), [1]
+                )  # replaceable dynamic bound
+                o5 = torch.ops.aten.view_copy.default(
+                    torch.ops.aten.tanh.default(x), [1]
+                )  # replaceable static
+                return o1, o2, o3, o4, o5
+
+        ep = torch.export.export(
+            TestViewCopies(),
+            args=(torch.ones(1),),
+        )
+        self.assertEqual(len(ep.graph.nodes), 11)
+        for node in ep.graph.nodes:
+            if node.op == "placeholder":
+                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
+                node.meta["spec"].shape_dynamism = TensorShapeDynamism.STATIC
+            elif node.target == torch.ops.aten.relu.default:
+                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
+                node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_UNBOUND
+            elif node.target == torch.ops.aten.gelu.default:
+                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
+                node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
+            elif node.target == torch.ops.aten.tanh.default:
+                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
+                node.meta["spec"].shape_dynamism = TensorShapeDynamism.STATIC
+            elif node.target == torch.ops.aten.view_copy.default:
+                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
+                node.meta["spec"].shape_dynamism = (
+                    node.args[0].meta["spec"].shape_dynamism
+                )
+            else:
+                pass
+
+        # Run tests
+        gm = ep.graph_module
+
+        # Check before transformation
+        n_view_copy_before = 0
+        n_memory_view_before = 0
+        for node in gm.graph.nodes:
+            if is_view_copy(node):
+                n_view_copy_before += 1
+            if is_memory_view(node):
+                n_memory_view_before += 1
+
+        self.assertEqual(n_view_copy_before, 5)
+        self.assertEqual(n_memory_view_before, 0)
+
+        # Do transformation
+        p = ReplaceViewCopyWithViewPass()
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+        # Check after transformation
+        n_view_copy_after = 0
+        n_memory_view_after = 0
+        for node in gm.graph.nodes:
+            if is_view_copy(node):
+                n_view_copy_after += 1
+            if is_memory_view(node):
+                n_memory_view_after += 1
+
+        self.assertEqual(n_view_copy_after, 0)
+        self.assertEqual(n_memory_view_after, 5)
