@@ -1,5 +1,4 @@
-load("@fbsource//tools/build_defs:fbsource_utils.bzl", "is_xplat")
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 
 def op_test(name, deps = [], kernel_name = "portable", use_kernel_prefix = False):
     """Defines a cxx_test() for an "op_*_test.cpp" file.

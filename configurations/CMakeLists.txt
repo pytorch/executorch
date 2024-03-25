@@ -28,24 +28,25 @@ set(_common_compile_options -Wno-deprecated-declarations)
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
+if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+  # Merge optimized and portable definitions, taking optimized where available.
+  merge_yaml(
+      FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/optimized/optimized-oss.yaml
+      FALLBACK_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
+      OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}
+  )
 
-# Merge optimized and portable definitions, taking optimized where available.
-merge_yaml(
-    FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/optimized/optimized-oss.yaml
-    FALLBACK_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml
-    OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}
-)
+  gen_selected_ops("${CMAKE_CURRENT_BINARY_DIR}/merged.yaml" "" "")
 
-gen_selected_ops("${CMAKE_CURRENT_BINARY_DIR}/merged.yaml" "" "")
+  generate_bindings_for_kernels(
+      FUNCTIONS_YAML ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml)
+  message("Generated files ${gen_command_sources}")
 
-generate_bindings_for_kernels(
-    FUNCTIONS_YAML ${CMAKE_CURRENT_BINARY_DIR}/merged.yaml)
-message("Generated files ${gen_command_sources}")
+  # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
+  gen_operators_lib(
+    "optimized_native_cpu_ops_lib"
+    KERNEL_LIBS portable_kernels optimized_kernels
+    DEPS executorch)
 
-# optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
-gen_operators_lib(
-  "optimized_native_cpu_ops_lib"
-  KERNEL_LIBS portable_kernels optimized_kernels
-  DEPS executorch)
-
-install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
+  install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
+endif()
