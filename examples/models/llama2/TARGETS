@@ -69,6 +69,7 @@ runtime.python_library(
         "export_llama.py",
         "export_llama_lib.py",
         "model.py",
+        "quant.py",
         "quantize.py",
     ],
     _is_external_target = True,
