@@ -56,6 +56,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_arange(self):
@@ -389,6 +390,7 @@ class TestQNNFloatingPointModel(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -484,6 +486,7 @@ class TestQNNQuantizedOperator(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_16a4w_conv2d(self):
@@ -880,6 +883,7 @@ class TestQNNQuantizedModel(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -1077,6 +1081,24 @@ class TestQNNFloatingPointUtils(TestQNN):
             expected_profile_events=25,
         )
 
+    def test_qnn_backend_shared_buffer(self):
+        TestQNN.shared_buffer = True
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            shared_buffer=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+        )
+
 
 class TestQNNQuantizedUtils(TestQNN):
     # TODO: refactor to support different backends
@@ -1179,6 +1201,25 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_profile_events=26,
         )
 
+    def test_qnn_backend_shared_buffer(self):
+        TestQNN.shared_buffer = True
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            shared_buffer=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+        )
+
 
 class TestExampleScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
@@ -1215,6 +1256,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1248,6 +1291,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1281,6 +1326,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1314,6 +1361,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1346,6 +1395,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1378,6 +1429,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1411,6 +1464,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1442,6 +1497,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1475,6 +1532,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1515,6 +1574,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1585,6 +1646,7 @@ def setup_environment():
     TestQNN.online_prepare = args.online_prepare
     TestQNN.enable_profile = args.enable_profile
     TestQNN.error_only = args.error_only
+    TestQNN.shared_buffer = args.shared_buffer
     return sys.argv[:1] + ns_args
 
 
