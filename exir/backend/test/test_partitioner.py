@@ -31,6 +31,10 @@ from executorch.exir.backend.utils import get_delegates
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.tests.models import MLP
+from executorch.extension.pybindings.portable_lib import (  # @manual=//executorch/extension/pybindings:portable_lib
+    _load_for_executorch_from_buffer,
+)
+from executorch.extension.pytree import tree_flatten
 from torch._export import capture_pre_autograd_graph
 from torch._export.utils import is_buffer, is_param
 from torch.export import export
@@ -439,6 +443,66 @@ class TestPartitioner(unittest.TestCase):
                     ):
                         delegation_tag = "tag0"
                         node.meta["delegation_tag"] = delegation_tag
+                        partition_tags[delegation_tag] = self.delegation_spec
+
+                return PartitionResult(
+                    tagged_exported_program=edge_exported_program,
+                    partition_tags=partition_tags,
+                )
+
+        inputs = (torch.ones(2, 2),)
+        model = capture_pre_autograd_graph(ReuseConstData(), (torch.ones(2, 2),))
+        edge = exir.to_edge(export(model, (torch.ones(2, 2),)))
+        exec_prog = edge.to_backend(PartitionerTagData()).to_executorch()
+        executorch_module = _load_for_executorch_from_buffer(exec_prog.buffer)
+        inputs_flattened, _ = tree_flatten(inputs)
+
+        # Send the input from server executor to client executor, and receive the result from client executor
+        _ = executorch_module.run_method("forward", inputs)
+
+    def test_partitioner_alert_split_constant_data(self):
+        """
+        We test that we throw an error when constant data users are split
+        between different delegated payloads or owning program.
+        """
+
+        class ReuseConstData(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.const = torch.ones(2, 2)
+
+            def forward(self, x):
+                y = x + self.const
+                z = x - self.const
+                return y, z
+
+        class PartitionerTagData(Partitioner):
+            def __init__(self):
+                super().__init__()
+                self.delegation_spec = DelegationSpec(
+                    ExecutorBackend.__name__,
+                    [CompileSpec(key, value) for key, value in self.spec.items()],
+                )
+
+            def partition(
+                self, edge_exported_program: ExportedProgram
+            ) -> PartitionResult:
+                partition_tags = {}
+                for node in edge_exported_program.graph.nodes:
+                    if node.op == "call_function" and node.target in [
+                        exir_ops.edge.aten.add.Tensor
+                    ]:
+                        delegation_tag = "tag0"
+                        node.meta["delegation_tag"] = delegation_tag
+                        partition_tags[delegation_tag] = self.delegation_spec
+
+                    if node.op == "placeholder" and (
+                        is_param(edge_exported_program, node)
+                        or is_buffer(edge_exported_program, node)
+                    ):
+                        delegation_tag = "tag0"
+                        node.meta["delegation_tag"] = delegation_tag
+                        node.meta["no_copy"] = True
                         partition_tags[delegation_tag] = self.delegation_spec
 
                 return PartitionResult(
