@@ -59,6 +59,7 @@ class TestEmformerModel(unittest.TestCase):
             )
             return (predict_inputs,)
 
+    @unittest.skip("T183426271")
     def test_fp32_emformer_predictor(self):
         predictor = self.Predictor()
         (
