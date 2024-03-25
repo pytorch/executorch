@@ -18,6 +18,8 @@
 cmake_minimum_required(VERSION 3.19)
 project(llama_runner)
 
+option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" ON)
+
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
@@ -52,29 +54,36 @@ find_package(executorch CONFIG REQUIRED)
 # llama_runner library
 add_subdirectory(runner)
 
+set(link_options_shared_lib)
+set(link_libraries)
 
-target_link_libraries(llama_main PUBLIC gflags llama_runner
-                      portable_ops_lib)
-target_link_options_shared_lib(portable_ops_lib)
-target_link_options_shared_lib(executorch)
+if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+  list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels
+              portable_kernels)
+  list(APPEND link_options_shared_lib optimized_native_cpu_ops_lib)
+else()
+  list(APPEND link_libraries portable_ops_lib portable_kernels)
+  list(APPEND link_options_shared_lib portable_ops_lib)
+endif()
+
+target_link_libraries(llama_main PUBLIC gflags llama_runner)
 
 # XNNPACK pthreadpool cpuinfo
 if(TARGET xnnpack_backend)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK pthreadpool cpuinfo)
-  target_link_libraries(llama_main PUBLIC ${xnnpack_backend_libs})
-  target_link_options_shared_lib(xnnpack_backend)
+  list(APPEND link_libraries ${xnnpack_backend_libs})
+  list(APPEND link_options_shared_lib xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
-  target_link_libraries(llama_main PUBLIC vulkan_backend)
-  target_link_options(
-    llama_main PUBLIC "SHELL:LINKER:--whole-archive \
-                      $<TARGET_FILE:vulkan_backend> \
-                      LINKER:--no-whole-archive")
+  list(APPEND link_libraries vulkan_backend)
+  list(APPEND link_options_shared_lib vulkan_backend)
 endif()
 
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
+target_link_libraries(llama_main PUBLIC ${link_libraries})
+target_link_options_shared_lib(llama_main PUBLIC ${link_options_shared_lib})
 
 # Print all summary
 executorch_print_configuration_summary()

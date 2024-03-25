@@ -115,7 +115,7 @@ EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME
 if [[ "${MODE}" == "xnnpack" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --pt2e_quantize xnnpack_dynamic"
 fi
-$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
+$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama "${EXPORT_ARGS}"
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"

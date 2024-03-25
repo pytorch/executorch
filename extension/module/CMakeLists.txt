@@ -12,7 +12,7 @@
 cmake_minimum_required(VERSION 3.19)
 
 # Source root directory for executorch.
-if(NOT EƒXECUTORCH_ROOT)
+if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
