@@ -11,7 +11,6 @@ import copy
 import logging
 import shlex
 
-from functools import partial
 from pathlib import Path
 
 import pkg_resources
@@ -25,7 +24,7 @@ from executorch.examples.models.llama2.llama_transformer import Transformer
 from executorch.examples.models.llama2.quant import (
     _get_pt2e_quantization_params,
     get_pt2e_quantizers,
-    quantize,
+    get_quant_source_transforms,
 )
 from executorch.exir.backend.backend_details import CompileSpec
 
@@ -33,8 +32,6 @@ from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
-
-from .quantize import EmbeddingOnlyInt8QuantHandler
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -313,39 +310,12 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
 
     # source transforms
     transforms = []
-    if args.quantization_mode:
-        modelname = f"{modelname}_q"
-        transforms.append(
-            partial(
-                quantize,
-                qmode=args.quantization_mode,
-                activation_dtype=dtype_override,
-                checkpoint_path=(
-                    Path(path) if (path := args.checkpoint) is not None else None
-                ),
-                tokenizer_path=(
-                    Path(path) if (path := args.tokenizer_path) is not None else None
-                ),
-                group_size=args.group_size,
-                calibration_tasks=args.calibration_tasks,
-                calibration_limit=args.calibration_limit,
-                calibration_seq_length=args.calibration_seq_length,
-            )
-        )
-
-    if args.embedding_quantize:
-        modelname = f"{modelname}_e"
-        bitwidth, group_size = args.embedding_quantize.split(",")
-        if group_size == "none" or group_size == "None" or group_size == "0":
-            group_size = None
-        else:
-            group_size = int(group_size)
-        bitwidth = int(bitwidth)
-        transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(
-                model, bitwidth=bitwidth, group_size=group_size
-            ).quantized_model()
-        )
+    if args.quantization_mode or args.embedding_quantize:
+        if args.quantization_mode:
+            modelname = f"{modelname}_q"
+        if args.embedding_quantize:
+            modelname = f"{modelname}_e"
+        transforms += get_quant_source_transforms(args, dtype_override)
 
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)

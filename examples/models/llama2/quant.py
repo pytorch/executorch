@@ -8,8 +8,9 @@
 
 import logging
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import torch
 from sentencepiece import SentencePieceProcessor
@@ -22,7 +23,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
 )
 
 from .builder import DType
-from .quantize import WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -51,6 +52,54 @@ class DynamicQuantLinearOptions:
 class PT2EQuantOptions:
     quantize_embedding: Optional[EmbeddingQuantOptions] = None
     quantize_linear: Optional[DynamicQuantLinearOptions] = None
+
+
+def get_quant_source_transforms(
+    args,
+    activation_dtype: Optional[DType],
+) -> List[Callable[[torch.nn.Module], torch.nn.Module]]:
+    """
+    Get a list of source transforms from quantization params
+
+    Args:
+        args: Parser args containing potential quant params
+    Returns:
+        A list of source transforms to pass into LlamaBuilder.
+    """
+    source_transforms = []
+    if args.quantization_mode:
+        source_transforms.append(
+            partial(
+                quantize,
+                qmode=args.quantization_mode,
+                activation_dtype=activation_dtype,
+                checkpoint_path=(
+                    Path(path) if (path := args.checkpoint) is not None else None
+                ),
+                tokenizer_path=(
+                    Path(path) if (path := args.tokenizer_path) is not None else None
+                ),
+                group_size=args.group_size,
+                calibration_tasks=args.calibration_tasks,
+                calibration_limit=args.calibration_limit,
+                calibration_seq_length=args.calibration_seq_length,
+            )
+        )
+
+    if args.embedding_quantize:
+        bitwidth, group_size = args.embedding_quantize.split(",")
+        if group_size == "none" or group_size == "None" or group_size == "0":
+            group_size = None
+        else:
+            group_size = int(group_size)
+        bitwidth = int(bitwidth)
+        source_transforms.append(
+            lambda model: EmbeddingOnlyInt8QuantHandler(
+                model, bitwidth=bitwidth, group_size=group_size
+            ).quantized_model()
+        )
+
+    return source_transforms
 
 
 def _get_pt2e_quantization_params(args) -> Optional[PT2EQuantOptions]:
