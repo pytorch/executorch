@@ -24,6 +24,7 @@ if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../build/Utils.cmake)
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 
@@ -32,13 +33,21 @@ if(NOT CMAKE_CXX_STANDARD)
   # Can't set to 11 due to executor_runner.cpp make_unique
 endif()
 
+if(CMAKE_TOOLCHAIN_FILE MATCHES ".*(iOS|ios\.toolchain)\.cmake$")
+  set(CMAKE_TOOLCHAIN_IOS ON)
+else()
+  set(CMAKE_TOOLCHAIN_IOS OFF)
+endif()
+
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-find_package(gflags REQUIRED PATHS
-             ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party)
+# For some reason android build is not able to find where gflags is
+# and hence cannot find corresponding .cmake file
+set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../third-party/gflags)
+find_package(gflags REQUIRED)
 
 #
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
@@ -50,7 +59,10 @@ if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
 endif()
 
 # find `executorch` libraries
+# Same as for gflags
+set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
+target_link_options_shared_lib(executorch)
 
 # custom ops library
 add_subdirectory(custom_ops)
@@ -99,6 +111,12 @@ if(TARGET vulkan_backend)
                       "SHELL:LINKER:--whole-archive \
                       $<TARGET_FILE:vulkan_backend> \
                       LINKER:--no-whole-archive")
+endif()
+
+# This one is needed for cpuinfo where it uses android
+# specific log lib
+if (ANDROID)
+  list(APPEND link_libraries log)
 endif()
 
 target_compile_options(llama_main PUBLIC ${_common_compile_options}
