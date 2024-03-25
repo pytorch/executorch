@@ -39,6 +39,9 @@ def define_common_targets():
         srcs = [
             "ExecutorBackendRegister.cpp",
         ],
+        visibility = [
+            "//executorch/exir/backend/test/...",
+        ],
         deps = [
             ":executor_backend",
             "//executorch/runtime/backend:interface",
