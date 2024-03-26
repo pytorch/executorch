@@ -30,7 +30,6 @@ import java.util.Objects;
 import org.pytorch.executorch.EValue;
 import org.pytorch.executorch.Module;
 import org.pytorch.executorch.Tensor;
-import org.pytorch.executorch.TensorImageUtils;
 
 public class MainActivity extends Activity implements Runnable {
   private ImageView mImageView;

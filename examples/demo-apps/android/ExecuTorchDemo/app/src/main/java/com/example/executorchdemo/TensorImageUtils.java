@@ -6,11 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-package org.pytorch.executorch;
+package com.example.executorchdemo;
 
 import android.graphics.Bitmap;
 import android.util.Log;
 import java.nio.FloatBuffer;
+import org.pytorch.executorch.Tensor;
 
 /**
  * Contains utility functions for {@link Tensor} creation from {@link android.graphics.Bitmap} or
