@@ -158,7 +158,7 @@ option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
-option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" ON)
+option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" OFF)
 
 option(EXECUTORCH_REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
 

@@ -18,7 +18,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(llama_runner)
 
-option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" ON)
+option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
