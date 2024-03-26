@@ -2,7 +2,7 @@
 
 #import "LLaMARunner.h"
 
-#import <ExecuTorch/ExecuTorchLog.h>
+#import <ExecuTorchLog.h>
 #import <executorch/examples/models/llama2/runner/runner.h>
 
 using namespace ::torch::executor;
