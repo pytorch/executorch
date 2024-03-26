@@ -19,6 +19,7 @@ FLATC="flatc"
 IOS_DEPLOYMENT_TARGET="17.0"
 COREML=OFF
 MPS=OFF
+OPTIMIZED=OFF
 PORTABLE=OFF
 QUANTIZED=OFF
 XNNPACK=OFF
@@ -26,6 +27,7 @@ HEADERS_PATH="include"
 EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
+OPTIMIZED_FRAMEWORK="optimized_backend:liboptimized_kernels.a,liboptimized_ops_lib.a:"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
 QUANTIZED_FRAMEWORK="quantized_backend:libquantized_kernels.a,libquantized_ops_lib.a:"
 XNNPACK_FRAMEWORK="xnnpack_backend:libXNNPACK.a,libcpuinfo.a,libpthreadpool.a,libxnnpack_backend.a:"
@@ -44,6 +46,7 @@ usage() {
   echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: '\$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc'"
   echo "  --coreml             Include this flag to build the Core ML backend."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
+  echo "  --optimized          Include this flag to build the Optimized backend."
   echo "  --portable           Include this flag to build the Portable backend."
   echo "  --quantized          Include this flag to build the Quantized backend."
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
@@ -65,6 +68,7 @@ for arg in "$@"; do
       --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
       --mps) MPS=ON ;;
+      --optimized) OPTIMIZED=ON ;;
       --portable) PORTABLE=ON ;;
       --quantized) QUANTIZED=ON ;;
       --xnnpack) XNNPACK=ON ;;
@@ -127,6 +131,7 @@ cmake_build() {
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
+        -DEXECUTORCH_REGISTER_OPTIMIZED_OPS=$OPTIMIZED \
         -DEXECUTORCH_REGISTER_QUANTIZED_OPS=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         ${platform_flag:+-DIOS_PLATFORM=$platform_flag}

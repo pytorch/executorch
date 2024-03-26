@@ -61,6 +61,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "portable_kernels",
 ]
 
 [targets.quantized_kernels]
@@ -77,6 +78,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "portable_kernels",
 ]
 
 [targets.program_schema]
