@@ -238,7 +238,7 @@ Error Runner::generate(
   }
 
   // create a 1xN int tensor with next as value
-  while (pos < seq_len) {
+  while (pos + 1 < seq_len) {
     // ET_LOG(Info, "Generating step %d...", pos);
     // set the current token in the tensor
     std::vector<EValue> inputs;
@@ -339,11 +339,11 @@ Error Runner::generate(
   timers_.inference_end_ms = util::time_in_ms();
   printf("\n");
 
-  if (pos == seq_len) {
+  if (pos + 1 == seq_len) {
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
 
-  timers_.printReport(num_prompt_tokens, pos - num_prompt_tokens);
+  timers_.printReport(num_prompt_tokens, (pos + 1) - num_prompt_tokens);
 
   delete[] prompt_tokens;
   return Error::Ok;
