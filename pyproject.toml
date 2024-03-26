@@ -20,15 +20,27 @@ dependencies=[
   "ruamel.yaml",
   "sympy",
   "tabulate",
-  "tomli",
-  "zstd",
 ]
 
+# Tell setuptools to generate commandline wrappers for tools that we install
+# under data/bin in the pip package. This will put these commands on the user's
+# path.
+[project.scripts]
+flatc = "executorch.data.bin:flatc"
+
 [tool.setuptools.package-data]
-"*" = ["*.fbs", "*.yaml"]
+# TODO(dbort): Prune /test[s]/ dirs, /third-party/ dirs, yaml files that we
+# don't need.
+"*" = [
+  # Some backends like XNNPACK need their .fbs files.
+  "*.fbs",
+  # Some kernel libraries need their .yaml files.
+  "*.yaml",
+]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["*.pyc"]
 
 [tool.usort]
+# Do not try to put "first-party" imports in their own section.
 first_party_detection = false

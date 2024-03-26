@@ -41,6 +41,7 @@ for arg in "$@"; do
   esac
 done
 
+
 # Install pytorch dependencies
 #
 # Note:
@@ -69,11 +70,15 @@ pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
 TORCHSR_VERSION=1.0.4
 pip install --pre torchsr==${TORCHSR_VERSION}
 
-# Install ExecuTorch after dependencies are installed.
+
+#
+# Install executorch pip package. This also makes `flatc` available on the path.
+#
+
+# Deps needed by pip install and cmake.
+# TODO(dbort): Remove tomli once min python version is 3.11.
+pip install zstd tomli setuptools wheel
+
 EXECUTORCH_BUILD_PYBIND="$EXECUTORCH_BUILD_PYBIND" \
 CMAKE_ARGS="$CMAKE_ARGS" \
-CMAKE_BUILD_PARALLEL_LEVEL=9 \
 pip install . --no-build-isolation -v
-
-# Install flatc dependency
-bash build/install_flatc.sh
