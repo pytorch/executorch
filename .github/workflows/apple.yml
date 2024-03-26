@@ -69,6 +69,7 @@ jobs:
           "executorch"
           "coreml_backend"
           "mps_backend"
+          "optimized_backend"
           "portable_backend"
           "quantized_backend"
           "xnnpack_backend"

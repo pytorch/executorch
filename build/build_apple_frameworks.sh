@@ -131,8 +131,8 @@ cmake_build() {
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
-        -DEXECUTORCH_REGISTER_OPTIMIZED_OPS=$OPTIMIZED \
-        -DEXECUTORCH_REGISTER_QUANTIZED_OPS=$QUANTIZED \
+        -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
+        -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         ${platform_flag:+-DIOS_PLATFORM=$platform_flag}
     cmake --build . --config $MODE
@@ -172,6 +172,7 @@ append_framework_flag() {
 append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
 append_framework_flag "$COREML" "$COREML_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
+append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
 append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
 append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
 append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"
