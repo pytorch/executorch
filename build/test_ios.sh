@@ -70,7 +70,7 @@ curl -LO "https://github.com/facebook/buck2/releases/download/$BUCK2_RELEASE_DAT
 zstd -cdq "$BUCK2_ARCHIVE" > "$BUCK2" && chmod +x "$BUCK2"
 rm "$BUCK2_ARCHIVE"
 
-./install_requirements.sh --pybind coreml mps xnnpack
+./install_requirements.sh --pybind coreml mps optimized quantized xnnpack
 export PATH="$(realpath third-party/flatbuffers/cmake-out):$PATH"
 ./build/install_flatc.sh
 
