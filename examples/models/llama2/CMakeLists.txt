@@ -62,7 +62,9 @@ endif()
 # Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-target_link_options_shared_lib(executorch)
+if (CMAKE_TOOLCHAIN_IOS OR ANDROID)
+  target_link_options_shared_lib(executorch)
+endif()
 
 # custom ops library
 add_subdirectory(custom_ops)
