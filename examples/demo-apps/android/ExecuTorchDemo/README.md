@@ -93,9 +93,9 @@ cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
 ```
 
-When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnn_executor_runner_lib`](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorch_jni via [CMake](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt).
+When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnnpack_backend`](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorch_jni via [CMake](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt).
 
-`libexecutorch_jni.so` wraps up the required XNNPACK Backend runtime library from `xnn_executor_runner_lib`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
+`libexecutorch_jni.so` wraps up the required XNNPACK Backend runtime library from `xnnpack_backend`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
 
 2. Build the libraries:
 
