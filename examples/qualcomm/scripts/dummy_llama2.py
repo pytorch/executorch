@@ -128,6 +128,7 @@ if __name__ == "__main__":
         inputs,
         custom_annotations=(),
         quant_dtype=quant_dtype,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
@@ -141,6 +142,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

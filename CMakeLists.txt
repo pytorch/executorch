@@ -140,7 +140,7 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT Util extension" OFF)
+option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT util library" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
@@ -158,7 +158,9 @@ option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
-option(REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
+option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
+
+option(EXECUTORCH_BUILD_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
 
@@ -313,13 +315,16 @@ endif()
 # operators necessary for the models that will run.
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
+if(EXECUTORCH_BUILD_OPTIMIZED)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
+endif()
 
-if(REGISTER_QUANTIZED_OPS)
+if(EXECUTORCH_BUILD_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
 #
 # gflags: Commandline flag host library.
@@ -347,10 +352,16 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch optimized_native_cpu_ops_lib gflags)
+  set(_executor_runner_libs executorch gflags)
+
+  if(EXECUTORCH_BUILD_OPTIMIZED)
+    list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND _executor_runner_libs portable_ops_lib)
+  endif()
 
   # Generate lib to register quantized ops
-  if(REGISTER_QUANTIZED_OPS)
+  if(EXECUTORCH_BUILD_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
@@ -361,6 +372,10 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
+
+if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
+ endif()
 
 # Add googletest if any test targets should be built
 if(EXECUTORCH_BUILD_GTESTS)
@@ -388,10 +403,6 @@ endif()
 
 if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
-endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
 endif()
 
 if(EXECUTORCH_BUILD_XNNPACK)

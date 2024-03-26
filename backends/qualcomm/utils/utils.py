@@ -197,6 +197,7 @@ def generate_qnn_executorch_compiler_spec(
     online_prepare: bool = False,
     tensor_dump_output_path: str = "",
     profile: bool = False,
+    shared_buffer: bool = False,
 ) -> List[CompileSpec]:
     """
     Helper function generating compiler specs for Qualcomm AI Engine Direct
@@ -222,6 +223,8 @@ def generate_qnn_executorch_compiler_spec(
         profile: Enable profile the performance of per operator.
             Note that for now only support kProfileDetailed to
             profile the performance of each operator with cycle unit.
+        shared_buffer: Enables usage of shared buffer between application
+            and backend for graph I/O.
 
     Returns:
         List[CompileSpec]: Compiler specs for Qualcomm AI Engine Direct.
@@ -256,6 +259,9 @@ def generate_qnn_executorch_compiler_spec(
         )
     else:
         qnn_executorch_options.profile_level = QnnExecuTorchProfileLevel.kProfileOff
+
+    if shared_buffer:
+        qnn_executorch_options.shared_buffer = True
 
     if (
         online_prepare
