@@ -180,7 +180,7 @@ class TorchBuilder:
             x = self.conv2d(x)
             return self.adaptive_avg_pool2d(x)
 
-    # @register_test
+    @register_test
     class block_conv_norm_activation(torch.nn.Module):
         inputs = {
             TosaProfile.BI: (torch.ones(1, 3, 256, 256),),
