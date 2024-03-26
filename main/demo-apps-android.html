@@ -527,8 +527,8 @@ cmake<span class="w"> </span>..<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<sp
 <span class="w">        </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON
 </pre></div>
 </div>
-<p>When we set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code>, we will build the target <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt"><code class="docutils literal notranslate"><span class="pre">xnn_executor_runner_lib</span></code></a> which in turn is linked into libexecutorch_jni via <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt">CMake</a>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">libexecutorch_jni.so</span></code> wraps up the required XNNPACK Backend runtime library from <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner_lib</span></code>, and adds an additional JNI layer using fbjni. This is later exposed to Java app.</p>
+<p>When we set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code>, we will build the target <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt"><code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code></a> which in turn is linked into libexecutorch_jni via <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt">CMake</a>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">libexecutorch_jni.so</span></code> wraps up the required XNNPACK Backend runtime library from <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code>, and adds an additional JNI layer using fbjni. This is later exposed to Java app.</p>
 <ol class="arabic simple" start="2">
 <li><p>Build the libraries:</p></li>
 </ol>
