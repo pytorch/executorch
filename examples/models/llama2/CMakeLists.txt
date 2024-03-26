@@ -62,7 +62,7 @@ endif()
 # Same as for gflags
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
-if (CMAKE_TOOLCHAIN_IOS OR ANDROID)
+if(CMAKE_TOOLCHAIN_IOS OR ANDROID)
   target_link_options_shared_lib(executorch)
 endif()
 
@@ -117,7 +117,7 @@ endif()
 
 # This one is needed for cpuinfo where it uses android
 # specific log lib
-if (ANDROID)
+if(ANDROID)
   list(APPEND link_libraries log)
 endif()
 
