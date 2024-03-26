@@ -158,9 +158,9 @@ option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
-option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" OFF)
+option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
+option(EXECUTORCH_BUILD_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
 
@@ -316,11 +316,11 @@ endif()
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
-if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+if(EXECUTORCH_BUILD_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
-if(EXECUTORCH_REGISTER_QUANTIZED_OPS)
+if(EXECUTORCH_BUILD_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
 
@@ -354,14 +354,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch gflags)
 
-  if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+  if(EXECUTORCH_BUILD_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
   else()
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
 
   # Generate lib to register quantized ops
-  if(EXECUTORCH_REGISTER_QUANTIZED_OPS)
+  if(EXECUTORCH_BUILD_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
