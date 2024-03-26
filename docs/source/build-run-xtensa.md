@@ -136,15 +136,22 @@ cd executorch
 rm -rf cmake-out
 # prebuild and install executorch library
 cmake -DBUCK2=buck2 \
+    -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/xtensa/xtensa.cmake \
     -DCMAKE_INSTALL_PREFIX=cmake-out \
     -DCMAKE_BUILD_TYPE=Debug \
+    -DEXECUTORCH_BUILD_HOST_TARGETS=ON \
+    -DEXECUTORCH_BUILD_EXECUTOR_RUNNER=OFF \
+    -DEXECUTORCH_BUILD_FLATC=OFF \
+    -DFLATC_EXECUTABLE="$(which flatc)" \
+    -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON \
     -DPYTHON_EXECUTABLE=python3 \
     -Bcmake-out .
 
 cmake --build cmake-out -j8 --target install --config Debug
 # build xtensa runner
 cmake -DCMAKE_BUILD_TYPE=Debug \
-    -DCMAKE_TOOLCHAIN_FILE=../examples/xtensa/xtensa.cmake \
+    -DCMAKE_TOOLCHAIN_FILE=<path_to_executorch>/examples/xtensa/xtensa.cmake \
+    -DCMAKE_PREFIX_PATH=<path_to_executorch>/cmake-out \
     -DMODEL_PATH=<path_to_program_file_generated_in_previous_step> \
     -DNXP_SDK_ROOT_DIR=<path_to_nxp_sdk_root> -DEXECUTORCH_BUILD_FLATC=0 \
     -DFLATC_EXECUTABLE="$(which flatc)" \
