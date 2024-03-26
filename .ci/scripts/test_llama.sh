@@ -47,7 +47,7 @@ cmake_install_executorch_libraries() {
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_REGISTER_OPTIMIZED_OPS=ON \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Release
@@ -59,7 +59,7 @@ cmake_build_llama_runner() {
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
-        -DEXECUTORCH_REGISTER_OPTIMIZED_OPS=ON \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
