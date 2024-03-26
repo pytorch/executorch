@@ -497,14 +497,6 @@ cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>example
 <div class="section" id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p>We build the required ExecuTorch runtime library to run the model.</p>
-<div class="section" id="java-helper-classes">
-<h4>Java helper classes<a class="headerlink" href="#java-helper-classes" title="Permalink to this heading">¶</a></h4>
-<p>Note: This is an ad-hoc solution. We will publish a formal Java package when it is ready. However, for now we need to copy sources from extension/android/src/main/java/org/pytorch/executorch.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">ExecuTorchDemo</span><span class="o">/</span><span class="n">app</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">java</span><span class="o">/</span><span class="n">com</span><span class="o">/</span><span class="n">example</span><span class="o">/</span><span class="n">executorchdemo</span><span class="o">/</span><span class="n">executor</span>
-<span class="n">cp</span> <span class="n">extension</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">java</span><span class="o">/</span><span class="n">org</span><span class="o">/</span><span class="n">pytorch</span><span class="o">/</span><span class="n">executorch</span><span class="o">/*.</span><span class="n">java</span> <span class="n">examples</span><span class="o">/</span><span class="n">demo</span><span class="o">-</span><span class="n">apps</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">ExecuTorchDemo</span><span class="o">/</span><span class="n">app</span><span class="o">/</span><span class="n">src</span><span class="o">/</span><span class="n">main</span><span class="o">/</span><span class="n">java</span><span class="o">/</span><span class="n">com</span><span class="o">/</span><span class="n">example</span><span class="o">/</span><span class="n">executorchdemo</span><span class="o">/</span><span class="n">executor</span>
-</pre></div>
-</div>
-</div>
 <div class="section" id="xnnpack">
 <h4>XNNPACK<a class="headerlink" href="#xnnpack" title="Permalink to this heading">¶</a></h4>
 <ol class="arabic simple">
@@ -678,7 +670,6 @@ cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
 </ul>
 </li>
 <li><a class="reference internal" href="#runtime">Runtime</a><ul>
-<li><a class="reference internal" href="#java-helper-classes">Java helper classes</a></li>
 <li><a class="reference internal" href="#xnnpack">XNNPACK</a></li>
 <li><a class="reference internal" href="#id2">Qualcomm Hexagon NPU</a></li>
 </ul>
