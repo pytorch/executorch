@@ -178,9 +178,9 @@ option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
-option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" ON)
+option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
+option(EXECUTORCH_BUILD_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
 
@@ -189,10 +189,6 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
-
-if(NOT BUCK2)
-  set(BUCK2 buck2)
-endif()
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -209,6 +205,9 @@ set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 #
 
 if(NOT EXECUTORCH_SRCS_FILE)
+  # Find or download buck2 binary.
+  resolve_buck2()
+
   # A file wasn't provided. Run a script to extract the source lists from the
   # buck2 build system and write them to a file we can include.
   #
@@ -336,11 +335,11 @@ endif()
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
-if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+if(EXECUTORCH_BUILD_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
 
-if(EXECUTORCH_REGISTER_QUANTIZED_OPS)
+if(EXECUTORCH_BUILD_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
 
@@ -374,14 +373,14 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
   set(_executor_runner_libs executorch gflags)
 
-  if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+  if(EXECUTORCH_BUILD_OPTIMIZED)
     list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
   else()
     list(APPEND _executor_runner_libs portable_ops_lib)
   endif()
 
   # Generate lib to register quantized ops
-  if(EXECUTORCH_REGISTER_QUANTIZED_OPS)
+  if(EXECUTORCH_BUILD_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 

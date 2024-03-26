@@ -18,7 +18,7 @@
 cmake_minimum_required(VERSION 3.19)
 project(llama_runner)
 
-option(EXECUTORCH_REGISTER_OPTIMIZED_OPS "Build the optimized kernels" ON)
+option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
@@ -66,7 +66,7 @@ ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/pthreadpool/in
 set(link_options)
 set(link_libraries)
 
-if(EXECUTORCH_REGISTER_OPTIMIZED_OPS)
+if(EXECUTORCH_BUILD_OPTIMIZED)
   list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels portable_kernels)
   list(APPEND link_options
                       "SHELL:LINKER:--whole-archive \
