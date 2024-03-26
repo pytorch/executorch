@@ -245,7 +245,7 @@ def quantize(
 
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
-        return WeightOnlyInt8QuantHandler(model).quantized_model()
+        return WeightOnlyInt8QuantHandler(model).quantize()
     elif qmode == "8da4w":
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
@@ -547,7 +547,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         transforms.append(
             lambda model: EmbeddingOnlyInt8QuantHandler(
                 model, bitwidth=bitwidth, group_size=group_size
-            ).quantized_model()
+            ).quantize()
         )
 
     if args.expand_rope_table:

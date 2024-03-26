@@ -235,7 +235,7 @@ class WeightOnlyInt8QuantHandler:
         replace_linear_weight_only_int8_per_channel(self.mod, self.node_type)
         return self.mod
 
-    def quantized_model(self) -> nn.Module:
+    def quantize(self) -> nn.Module:
         model_updated_state_dict = self.create_quantized_state_dict()
         self.convert_for_runtime()
         self.mod.load_state_dict(model_updated_state_dict)
@@ -350,7 +350,7 @@ class EmbeddingOnlyInt8QuantHandler:
         )
         return self.mod
 
-    def quantized_model(self) -> nn.Module:
+    def quantize(self) -> nn.Module:
         model_updated_state_dict = self.create_quantized_state_dict()
         self.convert_for_runtime()
         self.mod.load_state_dict(model_updated_state_dict)
@@ -570,7 +570,7 @@ class Int8DynActInt4WeightQuantHandler:
         )
         return self.mod
 
-    def quantized_model(self) -> nn.Module:
+    def quantize(self) -> nn.Module:
         model_updated_state_dict = self.create_quantized_state_dict()
         self.convert_for_runtime()
         self.mod.load_state_dict(model_updated_state_dict)
