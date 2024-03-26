@@ -453,6 +453,16 @@ if(EXECUTORCH_BUILD_PYBIND)
     set(PYBIND_LINK_MPS "mpsdelegate")
   endif()
 
+  if(EXECUTORCH_BUILD_OPTIMIZED)
+    set(PYBIND_LINK_OPTIMIZED "optimized_native_cpu_ops_lib")
+  else()
+    set(PYBIND_LINK_OPTIMIZED "portable_ops_lib")
+  endif()
+
+  if(EXECUTORCH_BUILD_QUANTIZED)
+    set(PYBIND_LINK_QUANTIZED "quantized_ops_lib")
+  endif()
+
   if(EXECUTORCH_BUILD_XNNPACK)
     set(PYBIND_LINK_XNNPACK "xnnpack_backend")
   endif()
@@ -490,11 +500,12 @@ if(EXECUTORCH_BUILD_PYBIND)
            etdump
            executorch
            extension_data_loader
-           portable_ops_lib
            util
            torch
            ${PYBIND_LINK_COREML}
            ${PYBIND_LINK_MPS}
+           ${PYBIND_LINK_OPTIMIZED}
+           ${PYBIND_LINK_QUANTIZED}
            ${PYBIND_LINK_XNNPACK})
 
   install(TARGETS portable_lib
