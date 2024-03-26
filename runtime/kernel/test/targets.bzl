@@ -57,7 +57,10 @@ def define_common_targets():
         name = "specialized_kernel_generated_lib",
         deps = [
             ":executorch_all_ops",
+        ],
+        kernel_deps = [
             "//executorch/kernels/portable:operators",
+            "//executorch/kernels/portable:edge_dialect_operators",
         ],
         functions_yaml_target = ":functions.yaml",
         visibility = [
