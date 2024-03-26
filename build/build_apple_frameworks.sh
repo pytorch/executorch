@@ -172,6 +172,7 @@ append_framework_flag() {
 append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
 append_framework_flag "$COREML" "$COREML_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
+append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
 append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
 append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
 append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"
