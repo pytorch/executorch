@@ -39,8 +39,8 @@ struct Framework {
       dependencies: [.target(name: name)],
       path: ".swift/\(name)",
       linkerSettings:
-          frameworks.map { .linkedFramework($0) } +
-          libraries.map { .linkedLibrary($0) }
+        frameworks.map { .linkedFramework($0) } +
+        libraries.map { .linkedLibrary($0) }
     )
   }
 }
