@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import unittest
 
 from typing import Tuple
@@ -12,6 +13,9 @@ import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 """
 This file contain unit tests where conv are combined with other ops.
@@ -145,7 +149,7 @@ class TestConvCombos(unittest.TestCase):
         if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs()
         else:
-            common.logger.warning(
+            logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
             )
 
@@ -175,7 +179,7 @@ class TestConvCombos(unittest.TestCase):
         if common.TOSA_REF_MODEL_INSTALLED:
             tester.run_method().compare_outputs(atol=atol, rtol=rtol, qtol=1)
         else:
-            common.logger.warning(
+            logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
             )
 
