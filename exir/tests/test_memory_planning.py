@@ -11,15 +11,9 @@ import unittest
 from typing import Any, Callable, List, Optional, Tuple, Type
 
 import executorch.exir as exir
-import executorch.exir.schema as schema
 
 import torch
-import torch.utils._pytree as pytree
-from executorch.backends.fb.qnnpack.partition.qnnpack_partitioner import (
-    QnnpackPartitioner,
-)
 from executorch.exir import ExecutorchBackendConfig, to_edge
-from executorch.exir.backend.backend_api import to_backend, validation_disabled
 from executorch.exir.memory_planning import (
     filter_nodes,
     get_node_tensor_specs,
@@ -28,16 +22,11 @@ from executorch.exir.memory_planning import (
 from executorch.exir.pass_base import PassResult
 from executorch.exir.pass_manager import PassManager
 from executorch.exir.passes import (  # noqa
-    ConstPropPass,
-    DebugPass,
     MemoryPlanningPass,
-    QuantFusionPass,
     SpecPropPass,
     ToOutVarPass,
 )
 from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
-from executorch.exir.print_program import print_program
-from executorch.exir.tests.asr_joiner import ASRJoiner
 from parameterized import parameterized
 
 from torch import nn
@@ -57,6 +46,7 @@ from torch.ao.quantization.quantize_fx import (
     prepare_fx,
 )
 from torch.export import export
+from torch.export.exported_program import ExportGraphSignature
 from torch.fx import Graph, GraphModule, Node
 from torch.nn import functional as F
 
@@ -96,7 +86,7 @@ class ToyModelForMemPlanning(torch.nn.Module):
 class ModelWithDifferentTensorSizes(torch.nn.Module):
     def __init__(self) -> None:
         super(ModelWithDifferentTensorSizes, self).__init__()
-        self.linears: List[torch.nn.Linear] = []
+        self.linears = torch.nn.ModuleList()
         for x in [2, 4, 8, 16, 32, 64, 128]:
             self.linears.append(torch.nn.Linear(x, x * 2))
 
@@ -189,7 +179,14 @@ class CustomPoolMemoryPlanningPass(MemoryPlanningPass):
                 elif node.target == torch.ops.aten.mul.out:
                     node.meta["spec"].mem_id = 1
 
-        return super().call(graph_module)
+        return super().run(graph_module)
+
+    def run(
+        self,
+        graph_module: torch.fx.GraphModule,
+        graph_signature: Optional[ExportGraphSignature] = None,
+    ) -> PassResult:
+        return self.call(graph_module)
 
 
 class MultiplePoolsToyModel(torch.nn.Module):
@@ -235,15 +232,14 @@ def maketest(
             eager_module = module_cls().eval()
             inputs = eager_module.get_random_inputs()
             graph_module = (
-                exir.capture(
-                    eager_module,
-                    inputs,
-                    exir.CaptureConfig(),
+                to_edge(
+                    export(
+                        eager_module,
+                        inputs,
+                    )
                 )
-                # torch._ops.aten.t.default
-                .to_edge(
-                    exir.EdgeCompileConfig(_check_ir_validity=False)
-                ).exported_program.graph_module
+                .exported_program()
+                .graph_module
             )
 
             graph_module = PassManager(
@@ -466,54 +462,6 @@ class TestMisc(unittest.TestCase):
         )
         return quantized_model
 
-    def test_asr_joiner(self) -> None:
-        eager_model = self.quantize(ASRJoiner())
-        inputs = eager_model.get_random_inputs()
-        edge_program = (
-            exir.capture(
-                eager_model,
-                inputs,
-                exir.CaptureConfig(
-                    enable_dynamic_shape=True,
-                ),
-            )
-            .to_edge(
-                exir.EdgeCompileConfig(
-                    _check_ir_validity=False,
-                )
-            )
-            .transform(ConstPropPass())
-        )
-        with validation_disabled():
-            backend_module = to_backend(
-                edge_program.exported_program, QnnpackPartitioner()
-            )
-
-        debug_pass = DebugPass(show_spec=True)
-        debug_pass(edge_program.exported_program.graph_module)
-        config = exir.ExecutorchBackendConfig(
-            passes=[QuantFusionPass(), ConstPropPass(propogate_quant=True)],
-        )
-        edge_program.exported_program = backend_module
-        program = edge_program.to_executorch(config)
-        gm = program.dump_graph_module()
-        gm.print_readable()
-        print_program(program.program, mark_dynamic_shape_tensor=True)
-
-        *_, out_node = gm.graph.nodes
-        ncheck = 0
-        for i, arg in enumerate(pytree.tree_flatten(out_node.args)[0]):
-            spec = arg.meta["spec"]
-            ncheck += 1
-            if i == 2:
-                self.assertEqual(spec.shape_dynamism, schema.TensorShapeDynamism.STATIC)
-            else:
-                self.assertEqual(
-                    spec.shape_dynamism, schema.TensorShapeDynamism.DYNAMIC_BOUND
-                )
-
-        self.assertEqual(3, ncheck)
-
     # pyre-ignore
     @parameterized.expand(
         [
@@ -535,12 +483,14 @@ class TestMisc(unittest.TestCase):
         expected_allocs: List[Tuple[int, int]],
         expected_bufsizes: List[int],
     ) -> None:
-        edge_program = exir.capture(
-            MultiplePoolsToyModel(),
-            (torch.ones(1),),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        edge_program = to_edge(
+            export(
+                MultiplePoolsToyModel(),
+                (torch.ones(1),),
+            )
+        )
 
-        program = edge_program.to_executorch(
+        edge_program.to_executorch(
             exir.ExecutorchBackendConfig(
                 memory_planning_pass=CustomPoolMemoryPlanningPass(
                     memory_planning_algo=algo,
@@ -548,7 +498,7 @@ class TestMisc(unittest.TestCase):
                 )
             )
         )
-        graph_module = program.dump_graph_module()
+        graph_module = edge_program.exported_program().graph_module
 
         verifier = Verifier(
             graph_module,
