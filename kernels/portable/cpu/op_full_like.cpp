@@ -45,20 +45,20 @@ Tensor& full_like_out(
   ScalarType val_type = utils::get_scalar_dtype(fill_value);
   ScalarType out_type = out.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, val_type, ctx, "full_like.out", CTYPE_VAL, [&] {
-        CTYPE_VAL val;
-        utils::extract_scalar(fill_value, &val);
+  constexpr auto name = "scalar_tensor.out";
 
-        ET_SWITCH_REAL_TYPES_AND(
-            Bool, out_type, ctx, "full_like.out", CTYPE_OUT, [&] {
-              CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
-              auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
-              for (size_t i = 0; i < out.numel(); ++i) {
-                data_out[i] = val_casted;
-              }
-            });
-      });
+  ET_SWITCH_REALB_TYPES(val_type, ctx, name, CTYPE_VAL, [&] {
+    CTYPE_VAL val;
+    utils::extract_scalar(fill_value, &val);
+
+    ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE_OUT, [&] {
+      CTYPE_OUT val_casted = static_cast<CTYPE_OUT>(val);
+      auto data_out = out.mutable_data_ptr<CTYPE_OUT>();
+      for (size_t i = 0; i < out.numel(); ++i) {
+        data_out[i] = val_casted;
+      }
+    });
+  });
 
   return out;
 }

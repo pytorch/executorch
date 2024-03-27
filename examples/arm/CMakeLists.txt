@@ -16,14 +16,17 @@ project(arm_example)
 option(EXECUTORCH_SELECT_OPS_LIST "Register the following list of ops" OFF)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
+
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
+
 # Source root directory for pytorch.
 if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)

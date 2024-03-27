@@ -55,8 +55,10 @@ dependencies {
   implementation("androidx.appcompat:appcompat:1.6.1")
   implementation("androidx.camera:camera-core:1.3.0-rc02")
   implementation("androidx.constraintlayout:constraintlayout:2.2.0-alpha12")
-  implementation("com.facebook.soloader:soloader:0.10.5")
   implementation("com.facebook.fbjni:fbjni:0.5.1")
+  implementation("org.pytorch.executorch:executorch") {
+    exclude("com.facebook.fbjni", "fbjni-java-only")
+  }
   testImplementation("junit:junit:4.13.2")
   androidTestImplementation("androidx.test.ext:junit:1.1.5")
   androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")

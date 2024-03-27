@@ -19,7 +19,7 @@ add_subdirectory(${EXECUTORCH_ROOT}/examples/third-party/fbjni
 if(CMAKE_TOOLCHAIN_ANDROID)
   add_library(executorch_jni SHARED jni/jni_layer.cpp)
   target_link_libraries(executorch_jni extension_data_loader extension_module
-                        fbjni)
+                        portable_ops_lib fbjni)
   if(EXECUTORCH_BUILD_QNN)
     target_link_libraries(executorch_jni qnn_executorch_backend)
   endif()
