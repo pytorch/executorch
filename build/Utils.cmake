@@ -203,3 +203,18 @@ function(resolve_buck2)
       endif()
     endif()
 endfunction()
+
+# Sets the value of the PYTHON_EXECUTABLE variable to 'python' if in
+# an active (non-base) conda environment, and 'python3' otherwise. This
+# maintains backwards compatibility for non-conda users and avoids conda
+# users needing to explicitly set PYTHON_EXECUTABLE=python.
+function(resolve_python_executable)
+  # Counter-intuitively, CONDA_DEFAULT_ENV contains the name of the
+  # active environment.
+  if(DEFINED ENV{CONDA_DEFAULT_ENV} AND 
+     NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL "base")
+    set(PYTHON_EXECUTABLE python PARENT_SCOPE)
+  else()
+    set(PYTHON_EXECUTABLE python3 PARENT_SCOPE)
+  endif()
+endfunction()
