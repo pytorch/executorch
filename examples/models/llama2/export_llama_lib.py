@@ -602,9 +602,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     ).export_to_edge(quantizers)
 
     # to_backend
-    partitioner = None
+    partitioners = []
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
@@ -612,8 +612,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # 1. We need dynamically quantized partitioner for both pt2e_quantize options
         #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
         # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
-        # partitioner = XnnpackPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
+        # partitioners.append(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -624,7 +624,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             args.quantization_mode is None
         ), "Vulkan backend does not support quantization at the moment"
 
-        partitioner = VulkanPartitioner()
+        partitioners.append(VulkanPartitioner())
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
@@ -643,7 +643,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         compile_specs = [CompileSpec("use_fp16", bytes([True]))]
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
-        partitioner = MPSPartitioner(compile_specs)
+        partitioners.append(MPSPartitioner(compile_specs))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
@@ -673,9 +673,11 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
             model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
-        partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        partitioners.append(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            CoreMLPartitioner(
+                skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+            )
         )
         modelname = f"coreml_{modelname}"
 
@@ -730,7 +732,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -741,7 +743,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
