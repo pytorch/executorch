@@ -14,7 +14,11 @@ from executorch import exir
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.partition.mps_partitioner import MPSPartitioner
 
-from executorch.exir import EdgeCompileConfig, EdgeProgramManager
+from executorch.exir import (
+    EdgeCompileConfig,
+    EdgeProgramManager,
+    ExecutorchProgramManager,
+)
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.capture._config import ExecutorchBackendConfig
@@ -107,17 +111,11 @@ if __name__ == "__main__":
         lowered_module = to_backend(
             MPSBackend.__name__, edge.exported_program(), compile_specs
         )
-        executorch_program = (
-            exir.capture(
-                lowered_module,
-                example_inputs,
-                exir.CaptureConfig(enable_aot=True, _unlift=False),
-            )
-            .to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
-            .to_executorch(
-                config=ExecutorchBackendConfig(extract_constant_segment=False)
-            )
-        )
+        executorch_program: ExecutorchProgramManager = export_to_edge(
+            lowered_module,
+            example_inputs,
+            edge_compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        ).to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
 
     model_name = f"{args.model_name}_mps"
 
