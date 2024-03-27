@@ -16,7 +16,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "032C016E2AC228E6002955E1"
                BuildableName = "LLaMA.app"
-               BlueprintName = "App"
+               BlueprintName = "LLaMA"
                ReferencedContainer = "container:LLaMA.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -45,7 +45,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "032C016E2AC228E6002955E1"
             BuildableName = "LLaMA.app"
-            BlueprintName = "App"
+            BlueprintName = "LLaMA"
             ReferencedContainer = "container:LLaMA.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -61,7 +61,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "032C016E2AC228E6002955E1"
             BuildableName = "LLaMA.app"
-            BlueprintName = "App"
+            BlueprintName = "LLaMA"
             ReferencedContainer = "container:LLaMA.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
