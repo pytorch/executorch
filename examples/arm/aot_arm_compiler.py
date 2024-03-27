@@ -49,7 +49,7 @@ def quantize(model, example_inputs):
     return m
 
 
-# Two simple models
+# Simple example models
 class AddModule(torch.nn.Module):
     def __init__(self):
         super().__init__()

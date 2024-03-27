@@ -1,4 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
+# Copyright 2024 Arm Limited and/or its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
@@ -55,6 +56,8 @@ message("Generated files ${gen_command_sources}")
 # dependency of the other(s). This is not allowed by the Xcode "new build
 # system".
 if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
+# Not targeting ARM_BAREMETAL as aot_lib depends on incompatible libraries
+if(NOT EXECUTORCH_BUILD_ARM_BAREMETAL)
   set(_quantized_aot_ops
       "quantized_decomposed::add.out"
       "quantized_decomposed::choose_qparams.Tensor_out"
@@ -79,6 +82,7 @@ if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
       ${EXECUTORCH_ROOT}/runtime/core/exec_aten/util/tensor_util_aten.cpp)
   gen_custom_ops_aot_lib(LIB_NAME "quantized_ops_aot_lib" KERNEL_SOURCES
                          "${_quantized_sources}")
+endif()
 endif()
 
 add_library(quantized_kernels ${_quantized_kernels__srcs})

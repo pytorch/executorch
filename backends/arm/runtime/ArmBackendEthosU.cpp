@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Arm Limited and/or its affiliates.
+ * Copyright 2023-2024 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -26,12 +26,10 @@ using namespace std;
 namespace torch {
 namespace executor {
 
-// TODO: we should be in 0x31, to access a full 2MB SRAM
-// region and enable maximum program performance up to
-// 2MB, rather than 1.
-// SRAM (rwx) : ORIGIN = 0x31000000, LENGTH = 0x00200000
-#define CS300_SRAM_LOW ((void*)0x11000000)
-#define CS300_SRAM_HIGH ((void*)0x110FFFFF)
+typedef struct {
+  FreeableBuffer* processed;
+  bool permuted_io_flag;
+} ExecutionHandle;
 
 class ArmBackend final : public PyTorchBackendInterface {
  public:
@@ -60,40 +58,37 @@ class ArmBackend final : public PyTorchBackendInterface {
       return Error::InvalidProgram;
     }
 
-    // Verify address range is accessible current expectation is the program
-    // is wholly stored in SRAM
-    // TODO: expect to improve capabilities here by supporting DRAM storage
-    //       and only moving required data into SRAM.
-    if (!(data > CS300_SRAM_LOW || foot < CS300_SRAM_HIGH)) {
-      ET_LOG(Error, "ArmBackend::init: Expected program binary to be in SRAM");
-      ET_LOG(
-          Error,
-          "ArmBackend::init: program binary range %p:%p",
-          data,
-          foot + 16);
-      return Error::InvalidProgram;
+    MemoryAllocator* allocator = context.get_runtime_allocator();
+    ExecutionHandle* handle =
+        ET_ALLOCATE_INSTANCE_OR_RETURN_ERROR(allocator, ExecutionHandle);
+    handle->processed = processed;
+
+    for (auto& compile_spec : compile_specs) {
+      if (0 == std::strcmp(compile_spec.key, "permute_memory_format") &&
+          0 == std::memcmp(compile_spec.value.buffer, "nhwc", 4)) {
+        handle->permuted_io_flag = true;
+      }
     }
 
     // Return the same buffer we were passed - this data will be
     // executed directly
-    return processed;
+    return handle;
   }
 
   Error execute(
       BackendExecutionContext& context,
       DelegateHandle* input_handle,
       EValue** args) const override {
-    FreeableBuffer* processed = (FreeableBuffer*)input_handle;
-
-    ET_LOG(Info, "ArmBackend::execute %p", processed->data());
-
+    ExecutionHandle* execution_handle = (ExecutionHandle*)input_handle;
     VelaHandles handles;
 
     // Command stream - we know at this point it's aligned
-    char* data = (char*)processed->data();
+    char* data = (char*)execution_handle->processed->data();
+    ET_LOG(Info, "ArmBackend::execute %p", data);
 
     // Read key sections from the vela_bin_stream
-    if (vela_bin_read(data, &handles, processed->size()) == false) {
+    if (vela_bin_read(data, &handles, execution_handle->processed->size()) ==
+        false) {
       ET_LOG(Error, "ArmBackend::vela_read: error, invalid binary layout");
       return Error::InvalidProgram;
     }
@@ -108,18 +103,93 @@ class ArmBackend final : public PyTorchBackendInterface {
         handles.scratch_data,
         handles.scratch_data_size);
 
-    // Write inputs into SRAM scratch area defined by Vela
+    // Write argument values (from EValue tensor) into Ethos-U scratch
+    // TODO(MLETORCH-123): Optimise into direct write from Vela into the SRAM
+    //                     or DRAM output for compatible data layouts.
     for (int i = 0; i < handles.inputs->count; i++) {
-      const char* input_addr =
-          handles.scratch_data + handles.inputs->io[i].offset;
-      // Process input EValue into scratch
-      // TODO: Optimise into direct write from Vela into the SRAM or DRAM output
-      //       for compatible data layouts.
-      int* input_address = (int*)input_addr;
       auto tensor_in = args[i]->toTensor();
-      for (int j = 0; j < tensor_in.numel(); j++) {
-        // TODO: extend beyond tensors with 4 byte elements
-        input_address[j] = tensor_in.mutable_data_ptr<int>()[j];
+      VelaIO* scratch_in = &handles.inputs->io[i];
+      char* scratch_addr = handles.scratch_data + handles.inputs->io[i].offset;
+
+      // We accept:
+      bool supported = 0;
+      // 32 bit int (simple non-quantised test cases)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Int and
+           handles.inputs->io[i].elem_size == 4);
+      // 8 bit int (IOQDQ pass prepared networks)
+      supported |=
+          (tensor_in.scalar_type() == ScalarType::Char and
+           handles.inputs->io[i].elem_size == 1);
+      if (!supported) {
+        ET_LOG(
+            Error,
+            "Input %d expected Integer (4 byte) or Char (1 byte) integer inputs",
+            i);
+        return Error::InvalidProgram;
+      }
+
+      // Special case implicitly permuted rank4 tensors
+      int permuted_input_shape = false;
+      if (tensor_in.dim() == 4) {
+        // special case for NHWC workaround in AOT; as the compilation has
+        // permuted to channel last in an undetectable way, we assume here
+        // that the application has similarly permuted any input tensors.
+        permuted_input_shape =
+            tensor_in.size(0) == handles.inputs->io[i].shape[0] &&
+            tensor_in.size(1) == handles.inputs->io[i].shape[3] &&
+            tensor_in.size(2) == handles.inputs->io[i].shape[1] &&
+            tensor_in.size(3) == handles.inputs->io[i].shape[2];
+        if (permuted_input_shape) {
+          ET_LOG(Info, "Tensor input %d will be permuted", i);
+        }
+        if (execution_handle->permuted_io_flag != permuted_input_shape) {
+          ET_LOG(Error, "Permute compile flag and permuted input don't agree");
+          return Error::InvalidProgram;
+        }
+      }
+      if (!permuted_input_shape) {
+        // Error check matching shapes in the general case
+        for (int j = 0; j < tensor_in.dim(); j++) {
+          if (tensor_in.size(j) != handles.inputs->io[i].shape[j]) {
+            ET_LOG(Error, "Tensor input %d mismatched shape", i);
+            ET_LOG(
+                Error,
+                "dimension %d mismatch, %d != %d",
+                i,
+                tensor_in.size(j),
+                handles.inputs->io[i].shape[j]);
+            return Error::InvalidProgram;
+          }
+        }
+      }
+
+      // Direct copy when not permuted
+      if (tensor_in.scalar_type() == ScalarType::Int and
+              handles.inputs->io[i].elem_size == 4 or
+          tensor_in.scalar_type() == ScalarType::Char and
+              handles.inputs->io[i].elem_size == 1) {
+        if (permuted_input_shape && tensor_in.dim() == 4) {
+          // permuted copy CHW to HWC
+          char* input = scratch_addr;
+          char* output = tensor_in.mutable_data_ptr<char>();
+          int H = tensor_in.size(1);
+          int W = tensor_in.size(1);
+          for (int i = 0; i != H * W; ++i) {
+            output[i * 3 + 0] = input[i + 0 * W * H];
+            output[i * 3 + 1] = input[i + 1 * W * H];
+            output[i * 3 + 2] = input[i + 2 * W * H];
+          }
+        } else {
+          // Sizes match and elt size matches so memcpy
+          memcpy(
+              scratch_addr,
+              tensor_in.mutable_data_ptr<char>(),
+              tensor_in.nbytes());
+        }
+      } else {
+        ET_LOG(Error, "No matching input copy routine");
+        return Error::InvalidProgram;
       }
     }
 

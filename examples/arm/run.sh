@@ -77,6 +77,7 @@ function build_executorch() {
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_ENABLE_LOGGING=ON                    \
         -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
+        -DEXECUTORCH_BUILD_QUANTIZED=ON                   \
         -DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL=ON       \
         -DFLATC_EXECUTABLE="$(which flatc)"               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
@@ -140,7 +141,7 @@ function run_fvp() {
         -C mps3_board.uart0.out_file='-'                    \
         -C mps3_board.uart0.shutdown_on_eot=1               \
         -a "${elf}"                                         \
-        --timelimit 30 || true # seconds
+        --timelimit 120 || true # seconds
     echo "[${FUNCNAME[0]} Simulation complete, $?"
 }
 

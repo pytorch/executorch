@@ -61,10 +61,16 @@ set_property(TARGET executorch_delegate_ethos_u PROPERTY IMPORTED_LOCATION
 add_library(portable_ops_lib STATIC IMPORTED)
 set_property(TARGET portable_ops_lib PROPERTY IMPORTED_LOCATION
   "${ET_BUILD_DIR_PATH}/examples/arm/libarm_portable_ops_lib.a")
-
 add_library(portable_kernels STATIC IMPORTED)
 set_property(TARGET portable_kernels PROPERTY IMPORTED_LOCATION
   "${ET_BUILD_DIR_PATH}/kernels/portable/libportable_kernels.a")
+
+add_library(quantized_ops_lib STATIC IMPORTED)
+set_property(TARGET quantized_ops_lib PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_ops_lib.a")
+add_library(quantized_kernels STATIC IMPORTED)
+set_property(TARGET quantized_kernels PROPERTY IMPORTED_LOCATION
+  "${ET_BUILD_DIR_PATH}/kernels/quantized/libquantized_kernels.a")
 
 add_library(extension_runner_util STATIC IMPORTED)
 set_property(TARGET extension_runner_util PROPERTY IMPORTED_LOCATION
@@ -95,13 +101,15 @@ ethosu_eval_link_options( arm_executor_runner )
 # bin size as we link in a number of other symbols
 target_link_libraries(
   arm_executor_runner
-  "-Wl,--whole-archive"
-  ethosu_target_init
   extension_runner_util
+  ethosu_target_init
   executorch
+  "-Wl,--whole-archive"
   executorch_delegate_ethos_u
-  portable_kernels
+  quantized_ops_lib
   portable_ops_lib
+  quantized_kernels
+  portable_kernels
   "-Wl,--no-whole-archive"
   )
 
