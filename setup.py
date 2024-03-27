@@ -231,11 +231,6 @@ cmdclass = {
 }
 ext_modules = []
 
-if os.environ.get("EXECUTORCH_BUILD_AOT_UTIL", "ON") == "ON":
-    ext_modules.append(
-        CMakeExtension("executorch.extension.aot_util.aot_util", "extension/aot_util")
-    )
-
 if os.environ.get("EXECUTORCH_BUILD_PYBIND", "OFF") == "ON":
     ext_modules.append(CMakeExtension("executorch.extension.pybindings.portable_lib"))
 
