@@ -140,8 +140,6 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT util library" OFF)
-
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
@@ -371,10 +369,6 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_link_libraries(executor_runner ${_executor_runner_libs})
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
-
-if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
- endif()
 
 # Add googletest if any test targets should be built
 if(EXECUTORCH_BUILD_GTESTS)
