@@ -20,12 +20,14 @@ project(llama_runner)
 
 option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
+
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
 
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -54,22 +56,15 @@ find_package(executorch CONFIG REQUIRED)
 # llama_runner library
 add_subdirectory(runner)
 
-set(link_options)
 set(link_libraries)
 
 if(EXECUTORCH_BUILD_OPTIMIZED)
   list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels
   portable_kernels cpublas eigen_blas)
-  list(APPEND link_options
-                      "SHELL:LINKER:--whole-archive \
-                      $<TARGET_FILE:optimized_native_cpu_ops_lib> \
-                      LINKER:--no-whole-archive")
+  target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
-  list(APPEND link_options
-                      "SHELL:LINKER:--whole-archive \
-                      $<TARGET_FILE:portable_ops_lib> \
-                      LINKER:--no-whole-archive")
+  target_link_options_shared_lib(portable_ops_lib)
 endif()
 
 target_link_libraries(llama_main PUBLIC gflags llama_runner)
@@ -78,24 +73,21 @@ target_link_libraries(llama_main PUBLIC gflags llama_runner)
 if(TARGET xnnpack_backend)
   set(xnnpack_backend_libs xnnpack_backend XNNPACK pthreadpool cpuinfo)
   list(APPEND link_libraries ${xnnpack_backend_libs})
-  list(APPEND link_options
-                      "SHELL:LINKER:--whole-archive \
-                      $<TARGET_FILE:xnnpack_backend> \
-                      LINKER:--no-whole-archive")
+  target_link_options_shared_lib(xnnpack_backend)
 endif()
 
 # Vulkan backend
 if(TARGET vulkan_backend)
   list(APPEND link_libraries vulkan_backend)
-  list(APPEND link_options
-                      "SHELL:LINKER:--whole-archive \
-                      $<TARGET_FILE:vulkan_backend> \
-                      LINKER:--no-whole-archive")
+  target_link_options_shared_lib(vulkan_backend)
 endif()
 
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 target_link_libraries(llama_main PUBLIC ${link_libraries})
-target_link_options(llama_main PUBLIC ${link_options})
+
+if(APPLE)
+  target_link_options_shared_lib(executorch)
+endif()
 
 # Print all summary
 executorch_print_configuration_summary()

@@ -22,15 +22,15 @@ Tensor& scalar_tensor_out(RuntimeContext& ctx, const Scalar& s, Tensor& out) {
   ScalarType s_type = utils::get_scalar_dtype(s);
   ScalarType out_type = out.scalar_type();
 
-  ET_SWITCH_REAL_TYPES_AND(
-      Bool, out_type, ctx, "scalar_tensor.out", CTYPE, [&]() {
-        ET_SWITCH_SCALAR_OBJ_TYPES(
-            s_type, ctx, "scalar_tensor.out", CTYPE_S, [&]() {
-              CTYPE_S val_s;
-              utils::extract_scalar(s, &val_s);
-              out.mutable_data_ptr<CTYPE>()[0] = convert<CTYPE, CTYPE_S>(val_s);
-            });
-      });
+  constexpr auto name = "scalar_tensor.out";
+
+  ET_SWITCH_REALHB_TYPES(out_type, ctx, name, CTYPE, [&]() {
+    ET_SWITCH_SCALAR_OBJ_TYPES(s_type, ctx, name, CTYPE_S, [&]() {
+      CTYPE_S val_s;
+      utils::extract_scalar(s, &val_s);
+      out.mutable_data_ptr<CTYPE>()[0] = convert<CTYPE, CTYPE_S>(val_s);
+    });
+  });
 
   return out;
 }

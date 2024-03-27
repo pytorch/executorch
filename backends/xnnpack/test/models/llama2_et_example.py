@@ -16,7 +16,6 @@ class TestLlama2ETExample(unittest.TestCase):
     def test_f32(self):
         self._test()
 
-    @unittest.skip("T183420542: Add proper fp16 support.")
     def test_f16(self):
         self._test(torch.float16)
 

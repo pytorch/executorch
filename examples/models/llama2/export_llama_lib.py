@@ -9,12 +9,13 @@
 import argparse
 import copy
 import logging
+import os
 import shlex
 from dataclasses import dataclass
 
 from functools import partial
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pkg_resources
 import torch
@@ -46,6 +47,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 pkg_name = __name__
+verbosity_setting = None
 
 
 def set_pkg_name(name: str) -> None:
@@ -55,6 +57,15 @@ def set_pkg_name(name: str) -> None:
 
 def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
+
+
+def set_verbosity(val):
+    global verbosity_setting
+    verbosity_setting = val
+
+
+def verbose_export():
+    return verbosity_setting
 
 
 @dataclass
@@ -227,8 +238,12 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
-    if checkpoint_path is None:
-        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+    assert checkpoint_path, "Need to specify a checkpoint"
+    assert os.path.isfile(
+        canonical_path(checkpoint_path)
+    ), f"{checkpoint_path} does not exist"
+    # if checkpoint_path is None:
+    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
     if calibration_tasks is None:
         calibration_tasks = ["wikitext"]
@@ -240,7 +255,8 @@ def quantize(
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
         model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
-        print("quantized model:", model)
+        if verbose_export():
+            print("quantized model:", model)
         return model
     elif qmode == "8da4w-gptq":
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
@@ -446,9 +462,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def canonical_path(path: str, *, dir: bool = False) -> str:
+def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
-    print(f"creating canonical path for {path}")
+    path = str(path)
+
+    if verbose_export():
+        print(f"creating canonical path for {path}")
+
     if not path.startswith("par:"):
         return path
 
@@ -457,7 +477,8 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return path[4:]
     else:
         return_val = pkg_resources.resource_filename(pkg_name, path[4:])
-        print(f"canonical name is: {return_val}")
+        if verbose_export():
+            print(f"canonical name is: {return_val}")
         return return_val
 
 
@@ -588,9 +609,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     ).export_to_edge(quantizers)
 
     # to_backend
-    partitioner = None
+    partitioners = []
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
@@ -598,8 +619,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # 1. We need dynamically quantized partitioner for both pt2e_quantize options
         #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
         # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
-        # partitioner = XnnpackPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
+        # partitioners.append(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -610,7 +631,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             args.quantization_mode is None
         ), "Vulkan backend does not support quantization at the moment"
 
-        partitioner = VulkanPartitioner()
+        partitioners.append(VulkanPartitioner())
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
@@ -629,7 +650,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         compile_specs = [CompileSpec("use_fp16", bytes([True]))]
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
-        partitioner = MPSPartitioner(compile_specs)
+        partitioners.append(MPSPartitioner(compile_specs))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
@@ -659,9 +680,11 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
             model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
-        partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        partitioners.append(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            CoreMLPartitioner(
+                skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+            )
         )
         modelname = f"coreml_{modelname}"
 
@@ -716,7 +739,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -727,7 +750,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")

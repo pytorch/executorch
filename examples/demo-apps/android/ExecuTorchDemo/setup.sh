@@ -8,11 +8,6 @@
 
 set -eu
 
-EXECUTOR_JAVA_DIR=examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/executor/
-mkdir -p "${EXECUTOR_JAVA_DIR}"
-# Temporary workaround until we have a formal Java package
-cp extension/android/src/main/java/org/pytorch/executorch/*.java "${EXECUTOR_JAVA_DIR}"
-
 pushd cmake-out
 # Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC_EXECUTABLE
 cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
