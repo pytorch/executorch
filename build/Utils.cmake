@@ -46,8 +46,6 @@ function(executorch_print_configuration_summary)
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}")
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}")
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL    : "
-                 "${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
@@ -191,10 +189,32 @@ function(resolve_buck2)
     if(resolve_buck2_exit_code EQUAL 0)
       set(BUCK2 ${resolve_buck2_output} PARENT_SCOPE)
       message(STATUS "Resolved buck2 as ${resolve_buck2_output}.")
-    else()
+    elseif(resolve_buck2_exit_code EQUAL 2)
       # Wrong buck version used. Stop here to ensure that the user sees
       # the error.
-      message(FATAL_ERROR "Failed to resolve buck2.")
-      message(FATAL_ERROR ${resolve_buck2_error})
+      message(FATAL_ERROR "Failed to resolve buck2.\n${resolve_buck2_error}")
+    else()
+      # Unexpected failure of the script. Warn.
+      message(WARNING "Failed to resolve buck2.")
+      message(WARNING "${resolve_buck2_error}")
+
+      if("${BUCK2}" STREQUAL "")
+        set(BUCK2 "buck2" PARENT_SCOPE)
+      endif()
     endif()
+endfunction()
+
+# Sets the value of the PYTHON_EXECUTABLE variable to 'python' if in
+# an active (non-base) conda environment, and 'python3' otherwise. This
+# maintains backwards compatibility for non-conda users and avoids conda
+# users needing to explicitly set PYTHON_EXECUTABLE=python.
+function(resolve_python_executable)
+  # Counter-intuitively, CONDA_DEFAULT_ENV contains the name of the
+  # active environment.
+  if(DEFINED ENV{CONDA_DEFAULT_ENV} AND 
+     NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL "base")
+    set(PYTHON_EXECUTABLE python PARENT_SCOPE)
+  else()
+    set(PYTHON_EXECUTABLE python3 PARENT_SCOPE)
+  endif()
 endfunction()
