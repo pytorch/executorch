@@ -46,8 +46,6 @@ function(executorch_print_configuration_summary)
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}")
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}")
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL    : "
-                 "${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
