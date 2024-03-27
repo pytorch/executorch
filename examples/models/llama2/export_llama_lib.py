@@ -9,12 +9,13 @@
 import argparse
 import copy
 import logging
+import os
 import shlex
 from dataclasses import dataclass
 
 from functools import partial
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pkg_resources
 import torch
@@ -237,8 +238,12 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
-    if checkpoint_path is None:
-        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+    assert checkpoint_path, "Need to specify a checkpoint"
+    assert os.path.isfile(
+        canonical_path(checkpoint_path)
+    ), f"{checkpoint_path} does not exist"
+    # if checkpoint_path is None:
+    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
     if calibration_tasks is None:
         calibration_tasks = ["wikitext"]
@@ -457,7 +462,9 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def canonical_path(path: str, *, dir: bool = False) -> str:
+def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
+
+    path = str(path)
 
     if verbose_export():
         print(f"creating canonical path for {path}")
