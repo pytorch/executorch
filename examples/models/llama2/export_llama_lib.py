@@ -710,17 +710,19 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        partitioner = QnnPartitioner(
-            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-            generate_qnn_executorch_compiler_spec(
-                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-                soc_model=QcomChipset.SM8650,  # default to SM8650
-                backend_options=backend_options,
-                debug=False,
-                saver=False,
-            ),
-            skip_node_id_set={},
-            skip_node_op_set={},
+        partitioners.append(
+            QnnPartitioner(
+                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+                generate_qnn_executorch_compiler_spec(
+                    # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+                    soc_model=QcomChipset.SM8650,  # default to SM8650
+                    backend_options=backend_options,
+                    debug=False,
+                    saver=False,
+                ),
+                skip_node_id_set={},
+                skip_node_op_set={},
+            )
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         _transform(builder_exported_to_edge.export_program())
