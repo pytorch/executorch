@@ -716,8 +716,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         backend_options = generate_htp_compiler_spec(use_fp16=False)
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         partitioners.append(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
             QnnPartitioner(
                 # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
                 generate_qnn_executorch_compiler_spec(
