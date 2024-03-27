@@ -40,6 +40,14 @@ class LinearVisitor(NodeVisitor):
         linear_input_tensors.append(input_tensor_wrapper)
 
         weight_node = node.args[1]
+        if (
+            quant_attrs := weight_node.meta.get("quant_attrs")
+        ) and "scales" in quant_attrs:
+            # Dimension of weight is [m, n], per channel quant params is [m]
+            # Change to [m, 1] to fit the tensor.div(s).add(z)
+            quant_attrs["scales"] = quant_attrs["scales"].reshape([-1, 1])
+            quant_attrs["zero_points"] = quant_attrs["zero_points"].reshape([-1, 1])
+
         weight_tensor = get_parameter(weight_node, self.edge_program)
         weight_tensor_wrapper = self.define_tensor(
             weight_node,
@@ -52,6 +60,12 @@ class LinearVisitor(NodeVisitor):
 
         if len(node.args) >= 3:
             bias_node = node.args[2]
+
+            # TODO remove this when qnn sdk support
+            if "scales" in bias_node.meta.get("quant_attrs"):
+                print(
+                    f"[WARNING] Fallback linear bias, {bias_node}. per channel bias quantization is not support yet."
+                )
             bias_tensor = get_parameter(bias_node, self.edge_program)
             bias_tensor_wrapper = self.define_tensor(
                 bias_node,

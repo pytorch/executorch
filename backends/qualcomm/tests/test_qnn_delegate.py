@@ -505,7 +505,33 @@ class TestQNNQuantizedOperator(TestQNN):
         module = Linear()  # noqa: F405
         sample_input = (torch.randn([3, 4]),)
         module = self.get_qdq_module(
-            module, sample_input, quant_dtype=QuantDtype.use_16a4w
+            module,
+            sample_input,
+            quant_dtype=QuantDtype.use_16a4w,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    def test_qnn_backend_16a4w_per_channel_linear(self):
+        module = Linear(use_bias=False)  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            is_linear_per_channel=True,
+            quant_dtype=QuantDtype.use_16a4w,
+        )
+        self.lower_module_and_test_output(module, sample_input)
+
+    # Is not enabled in the current qnn sdk release
+    @unittest.expectedFailure
+    def test_qnn_backend_16a4w_per_channel_linear_with_bias(self):
+        module = Linear()  # noqa: F405
+        sample_input = (torch.randn([3, 4]),)
+        module = self.get_qdq_module(
+            module,
+            sample_input,
+            is_linear_per_channel=True,
+            quant_dtype=QuantDtype.use_16a4w,
         )
         self.lower_module_and_test_output(module, sample_input)
 

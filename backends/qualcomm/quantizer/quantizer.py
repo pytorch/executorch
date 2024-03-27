@@ -267,7 +267,7 @@ class QnnQuantizer(Quantizer):
         self.custom_quant_annotations: Sequence[Callable] = []
         self.discard_nodes: Set[str] = set()
 
-        self.enable_per_channel_conv_quant: bool = True
+        self.use_per_channel_weight_quant_ops: Set[OpOverload] = set()
         # the weight quantized for activation 8 bits and 16 bits
         self.per_channel_weight_dtype: Dict = {
             "8bit_act": torch.int8,
@@ -290,16 +290,13 @@ class QnnQuantizer(Quantizer):
     def _get_quant_config(self, op: str | OpOverload) -> Optional[QuantizationConfig]:
         """
         Priority:
-            1. per channel config when enable_per_channel_conv_quant is True
+            1. is one of use_per_channel_weight_quant_ops
             2. int8 / int16 config
         """
         if type(op) == str:
             return
 
-        if self.enable_per_channel_conv_quant and op in [
-            torch.ops.aten.conv1d.default,
-            torch.ops.aten.conv2d.default,
-        ]:
+        if op in self.use_per_channel_weight_quant_ops:
             if op in self.bit16_quant_ops:
                 return get_ptq_per_channel_weight_config(
                     torch.uint16, self.per_channel_weight_dtype["16bit_act"]
@@ -315,6 +312,12 @@ class QnnQuantizer(Quantizer):
             return self.bit16_quant_config
 
         print(f"No quant config is implemented for op, {op}")
+
+    def _update_per_channel_weight_quant_ops(self, ops: Set[OpOverload], enable: bool):
+        if enable:
+            self.use_per_channel_weight_quant_ops.update(ops)
+        else:
+            self.use_per_channel_weight_quant_ops.difference(ops)
 
     def add_16bit_quant_ops(self, ops: Set[OpOverload]) -> None:
         for op in ops:
@@ -368,8 +371,15 @@ class QnnQuantizer(Quantizer):
         if weight_dtype_for_16bit_act:
             self.per_channel_weight_dtype["16bit_act"] = weight_dtype_for_16bit_act
 
-    def set_per_channel_quant(self, enable: bool) -> None:
-        self.enable_per_channel_conv_quant = enable
+    def set_per_channel_conv_quant(self, enable: bool) -> None:
+        conv_ops = {torch.ops.aten.conv1d.default, torch.ops.aten.conv2d.default}
+        self._update_per_channel_weight_quant_ops(conv_ops, enable)
+
+    def set_per_channel_linear_quant(self, enable: bool) -> None:
+        linear_ops = {
+            torch.ops.aten.linear.default,
+        }
+        self._update_per_channel_weight_quant_ops(linear_ops, enable)
 
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         model = RemoveClone()(model).graph_module
