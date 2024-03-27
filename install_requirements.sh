@@ -7,14 +7,14 @@
 
 # Install required python dependencies for developing
 # Dependencies are defined in .pyproject.toml
-if [[ -z $BUCK ]];
-then
-  BUCK=buck2
-fi
-
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
-  PYTHON_EXECUTABLE=python3
+  if [[ -z $CONDA_DEFAULT_ENV ]] || [[ $CONDA_DEFAULT_ENV == "base" ]];
+  then
+    PYTHON_EXECUTABLE=python3
+  else
+    PYTHON_EXECUTABLE=python
+  fi
 fi
 
 # Parse options.

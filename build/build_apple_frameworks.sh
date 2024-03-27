@@ -151,7 +151,8 @@ mkdir -p "$HEADERS_PATH"
   //extension/module: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
 
-cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"{*.h,*.modulemap} "$HEADERS_PATH"
+cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
+cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.modulemap "$HEADERS_PATH"
 
 echo "Creating frameworks"
 
