@@ -25,9 +25,8 @@ import sys
 
 import pytorch_sphinx_theme
 
+# To let us import ./custom_directives.py
 sys.path.insert(0, os.path.abspath("."))
-sys.path.insert(0, os.path.abspath("../../.."))
-sys.path.insert(0, os.path.abspath("../.."))
 # -- Project information -----------------------------------------------------
 
 project = "ExecuTorch"
@@ -43,8 +42,6 @@ author = "ExecuTorch Contributors"
 
 import os
 import sys
-
-sys.path.insert(0, os.path.abspath("../../"))
 
 extensions = [
     "breathe",
