@@ -104,6 +104,12 @@ print_cmake_info() {
   codesign -f -s - "${CMAKE_EXEC}" || true
 }
 
+setup_macos_env_variables() {
+  CMAKE_PREFIX_PATH=$(python -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
+  export CMAKE_PREFIX_PATH
+}
+
+setup_macos_env_variables
 # NB: we need buck2 in all cases because cmake build also depends on calling
 # buck2 atm
 install_buck
