@@ -67,7 +67,8 @@ set(link_options)
 set(link_libraries)
 
 if(EXECUTORCH_BUILD_OPTIMIZED)
-  list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels portable_kernels)
+  list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels
+  portable_kernels cpublas eigen_blas)
   list(APPEND link_options
                       "SHELL:LINKER:--whole-archive \
                       $<TARGET_FILE:optimized_native_cpu_ops_lib> \

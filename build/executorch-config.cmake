@@ -44,7 +44,7 @@ endif()
 set(lib_list
     etdump bundled_program extension_data_loader ${FLATCC_LIB} mpsdelegate
     qnn_executorch_backend portable_ops_lib extension_module xnnpack_backend
-    XNNPACK cpuinfo pthreadpool vulkan_backend optimized_kernels 
+    XNNPACK cpuinfo pthreadpool vulkan_backend optimized_kernels cpublas eigen_blas
     optimized_ops_lib optimized_native_cpu_ops_lib cpublas eigen_blas
 )
 foreach(lib ${lib_list})
