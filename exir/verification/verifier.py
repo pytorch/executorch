@@ -78,6 +78,7 @@ class EXIRATenDialectVerifier(EXIRATenDialectVerifierBase):
                 torch.ops.aten.quantize_per_tensor.default,
                 torch.ops.aten.dequantize.self,
                 torch.ops.aten.max.default,
+                torch.ops.aten.full_like.default,  # TODO(T183507359)
             ):
                 return
             if torch.Tag.core not in op.tags and torch.Tag.view_copy not in op.tags:
