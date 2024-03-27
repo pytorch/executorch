@@ -12,6 +12,7 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.torchvision_vit.model import TorchVisionViTModel
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
@@ -148,6 +149,8 @@ if __name__ == "__main__":
         args.model,
         f"{args.artifact}/{pte_filename}",
         inputs,
+        quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
     )
     # setup required paths accordingly
     # qnn_sdk       : QNN SDK path setup in environment variable
@@ -163,6 +166,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

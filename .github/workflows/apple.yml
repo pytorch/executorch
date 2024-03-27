@@ -65,7 +65,15 @@ jobs:
         pushd "${WORKSPACE}/pytorch/executorch"
         BUILD_TOOL=cmake
         VERSION="0.1.0"
-        OUTPUT="executorch-${VERSION}"
+        FRAMEWORKS=(
+          "executorch"
+          "coreml_backend"
+          "mps_backend"
+          "optimized_backend"
+          "portable_backend"
+          "quantized_backend"
+          "xnnpack_backend"
+        )
 
         .ci/scripts/setup-conda.sh
 
@@ -83,11 +91,12 @@ jobs:
 
         # Build iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --output="${OUTPUT}" --coreml --mps --portable --xnnpack
+        build/build_apple_frameworks.sh --coreml --mps --optimized --portable --quantized --xnnpack
 
         # Bundle iOS Frameworks
-        cp LICENSE "${OUTPUT}"
-        zip -r "${RUNNER_TEMP}/artifacts/${OUTPUT}.zip" "${OUTPUT}"
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cd cmake-out && zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
+        ) done
 
         popd
 
@@ -115,8 +124,8 @@ jobs:
           # NB: The name here needs to match the upload-artifact name from build-frameworks-ios job
           name: executorch-frameworks-ios
           path: ${{ runner.temp }}/frameworks-ios/
-      - name: Only push to S3 from main branch
-        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Only push to S3 when running the workflow manually from main branch
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' }}
         shell: bash
         run: |
           set -eux

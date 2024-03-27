@@ -36,6 +36,8 @@ constexpr ByteSlice kFlatbufferSize = {14, 4};
 constexpr ByteSlice kBytesOffset = {18, 4};
 constexpr ByteSlice kBytesSize = {22, 8};
 
+} // namespace
+
 /// Interprets the 8 bytes at `data` as a little-endian uint64_t.
 uint64_t GetUInt64LE(const uint8_t* data) {
   return (uint64_t)data[0] | ((uint64_t)data[1] << 8) |
@@ -54,8 +56,6 @@ uint32_t GetUInt32LE(const uint8_t* data) {
 uint32_t GetUInt16LE(const uint8_t* data) {
   return (uint32_t)data[0] | ((uint32_t)data[1] << 8);
 }
-
-} // namespace
 
 bool VulkanDelegateHeader::is_valid() const {
   if (header_size < kExpectedSize) {

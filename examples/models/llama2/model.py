@@ -66,6 +66,8 @@ class Llama2Model(EagerModelBase):
             if "use_sdpa_with_kv_cache" in kwargs
             else False
         )
+
+        self.max_seq_len = kwargs["max_seq_len"] if "max_seq_len" in kwargs else 128
         # The example is using a dummy small model with random weights for demo purpose only.
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
@@ -112,7 +114,7 @@ the checkpoint format to avoid generating faulty models.
                 )
         with open(params_path, "r") as f:
             params = json.loads(f.read())
-        max_seq_len = 128
+        max_seq_len = self.max_seq_len
         max_batch_size = 1
         model_args: ModelArgs = ModelArgs(
             max_seq_len=max_seq_len,
@@ -142,8 +144,8 @@ the checkpoint format to avoid generating faulty models.
 
             simple_quantizer = WeightOnlyInt8QuantHandler(self.model_)
             self.model_ = simple_quantizer.convert_for_runtime()
-        elif "int4" in str(checkpoint_path):
-            print("Using int4 weight-only quantization!")
+        elif "8da4w" in str(checkpoint_path):
+            print("Using int4 weight and int8 dynamic activation quantization!")
             from .quantize import Int8DynActInt4WeightQuantHandler
 
             simple_quantizer = Int8DynActInt4WeightQuantHandler(self.model_)
@@ -170,7 +172,11 @@ the checkpoint format to avoid generating faulty models.
 
     def get_example_inputs(self):
         if self.use_kv_cache:
-            return self.get_example_inputs_kvcache()
+            if self.use_sdpa_with_kv_cache_op:
+                return self.get_example_inputs_kvcache_sdpa()
+            else:
+                # return self.get_example_inputs_kvcache() TODO xnnpack does not handle forwarding symints, update partitioner to not partition symints
+                return self.get_example_inputs_kvcache_sdpa()
         else:
             return (
                 torch.tensor(
@@ -178,17 +184,23 @@ the checkpoint format to avoid generating faulty models.
                 ),  # tokens, with kv cache our input token length is always just 1 token.
             )
 
-    def get_example_inputs_kvcache(self):
-        cache_sizes = self.model_.get_cache_sizes()
-        cache_k = torch.zeros(cache_sizes, dtype=self.dtype)
-        cache_v = torch.zeros(cache_sizes, dtype=self.dtype)
+    # assumption is the custom op doesnt support dynamic shape right now. It might but its untested so lets first get static shape working
+    def get_example_inputs_kvcache_sdpa(self):
         return (
             torch.tensor(
                 [[1]], dtype=torch.long
             ),  # tokens, with kv cache our input token length is always just 1 token.
             torch.tensor(
-                0, dtype=torch.long
+                [0], dtype=torch.long
+            ),  # start_pos, what token of output are we on.)
+        )
+
+    def get_example_inputs_kvcache(self):
+        return (
+            torch.tensor(
+                [[1, 2, 3]], dtype=torch.long
+            ),  # tokens, with kv cache our input token length is always just 1 token.
+            torch.tensor(
+                [0, 1, 2], dtype=torch.long
             ),  # start_pos, what token of output are we on.
-            cache_k,  # key caches
-            cache_v,  # value caches
         )

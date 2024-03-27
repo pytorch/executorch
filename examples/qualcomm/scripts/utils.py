@@ -10,24 +10,29 @@ import subprocess
 import sys
 from pathlib import Path
 
+from typing import Optional
+
 import numpy as np
 
 import torch
 from executorch.backends.qualcomm.partition.qnn_partitioner import QnnPartitioner
 from executorch.backends.qualcomm.quantizer.quantizer import (
+    get_16a4w_qnn_ptq_config,
     get_default_16bit_qnn_ptq_config,
-    get_default_8bit_qnn_ptq_config,
     QnnQuantizer,
+    QuantDtype,
 )
 from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
     QcomChipset,
 )
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
+    generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
 from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.capture._config import ExecutorchBackendConfig
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
 
@@ -42,6 +47,7 @@ class SimpleADB:
         soc_model,
         host_id=None,
         error_only=False,
+        shared_buffer=False,
     ):
         self.qnn_sdk = qnn_sdk
         self.artifact_path = artifact_path
@@ -51,6 +57,7 @@ class SimpleADB:
         self.host_id = host_id
         self.working_dir = Path(self.pte_path).parent.absolute()
         self.input_list_filename = "input_list.txt"
+        self.etdump_path = f"{self.workspace}/etdump.etdp"
         self.output_folder = f"{self.workspace}/outputs"
         arch_table = {
             "SM8650": "75",
@@ -60,6 +67,7 @@ class SimpleADB:
         }
         self.soc_model = arch_table[soc_model]
         self.error_only = error_only
+        self.shared_buffer = shared_buffer
 
     def _adb(self, cmd):
         if not self.host_id:
@@ -117,6 +125,8 @@ class SimpleADB:
                 f"--model_path {os.path.basename(self.pte_path)}",
                 f"--output_folder_path {self.output_folder}",
                 f"--input_list_path {self.input_list_filename}",
+                f"--etdump_path {self.etdump_path}",
+                "--shared_buffer" if self.shared_buffer else "",
             ]
         )
         qnn_executor_runner_cmds = " ".join(
@@ -134,27 +144,40 @@ class SimpleADB:
         if callback:
             callback()
 
+    def pull_etdump(self, output_path, callback=None):
+        self._adb(["pull", f"{self.etdump_path}", output_path])
+        if callback:
+            callback()
 
+
+# TODO: refactor to support different backends
 def build_executorch_binary(
     model,  # noqa: B006
     inputs,  # noqa: B006
     soc_model,
     file_name,
     dataset,
-    use_fp16=False,
-    use_16bit_quant=False,
     custom_annotations=(),
     skip_node_id_set=None,
     skip_node_op_set=None,
+    quant_dtype: Optional[QuantDtype] = None,
+    shared_buffer=False,
 ):
-    if not use_fp16:
+    if quant_dtype:
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_annotations)
-        if use_16bit_quant:
+
+        if quant_dtype == QuantDtype.use_8a8w:
+            pass  # default setting
+        elif quant_dtype == QuantDtype.use_16a16w:
             quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
             quantizer.set_bit16_op_quant_config(get_default_16bit_qnn_ptq_config())
+        elif quant_dtype == QuantDtype.use_16a4w:
+            quantizer.add_16bit_quant_ops(quantizer.SUPPORTED_OPS)
+            quantizer.set_bit16_op_quant_config(get_16a4w_qnn_ptq_config())
+            quantizer.set_per_channel_weight_dtype(weight_dtype_for_16bit_act="int4")
         else:
-            quantizer.set_bit8_op_quant_config(get_default_8bit_qnn_ptq_config())
+            raise AssertionError(f"No support for QuantDtype {quant_dtype}.")
 
         captured_model = torch._export.capture_pre_autograd_graph(model, inputs)
         annotated_model = prepare_pt2e(captured_model, quantizer)
@@ -175,12 +198,16 @@ def build_executorch_binary(
         "SM8450": QcomChipset.SM8450,
     }
 
+    backend_options = generate_htp_compiler_spec(
+        use_fp16=False if quant_dtype else True
+    )
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            is_fp16=use_fp16,
             soc_model=arch_table[soc_model],
+            backend_options=backend_options,
             debug=False,
             saver=False,
+            shared_buffer=shared_buffer,
         ),
         skip_node_id_set,
         skip_node_op_set,
@@ -188,7 +215,18 @@ def build_executorch_binary(
     edge_prog.exported_program = to_backend(edge_prog.exported_program, qnn_partitioner)
     edge_prog.exported_program.graph_module.graph.print_tabular()
     exec_prog = edge_prog.to_executorch(
-        config=ExecutorchBackendConfig(extract_constant_segment=False)
+        config=ExecutorchBackendConfig(
+            extract_constant_segment=False,
+            # For shared buffer, user must pass the memory address
+            # which is allocated by RPC memory to executor runner.
+            # Therefore, won't want to pre-allocate
+            # by memory manager in runtime.
+            memory_planning_pass=MemoryPlanningPass(
+                memory_planning_algo="greedy",
+                alloc_graph_input=not shared_buffer,
+                alloc_graph_output=not shared_buffer,
+            ),
+        )
     )
     with open(f"{file_name}.pte", "wb") as file:
         file.write(exec_prog.buffer)
@@ -315,6 +353,13 @@ def setup_common_args_and_variables():
         "--device",
         help="serial number for android device communicated via ADB.",
         type=str,
+    )
+
+    parser.add_argument(
+        "-z",
+        "--shared_buffer",
+        help="Enables usage of shared buffer between application and backend for graph I/O.",
+        action="store_true",
     )
 
     # QNN_SDK_ROOT might also be an argument, but it is used in various places.

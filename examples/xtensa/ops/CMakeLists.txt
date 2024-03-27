@@ -32,17 +32,32 @@ set(_aten_ops__srcs
 add_library(aten_ops_xtensa ${_aten_ops__srcs})
 target_link_libraries(aten_ops_xtensa PUBLIC executorch)
 
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+target_include_directories(aten_ops_xtensa PUBLIC ${ROOT_DIR}/..
+                                                  ${CMAKE_BINARY_DIR}
+                                                  ${_common_include_directories})
+
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops "quantized_linear_out.cpp" "quantize_per_tensor.cpp"
   "dequantize_per_tensor.cpp")
+target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/..
+                                             ${CMAKE_BINARY_DIR}
+                                             ${_common_include_directories})
+
 target_link_libraries(custom_ops PUBLIC executorch)
 target_link_libraries(custom_ops PRIVATE xtensa_kernels)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in functions.yaml
 gen_selected_ops("${CMAKE_CURRENT_LIST_DIR}/functions.yaml" "" "")
-generate_bindings_for_kernels(${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml "")
+generate_bindings_for_kernels(
+  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/functions.yaml)
 message("Generated files ${gen_command_sources}")
 
-gen_operators_lib("xtensa_ops_lib" custom_ops aten_ops_xtensa)
+gen_operators_lib(
+  "xtensa_ops_lib"
+  KERNEL_LIBS custom_ops
+  DEPS aten_ops_xtensa)

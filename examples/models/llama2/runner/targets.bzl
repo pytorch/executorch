@@ -2,7 +2,7 @@ load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def _get_operator_lib(aten = False):
     if aten:
-        return ["//executorch/kernels/portable:generated_lib_aten"]
+        return ["//executorch/kernels/aten:generated_lib_aten"]
     elif runtime.is_oss:
         return ["//executorch/kernels/portable:generated_lib"]
     else:
@@ -35,7 +35,6 @@ def define_common_targets():
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
             ] + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests

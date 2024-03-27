@@ -51,8 +51,24 @@ Error QnnGraph::Configure() {
     return Error::Internal;
   }
 
+  // The profiler needs to be created after the backend is created.
+  profile_ =
+      std::make_unique<QnnProfile>(implementation_, backend_, profile_level_);
   return Error::Ok;
 }
+
+Qnn_ErrorHandle_t QnnGraph::GraphExecute(
+    const std::vector<Qnn_Tensor_t>& input_tensor_structs,
+    std::vector<Qnn_Tensor_t>& output_tensor_structs) {
+  return implementation_.GetQnnInterface().qnn_graph_execute(
+      handle_,
+      input_tensor_structs.data(),
+      input_tensor_structs.size(),
+      output_tensor_structs.data(),
+      output_tensor_structs.size(),
+      profile_->GetHandle(),
+      /*signalHandle=*/nullptr);
+};
 
 Error QnnGraph::EnsureTensorInQnnGraph(
     const std::shared_ptr<TensorWrapper>& tensor_wrapper) {

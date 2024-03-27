@@ -65,6 +65,15 @@ enum QnnExecuTorchHtpPrecision: int {
   kHtpFp16,
 }
 
+/// The QNN backend used to delegate the model's nodes. Each backend has
+/// its own set of supported ops and tensor types.
+enum QnnExecuTorchBackendType: int {
+  kUndefinedBackend = 0,
+  kGpuBackend,
+  kHtpBackend,
+  kDspBackend,
+}
+
 /// Defines pd sessions available for HTP backend.
 enum QnnExecuTorchHtpPdSession: int {
   kHtpUnsignedPd = 0,
@@ -73,6 +82,9 @@ enum QnnExecuTorchHtpPdSession: int {
 
 /// Specifies the backend options for the HTP backend.
 table QnnExecuTorchHtpBackendOptions {
+  /// Max spill-fill buffer across contexts.
+  max_sf_buf_size:int;
+
   /// The default performance mode sets no configurations on the HTP.
   performance_mode:QnnExecuTorchHtpPerformanceMode;
 
@@ -83,24 +95,28 @@ table QnnExecuTorchHtpBackendOptions {
   /// Signed or unsigned HTP PD session. The default PD session is unsigned.
   pd_session:QnnExecuTorchHtpPdSession;
 
+  /// Optional parameter specifying the directory of QNN Skel library. Only
+  /// useful for backends which have a Skel library.
+  skel_library_dir:string;
+
   /// With using conv hmx with short depths, we might have better performance,
   /// but convolution that have short depth and/or weights that are not
   /// symmetric could exhibit inaccurate results.
   use_conv_hmx:bool;
 
+  /// Deep Learning Bandwidth Compression allows inputs to be
+  /// compressed, such that the processing bandwidth can be lowered.
+  use_dlbc:bool;
+
   /// With using fold relu, we might have better performance, this optimization
   /// is correct when quantization ranges for convolution are equal or subset of
   /// the Relu operation.
   use_fold_relu:bool;
-}
 
-/// The QNN backend used to delegate the model's nodes. Each backend has
-/// its own set of supported ops and tensor types.
-enum QnnExecuTorchBackendType: int {
-  kUndefinedBackend = 0,
-  kGpuBackend,
-  kHtpBackend,
-  kDspBackend,
+  /// When multiple contexts are generated inside the same
+  /// pte, it is possible to reserve a single spill-fill allocation that
+  /// could be re-used across all the splits.
+  use_multi_contexts:bool;
 }
 
 /// Logging level of the delegate and QNN backend.
@@ -113,30 +129,37 @@ enum QnnExecuTorchLogLevel: int {
   kLogLevelDebug,
 }
 
+/// Profiling level of the delegate and QNN backend.
+enum QnnExecuTorchProfileLevel: int {
+  kProfileOff = 0,
+  kProfileBasic,
+  kProfileDetailed,
+}
 
-table QnnExecuTorchOptions {
+/// QNN backends currently supported
+table QnnExecuTorchBackendOptions {
   /// The backend QNN library to open and execute the graph with. This is a
   /// required argument and will error out if kUndefinedBackend is supplied.
   backend_type:QnnExecuTorchBackendType;
 
-  /// Optional parameter to override the QNN backend library.
-  library_path:string;
+  htp_options:QnnExecuTorchHtpBackendOptions;
+}
 
-  /// Optional parameter specifying the directory of QNN Skel library. Only
-  /// useful for backends which have a Skel library.
-  skel_library_dir:string;
+table QnnExecuTorchOptions {
+  /// Specify SoC to compile or execute for.
+  soc_info:SocInfo;
+
+  /// Optional backend specific options for the HTP backend.
+  backend_options:QnnExecuTorchBackendOptions;
 
   /// Optional parameter to create qnn graph if QNN context blob is not given
   graph_name:string;
 
+  /// Optional parameter to override the QNN backend library.
+  library_path:string;
+
   /// Logging level of the delegate and the backend. Default is off.
   log_level:QnnExecuTorchLogLevel;
-
-  /// Optional backend specific options for the HTP backend.
-  htp_options:QnnExecuTorchHtpBackendOptions;
-
-  /// Specify SoC to compile or execute for.
-  soc_info:SocInfo;
 
   /// Check if on-device graph construction. Default is false.
   online_prepare:bool;
@@ -146,6 +169,12 @@ table QnnExecuTorchOptions {
   /// In ALL cases, we don't recommend to set this option.
   /// This option exist just for debugging some accuracy issues.
   tensor_dump_output_path:string;
+
+  /// Profiling level of the delegate and the backend. Default is off.
+  profile_level:QnnExecuTorchProfileLevel;
+  
+  /// Enables usage of shared buffer between application and backend for graph I/O.
+  shared_buffer:bool;
 }
 
 root_type QnnExecuTorchOptions;

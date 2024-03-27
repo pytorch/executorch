@@ -174,3 +174,16 @@ def is_bias_node_for_addmm(node):
         )
 
     return is_rank2_linear_bias or is_rank_greater_than_2_linear_bias
+
+
+def is_consumer_node_depthwise_conv2d(node):
+    consumer_node = list(node.users)[0]
+    if consumer_node.target == exir_ops.edge.aten.convolution.default:
+        inputs = []
+        for arg in consumer_node.args:
+            inputs.append(TosaArg(arg))
+        group = inputs[-1]
+        if group.number > 1:
+            return True
+
+    return False

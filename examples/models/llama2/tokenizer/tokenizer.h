@@ -19,8 +19,8 @@
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
+#include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 #include <executorch/runtime/core/result.h>
-#include <executorch/runtime/kernel/kernel_includes.h>
 
 namespace torch {
 namespace executor {

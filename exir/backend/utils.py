@@ -11,11 +11,16 @@ from functools import lru_cache
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+from executorch.exir.backend.backend_details import ExportedProgram
+from executorch.exir.backend.canonical_partitioners.duplicate_constant_node_pass import (
+    duplicate_constant_node,
+)
 from executorch.exir.common import setting_python_recursive_limit
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.dialects._ops import ops as exir_ops
 
 from executorch.exir.lowered_backend_module import create_submodule_from_nodes
+from torch._export.utils import is_buffer, is_lifted_tensor_constant, is_param
 from torch.fx.node import Node
 from torch.fx.passes.utils.source_matcher_utils import SourcePartition
 
@@ -172,6 +177,72 @@ def replace_quantized_partition_with_op(
     return (replaced_op, dequant_nodes, quant_nodes)
 
 
+def _assign_new_tag(
+    tagged_exported_program: ExportedProgram,
+    copied_nodes: Set[str],
+):
+    """
+    Assign new tag to the copied nodes.
+
+    Before the pass
+    constant_0 (tag_10) ------------------> op_b (tag_10)
+    constant_0_copy (tag_10) -------------> op_a (tag_11)
+
+    After the pass
+    constant_0 (tag_10) ------------------> op_b (tag_10)
+    constant_0_copy (tag_11) -------------> op_a (tag_11)
+
+    """
+    for node in tagged_exported_program.graph.nodes:
+        if node.op == "placeholder":
+            if node.name in copied_nodes:
+                users_tag = set()
+                for user in node.users:
+                    users_tag.add(user.meta.get("delegation_tag", None))
+                # Assign the tag to the copy constant node the same as their users.
+                if len(users_tag) == 1:
+                    node.meta["delegation_tag"] = users_tag.pop()
+
+
+def _maybe_duplicate_constant_nodes(
+    tagged_exported_program: ExportedProgram,
+    tag: str,
+    owning_program: ExportedProgram,
+) -> None:
+    """
+    If the constants node is shared by different tagged nodes, like
+    constant_0 ----> op_b (tag_10)
+    |-------------> op_a (tag_11)
+
+    we make default as constant_0 is duplicated to constant_0_1, constant_0_2, unless the node is tagged with "no_copy"
+    constant_0 ------------------> op_b (tag_10)
+    constant_0_copy -------------> op_a (tag_11)
+
+    backend can estimate how much they want to duplicate the constant node, either error out or default to duplicate
+    """
+    candidate_nodes = set()
+    for node in tagged_exported_program.graph.nodes:
+        if node.meta.get("delegation_tag", "") == tag:
+            if node.op == "placeholder":
+                for user in node.users:
+                    users_tag = user.meta.get("delegation_tag", None)
+                    if users_tag != tag:
+                        # If the node is tagged with "no_copy", we stop duplicating it and throw an error
+                        if node.meta.get("no_copy", False):
+                            raise RuntimeError(
+                                f"constant data node ({node}) is tagged with ({tag}) but has user ({user}) which has tag ({users_tag})"
+                            )
+                        else:
+                            candidate_nodes.add(node.name)
+    copied_nodes = set()
+    for candidate_node in candidate_nodes:
+        # Both tagged exported program and the owning program need to go through the same duplication pass
+        copied_nodes = duplicate_constant_node(tagged_exported_program, candidate_node)
+        duplicate_constant_node(owning_program, candidate_node)
+    candidate_node_with_copies = candidate_nodes.union(copied_nodes)
+    _assign_new_tag(tagged_exported_program, candidate_node_with_copies)
+
+
 def _get_item_from_executorch_call_delegate(node: torch.fx.Node) -> bool:
     """
     Check if the node is the getitem followed by executorch_call_delegate node. These getitems node
@@ -218,23 +289,25 @@ def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
         %arg2_1 : [num_users=2] = placeholder[target=arg2_1]
         %lowered_module_0 : [num_users=1] = get_attr[target=lowered_module_0]
             backend_id: BackendWithCompilerDemo
-            lowered graph():       %arg0_1 : [num_users=1] = placeholder[target=arg0_1]
-            %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
-            %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
-            %aten_mm_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%arg0_1, %arg1_1), kwargs = {})
-            %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default, %arg2_1), kwargs = {})
-            return [aten_add_tensor]
+            lowered graph():
+                %arg0_1 : [num_users=1] = placeholder[target=arg0_1]
+                %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+                %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
+                %aten_mm_default : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%arg0_1, %arg1_1), kwargs = {})
+                %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default, %arg2_1), kwargs = {})
+                return [aten_add_tensor]
         %executorch_call_delegate : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_0, %arg0_1, %arg1_1, %arg2_1), kwargs = {})
         %getitem : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate, 0), kwargs = {})
         %aten_sub_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.sub.Tensor](args = (%getitem, %arg0_1), kwargs = {})
         %lowered_module_1 : [num_users=1] = get_attr[target=lowered_module_1]
             backend_id: BackendWithCompilerDemo
-            lowered graph():       %aten_sub_tensor : [num_users=1] = placeholder[target=aten_sub_tensor]
-            %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
-            %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
-            %aten_mm_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%aten_sub_tensor, %arg1_1), kwargs = {})
-            %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default_1, %arg2_1), kwargs = {})
-            return [aten_add_tensor_1]
+            lowered graph():
+                %aten_sub_tensor : [num_users=1] = placeholder[target=aten_sub_tensor]
+                %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
+                %arg2_1 : [num_users=1] = placeholder[target=arg2_1]
+                %aten_mm_default_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.mm.default](args = (%aten_sub_tensor, %arg1_1), kwargs = {})
+                %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_mm_default_1, %arg2_1), kwargs = {})
+                return [aten_add_tensor_1]
         %executorch_call_delegate_1 : [num_users=1] = call_function[target=torch.ops.higher_order.executorch_call_delegate](args = (%lowered_module_1, %aten_sub_tensor, %arg1_1, %arg2_1), kwargs = {})
         %getitem_1 : [num_users=1] = call_function[target=operator.getitem](args = (%executorch_call_delegate_1, 0), kwargs = {})
         return [getitem_1]
@@ -251,13 +324,44 @@ def print_delegated_graph(graph_module: torch.fx.GraphModule) -> str:
         if node.op == "get_attr" and node.name.startswith("lowered_module_"):
             lowered_module = lowered_module_dict[node.name]
             graph_format_str += f"{indent * 2}backend_id: {lowered_module.backend_id}\n"
-            graph_format_str += f"{indent * 2}lowered graph(): "
+            graph_format_str += f"{indent * 2}lowered graph():\n"
             for node_in_lowered_module in lowered_module.original_module.graph.nodes:
                 graph_format_str += (
                     f"{indent * 3}{node_in_lowered_module.format_node()}\n"
                 )
-    print(graph_format_str)
     return graph_format_str
+
+
+def tag_constant_data(edge_program: ExportedProgram) -> None:
+    """
+    Util function for partitioners. This function tags the const/param/buffers nodes
+    whose users all belong within the same partition. This should be called after tagging all other nodes.
+    Any const/param/buffer which is used as input to a subgraph, will be tagged with the same tag as that
+    subgraph. Throw error when const/param/buffers is used across different partitions. That is the
+    underlying data will be owned by multiple delegates.
+    """
+    for node in edge_program.graph.nodes:
+        # go through const/param/buffer nodes
+        is_attr = (
+            node.op == "placeholder"
+            and (
+                is_param(edge_program, node)
+                or is_buffer(edge_program, node)
+                or is_lifted_tensor_constant(edge_program, node)
+            )
+        ) or (node.op == "get_attr")
+        # if all users of const/param/buffer nodes are partitioned then partition
+        if is_attr:
+            user_tags = set()
+            for user in node.users:
+                user_tags.add(user.meta.get("delegation_tag", None))
+            assert len(user_tags) <= 1, (
+                "Const/Param/Buffer users have multiple tags because one constant data can't "
+                "be owned by multiple backends. Consider duplicating the constant data so that "
+                "each user is unique"
+            )
+            if len(user_tags) == 1:
+                node.meta["delegation_tag"] = user_tags.pop()
 
 
 # TODO - style: use templated types

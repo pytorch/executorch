@@ -96,6 +96,7 @@ def build_rescale(
     tosa_fb,
     scale,
     input_node,
+    output_name,
     output_type,
     output_shape,
     input_zp,
@@ -118,12 +119,11 @@ def build_rescale(
         output_unsigned=False,
     )
 
-    rescale_out = tosa_fb.addIntermediate(output_shape, output_type)
     tosa_fb.addOperator(
-        TosaOp.Op().RESCALE, [input_node.name], [rescale_out.name], attr_rescale
+        TosaOp.Op().RESCALE, [input_node.name], [output_name], attr_rescale
     )
 
-    return rescale_out
+    return
 
 
 def build_rescale_to_int32(
@@ -187,7 +187,14 @@ def build_rescale_from_int32(
 
 
 def build_rescale_conv_output(
-    tosa_fb, op, output_type, input_scale, weight_scale, output_scale
+    tosa_fb,
+    op,
+    output_name,
+    output_type,
+    input_scale,
+    weight_scale,
+    output_scale,
+    output_zp,
 ):
     # Only use double round if we are doing 32 bit scaling
     double_round = is_scale32(output_type)
@@ -196,7 +203,15 @@ def build_rescale_conv_output(
     post_conv2d_scale = (input_scale.number * weight_scale.number) / output_scale.number
 
     # Since we assume the input tensor that is being rescaled is int32 date type, zero point must be 0.
-    rescale_op = build_rescale(
-        tosa_fb, post_conv2d_scale, op, output_type, op.shape, 0, 0, double_round
+    build_rescale(
+        tosa_fb,
+        post_conv2d_scale,
+        op,
+        output_name,
+        output_type,
+        op.shape,
+        0,
+        output_zp.number,
+        double_round,
     )
-    return rescale_op
+    return

@@ -13,16 +13,27 @@ namespace qnn {
 std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
     const QnnImplementation& implementation,
     QnnLogger* logger,
-    const QnnExecuTorchLogLevel& log_level,
     const QnnExecuTorchContextBinary& qnn_context_blob,
-    const QnnExecuTorchBackendType& backend_type,
-    const std::string& graph_name,
-    const SocInfo* soc_info,
-    const QnnExecuTorchHtpBackendOptions* htp_options) {
+    const QnnExecuTorchOptions* options) {
   auto backend_params = std::make_unique<BackendConfigParameters>();
-  switch (backend_type) {
-    case QnnExecuTorchBackendType::kHtpBackend:
-      if (log_level >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+  switch (options->backend_options()->backend_type()) {
+    case QnnExecuTorchBackendType::kHtpBackend: {
+      auto htp_options = options->backend_options()->htp_options();
+      if (options->log_level() >= QnnExecuTorchLogLevel::kLogLevelInfo) {
+        const std::string skel_library_dir =
+            htp_options->skel_library_dir()->str();
+        if (!skel_library_dir.empty()) {
+          setenv(
+              "ADSP_LIBRARY_PATH", skel_library_dir.c_str(), /*overwrite=*/1);
+        }
+        QNN_EXECUTORCH_LOG_INFO(
+            "skel_library_dir: %s", skel_library_dir.c_str());
+        QNN_EXECUTORCH_LOG_INFO(
+            "htp_arch in htp_info: %s",
+            EnumNameHtpArch(options->soc_info()->htp_info()->htp_arch()));
+        QNN_EXECUTORCH_LOG_INFO(
+            "vtcm_size_in_mb in htp_info: %d",
+            options->soc_info()->htp_info()->vtcm_size_in_mb());
         QNN_EXECUTORCH_LOG_INFO(
             "performance_mode in htp_options: %s",
             EnumNameQnnExecuTorchHtpPerformanceMode(
@@ -41,7 +52,7 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
       backend_params->qnn_backend_ptr_ =
           std::make_unique<HtpBackend>(implementation, logger);
       backend_params->qnn_device_ptr_ = std::make_unique<HtpDevice>(
-          implementation, logger, soc_info, htp_options);
+          implementation, logger, options->soc_info(), htp_options);
 
       backend_params->qnn_context_ptr_ = std::make_unique<HtpContext>(
           implementation,
@@ -52,13 +63,17 @@ std::unique_ptr<BackendConfigParameters> QnnBackendFactory::Create(
 
       backend_params->qnn_graph_ptr_ = std::make_unique<HtpGraph>(
           implementation,
+          backend_params->qnn_backend_ptr_.get(),
           backend_params->qnn_context_ptr_.get(),
-          graph_name,
-          soc_info,
+          options->profile_level(),
+          options->graph_name()->str(),
+          options->soc_info(),
           htp_options);
+      backend_params->qnn_mem_manager_ptr_ = std::make_unique<QnnMemManager>(
+          implementation, backend_params->qnn_context_ptr_.get());
       backend_params->backend_init_state_ = BackendInitializeState::INITIALIZED;
       return backend_params;
-      break;
+    } break;
     case QnnExecuTorchBackendType::kGpuBackend:
     case QnnExecuTorchBackendType::kDspBackend:
     case QnnExecuTorchBackendType::kUndefinedBackend:

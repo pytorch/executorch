@@ -14,6 +14,7 @@
 #include <executorch/backends/qualcomm/runtime/backends/QnnGraphCommon.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnImplementation.h>
 #include <executorch/backends/qualcomm/runtime/backends/QnnLogger.h>
+#include <executorch/backends/qualcomm/runtime/backends/QnnMemManager.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpBackend.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpContext.h>
 #include <executorch/backends/qualcomm/runtime/backends/htpbackend/HtpDevice.h>
@@ -33,6 +34,7 @@ typedef struct BackendConfigParameters {
   std::unique_ptr<QnnContext> qnn_context_ptr_;
   std::unique_ptr<QnnDevice> qnn_device_ptr_;
   std::unique_ptr<QnnGraph> qnn_graph_ptr_;
+  std::unique_ptr<QnnMemManager> qnn_mem_manager_ptr_;
 
   // Default ctor
   BackendConfigParameters()
@@ -40,10 +42,12 @@ typedef struct BackendConfigParameters {
         backend_init_state_(BackendInitializeState::UNINITIALIZED),
         qnn_context_ptr_(nullptr),
         qnn_device_ptr_(nullptr),
-        qnn_graph_ptr_(nullptr) {}
+        qnn_graph_ptr_(nullptr),
+        qnn_mem_manager_ptr_(nullptr) {}
   // Default dtor
   ~BackendConfigParameters() {
     qnn_graph_ptr_.reset();
+    qnn_mem_manager_ptr_.reset();
     qnn_context_ptr_.reset();
     qnn_device_ptr_.reset();
     qnn_backend_ptr_.reset();
@@ -57,12 +61,8 @@ class QnnBackendFactory {
   std::unique_ptr<BackendConfigParameters> Create(
       const QnnImplementation& implementation,
       QnnLogger* logger,
-      const QnnExecuTorchLogLevel& log_level,
       const QnnExecuTorchContextBinary& qnn_context_blob,
-      const QnnExecuTorchBackendType& backend_type,
-      const std::string& graph_name,
-      const SocInfo* soc_info,
-      const QnnExecuTorchHtpBackendOptions* htp_options);
+      const QnnExecuTorchOptions* options);
 };
 } // namespace qnn
 } // namespace executor

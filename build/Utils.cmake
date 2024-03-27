@@ -1,8 +1,6 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# Copyright 2024 Arm Limited and/or its affiliates.
-#
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -33,25 +31,63 @@ function(executorch_print_configuration_summary)
   message(STATUS "  PYTHON_EXECUTABLE             : ${PYTHON_EXECUTABLE}")
   message(STATUS "  FLATC_EXECUTABLE              : ${FLATC_EXECUTABLE}")
   message(
-    STATUS "  EXECUTORCH_ENABLE_LOGGING     : ${EXECUTORCH_ENABLE_LOGGING}")
+    STATUS
+      "  EXECUTORCH_ENABLE_LOGGING              : ${EXECUTORCH_ENABLE_LOGGING}")
   message(STATUS "  EXECUTORCH_ENABLE_PROGRAM_VERIFICATION : "
                  "${EXECUTORCH_ENABLE_PROGRAM_VERIFICATION}")
   message(
-    STATUS "  EXECUTORCH_BUILD_HOST_TARGETS : ${EXECUTORCH_BUILD_HOST_TARGETS}")
-  message(STATUS "  EXECUTORCH_BUILD_FLATC        : ${EXECUTORCH_BUILD_FLATC}")
-  message(STATUS "  EXECUTORCH_BUILD_GFLAGS       : ${EXECUTORCH_BUILD_GFLAGS}")
+    STATUS "  EXECUTORCH_LOG_LEVEL                   : ${EXECUTORCH_LOG_LEVEL}")
+  message(STATUS "  EXECUTORCH_BUILD_ANDROID_JNI           : "
+                 "${EXECUTORCH_BUILD_ANDROID_JNI}")
+  message(STATUS "  EXECUTORCH_BUILD_ARM_BAREMETAL         : "
+                 "${EXECUTORCH_BUILD_ARM_BAREMETAL}")
   message(
     STATUS
-      "  EXECUTORCH_BUILD_EXECUTOR_RUNNER : ${EXECUTORCH_BUILD_EXECUTOR_RUNNER}"
-  )
-  message(
-    STATUS "  REGISTER_EXAMPLE_CUSTOM_OPS   : ${REGISTER_EXAMPLE_CUSTOM_OPS}")
+      "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}")
+  message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
+                 "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL    : "
+                 "${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
+  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
+                 "${EXECUTORCH_BUILD_EXTENSION_MODULE}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL : "
                  "${EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL}")
-  message(STATUS "  EXECUTORCH_BUILD_XNNPACK : ${EXECUTORCH_BUILD_XNNPACK}")
-  message(STATUS "  EXECUTORCH_BUILD_MPS     : ${EXECUTORCH_BUILD_MPS}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_FLATC                 : ${EXECUTORCH_BUILD_FLATC}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_GFLAGS                : ${EXECUTORCH_BUILD_GFLAGS}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_GTESTS                : ${EXECUTORCH_BUILD_GTESTS}")
+  message(STATUS "  EXECUTORCH_BUILD_HOST_TARGETS          : "
+                 "${EXECUTORCH_BUILD_HOST_TARGETS}")
+  message(
+    STATUS "  EXECUTORCH_BUILD_MPS                   : ${EXECUTORCH_BUILD_MPS}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}")
+  message(
+    STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}")
+  message(STATUS "  EXECUTORCH_BUILD_OPTIMIZED             : "
+                 "${EXECUTORCH_BUILD_OPTIMIZED}")
+  message(STATUS "  EXECUTORCH_BUILD_QUANTIZED             : "
+                 "${EXECUTORCH_BUILD_QUANTIZED}")
+  message(
+    STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_SIZE_TEST             : ${EXECUTORCH_BUILD_SIZE_TEST}"
+  )
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_XNNPACK               : ${EXECUTORCH_BUILD_XNNPACK}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}")
 endfunction()
 
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
@@ -99,15 +135,16 @@ function(extract_sources sources_file)
     else()
       set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
+
     execute_process(
-      COMMAND
-        ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
-        --buck2=${BUCK2} --config=${executorch_root}/build/cmake_deps.toml
-        --out=${sources_file}
+      COMMAND ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
+      --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
+      --buck2=${BUCK2}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
     if(NOT gen_srcs_exit_code EQUAL 0)
       message("Error while generating ${sources_file}. "
               "Exit code: ${gen_srcs_exit_code}")
@@ -116,4 +153,48 @@ function(extract_sources sources_file)
       message(FATAL_ERROR "executorch: source list generation failed")
     endif()
   endif()
+endfunction()
+
+# Sets the value of the BUCK2 variable by searching for a buck2 binary
+# with the correct version.
+#
+# The resolve_buck.py script uses the following logic to find buck2:
+#  1) If BUCK2 argument is set explicitly, use it. Warn if the version is
+#     incorrect.
+#  2) Look for a binary named buck2 on the system path. Take it if it is
+#     the correct version.
+#  3) Check for a previously downloaded buck2 binary (from step 4).
+#  4) Download and cache correct version of buck2.
+function(resolve_buck2)
+  if(EXECUTORCH_ROOT)
+    set(executorch_root ${EXECUTORCH_ROOT})
+  else()
+    set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
+
+  set(resolve_buck2_command
+    ${PYTHON_EXECUTABLE} ${executorch_root}/build/resolve_buck.py
+    --cache_dir=${CMAKE_CURRENT_BINARY_DIR}/buck2-bin)
+
+  if(NOT ${BUCK2} STREQUAL "")
+    list(APPEND resolve_buck2_command --buck2=${BUCK2})
+  endif()
+
+  execute_process(
+    COMMAND ${resolve_buck2_command}
+    OUTPUT_VARIABLE resolve_buck2_output
+    ERROR_VARIABLE resolve_buck2_error
+    RESULT_VARIABLE resolve_buck2_exit_code
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+    if(resolve_buck2_exit_code EQUAL 0)
+      set(BUCK2 ${resolve_buck2_output} PARENT_SCOPE)
+      message(STATUS "Resolved buck2 as ${resolve_buck2_output}.")
+    else()
+      # Wrong buck version used. Stop here to ensure that the user sees
+      # the error.
+      message(FATAL_ERROR "Failed to resolve buck2.")
+      message(FATAL_ERROR ${resolve_buck2_error})
+    endif()
 endfunction()

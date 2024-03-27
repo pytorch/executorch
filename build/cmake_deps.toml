@@ -45,6 +45,23 @@ deps = [
   "executorch",
 ]
 
+[targets.optimized_kernels]
+buck_targets = [
+  "//kernels/optimized:generated_lib",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  # Exclude the codegen templates, which are picked up because the buck target
+  # is the generated_lib and not the unwrapped set of kernels.
+  "^codegen/templates",
+]
+deps = [
+  "executorch",
+  "portable_kernels",
+]
+
 [targets.quantized_kernels]
 buck_targets = [
   "//kernels/quantized:generated_lib",
@@ -59,6 +76,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "portable_kernels",
 ]
 
 [targets.program_schema]
@@ -72,6 +90,16 @@ filters = [
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
 
+[targets.extension_aot_util]
+buck_targets = [
+  "//extension/aot_util:aot_util",
+]
+filters = [
+  ".cpp$",
+]
+deps = [
+  "executorch",
+]
 [targets.extension_data_loader]
 buck_targets = [
   "//extension/data_loader:buffer_data_loader",

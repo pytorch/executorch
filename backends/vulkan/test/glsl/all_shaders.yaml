@@ -33,30 +33,23 @@ fill_texture__test:
   shader_variants:
     - NAME: fill_texture__test
 
-image_to_nchw__test:
+idx_fill_texture:
   parameter_names_with_default_values:
-    NDIM: 3
     DTYPE: float
+    NDIM: 3
     PACKING: CHANNELS_PACKED
   generate_variant_forall:
+    PACKING:
+      - VALUE: "CHANNELS_PACKED"
+        SUFFIX: "C_packed"
+      - VALUE: "WIDTH_PACKED"
+        SUFFIX: "W_packed"
+      - VALUE: "HEIGHT_PACKED"
+        SUFFIX: "H_packed"
     DTYPE:
       - VALUE: "half"
         SUFFIX: "half"
       - VALUE: "float"
         SUFFIX: "float"
   shader_variants:
-    - NAME: image3d_to_nchw__test_C_packed
-
-nchw_to_image__test:
-  parameter_names_with_default_values:
-    NDIM: 3
-    DTYPE: float
-    PACKING: CHANNELS_PACKED
-  generate_variant_forall:
-    DTYPE:
-      - VALUE: "half"
-        SUFFIX: "half"
-      - VALUE: "float"
-        SUFFIX: "float"
-  shader_variants:
-    - NAME: nchw_to_image3d__test_C_packed
+    - NAME: idx_fill_texture

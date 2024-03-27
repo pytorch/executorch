@@ -96,7 +96,7 @@ class CMakeBuild(build_ext):
         # Set Python_EXECUTABLE instead if you use PYBIND11_FINDPYTHON
         # EXAMPLE_VERSION_INFO shows you how to pass a value into the C++ code
         # from Python.
-        buck = os.environ.get("BUCK", "buck2")
+        buck = os.environ.get("BUCK", "")
         cmake_prefix_path = os.environ.get("CMAKE_PREFIX_PATH", get_python_lib())
         cmake_args = [
             "-DEXECUTORCH_BUILD_PYBIND=ON",
@@ -224,14 +224,20 @@ class CustomEggInfoCommand(egg_info):
 
 
 cmdclass = {
+    "build_ext": CMakeBuild,
     "install": CustomInstallCommand,
     "develop": CustomDevelopCommand,
     "egg_info": CustomEggInfoCommand,
 }
-ext_modules = None
+ext_modules = []
+
+if os.environ.get("EXECUTORCH_BUILD_AOT_UTIL", "ON") == "ON":
+    ext_modules.append(
+        CMakeExtension("executorch.extension.aot_util.aot_util", "extension/aot_util")
+    )
+
 if os.environ.get("EXECUTORCH_BUILD_PYBIND", "OFF") == "ON":
-    cmdclass["build_ext"] = CMakeBuild
-    ext_modules = [CMakeExtension("executorch.extension.pybindings.portable_lib")]
+    ext_modules.append(CMakeExtension("executorch.extension.pybindings.portable_lib"))
 
 setup(
     package_dir={

@@ -13,6 +13,7 @@ from multiprocessing.connection import Client
 
 import numpy as np
 
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
@@ -107,6 +108,8 @@ if __name__ == "__main__":
         inputs,
         skip_node_id_set=skip_node_id_set,
         skip_node_op_set=skip_node_op_set,
+        quant_dtype=QuantDtype.use_8a8w,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
@@ -126,6 +129,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

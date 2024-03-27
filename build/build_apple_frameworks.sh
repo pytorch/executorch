@@ -19,13 +19,17 @@ FLATC="flatc"
 IOS_DEPLOYMENT_TARGET="17.0"
 COREML=OFF
 MPS=OFF
+OPTIMIZED=OFF
 PORTABLE=OFF
+QUANTIZED=OFF
 XNNPACK=OFF
 HEADERS_PATH="include"
 EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
+OPTIMIZED_FRAMEWORK="optimized_backend:liboptimized_kernels.a,liboptimized_ops_lib.a:"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
+QUANTIZED_FRAMEWORK="quantized_backend:libquantized_kernels.a,libquantized_ops_lib.a:"
 XNNPACK_FRAMEWORK="xnnpack_backend:libXNNPACK.a,libcpuinfo.a,libpthreadpool.a,libxnnpack_backend.a:"
 
 usage() {
@@ -42,7 +46,9 @@ usage() {
   echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: '\$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc'"
   echo "  --coreml             Include this flag to build the Core ML backend."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
+  echo "  --optimized          Include this flag to build the Optimized backend."
   echo "  --portable           Include this flag to build the Portable backend."
+  echo "  --quantized          Include this flag to build the Quantized backend."
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
   echo
   echo "Example:"
@@ -61,8 +67,10 @@ for arg in "$@"; do
       --flatc=*) FLATC="${arg#*=}" ;;
       --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
-      --portable) PORTABLE=ON ;;
       --mps) MPS=ON ;;
+      --optimized) OPTIMIZED=ON ;;
+      --portable) PORTABLE=ON ;;
+      --quantized) QUANTIZED=ON ;;
       --xnnpack) XNNPACK=ON ;;
       *)
       if [[ -z "$SOURCE_ROOT_DIR" ]]; then
@@ -109,6 +117,7 @@ cmake_build() {
     mkdir "$platform" && cd "$platform" || exit 1
     cmake "$SOURCE_ROOT_DIR" -G Xcode \
         -DCMAKE_BUILD_TYPE="$MODE" \
+        -DCMAKE_PREFIX_PATH="$($PYTHON -c 'import torch as _; print(_.__path__[0])')" \
         -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LANGUAGE_STANDARD="c++17" \
         -DCMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY="libc++" \
@@ -122,6 +131,8 @@ cmake_build() {
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
         -DEXECUTORCH_BUILD_MPS=$MPS \
+        -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
+        -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         ${platform_flag:+-DIOS_PLATFORM=$platform_flag}
     cmake --build . --config $MODE
@@ -159,9 +170,11 @@ append_framework_flag() {
 }
 
 append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
-append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
 append_framework_flag "$COREML" "$COREML_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
+append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
+append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
+append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
 append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"
 
 "$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"

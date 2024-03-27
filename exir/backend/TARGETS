@@ -26,6 +26,7 @@ runtime.python_library(
         ":compile_spec_schema",
         "//caffe2:torch",
         "//executorch/exir/backend:utils",
+        "//executorch/exir/backend/canonical_partitioners:duplicate_constant_node_pass",
     ],
 )
 

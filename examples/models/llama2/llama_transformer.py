@@ -8,7 +8,7 @@
 # Please refer to README.md in the same folder for more information.
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -122,9 +122,18 @@ def precompute_freqs_cis(dim: int, end: int, theta: float):
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim
-    assert 0 <= 1 < ndim
-    assert freqs_cis.shape == (x.shape[1], x.shape[-1])
-    shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
+    freqs_cis_ndim = freqs_cis.ndim
+    if freqs_cis_ndim == 3:
+        # freqs_cis: (seq_len, n_heads, head_dim // 2)
+        assert freqs_cis.shape == (x.shape[-3], x.shape[-2], x.shape[-1])
+        shape = [
+            d if (i == ndim - 3 or i == ndim - 2 or i == ndim - 1) else 1
+            for i, d in enumerate(x.shape)
+        ]
+    else:
+        # freqs_cis: (seq_len, head_dim // 2)
+        assert freqs_cis.shape == (x.shape[1], x.shape[-1])
+        shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(shape)
 
 
@@ -148,6 +157,42 @@ def apply_rotary_emb(
     return xq_out.type_as(xq), xk_out.type_as(xk)
 
 
+class KVCache(nn.Module):
+    def __init__(
+        self,
+        max_batch_size: int,
+        max_seq_length: int,
+        n_heads: int,
+        head_dim: int,
+        transpose_cache: bool,
+        dtype=torch.float32,
+    ):
+        super().__init__()
+        if transpose_cache:
+            cache_shape = (max_batch_size, n_heads, max_seq_length, head_dim)
+        else:
+            cache_shape = (max_batch_size, max_seq_length, n_heads, head_dim)
+
+        self.transpose_cache = transpose_cache
+        self.register_buffer(
+            "k_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+        self.register_buffer(
+            "v_cache", torch.zeros(cache_shape, dtype=dtype, device="cpu")
+        )
+
+    def update(
+        self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
+        k_out = self.k_cache
+        v_out = self.v_cache
+        k_out[:, :, input_pos] = k_val
+        v_out[:, :, input_pos] = v_val
+
+        return k_out, v_out
+
+
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
@@ -161,6 +206,7 @@ class Attention(nn.Module):
         self.head_dim = args.dim // args.n_heads
         self.max_batch_size = args.max_batch_size
         self.max_seq_len = args.max_seq_len
+        self.dim = args.dim
         # args.dim = 4096, args.n_heads = 32, self.head_dim = 4096 / 32 = 125
         self.wq = nn.Linear(args.dim, args.n_heads * self.head_dim, bias=False)
         self.wk = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
@@ -170,111 +216,92 @@ class Attention(nn.Module):
         self.use_sdpa_with_kv_cache_op = args.use_sdpa_with_kv_cache_op
         self.layer_id = layer_id
 
-        mask = torch.full(
-            (1, 1, args.max_seq_len, args.max_seq_len),
-            float("-inf"),
-            device="cpu",
+        causal_mask = torch.tril(
+            torch.ones(
+                self.max_seq_len,
+                self.max_seq_len,
+                dtype=torch.bool,
+                device="cpu",
+            )
         )
+        self.register_buffer("mask", causal_mask, persistent=False)
 
-        mask = torch.triu(mask, diagonal=1)
-        self.register_buffer("mask", mask)
-
-        # This is what we would use if ExecuTorch could support mutable buffers. We can't at this time, so instead
-        # what is done is this module takes in the cache as io.
-        # self.cache_k = torch.zeros(
-        #     (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        # )
-        # self.cache_v = torch.zeros(
-        #     (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        # )
-        self.kv_cache_sizes = [
-            args.max_batch_size,
-            args.max_seq_len,
-            self.n_kv_heads,
-            self.head_dim,
-        ]
+        if self.use_kv_cache:
+            self.kv_cache = KVCache(
+                args.max_batch_size,
+                args.max_seq_len,
+                self.n_kv_heads,
+                self.head_dim,
+                not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
+            )
 
     def forward(
         self,
         x: torch.Tensor,
         freqs_cos: torch.Tensor,
         freqs_sin: torch.Tensor,
-        start_pos: Optional[int] = None,
-        cache_k: Optional[torch.Tensor] = None,
-        # if use_sdpa_with_kv_cache_op
-        # shape: (num_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        # otherwise
-        # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        cache_v: Optional[torch.Tensor] = None,
-        # if use_sdpa_with_kv_cache_op
-        # shape: (num_layers, args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
-        # otherwise
-        # shape: (args.max_batch_size, args.max_seq_len, self.n_kv_heads, self.head_dim)
+        input_pos: Optional[torch.Tensor] = None,
     ):
         bsz, seqlen, _ = x.shape
 
         # QKV
-        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
+        q, k, v = self.wq(x), self.wk(x), self.wv(x)
         # We need view_copy elimination
-        xq = xq.view(bsz, seqlen, self.n_local_heads, self.head_dim)
-        xk = xk.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
-        xv = xv.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        q = q.view(bsz, seqlen, self.n_local_heads, self.head_dim)
+        k = k.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
+        v = v.view(bsz, seqlen, self.n_local_kv_heads, self.head_dim)
 
         # RoPE relative positional embeddings
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cos, freqs_sin)
+        q, k = apply_rotary_emb(q, k, freqs_cos, freqs_sin)
 
         if self.use_kv_cache:
-            assert start_pos is not None
-            assert cache_k is not None and cache_v is not None
+            assert input_pos is not None
 
-            # TODO(T180671810)
-            # Refactor this code to make custom op based
-            # SDPA into a separate optimized attention module
-            if self.use_sdpa_with_kv_cache_op:
+            if not self.use_sdpa_with_kv_cache_op:
+
+                q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+                k = k.transpose(1, 2)
+                v = v.transpose(1, 2)
+
+                k, v = self.kv_cache.update(input_pos, k, v)
+                mask = self.mask[None, None, input_pos]
+
+                k = k.repeat_interleave(self.n_rep, dim=1)
+                v = v.repeat_interleave(self.n_rep, dim=1)
+                y = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=mask, dropout_p=0.0
+                )
+
+                y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+                y = self.wo(y)
+                return y
+            else:
                 from .custom_ops.sdpa_with_kv_cache import sdpa_with_kv_cache  # noqa
 
                 output = torch.ops.llama.sdpa_with_kv_cache(
-                    xq,
-                    xk,
-                    xv,
-                    cache_k,
-                    cache_v,
-                    self.layer_id,
-                    start_pos,
+                    q,
+                    k,
+                    v,
+                    self.kv_cache.k_cache,
+                    self.kv_cache.v_cache,
+                    input_pos[-1].item(),
                     seqlen,
                 )
                 output = output.view(bsz, seqlen, -1)
                 output = self.wo(output)
-                return output, cache_k, cache_v
-            else:
-                # Replace the entry in the cache for this token
-                # The following lines are equivalent to:
-                # cache_k[:bsz, start_pos : start_pos + seqlen] = xk
-                # cache_v[:bsz, start_pos : start_pos + seqlen] = xv
-                # We use .narrow() here to make the compiler happy
-                narrowed_k = cache_k[:bsz].narrow(1, start_pos, seqlen)
-                narrowed_v = cache_v[:bsz].narrow(1, start_pos, seqlen)
+                return output
 
-                narrowed_k.copy_(xk)
-                narrowed_v.copy_(xv)
-
-                keys = cache_k[:bsz].narrow(1, 0, start_pos + seqlen)
-                values = cache_v[:bsz].narrow(1, 0, start_pos + seqlen)
-        else:
-            keys = xk
-            values = xv
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
 
         # grouped multiquery attention: expand out keys and values
-        keys = repeat_kv(keys, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
-        values = repeat_kv(values, self.n_rep)  # (bs, seqlen, n_local_heads, head_dim)
-
-        # make heads into a batch dimension
-        xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-        keys = keys.transpose(1, 2)
-        values = values.transpose(1, 2)
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
 
         assert hasattr(self, "mask")
-        mask = self.mask[:, :, :seqlen, :seqlen]
+        mask = self.mask[:seqlen, :seqlen]
 
         # this is needed to support xnnpack which requires mask shape to be 2d.
         # this is a temporary workaround. once we update xnnpack we should be able to handle this.
@@ -283,18 +310,13 @@ class Attention(nn.Module):
         # tensor will be 2-dimensional, regarldess of the values of l & s
         mask = torch.squeeze(mask, [0, 1])
 
-        output = F.scaled_dot_product_attention(
-            xq, keys, values, attn_mask=mask, dropout_p=0.0
-        )
+        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
         output = self.wo(output)
 
-        if self.use_kv_cache:
-            return output, cache_k, cache_v
-        else:
-            return output, None, None
+        return output
 
 
 class FeedForward(nn.Module):
@@ -379,16 +401,9 @@ class TransformerBlock(nn.Module):
         self.attention_norm = RMSNorm(args.dim, eps=args.norm_eps)
         self.ffn_norm = RMSNorm(args.dim, eps=args.norm_eps)
 
-    def forward(
-        self, x, freqs_cos, freqs_sin, start_pos=None, cache_k=None, cache_v=None
-    ):  # x: 1xN
-        h, cache_k, cache_v = self.attention.forward(
-            self.attention_norm(x),
-            freqs_cos,
-            freqs_sin,
-            start_pos,
-            cache_k,
-            cache_v,
+    def forward(self, x, freqs_cos, freqs_sin, input_pos=None):  # x: 1xN
+        h = self.attention.forward(
+            self.attention_norm(x), freqs_cos, freqs_sin, input_pos
         )
 
         h = x + h
@@ -396,7 +411,7 @@ class TransformerBlock(nn.Module):
             out = h + self.block_sparse_moe(self.ffn_norm(h))
         else:
             out = h + self.feed_forward(self.ffn_norm(h))
-        return out, cache_k, cache_v
+        return out
 
 
 class Transformer(nn.Module):
@@ -425,87 +440,35 @@ class Transformer(nn.Module):
     def forward(
         self,
         tokens: torch.Tensor,
-        start_pos: Optional[
+        input_pos: Optional[
             torch.Tensor
         ] = None,  # Scalar tensor indicating size of window of the caches
-        cache_k: Optional[
-            torch.Tensor
-        ] = None,  # n_layers long, it should be a list of tensors to accommodate the potential size difference among attention layers. The current implementation is overly simplified.
-        cache_v: Optional[torch.Tensor] = None,  # n_layers long
-    ) -> Union[
-        torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor]]
-    ]:
+    ) -> torch.Tensor:
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
 
         if self.use_kv_cache:
             assert (
-                cache_k is not None and cache_v is not None and start_pos is not None
-            ), "Caches and start_pos must be provided when use_kv_cache is True"
-            assert (
-                cache_k.size(0) == self.n_layers
-            ), f"{cache_k.size(0)} != {self.n_layers}"
-            assert (
-                cache_v.size(0) == self.n_layers
-            ), f"{cache_v.size(0)} != {self.n_layers}"
+                input_pos is not None
+            ), "input_pos must be provided when use_kv_cache is True"
 
-            sp = start_pos.item()
-            # self.params.max_seq_len - 1 because of 0 based indexing, and - 1 again because our input seq len is 1 and its added to the cache before accessing the cache
-            torch._constrain_as_size(sp, min=0, max=self.params.max_seq_len - 2)
-            torch._constrain_as_value(
-                cache_k.shape[0],
-                max=self.n_layers,
-                min=self.n_layers,
-            )
-            torch._constrain_as_value(
-                cache_v.shape[0], min=self.n_layers, max=self.n_layers
-            )
             # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
-            freqs_cos = self.freqs_cos[sp : sp + seqlen]
-            freqs_sin = self.freqs_sin[sp : sp + seqlen]
+            freqs_cos = self.freqs_cos[input_pos]
+            freqs_sin = self.freqs_sin[input_pos]
         else:
-            assert (
-                start_pos is None and cache_k is None and cache_v is None
-            ), "Caches and start_pos are unused when use_kv_cache is False"
+            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]
             freqs_sin = self.freqs_sin[:seqlen]
 
-        for index, layer in enumerate(self.layers):
-            if self.use_kv_cache:
-                if self.params.use_sdpa_with_kv_cache_op:
-                    h, updated_cache_k, updated_cache_v = layer(
-                        h,
-                        freqs_cos,
-                        freqs_sin,
-                        sp,  # pyre-ignore[61]
-                        cache_k,
-                        cache_v,
-                    )
-                else:
-                    h, updated_cache_k, updated_cache_v = layer(
-                        h,
-                        freqs_cos,
-                        freqs_sin,
-                        sp,  # pyre-ignore[61]
-                        cache_k[index],  # pyre-ignore[16]
-                        cache_v[index],
-                    )
-                    cache_k[index] = updated_cache_k  # pyre-ignore[16]
-                    cache_v[index] = updated_cache_v
-
-            else:
-                h, _, _ = layer(h, freqs_cos, freqs_sin)
+        for layer in self.layers:
+            h = layer(
+                h,
+                freqs_cos,
+                freqs_sin,
+                input_pos,
+            )
 
         h = self.norm(h)
 
         logits = self.output(h)
-        if self.use_kv_cache:
-            return (logits, cache_k, cache_v)  # pyre-ignore
-        else:
-            # 'None' is not a valid return for export so have to split the return into if else
-            return logits
-
-    # For each layer return the sizes of the needed caches
-    def get_cache_sizes(self):
-        # cache_k and cache_v have the same shape so could pick either here.
-        return [self.n_layers, *self.layers[0].attention.kv_cache_sizes]
+        return logits

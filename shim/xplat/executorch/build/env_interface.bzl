@@ -117,7 +117,7 @@ def _remove_platform_specific_args(kwargs):
     """
     keys = []
     for key in kwargs:
-        if key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps"):
+        if key.endswith("_platform_preprocessor_flags") or key.endswith("_platform_deps") or key.startswith("fbobjc"):
             keys.append(key)
     for key in keys:
         kwargs.pop(key)
@@ -215,6 +215,7 @@ env = struct(
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     genrule = native.genrule,
     is_oss = True,
+    is_xplat = False,
     patch_deps = _patch_deps,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,

@@ -5,13 +5,20 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import logging
 import unittest
 
 import torch
 import torchvision.models as models
+from executorch.backends.arm.test import common
 from executorch.backends.arm.test.test_models import TosaProfile
 from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+from executorch.backends.xnnpack.test.tester.tester import Quantize
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
+
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class TestMobileNetV2(unittest.TestCase):
@@ -30,7 +37,10 @@ class TestMobileNetV2(unittest.TestCase):
         "executorch_exir_dialects_edge__ops_aten_convolution_default",
     }
 
-    @unittest.skip("This test is not supported yet")
+    operators_after_quantization = all_operators - {
+        "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
+    }
+
     def test_mv2_tosa_MI(self):
         (
             ArmTester(
@@ -38,36 +48,42 @@ class TestMobileNetV2(unittest.TestCase):
                 inputs=self.model_inputs,
                 profile=TosaProfile.MI,
                 backend=ArmBackendSelector.TOSA,
+                permute_memory_to_nhwc=True,
             )
             .export()
             .to_edge()
             .check(list(self.all_operators))
             .partition()
             .to_executorch()
-            .run_method()
-            .compare_outputs()
         )
 
-    @unittest.skip("This test is not supported yet")
     def test_mv2_tosa_BI(self):
-        (
+        tester = (
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
                 profile=TosaProfile.BI,
                 backend=ArmBackendSelector.TOSA,
+                permute_memory_to_nhwc=True,
             )
-            .quantize()
+            .quantize(Quantize(calibrate=False))
             .export()
             .to_edge()
-            .check(list(self.all_operators))
+            .check(list(self.operators_after_quantization))
             .partition()
             .to_executorch()
-            .run_method()
-            .compare_outputs()
         )
+        if common.TOSA_REF_MODEL_INSTALLED:
+            tester.run_method().compare_outputs()
+        else:
+            logger.warning(
+                "TOSA ref model tool not installed, skip numerical correctness tests"
+            )
 
-    @unittest.skip("This test is not supported yet")
+    @unittest.skipIf(
+        not common.VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
     def test_mv2_u55_BI(self):
         (
             ArmTester(
@@ -75,11 +91,12 @@ class TestMobileNetV2(unittest.TestCase):
                 inputs=self.model_inputs,
                 profile=TosaProfile.BI,
                 backend=ArmBackendSelector.ETHOS_U55,
+                permute_memory_to_nhwc=True,
             )
-            .quantize()
+            .quantize(Quantize(calibrate=False))
             .export()
             .to_edge()
-            .check(list(self.all_operators))
+            .check(list(self.operators_after_quantization))
             .partition()
             .to_executorch()
         )

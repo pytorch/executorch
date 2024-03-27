@@ -86,37 +86,35 @@ TEST_F(OpDivScalarOutKernelTest, SanityCheckModeFloor) {
 }
 
 TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeTrunc) {
-  TensorFactory<ScalarType::Int> tf_a;
-  TensorFactory<ScalarType::Float> tf_out;
+  TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
 
-  Tensor out = tf_out.zeros(sizes);
+  Tensor out = tf.zeros(sizes);
 
   op_div_scalar_mode_out(
-      tf_a.make(sizes, {1, 2, 4, -9}),
+      tf.make(sizes, {1, 2, 4, -9}),
       2,
       exec_aten::optional<exec_aten::string_view>("trunc"),
       out);
 
   // Check that it matches the expected output.
-  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.0, 1.0, 2.0, -4.0}));
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, {0, 1, 2, -4}));
 }
 
 TEST_F(OpDivScalarModeOutKernelTest, SanityCheckModeFloor) {
-  TensorFactory<ScalarType::Int> tf_a;
-  TensorFactory<ScalarType::Float> tf_out;
+  TensorFactory<ScalarType::Int> tf;
 
   const std::vector<int32_t> sizes = {2, 2};
 
-  Tensor out = tf_out.zeros(sizes);
+  Tensor out = tf.zeros(sizes);
 
   op_div_scalar_mode_out(
-      tf_a.make(sizes, {1, 2, 4, -9}),
+      tf.make(sizes, {1, 2, 4, -9}),
       2,
       exec_aten::optional<exec_aten::string_view>("floor"),
       out);
 
   // Check that it matches the expected output.
-  EXPECT_TENSOR_EQ(out, tf_out.make(sizes, {0.0, 1.0, 2.0, -5.0}));
+  EXPECT_TENSOR_EQ(out, tf.make(sizes, {0, 1, 2, -5}));
 }

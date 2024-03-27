@@ -147,16 +147,16 @@ class QuantHandler:
 
 def replace_linear_weight_only_int8_per_channel(module, node_type):
     for name, child in module.named_children():
-        print(f"name: {name}")
+        # print(f"name: {name}")
         if isinstance(child, nn.Linear):
             if (
                 (node_type == "*")
                 or (node_type == "output" and name == "output")
                 or (node_type == "!output" and name != "output")
             ):
-                print(f"{name, child}")
-                print(f"in_features: {child.in_features}")
-                print(f"out_features: {child.out_features}")
+                # print(f"{name, child}")
+                # print(f"in_features: {child.in_features}")
+                # print(f"out_features: {child.out_features}")
                 setattr(
                     module,
                     name,
@@ -276,10 +276,10 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
     module, bitwidth: int = 8, group_size: Optional[int] = None
 ):
     for name, child in module.named_children():
-        print(f"name: {name}")
+        # print(f"name: {name}")
         if isinstance(child, nn.Embedding):
-            print(f"{name, child}")
-            print(f"weights size: {child.weight.size()}")
+            # print(f"{name, child}")
+            # print(f"weights size: {child.weight.size()}")
             setattr(
                 module,
                 name,
@@ -320,9 +320,9 @@ class EmbeddingOnlyInt8QuantHandler:
                 or isinstance(mod, fsEmbedding)
                 or isinstance(mod, fsStandardEmbedding)
             ):
-                print("****")
-                print(f"Embedding identified: {fqn, mod}")
-                print(f"weights size: {mod.weight.size()}")
+                # print("****")
+                # print(f"Embedding identified: {fqn, mod}")
+                # print(f"weights size: {mod.weight.size()}")
                 # print(f"quantize {fqn}...")
 
                 print(
@@ -514,11 +514,10 @@ class Int8DynActInt4WeightQuantHandler:
         for fqn, mod in self.mod.named_modules():
             if isinstance(mod, torch.nn.Linear):
                 assert not mod.bias
-                out_features = mod.out_features
                 in_features = mod.in_features
-                print("in features:", in_features, " out features:", out_features)
+                # print("in features:", in_features, " out features:", out_features)
                 # assert out_features % 8 == 0, "require out_features % 8 == 0"
-                print(f"linear: {fqn}, in={in_features}, out={out_features}")
+                # print(f"linear: {fqn}, in={in_features}, out={out_features}")
 
                 assert (
                     in_features % self.group_size == 0
@@ -652,7 +651,7 @@ class Int8DynActInt4WeightLinear(torch.nn.Module):
             self.scales,
             self.zeros,
             self.out_features,
-            self.groupsize,
+            self.group_size,
             self.precision,
         )
 
@@ -737,7 +736,6 @@ class GPTQQuantHandler(QuantHandler):
     """
 
     def __init__(self):
-        assert self.mod is not None
         assert self.get_qparams_func is not None
         assert self.quantize_func is not None
         assert self.dequantize_func is not None

@@ -12,6 +12,7 @@ from multiprocessing.connection import Client
 import numpy as np
 
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
     make_output_dir,
@@ -236,9 +237,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-u",
-        "--use_16bit_quant",
-        help="If specified, quantize model with 16 bits, otherwise, quantize model with 8 bits. Will only be used when ptq set to true.",
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
         action="store_true",
         default=False,
     )
@@ -246,9 +247,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-P",
         "--ptq",
-        help="If specified, will do PTQ.",
-        action="store_true",
-        default=False,
+        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
+        default="8a8w",
     )
 
     args = parser.parse_args()
@@ -271,29 +271,31 @@ if __name__ == "__main__":
     )
     inputs, input_list = get_dataset(data_val)
 
-    if args.ptq:
-        build_executorch_binary(
-            model,
-            inputs[0],
-            args.model,
-            f"{args.artifact}/{pte_filename}",
-            inputs,
-            use_fp16=False,
-            use_16bit_quant=args.use_16bit_quant,
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
-        )
+    if args.ptq == "8a8w":
+        quant_dtype = QuantDtype.use_8a8w
+    elif args.ptq == "16a16w":
+        quant_dtype = QuantDtype.use_16a16w
+    elif args.ptq == "16a4w":
+        quant_dtype = QuantDtype.use_16a4w
     else:
-        build_executorch_binary(
-            model,
-            inputs[0],
-            args.model,
-            f"{args.artifact}/{pte_filename}",
-            None,
-            use_fp16=True,
-            skip_node_id_set=skip_node_id_set,
-            skip_node_op_set=skip_node_op_set,
+        raise AssertionError(
+            f"No support for quant type {args.ptq}. Support 8a8w, 16a16w and 16a4w."
         )
+
+    if args.use_fp16:
+        quant_dtype = None
+
+    build_executorch_binary(
+        model,
+        inputs[0],
+        args.model,
+        f"{args.artifact}/{pte_filename}",
+        inputs,
+        skip_node_id_set=skip_node_id_set,
+        skip_node_op_set=skip_node_op_set,
+        quant_dtype=quant_dtype,
+        shared_buffer=args.shared_buffer,
+    )
 
     if args.compile_only:
         sys.exit(0)
@@ -312,6 +314,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

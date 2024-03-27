@@ -7,10 +7,12 @@
 import json
 import os
 import re
+import sys
 from multiprocessing.connection import Client
 
 import numpy as np
 import torch
+from executorch.backends.qualcomm.quantizer.quantizer import QuantDtype
 from executorch.examples.models.llama2 import Llama2Model
 from executorch.examples.qualcomm.scripts.utils import (
     build_executorch_binary,
@@ -56,40 +58,68 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "-P",
-        "--ptq",
-        help="If specified, will do PTQ.",
+        "-F",
+        "--use_fp16",
+        help="If specified, will run in fp16 precision and discard ptq setting",
         action="store_true",
         default=False,
     )
 
-    # QNN_SDK_ROOT might also be an argument, but it is used in various places.
-    # So maybe it's fine to just use the environment.
-    if "QNN_SDK_ROOT" not in os.environ:
-        raise RuntimeError("Environment variable QNN_SDK_ROOT must be set")
-    print(f"QNN_SDK_ROOT={os.getenv('QNN_SDK_ROOT')}")
+    parser.add_argument(
+        "-P",
+        "--ptq",
+        help="If specified, will do PTQ quantization. default is 8bits activation and 8bits weight. Support 8a8w, 16a16w and 16a4w.",
+        default="8a8w",
+    )
 
-    if "LD_LIBRARY_PATH" not in os.environ:
-        print(
-            "[Warning] LD_LIBRARY_PATH is not set. If errors like libQnnHtp.so "
-            "not found happen, please follow setup.md to set environment."
-        )
-    else:
-        print(f"LD_LIBRARY_PATH={os.getenv('LD_LIBRARY_PATH')}")
+    parser.add_argument(
+        "--checkpoint",
+        help="Pass llama2 checkpoint.",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--params",
+        help="Pass llama2 params json file.",
+        default=False,
+    )
 
     args = parser.parse_args()
 
     # ensure the working directory exist.
     os.makedirs(args.artifact, exist_ok=True)
 
-    instance = Llama2Model(use_kv_cache=args.use_kv_cache)
+    if args.params and args.checkpoint:
+        instance = Llama2Model(
+            use_kv_cache=args.use_kv_cache,
+            checkpoint=args.checkpoint,
+            params=args.params,
+        )
+    else:
+        instance = Llama2Model(
+            use_kv_cache=args.use_kv_cache,
+        )
+
     inputs, input_list = create_device_inputs(
         instance.get_example_inputs(), args.use_kv_cache
     )
 
     pte_filename = "dummy_llama2_qnn"
 
-    use_fp16 = False if args.ptq else True
+    if args.ptq == "8a8w":
+        quant_dtype = QuantDtype.use_8a8w
+    elif args.ptq == "16a16w":
+        quant_dtype = QuantDtype.use_16a16w
+    elif args.ptq == "16a4w":
+        quant_dtype = QuantDtype.use_16a4w
+    else:
+        raise AssertionError(
+            f"No support for quant type {args.ptq}. Support 8a8w, 16a16w and 16a4w."
+        )
+
+    if args.use_fp16:
+        quant_dtype = None
+
     build_executorch_binary(
         instance.get_eager_model().eval(),
         inputs,
@@ -97,8 +127,13 @@ if __name__ == "__main__":
         f"{args.artifact}/{pte_filename}",
         inputs,
         custom_annotations=(),
-        use_fp16=use_fp16,
+        quant_dtype=quant_dtype,
+        shared_buffer=args.shared_buffer,
     )
+
+    if args.compile_only:
+        sys.exit(0)
+
     adb = SimpleADB(
         qnn_sdk=os.getenv("QNN_SDK_ROOT"),
         artifact_path=f"{args.build_folder}",
@@ -107,6 +142,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

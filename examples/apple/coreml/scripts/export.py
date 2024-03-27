@@ -8,6 +8,8 @@ import copy
 import pathlib
 import sys
 
+import coremltools as ct
+
 import executorch.exir as exir
 
 import torch
@@ -19,7 +21,6 @@ from executorch.backends.apple.coreml.partition.coreml_partitioner import (
 )
 
 from executorch.exir.backend.backend_api import to_backend
-from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.sdk.etrecord import generate_etrecord
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
@@ -36,8 +37,6 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
 
-compute_units = ["cpu_only", "cpu_and_gpu", "cpu_and_ane", "all"]
-
 
 def parse_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
@@ -51,10 +50,25 @@ def parse_args() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "-c",
-        "--compute_units",
+        "--compute_unit",
         required=False,
-        default="all",
-        help=f"Provide compute units. Valid ones: {compute_units}",
+        default=ct.ComputeUnit.ALL.name.lower(),
+        help=f"Provide compute unit for the model. Valid ones: {[[compute_unit.name.lower() for compute_unit in ct.ComputeUnit]]}",
+    )
+
+    parser.add_argument(
+        "-precision",
+        "--compute_precision",
+        required=False,
+        default=ct.precision.FLOAT16.value,
+        help=f"Provide compute precision for the model. Valid ones: {[[precision.value for precision in ct.precision]]}",
+    )
+
+    parser.add_argument(
+        "--compile",
+        action=argparse.BooleanOptionalAction,
+        required=False,
+        default=False,
     )
     parser.add_argument("--use_partitioner", action=argparse.BooleanOptionalAction)
     parser.add_argument("--generate_etrecord", action=argparse.BooleanOptionalAction)
@@ -68,7 +82,7 @@ def partition_module_to_coreml(module):
     module = module.eval()
 
 
-def lower_module_to_coreml(module, compute_units):
+def lower_module_to_coreml(module, compile_specs):
     module = module.eval()
     edge = exir.capture(module, example_inputs, _CAPTURE_CONFIG).to_edge(
         _EDGE_COMPILE_CONFIG
@@ -82,7 +96,7 @@ def lower_module_to_coreml(module, compute_units):
     lowered_module = to_backend(
         CoreMLBackend.__name__,
         edge.exported_program,
-        [CompileSpec("compute_units", bytes(compute_units, "utf-8"))],
+        compile_specs,
     )
 
     return lowered_module, edge_copy
@@ -101,21 +115,36 @@ def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     return exec_prog
 
 
-def save_executorch_program(exec_prog, model_name, compute_units):
+def save_executorch_program(exec_prog, model_name, compute_unit):
     buffer = exec_prog.buffer
-    filename = f"{model_name}_coreml_{compute_units}.pte"
+    filename = f"{model_name}_coreml_{compute_unit}.pte"
     print(f"Saving exported program to {filename}")
     with open(filename, "wb") as file:
         file.write(buffer)
     return
 
 
-def save_processed_bytes(processed_bytes, model_name, compute_units):
-    filename = f"{model_name}_coreml_{compute_units}.bin"
+def save_processed_bytes(processed_bytes, model_name, compute_unit):
+    filename = f"{model_name}_coreml_{compute_unit}.bin"
     print(f"Saving processed bytes to {filename}")
     with open(filename, "wb") as file:
         file.write(processed_bytes)
     return
+
+
+def generate_compile_specs_from_args(args):
+    model_type = CoreMLBackend.MODEL_TYPE.MODEL
+    if args.compile:
+        model_type = CoreMLBackend.MODEL_TYPE.COMPILED_MODEL
+
+    compute_precision = ct.precision(args.compute_precision)
+    compute_unit = ct.ComputeUnit[args.compute_unit.upper()]
+
+    return CoreMLBackend.generate_compile_specs(
+        compute_precision=compute_precision,
+        compute_unit=compute_unit,
+        model_type=model_type,
+    )
 
 
 if __name__ == "__main__":
@@ -127,37 +156,44 @@ if __name__ == "__main__":
             f"Available models are {list(MODEL_NAME_TO_MODEL.keys())}."
         )
 
-    if args.compute_units not in compute_units:
+    valid_compute_units = [compute_unit.name.lower() for compute_unit in ct.ComputeUnit]
+    if args.compute_unit not in valid_compute_units:
         raise RuntimeError(
-            f"{args.compute_units} is invalid. "
-            f"Valid compute units are {compute_units}."
+            f"{args.compute_unit} is invalid. "
+            f"Valid compute units are {valid_compute_units}."
         )
 
     model, example_inputs, _ = EagerModelFactory.create_model(
         *MODEL_NAME_TO_MODEL[args.model_name]
     )
 
+    compile_specs = generate_compile_specs_from_args(args)
+    lowered_module = None
+
     if args.use_partitioner:
         model.eval()
         exir_program_aten = torch.export.export(model, example_inputs)
         edge_program_manager = exir.to_edge(exir_program_aten)
         edge_copy = copy.deepcopy(edge_program_manager)
-        delegated_program_manager = edge_program_manager.to_backend(CoreMLPartitioner())
+        partitioner = CoreMLPartitioner(
+            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        )
+        delegated_program_manager = edge_program_manager.to_backend(partitioner)
         exec_program = delegated_program_manager.to_executorch()
     else:
         lowered_module, edge_copy = lower_module_to_coreml(
-            model,
-            args.compute_units,
+            module=model,
+            compile_specs=compile_specs,
         )
         exec_program = export_lowered_module_to_executorch_program(
             lowered_module,
             example_inputs,
         )
 
-    save_executorch_program(exec_program, args.model_name, args.compute_units)
+    save_executorch_program(exec_program, args.model_name, args.compute_unit)
     generate_etrecord(f"{args.model_name}_coreml_etrecord.bin", edge_copy, exec_program)
 
-    if args.save_processed_bytes:
+    if args.save_processed_bytes and lowered_module is not None:
         save_processed_bytes(
-            lowered_module.processed_bytes, args.model_name, args.compute_units
+            lowered_module.processed_bytes, args.model_name, args.compute_unit
         )

@@ -38,15 +38,21 @@ class QnnManager {
       const std::vector<Qnn_Tensor_t>& input_tensor_structs,
       std::vector<Qnn_Tensor_t>& output_tensor_structs);
 
+  Error ProfileExecuteData(EventTracer* event_tracer);
+
   void Destroy();
 
-  bool IsAvailable();
-
-  bool IsTensorDump() {
-    return !tensor_dump_output_path_.empty();
+  bool IsAvailable() {
+    return true;
   }
 
-  bool IsOnlinePrepare();
+  bool IsOnlinePrepare() {
+    return options_->online_prepare();
+  }
+
+  bool IsTensorDump() {
+    return options_->tensor_dump_output_path()->size() > 0;
+  }
 
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
@@ -54,6 +60,10 @@ class QnnManager {
   Error Compile(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers,
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+
+  Error RegisterMem(
+      void* data_ptr,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
 
   std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs() {
     return input_tensors_;
@@ -69,21 +79,13 @@ class QnnManager {
   static constexpr const char* gpu_library_name_ = "libQnnGpu.so";
   static constexpr const char* dsp_library_name_ = "libQnnDsp.so";
 
-  QnnExecuTorchBackendType backend_type_;
-  std::string library_path_;
-  std::string skel_library_dir_;
-  std::string tensor_dump_output_path_;
-  std::string graph_name_;
-  const SocInfo* soc_info_;
-  const QnnExecuTorchHtpBackendOptions* htp_options_;
-  QnnExecuTorchLogLevel log_level_;
   QnnExecuTorchContextBinary qnn_context_blob_;
   std::unique_ptr<BackendConfigParameters> backend_params_ptr_;
   QnnImplementation qnn_loaded_backend_;
   std::unique_ptr<QnnLogger> logger_;
+  const QnnExecuTorchOptions* options_;
   std::vector<std::shared_ptr<TensorWrapper>> input_tensors_;
   std::vector<std::shared_ptr<TensorWrapper>> output_tensors_;
-  bool online_prepare_;
 };
 } // namespace qnn
 } // namespace executor

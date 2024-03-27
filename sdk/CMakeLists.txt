@@ -50,8 +50,15 @@ foreach(schema_file ${_bundled_input_schema_names})
        "${CMAKE_CURRENT_SOURCE_DIR}/bundled_program/schema/${schema_file}")
 endforeach()
 
+set(FLATCC_TEST OFF CACHE BOOL "")
+set(FLATCC_REFLECTION OFF CACHE BOOL "")
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc
                  ${CMAKE_BINARY_DIR}/third-party/flatcc)
+
+# Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
+# a shared object; recompile with -fPIC" when building on some x86 linux
+# systems.
+set_property(TARGET flatccrt PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # Assume we are cross-compiling and the CMAKE_TOOLCHAIN_FILE is set
 include(ExternalProject)
@@ -67,6 +74,7 @@ ExternalProject_Add(
   PREFIX ${CMAKE_BINARY_DIR}/_host_build
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatcc
   BINARY_DIR ${CMAKE_BINARY_DIR}/_host_build
+  CMAKE_CACHE_ARGS -DFLATCC_TEST:BOOL=OFF -DFLATCC_REFLECTION:BOOL=OFF
   INSTALL_COMMAND "" # Prevent the install step, modify as needed
 )
 
@@ -108,6 +116,22 @@ add_custom_command(
     ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/flatcc -cwr -o
     ${_program_schema__include_dir}/executorch/sdk/etdump
     ${_etdump_schema__srcs}
+  # TODO(dbort): flatcc installs its files directly in its source directory
+  # instead of under CMAKE_BINARY_DIR, and it has no options to avoid
+  # doing this. We build flatcc twice in the executorch build: once to get
+  # the `flatcc` host commandline tool, and once to get the (potentially
+  # cross-compiled) target runtime library. The host build will put its outputs
+  # in the source tree, making the cross-compiling target build think that
+  # the outputs have already been built. It will then try to link against the
+  # host-architecture libraries, failing when cross-compiling. To work around
+  # this, delete the host outputs after running this command (which only runs
+  # when setting up the cmake files, not when actually building). This leaves
+  # room for the target build to put its own files in the source tree. We should
+  # try to remove this hack, ideally by submitting an upstream PR that adds an
+  # option to change the installation location.
+  COMMAND
+    rm -f ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/*
+    ${CMAKE_SOURCE_DIR}/third-party/flatcc/lib/*
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   DEPENDS flatcc_project
   COMMENT "Generating etdump headers"
@@ -118,7 +142,7 @@ add_library(etdump ${CMAKE_CURRENT_SOURCE_DIR}/etdump/etdump_flatcc.cpp
 
 target_link_libraries(
   etdump
-  PUBLIC etdump_schema flatcc
+  PUBLIC etdump_schema flatccrt
   PRIVATE executorch)
 
 add_custom_command(
@@ -148,7 +172,7 @@ target_include_directories(
 
 # Install libraries
 install(
-  TARGETS bundled_program etdump flatcc
+  TARGETS bundled_program etdump flatccrt
   DESTINATION ${CMAKE_BINARY_DIR}/lib
   INCLUDES
   DESTINATION ${_common_include_directories})
