@@ -11,9 +11,6 @@ endif()
 cmake_minimum_required(VERSION 3.19)
 project(qualcomm_runner_example)
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -21,6 +18,13 @@ endif()
 # Source root directory for pytorch.
 if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
+endif()
+
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -41,7 +45,6 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 #
 # The `_<target>_srcs` lists are defined by including ${EXECUTORCH_SRCS_FILE}.
 #
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 set(EXECUTORCH_SRCS_FILE
   "${CMAKE_CURRENT_BINARY_DIR}/../../executorch_srcs.cmake"
 )
@@ -55,7 +58,6 @@ get_filename_component(EXECUTORCH_SOURCE_DIR
 set(_qnn_executor_runner__srcs ${_executor_runner__srcs})
 
 # portable_ops_lib
-include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 gen_selected_ops("" "" "ON")
 generate_bindings_for_kernels(
   FUNCTIONS_YAML ${EXECUTORCH_ROOT}/kernels/portable/functions.yaml

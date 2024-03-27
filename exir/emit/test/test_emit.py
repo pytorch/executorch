@@ -521,8 +521,6 @@ class TestEmit(unittest.TestCase):
         program = to_edge(export(f, x)).to_executorch().executorch_program
         self._assertCallLength(program, 0, 8)
 
-    # Non contiguous tensors are not supported in ExecuTorch
-    @unittest.expectedFailure
     def test_emit_layout(self) -> None:
         class Foo(torch.nn.Module):
             def forward(self, x: torch.Tensor) -> torch.Tensor:
