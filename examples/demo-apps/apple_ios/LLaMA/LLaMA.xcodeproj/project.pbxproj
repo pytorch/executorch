@@ -61,6 +61,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0320439D2BB4AC6600050211 /* LLaMA-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "LLaMA-Info.plist"; sourceTree = "<group>"; };
 		0324D6802BAACB6900DEF36F /* App.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		0324D6812BAACB6900DEF36F /* ContentView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		0324D6822BAACB6900DEF36F /* LogManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LogManager.swift; sourceTree = "<group>"; };
@@ -73,6 +74,7 @@
 		0324D6942BAACB7000DEF36F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0324D6992BAACB7C00DEF36F /* LLaMARunner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LLaMARunner.h; sourceTree = "<group>"; };
 		0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = LLaMARunner.mm; sourceTree = "<group>"; };
+		035A5E942BB4B523001E0553 /* LLaMA.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = LLaMA.entitlements; sourceTree = "<group>"; };
 		036CAF9D2BB1444500D6C2D5 /* LLaMA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LLaMA.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = LLaMARunner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		03729F072BB203B300152F2E /* runner.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = runner.cpp; sourceTree = "<group>"; };
@@ -109,6 +111,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0320439E2BB4AC6600050211 /* SupportingFiles */ = {
+			isa = PBXGroup;
+			children = (
+				0320439D2BB4AC6600050211 /* LLaMA-Info.plist */,
+			);
+			path = SupportingFiles;
+			sourceTree = "<group>";
+		};
 		0324D6892BAACB6900DEF36F /* Application */ = {
 			isa = PBXGroup;
 			children = (
@@ -129,6 +139,7 @@
 			isa = PBXGroup;
 			children = (
 				0324D6892BAACB6900DEF36F /* Application */,
+				0320439E2BB4AC6600050211 /* SupportingFiles */,
 			);
 			path = LLaMA;
 			sourceTree = "<group>";
@@ -174,10 +185,19 @@
 			children = (
 				0324D68A2BAACB6900DEF36F /* LLaMA */,
 				0324D6952BAACB7000DEF36F /* LLaMAAssets */,
+				035A5E952BB4B523001E0553 /* LLaMAEntitlements */,
 				0324D69F2BAACB7C00DEF36F /* LLaMARunner */,
 				036CAF9D2BB1444500D6C2D5 /* LLaMA.app */,
 				03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */,
 			);
+			sourceTree = "<group>";
+		};
+		035A5E952BB4B523001E0553 /* LLaMAEntitlements */ = {
+			isa = PBXGroup;
+			children = (
+				035A5E942BB4B523001E0553 /* LLaMA.entitlements */,
+			);
+			path = LLaMAEntitlements;
 			sourceTree = "<group>";
 		};
 		03729F062BB2035900152F2E /* runner */ = {
@@ -229,9 +249,9 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		032C016E2AC228E6002955E1 /* App */ = {
+		032C016E2AC228E6002955E1 /* LLaMA */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 032C017D2AC228E7002955E1 /* Build configuration list for PBXNativeTarget "App" */;
+			buildConfigurationList = 032C017D2AC228E7002955E1 /* Build configuration list for PBXNativeTarget "LLaMA" */;
 			buildPhases = (
 				032C016B2AC228E6002955E1 /* Sources */,
 				032C016C2AC228E6002955E1 /* Frameworks */,
@@ -243,7 +263,7 @@
 			dependencies = (
 				03729EDA2BB1F8DE00152F2E /* PBXTargetDependency */,
 			);
-			name = App;
+			name = LLaMA;
 			packageProductDependencies = (
 				0395C6D22BB34ED10090705A /* coreml_backend */,
 				0395C6D62BB34ED10090705A /* mps_backend */,
@@ -310,7 +330,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				032C016E2AC228E6002955E1 /* App */,
+				032C016E2AC228E6002955E1 /* LLaMA */,
 				03729ED42BB1F8DE00152F2E /* LLaMARunner */,
 			);
 		};
@@ -512,13 +532,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LLaMAEntitlements/LLaMA.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LLaMA/SupportingFiles/LLaMA-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = iLLaMA;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -542,13 +565,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LLaMAEntitlements/LLaMA.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "LLaMA/SupportingFiles/LLaMA-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = iLLaMA;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -652,7 +678,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		032C017D2AC228E7002955E1 /* Build configuration list for PBXNativeTarget "App" */ = {
+		032C017D2AC228E7002955E1 /* Build configuration list for PBXNativeTarget "LLaMA" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				032C017E2AC228E7002955E1 /* Debug */,
