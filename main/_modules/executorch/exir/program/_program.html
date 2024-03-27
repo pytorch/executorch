@@ -1027,7 +1027,7 @@
     <span class="k">return</span> <span class="n">passes</span>
 
 
-<div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.to_edge">[docs]</a><span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
+<div class="viewcode-block" id="to_edge"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.to_edge">[docs]</a><span class="k">def</span> <span class="nf">to_edge</span><span class="p">(</span>
     <span class="n">programs</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">ExportedProgram</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">ExportedProgram</span><span class="p">]],</span>
     <span class="n">constant_methods</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
     <span class="n">compile_config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">EdgeCompileConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -1103,7 +1103,7 @@
     <span class="k">return</span> <span class="n">EdgeProgramManager</span><span class="p">(</span><span class="n">edge_programs</span><span class="p">,</span> <span class="n">constant_methods</span><span class="p">,</span> <span class="n">config</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager">[docs]</a><span class="k">class</span> <span class="nc">EdgeProgramManager</span><span class="p">:</span>
+<div class="viewcode-block" id="EdgeProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager">[docs]</a><span class="k">class</span> <span class="nc">EdgeProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Edge dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
@@ -1153,13 +1153,13 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
 
-<div class="viewcode-block" id="EdgeProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager.exported_program">[docs]</a>    <span class="k">def</span> <span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<div class="viewcode-block" id="EdgeProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.exported_program">[docs]</a>    <span class="k">def</span> <span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the ExportedProgram specified by &#39;method_name&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_edge_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span></div>
 
-<div class="viewcode-block" id="EdgeProgramManager.transform"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager.transform">[docs]</a>    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span>
+<div class="viewcode-block" id="EdgeProgramManager.transform"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.transform">[docs]</a>    <span class="k">def</span> <span class="nf">transform</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">passes</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">PassType</span><span class="p">]]],</span>
         <span class="n">check_ir_validity</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -1202,7 +1202,7 @@
             <span class="n">new_programs</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span> <span class="n">config</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="EdgeProgramManager.to_backend"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager.to_backend">[docs]</a>    <span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+<div class="viewcode-block" id="EdgeProgramManager.to_backend"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_backend">[docs]</a>    <span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">partitioner</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Partitioner</span><span class="p">,</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Partitioner</span><span class="p">]]</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;EdgeProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1245,7 +1245,7 @@
             <span class="n">new_edge_programs</span><span class="p">,</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="p">),</span> <span class="n">config</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="EdgeProgramManager.to_executorch"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.EdgeProgramManager.to_executorch">[docs]</a>    <span class="k">def</span> <span class="nf">to_executorch</span><span class="p">(</span>
+<div class="viewcode-block" id="EdgeProgramManager.to_executorch"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_executorch">[docs]</a>    <span class="k">def</span> <span class="nf">to_executorch</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">config</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">ExecutorchBackendConfig</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ExecutorchProgramManager&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1301,7 +1301,7 @@
         <span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="ExecutorchProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.ExecutorchProgramManager">[docs]</a><span class="k">class</span> <span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
+<div class="viewcode-block" id="ExecutorchProgramManager"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager">[docs]</a><span class="k">class</span> <span class="nc">ExecutorchProgramManager</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Package of one or more `ExportedPrograms` in Execution dialect. Designed to simplify</span>
 <span class="sd">    lowering to ExecuTorch. See: https://pytorch.org/executorch/stable/ir-exir.html</span>
@@ -1374,13 +1374,13 @@
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_config_methods</span> <span class="k">else</span> <span class="nb">set</span><span class="p">()</span>
 
-<div class="viewcode-block" id="ExecutorchProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.exported_program">[docs]</a>    <span class="k">def</span> <span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+<div class="viewcode-block" id="ExecutorchProgramManager.exported_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.exported_program">[docs]</a>    <span class="k">def</span> <span class="nf">exported_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;forward&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Returns the ExportedProgram specified by &#39;method_name&#39;.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_execution_programs</span><span class="p">[</span><span class="n">method_name</span><span class="p">]</span></div>
 
-<div class="viewcode-block" id="ExecutorchProgramManager.dump_executorch_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#exir.ExecutorchProgramManager.dump_executorch_program">[docs]</a>    <span class="k">def</span> <span class="nf">dump_executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<div class="viewcode-block" id="ExecutorchProgramManager.dump_executorch_program"><a class="viewcode-back" href="../../../../export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.dump_executorch_program">[docs]</a>    <span class="k">def</span> <span class="nf">dump_executorch_program</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">verbose</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Prints the ExecuTorch binary in a human readable format.</span>
 

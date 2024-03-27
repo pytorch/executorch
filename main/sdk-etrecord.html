@@ -459,8 +459,8 @@ they are interested in working with via our tooling.</p>
 <p>Users should do a deepcopy of the output of to_edge() and pass in the deepcopy to the generate_etrecord API. This is needed because the subsequent call, to_executorch(), does an in-place mutation and will lose debug data in the process.</p>
 </div>
 <dl class="py function">
-<dt class="sig sig-object py" id="sdk.etrecord._etrecord.generate_etrecord">
-<span class="sig-prename descclassname"><span class="pre">sdk.etrecord._etrecord.</span></span><span class="sig-name descname"><span class="pre">generate_etrecord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_dialect_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">export_modules</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/sdk/etrecord/_etrecord.html#generate_etrecord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#sdk.etrecord._etrecord.generate_etrecord" title="Permalink to this definition">¶</a></dt>
+<dt class="sig sig-object py" id="executorch.sdk.etrecord._etrecord.generate_etrecord">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.etrecord._etrecord.</span></span><span class="sig-name descname"><span class="pre">generate_etrecord</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">etrecord_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">edge_dialect_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">executorch_program</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">export_modules</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/sdk/etrecord/_etrecord.html#generate_etrecord"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#executorch.sdk.etrecord._etrecord.generate_etrecord" title="Permalink to this definition">¶</a></dt>
 <dd><p>Generates an <cite>ETRecord</cite> from the given objects, serializes it and saves it to the given path.
 The objects that will be serialized to an <cite>ETRecord</cite> are all the graph modules present
 in the <cite>export_modules</cite> dict, the graph module present in the edge dialect program object,
@@ -541,7 +541,7 @@ output of <cite>torch.export()</cite> or <cite>exir.to_edge()</cite>.</p></li>
 <li><a class="reference internal" href="#">Prerequisite | ETRecord - ExecuTorch Record</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#generating-an-etrecord">Generating an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a><ul>
-<li><a class="reference internal" href="#sdk.etrecord._etrecord.generate_etrecord"><code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code></a></li>
+<li><a class="reference internal" href="#executorch.sdk.etrecord._etrecord.generate_etrecord"><code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code></a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#using-an-etrecord">Using an <code class="docutils literal notranslate"><span class="pre">ETRecord</span></code></a></li>

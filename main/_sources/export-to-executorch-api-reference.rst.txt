@@ -1,7 +1,7 @@
 Export to ExecuTorch API Reference
 ----------------------------------
 
-.. automodule:: exir
+.. automodule:: executorch.exir
 .. autofunction:: to_edge
 
 .. autoclass:: EdgeProgramManager
@@ -10,7 +10,7 @@ Export to ExecuTorch API Reference
 .. autoclass:: ExecutorchProgramManager
     :members: methods, config_methods, exported_program, buffer, debug_handle_map, dump_executorch_program
 
-.. automodule:: exir.backend.backend_api
+.. automodule:: executorch.exir.backend.backend_api
 .. autofunction:: to_backend
 
 .. autoclass:: LoweredBackendModule

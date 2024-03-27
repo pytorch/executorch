@@ -476,7 +476,7 @@
 <span class="p">)</span>
 
 
-<div class="viewcode-block" id="LoweredBackendModule"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#exir.backend.backend_api.LoweredBackendModule">[docs]</a><span class="k">class</span> <span class="nc">LoweredBackendModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<div class="viewcode-block" id="LoweredBackendModule"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule">[docs]</a><span class="k">class</span> <span class="nc">LoweredBackendModule</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A subclass of nn.Module that is generated for modules containing</span>
 <span class="sd">    delegated functions. This is can be created by calling `to_backend`.</span>
@@ -560,7 +560,7 @@
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_original_exported_program</span>
 
     <span class="c1"># TODO(chenlai): consolidate the seriailization config with serialize_to_flatbuffer api</span>
-<div class="viewcode-block" id="LoweredBackendModule.buffer"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#exir.backend.backend_api.LoweredBackendModule.buffer">[docs]</a>    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span>
+<div class="viewcode-block" id="LoweredBackendModule.buffer"><a class="viewcode-back" href="../../../export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.buffer">[docs]</a>    <span class="k">def</span> <span class="nf">buffer</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">extract_delegate_segments</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
         <span class="n">segment_alignment</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4096</span><span class="p">,</span>

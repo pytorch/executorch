@@ -956,11 +956,11 @@ can compose this lowered module with another module.
     ExportedProgram:
         class GraphModule(torch.nn.Module):
             def forward(self, arg0_1: "f32[1]", arg1_1: "f32[1]"):
-                # File: /pytorch/executorch/exir/lowered_backend_module.py:336 in forward, code: return executorch_call_delegate(self, *args)
+                # File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:336 in forward, code: return executorch_call_delegate(self, *args)
                 lowered_module_0 = self.lowered_module_0
                 executorch_call_delegate: "f32[1]" = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg1_1);  lowered_module_0 = arg1_1 = None
             
-                # File: /pytorch/executorch/exir/lowered_backend_module.py:336 in forward, code: return executorch_call_delegate(self, *args)
+                # File: /opt/conda/envs/py_3.10/lib/python3.10/site-packages/executorch/exir/lowered_backend_module.py:336 in forward, code: return executorch_call_delegate(self, *args)
                 lowered_module_1 = self.lowered_module_0
                 executorch_call_delegate_1: "f32[1]" = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, executorch_call_delegate);  lowered_module_1 = None
             
@@ -1370,7 +1370,7 @@ Links Mentioned
 
 .. rst-class:: sphx-glr-timing
 
-   **Total running time of the script:** (0 minutes 2.471 seconds)
+   **Total running time of the script:** (0 minutes 2.369 seconds)
 
 
 .. _sphx_glr_download_tutorials_export-to-executorch-tutorial.py:

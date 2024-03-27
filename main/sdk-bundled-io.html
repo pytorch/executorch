@@ -463,6 +463,27 @@
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.config.MethodTestCase.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inputs</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">expected_outputs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span></dt>
+<dd><p class="sd-card-text">Single test case for verifying specific method</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p class="sd-card-text"><strong>input</strong> – <p class="sd-card-text">All inputs required by eager_model with specific inference method for one-time execution.</p>
+<p class="sd-card-text">It is worth mentioning that, although both bundled program and ET runtime apis support setting input
+other than torch.tensor type, only the input in torch.tensor type will be actually updated in
+the method, and the rest of the inputs will just do a sanity check if they match the default value in method.</p>
+</p></li>
+<li><p class="sd-card-text"><strong>expected_output</strong> – Expected output of given input for verification. It can be None if user only wants to use the test case for profiling.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p class="sd-card-text">self</p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
 </details><details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
@@ -471,6 +492,24 @@
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">MethodTestSuite</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">method_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_cases</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/sdk/bundled_program/config.html#MethodTestSuite"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">All test info related to verify method</p>
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">method_name</span></span></dt>
+<dd><p class="sd-card-text">Name of the method to be verified.</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.config.</span></span><span class="sig-name descname"><span class="pre">test_cases</span></span></dt>
+<dd><p class="sd-card-text">All test cases for verifying the method.</p>
+</dd></dl>
+
+</dd></dl>
+
 </div>
 </details><p>Since each model may have multiple inference methods, we need to generate <code class="docutils literal notranslate"><span class="pre">List[MethodTestSuite]</span></code> to hold all essential infos.</p>
 </div>
@@ -501,6 +540,34 @@ Serialize and Deserialize<div class="sd-summary-down docutils">
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">serialize_from_bundled_program_to_flatbuffer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bundled_program</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/sdk/bundled_program/serialize.html#serialize_from_bundled_program_to_flatbuffer"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">Serialize a BundledProgram into FlatBuffer binary format.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p class="sd-card-text"><strong>bundled_program</strong> (<em>BundledProgram</em>) – The <cite>BundledProgram</cite> variable to be serialized.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p class="sd-card-text">The serialized FlatBuffer binary data in bytes.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py">
+<span class="sig-prename descclassname"><span class="pre">executorch.sdk.bundled_program.serialize.</span></span><span class="sig-name descname"><span class="pre">deserialize_from_flatbuffer_to_bundled_program</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">flatbuffer</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="_modules/executorch/sdk/bundled_program/serialize.html#deserialize_from_flatbuffer_to_bundled_program"><span class="viewcode-link"><span class="pre">[source]</span></span></a></dt>
+<dd><p class="sd-card-text">Deserialize a FlatBuffer binary format into a BundledProgram.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p class="sd-card-text"><strong>flatbuffer</strong> (<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#bytes" title="(in Python v3.12)"><em>bytes</em></a>) – The FlatBuffer binary data in bytes.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p class="sd-card-text">A <cite>BundledProgram</cite> instance.</p>
+</dd>
+</dl>
+</dd></dl>
+
 </div>
 </details></div>
 <div class="section" id="emit-example">
