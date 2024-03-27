@@ -514,7 +514,6 @@ class Int8DynActInt4WeightQuantHandler:
         for fqn, mod in self.mod.named_modules():
             if isinstance(mod, torch.nn.Linear):
                 assert not mod.bias
-                out_features = mod.out_features
                 in_features = mod.in_features
                 # print("in features:", in_features, " out features:", out_features)
                 # assert out_features % 8 == 0, "require out_features % 8 == 0"
