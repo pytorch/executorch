@@ -191,10 +191,17 @@ function(resolve_buck2)
     if(resolve_buck2_exit_code EQUAL 0)
       set(BUCK2 ${resolve_buck2_output} PARENT_SCOPE)
       message(STATUS "Resolved buck2 as ${resolve_buck2_output}.")
-    else()
+    elseif(resolve_buck2_exit_code EQUAL 2)
       # Wrong buck version used. Stop here to ensure that the user sees
       # the error.
-      message(FATAL_ERROR "Failed to resolve buck2.")
-      message(FATAL_ERROR ${resolve_buck2_error})
+      message(FATAL_ERROR "Failed to resolve buck2.\n${resolve_buck2_error}")
+    else()
+      # Unexpected failure of the script. Warn.
+      message(WARNING "Failed to resolve buck2.")
+      message(WARNING "${resolve_buck2_error}")
+
+      if("${BUCK2}" STREQUAL "")
+        set(BUCK2 "buck2" PARENT_SCOPE)
+      endif()
     endif()
 endfunction()
