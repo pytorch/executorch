@@ -418,11 +418,6 @@ if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
-endif()
-
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
