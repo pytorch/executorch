@@ -89,17 +89,6 @@ filters = [
 
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
-
-[targets.extension_aot_util]
-buck_targets = [
-  "//extension/aot_util:aot_util",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
-]
 [targets.extension_data_loader]
 buck_targets = [
   "//extension/data_loader:buffer_data_loader",
