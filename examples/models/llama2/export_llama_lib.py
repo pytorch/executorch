@@ -46,6 +46,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 pkg_name = __name__
+verbosity_setting = None
 
 
 def set_pkg_name(name: str) -> None:
@@ -55,6 +56,15 @@ def set_pkg_name(name: str) -> None:
 
 def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
+
+
+def set_verbosity(val):
+    global verbosity_setting
+    verbosity_setting = val
+
+
+def verbose_export():
+    return verbosity_setting
 
 
 @dataclass
@@ -141,7 +151,7 @@ def get_pt2e_quantizers(
                     'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
                     "Set that as TORCH_PACKAGE_DIR.\n"
                     "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DREGISTER_QUANTIZED_OPS=ON ..) && cmake --build . -j16\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DEXECUTORCH_BUILD_QUANTIZED=ON ..) && cmake --build . -j16\n"
                     'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
                     "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
                 )
@@ -240,7 +250,8 @@ def quantize(
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
         model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
-        print("quantized model:", model)
+        if verbose_export():
+            print("quantized model:", model)
         return model
     elif qmode == "8da4w-gptq":
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
@@ -448,7 +459,9 @@ def build_args_parser() -> argparse.ArgumentParser:
 
 def canonical_path(path: str, *, dir: bool = False) -> str:
 
-    print(f"creating canonical path for {path}")
+    if verbose_export():
+        print(f"creating canonical path for {path}")
+
     if not path.startswith("par:"):
         return path
 
@@ -457,7 +470,8 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return path[4:]
     else:
         return_val = pkg_resources.resource_filename(pkg_name, path[4:])
-        print(f"canonical name is: {return_val}")
+        if verbose_export():
+            print(f"canonical name is: {return_val}")
         return return_val
 
 

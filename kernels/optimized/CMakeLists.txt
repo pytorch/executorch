@@ -53,3 +53,5 @@ gen_operators_lib(
   "optimized_ops_lib"
   KERNEL_LIBS optimized_kernels
   DEPS executorch)
+
+install(TARGETS optimized_kernels optimized_ops_lib DESTINATION lib)
