@@ -13,15 +13,6 @@
 # cloning or pulling the upstream repo. Once this is done, you don't need to do
 # it again until you pull from the upstream repo again.
 #
-# NOTE: If your `buck2` binary is not on the PATH, you can change this line to
-# say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.
-#[[
-  (rm -rf cmake-out \
-    && mkdir cmake-out \
-    && cd cmake-out \
-    && cmake -DBUCK2=buck2 ..)
-]]
-#
 # ### Build ###
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
@@ -169,8 +160,9 @@ option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
+  resolve_python_executable()
 endif()
+message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
