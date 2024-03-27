@@ -11,13 +11,13 @@ import PackageDescription
 
 let url = "https://ossci-ios.s3.amazonaws.com/executorch"
 let version = "0.1.0"
-let coreml_sha256 = "a08d3a06f65c6c124214b27de77057832452206625cde36261b4b6a346314802"
-let executorch_sha256 = "ee0c1b870036834f7ac0dbf99fa396990243a96e0939c7d4f0ea341b794dcc38"
-let mps_sha256 = "020fedd9f7670422c132da42ddf3b9307c67f12f85c6928109f1d4885c67b1ca"
-let optimized_sha256 = "e5f3d9814758d79da7547c1936e7a665e305a82e4d6f340e25e41b6b924e45d1"
-let portable_sha256 = "968a8aa09794b69d60c9cfb6c9cfc37c8842a51fd0cafa14f7b7daa4d8e80eea"
-let quantized_sha256 = "e46e4252f5d0f134bf2edbf559ad07c92c49288dfcab21fa7406e1424051de1f"
-let xnnpack_sha256 = "016d4b3f947c267d9ffd4884198730a0f5a5a606d3376addd96e45aaa7a366cc"
+let coreml_sha256 = "e8c5000a389bdc98274aa0b359350a47e6d0cccb8af5efc46f814feac6afaf86"
+let executorch_sha256 = "e6c5d798b614a03ab8a4891caeaa8a7adf8d58ba29e767079321691ec9f1ffb4"
+let mps_sha256 = "3e54e3166b5e739cb3f76b2bc6f7b1982a0401821ab785a93120bacfde4bc1ee"
+let optimized_sha256 = "4d353f44badd321cf29fe548db9d66b493b93c6233a7e023988e256f0eefeaa1"
+let portable_sha256 = "c501f9b644a3e8a7bab62600b7802e4a9752fb789ba4fd02f46bec47858cec07"
+let quantized_sha256 = "4fb5f7216abc0ee16ece91a4bce822b06d67b52ca985c9eecbf9d3f8bd1ea1ba"
+let xnnpack_sha256 = "e610904cfd6e96f8f738c25a7bb4f6d7b86995b2cfeb72fc1f30523630dbb285"
 
 struct Framework {
   let name: String

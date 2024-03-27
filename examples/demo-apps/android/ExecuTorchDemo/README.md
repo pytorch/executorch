@@ -62,15 +62,6 @@ cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/mai
 
 We build the required ExecuTorch runtime library to run the model.
 
-#### Java helper classes
-
-Note: This is an ad-hoc solution. We will publish a formal Java package when it is ready. However, for now we need to copy sources from extension/android/src/main/java/org/pytorch/executorch.
-
-```
-mkdir -p examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/executor
-cp extension/android/src/main/java/org/pytorch/executorch/*.java examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/executor
-```
-
 #### XNNPACK
 
 1. Configure the CMake target for the library with XNNPACK backend:

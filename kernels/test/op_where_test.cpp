@@ -449,3 +449,15 @@ TEST_F(OpWhereOutTest, DynamicShapeUnbound) {
   test_dynamic_shape(
       {1, 1, 1}, torch::executor::TensorShapeDynamism::DYNAMIC_UNBOUND);
 }
+
+TEST_F(OpWhereOutTest, HalfSupport) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Half> tf;
+  Tensor cond = tb.make({2, 3}, {true, false, true, false, true, false});
+  Tensor a = tf.full({2, 3}, 1.5);
+  Tensor b = tf.full({2, 3}, 2.5);
+  Tensor out = tf.zeros({2, 3});
+
+  op_where_self_out(cond, a, b, out);
+  EXPECT_TENSOR_CLOSE(out, tf.make({2, 3}, {1.5, 2.5, 1.5, 2.5, 1.5, 2.5}));
+}

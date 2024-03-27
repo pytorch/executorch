@@ -558,7 +558,7 @@ bool validate_cache_params(
       "start_pos must be less than value cache at dim 1");
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      (start_pos + seq_length) < k_cache.size(1),
+      (start_pos + seq_length) <= k_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
@@ -568,14 +568,14 @@ bool validate_cache_params(
       k_cache.size(1));
 
   ET_LOG_MSG_AND_RETURN_IF_FALSE(
-      (start_pos + seq_length) < v_cache.size(1),
+      (start_pos + seq_length) <= v_cache.size(1),
       "start_post + seq_length must be less than max seq length supported by key cache."
       "start pos: %" PRId64 ", seq_length: %" PRId64
       "."
       "value cache size: %zd",
       start_pos,
       seq_length,
-      v_cache.size(2));
+      v_cache.size(1));
 
   // Make sure they are in contiguous dim order
   ET_LOG_MSG_AND_RETURN_IF_FALSE(

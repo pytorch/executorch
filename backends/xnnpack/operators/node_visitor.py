@@ -5,9 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import ctypes
-import sys
 
-from pathlib import Path
 from typing import cast, Dict, List, Optional, Tuple
 
 import torch
@@ -450,18 +448,6 @@ class NodeVisitor:
             vals_to_ids[quant_params.q_input] = id_out
 
     @staticmethod
-    def find_aot_util_path() -> str:
-        # Look for .so installed by wheel (OSS). TODO(gjcomer) Improve this.
-        rel_path = "executorch/extension/aot_util/libaot_util.so"
-        for sys_path in sys.path:
-            so_path = Path(sys_path) / rel_path
-            if so_path.exists():
-                return str(so_path.absolute().as_posix())
-
-        # Fall back to buck.
-        return "//executorch/extension/aot_util:aot_util"
-
-    @staticmethod
     def convert_to_qc4w(inp: torch.Tensor) -> torch.Tensor:
         """
         Convert a tensor to a quantized channelwise tensor 4bit tensor
@@ -478,37 +464,24 @@ class NodeVisitor:
         # Assuming we have a 2d tensor
         if inp.ndim != 2:
             inp = inp.squeeze()
-            assert (
-                inp.ndim == 2
-            ), f"convert_to_qc4w: expecting input tensor to be 2d, got {inp.ndim}"
-        oc, ic = inp.shape
+        assert (
+            inp.ndim == 2
+        ), f"convert_to_qc4w: expecting input tensor to be 2d, got {inp.ndim}"
 
         # pad ic
-        if ic % 2 != 0:
+        if inp.shape[-1] % 2 != 0:
             inp = F.pad(input=inp, pad=(0, 1, 0, 0), mode="constant", value=0)
+
+        # Shape after padding
+        oc, ic = inp.shape
+        assert ic % 2 == 0, "convert_to_qc4w: expecting ic to be even"
 
         # Adjust inp tensor for zp
         inp = inp.to(dtype=torch.uint8) + 8
 
-        # prepare result tensor
-        ric = int((ic + 1) / 2)
-        result = torch.zeros([oc, ric], dtype=torch.uint8)
-
-        try:
-            aot_path = NodeVisitor.find_aot_util_path()
-            torch.ops.load_library(aot_path)
-            result = torch.ops.xnnpack.convert_to_qc4w(inp)
-        except:
-            # Fallback to python implementation
-            # TODO Warn the user? They might be developing in-tree and didn't install,
-            # in which case, this will be very slow for large models.
-            for o in range(oc):
-                for i in range(ric):
-                    j = 2 * i
-                    result[o][i] = inp[o][j]
-                    result[o][i] += inp[o][j + 1] << 4
-
-        return result
+        # Prepare the Result tensor
+        inp = inp.contiguous().view(-1)
+        return (inp[1::2] << 4 | inp[::2]).view(oc, int(ic / 2))
 
     def get_serialized_buffer_index(
         self,

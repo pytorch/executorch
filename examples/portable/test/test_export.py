@@ -6,31 +6,27 @@
 
 import unittest
 
-from typing import Any, Callable
-
 import torch
 from executorch.examples.models import MODEL_NAME_TO_MODEL
 from executorch.examples.models.model_factory import EagerModelFactory
-
-from executorch.examples.portable.utils import export_to_edge
 
 from executorch.extension.pybindings.portable_lib import (  # @manual
     _load_for_executorch_from_buffer,
 )
 
+from ..utils import export_to_edge
+
 
 class ExportTest(unittest.TestCase):
-    def _assert_eager_lowered_same_result(
+    def collect_executorch_and_eager_outputs(
         self,
         eager_model: torch.nn.Module,
         example_inputs,
-        validation_fn: Callable[[Any, Any], bool],
     ):
         """
-        Asserts that the given model has the same result as the eager mode
-        lowered model, with example_inputs, validated by validation_fn, which
-        takes the eager mode output and ET output, and returns True if they
-        match.
+        Compares the output of the given eager mode PyTorch model with the output
+        of the equivalent executorch model, both provided with example inputs.
+        Returns a tuple containing the outputs of the eager mode model and the executorch mode model.
         """
         eager_model = eager_model.eval()
         model = torch._export.capture_pre_autograd_graph(eager_model, example_inputs)
@@ -45,100 +41,107 @@ class ExportTest(unittest.TestCase):
         with torch.no_grad():
             executorch_output = pte_model.run_method("forward", example_inputs)
 
-        self.assertTrue(validation_fn(eager_output, executorch_output))
+        return (eager_output, executorch_output)
 
-    @staticmethod
-    def validate_tensor_allclose(eager_output, executorch_output, rtol=1e-5, atol=1e-5):
-        result = torch.allclose(
-            eager_output,
-            executorch_output[0],
-            rtol=rtol,
-            atol=atol,
+    def validate_tensor_allclose(
+        self, eager_output, executorch_output, rtol=1e-5, atol=1e-5
+    ):
+        self.assertTrue(
+            isinstance(eager_output, type(executorch_output)),
+            f"Outputs are not of the same type: eager type: {type(eager_output)}, executorch type: {type(executorch_output)}",
         )
-        if not result:
-            print(f"eager output: {eager_output}")
-            print(f"executorch output: {executorch_output}")
-        return result
+        self.assertTrue(
+            len(eager_output) == len(executorch_output),
+            f"len(eager_output)={len(eager_output)}, len(executorch_output)={len(executorch_output)}",
+        )
+        result = True
+        for i in range(len(eager_output)):
+            result = torch.allclose(
+                eager_output[i],
+                executorch_output[i],
+                rtol=rtol,
+                atol=atol,
+            )
+            if not result:
+                print(f"eager output[{i}]: {eager_output[i]}")
+                print(f"executorch output[{i}]: {executorch_output[i]}")
+                break
+        return self.assertTrue(result)
 
     def test_mv3_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["mv3"]
         )
-        eager_model = eager_model.eval()
-
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
+        )
         # TODO(T166083470): Fix accuracy issue
-        self._assert_eager_lowered_same_result(
-            eager_model,
-            example_inputs,
-            lambda x, y: self.validate_tensor_allclose(x, y, rtol=1e-3, atol=1e-5),
+        self.validate_tensor_allclose(
+            eager_output, executorch_output[0], rtol=1e-3, atol=1e-5
         )
 
     def test_mv2_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["mv2"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
         )
+        self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_vit_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["vit"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
         )
+        self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_w2l_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["w2l"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
         )
+        self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_ic3_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["ic3"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
+        )
+        # TODO(T166083470): Fix accuracy issue
+        self.validate_tensor_allclose(
+            eager_output, executorch_output[0], rtol=1e-3, atol=1e-5
         )
 
     def test_resnet18_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["resnet18"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
         )
+        self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_resnet50_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["resnet50"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
         )
+        self.validate_tensor_allclose(eager_output, executorch_output[0])
 
     def test_dl3_export_to_executorch(self):
         eager_model, example_inputs, _ = EagerModelFactory.create_model(
             *MODEL_NAME_TO_MODEL["dl3"]
         )
-        eager_model = eager_model.eval()
-
-        self._assert_eager_lowered_same_result(
-            eager_model, example_inputs, self.validate_tensor_allclose
+        eager_output, executorch_output = self.collect_executorch_and_eager_outputs(
+            eager_model, example_inputs
         )
+        self.validate_tensor_allclose(list(eager_output.values()), executorch_output)
