@@ -1,6 +1,6 @@
-unary_op:
+activation:
   parameter_names_with_default_values:
-    OPERATOR: clamp(X, A, B)
+    OPERATOR: op(X)
     NDIM: 3
     DTYPE: float
   generate_variant_forall:
@@ -10,5 +10,9 @@ unary_op:
       - VALUE: float
         SUFFIX: float
   shader_variants:
-    - NAME: clamp
-      OPERATOR: clamp(X, A, B)
+    - NAME: abs
+      OPERATOR: abs(X)
+    - NAME: sigmoid
+      OPERATOR: 1 / (1 + exp(-1 * X))
+    - NAME: tanh
+      OPERATOR: tanh(clamp(X, -15.0, 15.0))

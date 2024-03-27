@@ -36,9 +36,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.div.Tensor_mode,
             exir_ops.edge.aten.pow.Tensor_Tensor,
             # Activation operators
+            exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.sigmoid.default,
+            exir_ops.edge.aten.tanh.default,
             # Matrix multiplication operators
             exir_ops.edge.aten.mm.default,
             # Pooling operators

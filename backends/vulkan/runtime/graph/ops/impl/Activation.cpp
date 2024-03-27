@@ -61,6 +61,34 @@ void add_clamp_node(
       resize_clamp_node));
 }
 
+void add_activation_node(
+    ComputeGraph& graph,
+    const ValueRef in,
+    const ValueRef out,
+    const std::string& op_name_string) {
+  ValueRef arg = prepack_if_tensor_ref(graph, in);
+
+  vTensor& t_out = graph.get_val(out).toTensor();
+  api::utils::uvec3 global_size = t_out.virtual_extents();
+  api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
+
+  std::stringstream kernel_name;
+  kernel_name << op_name_string;
+  apply_dtype_suffix(kernel_name, t_out);
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+      graph,
+      VK_KERNEL_FROM_STR(kernel_name.str()),
+      global_size,
+      local_size,
+      // Inputs and Outputs
+      {{out, api::MemoryAccessType::WRITE}, {arg, api::MemoryAccessType::READ}},
+      // Shader params buffers
+      {t_out.extents_ubo()},
+      // Resizing
+      resize_clamp_node));
+}
+
 float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
   if (!graph.get_val(val).isNone()) {
     return extract_scalar<float>(graph.get_val(val));
@@ -68,6 +96,11 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
   return max ? std::numeric_limits<float>::infinity()
              : -std::numeric_limits<float>::infinity();
 }
+
+#define DEFINE_ABS_FN(op_name)                                           \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_activation_node(graph, args[0], args[1], "abs");          \
+  }
 
 #define DEFINE_CLAMP_FN(op_name)                                         \
   void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
@@ -85,14 +118,30 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
         graph, args[0], 0, std::numeric_limits<float>::infinity(), args[1]); \
   }
 
+#define DEFINE_SIGMOID_FN(op_name)                                       \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_activation_node(graph, args[0], args[1], "sigmoid");      \
+  }
+
+#define DEFINE_TANH_FN(op_name)                                          \
+  void op_name(ComputeGraph& graph, const std::vector<ValueRef>& args) { \
+    return add_activation_node(graph, args[0], args[1], "tanh");         \
+  }
+
+DEFINE_ABS_FN(abs);
 DEFINE_CLAMP_FN(clamp);
 DEFINE_CLAMP_FN(hardtanh);
 DEFINE_RELU_FN(relu);
+DEFINE_SIGMOID_FN(sigmoid);
+DEFINE_TANH_FN(tanh);
 
 REGISTER_OPERATORS {
+  VK_REGISTER_OP(aten.abs.default, abs);
   VK_REGISTER_OP(aten.clamp.default, clamp);
   VK_REGISTER_OP(aten.hardtanh.default, hardtanh);
   VK_REGISTER_OP(aten.relu.default, relu);
+  VK_REGISTER_OP(aten.sigmoid.default, sigmoid);
+  VK_REGISTER_OP(aten.tanh.default, tanh);
 }
 
 } // namespace vulkan
