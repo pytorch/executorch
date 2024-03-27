@@ -11,7 +11,7 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",
-            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten/util:scalar_type_util",
         ],
         visibility = [
             "@EXECUTORCH_CLIENTS",

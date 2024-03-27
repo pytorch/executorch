@@ -8,6 +8,9 @@
 # install llava from the submodule
 pip install --force-reinstall -e examples/third-party/LLaVA
 
+# not included in the pip install package, but needed in llava
+pip install protobuf
+
 # The deps of llava can have different versions than deps of ExecuTorch.
 # For example, torch version required from llava is older than ExecuTorch.
 # To make both work, recover ExecuTorch's original dependencies by rerunning

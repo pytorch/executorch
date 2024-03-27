@@ -11,7 +11,7 @@ import logging
 from .meta_registrations import *  # noqa
 
 import torch
-from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir import EdgeCompileConfig
 from torch._export import capture_pre_autograd_graph
 from torch.ao.quantization.quantize_pt2e import convert_pt2e, prepare_pt2e
 
@@ -77,14 +77,15 @@ if __name__ == "__main__":
         export_to_edge(
             converted_model_exp,
             example_inputs,
-            EdgeCompileConfig(
+            edge_compile_config=EdgeCompileConfig(
                 _check_ir_validity=False,
             ),
         )
         .transform(
-            [ReplacePT2QuantWithXtensaQuant(), ReplacePT2DequantWithXtensaDequant()]
+            [ReplacePT2QuantWithXtensaQuant(), ReplacePT2DequantWithXtensaDequant()],
+            check_ir_validity=False,
         )
-        .to_executorch(config=ExecutorchBackendConfig(extract_constant_segment=False))
+        .to_executorch()
     )
 
     logging.info(f"Final exported graph:\n{exec_prog.exported_program().graph}")

@@ -215,6 +215,7 @@ env = struct(
     # @lint-ignore BUCKLINT: native and fb_native are explicitly forbidden in fbcode.
     genrule = native.genrule,
     is_oss = True,
+    is_xplat = False,
     patch_deps = _patch_deps,
     patch_cxx_compiler_flags = _patch_cxx_compiler_flags,
     patch_executorch_genrule_cmd = _patch_executorch_genrule_cmd,

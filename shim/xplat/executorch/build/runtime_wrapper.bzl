@@ -29,6 +29,9 @@ use TARGETS files normally. Same for xplat-only directories and BUCK files.
 load(":env_interface.bzl", "env")
 load(":selects.bzl", "selects")
 
+def is_xplat():
+    return env.is_xplat()
+
 def struct_to_json(x):
     return env.struct_to_json(struct(**x))
 
