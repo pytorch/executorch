@@ -60,7 +60,7 @@ set(link_libraries)
 
 if(EXECUTORCH_BUILD_OPTIMIZED)
   list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels
-    portable_kernels)
+  portable_kernels cpublas eigen_blas)
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
