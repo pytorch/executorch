@@ -47,6 +47,12 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
+# This has to be added because android build and maybe others
+# depend on runner as dep and not llama_main
+if (NOT TARGET custom_ops)
+  add_subdirectory(../custom_ops custom_ops)
+endif()
+
 set(llama_runner_deps executorch extension_module extension_data_loader
   custom_ops)
 
