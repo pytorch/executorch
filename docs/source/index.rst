@@ -85,10 +85,7 @@ Topics in this section will help you get started with ExecuTorch.
    :caption: Working with LLMs
    :hidden:
 
-   llm/introduction
-   llm/mobile/index
-   llm/desktop/index
-   llm/advanced-flow/index
+   llm/getting-started
 
 .. toctree::
    :glob:
