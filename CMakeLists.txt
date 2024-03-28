@@ -13,15 +13,6 @@
 # cloning or pulling the upstream repo. Once this is done, you don't need to do
 # it again until you pull from the upstream repo again.
 #
-# NOTE: If your `buck2` binary is not on the PATH, you can change this line to
-# say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.
-#[[
-  (rm -rf cmake-out \
-    && mkdir cmake-out \
-    && cd cmake-out \
-    && cmake -DBUCK2=buck2 ..)
-]]
-#
 # ### Build ###
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
@@ -140,8 +131,6 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT util library" OFF)
-
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
@@ -171,8 +160,9 @@ option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
 if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
+  resolve_python_executable()
 endif()
+message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
@@ -372,10 +362,6 @@ if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   target_compile_options(executor_runner PUBLIC ${_common_compile_options})
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
- endif()
-
 # Add googletest if any test targets should be built
 if(EXECUTORCH_BUILD_GTESTS)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/googletest)
@@ -459,7 +445,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
   find_library(TORCH_PYTHON_LIBRARY torch_python
-               PATHS "${TORCH_INSTALL_PREFIX}/lib")
+              PATHS "${TORCH_INSTALL_PREFIX}/lib")
 
   # compile options for pybind
 
