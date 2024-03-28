@@ -11,21 +11,20 @@ install_executorch_and_backend_lib() {
   echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
   rm -rf cmake-android-out && mkdir cmake-android-out
   ANDROID_NDK=/opt/ndk
-  BUCK2=$(which buck2)
-  FLATC=$(which flatc)
-  cmake -DBUCK2="$BUCK" \
-    -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake \
-    -DANDROID_ABI=arm64-v8a \
+  BUCK2=buck2
+  FLATC=flatc
+  cmake -DBUCK2="${BUCK2}" \
+    -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
+    -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_ENABLE_LOGGING=1 \
     -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DPYTHON_EXECUTABLE=python \
     -DEXECUTORCH_BUILD_OPTIMIZED=ON \
     -DXNNPACK_ENABLE_ARM_BF16=OFF \
+    -DFLATC_EXECUTABLE="${FLATC}" \
     -Bcmake-android-out .
 
   cmake --build cmake-android-out -j16 --target install --config Release
