@@ -301,14 +301,8 @@ class Attention(nn.Module):
         v = v.repeat_interleave(self.n_rep, dim=1)
 
         assert hasattr(self, "mask")
-        mask = self.mask[:seqlen, :seqlen]
 
-        # this is needed to support xnnpack which requires mask shape to be 2d.
-        # this is a temporary workaround. once we update xnnpack we should be able to handle this.
-        # shape before: [1, 1, l, s], after: [l, s]
-        # we make sure to specify the dimensions to be squeezed [0, 1] to ensure that the output
-        # tensor will be 2-dimensional, regarldess of the values of l & s
-        mask = torch.squeeze(mask, [0, 1])
+        mask = self.mask[:seqlen, :seqlen]
 
         output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
 
