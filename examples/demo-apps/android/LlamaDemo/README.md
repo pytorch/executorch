@@ -1,6 +1,6 @@
 # Welcome to the ExecuTorch LLaMA Android Demo App
 
-This app demonstrates the use of the LLaMA chat app demostrating local inference use case with ExecuTorch.
+This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.
 
 ::::{grid} 2
 :::{grid-item-card}  What you will learn
@@ -92,7 +92,7 @@ cp cmake-out/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${AN
 2. Run the app (^R).
 
 On the phone or emulator, you can try running the model:
-<img src="_static/img/android_llama_app.png" alt="Android LLaMA App" /><br>
+<img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br>
 
 ## Takeaways
 Through this tutorial we've learnt how to build the ExecuTorch LLAMA library with XNNPACK backend, and expose it to JNI layer to build the Android app.
