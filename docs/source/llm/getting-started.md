@@ -32,3 +32,5 @@ In some cases, it is necessary to write custom kernels or import them from anoth
 ## How to build Mobile Apps
 
 Here's how to finally build a mobile app on Android and iOS. TODO
+
+For Android demo app build, please see [this tutorial](./llama-demo-android.md).
