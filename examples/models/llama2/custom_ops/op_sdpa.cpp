@@ -16,6 +16,7 @@
 #include <executorch/runtime/core/exec_aten/util/scalar_type_util.h>
 
 #include <array>
+#include <vector>
 
 #ifdef ET_USE_THREADPOOL
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
