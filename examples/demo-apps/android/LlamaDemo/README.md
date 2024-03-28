@@ -29,11 +29,10 @@ export FLATC=<path_to_flatc_executable>
 3. Create a new directory for the CMake build output:
 ```
 mkdir cmake-out
-pushd cmake-out
 ```
 4. Run the following command to configure the CMake build:
 ```
-cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
+cmake . -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DBUCK2="${BUCK2}" \
@@ -41,28 +40,28 @@ cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DEXECUTORCH_BUILD_FLATC=OFF \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DFLATC_EXECUTABLE="${FLATC}" \
-  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+  -Bcmake-out
 
-cmake --build . -j16 --target install
+cmake --build cmake-out -j16 --target install
 
-cmake ../examples/models/llama2 -DBUCK2="$BUCK" \
+cmake examples/models/llama2 -DBUCK2="$BUCK" \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX=cmake-out \
-         -Bexamples/models/llama2
+         -Bcmake-out/examples/models/llama2
 
-cmake --build examples/models/llama2 -j16
+cmake --build cmake-out/examples/models/llama2 -j16
 
-cmake ../extension/android -DBUCK2="${BUCK2}" \
+cmake extension/android -DBUCK2="${BUCK2}" \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
-  -Bextension/android
+  -Bcmake-out/extension/android
 
-cmake --build extension/android -j16
-
-popd
+cmake --build cmake-out/extension/android -j16
 ```
 
 5. Copy the built library to your app:
