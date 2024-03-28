@@ -72,28 +72,35 @@ bool check_same_memory_layout(
   return (t1.gpu_memory_layout() == t3.gpu_memory_layout());
 }
 
-bool check_broadcastable(const vTensor& t1, const vTensor& t2) {
-  size_t ndim = std::max(t1.sizes().size(), t2.sizes().size());
+//
+// Broadcast flag functions
+//
 
-  // Match the sizes in reverse because sizes are in NCHW order
-  for (int i = -1; i >= -ndim; --i) {
-    int64_t t1_size = api::utils::val_at(i, t1.sizes());
-    int64_t t2_size = api::utils::val_at(i, t2.sizes());
-    // If the sizes are not equal, one of them must be 1
-    if (t1_size != t2_size) {
-      if (t1_size > 1 && t2_size != 1) {
-        return false;
-      } else if (t2_size > 1 && t1_size != 1) {
-        return false;
-      }
-    }
+bool is_packed_dim_broadcasted(const vTensor& sndr, const vTensor& rcvr) {
+  // We assume that the tensors are broadcastable. If values aren't equal at
+  // some index, then the value of rcvr is 1 and hence should be broadcasted.
+  switch (sndr.gpu_memory_layout()) {
+    case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
+      return api::utils::val_at(-3, sndr.sizes()) >
+          api::utils::val_at(-3, rcvr.sizes());
+    case api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED:
+      return api::utils::val_at(-2, sndr.sizes()) >
+          api::utils::val_at(-2, rcvr.sizes());
+    case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
+      return api::utils::val_at(-1, sndr.sizes()) >
+          api::utils::val_at(-1, rcvr.sizes());
   }
+}
 
-  return true;
+api::utils::ivec2 create_broadcast_params(
+    const vTensor& t1,
+    const vTensor& t2) {
+  return api::utils::make_ivec2(
+      {is_packed_dim_broadcasted(t2, t1), is_packed_dim_broadcasted(t1, t2)});
 }
 
 //
-// Work Group Size Calculation Utilities
+// Work group size calculation functions
 //
 
 api::utils::uvec3 adaptive_work_group_size(

@@ -24,13 +24,9 @@ from torch.utils._pytree import tree_flatten
 
 
 executorch_call_delegate = HigherOrderOperator("executorch_call_delegate")
-# pyre-ignore
 executorch_call_delegate.fallthrough(torch._C.DispatchKey.PythonDispatcher)
-# pyre-ignore
 executorch_call_delegate.fallthrough(torch._C.DispatchKey.PythonTLSSnapshot)
 executorch_call_delegate.fallthrough(torch._C.DispatchKey.ADInplaceOrView)
-executorch_call_delegate.fallthrough(torch._C.DispatchKey.BackendSelect)
-# pyre-ignore
 executorch_call_delegate.fallthrough(torch._C.DispatchKey.AutocastCPU)
 
 LOWERED_BACKEND_MODULE_TYPE = "LoweredBackendModule"

@@ -16,7 +16,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class BatchNorm(NodeVisitor):
-    target = "aten._native_batch_norm_legit_no_training.default"
+    target = ["aten._native_batch_norm_legit_no_training.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

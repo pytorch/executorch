@@ -154,8 +154,10 @@ def resolve_buck2(args: argparse.Namespace) -> Union[str, int]:
             )
 
             # Return an error, since the build will fail later. This lets us
-            # give the user a more useful error message.
-            return -1
+            # give the user a more useful error message. Note that an exit
+            # code of 2 allows us to distinguish from an unexpected error,
+            # such as a failed import, which exits with 1.
+            return 2
     else:
         # Look for system buck2 and check version. Note that this can return
         # None.

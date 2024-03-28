@@ -20,12 +20,14 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
 if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
+  resolve_python_executable()
 endif()
 
 if(NOT FLATC_EXECUTABLE)

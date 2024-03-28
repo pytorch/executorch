@@ -26,7 +26,7 @@ In `BundledProgram`, we create two new classes, `MethodTestCase` and `MethodTest
 :::{dropdown} `MethodTestCase`
 
 ```{eval-rst}
-.. autofunction:: bundled_program.config.MethodTestCase.__init__
+.. autofunction:: executorch.sdk.bundled_program.config.MethodTestCase.__init__
     :noindex:
 ```
 :::
@@ -34,7 +34,7 @@ In `BundledProgram`, we create two new classes, `MethodTestCase` and `MethodTest
 :::{dropdown} `MethodTestSuite`
 
 ```{eval-rst}
-.. autofunction:: bundled_program.config.MethodTestSuite
+.. autofunction:: executorch.sdk.bundled_program.config.MethodTestSuite
     :noindex:
 ```
 :::
@@ -49,7 +49,7 @@ We provide `create_bundled_program` API under `executorch/sdk/bundled_program/co
 :::{dropdown} `BundledProgram`
 
 ```{eval-rst}
-.. currentmodule:: bundled_program.core
+.. currentmodule:: executorch.sdk.bundled_program.core
 .. autofunction:: create_bundled_program
     :noindex:
 ```
@@ -66,13 +66,13 @@ To serialize `BundledProgram` to make runtime APIs use it, we provide two APIs, 
 :::{dropdown} Serialize and Deserialize
 
 ```{eval-rst}
-.. currentmodule:: bundled_program.serialize
+.. currentmodule:: executorch.sdk.bundled_program.serialize
 .. autofunction:: serialize_from_bundled_program_to_flatbuffer
     :noindex:
 ```
 
 ```{eval-rst}
-.. currentmodule:: bundled_program.serialize
+.. currentmodule:: executorch.sdk.bundled_program.serialize
 .. autofunction:: deserialize_from_flatbuffer_to_bundled_program
     :noindex:
 ```

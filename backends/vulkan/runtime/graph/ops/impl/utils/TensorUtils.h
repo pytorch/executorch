@@ -47,10 +47,14 @@ bool check_same_memory_layout(
     const vTensor& t2,
     const vTensor& t3);
 
-bool check_broadcastable(const vTensor& t1, const vTensor& t2);
+//
+// Broadcast flag functions
+//
+
+api::utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2);
 
 //
-// Work Group Size Calculation Utilities
+// Work group size calculation functions
 //
 
 api::utils::uvec3 adaptive_work_group_size(

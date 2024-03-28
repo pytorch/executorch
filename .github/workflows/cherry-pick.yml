@@ -46,7 +46,7 @@ jobs:
         run: |
           set -ex
 
-          python ./third-party/pytorch/.github/scripts/cherry_pick.py \
+          python .github/scripts/cherry_pick.py \
             --onto-branch "${BRANCH}" \
             --classification "${CLASSIFICATION}" \
             --fixes "${FIXES}" \
