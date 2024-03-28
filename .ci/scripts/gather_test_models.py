@@ -13,6 +13,54 @@ from typing import Any
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.xnnpack import MODEL_NAME_TO_OPTIONS
 
+# MODEL_NAME_TO_MODEL = {
+#     "mul": ("toy_model", "MulModule"),
+#     "linear": ("toy_model", "LinearModule"),
+#     "add": ("toy_model", "AddModule"),
+#     "add_mul": ("toy_model", "AddMulModule"),
+#     "softmax": ("toy_model", "SoftmaxModule"),
+#     "dl3": ("deeplab_v3", "DeepLabV3ResNet50Model"),
+#     "edsr": ("edsr", "EdsrModel"),
+#     "emformer_transcribe": ("emformer_rnnt", "EmformerRnntTranscriberModel"),
+#     "emformer_predict": ("emformer_rnnt", "EmformerRnntPredictorModel"),
+#     "emformer_join": ("emformer_rnnt", "EmformerRnntJoinerModel"),
+#     "llama2": ("llama2", "Llama2Model"),
+#     "mobilebert": ("mobilebert", "MobileBertModelExample"),
+#     "mv2": ("mobilenet_v2", "MV2Model"),
+#     "mv2_untrained": ("mobilenet_v2", "MV2UntrainedModel"),
+#     "mv3": ("mobilenet_v3", "MV3Model"),
+#     "vit": ("torchvision_vit", "TorchVisionViTModel"),
+#     "w2l": ("wav2letter", "Wav2LetterModel"),
+#     "ic3": ("inception_v3", "InceptionV3Model"),
+#     "ic4": ("inception_v4", "InceptionV4Model"),
+#     "resnet18": ("resnet", "ResNet18Model"),
+#     "resnet50": ("resnet", "ResNet50Model"),
+#     "llava_encoder": ("llava_encoder", "LlavaModel"),
+# }
+
+# from dataclasses import dataclass
+# @dataclass
+# class XNNPACKOptions(object):
+#     quantization: bool
+#     delegation: bool
+#
+# MODEL_NAME_TO_OPTIONS = {
+#     "linear": XNNPACKOptions(True, True),
+#     "add": XNNPACKOptions(True, True),
+#     "add_mul": XNNPACKOptions(True, True),
+#     "dl3": XNNPACKOptions(True, True),
+#     "ic3": XNNPACKOptions(True, True),
+#     "ic4": XNNPACKOptions(True, True),
+#     "mv2": XNNPACKOptions(True, True),
+#     "mv3": XNNPACKOptions(True, True),
+#     "resnet18": XNNPACKOptions(True, True),
+#     "resnet50": XNNPACKOptions(True, True),
+#     "vit": XNNPACKOptions(False, True),
+#     "w2l": XNNPACKOptions(False, True),
+#     "edsr": XNNPACKOptions(True, True),
+#     "mobilebert": XNNPACKOptions(False, True),  # T170286473
+#     "llama2": XNNPACKOptions(False, True),
+# }
 
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
@@ -24,6 +72,7 @@ CUSTOM_RUNNERS = {
         "w2l": "linux.12xlarge",
         "ic4": "linux.12xlarge",
         "resnet50": "linux.12xlarge",
+        "llava_encoder": "linux.4xlarge",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",
@@ -83,9 +132,17 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit"]
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "llava_encoder"]
     return True
 
+def model_should_run_on_target_os(model: str, target_os: str) -> bool:
+    """
+    A helper function to decide whether a model should be tested on a target os (linux/macos).
+    For example, a big model can be disabled in macos due to the limited macos resources.
+    """
+    if target_os == "macos":
+        return model not in ["llava_encoder",]
+    return True
 
 def export_models_for_ci() -> dict[str, dict]:
     """
@@ -117,6 +174,9 @@ def export_models_for_ci() -> dict[str, dict]:
         MODEL_NAME_TO_MODEL.keys(), ["portable", "xnnpack"]
     ):
         if not model_should_run_on_event(name, event):
+            continue
+
+        if not model_should_run_on_target_os(name, target_os):
             continue
 
         if backend == "xnnpack":
