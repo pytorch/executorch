@@ -5,16 +5,17 @@
 <!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
 <!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
 <head>
+<meta name="robots" content="noindex">
   <meta charset="utf-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Customization examples &mdash; ExecuTorch main documentation</title>
+  <title>Getting Started with LLMs via ExecuTorch &mdash; ExecuTorch main documentation</title>
   
 
   
   
-    <link rel="shortcut icon" href="../../_static/ExecuTorch-Logo-cropped.svg"/>
+    <link rel="shortcut icon" href="../_static/ExecuTorch-Logo-cropped.svg"/>
   
   
   
@@ -27,22 +28,22 @@
 
   
 
-  <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
-  <!-- <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" /> -->
-  <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/sg_gallery.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/sg_gallery-binder.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/sg_gallery-dataframe.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/sg_gallery-rendered-html.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
-  <link rel="stylesheet" href="../../_static/progress-bar.css" type="text/css" />
-    <link rel="index" title="Index" href="../../genindex.html" />
-    <link rel="search" title="Search" href="../../search.html" />
-    <link rel="next" title="Validating other models" href="validating-other-models.html" />
-    <link rel="prev" title="Getting Started with LLMs via ExecuTorch" href="getting-started.html" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <!-- <link rel="stylesheet" href="../_static/pygments.css" type="text/css" /> -->
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-binder.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-dataframe.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/sg_gallery-rendered-html.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Exporting to ExecuTorch Tutorial" href="../tutorials/export-to-executorch-tutorial.html" />
+    <link rel="prev" title="Building with CMake" href="../runtime-build-and-cross-compilation.html" />
 
 
   <!-- Google Tag Manager -->
@@ -56,16 +57,16 @@
 
 
   
-  <script src="../../_static/js/modernizr.min.js"></script>
+  <script src="../_static/js/modernizr.min.js"></script>
 
   <!-- Preload the theme fonts -->
 
-<link rel="preload" href="../../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="../../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="../../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="../../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="../../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
-<link rel="preload" href="../../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-book.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-bold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/FreightSans/freight-sans-medium-italic.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<link rel="preload" href="../_static/fonts/IBMPlexMono/IBMPlexMono-SemiBold.woff2" as="font" type="font/woff2" crossorigin="anonymous">
 
 <!-- Preload the katex fonts -->
 
@@ -247,7 +248,7 @@
 
 
 <div role="search">
-  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search Docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
@@ -263,100 +264,100 @@
          
               <p class="caption" role="heading"><span class="caption-text">Introduction</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../intro-overview.html">ExecuTorch Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../concepts.html">ExecuTorch Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../intro-how-it-works.html">How ExecuTorch Works</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../intro-overview.html">ExecuTorch Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../concepts.html">ExecuTorch Concepts</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../intro-how-it-works.html">How ExecuTorch Works</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Getting Started</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../getting-started-setup.html">Setting Up ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-architecture.html">High-level Architecture and Components of ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting-started-setup.html">Setting Up ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="../introduction.html">Introduction</a></li>
-<li class="toctree-l1 current"><a class="reference internal" href="index.html">Enabling LLMs on Mobile</a><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="benchmarks.html">Mobile Benchmarks for Local Llama</a></li>
-<li class="toctree-l2"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
-<li class="toctree-l2 current"><a class="current reference internal" href="#">Customization examples</a></li>
-<li class="toctree-l2"><a class="reference internal" href="validating-other-models.html">Validating other models</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#simple-hello-world-llm-example">Simple “Hello World” LLM example</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#use-mobile-acceleration">Use Mobile Acceleration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#debugging-and-profiling">Debugging and Profiling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-use-custom-kernels">How to use custom kernels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to build Mobile Apps</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="../desktop/index.html">Enabling LLMs on Desktop</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../advanced-flow/index.html">Enabling LLMs on Advanced Flow</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-qualcomm-ai-engine-direct-backend.html">Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../build-run-xtensa.html">Building and Running ExecuTorch on Xtensa HiFi4 DSP</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Exporting to ExecuTorch</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../export-overview.html">Exporting to ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-overview.html">Exporting to ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../export-to-executorch-api-reference.html">Export to ExecuTorch API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../executorch-runtime-api-reference.html">ExecuTorch Runtime API Reference</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">IR Specification</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../ir-exir.html">Export IR Specification</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ir-exir.html">Export IR Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../compiler-backend-dialect.html">Backend Dialect</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../compiler-memory-planning.html">Memory Planning</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../runtime-overview.html">ExecuTorch Runtime Overview</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../portable-cpp-programming.html">Portable C++ Programming</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-overview.html">ExecuTorch Runtime Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../quantization-overview.html">Quantization Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../quantization-overview.html">Quantization Overview</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../native-delegates-executorch-xnnpack-delegate.html">ExecuTorch XNNPACK delegate</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backend-delegates-integration.html">Integrating a Backend Delegate into ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../../sdk-tutorial.html">SDK usage tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-etdump.html">Prerequisite | ETDump - ExecuTorch Dump</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-inspector.html">Inspector APIs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-delegate-integration.html">SDK Delegate Integration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
 
          
@@ -389,7 +390,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="../../index.html">
+        <a href="../index.html">
           
             Docs
           
@@ -397,15 +398,13 @@
       </li>
 
         
-          <li><a href="index.html">Enabling LLMs on Mobile</a> &gt;</li>
-        
-      <li>Customization examples</li>
+      <li>Getting Started with LLMs via ExecuTorch</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="../../_sources/llm/mobile/customization-examples.md.txt" rel="nofollow"><img src="../../_static/images/view-page-source-icon.svg"></a>
+            <a href="../_sources/llm/getting-started.md.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -437,19 +436,39 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="customization-examples">
-<h1>Customization examples<a class="headerlink" href="#customization-examples" title="Permalink to this heading">¶</a></h1>
-<div class="section" id="custom-tokenization">
-<h2>Custom tokenization<a class="headerlink" href="#custom-tokenization" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="getting-started-with-llms-via-executorch">
+<h1>Getting Started with LLMs via ExecuTorch<a class="headerlink" href="#getting-started-with-llms-via-executorch" title="Permalink to this heading">¶</a></h1>
+<p>This section provides guidance on enabling Large Language Models (LLMs), starting with a simple example and gradually introducing new concepts to improve performance and productivity.</p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>To run this tutorial, you’ll first need to first <a class="reference internal" href="../getting-started-setup.html"><span class="doc std std-doc">Set up your ExecuTorch environment</span></a>.</p></li>
+<li><p>We highly suggest you to check out <span class="xref myst">LLama2 README</span> in our examples for end-to-end Llama2 mobile demo.</p></li>
+</ul>
 </div>
-<div class="section" id="custom-sampler">
-<h2>Custom sampler<a class="headerlink" href="#custom-sampler" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="simple-hello-world-llm-example">
+<h2>Simple “Hello World” LLM example<a class="headerlink" href="#simple-hello-world-llm-example" title="Permalink to this heading">¶</a></h2>
+<p>Let’s create a simple LLM app from scratch. TODO</p>
 </div>
-<div class="section" id="speculative-decoding">
-<h2>Speculative decoding<a class="headerlink" href="#speculative-decoding" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="quantization">
+<h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
+<p>Most LLMs are too large to fit into a mobile phone, making quantization necessary. In this example, we will demonstrate how to use the XNNPACKQuantizer to quantize the model and run it on a CPU. TODO</p>
 </div>
-<div class="section" id="modify-a-mobile-app-to-use-a-different-llm-model">
-<h2>Modify a mobile app to use a different LLM model<a class="headerlink" href="#modify-a-mobile-app-to-use-a-different-llm-model" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="use-mobile-acceleration">
+<h2>Use Mobile Acceleration<a class="headerlink" href="#use-mobile-acceleration" title="Permalink to this heading">¶</a></h2>
+<p>One of the benefits of ExecuTorch is the ability to delegate to mobile accelerators. Now, we will show a few examples of how to easily take advantage of mobile accelerators. TODO</p>
+</div>
+<div class="section" id="debugging-and-profiling">
+<h2>Debugging and Profiling<a class="headerlink" href="#debugging-and-profiling" title="Permalink to this heading">¶</a></h2>
+<p>It is sometimes necessary to profile and inspect the execution process. In this example, we will demonstrate how the ExecuTorch SDK can be used to identify which operations are being executed on which hardware.  TODO</p>
+</div>
+<div class="section" id="how-to-use-custom-kernels">
+<h2>How to use custom kernels<a class="headerlink" href="#how-to-use-custom-kernels" title="Permalink to this heading">¶</a></h2>
+<p>In some cases, it is necessary to write custom kernels or import them from another source in order to achieve the desired performance. In this example, we will demonstrate how to use the <code class="docutils literal notranslate"><span class="pre">kvcache_with_sdpa</span></code> kernel.</p>
+</div>
+<div class="section" id="how-to-build-mobile-apps">
+<h2>How to build Mobile Apps<a class="headerlink" href="#how-to-build-mobile-apps" title="Permalink to this heading">¶</a></h2>
+<p>Here’s how to finally build a mobile app on Android and iOS. TODO</p>
 </div>
 </div>
 
@@ -461,10 +480,10 @@
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="validating-other-models.html" class="btn btn-neutral float-right" title="Validating other models" accesskey="n" rel="next">Next <img src="../../_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="../tutorials/export-to-executorch-tutorial.html" class="btn btn-neutral float-right" title="Exporting to ExecuTorch Tutorial" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
       
       
-        <a href="getting-started.html" class="btn btn-neutral" title="Getting Started with LLMs via ExecuTorch" accesskey="p" rel="prev"><img src="../../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+        <a href="../runtime-build-and-cross-compilation.html" class="btn btn-neutral" title="Building with CMake" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -498,11 +517,14 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Customization examples</a><ul>
-<li><a class="reference internal" href="#custom-tokenization">Custom tokenization</a></li>
-<li><a class="reference internal" href="#custom-sampler">Custom sampler</a></li>
-<li><a class="reference internal" href="#speculative-decoding">Speculative decoding</a></li>
-<li><a class="reference internal" href="#modify-a-mobile-app-to-use-a-different-llm-model">Modify a mobile app to use a different LLM model</a></li>
+<li><a class="reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#simple-hello-world-llm-example">Simple “Hello World” LLM example</a></li>
+<li><a class="reference internal" href="#quantization">Quantization</a></li>
+<li><a class="reference internal" href="#use-mobile-acceleration">Use Mobile Acceleration</a></li>
+<li><a class="reference internal" href="#debugging-and-profiling">Debugging and Profiling</a></li>
+<li><a class="reference internal" href="#how-to-use-custom-kernels">How to use custom kernels</a></li>
+<li><a class="reference internal" href="#how-to-build-mobile-apps">How to build Mobile Apps</a></li>
 </ul>
 </li>
 </ul>
@@ -519,25 +541,25 @@
   
 
      
-       <script type="text/javascript" id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
-         <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
-         <script src="../../_static/jquery.js"></script>
-         <script src="../../_static/underscore.js"></script>
-         <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
-         <script src="../../_static/doctools.js"></script>
-         <script src="../../_static/sphinx_highlight.js"></script>
-         <script src="../../_static/clipboard.min.js"></script>
-         <script src="../../_static/copybutton.js"></script>
-         <script src="../../_static/design-tabs.js"></script>
-         <script src="../../_static/js/progress-bar.js"></script>
+       <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+         <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+         <script src="../_static/jquery.js"></script>
+         <script src="../_static/underscore.js"></script>
+         <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+         <script src="../_static/doctools.js"></script>
+         <script src="../_static/sphinx_highlight.js"></script>
+         <script src="../_static/clipboard.min.js"></script>
+         <script src="../_static/copybutton.js"></script>
+         <script src="../_static/design-tabs.js"></script>
+         <script src="../_static/js/progress-bar.js"></script>
      
 
   
 
-  <script type="text/javascript" src="../../_static/js/vendor/popper.min.js"></script>
-  <script type="text/javascript" src="../../_static/js/vendor/bootstrap.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/popper.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/bootstrap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/list.js/1.5.0/list.min.js"></script>
-  <script type="text/javascript" src="../../_static/js/theme.js"></script>
+  <script type="text/javascript" src="../_static/js/theme.js"></script>
 
   <script type="text/javascript">
       jQuery(function () {
@@ -708,7 +730,7 @@ for (var i = 0; i < menuItems.length; i++) {
   <div class="cookie-banner-wrapper">
   <div class="container">
     <p class="gdpr-notice">To analyze traffic and optimize your experience, we serve cookies on this site. By clicking or navigating, you agree to allow our usage of cookies. As the current maintainers of this site, Facebook’s Cookies Policy applies. Learn more, including about available controls: <a href="https://www.facebook.com/policies/cookies/">Cookies Policy</a>.</p>
-    <img class="close-button" src="../../_static/images/pytorch-x.svg">
+    <img class="close-button" src="../_static/images/pytorch-x.svg">
   </div>
 </div>
 
@@ -844,7 +866,7 @@ for (var i = 0; i < menuItems.length; i++) {
 
   <!-- End Mobile Menu -->
 
-  <script type="text/javascript" src="../../_static/js/vendor/anchor.min.js"></script>
+  <script type="text/javascript" src="../_static/js/vendor/anchor.min.js"></script>
 
   <script type="text/javascript">
     $(document).ready(function() {
