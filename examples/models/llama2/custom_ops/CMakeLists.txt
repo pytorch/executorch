@@ -49,6 +49,8 @@ set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(custom_ops_libs extension_module)
 list(APPEND custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
+list(APPEND custom_ops_libs cpublas)
+list(APPEND custom_ops_libs eigen_blas)
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in optimized.yaml
@@ -65,7 +67,7 @@ add_library(custom_ops ${_custom_ops__srcs})
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
 target_include_directories(custom_ops PRIVATE
   "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
-target_link_libraries(custom_ops PRIVATE ${custom_ops_libs})
+target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
 
 target_compile_options(custom_ops PUBLIC ${_common_compile_options}
   -DET_USE_THREADPOOL)
