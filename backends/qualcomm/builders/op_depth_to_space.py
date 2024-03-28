@@ -17,7 +17,7 @@ from .qnn_constants import OpDepthToSpace, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class DepthToSpaceVisitor(NodeVisitor):
-    target = "aten.pixel_shuffle.default"
+    target = ["aten.pixel_shuffle.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
