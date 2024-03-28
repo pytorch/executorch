@@ -71,7 +71,6 @@ if [ "$BUILD_AARCH64" = true ]; then
         -DCMAKE_INSTALL_PREFIX=$BUILD_ROOT \
         -DEXECUTORCH_BUILD_QNN=ON \
         -DEXECUTORCH_BUILD_SDK=ON \
-        -DFLATCC_TEST=OFF \
         -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
         -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
