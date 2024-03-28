@@ -26,7 +26,7 @@ concurrency:
 jobs:
   test-demo-ios:
     name: test-demo-ios
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
@@ -52,7 +52,7 @@ jobs:
 
   build-frameworks-ios:
     name: build-frameworks-ios
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     with:
       runner: macos-latest-xlarge
       python-version: '3.11'
