@@ -99,17 +99,6 @@ jobs:
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
         ) done
 
-        # Build Debug iOS Frameworks
-        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --coreml --mps --optimized --portable --quantized --xnnpack --Debug
-
-        # Bundle Debug iOS Frameworks
-        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cd cmake-out && \
-          mv "${FRAMEWORK}.xcframework" "{FRAMEWORK}_debug.xcframework" && \
-          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}_debug-${VERSION}.zip" "${FRAMEWORK}_debug.xcframework"
-        ) done
-
         popd
 
   upload-frameworks-ios:
