@@ -40,5 +40,11 @@ if(CMAKE_TOOLCHAIN_ANDROID)
     target_link_libraries(executorch_llama_jni vulkan_executor_runner_lib)
   endif()
 
+  if(EXECUTORCH_BUILD_OPTIMIZED)
+    target_link_libraries(executorch_llama_jni optimized_native_cpu_ops_lib
+    optimized_kernels cpublas eigen_blas)
+    target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+  endif()
+
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
 endif()

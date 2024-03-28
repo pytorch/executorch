@@ -14,11 +14,19 @@ build_executorch() {
   python -m examples.xnnpack.aot_compiler --model_name="${MODEL_NAME}" --delegate
 
   ASSETS_DIR=examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
+  ANDROID_NDK_VERSION=android-ndk-r26c
+  ANDROID_NDK_URL=https://dl.google.com/android/repository/
+  DOWNLOAD_LINK="${ANDROID_NDK_URL}${ANDROID_NDK_VERSION}-linux.zip"
+  pushd /tmp/
+  wget ${DOWNLOAD_LINK}
+  unzip "${ANDROID_NDK_VERSION}-linux.zip"
+  popd
+
   mkdir -p "${ASSETS_DIR}"
   cp "${MODEL_NAME}_xnnpack_fp32.pte" "${ASSETS_DIR}"
 
   rm -rf cmake-out && mkdir cmake-out
-  ANDROID_NDK=/opt/ndk BUCK2=$(which buck2) FLATC=$(which flatc) ANDROID_ABI=arm64-v8a \
+  ANDROID_NDK="/tmp/${ANDROID_NDK_VERSION}" BUCK2=/home/kimishpatel/buck2 FLATC=$(which flatc) ANDROID_ABI=arm64-v8a \
     bash examples/demo-apps/android/ExecuTorchDemo/setup.sh
 }
 
