@@ -77,6 +77,8 @@ ExternalProject_Add(
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatcc
   BINARY_DIR ${CMAKE_BINARY_DIR}/_host_build
   CMAKE_CACHE_ARGS -DFLATCC_TEST:BOOL=OFF -DFLATCC_REFLECTION:BOOL=OFF
+      # See above comment about POSITION_INDEPENDENT_CODE.
+      -DCMAKE_POSITION_INDEPENDENT_CODE:BOOL=ON
   INSTALL_COMMAND "" # Prevent the install step, modify as needed
 )
 
