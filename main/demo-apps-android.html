@@ -497,33 +497,42 @@ cp<span class="w"> </span>deeplab_v3/dlv3_qnn.pte<span class="w"> </span>example
 <div class="section" id="xnnpack">
 <h4>XNNPACK<a class="headerlink" href="#xnnpack" title="Permalink to this heading">¶</a></h4>
 <ol class="arabic simple">
-<li><p>Configure the CMake target for the library with XNNPACK backend:</p></li>
+<li><p>Build the CMake target for the library with XNNPACK backend:</p></li>
 </ol>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path-to-android-ndk&gt;
 <span class="nb">export</span><span class="w"> </span><span class="nv">BUCK2</span><span class="o">=</span>/tmp/buck2<span class="w"> </span><span class="c1"># Or your buck path</span>
 
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out
+
+<span class="c1"># Build the core executorch library</span>
 cmake<span class="w"> </span>..<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DANDROID_ABI<span class="o">=</span>arm64-v8a<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DBUCK2<span class="o">=</span><span class="nv">$BUCK</span><span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="nv">$FLATC_EXECUTABLE</span><span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_ANDROID_JNI<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">        </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON
+<span class="w">  </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span><span class="s2">/build/cmake/android.toolchain.cmake&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DBUCK2<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">BUCK2</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">FLATC</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON
+
+cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install
 </pre></div>
 </div>
 <p>When we set <code class="docutils literal notranslate"><span class="pre">EXECUTORCH_BUILD_XNNPACK=ON</span></code>, we will build the target <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt"><code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code></a> which in turn is linked into libexecutorch_jni via <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt">CMake</a>.</p>
-<p><code class="docutils literal notranslate"><span class="pre">libexecutorch_jni.so</span></code> wraps up the required XNNPACK Backend runtime library from <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code>, and adds an additional JNI layer using fbjni. This is later exposed to Java app.</p>
 <ol class="arabic simple" start="2">
-<li><p>Build the libraries:</p></li>
+<li><p>Build the Android extension:</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>-j16
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Build the android extension</span>
+cmake<span class="w"> </span>../extension/android<span class="w"> </span>-DBUCK2<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">BUCK2</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="si">${</span><span class="nv">ANDROID_NDK</span><span class="si">}</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DANDROID_ABI<span class="o">=</span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">ANDROID_ABI</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-Bextension/android
+
+cmake<span class="w"> </span>--build<span class="w"> </span>./extension/android<span class="w"> </span>-j16
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">libexecutorch_jni.so</span></code> wraps up the required XNNPACK Backend runtime library from <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code>, and adds an additional JNI layer using fbjni. This is later exposed to Java app.</p>
 </div>
 <div class="section" id="id2">
 <h4>Qualcomm Hexagon NPU<a class="headerlink" href="#id2" title="Permalink to this heading">¶</a></h4>
