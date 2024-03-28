@@ -203,10 +203,7 @@ class LoweredBackendModule(torch.nn.Module):
             for node in lowered_exported_program.graph.nodes
             if (
                 node.op == "placeholder"
-                and node.name
-                not in lowered_exported_program.graph_signature.inputs_to_buffers
-                and node.name
-                not in lowered_exported_program.graph_signature.inputs_to_parameters
+                and node.name in lowered_exported_program.graph_signature.user_inputs
             )
         ]
 
@@ -230,6 +227,8 @@ class LoweredBackendModule(torch.nn.Module):
                 node.name in lowered_exported_program.graph_signature.inputs_to_buffers
                 or node.name
                 in lowered_exported_program.graph_signature.inputs_to_parameters
+                or node.name
+                in lowered_exported_program.graph_signature.inputs_to_lifted_tensor_constants
             ):
                 lowered_exported_program.graph.erase_node(node)
 
