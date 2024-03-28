@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Getting Started with LLMs via ExecuTorch &mdash; ExecuTorch main documentation</title>
+  <title>Welcome to the ExecuTorch LLaMA Android Demo App &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -42,8 +42,6 @@
   <link rel="stylesheet" href="../_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Exporting to ExecuTorch Tutorial" href="../tutorials/export-to-executorch-tutorial.html" />
-    <link rel="prev" title="Building with CMake" href="../runtime-build-and-cross-compilation.html" />
 
 
   <!-- Google Tag Manager -->
@@ -275,17 +273,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../runtime-build-and-cross-compilation.html">Building with CMake</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
-<ul class="current">
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#simple-hello-world-llm-example">Simple “Hello World” LLM example</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#quantization">Quantization</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#use-mobile-acceleration">Use Mobile Acceleration</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#debugging-and-profiling">Debugging and Profiling</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#how-to-use-custom-kernels">How to use custom kernels</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#how-to-build-mobile-apps">How to build Mobile Apps</a></li>
-</ul>
-</li>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
@@ -398,13 +387,13 @@
       </li>
 
         
-      <li>Getting Started with LLMs via ExecuTorch</li>
+      <li>Welcome to the ExecuTorch LLaMA Android Demo App</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="../_sources/llm/getting-started.md.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+            <a href="../_sources/llm/llama-demo-android.md.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -436,40 +425,133 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="getting-started-with-llms-via-executorch">
-<h1>Getting Started with LLMs via ExecuTorch<a class="headerlink" href="#getting-started-with-llms-via-executorch" title="Permalink to this heading">¶</a></h1>
-<p>This section provides guidance on enabling Large Language Models (LLMs), starting with a simple example and gradually introducing new concepts to improve performance and productivity.</p>
-<div class="section" id="prerequisites">
-<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+  <div class="section" id="welcome-to-the-executorch-llama-android-demo-app">
+<h1>Welcome to the ExecuTorch LLaMA Android Demo App<a class="headerlink" href="#welcome-to-the-executorch-llama-android-demo-app" title="Permalink to this heading">¶</a></h1>
+<p>This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.</p>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn</div>
 <ul class="simple">
-<li><p>To run this tutorial, you’ll first need to first <a class="reference internal" href="../getting-started-setup.html"><span class="doc std std-doc">Set up your ExecuTorch environment</span></a>.</p></li>
-<li><p>We highly suggest you to check out <span class="xref myst">LLama2 README</span> in our examples for end-to-end Llama2 mobile demo.</p></li>
+<li><p class="sd-card-text">How to set up a build target for Android arm64-v8a</p></li>
+<li><p class="sd-card-text">How to build the required ExecuTorch runtime, LLaMA runner, and JNI wrapper for Android</p></li>
+<li><p class="sd-card-text">How to build the app with required JNI library</p></li>
 </ul>
 </div>
-<div class="section" id="simple-hello-world-llm-example">
-<h2>Simple “Hello World” LLM example<a class="headerlink" href="#simple-hello-world-llm-example" title="Permalink to this heading">¶</a></h2>
-<p>Let’s create a simple LLM app from scratch. TODO</p>
 </div>
-<div class="section" id="quantization">
-<h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
-<p>Most LLMs are too large to fit into a mobile phone, making quantization necessary. In this example, we will demonstrate how to use the XNNPACKQuantizer to quantize the model and run it on a CPU. TODO</p>
 </div>
-<div class="section" id="use-mobile-acceleration">
-<h2>Use Mobile Acceleration<a class="headerlink" href="#use-mobile-acceleration" title="Permalink to this heading">¶</a></h2>
-<p>One of the benefits of ExecuTorch is the ability to delegate to mobile accelerators. Now, we will show a few examples of how to easily take advantage of mobile accelerators. TODO</p>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Prerequisites</div>
+<ul class="simple">
+<li><p class="sd-card-text">Refer to <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
+<li><p class="sd-card-text">Download and install <a class="reference external" href="https://developer.android.com/studio">Android Studio and SDK</a>.</p></li>
+<li><p class="sd-card-text">Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.</p></li>
+</ul>
 </div>
-<div class="section" id="debugging-and-profiling">
-<h2>Debugging and Profiling<a class="headerlink" href="#debugging-and-profiling" title="Permalink to this heading">¶</a></h2>
-<p>It is sometimes necessary to profile and inspect the execution process. In this example, we will demonstrate how the ExecuTorch SDK can be used to identify which operations are being executed on which hardware.  TODO</p>
 </div>
-<div class="section" id="how-to-use-custom-kernels">
-<h2>How to use custom kernels<a class="headerlink" href="#how-to-use-custom-kernels" title="Permalink to this heading">¶</a></h2>
-<p>In some cases, it is necessary to write custom kernels or import them from another source in order to achieve the desired performance. In this example, we will demonstrate how to use the <code class="docutils literal notranslate"><span class="pre">kvcache_with_sdpa</span></code> kernel.</p>
 </div>
-<div class="section" id="how-to-build-mobile-apps">
-<h2>How to build Mobile Apps<a class="headerlink" href="#how-to-build-mobile-apps" title="Permalink to this heading">¶</a></h2>
-<p>Here’s how to finally build a mobile app on Android and iOS. TODO</p>
-<p>For Android demo app build, please see <a class="reference internal" href="llama-demo-android.html"><span class="doc std std-doc">this tutorial</span></a>.</p>
+</div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>, with NDK 25.</p>
+</div>
+<div class="section" id="getting-models">
+<h2>Getting models<a class="headerlink" href="#getting-models" title="Permalink to this heading">¶</a></h2>
+<p>Please refer to the LLaMA tutorial to export the model.</p>
+<p>Once you have the model, you need to push it to your device:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>shell<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/data/local/tmp/llama
+adb<span class="w"> </span>push<span class="w"> </span>model.pte<span class="w"> </span>/data/local/tmp/llama
+adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class="w"> </span>/data/local/tmp/llama
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The demo app searches in <code class="docutils literal notranslate"><span class="pre">/data/local/tmp/llama</span></code> for .pte and .bin files as LLAMA model and tokenizer.</p>
+</div>
+</div>
+<div class="section" id="build-jni-library">
+<h2>Build JNI library<a class="headerlink" href="#build-jni-library" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Open a terminal window and navigate to the root directory of the <code class="docutils literal notranslate"><span class="pre">executorch</span></code>.</p></li>
+<li><p>Set the following environment variables:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">export</span> <span class="n">ANDROID_NDK</span><span class="o">=&lt;</span><span class="n">path_to_android_ndk</span><span class="o">&gt;</span>
+<span class="n">export</span> <span class="n">ANDROID_ABI</span><span class="o">=</span><span class="n">arm64</span><span class="o">-</span><span class="n">v8a</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p>Create a new directory for the CMake build output:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">mkdir</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="4">
+<li><p>Run the following command to configure the CMake build:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span># Build the core ExecuTorch runtime library
+cmake . -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -DCMAKE_TOOLCHAIN_FILE=&quot;${ANDROID_NDK}/build/cmake/android.toolchain.cmake&quot; \
+  -DANDROID_ABI=&quot;${ANDROID_ABI}&quot; \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+  -Bcmake-out
+
+cmake --build cmake-out -j16 --target install
+
+# Build the llama2 runner library and custom ops
+cmake examples/models/llama2 \
+         -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+         -DANDROID_ABI=&quot;$ANDROID_ABI&quot; \
+         -DCMAKE_INSTALL_PREFIX=cmake-out \
+         -Bcmake-out/examples/models/llama2
+
+cmake --build cmake-out/examples/models/llama2 -j16
+
+# Build the Android JNI library
+cmake extension/android \
+  -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI=&quot;${ANDROID_ABI}&quot; \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
+  -Bcmake-out/extension/android
+
+cmake --build cmake-out/extension/android -j16
+</pre></div>
+</div>
+<ol class="arabic simple" start="5">
+<li><p>Copy the built library to your app:</p></li>
+</ol>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">JNI_LIBS_PATH</span><span class="o">=</span><span class="s2">&quot;examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs&quot;</span>
+<span class="n">mkdir</span> <span class="o">-</span><span class="n">p</span> <span class="s2">&quot;$</span><span class="si">{JNI_LIBS_PATH}</span><span class="s2">/$</span><span class="si">{ANDROID_ABI}</span><span class="s2">&quot;</span>
+<span class="n">cp</span> <span class="n">cmake</span><span class="o">-</span><span class="n">out</span><span class="o">/</span><span class="n">extension</span><span class="o">/</span><span class="n">android</span><span class="o">/</span><span class="n">libexecutorch_llama_jni</span><span class="o">.</span><span class="n">so</span> <span class="s2">&quot;$</span><span class="si">{JNI_LIBS_PATH}</span><span class="s2">/$</span><span class="si">{ANDROID_ABI}</span><span class="s2">/&quot;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="build-java-app">
+<h2>Build Java app<a class="headerlink" href="#build-java-app" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Open Android Studio and select “Open an existing Android Studio project” to open examples/demo-apps/android/LlamaDemo.</p></li>
+<li><p>Run the app (^R).</p></li>
+</ol>
+<p>On the phone or emulator, you can try running the model:
+<img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br></p>
+</div>
+<div class="section" id="takeaways">
+<h2>Takeaways<a class="headerlink" href="#takeaways" title="Permalink to this heading">¶</a></h2>
+<p>Through this tutorial we’ve learnt how to build the ExecuTorch LLAMA library with XNNPACK backend, and expose it to JNI layer to build the Android app.</p>
+</div>
+<div class="section" id="reporting-issues">
+<h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
+<p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
 </div>
 </div>
 
@@ -478,15 +560,6 @@
              
             </div>
             <footer>
-  
-    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="../tutorials/export-to-executorch-tutorial.html" class="btn btn-neutral float-right" title="Exporting to ExecuTorch Tutorial" accesskey="n" rel="next">Next <img src="../_static/images/chevron-right-orange.svg" class="next-page"></a>
-      
-      
-        <a href="../runtime-build-and-cross-compilation.html" class="btn btn-neutral" title="Building with CMake" accesskey="p" rel="prev"><img src="../_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
-      
-    </div>
   
 
   
@@ -518,14 +591,12 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Getting Started with LLMs via ExecuTorch</a><ul>
-<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li><a class="reference internal" href="#simple-hello-world-llm-example">Simple “Hello World” LLM example</a></li>
-<li><a class="reference internal" href="#quantization">Quantization</a></li>
-<li><a class="reference internal" href="#use-mobile-acceleration">Use Mobile Acceleration</a></li>
-<li><a class="reference internal" href="#debugging-and-profiling">Debugging and Profiling</a></li>
-<li><a class="reference internal" href="#how-to-use-custom-kernels">How to use custom kernels</a></li>
-<li><a class="reference internal" href="#how-to-build-mobile-apps">How to build Mobile Apps</a></li>
+<li><a class="reference internal" href="#">Welcome to the ExecuTorch LLaMA Android Demo App</a><ul>
+<li><a class="reference internal" href="#getting-models">Getting models</a></li>
+<li><a class="reference internal" href="#build-jni-library">Build JNI library</a></li>
+<li><a class="reference internal" href="#build-java-app">Build Java app</a></li>
+<li><a class="reference internal" href="#takeaways">Takeaways</a></li>
+<li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
 </ul>
 </li>
 </ul>
