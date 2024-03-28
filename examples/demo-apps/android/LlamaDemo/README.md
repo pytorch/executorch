@@ -2,10 +2,6 @@
 
 This app demonstrates the use of the LLaMA chat app demostrating local inference use case with ExecuTorch.
 
-```{note}
-This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis).
-```
-
 ::::{grid} 2
 :::{grid-item-card}  What you will learn
 :class-card: card-prerequisites
@@ -13,6 +9,17 @@ This demo app and tutorial has only been validated with arm64-v8a [ABI](https://
 * How to build the required ExecuTorch runtime, LLaMA runner, and JNI wrapper for Android
 * How to build the app with required JNI library
 :::
+:::{grid-item-card} Prerequisites
+:class-card: card-prerequisites
+* Refer to [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
+* Download and install [Android Studio and SDK](https://developer.android.com/studio).
+* Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.
+:::
+::::
+
+```{note}
+This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK 25.
+```
 
 ## Getting models
 Please refer to the LLaMA tutorial to export the model.
