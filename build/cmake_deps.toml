@@ -275,7 +275,7 @@ filters = [
 excludes = [
   "^codegen",
   # Exclude blas, since it's built as a separate target.
-  # "^kernels/optimized/blas",
+  "^kernels/optimized/blas",
 ]
 deps = [
   "executorch",
