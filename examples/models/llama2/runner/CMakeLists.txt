@@ -39,7 +39,7 @@ list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 target_include_directories(extension_module
                            INTERFACE ${_common_include_directories})
 
-if(CMAKE_TOOLCHAIN_IOS OR CMAKE_TOOLCHAIN_ANDROID OR APPLE)
+if(CMAKE_TOOLCHAIN_IOS OR ANDROID OR APPLE)
   # Building a share library on iOS requires code signing
   # On Android we see duplicated registration when using shared lib
   add_library(llama_runner STATIC ${_llama_runner__srcs})
@@ -47,10 +47,12 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
-set(llama_runner_deps executorch extension_module extension_data_loader)
+set(llama_runner_deps executorch extension_module extension_data_loader
+  custom_ops)
 
 target_link_libraries(
   llama_runner PUBLIC ${llama_runner_deps})
 
 target_include_directories(llama_runner
-                           INTERFACE ${_common_include_directories} ${EXECUTORCH_ROOT})
+                           INTERFACE ${_common_include_directories}
+                           ${EXECUTORCH_ROOT})

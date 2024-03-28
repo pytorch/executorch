@@ -35,7 +35,7 @@ class OpGetItem(OpSkipOps):
     do nothing if node is getitem
     """
 
-    target = "getitem"
+    target = ["getitem"]
 
     def define_node(
         self,

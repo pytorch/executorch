@@ -56,6 +56,8 @@ excludes = [
   # Exclude the codegen templates, which are picked up because the buck target
   # is the generated_lib and not the unwrapped set of kernels.
   "^codegen/templates",
+  # Exclude blas, since it's built as a separate target.
+  "^kernels/optimized/blas",
 ]
 deps = [
   "executorch",
@@ -85,6 +87,19 @@ buck_targets = [
 ]
 filters = [
   ".fbs$",
+]
+
+[targets.optimized_cpublas]
+buck_targets = [
+  "//kernels/optimized:libblas",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+]
+deps = [
+  "executorch",
 ]
 
 # ---------------------------------- core end ----------------------------------
@@ -250,6 +265,21 @@ filters = [
 ]
 # ---------------------------------- Vulkan end -----------------------------------
 # ---------------------------------- LLama start ----------------------------------
+[targets.custom_ops]
+buck_targets = [
+  "//examples/models/llama2/custom_ops:custom_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+  # Exclude blas, since it's built as a separate target.
+  "^kernels/optimized/blas",
+]
+deps = [
+  "executorch",
+]
 
 [targets.llama_runner]
 buck_targets = [
@@ -262,6 +292,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "custom_ops",
   "executorch",
   "extension_data_loader",
   "extension_module",

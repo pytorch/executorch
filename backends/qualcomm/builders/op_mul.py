@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseMultiply, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Mul(NodeVisitor):
-    target = "aten.mul.Tensor"
+    target = ["aten.mul.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
