@@ -17,10 +17,6 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 if(NOT FLATCC_EXECUTABLE)
   set(FLATCC_EXECUTABLE flatcc)
 endif()
@@ -28,6 +24,12 @@ endif()
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+endif()
+
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
 endif()
 
 if(NOT FLATC_EXECUTABLE)

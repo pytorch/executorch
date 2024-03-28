@@ -90,6 +90,7 @@ jobs:
       matrix:
         dtype: [fp32]
         build-tool: [buck2, cmake]
+        mode: [portable, xnnpack]
       fail-fast: false
     with:
       runner: linux.2xlarge
@@ -104,13 +105,14 @@ jobs:
 
         DTYPE=${{ matrix.dtype }}
         BUILD_TOOL=${{ matrix.build-tool }}
+        MODE=${{ matrix.mode }}
 
         # Setup executorch
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh buck2
         # Install requirements for export_llama
         PYTHON_EXECUTABLE=python bash examples/models/llama2/install_requirements.sh
         # Test llama2
-        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}"
+        PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
 
   test-custom-ops-linux:
     name: test-custom-ops-linux

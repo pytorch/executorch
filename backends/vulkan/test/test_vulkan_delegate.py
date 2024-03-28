@@ -146,16 +146,20 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y):
+            def forward(self, x, y, w):
                 z = x + y
                 z = z + x
                 z = z + x
+                z = z + w
+                z = w + z
+                z = z + 3  # test scalar broadcasting
                 return z
 
         add_module = AddModule()
         sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
+            torch.rand(size=(2, 1), dtype=torch.float32),  # test broadcasting
         )
 
         self.lower_module_and_test_output(add_module, sample_inputs)

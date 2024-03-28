@@ -24,7 +24,6 @@ void check_binary_op_args(
     const vTensor& other,
     const vTensor& out) {
   VK_CHECK_COND(check_same_memory_layout(self, other, out));
-  VK_CHECK_COND(check_broadcastable(self, other));
   std::vector<int64_t> broadcasted_sizes =
       calculate_broadcasted_output_size(self, other);
   VK_CHECK_COND(out.sizes() == broadcasted_sizes);
@@ -36,6 +35,8 @@ void resize_binary_op_node(
     const std::vector<ValueRef>& extra_args) {
   (void)extra_args;
   vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
+
+  // TODO(T183442143): Verify tensors are broadcastable.
   vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
   vTensor& other = graph->get_val(args[1].refs[1]).toTensor();
 
@@ -73,6 +74,9 @@ void add_binary_op_node(
     alpha_val = extract_scalar<float>(graph.get_val(alpha));
   }
 
+  const api::utils::ivec2 broadcast_params =
+      create_broadcast_params(t_in1, t_in2);
+
   std::stringstream kernel_name;
   kernel_name << "binary_" << op_name;
   apply_memory_layout_suffix(kernel_name, t_out);
@@ -90,6 +94,7 @@ void add_binary_op_node(
       {t_out.gpu_sizes_ubo(),
        t_in1.gpu_sizes_ubo(),
        t_in2.gpu_sizes_ubo(),
+       graph.create_params_buffer(broadcast_params),
        graph.create_params_buffer(alpha_val)},
       // Resizing
       resize_binary_op_node));

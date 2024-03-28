@@ -36,7 +36,12 @@ layout(set = 0, binding = 5) uniform PRECISION restrict OtherSizes {
 }
 other_sizes;
 
-layout(set = 0, binding = 6) uniform PRECISION restrict Alpha {
+layout(set = 0, binding = 6) uniform PRECISION restrict BroadcastParams {
+  ivec2 data;
+}
+broadcast_params;
+
+layout(set = 0, binding = 7) uniform PRECISION restrict Alpha {
   float data;
 }
 alpha;
@@ -63,8 +68,11 @@ void main() {
     COORD_TO_POS_${PACKING}(other_coord, other_sizes.data),
     0));
 
-  // Detect broadcasting
-  if (PACKED_DIM_${PACKING}(other_sizes.data) < PACKED_DIM_${PACKING}(in_sizes.data)) {
+  // Check boolean broadcast flags; we use ivec2 instead of bvec2 for alignment.
+  if (broadcast_params.data.x > 0) {
+    in_texel = in_texel.xxxx;
+  }
+  if (broadcast_params.data.y > 0) {
     other_texel = other_texel.xxxx;
   }
 

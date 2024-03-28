@@ -9,12 +9,13 @@
 import argparse
 import copy
 import logging
+import os
 import shlex
 from dataclasses import dataclass
 
 from functools import partial
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pkg_resources
 import torch
@@ -237,8 +238,12 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
-    if checkpoint_path is None:
-        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+    assert checkpoint_path, "Need to specify a checkpoint"
+    assert os.path.isfile(
+        canonical_path(checkpoint_path)
+    ), f"{checkpoint_path} does not exist"
+    # if checkpoint_path is None:
+    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
     if calibration_tasks is None:
         calibration_tasks = ["wikitext"]
@@ -457,7 +462,9 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def canonical_path(path: str, *, dir: bool = False) -> str:
+def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
+
+    path = str(path)
 
     if verbose_export():
         print(f"creating canonical path for {path}")
@@ -602,9 +609,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     ).export_to_edge(quantizers)
 
     # to_backend
-    partitioner = None
+    partitioners = []
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
@@ -612,8 +619,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # 1. We need dynamically quantized partitioner for both pt2e_quantize options
         #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
         # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
-        # partitioner = XnnpackPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
+        # partitioners.append(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -624,7 +631,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             args.quantization_mode is None
         ), "Vulkan backend does not support quantization at the moment"
 
-        partitioner = VulkanPartitioner()
+        partitioners.append(VulkanPartitioner())
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
@@ -643,7 +650,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         compile_specs = [CompileSpec("use_fp16", bytes([True]))]
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
-        partitioner = MPSPartitioner(compile_specs)
+        partitioners.append(MPSPartitioner(compile_specs))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
@@ -673,9 +680,11 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
             model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
-        partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        partitioners.append(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            CoreMLPartitioner(
+                skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+            )
         )
         modelname = f"coreml_{modelname}"
 
@@ -708,17 +717,19 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         backend_options = generate_htp_compiler_spec(use_fp16=False)
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        partitioner = QnnPartitioner(
-            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-            generate_qnn_executorch_compiler_spec(
-                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-                soc_model=QcomChipset.SM8650,  # default to SM8650
-                backend_options=backend_options,
-                debug=False,
-                saver=False,
-            ),
-            skip_node_id_set={},
-            skip_node_op_set={},
+        partitioners.append(
+            QnnPartitioner(
+                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+                generate_qnn_executorch_compiler_spec(
+                    # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+                    soc_model=QcomChipset.SM8650,  # default to SM8650
+                    backend_options=backend_options,
+                    debug=False,
+                    saver=False,
+                ),
+                skip_node_id_set={},
+                skip_node_op_set={},
+            )
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         _transform(builder_exported_to_edge.export_program())
@@ -730,7 +741,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -741,7 +752,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
