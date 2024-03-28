@@ -254,7 +254,9 @@ def quantize(
     elif qmode == "8da4w":
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, group_size=group_size
+        ).quantize(model)
         if verbose_export():
             print("quantized model:", model)
         return model
@@ -406,7 +408,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
     parser.add_argument(
-        "-G", "--group_size", default=None, help="group_size for weight quantization"
+        "-G",
+        "--group_size",
+        type=int,
+        default=None,
+        help="group_size for weight quantization",
     )
 
     parser.add_argument(
