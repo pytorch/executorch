@@ -19,8 +19,6 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(42)
-
 
 class TestSimpleAdd(unittest.TestCase):
     class Add(torch.nn.Module):

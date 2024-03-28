@@ -18,8 +18,6 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(42)
-
 
 class Conv2d(torch.nn.Module):
     """

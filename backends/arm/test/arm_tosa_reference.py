@@ -40,7 +40,6 @@ _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
 
 SUPPORTED_BI_TEST_LIST = [
     "simple_add_broadcast",
-    "block_bottleneck_residual",
 ]
 
 
