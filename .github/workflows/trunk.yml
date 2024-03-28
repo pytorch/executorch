@@ -34,7 +34,7 @@ jobs:
 
   test-models-macos:
     name: test-models-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     needs: gather-models
     strategy:
       matrix: ${{ fromJSON(needs.gather-models.outputs.models) }}
@@ -63,7 +63,7 @@ jobs:
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     strategy:
       matrix:
         include:
@@ -89,7 +89,7 @@ jobs:
 
   test-selective-build-macos:
     name: test-selective-build-macos
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     strategy:
       matrix:
         include:
@@ -115,7 +115,7 @@ jobs:
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
     strategy:
       matrix:
         include:
@@ -139,7 +139,7 @@ jobs:
 
   test-arm-backend-delegation:
     name: test-arm-backend-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -165,7 +165,7 @@ jobs:
 
   test-arm-reference-delegation:
     name: test-arm-reference-delegation
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
     with:
       runner: linux.2xlarge
       docker-image: executorch-ubuntu-22.04-arm-sdk
@@ -196,7 +196,7 @@ jobs:
 
   test-coreml-delegate:
     name: test-coreml-delegate
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     with:
       runner: macos-13-xlarge
       python-version: '3.11'
