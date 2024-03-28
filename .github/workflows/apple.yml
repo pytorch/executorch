@@ -91,7 +91,7 @@ jobs:
 
         # Build Release iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --Release --coreml --mps --optimized --portable --quantized --xnnpack
+        build/build_apple_frameworks.sh --coreml --mps --optimized --portable --quantized --xnnpack
 
         # Bundle Release iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
@@ -100,7 +100,7 @@ jobs:
 
         # Build Debug iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --Debug --coreml --mps --optimized --portable --quantized --xnnpack
+        build/build_apple_frameworks.sh --coreml --mps --optimized --portable --quantized --xnnpack --Debug
 
         # Bundle Debug iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
