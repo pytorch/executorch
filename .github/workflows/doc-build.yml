@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
     strategy:
       matrix:
         include:
@@ -79,7 +79,7 @@ jobs:
 # upload-preview:
 #    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
 #        (github.ref_type == 'branch' && github.ref_name == 'main')
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
 
   upload-gh-pages:
     needs: build
@@ -87,7 +87,7 @@ jobs:
         ((github.ref_type == 'branch' && github.ref_name == 'main') || github.ref_type == 'tag')
     permissions:
       contents: write
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
     with:
       repository: pytorch/executorch
       download-artifact: docs
