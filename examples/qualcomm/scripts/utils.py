@@ -226,6 +226,7 @@ def build_executorch_binary(
                 alloc_graph_input=not shared_buffer,
                 alloc_graph_output=not shared_buffer,
             ),
+            extract_delegate_segments=True,
         )
     )
     with open(f"{file_name}.pte", "wb") as file:
