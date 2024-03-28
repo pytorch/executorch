@@ -45,7 +45,8 @@ find_package(gflags REQUIRED PATHS
 #
 # llama_main: test binary to run llama, with tokenizer and sampler integrated
 #
-add_executable(llama_main main.cpp)
+add_executable(llama_main main.cpp
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/cpuinfo_utils.cpp)
 if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
   target_link_options(llama_main PRIVATE "LINKER:--gc-sections")
 endif()
@@ -53,8 +54,16 @@ endif()
 # find `executorch` libraries
 find_package(executorch CONFIG REQUIRED)
 
+# custom ops library
+add_subdirectory(custom_ops)
+
 # llama_runner library
 add_subdirectory(runner)
+
+target_include_directories(llama_main PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/cpuinfo/include)
+target_include_directories(llama_main PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/pthreadpool/include)
 
 set(link_libraries)
 
@@ -67,7 +76,7 @@ else()
   target_link_options_shared_lib(portable_ops_lib)
 endif()
 
-target_link_libraries(llama_main PUBLIC gflags llama_runner)
+target_link_libraries(llama_main PUBLIC gflags llama_runner custom_ops_lib)
 
 # XNNPACK pthreadpool cpuinfo
 if(TARGET xnnpack_backend)
@@ -82,7 +91,8 @@ if(TARGET vulkan_backend)
   target_link_options_shared_lib(vulkan_backend)
 endif()
 
-target_compile_options(llama_main PUBLIC ${_common_compile_options})
+target_compile_options(llama_main PUBLIC ${_common_compile_options}
+  -DET_USE_THREADPOOL)
 target_link_libraries(llama_main PUBLIC ${link_libraries})
 
 if(APPLE)
