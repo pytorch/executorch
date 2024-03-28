@@ -15,7 +15,7 @@ from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Unsqueeze(NodeVisitor):
-    target = "aten.unsqueeze_copy.default"
+    target = ["aten.unsqueeze_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

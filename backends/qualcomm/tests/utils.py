@@ -201,7 +201,8 @@ class TestQNN(unittest.TestCase):
 
         # Assert the backend name is qnn
         self.assertEqual(
-            len(exec_prog.program.execution_plan[0].delegates), expected_partitions
+            len(exec_prog.program.execution_plan[0].delegates),
+            expected_partitions,
         )
         for i in range(expected_partitions):
             self.assertEqual(

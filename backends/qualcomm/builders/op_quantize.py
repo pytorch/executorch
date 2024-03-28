@@ -61,9 +61,9 @@ class QuantizeOpBase(NodeVisitor):
 
 @register_node_visitor
 class PerTensorQuantize(QuantizeOpBase):
-    target = "quantized_decomposed.quantize_per_tensor.default"
+    target = ["quantized_decomposed.quantize_per_tensor.default"]
 
 
 @register_node_visitor
 class PerChannelQuantize(QuantizeOpBase):
-    target = "quantized_decomposed.quantize_per_channel.default"
+    target = ["quantized_decomposed.quantize_per_channel.default"]

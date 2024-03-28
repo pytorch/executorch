@@ -55,19 +55,19 @@ class DequantizeOpBase(NodeVisitor):
 
 @register_node_visitor
 class PerTensorDequantizeDefault(DequantizeOpBase):
-    target = "quantized_decomposed.dequantize_per_tensor.default"
+    target = ["quantized_decomposed.dequantize_per_tensor.default"]
 
 
 @register_node_visitor
 class PerTensorDequantizeTensor(DequantizeOpBase):
-    target = "quantized_decomposed.dequantize_per_tensor.tensor"
+    target = ["quantized_decomposed.dequantize_per_tensor.tensor"]
 
 
 @register_node_visitor
 class PerChannelDequantizeDefault(DequantizeOpBase):
-    target = "quantized_decomposed.dequantize_per_channel.default"
+    target = ["quantized_decomposed.dequantize_per_channel.default"]
 
 
 @register_node_visitor
 class PerChannelDequantizeTensor(DequantizeOpBase):
-    target = "quantized_decomposed.dequantize_per_channel.tensor"
+    target = ["quantized_decomposed.dequantize_per_channel.tensor"]
