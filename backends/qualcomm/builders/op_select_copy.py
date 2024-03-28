@@ -17,7 +17,7 @@ from .qnn_constants import OpStridedSlice, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class SelectCopy(NodeVisitor):
-    target = "aten.select_copy.int"
+    target = ["aten.select_copy.int", "aten.select.int"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

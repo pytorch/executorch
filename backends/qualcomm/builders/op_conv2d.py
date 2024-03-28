@@ -24,7 +24,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class Conv2d(NodeVisitor):
-    target = "aten.convolution.default"
+    target = ["aten.convolution.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

@@ -26,7 +26,7 @@ RELEASE_BRANCH="release/${RELEASE_VERSION}"
 
 if git ls-remote --exit-code origin ${RELEASE_BRANCH} >/dev/null 2>&1; then
   echo "Check out to Release Branch '${RELEASE_BRANCH}'"
-  git checkout -b ${RELEASE_BRANCH}
+  git checkout ${RELEASE_BRANCH}
 else
   echo "Error: Remote branch '${RELEASE_BRANCH}' not found. Please run 'cut-release-branch.sh' first."
   exit 1

@@ -17,7 +17,7 @@ from .qnn_constants import OpElementWisePower, QNN_OP_PACKAGE_NAME_QTI_AISW
 # TODO Add more class Like PowTensorTensor if needed
 @register_node_visitor
 class PowTensorScalar(NodeVisitor):
-    target = "aten.pow.Tensor_Scalar"
+    target = ["aten.pow.Tensor_Scalar"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

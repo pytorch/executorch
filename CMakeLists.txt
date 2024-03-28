@@ -13,6 +13,16 @@
 # cloning or pulling the upstream repo. Once this is done, you don't need to do
 # it again until you pull from the upstream repo again.
 #
+# NOTE: Build options can be configured by passing arguments to cmake. For
+# example, to enable the EXECUTORCH_BUILD_XNNPACK option, change the cmake
+# command to 'cmake -DEXECUTORCH_BUILD_XNNPACK=ON ..'.
+#[[
+  (rm -rf cmake-out \
+    && mkdir cmake-out \
+    && cd cmake-out \
+    && cmake ..)
+]]
+#
 # ### Build ###
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
@@ -45,6 +55,26 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+
+# --- cpuinfo
+set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
+set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "")
+set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE BOOL "")
+set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE BOOL "")
+set(CPUINFO_BUILD_BENCHMARKS OFF CACHE BOOL "")
+set(CPUINFO_LIBRARY_TYPE "static" CACHE STRING "")
+set(CPUINFO_LOG_LEVEL "error" CACHE STRING "")
+set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
+add_subdirectory("${CPUINFO_SOURCE_DIR}")
+
+# --- pthreadpool
+set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "")
+set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "")
+set(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "")
+set(PTHREADPOOL_ALLOW_DEPRECATED_API ON CACHE BOOL "")
+add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example

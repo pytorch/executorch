@@ -396,7 +396,8 @@ def register_node_visitor(visitor):
         and issubclass(visitor, NodeVisitor)
         and hasattr(visitor, "target")
     ), f"Illformed NodeVisitor subclass, can't register!, got: {visitor}"
-    _node_visitor_dict[visitor.target] = visitor
+    for target in visitor.target:
+        _node_visitor_dict[target] = visitor
 
 
 def generate_node_to_external_map(

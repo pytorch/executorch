@@ -17,7 +17,7 @@ from .qnn_constants import OpTranspose, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class TransposeVisitor(NodeVisitor):
-    target = "aten.permute_copy.default"
+    target = ["aten.permute_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

@@ -16,7 +16,7 @@ from .qnn_constants import OpStridedSlice, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class StrideSlice(NodeVisitor):
-    target = "aten.slice_copy.Tensor"
+    target = ["aten.slice_copy.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

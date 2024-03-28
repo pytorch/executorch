@@ -27,12 +27,28 @@ endif()
 
 set(_common_compile_options -Wno-deprecated-declarations)
 
+# Note for apple platform we can rely on Accelerate framework
+# Will come back to this
+include(${CMAKE_CURRENT_LIST_DIR}/External/EigenBLAS.cmake)
+list(APPEND _common_compile_options -DET_BUILD_WITH_BLAS)
+
+# For us to set CPU_CAPABILITY_AVX2 we need to detect architecture
+# plus processor. The way aten has implemented this is slightly
+# different. We probably need to figure out how to detect compiler
+# flag that suggest we are compiling for avx2
+# for now punting this to come back
+
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
+# Build cpublas.
+list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
+add_library(cpublas STATIC ${_optimized_cpublas__srcs})
+target_link_libraries(cpublas PRIVATE executorch eigen_blas)
+target_compile_options(cpublas PUBLIC ${_common_compile_options})
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
 # Executorch (for runtime). Here select all ops in optimized.yaml
@@ -45,7 +61,7 @@ message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
-target_link_libraries(optimized_kernels PRIVATE executorch)
+target_link_libraries(optimized_kernels PRIVATE executorch cpublas)
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
 #
@@ -55,4 +71,6 @@ gen_operators_lib(
   KERNEL_LIBS optimized_kernels
   DEPS executorch)
 
-install(TARGETS optimized_kernels optimized_ops_lib DESTINATION lib)
+install(TARGETS cpublas optimized_kernels optimized_ops_lib DESTINATION lib)
+
+install(TARGETS cpublas DESTINATION lib)
