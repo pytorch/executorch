@@ -64,35 +64,45 @@ We build the required ExecuTorch runtime library to run the model.
 
 #### XNNPACK
 
-1. Configure the CMake target for the library with XNNPACK backend:
+1. Build the CMake target for the library with XNNPACK backend:
 
 ```bash
 export ANDROID_NDK=<path-to-android-ndk>
 export BUCK2=/tmp/buck2 # Or your buck path
 
 rm -rf cmake-out && mkdir cmake-out && cd cmake-out
+
+# Build the core executorch library
 cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
-        -DANDROID_ABI=arm64-v8a \
-        -DBUCK2=$BUCK \
-        -DEXECUTORCH_BUILD_XNNPACK=ON \
-        -DEXECUTORCH_BUILD_FLATC=OFF \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DFLATC_EXECUTABLE=$FLATC_EXECUTABLE \
-        -DEXECUTORCH_BUILD_ANDROID_JNI=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON
+  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI="${ANDROID_ABI}" \
+  -DBUCK2="${BUCK2}" \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_FLATC=OFF \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DFLATC_EXECUTABLE="${FLATC}" \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+
+cmake --build . -j16 --target install
 ```
 
 When we set `EXECUTORCH_BUILD_XNNPACK=ON`, we will build the target [`xnnpack_backend`](https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt) which in turn is linked into libexecutorch_jni via [CMake](https://github.com/pytorch/executorch/blob/main/examples/demo-apps/android/jni/CMakeLists.txt).
 
-`libexecutorch_jni.so` wraps up the required XNNPACK Backend runtime library from `xnnpack_backend`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
-
-2. Build the libraries:
+2. Build the Android extension:
 
 ```bash
-cmake --build . -j16
+
+# Build the android extension
+cmake ../extension/android -DBUCK2="${BUCK2}" \
+  -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI="${ANDROID_ABI}" \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -Bextension/android
+
+cmake --build ./extension/android -j16
 ```
+
+`libexecutorch_jni.so` wraps up the required XNNPACK Backend runtime library from `xnnpack_backend`, and adds an additional JNI layer using fbjni. This is later exposed to Java app.
 
 #### Qualcomm Hexagon NPU
 

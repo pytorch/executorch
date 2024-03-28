@@ -33,24 +33,39 @@ pushd cmake-out
 ```
 4. Run the following command to configure the CMake build:
 ```
-cmake .. -DBUCK2="$BUCK" \
+cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI="${ANDROID_ABI}" \
+  -DBUCK2="${BUCK2}" \
+  -DEXECUTORCH_BUILD_XNNPACK=ON \
+  -DEXECUTORCH_BUILD_FLATC=OFF \
+  -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+  -DFLATC_EXECUTABLE="${FLATC}" \
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+
+cmake --build . -j16 --target install
+
+cmake ../examples/models/llama2 -DBUCK2="$BUCK" \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX=cmake-out \
-         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
-         -DEXECUTORCH_BUILD_FLATC=OFF \
-         -DFLATC_EXECUTABLE="${FLATC}" \
-         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
-         -DEXECUTORCH_BUILD_ANDROID_JNI=ON \
-         -DEXECUTORCH_BUILD_XNNPACK=ON
-```
-5. Run the following command to build the JNI library:
-```
-cmake --build . -j50
+         -Bexamples/models/llama2
+
+cmake --build examples/models/llama2 -j16
+
+cmake ../extension/android -DBUCK2="${BUCK2}" \
+  -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI="${ANDROID_ABI}" \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
+  -Bextension/android
+
+cmake --build extension/android -j16
+
 popd
 ```
-6. Copy the built library to your app:
+
+5. Copy the built library to your app:
 ```
 JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
 mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
