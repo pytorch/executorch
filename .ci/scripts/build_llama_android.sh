@@ -31,7 +31,7 @@ install_executorch_and_backend_lib() {
 build_llama_runner() {
     echo "Building llama runner for Android..."
     ANDROID_ABI=arm64-v8a
-    cmake -DBUCK2="$BUCK" \
+    cmake -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="$ANDROID_NDK"/build/cmake/android.toolchain.cmake  \
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
