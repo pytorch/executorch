@@ -114,6 +114,29 @@ jobs:
         # Test llama2
         PYTHON_EXECUTABLE=python bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
 
+  test-llama-runner-linux-android:
+    name: test-llama-runner-linux-android
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    strategy:
+      matrix:
+        include:
+          - build-tool: cmake
+      fail-fast: false
+    with:
+      runner: linux.2xlarge
+      docker-image: executorch-ubuntu-22.04-clang12-android
+      submodules: 'true'
+      ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      timeout: 90
+      script: |
+        # The generic Linux job chooses to use base env, not the one setup by the image
+        CONDA_ENV=$(conda env list --json | jq -r ".envs | .[-1]")
+        conda activate "${CONDA_ENV}"
+
+        BUILD_TOOL=${{ matrix.build-tool }}
+        PYTHON_EXECUTABLE=python \
+        bash .ci/scripts/build_llama_android.sh  "${BUILD_TOOL}"
+
   test-custom-ops-linux:
     name: test-custom-ops-linux
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
