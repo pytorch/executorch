@@ -24,7 +24,6 @@ from .export_llama_lib import (
     build_args_parser as _build_args_parser,
 )
 
-
 class GPTFastEvalWrapper(eval_wrapper):
     """
     A wrapper class based on GPTFast, providing integration with the lm-evaluation-harness library.
@@ -65,13 +64,20 @@ class GPTFastEvalWrapper(eval_wrapper):
         return self._device
 
     def tok_encode(self, string: str, **kwargs):
-        tokens = [self._tokenizer.bos_id()] + self._tokenizer.encode(string)
-        encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
-        # encoded is a pytorch tensor, but some internal logic in the
-        # eval harness expects it to be a list instead
         # TODO: verify this for multi-batch as well
-        encoded = encoded.tolist()
-        return encoded
+        tokens = self._tokenizer.encode(string)
+        if hasattr(self._tokenizer, "bos_id"):
+            tokens = [self._tokenizer.bos_id()] + tokens
+        return tokens
+
+    # def tok_encode(self, string: str, **kwargs):
+    #     tokens = [self._tokenizer.bos_id()] + self._tokenizer.encode(string)
+    #     encoded = torch.tensor(tokens, dtype=torch.int, device=self.device)
+    #     # encoded is a pytorch tensor, but some internal logic in the
+    #     # eval harness expects it to be a list instead
+    #     # TODO: verify this for multi-batch as well
+    #     encoded = encoded.tolist()
+    #     return encoded
 
     def tok_decode(self, tokens):
         decoded = self._tokenizer.decode(tokens)
@@ -98,7 +104,7 @@ def eval(
         task (str): The name of the evaluation task to perform.
         limit (Optional[int]): The maximum number of samples to evaluate (None for all available).
 
-    Returns:
+    Returns:p
         eval_results (dict): A dictionary of evaluation results for the specified task(s).
     """
 

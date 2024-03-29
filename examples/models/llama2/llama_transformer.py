@@ -185,10 +185,12 @@ class KVCache(nn.Module):
         self, input_pos: torch.Tensor, k_val: torch.Tensor, v_val: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # input_pos: [S], k_val: [B, H, S, D] or [B, S, H, D] depending on transpose_cache
-        k_out = self.k_cache
-        v_out = self.v_cache
-        k_out[:, :, input_pos] = k_val
-        v_out[:, :, input_pos] = v_val
+        # k_out = self.k_cache
+        # v_out = self.v_cache
+        # k_out[:, :, input_pos] = k_val
+        # v_out[:, :, input_pos] = v_val
+        k_out = torch.ops.aten.index_put_(self.k_cache, [None, None, input_pos], k_val)
+        v_out = torch.ops.aten.index_put_(self.v_cache, [None, None, input_pos], v_val)
 
         return k_out, v_out
 
@@ -442,15 +444,15 @@ class Transformer(nn.Module):
         h = self.tok_embeddings(tokens)
 
         if self.use_kv_cache:
-            assert (
-                input_pos is not None
-            ), "input_pos must be provided when use_kv_cache is True"
+            # assert (
+            #     input_pos is not None
+            # ), "input_pos must be provided when use_kv_cache is True"
 
             # when KV cache is used, seqlen is most likely 1. We want to slice from the start_pos.
             freqs_cos = self.freqs_cos[input_pos]
             freqs_sin = self.freqs_sin[input_pos]
         else:
-            assert input_pos is None, "input_pos is unused when use_kv_cache is False"
+            # assert input_pos is None, "input_pos is unused when use_kv_cache is False"
             freqs_cos = self.freqs_cos[:seqlen]
             freqs_sin = self.freqs_sin[:seqlen]
 

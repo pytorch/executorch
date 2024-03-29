@@ -269,17 +269,24 @@ def quantize(
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
             model_file=str(tokenizer_path)
         )
-        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
+        # TODO: expose this in quant_api?
+        from torchao.quantization.GPTQ import InputRecorder
+        inputs = InputRecorder(
             tokenizer,
-            blocksize,
-            percdamp,
-            group_size,
+            calibration_seq_length,
+            input_prep_func=None,
+            pad_calibration_inputs=pad_calibration_inputs,
+            vocab_size=model.vocab_size,  # TODO: vocab_size
+        ).record_inputs(
             calibration_tasks,
             calibration_limit,
-            calibration_seq_length,
-            pad_calibration_inputs,
+        ).get_inputs()
+        gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
+            blocksize,
+            percdamp,
+            group_size
         )
-        model = gptq_quantizer.quantize(model)
+        model = gptq_quantizer.quantize(model, inputs)
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
