@@ -15,7 +15,6 @@ install_executorch_and_backend_lib() {
   rm -rf cmake-android-out && mkdir cmake-android-out
   ANDROID_NDK=/opt/ndk
   BUCK2=buck2
-  FLATC=flatc
   ANDROID_ABI=arm64-v8a
   cmake -DBUCK2="${BUCK2}" \
     -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
@@ -28,7 +27,6 @@ install_executorch_and_backend_lib() {
     -DEXECUTORCH_BUILD_XNNPACK=ON \
     -DEXECUTORCH_BUILD_OPTIMIZED=ON \
     -DXNNPACK_ENABLE_ARM_BF16=OFF \
-    -DFLATC_EXECUTABLE="${FLATC}" \
     -Bcmake-android-out .
 
   cmake --build cmake-android-out -j16 --target install --config Release
