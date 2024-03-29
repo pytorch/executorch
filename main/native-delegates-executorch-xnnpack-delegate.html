@@ -499,20 +499,20 @@
 <h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p>The XNNPACK backend’s runtime interfaces with the ExecuTorch runtime through the custom <code class="docutils literal notranslate"><span class="pre">init</span></code> and <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. Each delegated subgraph is contained in an individually serialized XNNPACK blob. When the model is initialized, ExecuTorch calls <code class="docutils literal notranslate"><span class="pre">init</span></code> on all XNNPACK Blobs to load the subgraph from serialized flatbuffer. After, when the model is executed, each subgraph is executed via the backend through the custom <code class="docutils literal notranslate"><span class="pre">execute</span></code> function. To read more about how delegate runtimes interface with ExecuTorch, refer to this <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">resource</span></a>.</p>
 <div class="section" id="xnnpack-library">
-<h4>XNNPACK Library<a class="headerlink" href="#xnnpack-library" title="Permalink to this heading">¶</a></h4>
-<p>The XNNPACK Library currently used by the delegate is on the following <a class="reference external" href="https://github.com/google/XNNPACK/tree/51a987591a6fc9f0fc0707077f53d763ac132cbf">version</a>. XNNPACK delegate supports CPU’s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s <a class="reference external" href="https://github.com/google/XNNPACK">README</a>.</p>
+<h4><strong>XNNPACK Library</strong><a class="headerlink" href="#xnnpack-library" title="Permalink to this heading">¶</a></h4>
+<p>XNNPACK delegate supports CPU’s on multiple platforms; more information on the supported hardware architectures can be found on the XNNPACK Library’s <a class="reference external" href="https://github.com/google/XNNPACK">README</a>.</p>
 </div>
 <div class="section" id="init">
-<h4>Init<a class="headerlink" href="#init" title="Permalink to this heading">¶</a></h4>
+<h4><strong>Init</strong><a class="headerlink" href="#init" title="Permalink to this heading">¶</a></h4>
 <p>When calling XNNPACK delegate’s <code class="docutils literal notranslate"><span class="pre">init</span></code>, we deserialize the preprocessed blobs via flatbuffer. We define the nodes (operators) and edges (intermediate tensors) to build the XNNPACK execution graph using the information we serialized ahead-of-time. As we mentioned earlier, the majority of processing has been done ahead-of-time, so that at runtime we can just call the XNNPACK APIs with the serialized arguments in succession. As we define static data into the execution graph, XNNPACK performs weight packing at runtime to prepare static data like weights and biases for efficient execution. After creating the execution graph, we create the runtime object and pass it on to <code class="docutils literal notranslate"><span class="pre">execute</span></code>.</p>
 <p>Since weight packing creates an extra copy of the weights inside XNNPACK, We free the original copy of the weights inside the preprocessed XNNPACK Blob, this allows us to remove some of the memory overhead.</p>
 </div>
 <div class="section" id="execute">
-<h4>Execute<a class="headerlink" href="#execute" title="Permalink to this heading">¶</a></h4>
+<h4><strong>Execute</strong><a class="headerlink" href="#execute" title="Permalink to this heading">¶</a></h4>
 <p>When executing the XNNPACK subgraphs, we prepare the tensor inputs and outputs and feed them to the XNNPACK runtime graph. After executing the runtime graph, the output pointers are filled with the computed tensors.</p>
 </div>
 <div class="section" id="profiling">
-<h4>Profiling<a class="headerlink" href="#profiling" title="Permalink to this heading">¶</a></h4>
+<h4><strong>Profiling</strong><a class="headerlink" href="#profiling" title="Permalink to this heading">¶</a></h4>
 <p>We have enabled basic profiling for XNNPACK delegate that can be enabled with the following compiler flag <code class="docutils literal notranslate"><span class="pre">-DENABLE_XNNPACK_PROFILING</span></code>. After running the model it will produce basic per-op and total timings. We provide an example of the profiling below. The timings listed are the average across runs, and the units are in microseconds.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Fully</span> <span class="n">Connected</span> <span class="p">(</span><span class="n">NC</span><span class="p">,</span> <span class="n">F32</span><span class="p">)</span> <span class="n">GEMM</span><span class="p">:</span> <span class="mf">109.510002</span>
 <span class="n">Total</span> <span class="n">Time</span><span class="p">:</span> <span class="mf">109.510002</span>
@@ -672,10 +672,10 @@
 </ul>
 </li>
 <li><a class="reference internal" href="#runtime">Runtime</a><ul>
-<li><a class="reference internal" href="#xnnpack-library">XNNPACK Library</a></li>
-<li><a class="reference internal" href="#init">Init</a></li>
-<li><a class="reference internal" href="#execute">Execute</a></li>
-<li><a class="reference internal" href="#profiling">Profiling</a></li>
+<li><a class="reference internal" href="#xnnpack-library"><strong>XNNPACK Library</strong></a></li>
+<li><a class="reference internal" href="#init"><strong>Init</strong></a></li>
+<li><a class="reference internal" href="#execute"><strong>Execute</strong></a></li>
+<li><a class="reference internal" href="#profiling"><strong>Profiling</strong></a></li>
 </ul>
 </li>
 </ul>

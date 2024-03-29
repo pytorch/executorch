@@ -449,7 +449,6 @@ Before you begin it is recommended you go through the following:</div>
 <ul class="simple">
 <li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
 <li><p class="sd-card-text"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Model Lowering Tutorial</span></a></p></li>
-<li><p class="sd-card-text"><span class="xref myst">Custom Quantization</span></p></li>
 <li><p class="sd-card-text"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html"><span class="doc std std-doc">ExecuTorch XNNPACK Delegate</span></a></p></li>
 </ul>
 </div>
@@ -462,16 +461,18 @@ Before you begin it is recommended you go through the following:</div>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torchvision.models</span> <span class="k">as</span> <span class="nn">models</span>
 
-<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">ExportedProgram</span>
 <span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
 <span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
 
 
 <span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
 <span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
 
-<span class="n">edge</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">))</span>
+<span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span>
+<span class="n">edge</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">exported_program</span><span class="p">)</span>
 
 <span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
 </pre></div>
@@ -499,7 +500,7 @@ Before you begin it is recommended you go through the following:</div>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+    <span class="n">exec_prog</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>After lowering to the XNNPACK Program, we can then prepare it for executorch and save the model as a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. <code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary format that stores the serialized ExecuTorch graph.</p>
@@ -549,14 +550,14 @@ Before you begin it is recommended you go through the following:</div>
 <span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
 <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
-    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+    <span class="n">exec_prog</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="section" id="lowering-with-aot-compiler-py-script">
 <h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Permalink to this heading">¶</a></h2>
 <p>We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python3</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
 </pre></div>
 </div>
 <p>Note in the example above,</p>
@@ -567,12 +568,45 @@ Before you begin it is recommended you go through the following:</div>
 </ul>
 <p>The generated model file will be named <code class="docutils literal notranslate"><span class="pre">[model_name]_xnnpack_[qs8/fp32].pte</span></code> depending on the arguments supplied.</p>
 </div>
-<div class="section" id="running-the-xnnpack-model">
-<h2>Running the XNNPACK Model<a class="headerlink" href="#running-the-xnnpack-model" title="Permalink to this heading">¶</a></h2>
-<p>We will use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
+<div class="section" id="running-the-xnnpack-model-with-cmake">
+<h2>Running the XNNPACK Model with CMake<a class="headerlink" href="#running-the-xnnpack-model-with-cmake" title="Permalink to this heading">¶</a></h2>
+<p>After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of executorch repo</span>
+<span class="nb">cd</span><span class="w"> </span>executorch
+
+<span class="c1"># Get a clean cmake-out directory</span>
+rm-<span class="w"> </span>-rf<span class="w"> </span>cmake-out
+mkdir<span class="w"> </span>cmake-out
+
+<span class="c1"># Configure cmake</span>
+cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-out<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Then you can build the runtime componenets with</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+<p>Now you should be able to find the executable built at <code class="docutils literal notranslate"><span class="pre">./cmake-out/backends/xnnpack/xnn_executor_runner</span></code> you can run the executable with the model you generated as such</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/backends/xnnpack/xnn_executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_fp32.pte
+<span class="c1"># or to run the quantized variant</span>
+./cmake-out/backends/xnnpack/xnn_executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_q8.pte
+</pre></div>
+</div>
+</div>
+<div class="section" id="running-the-xnnpack-model-with-buck">
+<h2>Running the XNNPACK Model with Buck<a class="headerlink" href="#running-the-xnnpack-model-with-buck" title="Permalink to this heading">¶</a></h2>
+<p>Alternatively, you can use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <a class="reference internal" href="getting-started-setup.html#building-a-runtime"><span class="std std-doc">buck2</span></a>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
 <span class="c1"># or to run the quantized variant</span>
-buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_qs8.pte
+buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_q8.pte
 </pre></div>
 </div>
 </div>
@@ -631,7 +665,8 @@ buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_exe
 <li><a class="reference internal" href="#lowering-a-model-to-xnnpack">Lowering a model to XNNPACK</a></li>
 <li><a class="reference internal" href="#lowering-a-quantized-model-to-xnnpack">Lowering a Quantized Model to XNNPACK</a></li>
 <li><a class="reference internal" href="#lowering-with-aot-compiler-py-script">Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script</a></li>
-<li><a class="reference internal" href="#running-the-xnnpack-model">Running the XNNPACK Model</a></li>
+<li><a class="reference internal" href="#running-the-xnnpack-model-with-cmake">Running the XNNPACK Model with CMake</a></li>
+<li><a class="reference internal" href="#running-the-xnnpack-model-with-buck">Running the XNNPACK Model with Buck</a></li>
 <li><a class="reference internal" href="#building-and-linking-with-the-xnnpack-backend">Building and Linking with the XNNPACK Backend</a></li>
 </ul>
 </li>
