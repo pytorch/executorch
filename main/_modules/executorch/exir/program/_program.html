@@ -614,7 +614,7 @@
             <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">constant_tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
                 <span class="k">continue</span>
 
-            <span class="n">constant_tensor_fqn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;_lifted_tensor_constant</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">buffers</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="n">constant_tensor_fqn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;_lifted_tensor_constant</span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">ep</span><span class="o">.</span><span class="n">constants</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
 
             <span class="k">with</span> <span class="n">ep</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">inserting_before</span><span class="p">(</span><span class="n">first_user_input</span><span class="p">):</span>
                 <span class="c1"># Insert the constant node before the first user input</span>
@@ -634,14 +634,14 @@
                 <span class="c1"># Add the constant as a buffer to the graph signature</span>
                 <span class="n">lifted_constants</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
                     <span class="n">InputSpec</span><span class="p">(</span>
-                        <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">BUFFER</span><span class="p">,</span>
+                        <span class="n">kind</span><span class="o">=</span><span class="n">InputKind</span><span class="o">.</span><span class="n">CONSTANT_TENSOR</span><span class="p">,</span>
                         <span class="n">arg</span><span class="o">=</span><span class="n">TensorArgument</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">const_placeholder_node</span><span class="o">.</span><span class="n">name</span><span class="p">),</span>
                         <span class="n">target</span><span class="o">=</span><span class="n">constant_tensor_fqn</span><span class="p">,</span>
-                        <span class="n">persistent</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+                        <span class="n">persistent</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
                     <span class="p">)</span>
                 <span class="p">)</span>
                 <span class="n">buffers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">constant_tensor_fqn</span><span class="p">)</span>
-                <span class="n">ep</span><span class="o">.</span><span class="n">state_dict</span><span class="p">[</span><span class="n">constant_tensor_fqn</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor</span>
+                <span class="n">ep</span><span class="o">.</span><span class="n">constants</span><span class="p">[</span><span class="n">constant_tensor_fqn</span><span class="p">]</span> <span class="o">=</span> <span class="n">constant_tensor</span>
 
     <span class="n">new_input_specs</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">graph_signature</span><span class="o">.</span><span class="n">input_specs</span><span class="p">:</span>

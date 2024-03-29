@@ -628,10 +628,7 @@
             <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
             <span class="k">if</span> <span class="p">(</span>
                 <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span>
-                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span>
-                <span class="ow">not</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span>
-                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span>
-                <span class="ow">not</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span>
+                <span class="ow">and</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">user_inputs</span>
             <span class="p">)</span>
         <span class="p">]</span>
 
@@ -655,6 +652,8 @@
                 <span class="n">node</span><span class="o">.</span><span class="n">name</span> <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_buffers</span>
                 <span class="ow">or</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span>
                 <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_parameters</span>
+                <span class="ow">or</span> <span class="n">node</span><span class="o">.</span><span class="n">name</span>
+                <span class="ow">in</span> <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph_signature</span><span class="o">.</span><span class="n">inputs_to_lifted_tensor_constants</span>
             <span class="p">):</span>
                 <span class="n">lowered_exported_program</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">erase_node</span><span class="p">(</span><span class="n">node</span><span class="p">)</span>
 
