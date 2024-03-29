@@ -23,16 +23,18 @@ add_subdirectory(${EXECUTORCH_ROOT}/examples/third-party/fbjni
 set(executorch_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../lib/cmake/ExecuTorch)
 find_package(executorch CONFIG REQUIRED)
 target_link_options_shared_lib(executorch)
-target_link_options_shared_lib(portable_ops_lib)
 
 set(link_libraries)
 list(APPEND link_libraries extension_data_loader extension_module executorch
-            portable_ops_lib portable_kernels fbjni)
+            fbjni)
 
 if(TARGET optimized_native_cpu_ops_lib)
   list(APPEND link_libraries optimized_native_cpu_ops_lib optimized_kernels
-              cpublas eigen_blas)
+              portable_kernels cpublas eigen_blas)
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
+else()
+  list(APPEND link_libraries portable_ops_lib portable_kernels)
+  target_link_options_shared_lib(portable_ops_lib)
 endif()
 if(TARGET qnn_executorch_backend)
   list(APPEND link_libraries qnn_executorch_backend)
