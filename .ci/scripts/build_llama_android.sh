@@ -11,7 +11,7 @@ set -exu
 source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 
 install_executorch_and_backend_lib() {
-  echo "Installing libexecutorch.a, libportable_kernels.a, libetdump.a, libbundled_program.a"
+  echo "Installing executorch and xnnpack backend"
   rm -rf cmake-android-out && mkdir cmake-android-out
   ANDROID_NDK=/opt/ndk
   BUCK2=buck2
@@ -24,9 +24,6 @@ install_executorch_and_backend_lib() {
     -DCMAKE_BUILD_TYPE=Release \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DEXECUTORCH_BUILD_XNNPACK=ON \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-    -DXNNPACK_ENABLE_ARM_BF16=OFF \
     -Bcmake-android-out .
 
   cmake --build cmake-android-out -j16 --target install --config Release
