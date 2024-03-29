@@ -14,6 +14,7 @@
 
 namespace torch {
 namespace executor {
+#ifdef ET_EVENT_TRACER_ENABLED
 
 static int _allocator_fn(
     void* alloc_context,
@@ -179,5 +180,6 @@ int et_flatcc_custom_init(
       builder, _emitter_fn, alloc, _allocator_fn, alloc);
 }
 
+#endif // ET_EVENT_TRACER_ENABLED
 } // namespace executor
 } // namespace torch

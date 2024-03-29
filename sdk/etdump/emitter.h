@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/sdk/etdump/etdump_flatcc.h>
 #include <flatcc/flatcc_builder.h>
 
@@ -29,3 +30,4 @@ void etdump_static_allocator_reset(struct etdump_static_allocator* alloc);
 
 } // namespace executor
 } // namespace torch
+#endif //ET_EVENT_TRACER_ENABLED

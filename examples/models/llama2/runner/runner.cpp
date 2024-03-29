@@ -12,7 +12,9 @@
 #include <executorch/examples/models/llama2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
+#ifdef ET_EVENT_TRACER_ENABLED
 #include <executorch/sdk/etdump/etdump_flatcc.h>
+#endif
 
 #include <ctime>
 #include <memory>
@@ -37,6 +39,7 @@ Runner::Runner(
     const std::string& tokenizer_path,
     const float temperature)
     : tokenizer_path_(tokenizer_path), temperature_(temperature) {
+  #ifdef ET_EVENT_TRACER_ENABLED
   std::unique_ptr<torch::executor::ETDumpGen> etdump_gen_ =
       std::make_unique<torch::executor::ETDumpGen>();
 
@@ -44,6 +47,11 @@ Runner::Runner(
       model_path,
       Module::MlockConfig::UseMlockIgnoreErrors,
       std::move(etdump_gen_));
+  #else
+  module_ = std::make_unique<Module>(
+      model_path,
+      Module::MlockConfig::UseMlockIgnoreErrors);
+  #endif
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
