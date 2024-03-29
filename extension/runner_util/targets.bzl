@@ -38,5 +38,6 @@ def define_common_targets():
             ],
             deps = [
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
             ],
         )
