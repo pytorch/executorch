@@ -28,7 +28,7 @@ else
 fi
 cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install
 
-cmake examples/models/llama2 -DBUCK2="$BUCK" \
+cmake examples/models/llama2 -DBUCK2="${BUCK2}" \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
