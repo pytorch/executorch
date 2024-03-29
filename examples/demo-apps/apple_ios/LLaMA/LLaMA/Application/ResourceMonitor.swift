@@ -12,7 +12,7 @@ final class ResourceMonitor: ObservableObject {
   }
 
   public func start() {
-    memoryUpdateTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+    memoryUpdateTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
       self?.updateMemoryUsage()
     }
   }
