@@ -21,6 +21,7 @@
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/sdk/etdump/etdump_flatcc.h>
 
 namespace torch::executor {
 
@@ -38,6 +39,7 @@ class Runner {
       int32_t seq_len = 128,
       std::function<void(const std::string&)> callback = {});
   void stop();
+  Error dump_etdump(std::string etdump_path);
 
  private:
   // metadata
