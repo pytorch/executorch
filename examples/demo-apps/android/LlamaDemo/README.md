@@ -1,4 +1,4 @@
-# Welcome to the ExecuTorch LLaMA Android Demo App
+# Building ExecuTorch LLaMA Android Demo App
 
 This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.
 
@@ -22,12 +22,12 @@ This demo app and tutorial has only been validated with arm64-v8a [ABI](https://
 ```
 
 ## Getting models
-Please refer to the LLaMA tutorial to export the model.
+Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the model.
 
-Once you have the model, you need to push it to your device:
+After you export the model and generate tokenizer.bin, push them device:
 ```bash
 adb shell mkdir -p /data/local/tmp/llama
-adb push model.pte /data/local/tmp/llama
+adb push llama2.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
 ```
 
@@ -38,50 +38,50 @@ The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAM
 ## Build JNI library
 1. Open a terminal window and navigate to the root directory of the `executorch`.
 2. Set the following environment variables:
-```
+```bash
 export ANDROID_NDK=<path_to_android_ndk>
 export ANDROID_ABI=arm64-v8a
 ```
-3. Create a new directory for the CMake build output:
-```
-mkdir cmake-out
-```
-4. Run the following command to configure the CMake build:
-```
+3. Run the following command to configure the CMake build:
+```bash
 # Build the core ExecuTorch runtime library
 cmake . -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
+  -DCMAKE_BUILD_TYPE=Release \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_OPTIMIZED=ON \
   -Bcmake-out
 
-cmake --build cmake-out -j16 --target install
+cmake --build cmake-out -j16 --target install --config Release
 
 # Build the llama2 runner library and custom ops
 cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
+         -DCMAKE_BUILD_TYPE=Release \
+         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
          -DCMAKE_INSTALL_PREFIX=cmake-out \
          -Bcmake-out/examples/models/llama2
 
-cmake --build cmake-out/examples/models/llama2 -j16
+cmake --build cmake-out/examples/models/llama2 -j16 --config Release
 
 # Build the Android JNI library
 cmake extension/android \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
+  -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
   -Bcmake-out/extension/android
 
-cmake --build cmake-out/extension/android -j16
+cmake --build cmake-out/extension/android -j16 --config Release
 ```
 
-5. Copy the built library to your app:
-```
+4. Copy the built library to Java app jniLibs:
+```bash
 JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
 mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
 cp cmake-out/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
@@ -89,7 +89,7 @@ cp cmake-out/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${AN
 
 ## Build Java app
 1. Open Android Studio and select "Open an existing Android Studio project" to open examples/demo-apps/android/LlamaDemo.
-2. Run the app (^R).
+2. Run the app (^R). This builds and launches the app on the phone.
 
 On the phone or emulator, you can try running the model:
 <img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br>
