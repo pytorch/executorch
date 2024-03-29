@@ -189,7 +189,7 @@ def lift_constant_tensor_pass(ep):
             if not isinstance(constant_tensor, torch.Tensor):
                 continue
 
-            constant_tensor_fqn = f"_lifted_tensor_constant{len(ep.constants)}"
+            constant_tensor_fqn = f"_lifted_tensor_constant{len(buffers)}"
 
             with ep.graph.inserting_before(first_user_input):
                 # Insert the constant node before the first user input
@@ -209,14 +209,14 @@ def lift_constant_tensor_pass(ep):
                 # Add the constant as a buffer to the graph signature
                 lifted_constants.append(
                     InputSpec(
-                        kind=InputKind.CONSTANT_TENSOR,
+                        kind=InputKind.BUFFER,
                         arg=TensorArgument(name=const_placeholder_node.name),
                         target=constant_tensor_fqn,
-                        persistent=None,
+                        persistent=True,
                     )
                 )
                 buffers.append(constant_tensor_fqn)
-                ep.constants[constant_tensor_fqn] = constant_tensor
+                ep.state_dict[constant_tensor_fqn] = constant_tensor
 
     new_input_specs = []
     for s in graph_signature.input_specs:
