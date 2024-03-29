@@ -16,7 +16,7 @@ from .qnn_constants import OpTile, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Expand(NodeVisitor):
-    target = "aten.expand_copy.default"
+    target = ["aten.expand_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

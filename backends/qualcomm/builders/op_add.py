@@ -15,7 +15,7 @@ from .qnn_constants import OpElementWiseAdd, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Add(NodeVisitor):
-    target = "aten.add.Tensor"
+    target = ["aten.add.Tensor"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

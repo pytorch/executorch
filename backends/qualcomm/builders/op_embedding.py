@@ -17,7 +17,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class Embedding(NodeVisitor):
-    target = "aten.embedding.default"
+    target = ["aten.embedding.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

@@ -15,7 +15,7 @@ from .qnn_constants import OpSigmoid, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Sigmoid(NodeVisitor):
-    target = "aten.sigmoid.default"
+    target = ["aten.sigmoid.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

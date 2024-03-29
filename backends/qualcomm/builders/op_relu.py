@@ -15,7 +15,7 @@ from .qnn_constants import OpRelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Relu(NodeVisitor):
-    target = "aten.relu.default"
+    target = ["aten.relu.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

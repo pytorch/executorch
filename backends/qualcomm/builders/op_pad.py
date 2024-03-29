@@ -16,7 +16,7 @@ from .qnn_constants import OpPad, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Pad(NodeVisitor):
-    target = "aten.constant_pad_nd.default"
+    target = ["aten.constant_pad_nd.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
