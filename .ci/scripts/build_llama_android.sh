@@ -21,7 +21,6 @@ install_executorch_and_backend_lib() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-    -DEXECUTORCH_BUILD_FLATC=OFF \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
     -Bcmake-android-out .
@@ -41,6 +40,6 @@ build_llama_runner() {
 
     cmake --build cmake-android-out/examples/models/llama2 -j4 --config Release
 }
-
+install_flatc_from_source
 install_executorch_and_backend_lib
 build_llama_runner
