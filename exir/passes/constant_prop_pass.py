@@ -5,7 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 
 import torch
-from torch._export.utils import get_buffer, get_param, is_buffer, is_param
+from torch._export.utils import (
+    get_buffer,
+    get_param,
+    is_buffer,
+    is_lifted_tensor_constant,
+    is_param,
+)
 from torch._guards import detect_fake_mode
 from torch.export import ExportedProgram
 from torch.export.exported_program import InputKind, InputSpec, TensorArgument
@@ -21,6 +27,7 @@ def is_const(arg, exported_program, const_data_list) -> bool:
     elif (
         is_param(exported_program, arg)
         or is_buffer(exported_program, arg)
+        or is_lifted_tensor_constant(exported_program, arg)
         or arg.name in const_data_list
     ):
         return True
@@ -34,6 +41,8 @@ def get_data(exported_program, arg):
         return get_param(exported_program, arg)
     elif is_buffer(exported_program, arg):
         return get_buffer(exported_program, arg)
+    elif arg.name in exported_program.constants:
+        return exported_program.constants[arg.name]
     return None
 
 
