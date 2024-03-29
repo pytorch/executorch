@@ -20,6 +20,11 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
+#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#endif
+
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
@@ -91,6 +96,17 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature) {
+#if defined(ET_USE_THREADPOOL)
+    // Reserve 1 thread for the main thread.
+    uint32_t num_performant_cores =
+        torch::executorch::cpuinfo::get_num_performant_cores() - 1;
+    if (num_performant_cores > 0) {
+      ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
+      torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
+          num_performant_cores);
+    }
+#endif
+
     runner_ = std::make_unique<Runner>(
         model_path->toStdString().c_str(),
         tokenizer_path->toStdString().c_str(),
