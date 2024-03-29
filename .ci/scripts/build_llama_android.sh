@@ -24,10 +24,9 @@ install_executorch_and_backend_lib() {
     -DEXECUTORCH_BUILD_FLATC=OFF \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-    -DFLATC_EXECUTABLE="${FLATC}" \
     -Bcmake-android-out .
 
-  cmake --build cmake-android-out -j16 --target install --config Release
+  cmake --build cmake-android-out -j4 --target install --config Release
 }
 
 build_llama_runner() {
@@ -40,7 +39,7 @@ build_llama_runner() {
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
     -Bcmake-android-out/examples/models/llama2 examples/models/llama2
 
-    cmake --build cmake-android-out/examples/models/llama2 -j16 --config Release
+    cmake --build cmake-android-out/examples/models/llama2 -j4 --config Release
 }
 
 install_executorch_and_backend_lib
