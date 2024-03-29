@@ -8,7 +8,7 @@
 # Install snakeviz for cProfile flamegraph
 # Install sentencepiece for llama tokenizer
 pip install snakeviz sentencepiece
-pip install torchao-nightly
+pip install git+https://github.com/pytorch-labs/ao.git@ec08d7189c895fe64e74e6f5f7090181426e4b74
 
 # Install lm-eval for Model Evaluation with lm-evalution-harness
 pip install lm-eval
