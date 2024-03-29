@@ -15,7 +15,7 @@ from .qnn_constants import OpReshape, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Reshape(NodeVisitor):
-    target = "aten.view_copy.default"
+    target = ["aten.view_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

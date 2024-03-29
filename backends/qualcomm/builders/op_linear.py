@@ -17,7 +17,7 @@ from .utils import get_parameter
 
 @register_node_visitor
 class LinearVisitor(NodeVisitor):
-    target = "aten.linear.default"
+    target = ["aten.linear.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

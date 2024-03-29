@@ -15,7 +15,7 @@ from .qnn_constants import OpMatMul, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class BMM(NodeVisitor):
-    target = "aten.bmm.default"
+    target = ["aten.bmm.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

@@ -14,6 +14,8 @@ adb push model.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
 ```
 
+The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAMA model and tokenizer.
+
 ## Build JNI library
 1. Open a terminal window and navigate to the root directory of the `executorch`.
 2. Set the following environment variables:
@@ -48,22 +50,12 @@ cmake .. -DBUCK2="$BUCK" \
 cmake --build . -j50
 popd
 ```
-6.
-Copy the built library to your app:
+6. Copy the built library to your app:
 ```
 JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
 mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
 cp cmake-out/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
 ```
-
-## Build Java library
-The Java part of the ExecuTorch library can be built with gradlew:
-```
-pushd extension/android
-./gradlew build
-popd
-```
-In the android app, we set up the relative path to the built aar, so no further action is needed.
 
 ## Build Java app
 1. Open Android Studio and select "Open an existing Android Studio project" to open examples/demo-apps/android/LlamaDemo.

@@ -16,7 +16,7 @@ from .qnn_constants import OpLogSoftmax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class LogSoftmax(NodeVisitor):
-    target = "aten._log_softmax.default"
+    target = ["aten._log_softmax.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)
