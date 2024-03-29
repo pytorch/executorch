@@ -8,6 +8,9 @@
 
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/util/dim_order_util.h>
+#include <executorch/runtime/core/exec_aten/util/tensor_util.h>
+#include <executorch/runtime/platform/assert.h>
+
 #ifdef USE_ATEN_LIB
 #include <torch/torch.h>
 #else
@@ -56,8 +59,18 @@ class ManagedTensor {
         data_ptr_,
         dim_order_.data(),
         strides_.data(),
-        TensorShapeDynamism::STATIC);
+        TensorShapeDynamism::DYNAMIC_BOUND);
 #endif
+  }
+
+  void resize(const std::vector<SizesType>& new_sizes) {
+    ET_CHECK_MSG(
+        new_sizes.size() == sizes_.size(),
+        "Cannot change rank of a managed tensor");
+    auto err = resize_tensor(
+        this->get_aliasing_tensor(),
+        exec_aten::ArrayRef<SizesType>(new_sizes.data(), new_sizes.size()));
+    ET_CHECK(err == Error::Ok);
   }
 
   /**
