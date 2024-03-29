@@ -1,4 +1,4 @@
-name: Build ExecuTorch Android demo apps
+name: Android
 
 on:
   push:

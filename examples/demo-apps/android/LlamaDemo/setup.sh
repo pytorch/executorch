@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
@@ -28,7 +28,7 @@ else
 fi
 cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install
 
-cmake examples/models/llama2 -DBUCK2="$BUCK" \
+cmake examples/models/llama2 -DBUCK2="${BUCK2}" \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
@@ -48,7 +48,3 @@ cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}"
 JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
 mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
 cp "${CMAKE_OUT}"/extension/android/libexecutorch_llama_jni.so "${JNI_LIBS_PATH}/${ANDROID_ABI}/"
-
-pushd extension/android
-./gradlew build
-popd

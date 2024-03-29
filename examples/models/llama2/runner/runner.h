@@ -20,6 +20,7 @@
 #include <executorch/examples/models/llama2/sampler/sampler.h>
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/extension/module/module.h>
+#include <executorch/extension/runner_util/managed_tensor.h>
 
 namespace torch::executor {
 
@@ -45,7 +46,11 @@ class Runner {
   template <typename T>
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
-  std::vector<exec_aten::SizesType> getKVCacheShape();
+  Result<torch::executor::Tensor> run_model_step(
+      int64_t input_token,
+      ManagedTensor& tokens,
+      ManagedTensor& start_pos,
+      size_t max_seq_len);
   // metadata
   int32_t vocab_size_;
   int32_t bos_id_;
