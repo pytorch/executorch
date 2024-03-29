@@ -21,9 +21,10 @@ install_executorch_and_backend_lib() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_FLATC=OFF \
     -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
     -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DFLATC_EXECUTABLE="${FLATC}" \
     -Bcmake-android-out .
 
   cmake --build cmake-android-out -j16 --target install --config Release
@@ -37,13 +38,10 @@ build_llama_runner() {
     -DANDROID_ABI="${ANDROID_ABI}" \
     -DANDROID_PLATFORM=android-23 \
     -DCMAKE_INSTALL_PREFIX=cmake-android-out \
-    -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=python \
-    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
     -Bcmake-android-out/examples/models/llama2 examples/models/llama2
 
     cmake --build cmake-android-out/examples/models/llama2 -j16 --config Release
 }
 
-install_flatc_from_source
 install_executorch_and_backend_lib
 build_llama_runner
