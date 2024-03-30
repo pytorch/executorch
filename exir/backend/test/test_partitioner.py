@@ -232,7 +232,9 @@ class TestPartitioner(unittest.TestCase):
 
         # Check Owning Program still owns all constant data
         owning_program = delegated.exported_program()
-        self.assertEqual(len(owning_program.state_dict), 3)
+        self.assertEqual(
+            len(owning_program.state_dict) + len(owning_program.constants), 3
+        )
         self.assertEqual(len(owning_program.graph_signature.buffers), 2)
         self.assertEqual(len(owning_program.graph_signature.parameters), 1)
 
@@ -321,7 +323,7 @@ class TestPartitioner(unittest.TestCase):
             delegated.exported_program().graph_module, lowered_module_node.name
         )
         delegated_ep = lower_module.original_module
-        self.assertEqual(len(delegated_ep.state_dict), 3)
+        self.assertEqual(len(delegated_ep.state_dict) + len(delegated_ep.constants), 3)
         self.assertEqual(len(delegated_ep.graph_signature.buffers), 2)
         self.assertEqual(len(delegated_ep.graph_signature.parameters), 1)
 
@@ -375,7 +377,9 @@ class TestPartitioner(unittest.TestCase):
 
         # Check Owning Program still owns only buffers
         owning_program = delegated.exported_program()
-        self.assertEqual(len(owning_program.state_dict), 2)
+        self.assertEqual(
+            len(owning_program.state_dict) + len(owning_program.constants), 2
+        )
         self.assertEqual(len(owning_program.graph_signature.buffers), 2)
         self.assertEqual(len(owning_program.graph_signature.parameters), 0)
 
