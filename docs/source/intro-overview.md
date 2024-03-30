@@ -1,9 +1,9 @@
 # ExecuTorch Overview
 
 **ExecuTorch** is an end-to-end solution for enabling on-device inference
-capabilities across mobile and edge devices including wearables, embedded
-devices and microcontrollers. It is part of the PyTorch Edge ecosystem and
-enables efficient deployment of PyTorch models to edge devices.
+capabilities across mobile and edge devices including Android, iOS, wearables, 
+embedded devices, and microcontrollers. It is part of the PyTorch Edge ecosystem 
+and enables efficient deployment of PyTorch models to edge devices.
 
 Key value propositions of ExecuTorch are:
 
