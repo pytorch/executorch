@@ -32,6 +32,11 @@ if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
 endif()
 
+# Build with -fPIC for targets in this directory and in all subdirectories that
+# it includes. This is required to link libXNNPACK.a into shared libraries on
+# some x86_64 systems.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations)
 
