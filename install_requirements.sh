@@ -27,9 +27,10 @@ for arg in "$@"; do
       EXECUTORCH_BUILD_PYBIND=ON
       ;;
     coreml|mps|xnnpack)
-      if [[ "$EXECUTORCH_BUILD_PYBIND" == "ON" ]]; then
-        CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_BUILD_${arg^^}=ON"
-      else
+    if [[ "$EXECUTORCH_BUILD_PYBIND" == "ON" ]]; then
+      arg_upper=$(echo "$arg" | awk '{print toupper($0)}')
+      CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_BUILD_${arg_upper}=ON"
+    else
         echo "Error: $arg must follow --pybind"
         exit 1
       fi
