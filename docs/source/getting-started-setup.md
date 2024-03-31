@@ -51,8 +51,8 @@ also work on other systems with similar environments.
 - RHEL 8 or later
 - Windows Subsystem for Linux running any of the above
 
-**macOS (x86_64/M1/M2)**
-- Big Sur or later
+**macOS (M1/M2)**
+- Big Sur or later (x86/x86-64 is not supported - [see why](https://github.com/pytorch/pytorch/issues/114602))
 
 The most critical requirements are:
 - The ability to install a recent version of `conda`, described below.
