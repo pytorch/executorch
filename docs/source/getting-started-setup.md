@@ -111,36 +111,11 @@ Follow these steps:
    source .executorch/bin/activate
    ```
 
-1. Install [Cmake](https://cmake.org/download)
-
-   ```bash
-   conda install cmake
-   ```
-
-   Alternatively:
-
-   ```bash
-   pip install cmake
-   ```
-
 1. Install ExecuTorch and dependencies:
 
    ```bash
    ./install_requirements.sh
    ```
-
-   **Optional:** Install ExecuTorch as an editable installation:
-   ```bash
-   pip install --editable . --config-settings editable_mode=strict --no-build-isolation
-   ```
-
-1. Expose FlatBuffers compiler:
-
-   ExecuTorch uses `flatc` to export models and builds it from sources at
-   `third-party/flatbuffers`. Make it available by adding it to the `$PATH` environment variable,
-   as prompted by the previous step, or exporting as `$FLATC_EXECUTABLE`
-   enironment variable.
-   Run `./build/install_flatc.sh` to make sure `flatc` is installed correctly.
 
 You have successfully set up your environment to work with ExecuTorch. The next
 step is to generate a sample ExecuTorch program.
