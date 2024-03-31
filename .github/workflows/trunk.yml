@@ -159,6 +159,25 @@ jobs:
         git config --global user.name "Github Executorch"
         bash examples/arm/setup.sh --i-agree-to-the-contained-eula
 
+        # Debug - check file watcher status
+        MAX_WATCHES=`cat /proc/sys/fs/inotify/max_user_watches`
+        echo "Max watches: $MAX_WATCHES"
+
+        PROCS=`find /proc/*/fd/ -type l -lname "anon_inode:inotify" -printf "%hinfo/%f\n"`
+
+        PID_REGEX="/proc/([0-9]*)/fdinfo"
+
+        for p in $PROCS; do
+            if [[ $p =~ $PID_REGEX ]]; then
+                PID=${BASH_REMATCH[1]}
+                CMDLINE=$(<"/proc/${PID}/cmdline")
+                WATCH_COUNT=`grep -cE "^inotify" < $p`
+                echo $PID $WATCH_COUNT $CMDLINE
+            else
+                echo "Bad path $p"
+            fi
+        done
+
         # Test ethos-u delegate examples with run.sh
         source examples/arm/ethos-u-scratch/setup_path.sh
         PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/ buck2
