@@ -48,9 +48,8 @@ private:
     
 using Buffer = std::vector<uint8_t>;
 
-std::unique_ptr<Program> get_program(NSURL *url) {
-    DataLoaderImpl dataLoader(url.path.UTF8String);
-    auto program = Program::load(&dataLoader);
+std::unique_ptr<Program> get_program(DataLoader *loader) {
+    auto program = Program::load(loader);
     if (!program.ok()) {
         return nullptr;
     }
@@ -140,7 +139,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 - (void)testProgramLoad {
     NSURL *modelURL = [[self class] bundledResourceWithName:@"add_coreml_all" extension:@"pte"];
     XCTAssertNotNil(modelURL);
-    auto program = get_program(modelURL);
+    auto loader = std::make_unique<DataLoaderImpl>(modelURL.path.UTF8String);
+    auto program = get_program(loader.get());
     XCTAssert(program != nullptr);
     auto methodName = get_method_name(program.get());
     XCTAssert(methodName.ok());
@@ -157,7 +157,8 @@ Result<std::vector<Buffer>> prepare_input_tensors(Method& method) {
 
 - (void)executeModelAtURL:(NSURL *)modelURL nTimes:(NSUInteger)nTimes {
     for (NSUInteger i = 0; i < nTimes; i++) {
-        auto program = get_program(modelURL);
+        auto loader = std::make_unique<DataLoaderImpl>(modelURL.path.UTF8String);
+        auto program = get_program(loader.get());
         XCTAssert(program != nullptr);
         auto methodName = get_method_name(program.get());
         XCTAssert(methodName.ok());

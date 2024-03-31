@@ -62,8 +62,10 @@ NS_ASSUME_NONNULL_BEGIN
 /// All compute units name.
 @property (class, copy, readonly, nonatomic) NSString* allComputeUnitsName;
 
-/// The name of debug symbols in the manifest file of `mlpackage`.
-@property (class, copy, readonly, nonatomic, nullable) NSString* debugSymbols;
+/// The debug info relative path in the AOT blob.
+@property (class, copy, readonly, nonatomic, nullable) NSString* debugInfoFileRelativePath;
+/// The debug symbol to operation path key name.
+@property (class, copy, readonly, nonatomic, nullable) NSString* debugSymbolToOperationPathKeyName;
 
 @end
 

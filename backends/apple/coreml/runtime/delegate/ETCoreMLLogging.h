@@ -62,7 +62,7 @@ typedef NS_ERROR_ENUM(ETCoreMLErrorDomain, ETCoreMLError) {
 /// `*errorOut` with NSError.
 #define ETCoreMLLogUnderlyingErrorAndSetNSError(errorOut, errorCode, underlyingNSError, formatString, ...) \
     os_log_error(ETCoreMLErrorUtils.loggingChannel,                                                        \
-                 formatString " (Underlying error: %@)",                                                   \
+                 formatString ", with underlying error= %@.",                                              \
                  ##__VA_ARGS__,                                                                            \
                  (underlyingNSError).localizedDescription);                                                \
     if (errorOut) {                                                                                        \
@@ -71,10 +71,10 @@ typedef NS_ERROR_ENUM(ETCoreMLErrorDomain, ETCoreMLError) {
                                                format:@formatString, ##__VA_ARGS__];                       \
     }
 
-#define ETCoreMLLogError(error, formatString, ...)       \
-    os_log_error(ETCoreMLErrorUtils.loggingChannel,      \
-                 formatString " (Underlying error: %@)", \
-                 ##__VA_ARGS__,                          \
+#define ETCoreMLLogError(error, formatString, ...)  \
+    os_log_error(ETCoreMLErrorUtils.loggingChannel, \
+                 formatString ", with error= %@.",  \
+                 ##__VA_ARGS__,                     \
                  (error).localizedDescription);
 
 

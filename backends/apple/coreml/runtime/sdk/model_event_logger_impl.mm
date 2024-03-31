@@ -39,7 +39,7 @@ void ModelEventLoggerImpl::log_profiling_infos(NSDictionary<ETCoreMLModelStructu
         NSString *symbol_name = op_path_to_debug_symbol_name_map[path];
         if (symbol_name == nil) {
             // We will use the operation output name as a placeholder for now.
-            symbol_name = profiling_info.outputNames.firstObject;
+            symbol_name = [NSString stringWithFormat:@"%@:%@", profiling_info.outputNames.firstObject, profiling_info.operatorName];
         }
         NSData *metadata = profiling_info.metadata;
         tracer_->log_profiling_delegate(symbol_name.UTF8String,
