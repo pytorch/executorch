@@ -41,7 +41,6 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
 
   @Override
   public void onStats(float tps) {
-    System.out.println("LLAMAERROR ERRORRRRRR");
     runOnUiThread(() -> {
       if (mResultMessage != null) {
         mResultMessage.setTokensPerSecond(tps);
