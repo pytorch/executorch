@@ -203,6 +203,17 @@ def define_common_targets():
         visibility = ["//executorch/kernels/portable/cpu/..."],
     )
 
+    runtime.cxx_library(
+        name = "sort_util",
+        srcs = ["sort_util.cpp"],
+        exported_headers = ["sort_util.h"],
+        deps = [
+            "//executorch/runtime/kernel:kernel_includes",
+            "//executorch/runtime/core/exec_aten/util:tensor_util",
+        ],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/torchvision/..."],
+    )
+
     # Utility functions that can be used by operators that perform reduction
     for aten_mode in [True, False]:
         suffix = "_aten" if aten_mode else ""

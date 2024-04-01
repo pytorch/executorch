@@ -21,3 +21,13 @@ def define_common_targets():
             "//executorch/kernels/portable/cpu/util:reduce_util",
         ],
     )
+
+    runtime.cxx_test(
+        name = "sort_util_test",
+        srcs = ["sort_util_test.cpp"],
+        deps = [
+            "//executorch/runtime/core/exec_aten:lib",
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
+            "//executorch/kernels/portable/cpu/util:sort_util",
+        ],
+    )
