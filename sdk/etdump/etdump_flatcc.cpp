@@ -6,6 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#ifdef ET_EVENT_TRACER_ENABLED
 #include "executorch/sdk/etdump/etdump_flatcc.h"
 #include <executorch/sdk/etdump/etdump_schema_flatcc_builder.h>
 #include <executorch/sdk/etdump/etdump_schema_flatcc_reader.h>
@@ -496,3 +497,4 @@ bool ETDumpGen::is_static_etdump() {
 
 } // namespace executor
 } // namespace torch
+#endif // ET_EVENT_TRACER_ENABLED

@@ -39,6 +39,11 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_string(
+    etdump_path,
+    "llama_etdump.etdp",
+    "Where to write the llama etdump.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -73,6 +78,9 @@ int32_t main(int32_t argc, char** argv) {
 
   // generate
   runner.generate(prompt, seq_len);
+
+  // dump etdump profiling data
+  runner.dump_etdump(FLAGS_etdump_path);
 
   return 0;
 }
