@@ -88,6 +88,13 @@ function(executorch_print_configuration_summary)
   message(
     STATUS
       "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}")
+
 endfunction()
 
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
