@@ -19,7 +19,7 @@ NSString *const kEstimatedCostKey = @"estimatedCost";
 NSArray<NSString *> *compute_unit_names(ETCoreMLComputeUnits compute_units) {
     NSMutableArray<NSString *> *result = [NSMutableArray array];
     if ((compute_units & ETCoreMLComputeUnitNeuralEngine) > 0) {
-        [result addObject:@"ANE"];
+        [result addObject:@"NE"];
     }
     if ((compute_units & ETCoreMLComputeUnitCPU) > 0) {
         [result addObject:@"CPU"];
