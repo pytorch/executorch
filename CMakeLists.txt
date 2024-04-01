@@ -58,21 +58,41 @@ endif()
 
 # --- cpuinfo
 set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
-set(CPUINFO_BUILD_TOOLS OFF CACHE BOOL "")
-set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE BOOL "")
-set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE BOOL "")
-set(CPUINFO_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(CPUINFO_LIBRARY_TYPE "static" CACHE STRING "")
-set(CPUINFO_LOG_LEVEL "error" CACHE STRING "")
+set(CPUINFO_BUILD_TOOLS
+    OFF
+    CACHE BOOL "")
+set(CPUINFO_BUILD_UNIT_TESTS
+    OFF
+    CACHE BOOL "")
+set(CPUINFO_BUILD_MOCK_TESTS
+    OFF
+    CACHE BOOL "")
+set(CPUINFO_BUILD_BENCHMARKS
+    OFF
+    CACHE BOOL "")
+set(CPUINFO_LIBRARY_TYPE
+    "static"
+    CACHE STRING "")
+set(CPUINFO_LOG_LEVEL
+    "error"
+    CACHE STRING "")
 set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
 add_subdirectory("${CPUINFO_SOURCE_DIR}")
 
 # --- pthreadpool
 set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
-set(PTHREADPOOL_BUILD_TESTS OFF CACHE BOOL "")
-set(PTHREADPOOL_BUILD_BENCHMARKS OFF CACHE BOOL "")
-set(PTHREADPOOL_LIBRARY_TYPE "static" CACHE STRING "")
-set(PTHREADPOOL_ALLOW_DEPRECATED_API ON CACHE BOOL "")
+set(PTHREADPOOL_BUILD_TESTS
+    OFF
+    CACHE BOOL "")
+set(PTHREADPOOL_BUILD_BENCHMARKS
+    OFF
+    CACHE BOOL "")
+set(PTHREADPOOL_LIBRARY_TYPE
+    "static"
+    CACHE STRING "")
+set(PTHREADPOOL_ALLOW_DEPRECATED_API
+    ON
+    CACHE BOOL "")
 add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
 
 # ------------------------------ OPTIONS -------------------------------------
@@ -160,6 +180,8 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
        "Build the Arm Baremetal flow for Cortex-M and Ethos-U" OFF)
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
+
+option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
@@ -335,6 +357,12 @@ endif()
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
+if(EXECUTORCH_BUILD_CUSTOM)
+  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops)
+endif()
+
 if(EXECUTORCH_BUILD_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
@@ -470,7 +498,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
   find_library(TORCH_PYTHON_LIBRARY torch_python
-              PATHS "${TORCH_INSTALL_PREFIX}/lib")
+               PATHS "${TORCH_INSTALL_PREFIX}/lib")
 
   # compile options for pybind
 
