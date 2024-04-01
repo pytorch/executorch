@@ -48,7 +48,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/optimized/cpu/...", "//executorch/kernels/torchvision/..."],
     )
 
     runtime.cxx_library(
@@ -200,7 +200,7 @@ def define_common_targets():
             "//executorch/runtime/kernel:kernel_includes",
             "//executorch/runtime/core/exec_aten/util:tensor_util",
         ],
-        visibility = ["//executorch/kernels/portable/cpu/..."],
+        visibility = ["//executorch/kernels/portable/cpu/...", "//executorch/kernels/torchvision/..."],
     )
 
     runtime.cxx_library(

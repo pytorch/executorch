@@ -1,0 +1,25 @@
+load(":targets.bzl", "define_common_targets")
+
+oncall("executorch")
+
+# Disabling this pybinding test for now as it fails to emit a program with the nms op in
+# it. Needs to be debugged further, most probably has to do something with symbolic shapes.
+#
+# python_unittest(
+#    # @autodeps-skip
+#    name = "test_ops",
+#    srcs = [
+#        "test_ops.py",
+#    ],
+#    preload_deps = [
+#        "//executorch/kernels/torchvision:custom_ops_generated_lib",
+#    ],
+#    deps = [
+#        "//caffe2:torch",
+#        "//executorch/exir:lib",
+#        "//executorch/extension/pybindings:portable_lib",  # @manual
+#        "//pytorch/vision:torchvision",
+#    ],
+#)
+
+define_common_targets()
