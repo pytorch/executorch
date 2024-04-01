@@ -31,15 +31,7 @@ class Runner {
       const std::string& tokenizer_path,
       const float temperature = 0.8f);
 
-  bool is_loaded() const;
-  Error load();
-  Error generate(
-      const std::string& prompt,
-      int32_t seq_len = 128,
-      std::function<void(const std::string&)> callback = {});
-  void stop();
-
-  struct TimeStamps {
+  struct TimeStampsAndStats {
     // Scaling factor for timestamps - in this case, we use ms.
     const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
     // Time stamps for the different stages of the execution
@@ -59,15 +51,23 @@ class Runner {
     long inference_end_ms;
     // Keep a running total of the time spent in sampling.
     long aggregate_sampling_time_ms;
+    // Token count from prompt
+    int64_t num_prompt_tokens;
+    // Token count from generated (total - prompt)
+    int64_t num_generated_tokens;
 
-    void printReport(
-        const int64_t& num_prompt_tokens,
-        const int64_t& num_generated_tokens);
-    const std::string toJsonString(
-        const int64_t& num_prompt_tokens,
-        const int64_t& num_generated_tokens);
+    void printReport();
+    const std::string toJsonString();
   };
-  TimeStamps timers_;
+
+  bool is_loaded() const;
+  Error load();
+  Error generate(
+      const std::string& prompt,
+      int32_t seq_len = 128,
+      std::function<void(const std::string&)> on_token_generated_callback = {},
+      std::function<void(const TimeStampsAndStats&)> on_stats_callback = {});
+  void stop();
 
  private:
   // metadata
@@ -98,6 +98,7 @@ class Runner {
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<Sampler> sampler_;
   bool shouldStop_{false};
+  TimeStampsAndStats timers_;
 };
 
 } // namespace torch::executor

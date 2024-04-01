@@ -208,7 +208,8 @@ Result<torch::executor::Tensor> Runner::run_model_step(
 Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
-    std::function<void(const std::string&)> callback) {
+    std::function<void(const std::string&)> on_token_generated_callback,
+    std::function<void(const TimeStampsAndStats&)> on_stats_callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -364,8 +365,8 @@ Error Runner::generate(
     util::safe_printf(piece);
     fflush(stdout);
 
-    if (callback) {
-      callback(piece);
+    if (on_token_generated_callback) {
+      on_token_generated_callback(piece);
     }
 
     if (shouldStop_) {
@@ -386,18 +387,21 @@ Error Runner::generate(
     ET_LOG(Info, "Sequence length (%i tokens) reached!", seq_len);
   }
 
-  timers_.printReport(num_prompt_tokens, pos - num_prompt_tokens);
+  timers_.num_prompt_tokens = num_prompt_tokens;
+  timers_.num_generated_tokens = pos - num_prompt_tokens;
+  timers_.printReport();
+  if (on_stats_callback) {
+    on_stats_callback(timers_);
+  }
 
   delete[] prompt_tokens;
   return Error::Ok;
 }
 
-void Runner::TimeStamps::printReport(
-    const int64_t& num_prompt_tokens,
-    const int64_t& num_generated_tokens) {
+void Runner::TimeStampsAndStats::printReport() {
   printf(
       "PyTorchObserver %s\n",
-      toJsonString(num_prompt_tokens, num_generated_tokens).c_str());
+      toJsonString().c_str());
 
   ET_LOG(
       Info,
@@ -449,9 +453,7 @@ void Runner::TimeStamps::printReport(
       (double)aggregate_sampling_time_ms / SCALING_FACTOR_UNITS_PER_SECOND);
 }
 
-const std::string Runner::TimeStamps::toJsonString(
-    const int64_t& num_prompt_tokens,
-    const int64_t& num_generated_tokens) {
+const std::string Runner::TimeStampsAndStats::toJsonString() {
   std::stringstream ss;
   ss << "{\"prompt_tokens\":" << num_prompt_tokens << ","
      << "\"generated_tokens\":" << num_generated_tokens << ","
