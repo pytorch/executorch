@@ -69,6 +69,7 @@ class Runner {
   std::unique_ptr<Sampler> sampler_;
   bool shouldStop_{false};
 
+ public:
   struct TimeStamps {
     // Scaling factor for timestamps - in this case, we use ms.
     const long SCALING_FACTOR_UNITS_PER_SECOND = 1000;
