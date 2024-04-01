@@ -8,10 +8,13 @@ from executorch.backends.apple.mps.operators.node_visitor import (
     NodeVisitor,
     register_node_visitor,
 )
-from executorch.backends.apple.mps.serialization.mps_graph_schema import MPSGraph, MPSView
-from executorch.backends.apple.mps.utils.mps_utils import get_input_node
-from executorch.exir.dialects._ops import ops as exir_ops
+from executorch.backends.apple.mps.serialization.mps_graph_schema import (
+    MPSGraph,
+    MPSView,
+)
 from executorch.backends.transforms import get_shape
+from executorch.exir.dialects._ops import ops as exir_ops
+
 
 @register_node_visitor
 class CloneVisitor(NodeVisitor):

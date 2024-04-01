@@ -157,7 +157,6 @@ class NodeVisitor:
         """
         assert isinstance(val, int) or isinstance(val, float)
 
-
         id = len(mps_graph.mps_values)
         self.tensor_to_id[val] = id
 
