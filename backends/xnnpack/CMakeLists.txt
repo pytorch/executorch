@@ -33,7 +33,7 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-set(_common_compile_options -Wno-deprecated-declarations)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
