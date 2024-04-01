@@ -399,9 +399,7 @@ Error Runner::generate(
 }
 
 void Runner::TimeStampsAndStats::printReport() {
-  printf(
-      "PyTorchObserver %s\n",
-      toJsonString().c_str());
+  printf("PyTorchObserver %s\n", toJsonString().c_str());
 
   ET_LOG(
       Info,
