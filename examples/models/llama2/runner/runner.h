@@ -98,7 +98,6 @@ class Runner {
   std::unique_ptr<Tokenizer> tokenizer_;
   std::unique_ptr<Sampler> sampler_;
   bool shouldStop_{false};
-
 };
 
 } // namespace torch::executor
