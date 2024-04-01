@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-
 cmake_minimum_required(VERSION 3.19)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -44,7 +43,6 @@ include(${EXECUTORCH_SRCS_FILE})
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
-
 # Custom op libraries
 set(custom_ops_libs extension_module)
 list(APPEND custom_ops_libs pthreadpool)
@@ -57,25 +55,34 @@ list(APPEND custom_ops_libs eigen_blas)
 set(_yaml "${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml")
 gen_selected_ops("${_yaml}" "" "")
 
-generate_bindings_for_kernels(
-  FUNCTIONS_YAML ${CMAKE_CURRENT_SOURCE_DIR}/custom_ops.yaml)
+generate_bindings_for_kernels(FUNCTIONS_YAML
+                              ${CMAKE_CURRENT_SOURCE_DIR}/custom_ops.yaml)
 message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
+
+# TODO: Consider moving xnnpack/threadpool in a separate lib since it's now used
+# by custom ops too.
+if(NOT EXECUTORCH_BUILD_XNNPACK)
+  list(
+    APPEND
+    _custom_ops__srcs
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
+  )
+endif()
+
 add_library(custom_ops ${_custom_ops__srcs})
 
 target_include_directories(custom_ops PUBLIC "${_common_include_directories}")
-target_include_directories(custom_ops PRIVATE
-  "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
+target_include_directories(
+  custom_ops PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
 target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
 
 target_compile_options(custom_ops PUBLIC ${_common_compile_options}
-  -DET_USE_THREADPOOL)
+                                         -DET_USE_THREADPOOL)
 
 # Build a library for _custom_ops_srcs
 #
 # custom_ops_lib: Register optimized ops kernels into Executorch runtime
-gen_operators_lib(
-  "custom_ops_lib"
-  KERNEL_LIBS custom_ops
-  DEPS executorch)
+gen_operators_lib("custom_ops_lib" KERNEL_LIBS custom_ops DEPS executorch)
