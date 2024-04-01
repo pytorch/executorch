@@ -391,7 +391,7 @@ class MPSFull:
 
 @dataclass
 class MPSFullLike(MPSNode1x1):
-    fill_value: float = 0.0
+    fill_value: Union[float, str] = 0.0
     dtype: MPSDataType = MPSDataType.mps_data_type_float32
 
 

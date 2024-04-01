@@ -157,10 +157,10 @@ class NodeVisitor:
         """
         assert isinstance(val, int) or isinstance(val, float)
 
-        if val in self.tensor_to_id:
-            return self.tensor_to_id[val]
 
-        id = self.get_serialized_id(val, mps_graph)
+        id = len(mps_graph.mps_values)
+        self.tensor_to_id[val] = id
+
         tensor = torch.tensor(val)
         constant_buffer_size, constant_buffer, mps_data_type = self.get_serialized_data(
             tensor, mps_graph, mps_data_type, id
