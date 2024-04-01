@@ -39,6 +39,9 @@ def create_device_inputs(example_inputs, use_kv_cache):
 
 
 if __name__ == "__main__":
+    print(
+        "[WARNING] The module of llama is changing frequently. This script might not work"
+    )
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
