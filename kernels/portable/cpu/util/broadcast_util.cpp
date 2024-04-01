@@ -19,15 +19,13 @@ namespace executor {
 using Tensor = exec_aten::Tensor;
 using ScalarType = exec_aten::ScalarType;
 
-void free_broadcast_tensor(const Tensor& broadcast_tensor) {
-  free((void*)broadcast_tensor.const_data_ptr());
-  free((void*)broadcast_tensor.sizes().data());
-  free((void*)broadcast_tensor.dim_order().data());
-  free((void*)broadcast_tensor.strides().data());
-  free(broadcast_tensor.unsafeGetTensorImpl());
+void free_tensor(const Tensor& tensor) {
+  free((void*)tensor.const_data_ptr());
+  free((void*)tensor.sizes().data());
+  free((void*)tensor.dim_order().data());
+  free((void*)tensor.strides().data());
+  free(tensor.unsafeGetTensorImpl());
 }
-
-namespace {
 
 Tensor make_tensor(
     const ArrayRef<Tensor::SizesType>& sizes,
@@ -73,8 +71,6 @@ Tensor make_tensor(
 
   return Tensor{tensor_impl};
 }
-
-} // namespace
 
 bool tensor_is_broadcastable_to(
     const exec_aten::ArrayRef<Tensor::SizesType> broadcast_from_shape,

@@ -1,0 +1,7 @@
+- func: torchvision::nms.out(Tensor dets, Tensor scores, float iou_threshold, *, Tensor(a!) out) -> Tensor(a!)
+  variants: function
+  device_check: NoCheck
+  device_guard: False
+  kernels:
+    - arg_meta: null
+      kernel_name: torch::executor::nms_out

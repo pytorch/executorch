@@ -63,6 +63,21 @@ bool tensors_are_broadcastable_between(
 bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
 
 /**
+ * Create a new tensor with the given sizes, dim_order, and strides.
+ *
+ * @param[in] sizes The sizes of the tensor.
+ * @param[in] dim_order The dim order of the tensor.
+ * @param[in] strides The strides of the tensor.
+ * @param[in] dtype The data type of the tensor.
+ * @returns A new tensor with the given sizes, dim_order, and strides.
+ */
+Tensor make_tensor(
+    const ArrayRef<Tensor::SizesType>& sizes,
+    const ArrayRef<Tensor::DimOrderType>& dim_order,
+    const ArrayRef<Tensor::StridesType>& strides,
+    const ScalarType& dtype);
+
+/**
  * DEPRECATED: Use `delinearize_index()` and `linearize_access_indexes()` for
  * index remapping to avoid memory allocation.
  *
@@ -75,7 +90,7 @@ bool tensors_are_broadcastable_between(const Tensor& a, const Tensor& b);
  * @param[in] broadcast_to The tensor to which we want to broadcast to.
  * @returns A new tensor with the same shape as broadcast_to and the data
  * repeated as appropriate. This tensor contains dynamically allocated memory
- * and must be freed using free_broadcast_tensor.
+ * and must be freed using free_tensor.
  */
 __ET_DEPRECATED exec_aten::Tensor broadcast_tensor(
     const exec_aten::Tensor& broadcast_from,
@@ -202,8 +217,7 @@ __ET_NODISCARD inline Error resize_to_broadcast_target_size(
  * broadcast_tensor.
  * @returns void
  */
-__ET_DEPRECATED void free_broadcast_tensor(
-    const exec_aten::Tensor& broadcast_tensor);
+__ET_DEPRECATED void free_tensor(const exec_aten::Tensor& broadcast_tensor);
 
 /**
  * Delinearize a flattened index to per-dimension indexes.

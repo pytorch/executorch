@@ -28,6 +28,7 @@ def define_common_targets():
                 "//executorch/kernels/portable/cpu/util/test/...",
                 "//executorch/kernels/quantized/test/...",
                 "//executorch/kernels/optimized/test/...",
+                "//executorch/kernels/torchvision/test/...",
                 "//executorch/kernels/test/...",
                 "//executorch/runtime/core/test/...",
                 "//executorch/test/...",
