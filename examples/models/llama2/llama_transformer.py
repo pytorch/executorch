@@ -7,6 +7,7 @@
 
 # Please refer to README.md in the same folder for more information.
 
+import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -264,17 +265,27 @@ class Attention(nn.Module):
                 v = v.transpose(1, 2)
 
                 k, v = self.kv_cache.update(input_pos, k, v)
-                mask = self.mask[None, None, input_pos]
+                # mask = self.mask[None, None, input_pos]
 
                 k = k.repeat_interleave(self.n_rep, dim=1)
                 v = v.repeat_interleave(self.n_rep, dim=1)
-                y = F.scaled_dot_product_attention(
-                    q, k, v, attn_mask=mask, dropout_p=0.0
-                )
+                scores = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
+                scores = F.softmax(scores.float(), dim=-1).type_as(q)
+                output = torch.matmul(scores, v)  # (bs, n_local_heads, seqlen, head_dim)
 
-                y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+                output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
-                y = self.wo(y)
+                output = self.wo(output)
+                return output
+                # y = F.scaled_dot_product_attention(
+                #     q, k, v, attn_mask=mask, dropout_p=0.0
+                # )
+
+                # y = scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+
+                # y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+                # y = self.wo(y)
                 return y
             else:
                 from .custom_ops.sdpa_with_kv_cache import sdpa_with_kv_cache  # noqa
@@ -300,16 +311,13 @@ class Attention(nn.Module):
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
 
-        assert hasattr(self, "mask")
-
-        mask = self.mask[:seqlen, :seqlen]
-
-        output = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        scores = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
+        scores = F.softmax(scores.float(), dim=-1).type_as(q)
+        output = torch.matmul(scores, v)  # (bs, n_local_heads, seqlen, head_dim)
 
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
 
         output = self.wo(output)
-
         return output
 
 
