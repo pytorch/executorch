@@ -25,6 +25,20 @@ def define_common_targets():
         )
 
         runtime.cxx_library(
+            name = "et_view" + aten_suffix,
+            srcs = ["et_view.cpp"],
+            visibility = [],  # Private
+            exported_headers = ["et_view.h"],
+            deps = [
+                "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
+            ],
+            exported_deps = [
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
+            ],
+        )
+
+        runtime.cxx_library(
             name = "prim_ops_registry" + aten_suffix,
             srcs = ["register_prim_ops.cpp"],
             visibility = [
@@ -37,6 +51,7 @@ def define_common_targets():
             compiler_flags = ["-Wno-global-constructors"],
             deps = [
                 ":et_copy_index" + aten_suffix,
+                ":et_view" + aten_suffix,
                 "//executorch/runtime/core:evalue" + aten_suffix,
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
