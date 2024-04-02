@@ -44,3 +44,12 @@
 #define STRIDE_WIDTH_PACKED(vec) (1)
 
 #define STRIDE_HEIGHT_PACKED(vec) (vec.x)
+
+// Given a buffer(1-D) index cur, compute a new index where the corresponding
+// tensor(N-D)'s x and y dimensions are swapped, and size is of the M-D plane of
+// dimensions lower than x and y.
+#define SWAP_DIMS(cur, x, y, size)                          \
+  cur +                                                     \
+      size*(                                                \
+          (1 - y) * ((cur % (x * y * size)) / (y * size)) + \
+          (x - 1) * ((cur % (y * size)) / size))

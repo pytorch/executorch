@@ -172,7 +172,7 @@ class ComputeGraph final {
       const api::ScalarType dtype,
       const api::StorageType storage_type,
       const api::GPUMemoryLayout memory_layout,
-      const int64_t shared_object_idx);
+      const int64_t shared_object_idx = -1);
 
   /*
    * Add a `vTensor` value to the graph with the specified properties. The

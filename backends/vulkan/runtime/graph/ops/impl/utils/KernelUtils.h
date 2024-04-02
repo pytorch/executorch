@@ -29,7 +29,7 @@ int64_t calc_out_size(
     const int64_t stride,
     const int64_t padding,
     const int64_t dilation,
-    const bool ceil_mode);
+    const bool ceil_mode = false);
 
 api::utils::ivec2 reverse(ComputeGraph& graph, ValueRef vref);
 
