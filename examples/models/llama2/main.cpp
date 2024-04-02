@@ -39,6 +39,11 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_bool(
+    eval_mode,
+    false,
+    "Defaults to false. If enabled, output the logits after a single forward call for evaluation.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -57,6 +62,8 @@ int32_t main(int32_t argc, char** argv) {
 
   int32_t cpu_threads = FLAGS_cpu_threads;
 
+  bool eval_mode = FLAGS_eval_mode;
+
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
       ? torch::executorch::cpuinfo::get_num_performant_cores()
@@ -71,8 +78,21 @@ int32_t main(int32_t argc, char** argv) {
   // create llama runner
   ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
 
+  // callback
+  std::function<void(const exec_aten::Tensor)> eval_callback = {};
+  if (eval_mode) {
+    eval_callback = [](const exec_aten::Tensor& logits_tensor) -> void {
+      float* logits_data = logits_tensor.mutable_data_ptr<float>();
+      printf("\n(Logits: %zd)\n", logits_tensor.numel());
+      for (int i = 0; i < logits_tensor.numel(); ++i) {
+        printf(" %f", logits_data[i]);
+      }
+      exit(0);
+    };
+  }
+
   // generate
-  runner.generate(prompt, seq_len);
+  runner.generate(prompt, seq_len, {}, eval_callback);
 
   return 0;
 }
