@@ -477,3 +477,22 @@ class TestBackends(unittest.TestCase):
         sample_inputs = (torch.ones(size=(31, 63), dtype=torch.float32),)
 
         self.lower_module_and_test_output(module, sample_inputs)
+
+    def test_vulkan_backend_sum_dim_list(self):
+        class SumModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = torch.sum(x, (0, -1), keepdim=True)
+                x = torch.sum(x, 2, keepdim=False)
+                return x
+
+        module = SumModule()
+        sample_inputs = (torch.ones(size=(3, 2, 7, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

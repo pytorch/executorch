@@ -60,6 +60,14 @@ api::utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2);
 api::utils::uvec3 adaptive_work_group_size(
     const api::utils::uvec3& global_work_group);
 
+//
+// Tensor dim utilities
+//
+
+inline int64_t normalize(const int64_t dimension, const int64_t n) {
+  return (dimension % n + n) % n;
+}
+
 } // namespace vulkan
 } // namespace native
 } // namespace at
