@@ -36,6 +36,9 @@ from executorch.exir.passes.debug_handle_generator_pass import DebugHandleGenera
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+from executorch.exir.passes.normalize_view_copy_base_pass import (
+    NormalizeViewCopyBasePass,
+)
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
@@ -1420,3 +1423,53 @@ class TestPasses(unittest.TestCase):
                 for node in edge.exported_program().graph_module.graph.nodes
             )
         )
+
+    def test_normalize_view_copy_base_pass(self) -> None:
+
+        class ViewChain(torch.nn.Module):
+            def forward(self, x):
+                x = torch.ops.aten.view_copy.default(x, [30, 1])
+                x = torch.ops.aten.view_copy.default(x, [5, 6])
+                x = torch.ops.aten.view_copy.default(x, [2, 15])
+                x = torch.ops.aten.view_copy.default(x, [3, -1])
+                return x
+
+        def is_view_copy(node: torch.fx.Node) -> bool:
+            return (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.view_copy.default
+            )
+
+        gm = export(ViewChain(), (torch.ones(30),)).graph_module
+
+        # Check before transformation
+        n_view_copy_before = 0
+        n_view_copy_bases_before = 0
+        for node in gm.graph.nodes:
+            if is_view_copy(node):
+                n_view_copy_before += 1
+                base = node.args[0]
+                if is_view_copy(base):
+                    n_view_copy_bases_before += 1
+
+        self.assertEqual(n_view_copy_before, 4)
+        self.assertEqual(n_view_copy_bases_before, 3)
+
+        # Do transformation
+        p = NormalizeViewCopyBasePass()
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+        # Check after transformation
+        n_view_copy_after = 0
+        n_view_copy_bases_after = 0
+        for node in gm.graph.nodes:
+            if is_view_copy(node):
+                n_view_copy_after += 1
+                base = node.args[0]
+                if is_view_copy(base):
+                    n_view_copy_bases_after += 1
+
+        self.assertEqual(n_view_copy_after, 4)
+        self.assertEqual(n_view_copy_bases_after, 0)
