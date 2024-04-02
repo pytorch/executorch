@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from functools import partial
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import pkg_resources
 import torch
@@ -214,12 +214,12 @@ def quantize(
     qmode: str,
     activation_dtype: Optional[DType],
     checkpoint_path: Optional[Path] = None,
-    # following arguments only available when setting int4 quantization.
-    group_size: int = 128,
-    # following arguments only used for GPTQ
+    # following arguments only available when setting int4 or gptq quantization.
+    group_size: Optional[int] = 128,
+    # following arguments are only used for GPTQ
     calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 100,
-    calibration_seq_length: int = 2048,
+    calibration_limit: Optional[int] = None,
+    calibration_seq_length: Optional[int] = None,
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
     blocksize: int = 128,
@@ -245,13 +245,13 @@ def quantize(
     # if checkpoint_path is None:
     #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
-    if calibration_tasks is None:
-        calibration_tasks = ["wikitext"]
-
     if qmode == "int8":
         # Add quantization mode options here: group size, bit width, etc.
         return WeightOnlyInt8QuantHandler(model).quantized_model()
     elif qmode == "8da4w":
+        # Check for required args
+        if group_size is None:
+            raise Exception("For 8da4w quantization, group size must be specified.")
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
         model = Int8DynActInt4WeightQuantizer(
@@ -261,6 +261,19 @@ def quantize(
             print("quantized model:", model)
         return model
     elif qmode == "8da4w-gptq":
+        # Check for required args
+        required_args: Optional[Any] = [
+            group_size,
+            calibration_limit,
+            calibration_seq_length,
+        ]
+        if any(arg is None for arg in required_args):
+            raise Exception(
+                "For 8da4w-gptq quantization, group size, calibration limit and calibration sequence length must be specified."
+            )
+        if calibration_tasks is None:
+            calibration_tasks = ["wikitext"]
+
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
         if tokenizer_path is None:
