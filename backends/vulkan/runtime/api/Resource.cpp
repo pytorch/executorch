@@ -23,9 +23,7 @@ std::ostream& operator<<(std::ostream& out, VmaTotalStatistics stats) {
 
 #undef PRINT_FIELD
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -837,6 +835,4 @@ void VulkanFence::wait() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

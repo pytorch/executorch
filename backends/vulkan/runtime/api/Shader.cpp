@@ -10,9 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -232,6 +230,4 @@ void ShaderCache::purge() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

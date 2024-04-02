@@ -8,15 +8,11 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <cstring>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
@@ -35,8 +31,4 @@ ValueRef prepack_if_tensor_ref(
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

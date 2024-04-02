@@ -10,9 +10,7 @@
 
 #include <sstream>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 #define VK_RESULT_CASE(code) \
@@ -80,6 +78,4 @@ Error::Error(SourceLocation source_location, const char* cond, std::string msg)
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

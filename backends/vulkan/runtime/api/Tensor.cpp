@@ -9,9 +9,7 @@
 #include <executorch/backends/vulkan/runtime/api/Tensor.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 namespace {
 
@@ -681,6 +679,4 @@ void vTensorStorage::discard_and_reallocate(
       context_, buffer_length_, storage_type_, dtype, buffer_owns_memory);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

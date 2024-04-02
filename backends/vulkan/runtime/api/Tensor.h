@@ -10,14 +10,10 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/Context.h>
 #include <executorch/backends/vulkan/runtime/api/Types.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 struct LastAccess {
   api::PipelineStageFlags stage;
@@ -421,8 +417,4 @@ void add_buffer_barrier(
     const api::PipelineStageFlags,
     const api::MemoryAccessFlags);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

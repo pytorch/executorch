@@ -20,9 +20,7 @@
 #define VULKAN_QUERY_POOL_SIZE 4096u
 #endif
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 Context::Context(size_t adapter_i, const ContextConfig& config)
@@ -230,6 +228,4 @@ UniformParamsBuffer& UniformParamsBuffer::operator=(
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

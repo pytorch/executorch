@@ -15,8 +15,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#ifdef USE_VULKAN_API
-
 #define VMA_VULKAN_VERSION 1000000
 
 #ifdef USE_VULKAN_WRAPPER
@@ -60,5 +58,3 @@
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif /* __clang__ */
-
-#endif /* USE_VULKAN_API */

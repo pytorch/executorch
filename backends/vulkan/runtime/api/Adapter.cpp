@@ -14,9 +14,7 @@
 #include <sstream>
 #include <utility>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 PhysicalDevice::PhysicalDevice(VkPhysicalDevice physical_device_handle)
@@ -444,6 +442,4 @@ std::ostream& operator<<(std::ostream& os, const Adapter& adapter) {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

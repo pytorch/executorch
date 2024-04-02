@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -343,6 +341,4 @@ void ComputePipelineCache::purge() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute
