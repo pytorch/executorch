@@ -13,6 +13,16 @@
 # cloning or pulling the upstream repo. Once this is done, you don't need to do
 # it again until you pull from the upstream repo again.
 #
+# NOTE: Build options can be configured by passing arguments to cmake. For
+# example, to enable the EXECUTORCH_BUILD_XNNPACK option, change the cmake
+# command to 'cmake -DEXECUTORCH_BUILD_XNNPACK=ON ..'.
+#[[
+  (rm -rf cmake-out \
+    && mkdir cmake-out \
+    && cd cmake-out \
+    && cmake ..)
+]]
+#
 # ### Build ###
 #
 # NOTE: The `-j` argument specifies how many jobs/processes to use when
@@ -45,6 +55,7 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
@@ -131,6 +142,8 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
+option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
+
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
@@ -158,6 +171,61 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
+
+#
+# pthreadpool: build pthreadpool library. Disable on unsupported platforms
+#
+cmake_dependent_option(EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library."
+                       ON "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+
+#
+# cpuinfo: build cpuinfo library. Disable on unsupported platforms
+#
+cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
+                       "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+
+if(EXECUTORCH_BUILD_CPUINFO)
+  # --- cpuinfo
+  set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
+  set(CPUINFO_BUILD_TOOLS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_UNIT_TESTS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_MOCK_TESTS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_LIBRARY_TYPE
+      "static"
+      CACHE STRING "")
+  set(CPUINFO_LOG_LEVEL
+      "error"
+      CACHE STRING "")
+  set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
+  add_subdirectory("${CPUINFO_SOURCE_DIR}")
+endif()
+
+if(EXECUTORCH_BUILD_PTHREADPOOL)
+  # --- pthreadpool
+  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+  set(PTHREADPOOL_BUILD_TESTS
+      OFF
+      CACHE BOOL "")
+  set(PTHREADPOOL_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL "")
+  set(PTHREADPOOL_LIBRARY_TYPE
+      "static"
+      CACHE STRING "")
+  set(PTHREADPOOL_ALLOW_DEPRECATED_API
+      ON
+      CACHE BOOL "")
+  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+endif()
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -305,6 +373,12 @@ endif()
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
 
+if(EXECUTORCH_BUILD_CUSTOM)
+  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops)
+endif()
+
 if(EXECUTORCH_BUILD_OPTIMIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 endif()
@@ -398,11 +472,6 @@ if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
 endif()
 
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
-endif()
-
 if(EXECUTORCH_BUILD_QNN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/qualcomm)
 endif()
@@ -445,7 +514,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   # find pytorch lib, to allow pybind to take at::Tensor as input/output
   find_package(Torch CONFIG REQUIRED)
   find_library(TORCH_PYTHON_LIBRARY torch_python
-              PATHS "${TORCH_INSTALL_PREFIX}/lib")
+               PATHS "${TORCH_INSTALL_PREFIX}/lib")
 
   # compile options for pybind
 

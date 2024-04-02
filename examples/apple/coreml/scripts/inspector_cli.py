@@ -55,7 +55,6 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    print("Creating inspector")
     inspector = Inspector(
         etdump_path=args.etdump_path,
         etrecord=args.etrecord_path,

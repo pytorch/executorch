@@ -85,6 +85,7 @@ function build_executorch() {
         -DCMAKE_INSTALL_PREFIX=${et_build_dir}            \
         -DCMAKE_BUILD_TYPE=Release                        \
         -DEXECUTORCH_SELECT_OPS_LIST="aten::_softmax.out" \
+        -DEXECUTORCH_BUILD_ARM_BAREMETAL=ON               \
         -DCMAKE_TOOLCHAIN_FILE="${toolchain_cmake}"       \
         -B"${et_build_dir}"/examples/arm                  \
         "${et_root_dir}"/examples/arm
