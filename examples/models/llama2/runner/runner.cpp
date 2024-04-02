@@ -208,7 +208,8 @@ Result<torch::executor::Tensor> Runner::run_model_step(
 Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
-    std::function<void(const std::string&)> callback) {
+    std::function<void(const std::string&)> callback,
+    std::function<void(const exec_aten::Tensor&)> eval_callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -366,6 +367,10 @@ Error Runner::generate(
 
     if (callback) {
       callback(piece);
+    }
+
+    if (eval_callback) {
+      eval_callback(logits_tensor);
     }
 
     if (shouldStop_) {

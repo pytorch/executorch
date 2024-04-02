@@ -36,7 +36,8 @@ class Runner {
   Error generate(
       const std::string& prompt,
       int32_t seq_len = 128,
-      std::function<void(const std::string&)> callback = {});
+      std::function<void(const std::string&)> callback = {},
+      std::function<void(const exec_aten::Tensor&)> eval_callback = {});
   void stop();
 
  private:
