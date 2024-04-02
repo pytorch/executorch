@@ -10,22 +10,18 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 
 #include <string>
 #include <unordered_map>
 
 #define VK_KERNEL(shader_name) \
-  ::at::native::vulkan::api::shader_registry().get_shader_info(#shader_name)
+  ::vkcompute::api::shader_registry().get_shader_info(#shader_name)
 
 #define VK_KERNEL_FROM_STR(shader_name_str) \
-  ::at::native::vulkan::api::shader_registry().get_shader_info(shader_name_str)
+  ::vkcompute::api::shader_registry().get_shader_info(shader_name_str)
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 enum class DispatchKey : int8_t {
@@ -88,8 +84,4 @@ class ShaderRegisterInit final {
 ShaderRegistry& shader_registry();
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

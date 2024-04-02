@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 #define PRINT_CASE(name) \
   case TypeTag::name:    \
@@ -35,6 +33,4 @@ std::ostream& operator<<(std::ostream& out, const TypeTag& tag) {
   return out;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

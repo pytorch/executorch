@@ -8,8 +8,6 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Context.h>
@@ -21,5 +19,3 @@
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 #include <executorch/backends/vulkan/runtime/api/Tensor.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
-
-#endif /* USE_VULKAN_API */

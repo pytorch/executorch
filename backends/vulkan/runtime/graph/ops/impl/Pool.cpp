@@ -15,9 +15,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void resize_max_pool2d_node(
     ComputeGraph* graph,
@@ -133,6 +131,4 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.max_pool2d_with_indices.default, max_pool2d);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

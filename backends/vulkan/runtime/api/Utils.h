@@ -15,8 +15,6 @@
 
 #include <executorch/backends/vulkan/runtime/api/Exception.h>
 
-#ifdef USE_VULKAN_API
-
 // Compiler Macros
 
 // Suppress an unused variable. Copied from C10_UNUSED
@@ -26,10 +24,9 @@
 #define VK_UNUSED __attribute__((__unused__))
 #endif //_MSC_VER
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
+
 namespace utils {
 
 //
@@ -397,8 +394,4 @@ inline VkExtent3D create_extent3d(const utils::uvec3& extents) {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

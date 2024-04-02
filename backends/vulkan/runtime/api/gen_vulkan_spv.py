@@ -587,7 +587,7 @@ cpp_template = """
 #include <stdint.h>
 #include <vector>
 
-using namespace at::native::vulkan;
+using namespace vkcompute;
 
 namespace at {{
 namespace native {{

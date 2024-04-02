@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor) {
   switch (tensor.image().format()) {
@@ -46,6 +44,4 @@ void apply_memory_layout_suffix(
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

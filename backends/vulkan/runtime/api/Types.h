@@ -10,8 +10,6 @@
 
 // @lint-ignore-every CLANGTIDY bugprone-branch-clone
 
-#ifdef USE_VULKAN_API
-
 #include <cstddef>
 #include <cstdint>
 
@@ -36,9 +34,7 @@
   _(uint8_t, VK_FORMAT_R8G8B8A8_UINT, QUInt8)   \
   _(int32_t, VK_FORMAT_R32G32B32A32_SINT, QInt32)
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -142,11 +138,10 @@ inline std::ostream& operator<<(std::ostream& os, const ScalarType dtype) {
 template <ScalarType N>
 struct ScalarTypeToCType;
 
-#define SPECIALIZE_ScalarTypeToCType(ctype, vkformat, scalar_type) \
-  template <>                                                      \
-  struct ScalarTypeToCType<                                        \
-      ::at::native::vulkan::api::ScalarType::scalar_type> {        \
-    using type = ctype;                                            \
+#define SPECIALIZE_ScalarTypeToCType(ctype, vkformat, scalar_type)      \
+  template <>                                                           \
+  struct ScalarTypeToCType<::vkcompute::api::ScalarType::scalar_type> { \
+    using type = ctype;                                                 \
   };
 
 VK_FORALL_SCALAR_TYPES(SPECIALIZE_ScalarTypeToCType)
@@ -194,8 +189,4 @@ enum class GPUMemoryLayout : uint32_t {
 };
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-// #include <containers/Value.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
@@ -18,9 +17,7 @@
 #include <cstdint>
 #include <set>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 std::vector<int64_t> calc_out_sizes(vTensor& self, int64_t dim, bool keepdim) {
   std::vector<int64_t> output_size = self.sizes();
@@ -158,6 +155,4 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.sum.dim_IntList, sum_dim_IntList);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

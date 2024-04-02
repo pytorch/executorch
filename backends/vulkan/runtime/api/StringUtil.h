@@ -8,7 +8,6 @@
 
 #pragma once
 // @lint-ignore-every CLANGTIDY facebook-hte-LocalUncheckedArrayBounds
-#ifdef USE_VULKAN_API
 
 #include <exception>
 #include <ostream>
@@ -16,9 +15,7 @@
 #include <string>
 #include <vector>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 namespace detail {
@@ -90,8 +87,4 @@ inline std::string concat_str(const Args&... args) {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

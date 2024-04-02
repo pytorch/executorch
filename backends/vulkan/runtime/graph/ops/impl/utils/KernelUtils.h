@@ -8,17 +8,13 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 struct KernelParams final {
   api::utils::ivec2 kernel_size;
@@ -37,8 +33,4 @@ int64_t calc_out_size(
 
 api::utils::ivec2 reverse(ComputeGraph& graph, ValueRef vref);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

@@ -10,8 +10,6 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
@@ -22,9 +20,7 @@
 #include <mutex>
 #include <ostream>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 struct PhysicalDevice final {
@@ -218,8 +214,4 @@ class Adapter final {
 };
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

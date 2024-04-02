@@ -10,8 +10,6 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/Types.h>
@@ -20,9 +18,7 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 class ShaderLayout final {
@@ -198,9 +194,7 @@ class ShaderCache final {
 };
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute
 
 inline bool operator==(
     const VkDescriptorSetLayoutBinding& _1,
@@ -211,5 +205,3 @@ inline bool operator==(
       _1.stageFlags == _2.stageFlags &&
       _1.pImmutableSamplers == _2.pImmutableSamplers);
 }
-
-#endif /* USE_VULKAN_API */

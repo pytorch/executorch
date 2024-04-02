@@ -11,9 +11,7 @@
 
 #include <mutex>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -448,6 +446,4 @@ void CommandPool::allocate_new_batch(const uint32_t count) {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

@@ -124,9 +124,7 @@ def define_common_targets(is_fbcode = False):
         is_fbcode = is_fbcode,
     )
 
-    VK_API_PREPROCESSOR_FLAGS = [
-        "-DUSE_VULKAN_API",
-    ]
+    VK_API_PREPROCESSOR_FLAGS = []
     VK_API_DEPS = [
         "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
     ]

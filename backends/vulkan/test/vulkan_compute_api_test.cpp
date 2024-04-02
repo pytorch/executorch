@@ -18,8 +18,6 @@
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
 
-using namespace at::native::vulkan;
-
 //
 // Compute API Tests
 //
