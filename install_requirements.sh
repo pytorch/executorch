@@ -49,19 +49,14 @@ done
 # Since ExecuTorch often uses main-branch features of pytorch, only the nightly
 # pip versions will have the required features. The NIGHTLY_VERSION value should
 # agree with the third-party/pytorch pinned submodule commit.
-#
-# NOTE: If a newly-fetched version of the executorch repo changes the value of
-# NIGHTLY_VERSION, you should re-run this script to install the necessary
-# package versions.
-NIGHTLY_VERSION=dev20240324
 
 # The pip repository that hosts nightly torch packages.
-TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
+TORCH_URL="https://download.pytorch.org/whl/test/cpu"
 
 # pip packages needed by exir.
 EXIR_REQUIREMENTS=(
-  torch=="2.4.0.${NIGHTLY_VERSION}"
-  torchvision=="0.19.0.${NIGHTLY_VERSION}"  # For testing.
+  torch=="2.3.0"
+  torchvision=="0.18.0"
 )
 
 # pip packages needed for development.
@@ -77,7 +72,7 @@ DEVEL_REQUIREMENTS=(
 # TODO(dbort): Make each example publish its own requirements.txt
 EXAMPLES_REQUIREMENTS=(
   timm==0.6.13
-  torchaudio=="2.2.0.${NIGHTLY_VERSION}"
+  torchaudio=="2.3.0"
   torchsr==1.0.4
   transformers==4.38.2
 )
@@ -92,7 +87,7 @@ REQUIREMENTS_TO_INSTALL=(
 
 # Install the requirements. `--extra-index-url` tells pip to look for package
 # versions on the provided URL if they aren't available on the default URL.
-pip install --extra-index-url "${TORCH_NIGHTLY_URL}" \
+pip install --extra-index-url "${TORCH_URL}" \
     "${REQUIREMENTS_TO_INSTALL[@]}"
 
 #
