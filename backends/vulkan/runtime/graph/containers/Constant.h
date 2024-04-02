@@ -8,18 +8,16 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/Context.h>
 
-#include <ATen/native/vulkan/api/Context.h>
-
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 /*
- * Represents a reference to a tensor that has been serialized with the model,
- * such as a serialized weight tensor. It contains some metadata as well as a
- * raw pointer to the data of the tensor, which is assumed to be contiguous.
+ * Represents a reference to a tensor that has been
+ * serialized with the model, such as a serialized weight
+ * tensor. It contains some metadata as well as a raw
+ * pointer to the data of the tensor, which is assumed to
+ * be contiguous.
  */
 struct TensorRef final {
   std::vector<int64_t> sizes;
@@ -38,8 +36,4 @@ struct TensorRef final {
   TensorRef& operator=(TensorRef&&) = default;
 };
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

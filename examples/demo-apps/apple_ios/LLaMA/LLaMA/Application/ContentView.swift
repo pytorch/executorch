@@ -1,4 +1,10 @@
-// (c) Meta Platforms, Inc. and affiliates. Confidential and proprietary.
+/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -204,15 +210,21 @@ struct ContentView: View {
         return
       }
       do {
+        var tokens: [String] = []
         try runnerHolder.runner?.generate(text, sequenceLength: seq_len) { token in
-
-          DispatchQueue.main.async {
-            withAnimation {
-              var message = messages.removeLast()
-              message.text += token
-              message.tokenCount += 1
-              message.dateUpdated = Date()
-              messages.append(message)
+          tokens.append(token)
+          if tokens.count > 2 {
+            let text = tokens.joined()
+            let count = text.count
+            tokens = []
+            DispatchQueue.main.async {
+              withAnimation {
+                var message = messages.removeLast()
+                message.text += text
+                message.tokenCount += count
+                message.dateUpdated = Date()
+                messages.append(message)
+              }
             }
           }
           if shouldStopGenerating {

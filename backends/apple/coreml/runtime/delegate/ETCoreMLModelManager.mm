@@ -29,8 +29,10 @@
 #import <system_error>
 #import <vector>
 
-#ifdef ET_EVENT_TRACER_ENABLED
+#if ET_EVENT_TRACER_ENABLED
 #import <ETCoreMLModelAnalyzer.h>
+#import <ETCoreMLModelStructurePath.h>
+#import <objc_safe_cast.h>
 #endif
 
 namespace {
@@ -124,16 +126,32 @@ BOOL set_outputs(NSArray<MLMultiArray *> *outputs,
     return YES;
 }
 
-std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSystem& inMemoryFS) {
-    std::error_code error;
-    const auto& file_path = ::canonical_path(ETCoreMLStrings.metadataFileRelativePath);
-    auto buffer = inMemoryFS.get_file_content(file_path, error);
-    if (!buffer) {
+NSData * _Nullable get_file_data(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
+                                 NSString *fileName) {
+    std::error_code ec;
+    const auto& file_path = ::canonical_path(fileName);
+    __block auto buffer = inMemoryFS->get_file_content(file_path, ec);
+    if (!buffer ||  buffer->size() == 0) {
+        return nil;
+    }
+    
+    NSData *file_data = [[NSData alloc] initWithBytesNoCopy:buffer->data()
+                                                     length:buffer->size()
+                                                deallocator:^(void * _Nonnull __unused bytes, NSUInteger __unused length) {
+        buffer.reset();
+    }];
+    
+    return file_data;
+}
+
+std::optional<ModelMetadata> get_model_metadata(const inmemoryfs::InMemoryFileSystem *inMemoryFS) {
+    NSData *file_data = get_file_data(inMemoryFS, ETCoreMLStrings.metadataFileRelativePath);
+    if (!file_data) {
         return std::nullopt;
     }
     
     std::string contents;
-    contents.assign(reinterpret_cast<char *>(buffer->data()), buffer->size());
+    contents.assign(static_cast<const char *>(file_data.bytes), file_data.length);
     ModelMetadata metadata;
     metadata.from_json_string(std::move(contents));
     if (metadata.is_valid()) {
@@ -256,6 +274,7 @@ void add_compute_unit(std::string& identifier, MLComputeUnits compute_units) {
     identifier.append(to_string(compute_units));
 }
 
+#if ET_EVENT_TRACER_ENABLED
 ETCoreMLAsset * _Nullable make_asset(NSURL *url,
                                      NSString *identifier,
                                      NSFileManager *fm,
@@ -267,6 +286,34 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
     
     return [[ETCoreMLAsset alloc] initWithBackingAsset:std::move(backingAsset.value())];
 }
+
+NSDictionary<ETCoreMLModelStructurePath *, NSString *> * _Nullable get_operation_path_to_symbol_name_map(const inmemoryfs::InMemoryFileSystem *inMemoryFS,
+                                                                                                         NSError * __autoreleasing *error) {
+    NSData *file_data = get_file_data(inMemoryFS, ETCoreMLStrings.debugInfoFileRelativePath);
+    if (!file_data) {
+        return nil;
+    }
+    
+    id object = [NSJSONSerialization JSONObjectWithData:file_data options:(NSJSONReadingOptions)0 error:error];
+    if (!object) {
+        return nil;
+    }
+    
+    NSDictionary<NSString *, id> *json_dict = SAFE_CAST(object, NSDictionary);
+    NSMutableDictionary<ETCoreMLModelStructurePath *, NSString *> *result = [NSMutableDictionary dictionaryWithCapacity:json_dict.count];
+    NSDictionary<NSString *, NSArray<id> *> *debug_symbol_to_operation_path_map = SAFE_CAST(json_dict[ETCoreMLStrings.debugSymbolToOperationPathKeyName], NSDictionary);
+    for (NSString *symbol_name in debug_symbol_to_operation_path_map) {
+        NSArray<NSDictionary<NSString *, id> *> *components = SAFE_CAST(debug_symbol_to_operation_path_map[symbol_name], NSArray);
+        if (components.count == 0) {
+            continue;
+        }
+        ETCoreMLModelStructurePath *path = [[ETCoreMLModelStructurePath alloc] initWithComponents:components];
+        result[path] = symbol_name;
+    }
+    
+    return result;
+}
+#endif
 } //namespace
 
 @interface ETCoreMLModelManager () {
@@ -410,10 +457,17 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
         return nil;
     }
     
-
+    NSError *localError = nil;
+    NSDictionary<ETCoreMLModelStructurePath *, NSString *> *operation_path_to_symbol_name_map = get_operation_path_to_symbol_name_map(inMemoryFS,
+                                                                                                                                      &localError);
+    if (localError) {
+        ETCoreMLLogError(localError, "Failed to parse debug info file");
+    }
+    
     return [[ETCoreMLModelAnalyzer alloc] initWithCompiledModelAsset:compiledModelAsset
                                                           modelAsset:modelAsset
                                                             metadata:metadata
+                                       operationPathToDebugSymbolMap: operation_path_to_symbol_name_map
                                                        configuration:configuration
                                                         assetManager:self.assetManager
                                                                error:error];
@@ -466,7 +520,7 @@ ETCoreMLAsset * _Nullable make_asset(NSURL *url,
         return nil;
     }
     
-    std::optional<ModelMetadata> metadata = ::get_model_metadata(*inMemoryFS);
+    std::optional<ModelMetadata> metadata = ::get_model_metadata(inMemoryFS.get());
     if (!metadata) {
         ETCoreMLLogErrorAndSetNSError(error,
                                       ETCoreMLErrorCorruptedMetadata,

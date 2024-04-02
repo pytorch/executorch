@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void bind_tensor_to_descriptor_set(
     vTensor& tensor,
@@ -74,6 +72,4 @@ void bind_staging_to_descriptor_set(
   descriptor_set.bind(idx, staging.buffer());
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

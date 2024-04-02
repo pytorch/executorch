@@ -13,9 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void add_staging_to_tensor_node(
     ComputeGraph& graph,
@@ -107,6 +105,4 @@ ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

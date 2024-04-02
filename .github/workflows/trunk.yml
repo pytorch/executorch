@@ -159,6 +159,10 @@ jobs:
         git config --global user.name "Github Executorch"
         bash examples/arm/setup.sh --i-agree-to-the-contained-eula
 
+        # Increase number of files user can monitor to bypass buck failures.
+        # Hopefully this is high enough for this setup.
+        sudo sysctl fs.inotify.max_user_watches=1048576 # 1024 * 1024
+
         # Test ethos-u delegate examples with run.sh
         source examples/arm/ethos-u-scratch/setup_path.sh
         PYTHON_EXECUTABLE=python bash examples/arm/run.sh examples/arm/ethos-u-scratch/ buck2

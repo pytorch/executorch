@@ -8,18 +8,15 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <ATen/native/vulkan/api/api.h>
-
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 /*
- * Maps a semantic dimension name to an integer that corresponds to its
- * innermost ordering in a 4D tensor in NCHW format. Width is the innermost
- * dimension, so it corresponds to 1, height is the next innermost, so it
+ * Maps a semantic dimension name to an integer that
+ * corresponds to its innermost ordering in a 4D tensor in
+ * NCHW format. Width is the innermost dimension, so it
+ * corresponds to 1, height is the next innermost, so it
  * corresponds to 2, and so on.
  */
 struct Dim4D {
@@ -73,8 +70,4 @@ uint32_t dim_at(const vTensor& v_in) {
   return dim_at<N>(v_in.sizes());
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

@@ -13,9 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 PrepackNode::PrepackNode(
     ComputeGraph& graph,
@@ -67,6 +65,4 @@ void PrepackNode::encode(ComputeGraph* graph) {
       descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

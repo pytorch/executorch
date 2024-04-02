@@ -794,6 +794,7 @@ _ATEN_OPS = (
         name = "op_select_copy",
         deps = [
             "//executorch/kernels/portable/cpu/util:copy_ops_util",
+            "//executorch/kernels/portable/cpu/util:select_copy_util",
         ],
     ),
     op_target(

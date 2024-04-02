@@ -85,9 +85,14 @@
     return ETCoreMLDatabaseName;
 }
 
-+ (NSString *)debugSymbols {
-    static NSString * const ETCoreMLDebugSymbolsName = @"debugSymbols";
-    return ETCoreMLDebugSymbolsName;
++ (NSString *)debugInfoFileRelativePath {
+    static NSString * const ETCoreMLDebugInfoFileRelativePath = @"debug_info.json";
+    return ETCoreMLDebugInfoFileRelativePath;
+}
+
++ (NSString *)debugSymbolToOperationPathKeyName {
+    static NSString * const ETCoreMLDebugSymbolToOperationPathKeyName = @"debugSymbolToOperationPath";
+    return ETCoreMLDebugSymbolToOperationPathKeyName;
 }
 
 + (nullable NSString *)assetsDirectoryPath {

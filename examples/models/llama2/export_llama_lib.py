@@ -218,8 +218,8 @@ def quantize(
     group_size: int = 128,
     # following arguments only used for GPTQ
     calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 5,
-    calibration_seq_length: int = 100,
+    calibration_limit: int = 100,
+    calibration_seq_length: int = 2048,
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
     blocksize: int = 128,
@@ -254,7 +254,9 @@ def quantize(
     elif qmode == "8da4w":
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, group_size=group_size
+        ).quantize(model)
         if verbose_export():
             print("quantized model:", model)
         return model
@@ -340,19 +342,19 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--calibration_tasks",
         nargs="+",
         type=str,
-        default=[],
+        default=None,
         help="Tasks for GPTQ calibration",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
-        default=5,
+        default=None,
         help="number of samples used for calibration",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
-        default=2048,
+        default=None,
         help="Sequence length for GPTQ calibration",
     )
     parser.add_argument(
@@ -406,7 +408,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
     parser.add_argument(
-        "-G", "--group_size", default=None, help="group_size for weight quantization"
+        "-G",
+        "--group_size",
+        type=int,
+        default=None,
+        help="group_size for weight quantization",
     )
 
     parser.add_argument(
@@ -525,9 +531,25 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     transforms = []
     if args.quantization_mode:
         modelname = f"{modelname}_q"
+
+        # If these optional args are None, don't provide them to quantize()
+        quant_args_str = [
+            "group_size",
+            "calibration_tasks",
+            "calibration_limit",
+            "calibration_seq_length",
+        ]
+        arg_dict = vars(args)
+        quant_args = {
+            param: val
+            for param in quant_args_str
+            if (val := arg_dict.get(param)) is not None
+        }
+
         transforms.append(
             partial(
                 quantize,
+                **quant_args,
                 qmode=args.quantization_mode,
                 activation_dtype=dtype_override,
                 checkpoint_path=(
@@ -536,10 +558,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
                 tokenizer_path=(
                     Path(path) if (path := args.tokenizer_path) is not None else None
                 ),
-                group_size=args.group_size,
-                calibration_tasks=args.calibration_tasks,
-                calibration_limit=args.calibration_limit,
-                calibration_seq_length=args.calibration_seq_length,
             )
         )
 

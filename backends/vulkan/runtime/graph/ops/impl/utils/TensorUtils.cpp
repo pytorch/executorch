@@ -10,9 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/DimUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 //
 // Tensor output size calculation functions
@@ -120,6 +118,4 @@ api::utils::uvec3 adaptive_work_group_size(
   return local_group_size;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

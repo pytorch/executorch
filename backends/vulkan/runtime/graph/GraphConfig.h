@@ -8,13 +8,9 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <ATen/native/vulkan/api/api.h>
-
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 struct GraphConfig final {
   api::ContextConfig contextConfig;
@@ -39,8 +35,4 @@ struct GraphConfig final {
   void setMemoryLayoutOverride(api::GPUMemoryLayout memory_layout);
 };
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

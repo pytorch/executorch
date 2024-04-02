@@ -18,6 +18,7 @@ PYTHON=$(which python3)
 FLATC="flatc"
 IOS_DEPLOYMENT_TARGET="17.0"
 COREML=OFF
+CUSTOM=OFF
 MPS=OFF
 OPTIMIZED=OFF
 PORTABLE=OFF
@@ -26,6 +27,7 @@ XNNPACK=OFF
 HEADERS_PATH="include"
 EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
+CUSTOM_FRAMEWORK="custom_backend:libcustom_ops.a,libcustom_ops_lib.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
 OPTIMIZED_FRAMEWORK="optimized_backend:liboptimized_kernels.a,liboptimized_ops_lib.a:"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
@@ -45,6 +47,7 @@ usage() {
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
   echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: '\$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc'"
   echo "  --coreml             Include this flag to build the Core ML backend."
+  echo "  --custom             Include this flag to build the Custom backend."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
   echo "  --optimized          Include this flag to build the Optimized backend."
   echo "  --portable           Include this flag to build the Portable backend."
@@ -67,6 +70,7 @@ for arg in "$@"; do
       --flatc=*) FLATC="${arg#*=}" ;;
       --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
+      --custom) CUSTOM=ON ;;
       --mps) MPS=ON ;;
       --optimized) OPTIMIZED=ON ;;
       --portable) PORTABLE=ON ;;
@@ -130,6 +134,7 @@ cmake_build() {
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
+        -DEXECUTORCH_BUILD_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
         -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
@@ -172,6 +177,7 @@ append_framework_flag() {
 
 append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
 append_framework_flag "$COREML" "$COREML_FRAMEWORK"
+append_framework_flag "$CUSTOM" "$CUSTOM_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
 append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
 append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
