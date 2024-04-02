@@ -10,7 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/api.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
