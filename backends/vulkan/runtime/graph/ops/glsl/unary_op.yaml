@@ -10,5 +10,11 @@ unary_op:
       - VALUE: float
         SUFFIX: float
   shader_variants:
+    - NAME: abs
+      OPERATOR: abs(X)
     - NAME: clamp
       OPERATOR: clamp(X, A, B)
+    - NAME: sigmoid
+      OPERATOR: 1 / (1 + exp(-1 * X))
+    - NAME: tanh
+      OPERATOR: tanh(clamp(X, -15.0, 15.0))

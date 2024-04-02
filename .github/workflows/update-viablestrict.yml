@@ -16,10 +16,10 @@ jobs:
     environment: ${{ (github.event_name == 'schedule') && 'update-viable-strict' || '' }}
     steps:
       - name: Update viable/strict
-        uses: pytorch/test-infra/.github/actions/update-viablestrict@main
+        uses: pytorch/test-infra/.github/actions/update-viablestrict@release/2.3
         with:
           repository: pytorch/executorch
           stable-branch: viable/strict
-          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\"]'
+          requires: '[\"pull\", \"lint\", \"trunk\", \"Build documentation\", \"Android\", \"Apple\"]'
           secret-bot-token: ${{ secrets.UPDATEBOT_TOKEN }}
           rockset-api-key: ${{ secrets.ROCKSET_API_KEY }}

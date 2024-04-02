@@ -264,7 +264,7 @@ NSString *get_asset_identifier(NSString *asset_identifier,
 
 std::unique_ptr<Model> parse_model_spec(NSURL *model_spec_url,
                                         NSError * __autoreleasing *error) {
-    NSData *data = [NSData dataWithContentsOfURL:model_spec_url options:NSDataReadingMapped error:error];
+    NSData *data = [NSData dataWithContentsOfURL:model_spec_url options:NSDataReadingMappedIfSafe error:error];
     if (!data) {
         return nullptr;
     }
@@ -457,10 +457,10 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
     }
     
     if (localError) {
-        os_log_error(ETCoreMLErrorUtils.loggingChannel, "%@: Failed to retrieve asset with identifier=%@, error=%@.",
-                     NSStringFromClass(ETCoreMLModelDebugger.class),
-                     identifier,
-                     localError);
+        ETCoreMLLogError(localError,
+                         "%@: Failed to retrieve asset with identifier=%@",
+                         NSStringFromClass(ETCoreMLModelDebugger.class),
+                         identifier);
     }
     
     NSURL *compiledModelURL = get_compiled_model_url_with_intermediate_outputs(self.modelAsset.contentURL,
@@ -482,10 +482,10 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
     }
     
     if (localError) {
-        os_log_error(ETCoreMLErrorUtils.loggingChannel, "%@: Failed to store asset with identifier=%@, error=%@.",
-                     NSStringFromClass(ETCoreMLModelDebugger.class),
-                     identifier,
-                     localError);
+        ETCoreMLLogError(localError, 
+                         "%@: Failed to store asset with identifier=%@",
+                         NSStringFromClass(ETCoreMLModelDebugger.class),
+                         identifier);
     }
     
     return make_asset(compiledModelURL, identifier, self.assetManager.fileManager, error);
@@ -512,16 +512,15 @@ void set_intermediate_outputs(id<MLFeatureProvider> output_features,
     }
     
     if (localError) {
-        os_log_error(ETCoreMLErrorUtils.loggingChannel , "%@: Failed to load model with outputs=%@.",
-                     NSStringFromClass(ETCoreMLModelDebugger.class),
-                     get_output_names(paths));
+        ETCoreMLLogError(localError, "%@: Failed to load model with outputs=%@",
+                         NSStringFromClass(ETCoreMLModelDebugger.class),
+                         get_output_names(paths));
     }
     
     if ([self.assetManager removeAssetWithIdentifier:compiledAsset.identifier error:&localError]) {
-        os_log_error(ETCoreMLErrorUtils.loggingChannel, "%@: Failed to remove compiled asset with identifier=%@, error=%@.",
-                     NSStringFromClass(ETCoreMLModelDebugger.class),
-                     compiledAsset.identifier,
-                     localError);
+        ETCoreMLLogError(localError, "%@: Failed to remove compiled asset with identifier=%@",
+                         NSStringFromClass(ETCoreMLModelDebugger.class),
+                         compiledAsset.identifier);
     }
     
     if (paths.count == 1) {

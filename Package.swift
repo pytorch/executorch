@@ -11,13 +11,14 @@ import PackageDescription
 
 let url = "https://ossci-ios.s3.amazonaws.com/executorch"
 let version = "0.1.0"
-let coreml_sha256 = "e8c5000a389bdc98274aa0b359350a47e6d0cccb8af5efc46f814feac6afaf86"
-let executorch_sha256 = "e6c5d798b614a03ab8a4891caeaa8a7adf8d58ba29e767079321691ec9f1ffb4"
-let mps_sha256 = "3e54e3166b5e739cb3f76b2bc6f7b1982a0401821ab785a93120bacfde4bc1ee"
-let optimized_sha256 = "4d353f44badd321cf29fe548db9d66b493b93c6233a7e023988e256f0eefeaa1"
-let portable_sha256 = "c501f9b644a3e8a7bab62600b7802e4a9752fb789ba4fd02f46bec47858cec07"
-let quantized_sha256 = "4fb5f7216abc0ee16ece91a4bce822b06d67b52ca985c9eecbf9d3f8bd1ea1ba"
-let xnnpack_sha256 = "e610904cfd6e96f8f738c25a7bb4f6d7b86995b2cfeb72fc1f30523630dbb285"
+let coreml_sha256 = "78d853d87be478696e56e658aa4ff17d47ae185a9a6a36316c821fa8b2d3aacd"
+let custom_sha256 = "f059f6716298403dff89a952a70e323c54911be140d05f2467bd5cc61aaefae3"
+let executorch_sha256 = "ba9a0c2b061afaedbc3c5454040a598b1371170bd9d9a30b7163c20e23339841"
+let mps_sha256 = "39542a8671cca1aa627102aa47785d0f6e2dfe9a40e2c22288a755057b00fbfa"
+let optimized_sha256 = "1d84fa16197bb6f0dec01aaa29d2a140c0e14d8e5e92630a7b4dd6f48012506d"
+let portable_sha256 = "4993904f89ecb4476677ff3c072ed1a314a608170f10d364cfd23947851ccbf3"
+let quantized_sha256 = "8d35ee0e7ca77c19782eaea07a1888f576cda679f8a4a5edb03d80ebe858047e"
+let xnnpack_sha256 = "380e5185c4c48ede7cc0d0f0657ffb26df83cd9f55813d78593aea8a93942caf"
 
 struct Framework {
   let name: String
@@ -56,6 +57,10 @@ let frameworks = [
     libraries: [
       "sqlite3",
     ]
+  ),
+  Framework(
+    name: "custom_backend",
+    checksum: custom_sha256
   ),
   Framework(
     name: "executorch",

@@ -5,12 +5,8 @@ cmake-android-out/
 cmake-ios-out/
 ethos-u-scratch/
 executorch.egg-info
+pip-out/
 __pycache__/
-build/lib/
-exir/_serialize/scalar_type.fbs
-exir/_serialize/program.fbs
-sdk/bundled_program/serialize/bundled_program_schema.fbs
-sdk/bundled_program/serialize/scalar_type.fbs
 
 # Any exported models and profiling outputs
 *.pte

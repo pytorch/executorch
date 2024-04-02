@@ -35,7 +35,7 @@ struct ModelMetadata {
 
     inline std::string to_json_string() const noexcept { return executorchcoreml::serde::json::to_json_string(*this); }
 
-    inline void from_json_string(std::string json_string) noexcept {
+    inline void from_json_string(const std::string& json_string) noexcept {
         executorchcoreml::serde::json::from_json_string(json_string, *this);
     }
 

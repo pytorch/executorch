@@ -13,7 +13,6 @@ from typing import Any
 from examples.models import MODEL_NAME_TO_MODEL
 from examples.xnnpack import MODEL_NAME_TO_OPTIONS
 
-
 DEFAULT_RUNNERS = {
     "linux": "linux.2xlarge",
     "macos": "macos-m1-stable",
@@ -24,6 +23,7 @@ CUSTOM_RUNNERS = {
         "w2l": "linux.12xlarge",
         "ic4": "linux.12xlarge",
         "resnet50": "linux.12xlarge",
+        "llava_encoder": "linux.4xlarge",
         # This one causes timeout on smaller runner, the root cause is unclear (T161064121)
         "dl3": "linux.12xlarge",
         "emformer_join": "linux.12xlarge",
@@ -83,7 +83,17 @@ def model_should_run_on_event(model: str, event: str) -> bool:
     We put higher priority and fast models to pull request and rest to push.
     """
     if event == "pull_request":
-        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit"]
+        return model in ["add", "ic3", "mv2", "mv3", "resnet18", "vit", "llava_encoder"]
+    return True
+
+
+def model_should_run_on_target_os(model: str, target_os: str) -> bool:
+    """
+    A helper function to decide whether a model should be tested on a target os (linux/macos).
+    For example, a big model can be disabled in macos due to the limited macos resources.
+    """
+    if target_os == "macos":
+        return model not in ["llava_encoder"]
     return True
 
 
@@ -117,6 +127,9 @@ def export_models_for_ci() -> dict[str, dict]:
         MODEL_NAME_TO_MODEL.keys(), ["portable", "xnnpack"]
     ):
         if not model_should_run_on_event(name, event):
+            continue
+
+        if not model_should_run_on_target_os(name, target_os):
             continue
 
         if backend == "xnnpack":
