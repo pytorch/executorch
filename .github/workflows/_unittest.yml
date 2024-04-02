@@ -14,7 +14,7 @@ on:
 
 jobs:
   linux:
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@release/2.3
     strategy:
       matrix:
         include:
@@ -43,7 +43,7 @@ jobs:
         pytest -n auto --cov=./ --cov-report=xml
 
   macos:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/macos_job.yml@release/2.3
     strategy:
       matrix:
         include:
