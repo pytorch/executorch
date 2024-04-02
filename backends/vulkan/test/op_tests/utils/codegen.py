@@ -396,13 +396,13 @@ class VkTestSuiteGen(TestSuiteGen):
 ###############################
 
 preamble_str = """
-#include <ATen/native/vulkan/api/api.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
 #include <tuple>
 
-using namespace at::native::vulkan;
+using namespace vkcompute;
 
 api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
     switch(at_scalartype) {

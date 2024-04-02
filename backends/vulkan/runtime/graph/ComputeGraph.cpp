@@ -15,9 +15,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 ComputeGraph::ComputeGraph(GraphConfig config)
     : config_{config},
@@ -308,6 +306,4 @@ void ComputeGraph::propagate_resize() {
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

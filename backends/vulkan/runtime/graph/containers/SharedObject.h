@@ -10,19 +10,15 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
-#include <ATen/native/vulkan/api/Types.h>
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/Tensor.h>
+#include <executorch/backends/vulkan/runtime/api/Types.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 class ComputeGraph;
 
@@ -41,8 +37,4 @@ struct SharedObject {
   void bind_users(ComputeGraph* const graph);
 };
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

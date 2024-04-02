@@ -1,10 +1,9 @@
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
-    gen_aten_vulkan_spv_target = "//caffe2/tools:gen_aten_vulkan_spv_bin"
+    gen_vulkan_spv_target = "//executorch/backends/vulkan:gen_vulkan_spv_bin"
     glslc_path = "//caffe2/fb/vulkan/dotslash:glslc"
     if is_fbcode:
-        gen_aten_vulkan_spv_target = "//caffe2:gen_vulkan_spv_bin"
         glslc_path = "//caffe2/fb/vulkan/tools:glslc"
 
     glsl_paths = []
@@ -14,7 +13,7 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         glsl_paths.append("$(location {})/{}".format(target, subpath))
 
     genrule_cmd = [
-        "$(exe {})".format(gen_aten_vulkan_spv_target),
+        "$(exe {})".format(gen_vulkan_spv_target),
         "--glsl-paths {}".format(" ".join(glsl_paths)),
         "--output-path $OUT",
         "--glslc-path=$(exe {})".format(glslc_path),
@@ -45,11 +44,34 @@ def vulkan_spv_shader_lib(name, spv_filegroups, is_fbcode = False):
         # Define a soname that can be used for dynamic loading in Java, Python, etc.
         soname = "lib{}.$(ext)".format(name),
         exported_deps = [
-            "//caffe2:torch_vulkan_api",
+            "//executorch/backends/vulkan:vulkan_compute_api",
         ],
     )
 
 def define_common_targets(is_fbcode = False):
+    runtime.python_library(
+        name = "gen_vulkan_spv_lib",
+        srcs = [
+            "runtime/api/gen_vulkan_spv.py",
+        ],
+        base_module = "",
+        deps = [
+            "//caffe2/torchgen:torchgen",
+        ],
+    )
+
+    runtime.python_binary(
+        name = "gen_vulkan_spv_bin",
+        main_module = "runtime.api.gen_vulkan_spv",
+        visibility = [
+            "//executorch/backends/vulkan/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        deps = [
+            ":gen_vulkan_spv_lib",
+        ],
+    )
+
     runtime.genrule(
         name = "gen_vk_delegate_schema",
         srcs = [
@@ -100,6 +122,42 @@ def define_common_targets(is_fbcode = False):
             ":vulkan_graph_runtime_shaders": "runtime/graph/ops/glsl",
         },
         is_fbcode = is_fbcode,
+    )
+
+    VK_API_PREPROCESSOR_FLAGS = []
+    VK_API_DEPS = [
+        "fbsource//third-party/VulkanMemoryAllocator/3.0.1:VulkanMemoryAllocator_xplat",
+    ]
+
+    if not is_fbcode:
+        VK_API_DEPS += [
+            "fbsource//third-party/volk:volk",
+        ]
+        VK_API_PREPROCESSOR_FLAGS += [
+            "-DUSE_VULKAN_WRAPPER",
+            "-DUSE_VULKAN_VOLK",
+        ]
+    else:
+        VK_API_DEPS += [
+            "fbsource//third-party/swiftshader:swiftshader_vk_headers",
+            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_fbcode",
+            "fbsource//third-party/swiftshader/lib/linux-x64:libvk_swiftshader_so",
+        ]
+
+    runtime.cxx_library(
+        name = "vulkan_compute_api",
+        srcs = native.glob([
+            "runtime/api/*.cpp",
+        ]),
+        exported_headers = native.glob([
+            "runtime/api/*.h",
+        ]),
+        visibility = [
+            "//executorch/backends/vulkan/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        exported_preprocessor_flags = VK_API_PREPROCESSOR_FLAGS,
+        exported_deps = VK_API_DEPS,
     )
 
     runtime.cxx_library(

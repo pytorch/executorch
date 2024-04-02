@@ -8,13 +8,9 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 //
 // For objects in the graph
@@ -48,8 +44,4 @@ void bind_staging_to_descriptor_set(
     api::DescriptorSet& descriptor_set,
     const uint32_t idx);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute
