@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Union
 import torch
 from executorch.backends.apple.mps.mps_preprocess import MPSBackend
 from executorch.backends.apple.mps.operators.node_visitor import get_node_visitors
+from executorch.backends.apple.mps.utils.mps_utils import is_parameter
 from executorch.exir.backend.backend_details import CompileSpec
 from executorch.exir.backend.canonical_partitioners.pattern_op_partitioner import (
     generate_partitions_from_list_of_nodes,
@@ -30,8 +31,15 @@ logging.basicConfig(level=logging.DEBUG, format=FORMAT)
 class MPSOperatorSupport(OperatorSupportBase):
     def __init__(self, edge_program: torch.export.ExportedProgram, compiler_specs):
         self.node_visitors = get_node_visitors(edge_program)
+        self.edge_program = edge_program
 
     def is_node_supported(self, submodules, node: torch.fx.Node) -> bool:
+        # Parameters are supported if any of their users are supported
+        if is_parameter(self.edge_program, node):
+            return any(
+                self.is_node_supported(submodules, user) for user in node.users.keys()
+            )
+
         if node.op != "call_function":
             return False
 
