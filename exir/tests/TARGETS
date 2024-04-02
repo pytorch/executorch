@@ -216,6 +216,7 @@ python_unittest(
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:normalize_view_copy_base_pass",
         "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:remove_mixed_type_operators",
         "//executorch/exir/passes:replace_edge_with_backend_pass",
