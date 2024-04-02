@@ -55,7 +55,12 @@ class ConstantOpVisitor(NodeVisitor):
         elif node.target == exir_ops.edge.aten.empty.memory_format:
             fill_value = 0
         elif node.target == exir_ops.edge.aten.scalar_tensor.default:
-            fill_value = float(node.args[0])
+            fill_value = cast(float, node.args[0])
+
+        if fill_value == float("-inf"):
+            fill_value = "-inf"
+        elif fill_value == float("inf"):
+            fill_value = "inf"
 
         dtype = MPSDataType.mps_data_type_float32
         if node.kwargs and "dtype" in node.kwargs and node.kwargs["dtype"] is not None:

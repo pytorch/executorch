@@ -10,9 +10,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ComputeGraph.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void SharedObject::add_user(ComputeGraph* const graph, const ValueRef idx) {
   vTensor& t = graph->get_val(idx).toTensor();
@@ -68,6 +66,4 @@ void SharedObject::bind_users(ComputeGraph* const graph) {
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

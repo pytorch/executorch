@@ -15,9 +15,7 @@
 
 #include <cstring>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 template <typename T>
 void memcpy_to_mapping_impl(
@@ -139,6 +137,4 @@ api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src) {
   return VK_KERNEL_FROM_STR(kernel_name.str());
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

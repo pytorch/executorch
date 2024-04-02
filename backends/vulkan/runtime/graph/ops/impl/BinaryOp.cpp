@@ -15,9 +15,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void check_binary_op_args(
     const vTensor& self,
@@ -132,6 +130,4 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.pow.Tensor_Tensor, pow);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

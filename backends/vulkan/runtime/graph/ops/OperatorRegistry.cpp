@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 bool OperatorRegistry::has_op(const std::string& name) {
   return table_.count(name) > 0;
@@ -30,6 +28,4 @@ OperatorRegistry& operator_registry() {
   return registry;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

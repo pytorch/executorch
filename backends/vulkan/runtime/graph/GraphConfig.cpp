@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 GraphConfig::GraphConfig() {
   // No automatic submissions
@@ -72,6 +70,4 @@ void GraphConfig::setMemoryLayoutOverride(api::GPUMemoryLayout memory_layout) {
   memoryLayoutOverride = memory_layout;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

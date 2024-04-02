@@ -15,9 +15,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 void check_matmul_args(
     const vTensor& mat1,
@@ -110,6 +108,4 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.mm.default, matmul);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute
