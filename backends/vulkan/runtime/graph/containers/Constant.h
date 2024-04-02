@@ -10,7 +10,7 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/Context.h>
 
 namespace at {
 namespace native {

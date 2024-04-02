@@ -12,8 +12,8 @@
 
 #ifdef USE_VULKAN_API
 
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/Tensor.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
