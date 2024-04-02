@@ -9,12 +9,13 @@
 import argparse
 import copy
 import logging
+import os
 import shlex
 from dataclasses import dataclass
 
 from functools import partial
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import pkg_resources
 import torch
@@ -46,6 +47,7 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 pkg_name = __name__
+verbosity_setting = None
 
 
 def set_pkg_name(name: str) -> None:
@@ -55,6 +57,15 @@ def set_pkg_name(name: str) -> None:
 
 def get_resource_path(resource_name) -> str:
     return pkg_resources.resource_filename(pkg_name, resource_name)
+
+
+def set_verbosity(val):
+    global verbosity_setting
+    verbosity_setting = val
+
+
+def verbose_export():
+    return verbosity_setting
 
 
 @dataclass
@@ -141,7 +152,7 @@ def get_pt2e_quantizers(
                     'Use `python -c "import torch as _; print(_.__path__)"` to find where torch package is installed.\n'
                     "Set that as TORCH_PACKAGE_DIR.\n"
                     "Then from root executorch dir do the following:\n"
-                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DREGISTER_QUANTIZED_OPS=ON ..) && cmake --build . -j16\n"
+                    "rm -rf cmake-out && mkdir cmake-out && (cd cmake-out && cmake -DBUCK2=<path-to-buck2> -DCMAKE_PREFIX_PATH=$TORCH_PACKAGE_DIR -DEXECUTORCH_BUILD_QUANTIZED=ON ..) && cmake --build . -j16\n"
                     'To find the location of the lib: find cmake-out -name "libquantized_ops_aot_lib*"\n'
                     "Then specify the said library via -s <path to libquantized_ops_aot_lib.so\n"
                 )
@@ -207,8 +218,8 @@ def quantize(
     group_size: int = 128,
     # following arguments only used for GPTQ
     calibration_tasks: Optional[list] = None,
-    calibration_limit: int = 5,
-    calibration_seq_length: int = 100,
+    calibration_limit: int = 100,
+    calibration_seq_length: int = 2048,
     pad_calibration_inputs: bool = False,
     percdamp: float = 0.01,
     blocksize: int = 128,
@@ -227,8 +238,12 @@ def quantize(
     else:
         torch_dtype = torch.float16
 
-    if checkpoint_path is None:
-        checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
+    assert checkpoint_path, "Need to specify a checkpoint"
+    assert os.path.isfile(
+        canonical_path(checkpoint_path)
+    ), f"{checkpoint_path} does not exist"
+    # if checkpoint_path is None:
+    #     checkpoint_path = Path("checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth")
 
     if calibration_tasks is None:
         calibration_tasks = ["wikitext"]
@@ -239,8 +254,11 @@ def quantize(
     elif qmode == "8da4w":
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-        model = Int8DynActInt4WeightQuantizer(precision=torch_dtype).quantize(model)
-        print("quantized model:", model)
+        model = Int8DynActInt4WeightQuantizer(
+            precision=torch_dtype, group_size=group_size
+        ).quantize(model)
+        if verbose_export():
+            print("quantized model:", model)
         return model
     elif qmode == "8da4w-gptq":
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
@@ -324,19 +342,19 @@ def build_args_parser() -> argparse.ArgumentParser:
         "--calibration_tasks",
         nargs="+",
         type=str,
-        default=[],
+        default=None,
         help="Tasks for GPTQ calibration",
     )
     parser.add_argument(
         "--calibration_limit",
         type=int,
-        default=5,
+        default=None,
         help="number of samples used for calibration",
     )
     parser.add_argument(
         "--calibration_seq_length",
         type=int,
-        default=2048,
+        default=None,
         help="Sequence length for GPTQ calibration",
     )
     parser.add_argument(
@@ -390,7 +408,11 @@ def build_args_parser() -> argparse.ArgumentParser:
         help="Use cProfile to profile model export. Results saved to profile_path as a html file.",
     )
     parser.add_argument(
-        "-G", "--group_size", default=None, help="group_size for weight quantization"
+        "-G",
+        "--group_size",
+        type=int,
+        default=None,
+        help="group_size for weight quantization",
     )
 
     parser.add_argument(
@@ -446,9 +468,13 @@ def build_args_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def canonical_path(path: str, *, dir: bool = False) -> str:
+def canonical_path(path: Union[str, Path], *, dir: bool = False) -> str:
 
-    print(f"creating canonical path for {path}")
+    path = str(path)
+
+    if verbose_export():
+        print(f"creating canonical path for {path}")
+
     if not path.startswith("par:"):
         return path
 
@@ -457,7 +483,8 @@ def canonical_path(path: str, *, dir: bool = False) -> str:
         return path[4:]
     else:
         return_val = pkg_resources.resource_filename(pkg_name, path[4:])
-        print(f"canonical name is: {return_val}")
+        if verbose_export():
+            print(f"canonical name is: {return_val}")
         return return_val
 
 
@@ -504,9 +531,25 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     transforms = []
     if args.quantization_mode:
         modelname = f"{modelname}_q"
+
+        # If these optional args are None, don't provide them to quantize()
+        quant_args_str = [
+            "group_size",
+            "calibration_tasks",
+            "calibration_limit",
+            "calibration_seq_length",
+        ]
+        arg_dict = vars(args)
+        quant_args = {
+            param: val
+            for param in quant_args_str
+            if (val := arg_dict.get(param)) is not None
+        }
+
         transforms.append(
             partial(
                 quantize,
+                **quant_args,
                 qmode=args.quantization_mode,
                 activation_dtype=dtype_override,
                 checkpoint_path=(
@@ -515,10 +558,6 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
                 tokenizer_path=(
                     Path(path) if (path := args.tokenizer_path) is not None else None
                 ),
-                group_size=args.group_size,
-                calibration_tasks=args.calibration_tasks,
-                calibration_limit=args.calibration_limit,
-                calibration_seq_length=args.calibration_seq_length,
             )
         )
 
@@ -588,9 +627,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     ).export_to_edge(quantizers)
 
     # to_backend
-    partitioner = None
+    partitioners = []
     if pt2e_quant_params is not None and pt2e_quant_params.quantize_linear is not None:
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
         modelname = f"xnnpack_dq_{modelname}"
 
     if args.xnnpack:
@@ -598,8 +637,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         # 1. We need dynamically quantized partitioner for both pt2e_quantize options
         #    as well as "qmode 8da4w" which is also dynamic quantizes linear layers.
         # 2. XNNPACK partitioner seems to result in seg fault for non dqlinear ops.
-        partitioner = XnnpackDynamicallyQuantizedPartitioner()
-        # partitioner = XnnpackPartitioner()
+        partitioners.append(XnnpackDynamicallyQuantizedPartitioner())
+        # partitioners.append(XnnpackPartitioner())
         modelname = f"xnnpack_{modelname}"
 
     if args.vulkan:
@@ -610,7 +649,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             args.quantization_mode is None
         ), "Vulkan backend does not support quantization at the moment"
 
-        partitioner = VulkanPartitioner()
+        partitioners.append(VulkanPartitioner())
         modelname = f"vulkan_{modelname}"
 
     if args.mps:
@@ -629,7 +668,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         compile_specs = [CompileSpec("use_fp16", bytes([True]))]
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`.
-        partitioner = MPSPartitioner(compile_specs)
+        partitioners.append(MPSPartitioner(compile_specs))
         modelname = f"mps_{modelname}"
 
     if args.coreml:
@@ -659,9 +698,11 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
             model_type=CoreMLBackend.MODEL_TYPE.MODEL,
         )
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
-        partitioner = CoreMLPartitioner(
-            skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+        partitioners.append(
+            # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
+            CoreMLPartitioner(
+                skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+            )
         )
         modelname = f"coreml_{modelname}"
 
@@ -693,18 +734,20 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         backend_options = generate_htp_compiler_spec(use_fp16=False)
-        # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        partitioner = QnnPartitioner(
+        partitioners.append(
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-            generate_qnn_executorch_compiler_spec(
-                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-                soc_model=QcomChipset.SM8650,  # default to SM8650
-                backend_options=backend_options,
-                debug=False,
-                saver=False,
-            ),
-            skip_node_id_set={},
-            skip_node_op_set={},
+            QnnPartitioner(
+                # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
+                generate_qnn_executorch_compiler_spec(
+                    # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
+                    soc_model=QcomChipset.SM8650,  # default to SM8650
+                    backend_options=backend_options,
+                    debug=False,
+                    saver=False,
+                ),
+                skip_node_id_set={},
+                skip_node_op_set={},
+            )
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
         _transform(builder_exported_to_edge.export_program())
@@ -716,7 +759,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         logging.info("Generating etrecord")
         # Copy the edge manager which will be serialized into etrecord. This is memory-wise expensive.
         edge_manager_copy = copy.deepcopy(builder_exported_to_edge.edge_manager)
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
         # Generate ETRecord
         if edge_manager_copy:
@@ -727,7 +770,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
             logging.info("Generated etrecord.bin")
     else:
-        builder = builder_exported_to_edge.to_backend(partitioner).to_executorch()
+        builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
 
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")

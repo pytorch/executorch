@@ -8,14 +8,8 @@
 
 set -eu
 
-EXECUTOR_JAVA_DIR=examples/demo-apps/android/ExecuTorchDemo/app/src/main/java/com/example/executorchdemo/executor/
-mkdir -p "${EXECUTOR_JAVA_DIR}"
-# Temporary workaround until we have a formal Java package
-cp extension/android/src/main/java/org/pytorch/executorch/*.java "${EXECUTOR_JAVA_DIR}"
-
-pushd cmake-out
-# Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC_EXECUTABLE
-cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
+# Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC
+cmake . -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DBUCK2="${BUCK2}" \
@@ -23,16 +17,23 @@ cmake .. -DCMAKE_INSTALL_PREFIX=cmake-out \
   -DEXECUTORCH_BUILD_FLATC=OFF \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
   -DFLATC_EXECUTABLE="${FLATC}" \
-  -DEXECUTORCH_BUILD_ANDROID_JNI=ON \
-  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON
+  -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+  -Bcmake-out
 
 if [ "$(uname)" == "Darwin" ]; then
   CMAKE_JOBS=$(( $(sysctl -n hw.ncpu) - 1 ))
 else
   CMAKE_JOBS=$(( $(nproc) - 1 ))
 fi
-cmake --build . -j "${CMAKE_JOBS}"
-popd
+cmake --build cmake-out -j "${CMAKE_JOBS}" --target install
+
+cmake extension/android -DBUCK2="${BUCK2}" \
+  -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
+  -DANDROID_ABI="${ANDROID_ABI}" \
+  -DCMAKE_INSTALL_PREFIX=cmake-out \
+  -Bcmake-out/extension/android
+
+cmake --build cmake-out/extension/android -j "${CMAKE_JOBS}"
 
 JNI_LIBS_PATH="examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs"
 mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"

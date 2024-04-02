@@ -12,7 +12,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/utils.sh"
 MODEL_NAME=$1 # stories110M.pt
 BUILD_TOOL=$2 # buck2 or cmake
 DTYPE=$3 # fp16 or fp32
-
+MODE=${4:-"xnnpack"} # portable or xnnpack
+if [[ $# -lt 4 ]]; then # Assuming 4 mandatory args
+    echo "Expecting atleast 4 positional arguments"
+    echo "Usage: [...]"
+fi
 if [[ -z "${MODEL_NAME:-}" ]]; then
   echo "Missing model name, exiting..."
   exit 1
@@ -25,6 +29,11 @@ fi
 
 if [[ -z "${DTYPE:-}" ]]; then
   echo "Missing dtype, choose fp16 or fp32, exiting..."
+  exit 1
+fi
+
+if [[ -z "${MODE:-}" ]]; then
+  echo "Missing mode, choose portable or xnnpack, exiting..."
   exit 1
 fi
 
@@ -42,11 +51,18 @@ which "${PYTHON_EXECUTABLE}"
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
+    if [[ "${MODE}" == "xnnpack" ]]; then
+      XNNPACK=ON
+    else
+      XNNPACK=OFF
+    fi
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Release
@@ -58,6 +74,7 @@ cmake_build_llama_runner() {
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
@@ -99,7 +116,11 @@ fi
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
-$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama -c stories110M.pt -p "${PARAMS}" -d "${DTYPE}"
+EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME}"
+if [[ "${MODE}" == "xnnpack" ]]; then
+  EXPORT_ARGS="${EXPORT_ARGS} --pt2e_quantize xnnpack_dynamic"
+fi
+$PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
 echo "Creating tokenizer.bin"

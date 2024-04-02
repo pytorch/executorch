@@ -12,7 +12,7 @@ import json
 import logging
 from enum import Enum
 from json import JSONDecodeError
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 
 import torch
 from executorch.backends.transforms.duplicate_dynamic_quant_chain import (
@@ -199,16 +199,16 @@ class LlamaEdgeManager:
             logging.info(f"Applied source transforms: {self.applied_source_transforms}")
         return self
 
-    def _get_dynamic_shape(self) -> Optional[Dict[str, Any]]:
+    def _get_dynamic_shape(self) -> Any:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
             if self.use_sdpa_with_kv_cache:
                 return None
             else:
-                # return {"tokens": {1: dim}, "input_pos": {0: dim}} TODO update xnnpack to be able to handle dynamic shape kv cache
+                # return {1: dim}, {0: dim}} TODO update xnnpack to be able to handle dynamic shape kv cache
                 return None
         else:
-            return {"tokens": {1: dim}}
+            return ({1: dim},)
 
     def _get_edge_config(self) -> EdgeCompileConfig:
         edge_config = EdgeCompileConfig(
@@ -283,7 +283,9 @@ class LlamaEdgeManager:
             )
         return self
 
-    def to_backend(self, partitioner: Optional[Partitioner]) -> "LlamaEdgeManager":
+    def to_backend(
+        self, partitioners: Optional[List[Partitioner]]
+    ) -> "LlamaEdgeManager":
         """
         Partition the model and lower to different backends. The signature is
         aligned with the signature of `to_backend` method of EdgeManager.
@@ -291,18 +293,26 @@ class LlamaEdgeManager:
             partitioner (Optional[Partitioner]): One or more
                 partitioner to be sent to EdgeManager.to_backend().
         """
-        assert self.edge_manager is not None, "Need to run export_to_edge() first"
-        if partitioner is None:
+        if partitioners is None:
             logging.info("No partitioner provided, passing...")
         else:
-            self.edge_manager = self.edge_manager.to_backend(partitioner)
-            if self.verbose:
-                logging.info(
-                    print_delegated_graph(
-                        self.edge_manager.exported_program().graph_module
-                    )
-                )
-                logging.info(f"Applied partitioners: {partitioner}")
+            for partitioner in partitioners:
+                if partitioner is not None:
+                    assert (
+                        self.edge_manager is not None
+                    ), "Need to run export_to_edge() first"
+                    self.edge_manager = self.edge_manager.to_backend(partitioner)
+                    if self.verbose:
+                        logging.info(
+                            print_delegated_graph(
+                                self.edge_manager.exported_program().graph_module
+                            )
+                        )
+                        logging.info(f"Applied partitioners: {partitioner}")
+                else:
+                    logging.info("No partitioner provided, passing...")
+                    continue
+
         return self
 
     def to_executorch(self) -> "LlamaEdgeManager":

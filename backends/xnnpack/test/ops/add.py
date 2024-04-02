@@ -97,7 +97,6 @@ class TestAdd(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_add_Tensor"])
             .to_executorch()
             .serialize()
-            .dump_artifact("/data/users/maxren/models/q_add_constant.pte")
             .run_method()
             .compare_outputs()
         )

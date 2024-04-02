@@ -59,6 +59,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "portable_kernels",
 ]
 
 [targets.quantized_kernels]
@@ -75,6 +76,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "portable_kernels",
 ]
 
 [targets.program_schema]
@@ -85,9 +87,21 @@ filters = [
   ".fbs$",
 ]
 
+[targets.optimized_cpublas]
+buck_targets = [
+  "//kernels/optimized:libblas",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+]
+deps = [
+  "executorch",
+]
+
 # ---------------------------------- core end ----------------------------------
 # ---------------------------------- extension start ----------------------------------
-
 [targets.extension_data_loader]
 buck_targets = [
   "//extension/data_loader:buffer_data_loader",
@@ -117,17 +131,6 @@ deps = [
 [targets.extension_runner_util]
 buck_targets = [
   "//extension/runner_util:inputs",
-]
-filters = [
-  ".cpp$",
-]
-deps = [
-  "executorch",
-]
-
-[targets.extension_aot_util]
-buck_targets = [
-  "//extension/aot_util:aot_util",
 ]
 filters = [
   ".cpp$",
@@ -260,6 +263,21 @@ filters = [
 ]
 # ---------------------------------- Vulkan end -----------------------------------
 # ---------------------------------- LLama start ----------------------------------
+[targets.custom_ops]
+buck_targets = [
+  "//examples/models/llama2/custom_ops:custom_ops",
+]
+filters = [
+  ".cpp$",
+]
+excludes = [
+  "^codegen",
+]
+deps = [
+  "executorch",
+  "optimized_kernels",
+  "xnnpack_backend",
+]
 
 [targets.llama_runner]
 buck_targets = [
@@ -272,6 +290,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "custom_ops",
   "executorch",
   "extension_data_loader",
   "extension_module",

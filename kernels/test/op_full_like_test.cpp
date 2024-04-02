@@ -187,3 +187,25 @@ TEST_F(OpFullLikeTest, DynamicShapeUnbound) {
   Tensor ret = op_full_like_out(x, Scalar(3.0), MemoryFormat::Contiguous, out);
   EXPECT_TENSOR_CLOSE(out, expected_result);
 }
+
+TEST_F(OpFullLikeTest, HalfSupport) {
+  TensorFactory<ScalarType::Half> tf;
+  optional<MemoryFormat> memory_format;
+  Tensor in = tf.ones({2, 3});
+  Tensor out = tf.zeros({2, 3});
+
+  op_full_like_out(in, false, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 0));
+
+  op_full_like_out(in, true, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 1));
+
+  op_full_like_out(in, 7, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 7));
+
+  op_full_like_out(in, 2.5, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, 2.5));
+
+  op_full_like_out(in, INFINITY, memory_format, out);
+  EXPECT_TENSOR_CLOSE(out, tf.full({2, 3}, INFINITY));
+}

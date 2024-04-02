@@ -26,7 +26,7 @@ Inspector Methods
 Constructor
 ~~~~~~~~~~~
 
-.. autofunction:: sdk.Inspector.__init__
+.. autofunction:: executorch.sdk.Inspector.__init__
 
 **Example Usage:**
 
@@ -39,13 +39,13 @@ Constructor
 to_dataframe
 ~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.Inspector.to_dataframe
+.. autofunction:: executorch.sdk.Inspector.to_dataframe
 
 
 print_data_tabular
 ~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.Inspector.print_data_tabular
+.. autofunction:: executorch.sdk.Inspector.print_data_tabular
 
 .. _example-usage-1:
 
@@ -61,7 +61,7 @@ print_data_tabular
 find_total_for_module
 ~~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.Inspector.find_total_for_module
+.. autofunction:: executorch.sdk.Inspector.find_total_for_module
 
 .. _example-usage-2:
 
@@ -79,7 +79,7 @@ find_total_for_module
 get_exported_program
 ~~~~~~~~~~~~~~~~~~~~
 
-.. autofunction:: sdk.Inspector.get_exported_program
+.. autofunction:: executorch.sdk.Inspector.get_exported_program
 
 .. _example-usage-3:
 
@@ -118,7 +118,7 @@ of an ``Inspector`` instance, for example:
 
     inspector.event_blocks
 
-.. autoclass:: sdk.inspector.inspector.EventBlock
+.. autoclass:: executorch.sdk.inspector.EventBlock
 
 ``Event`` Class
 ~~~~~~~~~~~~~~~
@@ -126,7 +126,7 @@ of an ``Inspector`` instance, for example:
 Access ``Event`` instances through the ``events`` attribute of an
 ``EventBlock`` instance.
 
-.. autoclass:: sdk.inspector.inspector.Event
+.. autoclass:: executorch.sdk.inspector.Event
 
 **Example Usage:**
 

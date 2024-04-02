@@ -12,6 +12,7 @@ from executorch.backends.qualcomm.serialization.qnn_compile_spec_schema import (
 )
 from executorch.backends.qualcomm.utils.utils import (
     capture_program,
+    generate_htp_compiler_spec,
     generate_qnn_executorch_compiler_spec,
 )
 from executorch.examples.models import MODEL_NAME_TO_MODEL
@@ -71,12 +72,13 @@ if __name__ == "__main__":
     edge_copy = copy.deepcopy(edge_program)
 
     # Delegate to QNN backend
+    backend_options = generate_htp_compiler_spec(
+        use_fp16=False,
+    )
     qnn_partitioner = QnnPartitioner(
         generate_qnn_executorch_compiler_spec(
-            is_fp16=False,
             soc_model=QcomChipset.SM8550,
-            debug=False,
-            saver=False,
+            backend_options=backend_options,
         )
     )
     with validation_disabled():

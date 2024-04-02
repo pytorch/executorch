@@ -19,6 +19,15 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
+include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
+
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
 # Find prebuilt executorch lib
 find_package(executorch CONFIG REQUIRED)
 
@@ -74,6 +83,10 @@ target_include_directories(
          ${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/utilities/str
          ${NXP_SDK_ROOT_DIR}/boards/evkmimxrt685/dsp_examples/mu_polling/dsp)
 
+add_library(extension_runner_util STATIC IMPORTED)
+set_property(TARGET extension_runner_util PROPERTY IMPORTED_LOCATION
+  "${CMAKE_CURRENT_LIST_DIR}/../../cmake-out/extension/runner_util/libextension_runner_util.a")
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/ops)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels)
 
@@ -90,13 +103,15 @@ add_custom_target(gen_model_header DEPENDS ${CMAKE_BINARY_DIR}/model_pte.h)
 add_executable(xtensa_executorch_example executor_runner.cpp)
 add_dependencies(xtensa_executorch_example gen_model_header)
 
+# lint_cmake: -linelength
 target_include_directories(xtensa_executorch_example PUBLIC ${ROOT_DIR}/..
-                                                            ${CMAKE_BINARY_DIR})
+                                                            ${CMAKE_BINARY_DIR}
+                                                            ${_common_include_directories})
 
 target_link_options(xtensa_executorch_example PRIVATE
                     -mlsp=${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/xtensa/min-rt)
 target_link_libraries(xtensa_executorch_example dsp_mu_polling_libs
-                      xtensa_ops_lib executorch)
+                      xtensa_ops_lib extension_runner_util executorch)
 
 add_custom_command(
   TARGET xtensa_executorch_example

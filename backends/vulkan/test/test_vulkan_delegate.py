@@ -146,16 +146,20 @@ class TestBackends(unittest.TestCase):
             def __init__(self):
                 super().__init__()
 
-            def forward(self, x, y):
+            def forward(self, x, y, w):
                 z = x + y
                 z = z + x
                 z = z + x
+                z = z + w
+                z = w + z
+                z = z + 3  # test scalar broadcasting
                 return z
 
         add_module = AddModule()
         sample_inputs = (
             torch.rand(size=(2, 3), dtype=torch.float32),
             torch.rand(size=(2, 3), dtype=torch.float32),
+            torch.rand(size=(2, 1), dtype=torch.float32),  # test broadcasting
         )
 
         self.lower_module_and_test_output(add_module, sample_inputs)
@@ -379,6 +383,36 @@ class TestBackends(unittest.TestCase):
             first_output_only=True,
         )
 
+    def test_vulkan_backend_abs(self):
+        class AbsModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.abs(x)
+
+        self.lower_clamp_module_and_test_output(AbsModule())
+
+    def test_vulkan_backend_sigmoid(self):
+        class SigmoidModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.sigmoid(x)
+
+        self.lower_clamp_module_and_test_output(SigmoidModule())
+
+    def test_vulkan_backend_tanh(self):
+        class TanhModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.tanh(x)
+
+        self.lower_clamp_module_and_test_output(TanhModule())
+
     def test_vulkan_backend_partial(self):
         class SimpleModel(torch.nn.Module):
             def __init__(self):
@@ -443,3 +477,22 @@ class TestBackends(unittest.TestCase):
         sample_inputs = (torch.ones(size=(31, 63), dtype=torch.float32),)
 
         self.lower_module_and_test_output(module, sample_inputs)
+
+    def test_vulkan_backend_sum_dim_list(self):
+        class SumModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = torch.sum(x, (0, -1), keepdim=True)
+                x = torch.sum(x, 2, keepdim=False)
+                return x
+
+        module = SumModule()
+        sample_inputs = (torch.ones(size=(3, 2, 7, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

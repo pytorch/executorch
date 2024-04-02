@@ -44,10 +44,10 @@ function(executorch_print_configuration_summary)
   message(
     STATUS
       "  EXECUTORCH_BUILD_COREML                : ${EXECUTORCH_BUILD_COREML}")
+  message(STATUS "  EXECUTORCH_BUILD_CUSTOM                : "
+                 "${EXECUTORCH_BUILD_CUSTOM}")
   message(STATUS "  EXECUTORCH_BUILD_EXECUTOR_RUNNER       : "
                  "${EXECUTORCH_BUILD_EXECUTOR_RUNNER}")
-  message(STATUS "  EXECUTORCH_BUILD_EXTENSION_AOT_UTIL    : "
-                 "${EXECUTORCH_BUILD_EXTENSION_AOT_UTIL}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_DATA_LOADER : "
                  "${EXECUTORCH_BUILD_EXTENSION_DATA_LOADER}")
   message(STATUS "  EXECUTORCH_BUILD_EXTENSION_MODULE      : "
@@ -72,8 +72,10 @@ function(executorch_print_configuration_summary)
       "  EXECUTORCH_BUILD_PYBIND                : ${EXECUTORCH_BUILD_PYBIND}")
   message(
     STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}")
-  message(
-    STATUS "  REGISTER_QUANTIZED_OPS             : ${REGISTER_QUANTIZED_OPS}")
+  message(STATUS "  EXECUTORCH_BUILD_OPTIMIZED             : "
+                 "${EXECUTORCH_BUILD_OPTIMIZED}")
+  message(STATUS "  EXECUTORCH_BUILD_QUANTIZED             : "
+                 "${EXECUTORCH_BUILD_QUANTIZED}")
   message(
     STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}")
   message(
@@ -86,6 +88,13 @@ function(executorch_print_configuration_summary)
   message(
     STATUS
       "  EXECUTORCH_BUILD_VULKAN                : ${EXECUTORCH_BUILD_VULKAN}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_PTHREADPOOL           : ${EXECUTORCH_BUILD_PTHREADPOOL}")
+  message(
+    STATUS
+      "  EXECUTORCH_BUILD_CPUINFO               : ${EXECUTORCH_BUILD_CPUINFO}")
+
 endfunction()
 
 # This is the funtion to use -Wl, --whole-archive to link static library NB:
@@ -133,15 +142,17 @@ function(extract_sources sources_file)
     else()
       set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
     endif()
+
     execute_process(
       COMMAND
         ${PYTHON_EXECUTABLE} ${executorch_root}/build/extract_sources.py
-        --buck2=${BUCK2} --config=${executorch_root}/build/cmake_deps.toml
-        --out=${sources_file}
+        --config=${executorch_root}/build/cmake_deps.toml --out=${sources_file}
+        --buck2=${BUCK2}
       OUTPUT_VARIABLE gen_srcs_output
       ERROR_VARIABLE gen_srcs_error
       RESULT_VARIABLE gen_srcs_exit_code
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
     if(NOT gen_srcs_exit_code EQUAL 0)
       message("Error while generating ${sources_file}. "
               "Exit code: ${gen_srcs_exit_code}")
@@ -149,5 +160,76 @@ function(extract_sources sources_file)
       message("Error:\n${gen_srcs_error}")
       message(FATAL_ERROR "executorch: source list generation failed")
     endif()
+  endif()
+endfunction()
+
+# Sets the value of the BUCK2 variable by searching for a buck2 binary with the
+# correct version.
+#
+# The resolve_buck.py script uses the following logic to find buck2: 1) If BUCK2
+# argument is set explicitly, use it. Warn if the version is incorrect. 2) Look
+# for a binary named buck2 on the system path. Take it if it is the correct
+# version. 3) Check for a previously downloaded buck2 binary (from step 4). 4)
+# Download and cache correct version of buck2.
+function(resolve_buck2)
+  if(EXECUTORCH_ROOT)
+    set(executorch_root ${EXECUTORCH_ROOT})
+  else()
+    set(executorch_root ${CMAKE_CURRENT_SOURCE_DIR})
+  endif()
+
+  set(resolve_buck2_command
+      ${PYTHON_EXECUTABLE} ${executorch_root}/build/resolve_buck.py
+      --cache_dir=${CMAKE_CURRENT_BINARY_DIR}/buck2-bin)
+
+  if(NOT ${BUCK2} STREQUAL "")
+    list(APPEND resolve_buck2_command --buck2=${BUCK2})
+  endif()
+
+  execute_process(
+    COMMAND ${resolve_buck2_command}
+    OUTPUT_VARIABLE resolve_buck2_output
+    ERROR_VARIABLE resolve_buck2_error
+    RESULT_VARIABLE resolve_buck2_exit_code
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+  if(resolve_buck2_exit_code EQUAL 0)
+    set(BUCK2
+        ${resolve_buck2_output}
+        PARENT_SCOPE)
+    message(STATUS "Resolved buck2 as ${resolve_buck2_output}.")
+  elseif(resolve_buck2_exit_code EQUAL 2)
+    # Wrong buck version used. Stop here to ensure that the user sees the error.
+    message(FATAL_ERROR "Failed to resolve buck2.\n${resolve_buck2_error}")
+  else()
+    # Unexpected failure of the script. Warn.
+    message(WARNING "Failed to resolve buck2.")
+    message(WARNING "${resolve_buck2_error}")
+
+    if("${BUCK2}" STREQUAL "")
+      set(BUCK2
+          "buck2"
+          PARENT_SCOPE)
+    endif()
+  endif()
+endfunction()
+
+# Sets the value of the PYTHON_EXECUTABLE variable to 'python' if in an active
+# (non-base) conda environment, and 'python3' otherwise. This maintains
+# backwards compatibility for non-conda users and avoids conda users needing to
+# explicitly set PYTHON_EXECUTABLE=python.
+function(resolve_python_executable)
+  # Counter-intuitively, CONDA_DEFAULT_ENV contains the name of the active
+  # environment.
+  if(DEFINED ENV{CONDA_DEFAULT_ENV} AND NOT $ENV{CONDA_DEFAULT_ENV} STREQUAL
+                                        "base")
+    set(PYTHON_EXECUTABLE
+        python
+        PARENT_SCOPE)
+  else()
+    set(PYTHON_EXECUTABLE
+        python3
+        PARENT_SCOPE)
   endif()
 endfunction()

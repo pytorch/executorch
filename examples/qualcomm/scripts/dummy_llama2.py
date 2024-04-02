@@ -39,6 +39,9 @@ def create_device_inputs(example_inputs, use_kv_cache):
 
 
 if __name__ == "__main__":
+    print(
+        "[WARNING] The module of llama is changing frequently. This script might not work"
+    )
     parser = setup_common_args_and_variables()
     parser.add_argument(
         "-a",
@@ -128,6 +131,7 @@ if __name__ == "__main__":
         inputs,
         custom_annotations=(),
         quant_dtype=quant_dtype,
+        shared_buffer=args.shared_buffer,
     )
 
     if args.compile_only:
@@ -141,6 +145,7 @@ if __name__ == "__main__":
         device_id=args.device,
         host_id=args.host,
         soc_model=args.model,
+        shared_buffer=args.shared_buffer,
     )
     adb.push(inputs=inputs, input_list=input_list)
     adb.execute()

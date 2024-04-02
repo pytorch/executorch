@@ -18,14 +18,18 @@ PYTHON=$(which python3)
 FLATC="flatc"
 IOS_DEPLOYMENT_TARGET="17.0"
 COREML=OFF
+CUSTOM=OFF
 MPS=OFF
+OPTIMIZED=OFF
 PORTABLE=OFF
 QUANTIZED=OFF
 XNNPACK=OFF
 HEADERS_PATH="include"
 EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
 COREML_FRAMEWORK="coreml_backend:libcoremldelegate.a:"
+CUSTOM_FRAMEWORK="custom_backend:libcustom_ops.a,libcustom_ops_lib.a:"
 MPS_FRAMEWORK="mps_backend:libmpsdelegate.a:"
+OPTIMIZED_FRAMEWORK="optimized_backend:liboptimized_kernels.a,liboptimized_ops_lib.a:"
 PORTABLE_FRAMEWORK="portable_backend:libportable_kernels.a,libportable_ops_lib.a:"
 QUANTIZED_FRAMEWORK="quantized_backend:libquantized_kernels.a,libquantized_ops_lib.a:"
 XNNPACK_FRAMEWORK="xnnpack_backend:libXNNPACK.a,libcpuinfo.a,libpthreadpool.a,libxnnpack_backend.a:"
@@ -43,7 +47,9 @@ usage() {
   echo "  --python=FILE        Python executable path. Default: Path of python3 found in the current \$PATH"
   echo "  --flatc=FILE         FlatBuffers Compiler executable path. Default: '\$SOURCE_ROOT_DIR/third-party/flatbuffers/cmake-out/flatc'"
   echo "  --coreml             Include this flag to build the Core ML backend."
+  echo "  --custom             Include this flag to build the Custom backend."
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
+  echo "  --optimized          Include this flag to build the Optimized backend."
   echo "  --portable           Include this flag to build the Portable backend."
   echo "  --quantized          Include this flag to build the Quantized backend."
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
@@ -64,7 +70,9 @@ for arg in "$@"; do
       --flatc=*) FLATC="${arg#*=}" ;;
       --ios-deployment-target=*) IOS_DEPLOYMENT_TARGET="${arg#*=}" ;;
       --coreml) COREML=ON ;;
+      --custom) CUSTOM=ON ;;
       --mps) MPS=ON ;;
+      --optimized) OPTIMIZED=ON ;;
       --portable) PORTABLE=ON ;;
       --quantized) QUANTIZED=ON ;;
       --xnnpack) XNNPACK=ON ;;
@@ -126,8 +134,10 @@ cmake_build() {
         -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$(pwd)" \
         -DIOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
         -DEXECUTORCH_BUILD_COREML=$COREML \
+        -DEXECUTORCH_BUILD_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_MPS=$MPS \
-        -DREGISTER_QUANTIZED_OPS=$QUANTIZED \
+        -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
+        -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         ${platform_flag:+-DIOS_PLATFORM=$platform_flag}
     cmake --build . --config $MODE
@@ -146,7 +156,8 @@ mkdir -p "$HEADERS_PATH"
   //extension/module: \
 | rsync -av --files-from=- "$SOURCE_ROOT_DIR" "$HEADERS_PATH/executorch"
 
-cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"{*.h,*.modulemap} "$HEADERS_PATH"
+cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.h "$HEADERS_PATH/executorch"
+cp "$SOURCE_ROOT_DIR/extension/apple/ExecuTorch/Exported/"*.modulemap "$HEADERS_PATH"
 
 echo "Creating frameworks"
 
@@ -166,7 +177,9 @@ append_framework_flag() {
 
 append_framework_flag "ON" "$EXECUTORCH_FRAMEWORK"
 append_framework_flag "$COREML" "$COREML_FRAMEWORK"
+append_framework_flag "$CUSTOM" "$CUSTOM_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
+append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
 append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
 append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
 append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"

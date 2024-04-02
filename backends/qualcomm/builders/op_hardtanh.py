@@ -17,7 +17,7 @@ from .qnn_constants import OpReluMinMax, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class HardTanhVisitor(NodeVisitor):
-    target = "aten.hardtanh.default"
+    target = ["aten.hardtanh.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

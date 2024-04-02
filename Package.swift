@@ -11,12 +11,14 @@ import PackageDescription
 
 let url = "https://ossci-ios.s3.amazonaws.com/executorch"
 let version = "0.1.0"
-let coreml_sha256 = "1f0432ee5782eab259ce9e3007415006be152c27ce530c1ef8a79bca940c6a32"
-let executorch_sha256 = "bf1ea573338bd30e90433bfb93db5d713aa7ecc351579ee7432f57fec329441b"
-let mps_sha256 = "df851be40444509f622ed155b787073aaba7643669eda36b6b3eb902e29b43a6"
-let portable_sha256 = "f183c5934491047b04130304466357959ae65e99b0b482a8a3372676ef817777"
-let quantized_sha256 = "bf79625d32161ac1892e172ec69e83a94b60ea400c8fa32bf4c4e85c7d338e8a"
-let xnnpack_sha256 = "85ab60d6a29fcebaf7aac1eb775ef96c1d87d1fa104458d0efdc681b7ea6b558"
+let coreml_sha256 = "78d853d87be478696e56e658aa4ff17d47ae185a9a6a36316c821fa8b2d3aacd"
+let custom_sha256 = "f059f6716298403dff89a952a70e323c54911be140d05f2467bd5cc61aaefae3"
+let executorch_sha256 = "ba9a0c2b061afaedbc3c5454040a598b1371170bd9d9a30b7163c20e23339841"
+let mps_sha256 = "39542a8671cca1aa627102aa47785d0f6e2dfe9a40e2c22288a755057b00fbfa"
+let optimized_sha256 = "1d84fa16197bb6f0dec01aaa29d2a140c0e14d8e5e92630a7b4dd6f48012506d"
+let portable_sha256 = "4993904f89ecb4476677ff3c072ed1a314a608170f10d364cfd23947851ccbf3"
+let quantized_sha256 = "8d35ee0e7ca77c19782eaea07a1888f576cda679f8a4a5edb03d80ebe858047e"
+let xnnpack_sha256 = "380e5185c4c48ede7cc0d0f0657ffb26df83cd9f55813d78593aea8a93942caf"
 
 struct Framework {
   let name: String
@@ -57,6 +59,10 @@ let frameworks = [
     ]
   ),
   Framework(
+    name: "custom_backend",
+    checksum: custom_sha256
+  ),
+  Framework(
     name: "executorch",
     checksum: executorch_sha256
   ),
@@ -68,6 +74,10 @@ let frameworks = [
       "MetalPerformanceShaders",
       "MetalPerformanceShadersGraph",
     ]
+  ),
+  Framework(
+    name: "optimized_backend",
+    checksum: optimized_sha256
   ),
   Framework(
     name: "portable_backend",

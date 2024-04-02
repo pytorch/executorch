@@ -11,10 +11,6 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 # Source root directory for pytorch.
 if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
@@ -22,6 +18,10 @@ endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
 
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
@@ -32,10 +32,21 @@ set(_aten_ops__srcs
 add_library(aten_ops_xtensa ${_aten_ops__srcs})
 target_link_libraries(aten_ops_xtensa PUBLIC executorch)
 
+# Let files say "include <executorch/path/to/header.h>".
+set(_common_include_directories ${EXECUTORCH_ROOT}/..)
+
+target_include_directories(aten_ops_xtensa PUBLIC ${ROOT_DIR}/..
+                                                  ${CMAKE_BINARY_DIR}
+                                                  ${_common_include_directories})
+
 # Custom ops that are needed to run the test model.
 add_library(
   custom_ops "quantized_linear_out.cpp" "quantize_per_tensor.cpp"
   "dequantize_per_tensor.cpp")
+target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/..
+                                             ${CMAKE_BINARY_DIR}
+                                             ${_common_include_directories})
+
 target_link_libraries(custom_ops PUBLIC executorch)
 target_link_libraries(custom_ops PRIVATE xtensa_kernels)
 

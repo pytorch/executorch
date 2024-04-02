@@ -35,14 +35,19 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.div.Tensor,
             exir_ops.edge.aten.div.Tensor_mode,
             exir_ops.edge.aten.pow.Tensor_Tensor,
-            # Activation operators
+            # Unary operators
+            exir_ops.edge.aten.abs.default,
             exir_ops.edge.aten.clamp.default,
             exir_ops.edge.aten.hardtanh.default,
             exir_ops.edge.aten.relu.default,
+            exir_ops.edge.aten.sigmoid.default,
+            exir_ops.edge.aten.tanh.default,
             # Matrix multiplication operators
             exir_ops.edge.aten.mm.default,
             # Pooling operators
             exir_ops.edge.aten.max_pool2d_with_indices.default,
+            # Sum
+            exir_ops.edge.aten.sum.dim_IntList,
             # Other
             operator.getitem,
         ]

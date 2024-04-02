@@ -13,13 +13,14 @@
 # cloning or pulling the upstream repo. Once this is done, you don't need to do
 # it again until you pull from the upstream repo again.
 #
-# NOTE: If your `buck2` binary is not on the PATH, you can change this line to
-# say something like `-DBUCK2=/tmp/buck2` to point directly to the tool.
+# NOTE: Build options can be configured by passing arguments to cmake. For
+# example, to enable the EXECUTORCH_BUILD_XNNPACK option, change the cmake
+# command to 'cmake -DEXECUTORCH_BUILD_XNNPACK=ON ..'.
 #[[
   (rm -rf cmake-out \
     && mkdir cmake-out \
     && cd cmake-out \
-    && cmake -DBUCK2=buck2 ..)
+    && cmake ..)
 ]]
 #
 # ### Build ###
@@ -54,6 +55,7 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
+
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
@@ -140,7 +142,7 @@ option(EXECUTORCH_BUILD_ARM_BAREMETAL
 
 option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
-option(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL "Build the AOT Util extension" OFF)
+option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
 
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
@@ -158,7 +160,9 @@ option(EXECUTORCH_BUILD_PYBIND "Build the Python Bindings" OFF)
 
 option(EXECUTORCH_BUILD_QNN "Build the Qualcomm backend" OFF)
 
-option(REGISTER_QUANTIZED_OPS "Build the quantized kernels" OFF)
+option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
+
+option(EXECUTORCH_BUILD_QUANTIZED "Build the quantized kernels" OFF)
 
 option(EXECUTORCH_BUILD_SDK "Build the ExecuTorch SDK")
 
@@ -168,13 +172,65 @@ option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
 
-if(NOT BUCK2)
-  set(BUCK2 buck2)
+#
+# pthreadpool: build pthreadpool library. Disable on unsupported platforms
+#
+cmake_dependent_option(EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library."
+                       ON "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+
+#
+# cpuinfo: build cpuinfo library. Disable on unsupported platforms
+#
+cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
+                       "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+
+if(EXECUTORCH_BUILD_CPUINFO)
+  # --- cpuinfo
+  set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
+  set(CPUINFO_BUILD_TOOLS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_UNIT_TESTS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_MOCK_TESTS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_LIBRARY_TYPE
+      "static"
+      CACHE STRING "")
+  set(CPUINFO_LOG_LEVEL
+      "error"
+      CACHE STRING "")
+  set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
+  add_subdirectory("${CPUINFO_SOURCE_DIR}")
+endif()
+
+if(EXECUTORCH_BUILD_PTHREADPOOL)
+  # --- pthreadpool
+  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+  set(PTHREADPOOL_BUILD_TESTS
+      OFF
+      CACHE BOOL "")
+  set(PTHREADPOOL_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL "")
+  set(PTHREADPOOL_LIBRARY_TYPE
+      "static"
+      CACHE STRING "")
+  set(PTHREADPOOL_ALLOW_DEPRECATED_API
+      ON
+      CACHE BOOL "")
+  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
+  resolve_python_executable()
 endif()
+message(STATUS "Using python executable '${PYTHON_EXECUTABLE}'")
 
 # TODO(dbort): Fix these warnings and remove this flag.
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
@@ -187,6 +243,9 @@ set(_common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/..)
 #
 
 if(NOT EXECUTORCH_SRCS_FILE)
+  # Find or download buck2 binary.
+  resolve_buck2()
+
   # A file wasn't provided. Run a script to extract the source lists from the
   # buck2 build system and write them to a file we can include.
   #
@@ -313,13 +372,22 @@ endif()
 # operators necessary for the models that will run.
 #
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/portable)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
+if(EXECUTORCH_BUILD_CUSTOM)
+  # TODO: move all custom kernels to ${CMAKE_CURRENT_SOURCE_DIR}/kernels/custom
+  add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/custom_ops)
+endif()
 
-if(REGISTER_QUANTIZED_OPS)
+if(EXECUTORCH_BUILD_OPTIMIZED)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/optimized)
+endif()
+
+if(EXECUTORCH_BUILD_QUANTIZED)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/kernels/quantized)
 endif()
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/configurations)
 
 #
 # gflags: Commandline flag host library.
@@ -347,10 +415,16 @@ cmake_dependent_option(
   EXECUTORCH_BUILD_HOST_TARGETS OFF)
 if(EXECUTORCH_BUILD_EXECUTOR_RUNNER)
   # Baseline libraries that executor_runner will link against.
-  set(_executor_runner_libs executorch optimized_native_cpu_ops_lib gflags)
+  set(_executor_runner_libs executorch gflags)
+
+  if(EXECUTORCH_BUILD_OPTIMIZED)
+    list(APPEND _executor_runner_libs optimized_native_cpu_ops_lib)
+  else()
+    list(APPEND _executor_runner_libs portable_ops_lib)
+  endif()
 
   # Generate lib to register quantized ops
-  if(REGISTER_QUANTIZED_OPS)
+  if(EXECUTORCH_BUILD_QUANTIZED)
     list(APPEND _executor_runner_libs quantized_ops_lib)
   endif()
 
@@ -390,21 +464,12 @@ if(EXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/runner_util)
 endif()
 
-if(EXECUTORCH_BUILD_EXTENSION_AOT_UTIL)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/aot_util)
-endif()
-
 if(EXECUTORCH_BUILD_XNNPACK)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/xnnpack)
 endif()
 
 if(EXECUTORCH_BUILD_VULKAN)
   add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/backends/vulkan)
-endif()
-
-if(EXECUTORCH_BUILD_ANDROID_JNI)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/examples/models/llama2/runner)
-  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/extension/android)
 endif()
 
 if(EXECUTORCH_BUILD_QNN)

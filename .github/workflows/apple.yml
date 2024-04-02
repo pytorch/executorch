@@ -68,7 +68,9 @@ jobs:
         FRAMEWORKS=(
           "executorch"
           "coreml_backend"
+          "custom_backend"
           "mps_backend"
+          "optimized_backend"
           "portable_backend"
           "quantized_backend"
           "xnnpack_backend"
@@ -88,13 +90,14 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         backends/apple/mps/install_requirements.sh
 
-        # Build iOS Frameworks
+        # Build Release iOS Frameworks
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
-        build/build_apple_frameworks.sh --coreml --mps --portable --quantized --xnnpack
+        build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack
 
-        # Bundle iOS Frameworks
+        # Bundle Release iOS Frameworks
         for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
-          cd cmake-out && zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
+          cd cmake-out && \
+          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
         ) done
 
         popd

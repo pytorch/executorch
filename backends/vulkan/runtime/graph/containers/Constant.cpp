@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 TensorRef::TensorRef(
     const std::vector<int64_t>& t_sizes,
@@ -24,6 +22,4 @@ TensorRef::TensorRef(
   }
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

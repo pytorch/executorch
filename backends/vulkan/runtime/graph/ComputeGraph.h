@@ -10,9 +10,7 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
-#include <ATen/native/vulkan/api/api.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/GraphConfig.h>
 
@@ -22,11 +20,10 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/ExecuteNode.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/PrepackNode.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
-// Define valid scalar types that the Value class can accept
+// Define valid scalar types that the Value class can
+// accept
 template <typename T>
 struct is_valid_scalar_type : std::false_type {};
 
@@ -317,8 +314,4 @@ ComputeGraph::add_scalar_list(std::vector<T>&& value) {
   return idx;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

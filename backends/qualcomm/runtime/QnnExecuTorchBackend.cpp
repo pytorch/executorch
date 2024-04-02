@@ -188,9 +188,14 @@ Error QnnExecuTorchBackend::execute(
   std::vector<Qnn_Tensor_t> input_tensor_structs;
   std::vector<Qnn_Tensor_t> output_tensor_structs;
 
+  input_tensor_structs.reserve(input_tensors.size());
   for (int i = 0; i < input_tensors.size(); ++i) {
-    input_tensors[i]->FillDataBuffer(
-        args[i]->toTensor().const_data_ptr(), true /* copy_data */);
+    if (qnn_manager->RegisterMem(
+            args[i]->toTensor().mutable_data_ptr(), input_tensors[i]) !=
+        Error::Ok) {
+      input_tensors[i]->FillDataBuffer(
+          args[i]->toTensor().const_data_ptr(), true /* copy_data */);
+    }
     input_tensor_structs.push_back(input_tensors[i]->CloneTensorStruct());
   }
 
@@ -198,9 +203,12 @@ Error QnnExecuTorchBackend::execute(
   for (const auto& output_tensor : output_tensors) {
     // pos=0 limits the search to the prefix
     if (output_tensor->GetName().rfind("output_", 0) == 0) {
-      output_tensor->FillDataBuffer(
-          args[output_index]->toTensor().mutable_data_ptr(),
-          false /* copy_data */);
+      void* mutable_data_ptr =
+          args[output_index]->toTensor().mutable_data_ptr();
+      if (qnn_manager->RegisterMem(mutable_data_ptr, output_tensor) !=
+          Error::Ok) {
+        output_tensor->FillDataBuffer(mutable_data_ptr, false /* copy_data */);
+      }
       output_index++;
     }
     output_tensor_structs.push_back(output_tensor->CloneTensorStruct());

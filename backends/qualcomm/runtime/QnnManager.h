@@ -42,13 +42,17 @@ class QnnManager {
 
   void Destroy();
 
-  bool IsAvailable();
+  bool IsAvailable() {
+    return true;
+  }
+
+  bool IsOnlinePrepare() {
+    return options_->online_prepare();
+  }
 
   bool IsTensorDump() {
     return options_->tensor_dump_output_path()->size() > 0;
   }
-
-  bool IsOnlinePrepare();
 
   bool IsNodeSupportedByBackend(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers);
@@ -56,6 +60,10 @@ class QnnManager {
   Error Compile(
       std::vector<std::shared_ptr<OpWrapper>>& op_wrappers,
       QnnExecuTorchContextBinary& qnn_executorch_context_binary);
+
+  Error RegisterMem(
+      void* data_ptr,
+      const std::shared_ptr<TensorWrapper>& tensor_wrapper);
 
   std::vector<std::shared_ptr<TensorWrapper>> GetGraphInputs() {
     return input_tensors_;

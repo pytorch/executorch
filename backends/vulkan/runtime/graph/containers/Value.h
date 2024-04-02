@@ -10,17 +10,13 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
-#include <ATen/native/vulkan/api/Context.h>
-#include <ATen/native/vulkan/api/Tensor.h>
+#include <executorch/backends/vulkan/runtime/api/Context.h>
+#include <executorch/backends/vulkan/runtime/api/Tensor.h>
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Constant.h>
 #include <executorch/backends/vulkan/runtime/graph/containers/Types.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 using ValueRef = int32_t;
 
@@ -293,8 +289,4 @@ struct Value final {
   }
 };
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

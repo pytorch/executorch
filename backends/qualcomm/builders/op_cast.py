@@ -15,7 +15,7 @@ from .qnn_constants import OpCast, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Cast(NodeVisitor):
-    target = "aten._to_copy.default"
+    target = ["aten._to_copy.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

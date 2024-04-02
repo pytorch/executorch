@@ -32,6 +32,7 @@ from executorch.exir.backend.backend_api import to_backend
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.program._program import ExecutorchProgram
 from executorch.sdk import generate_etrecord
 from executorch.sdk.inspector import Inspector
@@ -64,6 +65,7 @@ class TestQNN(unittest.TestCase):
     use_8a8w: str = "8a8w"
     use_16a16w: str = "16a16w"
     use_16a4w: str = "16a4w"
+    shared_buffer: bool = False
 
     def _assert_outputs_equal(self, model_output, ref_output):
         self.assertTrue(len(ref_output) == len(model_output))
@@ -183,11 +185,24 @@ class TestQNN(unittest.TestCase):
         delegated_program.exported_program = to_backend(
             delegated_program.exported_program, qnn_partitioner
         )
-        exec_prog = delegated_program.to_executorch()
+        exec_prog = delegated_program.to_executorch(
+            exir.ExecutorchBackendConfig(
+                # For shared buffer, user must pass the memory address
+                # which is allocated by RPC memory to executor runner.
+                # Therefore, won't want to pre-allocate
+                # by memory manager in runtime.
+                memory_planning_pass=MemoryPlanningPass(
+                    memory_planning_algo="greedy",
+                    alloc_graph_input=not self.shared_buffer,
+                    alloc_graph_output=not self.shared_buffer,
+                )
+            )
+        )
 
         # Assert the backend name is qnn
         self.assertEqual(
-            len(exec_prog.program.execution_plan[0].delegates), expected_partitions
+            len(exec_prog.program.execution_plan[0].delegates),
+            expected_partitions,
         )
         for i in range(expected_partitions):
             self.assertEqual(

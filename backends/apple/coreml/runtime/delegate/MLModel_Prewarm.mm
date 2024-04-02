@@ -1,5 +1,5 @@
 //
-// MLModel+Prewarm.m
+// MLModel+Prewarm.mm
 //
 // Copyright © 2024 Apple Inc. All rights reserved.
 //
@@ -9,7 +9,7 @@
 
 #import <algorithm>
 
-@interface MLMultiArray (PreHeat)
+@interface MLMultiArray (Prewarm)
 
 + (nullable MLMultiArray *)zeroedMultiArrayWithShape:(NSArray<NSNumber *> *)shape
                                             dataType:(MLMultiArrayDataType)dataType
@@ -18,7 +18,7 @@
 @end
 
 
-@implementation MLMultiArray (PreHeat)
+@implementation MLMultiArray (Prewarm)
 
 + (MLMultiArray *)zeroedMultiArrayWithShape:(NSArray<NSNumber *> *)shape
                                    dataType:(MLMultiArrayDataType)dataType

@@ -8,7 +8,7 @@
 
 #include <gtest/gtest.h>
 
-#include <ATen/native/vulkan/api/api.h>
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
 
@@ -17,8 +17,6 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/test/utils/test_utils.h>
-
-using namespace at::native::vulkan;
 
 //
 // Compute API Tests
@@ -549,7 +547,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   std::vector<int64_t> size_big = {12, 64, 64};
   std::vector<int64_t> size_small = {12, 64, 64};
 
-  // Build graph
+  // Build graph and regularly check allocation counts
 
   IOValueRef a = graph.add_input_tensor(
       size_big,
@@ -560,9 +558,8 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       api::kFloat,
       /*shared_object_idx = */ 4);
 
-  // Allocation count will be 6:
-  // 4: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for each staging shader
-  // 2: staging buffer for each input tensor
+  // +4: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for each staging shader
+  // +2: staging buffer for each input tensor
   EXPECT_TRUE(get_vma_allocation_count() == 6);
 
   ValueRef c = graph.add_tensor(
@@ -578,11 +575,10 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       api::kFloat,
       /*shared_object_idx = */ 2);
 
-  // Allocation count will be 11, 5 are new:
-  // 2: out.gpu_sizes_ubo(), alpha UBO for arithmetic shader
-  // 2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() uniform buffer for staging shader
-  // 1: staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 11);
+  // +3: out.gpu_sizes_ubo(), alpha UBO, broadcast UBO for arithmetic shader
+  // +2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() uniform buffer for staging shader
+  // +1: staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 12);
 
   ValueRef e = graph.add_tensor(
       size_big,
@@ -596,18 +592,16 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
   out.value = e;
   out.staging = graph.set_output_tensor(out.value);
 
-  // Allocation count will be 15, 4 are new:
-  // 1: alpha UBO for arithmetic shader
-  // 2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for staging shader
-  // 1 staging buffer for the input tensor
-  EXPECT_TRUE(get_vma_allocation_count() == 15);
+  // +2: alpha UBO, broadcast UBO for arithmetic shader
+  // +2: t.gpu_sizes_ubo(), t.cpu_sizes_ubo() for staging shader
+  // +1 staging buffer for the input tensor
+  EXPECT_TRUE(get_vma_allocation_count() == 17);
 
   graph.prepare();
   graph.encode_execute();
 
-  // Allocation count will be 18, 3 are new:
-  // 3: shared memory allocations for tensors
-  EXPECT_TRUE(get_vma_allocation_count() == 18);
+  // +3: shared memory allocations for tensors
+  EXPECT_TRUE(get_vma_allocation_count() == 20);
 
   // Run graph
 

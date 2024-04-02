@@ -134,8 +134,8 @@ cmake_install_executorch_lib() {
 
 download_stories_model_artifacts() {
     # Download stories110M.pt and tokenizer from Github
-  wget "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt"
-  wget "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model"
+  curl -Ls "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt" --output stories110M.pt
+  curl -Ls "https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model" --output tokenizer.model
   # Create params.json file
   touch params.json
   echo '{"dim": 768, "multiple_of": 32, "n_heads": 12, "n_layers": 12, "norm_eps": 1e-05, "vocab_size": 32000}' > params.json

@@ -17,10 +17,6 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
 endif()
 
-if(NOT PYTHON_EXECUTABLE)
-  set(PYTHON_EXECUTABLE python3)
-endif()
-
 if(NOT FLATC_EXECUTABLE)
   set(FLATC_EXECUTABLE flatc)
 endif()
@@ -31,6 +27,10 @@ if(NOT EXECUTORCH_ROOT)
 endif()
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
+
+if(NOT PYTHON_EXECUTABLE)
+  resolve_python_executable()
+endif()
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 set(_common_compile_options -Wno-deprecated-declarations)
@@ -87,6 +87,10 @@ target_link_libraries(xnnpack_backend
 target_include_directories(xnnpack_backend
                            PUBLIC ${_common_include_directories})
 target_include_directories(xnnpack_backend PUBLIC ${XNNPACK_INCLUDE_DIR})
+target_include_directories(xnnpack_backend PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/third-party/pthreadpool/include)
+target_include_directories(xnnpack_backend PUBLIC
+${CMAKE_CURRENT_SOURCE_DIR}/third-party/cpuinfo/include)
 target_compile_options(xnnpack_backend PUBLIC ${_common_compile_options})
 target_link_options_shared_lib(xnnpack_backend)
 
@@ -101,7 +105,8 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
   target_link_libraries(xnn_executor_runner
-                        xnnpack_backend gflags portable_ops_lib)
+                        xnnpack_backend gflags portable_ops_lib
+                        pthreadpool cpuinfo)
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 

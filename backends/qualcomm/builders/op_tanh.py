@@ -16,7 +16,7 @@ from .qnn_constants import OpTanh, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 @register_node_visitor
 class Tanh(NodeVisitor):
-    target = "aten.tanh.default"
+    target = ["aten.tanh.default"]
 
     def __init__(self, *args) -> None:
         super().__init__(*args)

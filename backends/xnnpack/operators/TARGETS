@@ -13,6 +13,5 @@ runtime.python_library(
         "//executorch/backends/xnnpack/utils:xnnpack_utils",
         "//executorch/exir:graph_module",
         "//executorch/exir/backend:backend_details",
-        "//executorch/extension/aot_util:aot_util",
     ],
 )

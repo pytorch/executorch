@@ -7,14 +7,14 @@
 
 # Install required python dependencies for developing
 # Dependencies are defined in .pyproject.toml
-if [[ -z $BUCK ]];
-then
-  BUCK=buck2
-fi
-
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
-  PYTHON_EXECUTABLE=python3
+  if [[ -z $CONDA_DEFAULT_ENV ]] || [[ $CONDA_DEFAULT_ENV == "base" ]];
+  then
+    PYTHON_EXECUTABLE=python3
+  else
+    PYTHON_EXECUTABLE=python
+  fi
 fi
 
 # Parse options.
@@ -28,7 +28,8 @@ for arg in "$@"; do
       ;;
     coreml|mps|xnnpack)
       if [[ "$EXECUTORCH_BUILD_PYBIND" == "ON" ]]; then
-        CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_BUILD_${arg^^}=ON"
+        arg_upper="$(echo "${arg}" | tr '[:lower:]' '[:upper:]')"
+        CMAKE_ARGS="$CMAKE_ARGS -DEXECUTORCH_BUILD_${arg_upper}=ON"
       else
         echo "Error: $arg must follow --pybind"
         exit 1
@@ -41,39 +42,63 @@ for arg in "$@"; do
   esac
 done
 
-# Install pytorch dependencies
 #
-# Note:
-# When getting a new version of the executorch repo (via clone, fetch, or pull),
-# you may need to re-install a new version for all pytorch dependencies to run the
-# models in executorch/examples/models.
-# The version in this file will be the correct version for the
-# corresponsing version of the repo.
+# Install pip packages used by code in the ExecuTorch repo.
+#
+
+# Since ExecuTorch often uses main-branch features of pytorch, only the nightly
+# pip versions will have the required features. The NIGHTLY_VERSION value should
+# agree with the third-party/pytorch pinned submodule commit.
+#
+# NOTE: If a newly-fetched version of the executorch repo changes the value of
+# NIGHTLY_VERSION, you should re-run this script to install the necessary
+# package versions.
 NIGHTLY_VERSION=dev20240324
 
-TORCH_VERSION=2.4.0.${NIGHTLY_VERSION}
-pip install --force-reinstall --pre torch=="${TORCH_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
+# The pip repository that hosts nightly torch packages.
+TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
 
-TORCH_VISION_VERSION=0.19.0.${NIGHTLY_VERSION}
-pip install --force-reinstall --pre torchvision=="${TORCH_VISION_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
+# pip packages needed by exir.
+EXIR_REQUIREMENTS=(
+  torch=="2.4.0.${NIGHTLY_VERSION}"
+  torchvision=="0.19.0.${NIGHTLY_VERSION}"  # For testing.
+)
 
-TORCH_AUDIO_VERSION=2.2.0.${NIGHTLY_VERSION}
-pip install --force-reinstall --pre torchaudio=="${TORCH_AUDIO_VERSION}" -i https://download.pytorch.org/whl/nightly/cpu
+# pip packages needed for development.
+DEVEL_REQUIREMENTS=(
+  cmake  # For building binary targets.
+  setuptools  # For building the pip package.
+  tomli  # Imported by extract_sources.py when using python < 3.11.
+  wheel  # For building the pip package archive.
+  zstd  # Imported by resolve_buck.py.
+)
 
-TIMM_VERSION=0.6.13
-pip install --pre timm==${TIMM_VERSION}
+# pip packages needed to run examples.
+# TODO(dbort): Make each example publish its own requirements.txt
+EXAMPLES_REQUIREMENTS=(
+  timm==0.6.13
+  torchaudio=="2.2.0.${NIGHTLY_VERSION}"
+  torchsr==1.0.4
+  transformers==4.38.2
+)
 
-TRANSFORMERS_VERSION=4.38.2
-pip install --force-reinstall --pre transformers==${TRANSFORMERS_VERSION}
+# Assemble the list of requirements to actually install.
+# TODO(dbort): Add options for reducing the number of requirements.
+REQUIREMENTS_TO_INSTALL=(
+  "${EXIR_REQUIREMENTS[@]}"
+  "${DEVEL_REQUIREMENTS[@]}"
+  "${EXAMPLES_REQUIREMENTS[@]}"
+)
 
-TORCHSR_VERSION=1.0.4
-pip install --pre torchsr==${TORCHSR_VERSION}
+# Install the requirements. `--extra-index-url` tells pip to look for package
+# versions on the provided URL if they aren't available on the default URL.
+pip install --extra-index-url "${TORCH_NIGHTLY_URL}" \
+    "${REQUIREMENTS_TO_INSTALL[@]}"
 
-# Install ExecuTorch after dependencies are installed.
-EXECUTORCH_BUILD_PYBIND="$EXECUTORCH_BUILD_PYBIND" \
-CMAKE_ARGS="$CMAKE_ARGS" \
-CMAKE_BUILD_PARALLEL_LEVEL=9 \
-pip install . --no-build-isolation -v
+#
+# Install executorch pip package. This also makes `flatc` available on the path.
+#
 
-# Install flatc dependency
-bash build/install_flatc.sh
+EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
+    CMAKE_ARGS="${CMAKE_ARGS}" \
+    pip install . --no-build-isolation -v

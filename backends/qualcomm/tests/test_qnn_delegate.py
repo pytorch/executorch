@@ -32,7 +32,8 @@ from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
-from executorch.examples.models.llama2 import Llama2Model
+
+# from executorch.examples.models.llama2 import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
@@ -56,6 +57,7 @@ class TestQNNFloatingPointOperator(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_arange(self):
@@ -389,6 +391,7 @@ class TestQNNFloatingPointModel(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -437,7 +440,8 @@ class TestQNNFloatingPointModel(TestQNN):
             EdsrModel(),
             InceptionV3Model(),
             InceptionV4Model(),
-            Llama2Model(),
+            # The module of llama is changing frequently. Reopen it when it's stable
+            # Llama2Model(),
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
@@ -484,6 +488,7 @@ class TestQNNQuantizedOperator(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_16a4w_conv2d(self):
@@ -880,6 +885,7 @@ class TestQNNQuantizedModel(TestQNN):
             online_prepare=TestQNN.online_prepare,
             tensor_dump_output_path="",
             profile=TestQNN.enable_profile,
+            shared_buffer=TestQNN.shared_buffer,
         )
 
     def test_qnn_backend_conv1d_relu_log_softmax(self):
@@ -918,7 +924,8 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": EdsrModel(), "annotation": ()},
             {"module": InceptionV3Model(), "annotation": ()},
             {"module": InceptionV4Model(), "annotation": ()},
-            {"module": Llama2Model(), "annotation": ()},
+            # The module of llama is changing frequently. Reopen it when it's stable
+            # {"module": Llama2Model(), "annotation": ()},
             {"module": MV2Model(), "annotation": ()},
             {"module": MV3Model(), "annotation": ()},
             # only works on QNN 2.12 so far
@@ -1077,6 +1084,24 @@ class TestQNNFloatingPointUtils(TestQNN):
             expected_profile_events=25,
         )
 
+    def test_qnn_backend_shared_buffer(self):
+        TestQNN.shared_buffer = True
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=True,
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            shared_buffer=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+        )
+
 
 class TestQNNQuantizedUtils(TestQNN):
     # TODO: refactor to support different backends
@@ -1179,6 +1204,70 @@ class TestQNNQuantizedUtils(TestQNN):
             expected_profile_events=26,
         )
 
+    def test_qnn_backend_shared_buffer(self):
+        TestQNN.shared_buffer = True
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False,
+        )
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            shared_buffer=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(
+            module,
+            sample_input,
+            expected_partitions=1,
+        )
+
+
+class TestExampleOssScript(TestQNN):
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
+    def test_fbnet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/fbnet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 90)
+
 
 class TestExampleScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
@@ -1215,6 +1304,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1248,6 +1339,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1281,6 +1374,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1314,6 +1409,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1346,6 +1443,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1378,6 +1477,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1389,6 +1490,9 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["MIoU"], 0.55)
 
     def test_dummy_llama2(self):
+        self.skipTest(
+            "The module of llama is changing frequently. Reopen it when it's stable"
+        )
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -1411,6 +1515,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1421,6 +1527,9 @@ class TestExampleScript(TestQNN):
 
     @unittest.expectedFailure
     def test_ptq_dummy_llama2(self):
+        self.skipTest(
+            "The module of llama is changing frequently. Reopen it when it's stable"
+        )
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -1442,6 +1551,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1475,6 +1586,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1515,6 +1628,8 @@ class TestExampleScript(TestQNN):
         ]
         if self.host:
             cmds.extend(["--host", self.host])
+        if self.shared_buffer:
+            cmds.extend(["--shared_buffer"])
 
         p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
         with Listener((self.ip, self.port)) as listener:
@@ -1585,6 +1700,7 @@ def setup_environment():
     TestQNN.online_prepare = args.online_prepare
     TestQNN.enable_profile = args.enable_profile
     TestQNN.error_only = args.error_only
+    TestQNN.shared_buffer = args.shared_buffer
     return sys.argv[:1] + ns_args
 
 
