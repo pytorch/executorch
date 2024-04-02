@@ -311,3 +311,16 @@ python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
+
+python_library(
+    name = "replace_view_copy_with_view_pass",
+    srcs = [
+        "replace_view_copy_with_view_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:memory",
+        "//executorch/exir:tensor",
+        "//executorch/exir/dialects:lib",
+    ],
+)
