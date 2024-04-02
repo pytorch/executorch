@@ -18,9 +18,7 @@
 #include <iostream>
 #include <utility>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 namespace {
@@ -286,6 +284,4 @@ size_t QueryPool::shader_logs_entry_count() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

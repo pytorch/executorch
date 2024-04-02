@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 int64_t calc_out_size(
     const int64_t in_size,
@@ -33,6 +31,4 @@ api::utils::ivec2 reverse(ComputeGraph& graph, ValueRef vref) {
       graph.get_val(vref).toIntList(), /*reverse=*/true);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

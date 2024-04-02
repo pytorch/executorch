@@ -13,9 +13,7 @@
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 #include <executorch/backends/vulkan/runtime/api/Runtime.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 namespace {
@@ -360,6 +358,4 @@ Runtime* runtime() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

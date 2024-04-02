@@ -8,7 +8,6 @@
 
 #pragma once
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
-#ifdef USE_VULKAN_API
 
 #include <exception>
 #include <ostream>
@@ -18,37 +17,34 @@
 #include <executorch/backends/vulkan/runtime/api/StringUtil.h>
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
-#define VK_CHECK(function)                                       \
-  do {                                                           \
-    const VkResult result = (function);                          \
-    if (VK_SUCCESS != result) {                                  \
-      throw ::at::native::vulkan::api::Error(                    \
-          {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
-          ::at::native::vulkan::api::concat_str(                 \
-              #function, " returned ", result));                 \
-    }                                                            \
+#define VK_CHECK(function)                                                \
+  do {                                                                    \
+    const VkResult result = (function);                                   \
+    if (VK_SUCCESS != result) {                                           \
+      throw ::vkcompute::api::Error(                                      \
+          {__func__, __FILE__, static_cast<uint32_t>(__LINE__)},          \
+          ::vkcompute::api::concat_str(#function, " returned ", result)); \
+    }                                                                     \
   } while (false)
 
 #define VK_CHECK_COND(cond, ...)                                 \
   do {                                                           \
     if (!(cond)) {                                               \
-      throw ::at::native::vulkan::api::Error(                    \
+      throw ::vkcompute::api::Error(                             \
           {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
           #cond,                                                 \
-          ::at::native::vulkan::api::concat_str(__VA_ARGS__));   \
+          ::vkcompute::api::concat_str(__VA_ARGS__));            \
     }                                                            \
   } while (false)
 
 #define VK_THROW(...)                                          \
   do {                                                         \
-    throw ::at::native::vulkan::api::Error(                    \
+    throw ::vkcompute::api::Error(                             \
         {__func__, __FILE__, static_cast<uint32_t>(__LINE__)}, \
-        ::at::native::vulkan::api::concat_str(__VA_ARGS__));   \
+        ::vkcompute::api::concat_str(__VA_ARGS__));            \
   } while (false)
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 std::ostream& operator<<(std::ostream& out, const VkResult loc);
@@ -82,8 +78,4 @@ class Error : public std::exception {
 };
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

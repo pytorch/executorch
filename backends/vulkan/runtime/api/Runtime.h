@@ -12,15 +12,12 @@
 
 #include <functional>
 #include <memory>
-#ifdef USE_VULKAN_API
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -107,8 +104,4 @@ class Runtime final {
 Runtime* runtime();
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

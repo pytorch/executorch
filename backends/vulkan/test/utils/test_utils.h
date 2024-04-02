@@ -15,7 +15,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
-using namespace at::native::vulkan;
+using namespace vkcompute;
 
 #define CREATE_FLOAT_TEXTURE(sizes, allocate_memory) \
   vTensor(                                           \

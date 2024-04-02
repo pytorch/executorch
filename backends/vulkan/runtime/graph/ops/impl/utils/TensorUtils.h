@@ -8,13 +8,9 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 //
 // Tensor output size calculation functions
@@ -68,8 +64,4 @@ inline int64_t normalize(const int64_t dimension, const int64_t n) {
   return (dimension % n + n) % n;
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

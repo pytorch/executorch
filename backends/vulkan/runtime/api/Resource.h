@@ -10,8 +10,6 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/Allocator.h>
@@ -25,9 +23,7 @@
 
 std::ostream& operator<<(std::ostream& out, VmaTotalStatistics stats);
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 using MemoryAccessFlags = uint8_t;
@@ -600,8 +596,4 @@ inline VulkanBuffer MemoryAllocator::create_params_buffer(const Block& block) {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

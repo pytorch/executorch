@@ -11,7 +11,6 @@
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
 #include <functional>
-#ifdef USE_VULKAN_API
 
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
@@ -19,9 +18,7 @@
 #include <executorch/backends/vulkan/runtime/api/Command.h>
 #include <executorch/backends/vulkan/runtime/api/Pipeline.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 struct QueryPoolConfig final {
@@ -124,8 +121,4 @@ class QueryPool final {
 };
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute

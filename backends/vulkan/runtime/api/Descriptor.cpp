@@ -12,9 +12,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 //
@@ -290,6 +288,4 @@ void DescriptorPool::flush() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

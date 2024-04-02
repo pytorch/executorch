@@ -8,9 +8,7 @@
 
 #include <executorch/backends/vulkan/runtime/api/ShaderRegistry.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 bool ShaderRegistry::has_shader(const std::string& shader_name) {
@@ -64,6 +62,4 @@ ShaderRegistry& shader_registry() {
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

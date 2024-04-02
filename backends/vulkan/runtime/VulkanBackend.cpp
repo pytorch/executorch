@@ -32,7 +32,7 @@ namespace executor {
 namespace vulkan {
 namespace {
 
-using namespace at::native::vulkan;
+using namespace vkcompute;
 
 // Flatbuffer types
 using VkGraphPtr = const vkgraph::VkGraph*;

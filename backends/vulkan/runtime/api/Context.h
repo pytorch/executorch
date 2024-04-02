@@ -10,8 +10,6 @@
 
 // @lint-ignore-every CLANGTIDY facebook-hte-BadMemberName
 
-#ifdef USE_VULKAN_API
-
 #include <executorch/backends/vulkan/runtime/api/vk_api.h>
 
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
@@ -24,9 +22,7 @@
 #include <executorch/backends/vulkan/runtime/api/Shader.h>
 #include <executorch/backends/vulkan/runtime/api/Utils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 namespace api {
 
 struct ContextConfig final {
@@ -560,8 +556,4 @@ inline bool Context::submit_compute_job(
 }
 
 } // namespace api
-} // namespace vulkan
-} // namespace native
-} // namespace at
-
-#endif /* USE_VULKAN_API */
+} // namespace vkcompute
