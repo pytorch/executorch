@@ -41,8 +41,19 @@ popd
 This is running the shell script [setup.sh](./setup.sh) which configures the required core ExecuTorch, LLAMA2, and Android libraries, builds them, and copy to jniLibs.
 
 ## Build Java app
+### Alternative 1: Android Studio (Recommended)
 1. Open Android Studio and select "Open an existing Android Studio project" to open examples/demo-apps/android/LlamaDemo.
 2. Run the app (^R). This builds and launches the app on the phone.
+
+### Alternative 2: Command line
+Without Android Studio UI, we can run gradle directly to build the app. We need to set up the Android SDK path and invoke gradle.
+```bash
+export ANDROID_HOME=<path_to_android_sdk_home>
+pushd examples/demo-apps/android/LlamaDemo
+./gradlew build
+adb install -t ./app/build/outputs/apk/debug/app-debug.apk
+popd
+```
 
 On the phone or emulator, you can try running the model:
 <img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br>
