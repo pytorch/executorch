@@ -35,7 +35,7 @@ export ANDROID_ABI=arm64-v8a
 3. Run the following command set up the required JNI library:
 ```bash
 pushd examples/demo-apps/android/LlamaDemo
-./gradlew setup
+./gradlew :app:setup
 popd
 ```
 This is running the shell script [setup.sh](./setup.sh) which configures the required core ExecuTorch, LLAMA2, and Android libraries, builds them, and copy to jniLibs.
@@ -50,8 +50,7 @@ Without Android Studio UI, we can run gradle directly to build the app. We need 
 ```bash
 export ANDROID_HOME=<path_to_android_sdk_home>
 pushd examples/demo-apps/android/LlamaDemo
-./gradlew build
-adb install -t ./app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:installDebug
 popd
 ```
 
