@@ -124,6 +124,13 @@ ValueRef ComputeGraph::add_tensor(
 }
 
 ValueRef ComputeGraph::add_tensor(
+    TensorRef& tref,
+    const api::StorageType storage_type,
+    const api::GPUMemoryLayout memory_layout) {
+  return add_tensor(tref.sizes, tref.dtype, storage_type, memory_layout);
+}
+
+ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const api::ScalarType dtype,
     const api::GPUMemoryLayout memory_layout,
@@ -133,15 +140,17 @@ ValueRef ComputeGraph::add_tensor(
 }
 
 ValueRef ComputeGraph::add_tensor(
+    TensorRef& tref,
+    const api::GPUMemoryLayout memory_layout) {
+  return add_tensor(tref.sizes, tref.dtype, memory_layout);
+}
+
+ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const api::ScalarType dtype,
     const int64_t shared_object_idx) {
   return add_tensor(
-      sizes,
-      dtype,
-      suggested_storage_type(),
-      suggested_memory_layout(sizes),
-      shared_object_idx);
+      sizes, dtype, suggested_memory_layout(sizes), shared_object_idx);
 }
 
 ValueRef ComputeGraph::add_tensorref(
