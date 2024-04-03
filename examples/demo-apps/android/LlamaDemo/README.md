@@ -59,7 +59,7 @@ On the phone or emulator, you can try running the model:
 <img src="../_static/img/android_llama_app.png" alt="Android LLaMA App" /><br>
 
 ## Takeaways
-Through this tutorial we've learnt how to build the ExecuTorch LLAMA library with XNNPACK backend, and expose it to JNI layer to build the Android app.
+Through this tutorial we've learnt how to build the ExecuTorch LLAMA library, and expose it to JNI layer to build the Android app.
 
 ## Reporting Issues
 If you encountered any bugs or issues following this tutorial please file a bug/issue here on [Github](https://github.com/pytorch/executorch/issues/new).
