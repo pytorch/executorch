@@ -280,6 +280,7 @@ class LlamaEdgeManager:
                 edge_constant_methods=metadata,
                 edge_compile_config=edge_config,
                 verbose=True,
+                strict=False,
             )
         return self
 
