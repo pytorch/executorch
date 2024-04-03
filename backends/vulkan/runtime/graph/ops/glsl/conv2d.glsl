@@ -78,12 +78,12 @@ void main() {
   kstart.y += pos.z * params.kernel_size.y;
 
   // Perform the convolution by iterating over the overlay region.
-  vec4 sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
+  ${VEC4_T[DTYPE]} sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
   const int ic4 = extra_params.in_group_size / 4;
   for (int z4 = 0; z4 < ic4; ++z4, kstart.x += params.kernel_size.x * 4) {
     for (int y = start.y, ky = kstart.y; y < end.y; y += params.dilation.y, ++ky) {
       for (int x = start.x, kx = kstart.x; x < end.x; x += params.dilation.x, kx += 4) {
-        const vec4 in_texel = texelFetch(image_in, ivec3(x, y, z4), 0);
+        const ${VEC4_T[DTYPE]} in_texel = texelFetch(image_in, ivec3(x, y, z4), 0);
 
         // To explain the calculation below, the contents of in_texel and the
         // group of 4 texels loaded from kernel_in are shown:
@@ -115,18 +115,18 @@ void main() {
         //  | x | | A0 |   | y | | A1 |   | z | | A2 |   | w | | A3 |
         //  +---+ +----+   +---+ +----+   +---+ +----+   +---+ +----+
         //
-        //  which is what is expressed in the following calculations.
+        // which is expressed in the following statements.
 
-        const vec4 ktex_0 = texelFetch(kernel_in, ivec2(kx + 0, ky), 0);
+        const ${VEC4_T[DTYPE]} ktex_0 = texelFetch(kernel_in, ivec2(kx + 0, ky), 0);
         sum = fma(in_texel.xxxx, ktex_0, sum);
 
-        const vec4 ktex_1 = texelFetch(kernel_in, ivec2(kx + 1, ky), 0);
+        const ${VEC4_T[DTYPE]} ktex_1 = texelFetch(kernel_in, ivec2(kx + 1, ky), 0);
         sum = fma(in_texel.yyyy, ktex_1, sum);
 
-        const vec4 ktex_2 = texelFetch(kernel_in, ivec2(kx + 2, ky), 0);
+        const ${VEC4_T[DTYPE]} ktex_2 = texelFetch(kernel_in, ivec2(kx + 2, ky), 0);
         sum = fma(in_texel.zzzz, ktex_2, sum);
 
-        const vec4 ktex_3 = texelFetch(kernel_in, ivec2(kx + 3, ky), 0);
+        const ${VEC4_T[DTYPE]} ktex_3 = texelFetch(kernel_in, ivec2(kx + 3, ky), 0);
         sum = fma(in_texel.wwww, ktex_3, sum);
       }
     }

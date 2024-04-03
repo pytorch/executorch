@@ -47,7 +47,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * rest of this comment. Refer to the code-level comments, for how we translate
  * it to GPU by reversing the steps.
  *
- * Consider example weight tensor of size {10,7,3,3}. The following
+ * Consider an example weight tensor of size {10,7,3,3}. The following
  * transformations will be applied.
  *
  * 1. Pad the N and C dims so that both are a multiple of 4. In this case, 2

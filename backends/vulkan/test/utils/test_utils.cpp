@@ -138,7 +138,6 @@ void record_conv2d_prepack_weights_op(
           api::MemoryAccessType::WRITE),
       src_buffer,
       v_dst.gpu_sizes_ubo()->buffer(),
-      v_dst.cpu_sizes_ubo()->buffer(),
       original_sizes_ubo.buffer(),
       padded_sizes_ubo.buffer());
 }
