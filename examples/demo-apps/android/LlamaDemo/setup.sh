@@ -4,9 +4,10 @@
 #
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
+
 set -eu
 
-CMAKE_OUT=cmake-out
+CMAKE_OUT="${CMAKE_OUT:-cmake-out}"
 # Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
