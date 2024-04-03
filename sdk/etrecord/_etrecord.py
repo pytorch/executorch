@@ -7,7 +7,6 @@
 import json
 import pickle
 from dataclasses import dataclass
-from enum import Enum
 from typing import Dict, List, Optional, Union
 from zipfile import BadZipFile, ZipFile
 
@@ -29,8 +28,18 @@ from executorch.sdk.bundled_program.schema.bundled_program_schema import Value
 
 ProgramOutput = List[Value]
 
+try:
+    # breaking change introduced in python 3.11
+    # pyre-ignore
+    from enum import StrEnum
+except ImportError:
+    from enum import Enum
 
-class ETRecordReservedFileNames(str, Enum):
+    class StrEnum(str, Enum):
+        pass
+
+
+class ETRecordReservedFileNames(StrEnum):
     ETRECORD_IDENTIFIER = "ETRECORD_V0"
     EDGE_DIALECT_EXPORTED_PROGRAM = "edge_dialect_exported_program"
     ET_DIALECT_GRAPH_MODULE = "et_dialect_graph_module"
