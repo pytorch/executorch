@@ -18,7 +18,8 @@ from executorch.backends.qualcomm.utils.constants import (
 )
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .node_visitor import get_parameter, NodeVisitor, register_node_visitor
+from .node_visitor import get_parameter, NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpPRelu, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 

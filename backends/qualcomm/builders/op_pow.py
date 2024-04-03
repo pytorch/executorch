@@ -11,7 +11,8 @@ import torch
 from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWisePower, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
