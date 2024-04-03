@@ -3,17 +3,17 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from enum import Enum
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
 import torch
-from executorch.backends.arm.arm_backend import (
-    generate_ethosu_compile_spec,
-    generate_tosa_compile_spec,
-)
 
+from executorch.backends.arm.arm_backend import (
+    get_intermediate_path,
+    is_permute_memory,
+    is_tosa,
+)
 from executorch.backends.arm.arm_partitioner import ArmPartitioner
 from executorch.backends.arm.arm_quantizer import (
     ArmQuantizer,
@@ -22,7 +22,6 @@ from executorch.backends.arm.arm_quantizer import (
 
 from executorch.backends.arm.test.tosautil.tosa_test_utils import (
     QuantizationParams,
-    TosaProfile,
     TosaTestUtils,
 )
 
@@ -35,12 +34,8 @@ from executorch.backends.xnnpack.test.tester.tester import (
 )
 
 from executorch.exir import EdgeCompileConfig
+from executorch.exir.backend.compile_spec_schema import CompileSpec
 from torch.export import ExportedProgram
-
-
-class ArmBackendSelector(Enum):
-    TOSA = "tosa"
-    ETHOS_U55 = "ethos-u55"
 
 
 class Partition(Partition):
@@ -75,44 +70,23 @@ class ArmTester(Tester):
         self,
         model: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
-        backend: ArmBackendSelector = ArmBackendSelector.TOSA,
-        profile: TosaProfile = TosaProfile.BI,
-        permute_memory_to_nhwc: bool = False,
+        compile_spec: List[CompileSpec] = None,
     ):
         """
         Args:
             model (torch.nn.Module): The model to test
             inputs (Tuple[torch.Tensor]): The inputs to the model
-            backend (ArmBackendSelector): The backend to use. E.g. TOSA or
-                ETHOS_U55.
-                TOSA: Lower to TOSA and test numerical correctness compared to
-                    torch reference.
-                ETHOS_U55: Lower to TOSA, then let Vela compile. Only
-                    functional test, no numerical checks.
-            profile (TosaProfile): The TOSA profile to use. Either
-                TosaProfile.BI or TosaProfile.MI
-            permute_memory_to_nhwc (bool) : flag for enabling the memory format
-                permutation to nhwc as required by TOSA
+            compile_spec (List[CompileSpec]): The compile spec to use
         """
-        self.tosa_test_util = None
-        self.is_quantized = profile == TosaProfile.BI
-        self.permute_memory_to_nhwc = permute_memory_to_nhwc
 
-        if backend == ArmBackendSelector.TOSA:
-            self.tosa_test_util = TosaTestUtils(profile=profile)
-            # The spec below tiggers arm_backend.py to output two files:
-            #   1) output.tosa
-            #   2) desc.json
-            # Saved on disk in self.tosa_test_util.intermediate_path
-            self.compile_spec = generate_tosa_compile_spec(
-                permute_memory_to_nhwc, self.tosa_test_util.intermediate_path
-            )
-        elif backend == ArmBackendSelector.ETHOS_U55:
-            self.compile_spec = generate_ethosu_compile_spec(
-                config="ethos-u55-128", permute_memory_to_nhwc=permute_memory_to_nhwc
-            )
-        else:
-            raise ValueError(f"Unknown backend: {backend}")
+        # Use the TosaTestUtils if you are using a TOSA backend
+        self.tosa_test_util = None
+        if is_tosa(compile_spec):
+            intermediate_path = get_intermediate_path(compile_spec)
+            self.tosa_test_util = TosaTestUtils(intermediate_path=intermediate_path)
+
+        self.compile_spec = compile_spec
+
         super().__init__(model, inputs)
 
     def quantize(self, quantize_stage: Optional[Quantize] = None):
@@ -150,7 +124,6 @@ class ArmTester(Tester):
         Todo:
             * A lot of the stuff in this method should be broken out into a
               run_artifact() method on a ToExecutorch stage class.
-            * See "TODO" inline below
         """
         assert (
             self.tosa_test_util is not None
@@ -159,14 +132,20 @@ class ArmTester(Tester):
 
         export_stage = self.stages[self.stage_name(Export)]
 
-        (input_names, qp_input) = self._get_input_params(export_stage.artifact)
-        (output_name, qp_output) = self._get_output_param(export_stage.artifact)
+        is_quantized = self.stages["Quantize"] is not None
+        (input_names, qp_input) = self._get_input_params(
+            export_stage.artifact, is_quantized
+        )
+        (output_name, qp_output) = self._get_output_param(
+            export_stage.artifact, is_quantized
+        )
 
         # Calculate the reference output using the original module or the quant
         # module. self.quantization_scale is used by compare_outputs() to
         # calculate the tolerance
-        self.quantization_scale = None if qp_output is None else qp_output.scale
-        if self.is_quantized:
+        self.quantization_scale = None
+        if is_quantized:
+            self.quantization_scale = qp_output.scale
             module_for_ref = self.stages[self.stage_name(Quantize)].artifact
         else:
             module_for_ref = self.original_module
@@ -175,7 +154,9 @@ class ArmTester(Tester):
         )
 
         # Transpose input data which is on NCHW format to NHWC format,
-        if self.permute_memory_to_nhwc and len(inputs_to_run[0].shape) == 4:
+
+        is_nhwc = is_permute_memory(self.compile_spec)
+        if is_nhwc and len(inputs_to_run[0].shape) == 4:
             NHWC_Order = (0, 2, 3, 1)
             inputs_to_run = (np.transpose(inputs_to_run[0], NHWC_Order),)
 
@@ -188,7 +169,7 @@ class ArmTester(Tester):
         )
 
         # Transpose back to NCHW format for comparison to torch output
-        if self.permute_memory_to_nhwc and len(tosa_output.shape) == 4:
+        if is_nhwc and len(tosa_output.shape) == 4:
             NCHW_Order = (0, 3, 1, 2)
             tosa_output = (np.transpose(tosa_output, NCHW_Order),)
 
@@ -197,7 +178,7 @@ class ArmTester(Tester):
         return self
 
     def _get_input_params(
-        self, program: ExportedProgram
+        self, program: ExportedProgram, is_quantized: bool
     ) -> Tuple[str, Union[List[QuantizationParams], List[None]]]:
         """
         Get name and optionally quantization parameters for the inputs to this
@@ -218,7 +199,7 @@ class ArmTester(Tester):
                 input_names.append(node.name)
                 continue
 
-        if self.is_quantized:
+        if is_quantized:
             quant_params = []
             for node in program.graph.nodes:
                 if (
@@ -240,7 +221,7 @@ class ArmTester(Tester):
             return (input_names, len(input_names) * [None])  # return a list of None's
 
     def _get_output_param(
-        self, program: ExportedProgram
+        self, program: ExportedProgram, is_quantized: bool
     ) -> Tuple[str, Union[QuantizationParams, None]]:
         """
         Get name and optionally quantization parameters for the inputs to this
@@ -258,7 +239,7 @@ class ArmTester(Tester):
                 output_node = node
                 break
 
-        if self.is_quantized:
+        if is_quantized:
             quant_params = None
             for node in program.graph.nodes:
                 if (

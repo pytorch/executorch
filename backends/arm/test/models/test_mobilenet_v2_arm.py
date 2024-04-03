@@ -11,8 +11,8 @@ import unittest
 import torch
 import torchvision.models as models
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.test_models import TosaProfile
-from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from executorch.backends.xnnpack.test.tester.tester import Quantize
 from torchvision.models.mobilenetv2 import MobileNet_V2_Weights
 
@@ -46,9 +46,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
-                profile=TosaProfile.MI,
-                backend=ArmBackendSelector.TOSA,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
             .to_edge()
@@ -62,9 +60,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.TOSA,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize(Quantize(calibrate=False))
             .export()
@@ -89,9 +85,7 @@ class TestMobileNetV2(unittest.TestCase):
             ArmTester(
                 self.mv2,
                 inputs=self.model_inputs,
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.ETHOS_U55,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize(Quantize(calibrate=False))
             .export()

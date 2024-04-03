@@ -12,8 +12,8 @@ from typing import Tuple
 import torch
 from executorch.backends.arm.test import common
 from executorch.backends.arm.test.ops.test_conv import Conv2d
-from executorch.backends.arm.test.test_models import TosaProfile
-from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -134,9 +134,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=test_data,
-                profile=TosaProfile.MI,
-                backend=ArmBackendSelector.TOSA,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
             .to_edge()
@@ -159,9 +157,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=test_data,
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.TOSA,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .export()
@@ -185,9 +181,7 @@ class TestDepthwiseConv2D(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=test_data,
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.ETHOS_U55,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .export()
