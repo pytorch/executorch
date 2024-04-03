@@ -12,7 +12,7 @@ import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch  # noqa: F401
 from executorch.backends.qualcomm._passes.qnn_pass_manager import QnnPassManager
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.builders.qnn_constants import OpContextLoader
 from executorch.backends.qualcomm.partition.utils import generate_qnn_executorch_option
 from executorch.backends.qualcomm.serialization.qc_schema_serialize import (
@@ -46,10 +46,13 @@ class QnnBackend(BackendDetails):
         graph_module = QnnPassManager().transform_for_preprocess_pipeline(edge_program)
         assert graph_module is not None
 
+        python_options = flatbuffer_to_option(compile_specs[0].value)
         enable_tensor_dump = qnn_manager.IsTensorDump()
         nodes_to_wrappers = defaultdict(dict)
         node_visitors = get_node_visitors(
-            edge_program, enable_tensor_dump=enable_tensor_dump
+            edge_program,
+            enable_tensor_dump=enable_tensor_dump,
+            op_package_infos=python_options.op_package_options.op_package_infos,
         )
         py_op_wrapper_list = []
         for node in graph_module.graph.nodes:
