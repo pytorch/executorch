@@ -32,6 +32,7 @@ class Relu(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         relu_input_tensors = [relu_inp_tensor_wrapper]
 
@@ -41,6 +42,7 @@ class Relu(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         relu_output_tensors = [output_tensor_wrapper]
 
