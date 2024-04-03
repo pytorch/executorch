@@ -76,6 +76,9 @@ QnnManager::QnnManager(
         "Is on-device graph construction: %d", options->online_prepare());
     QNN_EXECUTORCH_LOG_INFO(
         "Enable shared buffer: %d", options->shared_buffer());
+    QNN_EXECUTORCH_LOG_INFO(
+        "The number of op packages: %d",
+        options_->op_package_options()->op_package_infos()->size());
   }
 
   if (library_path.empty()) {
@@ -296,7 +299,8 @@ Error QnnManager::Init() {
         Internal,
         "Fail to configure Qnn backend cache");
     ET_CHECK_OR_RETURN_ERROR(
-        backend_params_ptr_->qnn_backend_ptr_->Configure() == Error::Ok,
+        backend_params_ptr_->qnn_backend_ptr_->Configure(
+            options_->op_package_options()) == Error::Ok,
         Internal,
         "Fail to configure Qnn backend");
     ET_CHECK_OR_RETURN_ERROR(

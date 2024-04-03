@@ -11,7 +11,8 @@ import executorch.backends.qualcomm.python.PyQnnWrapperAdaptor as PyQnnWrapper
 import numpy as np
 import torch
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpTile, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
