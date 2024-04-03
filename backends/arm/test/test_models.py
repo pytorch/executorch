@@ -153,5 +153,3 @@ class TorchBuilder:
 
         def forward(self, x):
             return self.batch_norm_2d(x)
-
-    @register_test
