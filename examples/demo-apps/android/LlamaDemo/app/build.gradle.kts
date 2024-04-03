@@ -24,7 +24,6 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables { useSupportLibrary = true }
-    externalNativeBuild { cmake { cppFlags += "" } }
   }
 
   buildTypes {
@@ -66,4 +65,11 @@ dependencies {
   androidTestImplementation("androidx.compose.ui:ui-test-junit4")
   debugImplementation("androidx.compose.ui:ui-tooling")
   debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+tasks {
+  exec {
+    commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup.sh")
+    workingDir("../../../../../")
+  }
 }
