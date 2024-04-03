@@ -36,8 +36,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
   api::Context* const context = graph->context();
   api::PipelineBarrier pipeline_barrier{};
 
-  TensorRef tref = graph->get_val(tref_).toTensorRef();
-  vTensor packed = graph->get_val(packed_).toTensor();
+  TensorRef& tref = graph->get_val(tref_).toTensorRef();
+  vTensor& packed = graph->get_val(packed_).toTensor();
 
   size_t numel = api::utils::multiply_integers(tref.sizes);
   api::StorageBuffer staging(graph->context(), tref.dtype, numel);
