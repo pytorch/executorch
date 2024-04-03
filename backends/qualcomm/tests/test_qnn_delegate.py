@@ -61,7 +61,7 @@ from executorch.backends.qualcomm._passes import (
     InsertRequantize,
     LayoutTransform,
 )
-from executorch.backends.qualcomm.builders.node_visitor import get_node_visitors
+from executorch.backends.qualcomm.builders.node_visitor_manager import get_node_visitors
 from executorch.backends.qualcomm.debugger.utils import DrawGraph
 from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
@@ -4179,6 +4179,38 @@ class TestExampleScript(TestQNN):
                 self.assertGreaterEqual(msg["MPA"], 0.70)
                 self.assertGreaterEqual(msg["MIoU"], 0.55)
 
+    def test_custom_op(self):
+        if not self.required_envs([self.op_package_dir]):
+            self.skipTest("missing required envs")
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/custom_op/custom_ops_1.py",
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+            "--op_package_dir",
+            self.op_package_dir,
+            "--build_op_package",
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertTrue(msg["is_close"])
+
     @unittest.skip("dynamic shape inputs appear in recent torch.export.export")
     def test_mobilebert(self):
         if not self.required_envs([self.pretrained_weight]):
@@ -4382,6 +4414,13 @@ def setup_environment():
         help="Path to open source software model repository",
         type=str,
     )
+    parser.add_argument(
+        "-d",
+        "--op_package_dir",
+        help="Path to operator package which generates from qnn-op-package-generator",
+        default="",
+        type=str,
+    )
 
     parser.add_argument(
         "--pre_gen_pte",
@@ -4415,7 +4454,7 @@ def setup_environment():
     TestQNN.compile_only = args.compile_only
     TestQNN.pre_gen_pte = args.pre_gen_pte
     TestQNN.llama_artifacts = args.llama_artifacts
-
+    TestQNN.op_package_dir = args.op_package_dir
     return sys.argv[:1] + ns_args
 
 

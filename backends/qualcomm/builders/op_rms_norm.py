@@ -15,7 +15,8 @@ from executorch.backends.qualcomm.builders.utils import get_parameter
 from executorch.backends.qualcomm.utils.constants import QCOM_DATA, QCOM_QUANT_ATTRS
 from executorch.exir.dialects._ops import ops as exir_ops
 
-from .node_visitor import NodeVisitor, register_node_visitor
+from .node_visitor import NodeVisitor
+from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpRmsNorm, QNN_OP_PACKAGE_NAME_QTI_AISW
 
 
