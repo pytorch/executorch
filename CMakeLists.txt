@@ -224,6 +224,11 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(PTHREADPOOL_ALLOW_DEPRECATED_API
       ON
       CACHE BOOL "")
+  if(APPLE)
+    set(PTHREADPOOL_SYNC_PRIMITIVE
+       "condvar"
+       CACHE STRING "")
+  endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
 endif()
 
