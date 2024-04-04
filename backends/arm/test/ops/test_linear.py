@@ -19,7 +19,6 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(42)
 
 test_data_suite_rank1 = [
     # (test_name, test_data, out_features)
