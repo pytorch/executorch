@@ -593,7 +593,10 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
         partitioners.append(
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `apple`
             CoreMLPartitioner(
-                skip_ops_for_coreml_delegation=None, compile_specs=compile_specs
+                skip_ops_for_coreml_delegation=[
+                    "aten.index_put.default",
+                ],
+                compile_specs=compile_specs,
             )
         )
         modelname = f"coreml_{modelname}"
