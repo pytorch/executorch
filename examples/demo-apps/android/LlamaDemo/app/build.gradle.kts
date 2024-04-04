@@ -71,7 +71,7 @@ dependencies {
 tasks.register("setup") {
   doFirst {
     exec {
-      commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup.sh" )
+      commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup.sh")
       workingDir("../../../../../")
     }
   }
