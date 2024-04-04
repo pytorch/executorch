@@ -7,16 +7,13 @@
 
 set -eu
 
-CMAKE_OUT=cmake-out
+CMAKE_OUT="${CMAKE_OUT:-cmake-out}"
 # Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
-  -DBUCK2="${BUCK2}" \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
-  -DEXECUTORCH_BUILD_FLATC=OFF \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-  -DFLATC_EXECUTABLE="${FLATC}" \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_OPTIMIZED=ON \
   -B"${CMAKE_OUT}"
@@ -28,7 +25,7 @@ else
 fi
 cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install
 
-cmake examples/models/llama2 -DBUCK2="${BUCK2}" \
+cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
@@ -36,7 +33,7 @@ cmake examples/models/llama2 -DBUCK2="${BUCK2}" \
 
 cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}"
 
-cmake extension/android -DBUCK2="${BUCK2}" \
+cmake extension/android \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
