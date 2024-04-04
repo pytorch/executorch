@@ -1044,11 +1044,39 @@ void test_mm(
 }
 
 TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
-#define RUN_TESTS(dtype, layout, prepack)                                  \
-  test_mm(/*B=*/1, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
-  test_mm(/*B=*/5, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
-  test_mm(/*B=*/7, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);  \
-  test_mm(/*B=*/1, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);
+#define RUN_TESTS(dtype, layout, prepack) \
+  test_mm(                                \
+      /*B = */ 1,                         \
+      /*M = */ 31,                        \
+      /*K = */ 127,                       \
+      /*N = */ 23,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);                           \
+  test_mm(                                \
+      /*B = */ 5,                         \
+      /*M = */ 31,                        \
+      /*K = */ 127,                       \
+      /*N = */ 23,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);                           \
+  test_mm(                                \
+      /*B = */ 7,                         \
+      /*M = */ 13,                        \
+      /*K = */ 89,                        \
+      /*N = */ 17,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);                           \
+  test_mm(                                \
+      /*B = */ 1,                         \
+      /*M = */ 13,                        \
+      /*K = */ 89,                        \
+      /*N = */ 17,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
   CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
@@ -1102,7 +1130,7 @@ void test_max_pool2d(
 
   // Run graph
 
-  fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota=*/true);
+  fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota = */ true);
 
   vTensor& t_in = graph.get_val(in_ioval.value).toTensor();
   std::vector<float> input_data(t_in.gpu_numel());
@@ -1140,7 +1168,7 @@ void test_max_pool2d(
 TEST(VulkanComputeGraphOpsTest, max_pool2d_smoke_test) {
   std::vector<int64_t> kernel = {2, 3};
   test_max_pool2d(
-      /*in_size=*/{1, 4, 6},
-      /*base_val=*/10.0f,
+      /*in_size = */ {1, 4, 6},
+      /*base_val = */ 10.0f,
       kernel);
 }

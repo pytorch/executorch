@@ -82,8 +82,8 @@ float get_val_or_inf(ComputeGraph& graph, const ValueRef& val, bool max) {
     return add_unary_op_node(                                            \
         graph,                                                           \
         args[0],                                                         \
-        get_val_or_inf(graph, args[1], /*max =*/false),                  \
-        get_val_or_inf(graph, args[2], /*max =*/true),                   \
+        get_val_or_inf(graph, args[1], /*max = */ false),                \
+        get_val_or_inf(graph, args[2], /*max = */ true),                 \
         args[3],                                                         \
         kClampShaderName);                                               \
   }
