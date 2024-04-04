@@ -117,6 +117,11 @@ Follow these steps:
    ./install_requirements.sh
    ```
 
+   To install with pybindings and dependencies for other backends. See options [here](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29):
+   ```bash
+   ./install_requirements.sh --pybind <coreml | mps | xnnpack>
+   ```
+
 You have successfully set up your environment to work with ExecuTorch. The next
 step is to generate a sample ExecuTorch program.
 
