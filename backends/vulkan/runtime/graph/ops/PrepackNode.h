@@ -41,6 +41,7 @@ class PrepackNode final {
 
  protected:
   const api::ShaderInfo shader_;
+  api::ShaderInfo noop_shader_;
   const api::utils::uvec3 global_workgroup_size_;
   const api::utils::uvec3 local_workgroup_size_;
   const ValueRef tref_;

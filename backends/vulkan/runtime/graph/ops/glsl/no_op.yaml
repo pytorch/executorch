@@ -1,0 +1,26 @@
+# Copyright (c) Meta Platforms, Inc. and affiliates.
+# All rights reserved.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+no_op:
+  parameter_names_with_default_values:
+    OPERATOR: X + A * Y
+    NDIM: 3
+    DTYPE: float
+  generate_variant_forall:
+    NDIM:
+      - VALUE: 3
+        SUFFIX: 3d
+      - VALUE: 2
+        SUFFIX: 2d
+    DTYPE:
+      - VALUE: half
+        SUFFIX: half
+      - VALUE: float
+        SUFFIX: float
+      - VALUE: int
+        SUFFIX: int
+  shader_variants:
+    - NAME: no_op
