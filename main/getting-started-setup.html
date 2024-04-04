@@ -551,6 +551,10 @@ conda<span class="w"> </span>activate<span class="w"> </span>executorch
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
 </pre></div>
 </div>
+<p>To install with pybindings and dependencies for other backends. See options <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29">here</a>:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
+</pre></div>
+</div>
 </li>
 </ol>
 <p>You have successfully set up your environment to work with ExecuTorch. The next
