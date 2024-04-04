@@ -17,7 +17,30 @@ Please note that the models are subject to the [acceptable use policy](https://g
 
 # Results
 
-TODO - Will fill in table of results.
+Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
+
+## Quantization:
+We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html).
+
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes.
+
+|Llama 2 | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------|-----------------| ---------------------- | ---------------
+|Wikitext Perplexity | 9.16 | 10.2 | 10.7
+
+Note that groupsize less than 128 was not enabled, since such model were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
+
+## Performance
+
+Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measurement performance is in terms of tokens/second.
+
+|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------| ---------------------- | ---------------
+|Galaxy S22 | x | x |
+|Galaxy S24 | x | x |
+|One plus 12 | x | x |
+|iPhone 15 pro | x | x |
+
 
 # Instructions
 
