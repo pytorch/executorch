@@ -401,7 +401,7 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
   ComputeGraph graph(config);
 
   ValueRef idx = graph.add_scalar_list<int64_t>({1, 2, 3, 4});
-  std::vector<int64_t>& arr = graph.get_val(idx).toIntList();
+  const auto& arr = graph.get_val(idx).toIntList();
   EXPECT_TRUE(arr.size() == 4);
   for (int i = 0; i < 4; i++) {
     EXPECT_TRUE(arr[i] == i + 1);
@@ -417,7 +417,7 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
     std::vector<double> data = {5.0, 4.0, 3.0, 2.0, 1.0};
     idx = graph.add_scalar_list(std::move(data));
   }
-  std::vector<double>& arr = graph.get_val(idx).toDoubleList();
+  const auto& arr = graph.get_val(idx).toDoubleList();
   EXPECT_TRUE(arr.size() == 5);
   for (int i = 0; i < 5; i++) {
     EXPECT_TRUE(arr[i] == (5 - i));
@@ -1044,11 +1044,39 @@ void test_mm(
 }
 
 TEST(VulkanComputeGraphOpsTest, mm_smoke_test) {
-#define RUN_TESTS(dtype, layout, prepack)                                  \
-  test_mm(/*B=*/1, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
-  test_mm(/*B=*/5, /*M=*/31, /*K=*/127, /*N=*/23, dtype, layout, prepack); \
-  test_mm(/*B=*/7, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);  \
-  test_mm(/*B=*/1, /*M=*/13, /*K=*/89, /*N=*/17, dtype, layout, prepack);
+#define RUN_TESTS(dtype, layout, prepack) \
+  test_mm(                                \
+      /*B = */ 1,                         \
+      /*M = */ 31,                        \
+      /*K = */ 127,                       \
+      /*N = */ 23,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);                           \
+  test_mm(                                \
+      /*B = */ 5,                         \
+      /*M = */ 31,                        \
+      /*K = */ 127,                       \
+      /*N = */ 23,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);                           \
+  test_mm(                                \
+      /*B = */ 7,                         \
+      /*M = */ 13,                        \
+      /*K = */ 89,                        \
+      /*N = */ 17,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);                           \
+  test_mm(                                \
+      /*B = */ 1,                         \
+      /*M = */ 13,                        \
+      /*K = */ 89,                        \
+      /*N = */ 17,                        \
+      dtype,                              \
+      layout,                             \
+      prepack);
 
   CALL_TEST_FN_FOR_W_PACKED(RUN_TESTS);
   CALL_TEST_FN_FOR_C_PACKED(RUN_TESTS);
@@ -1102,7 +1130,7 @@ void test_max_pool2d(
 
   // Run graph
 
-  fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota=*/true);
+  fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota = */ true);
 
   vTensor& t_in = graph.get_val(in_ioval.value).toTensor();
   std::vector<float> input_data(t_in.gpu_numel());
@@ -1140,14 +1168,14 @@ void test_max_pool2d(
 TEST(VulkanComputeGraphOpsTest, max_pool2d_smoke_test) {
   std::vector<int64_t> kernel = {2, 3};
   test_max_pool2d(
-      /*in_size=*/{1, 4, 6},
-      /*base_val=*/10.0f,
+      /*in_size = */ {1, 4, 6},
+      /*base_val = */ 10.0f,
       kernel);
 }
 
 TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
   const auto original_sizes = std::vector<int64_t>{2, 3, 1, 2};
-  const auto padded_sizes = std::vector<int64_t>{4, 4, 1, 2};
+  const auto padded_sizes = std::vector<int64_t>{4, 4};
   const auto gpu_sizes = std::vector<int64_t>{4, 1, 8};
 
   vTensor vten = vTensor(
@@ -1169,7 +1197,8 @@ TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
       data_in.data(), staging_buffer_in, sizeof(float) * in_numel);
 
   // Output staging buffer
-  const int64_t out_numel = api::utils::multiply_integers(padded_sizes);
+  const int64_t out_numel =
+      padded_sizes[0] * padded_sizes[1] * original_sizes[2] * original_sizes[3];
   api::StorageBuffer staging_buffer_out(api::context(), api::kFloat, out_numel);
 
   // Copy data in and out of the tensor

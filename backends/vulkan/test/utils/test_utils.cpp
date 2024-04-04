@@ -122,9 +122,9 @@ void record_conv2d_prepack_weights_op(
   api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name.str());
 
   api::UniformParamsBuffer original_sizes_ubo(
-      context, api::utils::make_ivec4(original_sizes, /*reverse=*/true));
+      context, api::utils::make_ivec4(original_sizes, /*reverse = */ true));
   api::UniformParamsBuffer padded_sizes_ubo(
-      context, api::utils::make_ivec4(padded_sizes, /*reverse=*/true));
+      context, api::utils::make_ivec2(padded_sizes, /*reverse = */ true));
 
   context->submit_compute_job(
       shader,

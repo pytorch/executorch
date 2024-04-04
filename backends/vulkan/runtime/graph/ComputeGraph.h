@@ -191,8 +191,24 @@ class ComputeGraph final {
    */
   ValueRef add_tensor(
       const std::vector<int64_t>& sizes,
-      const api::ScalarType dtype = api::ScalarType::Float,
+      const api::ScalarType dtype,
       const int64_t shared_object_idx = -1);
+
+  /*
+   * Add a `vTensor` value to the graph with the properties of `vref`.
+   */
+  ValueRef add_tensor_like(
+      const ValueRef vref,
+      const api::StorageType storage_type,
+      const api::GPUMemoryLayout memory_layout);
+
+  /*
+   * Add a `vTensor` value to the graph with the properties of `vref`. The
+   * suggested storage type will be used to construct the `vTensor`.
+   */
+  ValueRef add_tensor_like(
+      const ValueRef vref,
+      const api::GPUMemoryLayout memory_layout);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A

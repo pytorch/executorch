@@ -33,8 +33,8 @@ layout(set = 0, binding = 3) uniform PRECISION restrict OriginalSizes {
 original_sizes;
 
 // Corresponds to {3,3,8,12} in the example below.
-layout(set = 0, binding = 4) uniform PRECISION restrict AlignedSizes {
-  ivec4 data;
+layout(set = 0, binding = 4) uniform PRECISION restrict PaddedSizes {
+  ivec2 data;
 }
 padded_sizes;
 
@@ -94,39 +94,31 @@ void main() {
       base_index + ivec4(0, 1, 2, 3) * STRIDE_CHANNELS_PACKED(gpu_sizes.data);
 
   // Re-map the normal CPU buffer indices to special indices, through a series
-  // of permutations: reshape is a no-op to the underlying indices, and permute
-  // is one of the hardest math problems I've ever solved.
-  //
+  // of mappings: reshape is a no-op to the underlying indices, pad is hard, and
+  // permute is one of the hardest math problems I've ever solved.
+  const int Np = padded_sizes.data.y;
+  const int Cp = padded_sizes.data.x;
+  const int N = original_sizes.data.w;
+  const int C = original_sizes.data.z;
+  const int H = original_sizes.data.y;
+  const int W = original_sizes.data.x;
+
   // Undo step 6 premute: (4,3,3,24) -> (3,4,3,24)
   // Undo step 4 permute: (12,3,2,12) -> (12,2,3,12)
   // Undo step 3 permute, part 1: (12,2,3h,3w,4) -> (12,2,3h,4,3w)
   // Undo step 3 permute, part 2: (12,2,3h,4,3w) -> (12,2,4,3h,3w)
-  const ivec4 p1 = SWAP_DIMS(
-      p0,
-      4,
-      (padded_sizes.data.w / 4),
-      (padded_sizes.data.y * padded_sizes.data.z * padded_sizes.data.x));
-  const ivec4 p2 = SWAP_DIMS(
-      p1,
-      padded_sizes.data.y,
-      (padded_sizes.data.z / 4),
-      (padded_sizes.data.x * 4));
-  const ivec4 p3 = SWAP_DIMS(p2, padded_sizes.data.x, 4, 1);
-  const ivec4 p4 = SWAP_DIMS(p3, padded_sizes.data.y, 4, padded_sizes.data.x);
+  const ivec4 p1 = SWAP_ADJ_DIMS(p0, 4, (Np / 4), (H * Cp * W));
+  const ivec4 p2 = SWAP_ADJ_DIMS(p1, H, (Cp / 4), (W * 4));
+  const ivec4 p3 = SWAP_ADJ_DIMS(p2, W, 4, 1);
+  const ivec4 p4 = SWAP_ADJ_DIMS(p3, H, 4, W);
 
-  // For values in the padded region, write zero instead of buffer data.
-  //
   // Undo step 1 pad: (12,8,3,3) -> (10,7,3,3)
-  const ivec4 c = p4 %
-      (padded_sizes.data.z * padded_sizes.data.y * padded_sizes.data.x) /
-      (padded_sizes.data.y * padded_sizes.data.x);
-  const ivec4 n =
-      p4 / (padded_sizes.data.z * padded_sizes.data.y * padded_sizes.data.x);
-  const ivec4 p5 = p4 -
-      n * (padded_sizes.data.z - original_sizes.data.z) * padded_sizes.data.y *
-          padded_sizes.data.x;
-  const ivec4 mask = ivec4(greaterThanEqual(c, original_sizes.data.zzzz)) |
-      ivec4(greaterThanEqual(n, original_sizes.data.wwww));
+  // For values in the padded region, write zero instead of buffer data.
+  const ivec4 c = p4 % (Cp * H * W) / (H * W);
+  const ivec4 n = p4 / (Cp * H * W);
+  const ivec4 p5 = p4 - n * (Cp - C) * H * W;
+  const ivec4 mask = ivec4(greaterThanEqual(c, ivec4(C))) |
+      ivec4(greaterThanEqual(n, ivec4(N)));
 
   ${T[DTYPE]} val_x = mix(buffer_in.data[p5.x], 0, mask.x);
   ${T[DTYPE]} val_y = mix(buffer_in.data[p5.y], 0, mask.y);

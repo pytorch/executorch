@@ -23,14 +23,22 @@ struct KernelParams final {
   api::utils::ivec2 dilation;
 };
 
-int64_t calc_out_size(
-    const int64_t in_size,
-    const int64_t kernel_size,
-    const int64_t stride,
-    const int64_t padding,
-    const int64_t dilation,
-    const bool ceil_mode = false);
+KernelParams create_kernel_params(
+    ComputeGraph& graph,
+    const ValueRef weight,
+    const bool kernel_only,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation);
 
-api::utils::ivec2 reverse(ComputeGraph& graph, ValueRef vref);
+std::vector<int64_t> calc_out_sizes_hw(
+    ComputeGraph& graph,
+    const std::vector<int64_t>& in_sizes,
+    const ValueRef weight,
+    const bool kernel_only,
+    const ValueRef stride,
+    const ValueRef padding,
+    const ValueRef dilation,
+    const ValueRef ceil_mode = kDummyValueRef);
 
 } // namespace vkcompute
