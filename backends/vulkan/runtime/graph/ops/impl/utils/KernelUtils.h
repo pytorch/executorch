@@ -30,15 +30,7 @@ KernelParams create_kernel_params(
     const ValueRef padding,
     const ValueRef dilation);
 
-int64_t calc_out_size(
-    const int64_t in_size,
-    const int64_t kernel_size,
-    const int64_t stride,
-    const int64_t padding,
-    const int64_t dilation,
-    const bool ceil_mode);
-
-std::vector<int64_t> calc_hw_out_sizes(
+std::vector<int64_t> calc_out_sizes_hw(
     ComputeGraph& graph,
     const std::vector<int64_t>& in_sizes,
     const ValueRef kernel_size,
@@ -46,4 +38,5 @@ std::vector<int64_t> calc_hw_out_sizes(
     const ValueRef padding,
     const ValueRef dilation,
     const ValueRef ceil_mode);
+
 } // namespace vkcompute

@@ -35,7 +35,7 @@ void resize_max_pool2d_node(
   new_out_sizes.at(ndim - 3) = self.sizes().at(ndim - 3);
 
   // Height, Width
-  const auto hw_sizes = calc_hw_out_sizes(
+  const auto new_out_sizes_hw = calc_out_sizes_hw(
       *graph,
       self.sizes(),
       extra_args[0],
@@ -43,8 +43,8 @@ void resize_max_pool2d_node(
       extra_args[2],
       extra_args[3],
       extra_args[4]);
-  new_out_sizes.at(ndim - 2) = hw_sizes.at(0);
-  new_out_sizes.at(ndim - 1) = hw_sizes.at(1);
+  new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
+  new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
   out.virtual_resize(new_out_sizes);
   indices.virtual_resize(new_out_sizes);

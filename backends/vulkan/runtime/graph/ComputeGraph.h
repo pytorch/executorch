@@ -175,14 +175,6 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
-   * Add a `vTensor` value to the graph with the properties of `tref`.
-   */
-  ValueRef add_tensor(
-      TensorRef& tref,
-      const api::StorageType storage_type,
-      const api::GPUMemoryLayout memory_layout);
-
-  /*
    * Add a `vTensor` value to the graph with the specified properties. The
    * suggested storage type will be used to construct the `vTensor`.
    */
@@ -193,14 +185,6 @@ class ComputeGraph final {
       const int64_t shared_object_idx = -1);
 
   /*
-   * Add a `vTensor` value to the graph with the properties of `tref`. The
-   * suggested storage type will be used to construct the `vTensor`.
-   */
-  ValueRef add_tensor(
-      TensorRef& tref,
-      const api::GPUMemoryLayout memory_layout);
-
-  /*
    * Add a `vTensor` value to the graph with the specified properties. The
    * suggested storage type and memory layout will be used to construct the
    * `vTensor`.
@@ -209,6 +193,22 @@ class ComputeGraph final {
       const std::vector<int64_t>& sizes,
       const api::ScalarType dtype,
       const int64_t shared_object_idx = -1);
+
+  /*
+   * Add a `vTensor` value to the graph with the properties of `vref`.
+   */
+  ValueRef add_tensor_like(
+      const ValueRef vref,
+      const api::StorageType storage_type,
+      const api::GPUMemoryLayout memory_layout);
+
+  /*
+   * Add a `vTensor` value to the graph with the properties of `vref`. The
+   * suggested storage type will be used to construct the `vTensor`.
+   */
+  ValueRef add_tensor_like(
+      const ValueRef vref,
+      const api::GPUMemoryLayout memory_layout);
 
   /*
    * Add a `TensorRef` value to the graph with the specific properties. A

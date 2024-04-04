@@ -63,7 +63,7 @@ ValueRef prepack(
     ComputeGraph& graph,
     const ValueRef vref,
     const api::GPUMemoryLayout layout) {
-  ValueRef v = graph.add_tensor(graph.get_val(vref).toTensorRef(), layout);
+  ValueRef v = graph.add_tensor_like(vref, layout);
   vTensor& t = graph.get_val(v).toTensor();
 
   api::ShaderInfo shader = get_nchw_to_image_shader(t);
