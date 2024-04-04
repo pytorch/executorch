@@ -44,6 +44,11 @@ Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measur
 
 # Instructions
 
+## Tested on
+
+- MacOS M1/M2, Linux.
+- For Llama7b, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
+
 ## Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch
 2. Run `examples/models/llama2/install_requirements.sh` to install a few dependencies.
@@ -82,21 +87,45 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 4. Create tokenizer.bin.
 
-    Build with buck2:
     ```
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
 ## Step 3: Run on your computer to validate
 
-1. Build llama runner. TODO
+1. Build executorch with XNNPACK enabled. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
+    ```
+    cmake -DBUCK2=/tmp/buck2 \
+        -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DEXECUTORCH_ENABLE_LOGGING=1 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -Bcmake-out .
 
-2. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L13).
-    Build with buck2:
+    cmake --build cmake-out -j16 --target install --config Release
     ```
-    buck2 run examples/models/llama2:main -- --model_path=llama2.pte --tokenizer_path=tokenizer.bin --prompt="Once"
+
+2. Build llama runner.
     ```
-    Build with cmake: TODO
+    cmake -DBUCK2=/tmp/buck2 \
+        -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -Bcmake-out/examples/models/llama2 \
+        examples/models/llama2
+
+    cmake --build cmake-out/examples/models/llama2 -j16 --config Release
+    ```
+
+3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
+    ```
+    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
+    ```
 
 ## Step 4: Run benchmark on Android phone
 
@@ -117,3 +146,14 @@ This example tries to reuse the Python code, with minimal modifications to make 
 1. Since ExecuTorch does not support complex Tensor data type, use the customized functions to have rotary embedding with real numbers. Please see [GitHub issue: Support complex data type in ExecuTorch](https://github.com/pytorch/executorch/issues/886).
 2. No CUDA. ExecuTorch is focused on Edge use cases where CUDA is not available on most of the edge devices.
 3. No dependencies on fairscale. The ColumnParallelLinear, ParallelEmbedding and training are not needed and supported in ExecuTorch.
+
+
+# Clean
+To clean your build:
+```
+git clean -xfd
+pip uninstall executorch
+./install_requirements.sh <options>
+
+rm -rf cmake-out
+```
