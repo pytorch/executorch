@@ -63,7 +63,8 @@ class Runner {
       const std::string& prompt,
       int32_t seq_len = 128,
       std::function<void(const std::string&)> token_callback = {},
-      std::function<void(const Stats&)> stats_callback = {});
+      std::function<void(const Stats&)> stats_callback = {},
+      std::function<void(const exec_aten::Tensor&)> eval_callback = {});
   void stop();
 
  private:

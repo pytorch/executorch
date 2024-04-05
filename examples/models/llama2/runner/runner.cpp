@@ -211,7 +211,8 @@ Error Runner::generate(
     const std::string& prompt,
     int32_t seq_len,
     std::function<void(const std::string&)> token_callback,
-    std::function<void(const Stats&)> stats_callback) {
+    std::function<void(const Stats&)> stats_callback,
+    std::function<void(const exec_aten::Tensor&)> eval_callback) {
   // Prepare the inputs.
   // Use ones-initialized inputs.
   ET_CHECK_MSG(!prompt.empty(), "Prompt cannot be null");
@@ -369,6 +370,10 @@ Error Runner::generate(
 
     if (token_callback) {
       token_callback(piece);
+    }
+
+    if (eval_callback) {
+      eval_callback(logits_tensor);
     }
 
     if (shouldStop_) {
