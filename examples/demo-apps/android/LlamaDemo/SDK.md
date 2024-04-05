@@ -60,6 +60,7 @@ unzip commandlinetools.zip
 3. Specify a root for Android SDK. For example, we can put it under `$DEV_HOME/sdk`.
 
 ```
+mkdir -p $DEV_HOME/sdk
 export ANDROID_HOME="$(realpath $DEV_HOME/sdk)"
 # Install SDK 34
 ./cmdline-tools/bin/sdkmanager --sdk_root="${ANDROID_HOME}" --install "platforms;android-34"
