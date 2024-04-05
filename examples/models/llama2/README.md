@@ -59,11 +59,9 @@ Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measur
 
 You can export and run the original Llama2 7B model.
 
-1. Llama2 pretrained parameters can be downloaded [here](https://ai.meta.com/resources/models-and-libraries/llama-downloads/)
+1. Llama2 pretrained parameters can be downloaded from [Meta's official website](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) or from [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b).
 
-2. TODO: Do some preparation.
-
-3. Export model and generate `.pte` file:
+2. Export model and generate `.pte` file:
     ```
     python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w -d fp32
     ```
