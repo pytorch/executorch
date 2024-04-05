@@ -87,13 +87,24 @@ enum class Conv2dMethod : uint8_t {
 };
 
 api::ShaderInfo get_conv2d_shader(
+    ComputeGraph& graph,
     const vTensor& t_out,
     const bool prepack_weights,
-    const Conv2dMethod method) {
+    const Conv2dMethod method,
+    const ValueRef weight) {
   std::stringstream kernel_name;
   switch (method) {
     case Conv2dMethod::Depthwise:
       kernel_name << "conv2d_dw";
+      if (!prepack_weights) {
+        const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
+        if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
+          kernel_name << "_output_tile_3x3";
+        }
+        if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
+          kernel_name << "_output_tile_5x5";
+        }
+      }
       break;
     case Conv2dMethod::SlidingWindow:
       kernel_name << "conv2d";
@@ -169,7 +180,7 @@ ValueRef prepack_weights(
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   api::ShaderInfo shader =
-      get_conv2d_shader(t, /*prepack_weights = */ true, method);
+      get_conv2d_shader(graph, t, /*prepack_weights = */ true, method, vref);
 
   const auto padded_sizes = get_padded_sizes(original_sizes, method);
 
@@ -298,8 +309,8 @@ void add_conv2d_node(
 
   check_conv2d_params(kernel_params, transposed_val);
 
-  api::ShaderInfo shader =
-      get_conv2d_shader(t_out, /*prepack_weights = */ false, method);
+  api::ShaderInfo shader = get_conv2d_shader(
+      graph, t_out, /*prepack_weights = */ false, method, weight);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
