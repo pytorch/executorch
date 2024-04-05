@@ -26,7 +26,7 @@ struct KernelParams final {
 KernelParams create_kernel_params(
     ComputeGraph& graph,
     const ValueRef weight,
-    const bool kernel_only,
+    const bool kernel_size_only,
     const ValueRef stride,
     const ValueRef padding,
     const ValueRef dilation);
@@ -35,7 +35,7 @@ std::vector<int64_t> calc_out_sizes_hw(
     ComputeGraph& graph,
     const std::vector<int64_t>& in_sizes,
     const ValueRef weight,
-    const bool kernel_only,
+    const bool kernel_size_only,
     const ValueRef stride,
     const ValueRef padding,
     const ValueRef dilation,

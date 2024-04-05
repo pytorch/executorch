@@ -32,7 +32,7 @@ layout(set = 0, binding = 3) uniform PRECISION restrict OriginalSizes {
 }
 original_sizes;
 
-// Corresponds to {3,3,8,12} in the example below.
+// Corresponds to {8,12} in the example below.
 layout(set = 0, binding = 4) uniform PRECISION restrict PaddedSizes {
   ivec2 data;
 }
@@ -53,7 +53,7 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  * 1. Pad the N and C dims so that both are a multiple of 4. In this case, 2
  * batches and 1 channel of padding are added, producing a tensor of size
  * {12,8,3,3}.
- *      at::pad(x, {0,0,0,0,0,2,0,1}, "constant", 0);
+ *      at::pad(x, {0,0,0,0,0,1,0,2}, "constant", 0);
  *
  * 2. Split the tensor along the C dim so that each split has 4 channels.
  *      x.reshape({12,2,4,3,3});
@@ -94,8 +94,8 @@ void main() {
       base_index + ivec4(0, 1, 2, 3) * STRIDE_CHANNELS_PACKED(gpu_sizes.data);
 
   // Re-map the normal CPU buffer indices to special indices, through a series
-  // of mappings: reshape is a no-op to the underlying indices, pad is hard, and
-  // permute is one of the hardest math problems I've ever solved.
+  // of mappings: reshape is a no-op to the underlying indices, so we only map
+  // for pad and permute.
   const int Np = padded_sizes.data.y;
   const int Cp = padded_sizes.data.x;
   const int N = original_sizes.data.w;

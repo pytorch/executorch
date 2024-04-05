@@ -39,7 +39,7 @@ void resize_max_pool2d_node(
       *graph,
       self.sizes(),
       extra_args[0],
-      /*kernel_only = */ true,
+      /*kernel_size_only = */ true,
       extra_args[1],
       extra_args[2],
       extra_args[3],
@@ -83,7 +83,12 @@ void add_max_pool2d_node(
   apply_dtype_suffix(kernel_name, t_out);
 
   KernelParams kernel_params = create_kernel_params(
-      graph, kernel_size, /*kernel_only = */ true, stride, padding, dilation);
+      graph,
+      kernel_size,
+      /*kernel_size_only = */ true,
+      stride,
+      padding,
+      dilation);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,

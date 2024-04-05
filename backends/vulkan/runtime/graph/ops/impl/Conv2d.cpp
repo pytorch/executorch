@@ -41,7 +41,7 @@ void resize_conv2d_node(
       *graph,
       self.sizes(),
       extra_args[0],
-      /*kernel_only = */ false,
+      /*kernel_size_only = */ false,
       extra_args[1],
       extra_args[2],
       extra_args[3]);
@@ -56,13 +56,11 @@ ValueRef prepack_biases(ComputeGraph& graph, const ValueRef vref) {
     VK_THROW("aten.convolution.default: Null bias is not supported yet!");
   }
 
-  TensorRef& tref = graph.get_val(vref).toTensorRef();
-  ValueRef v = graph.add_tensor(
-      tref.sizes,
-      tref.dtype,
+  ValueRef v = graph.add_tensor_like(
+      vref,
       api::StorageType::TEXTURE_2D,
       api::GPUMemoryLayout::TENSOR_WIDTH_PACKED);
-  vTensor t = graph.get_val(v).toTensor();
+  vTensor& t = graph.get_val(v).toTensor();
 
   api::ShaderInfo shader = get_nchw_to_image_shader(t);
 
@@ -110,7 +108,7 @@ ValueRef prepack_weights(ComputeGraph& graph, const ValueRef vref) {
       graph.get_val(vref).toTensorRef().dtype,
       api::StorageType::TEXTURE_2D,
       api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
-  vTensor t = graph.get_val(v).toTensor();
+  vTensor& t = graph.get_val(v).toTensor();
 
   api::utils::uvec3 global_size = t.extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -163,7 +161,7 @@ Conv2dParams create_conv2d_params(
   });
   const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
   const int32_t in_group_size = api::utils::safe_downcast<int32_t>(
-      api::utils::align_up(weight_sizes.at(0), INT64_C(4)));
+      api::utils::align_up(weight_sizes.at(1), INT64_C(4)));
   return {overlay_region, in_group_size};
 }
 
@@ -187,13 +185,13 @@ void add_conv2d_node(
     const ValueRef dilation,
     const ValueRef out) {
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
+  ValueRef arg_weight = prepack_weights(graph, weight);
+  ValueRef arg_bias = prepack_biases(graph, bias);
+
   vTensor& t_in = graph.get_val(arg_in).toTensor();
   vTensor& t_out = graph.get_val(out).toTensor();
 
   check_conv2d_args(t_in, t_out);
-
-  ValueRef arg_weight = prepack_weights(graph, weight);
-  ValueRef arg_bias = prepack_biases(graph, bias);
 
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
@@ -201,7 +199,7 @@ void add_conv2d_node(
   KernelParams kernel_params = create_kernel_params(
       graph,
       weight,
-      /*kernel_only = */ false,
+      /*kernel_size_only = */ false,
       stride,
       padding,
       dilation);

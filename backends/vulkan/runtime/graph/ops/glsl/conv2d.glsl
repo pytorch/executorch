@@ -84,6 +84,7 @@ void main() {
     for (int y = start.y, ky = kstart.y; y < end.y; y += params.dilation.y, ++ky) {
       for (int x = start.x, kx = kstart.x; x < end.x; x += params.dilation.x, kx += 4) {
         const ${VEC4_T[DTYPE]} in_texel = texelFetch(image_in, ivec3(x, y, z4), 0);
+        const ivec4 kxs = kx + ivec4(0, 1, 2, 3);
 
         // To explain the calculation below, the contents of in_texel and the
         // group of 4 texels loaded from kernel_in are shown:
@@ -117,17 +118,10 @@ void main() {
         //
         // which is expressed in the following statements.
 
-        const ${VEC4_T[DTYPE]} ktex_0 = texelFetch(kernel_in, ivec2(kx + 0, ky), 0);
-        sum = fma(in_texel.xxxx, ktex_0, sum);
-
-        const ${VEC4_T[DTYPE]} ktex_1 = texelFetch(kernel_in, ivec2(kx + 1, ky), 0);
-        sum = fma(in_texel.yyyy, ktex_1, sum);
-
-        const ${VEC4_T[DTYPE]} ktex_2 = texelFetch(kernel_in, ivec2(kx + 2, ky), 0);
-        sum = fma(in_texel.zzzz, ktex_2, sum);
-
-        const ${VEC4_T[DTYPE]} ktex_3 = texelFetch(kernel_in, ivec2(kx + 3, ky), 0);
-        sum = fma(in_texel.wwww, ktex_3, sum);
+        sum = fma(in_texel.xxxx, texelFetch(kernel_in, ivec2(kxs.x, ky), 0), sum);
+        sum = fma(in_texel.yyyy, texelFetch(kernel_in, ivec2(kxs.y, ky), 0), sum);
+        sum = fma(in_texel.zzzz, texelFetch(kernel_in, ivec2(kxs.z, ky), 0), sum);
+        sum = fma(in_texel.wwww, texelFetch(kernel_in, ivec2(kxs.w, ky), 0), sum);
       }
     }
   }
