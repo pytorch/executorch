@@ -173,6 +173,8 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_OPTIMIZED=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
+
+cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
 
 **2. Run on Android via adb shell**
