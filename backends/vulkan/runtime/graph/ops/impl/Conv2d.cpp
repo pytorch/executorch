@@ -80,15 +80,27 @@ ValueRef prepack_biases(ComputeGraph& graph, const ValueRef vref) {
   return v;
 }
 
+enum class Conv2dMethod : uint8_t {
+  Depthwise,
+  SlidingWindow,
+  Transposed,
+};
+
 api::ShaderInfo get_conv2d_shader(
     const vTensor& t_out,
     const bool prepack_weights,
-    const bool transposed) {
+    const Conv2dMethod method) {
   std::stringstream kernel_name;
-  if (transposed) {
-    kernel_name << "conv_transpose2d";
-  } else {
-    kernel_name << "conv2d";
+  switch (method) {
+    case Conv2dMethod::Depthwise:
+      kernel_name << "conv2d_dw";
+      break;
+    case Conv2dMethod::SlidingWindow:
+      kernel_name << "conv2d";
+      break;
+    case Conv2dMethod::Transposed:
+      kernel_name << "conv_transpose2d";
+      break;
   }
   if (prepack_weights) {
     kernel_name << "_prepack_weights";
@@ -98,23 +110,53 @@ api::ShaderInfo get_conv2d_shader(
   return VK_KERNEL_FROM_STR(kernel_name.str());
 }
 
-ValueRef prepack_weights(
-    ComputeGraph& graph,
-    const ValueRef vref,
-    const bool transposed) {
-  const auto original_sizes = graph.get_val(vref).toTensorRef().sizes;
-
+std::vector<int64_t> get_final_sizes(
+    const std::vector<int64_t>& original_sizes,
+    const Conv2dMethod method) {
   int64_t batch_padded =
       api::utils::align_up(api::utils::val_at(-4, original_sizes), INT64_C(4));
   int64_t channels_padded =
       api::utils::align_up(api::utils::val_at(-3, original_sizes), INT64_C(4));
+  int64_t channels = api::utils::val_at(-3, original_sizes);
   int64_t height = api::utils::val_at(-2, original_sizes);
   int64_t width = api::utils::val_at(-1, original_sizes);
 
-  const auto final_sizes = std::vector<int64_t>{
-      4,
-      transposed ? channels_padded * height / 4 : batch_padded * height / 4,
-      transposed ? batch_padded * width : channels_padded * width};
+  switch (method) {
+    case Conv2dMethod::Depthwise:
+      return std::vector<int64_t>{
+          4, batch_padded * channels / 4, height * width};
+    case Conv2dMethod::SlidingWindow:
+      return std::vector<int64_t>{
+          4, batch_padded * height / 4, channels_padded * width};
+    case Conv2dMethod::Transposed:
+      return std::vector<int64_t>{
+          4, channels_padded * height / 4, batch_padded * width};
+  }
+}
+
+std::vector<int64_t> get_padded_sizes(
+    const std::vector<int64_t>& original_sizes,
+    const Conv2dMethod method) {
+  int64_t batch_padded =
+      api::utils::align_up(api::utils::val_at(-4, original_sizes), INT64_C(4));
+  int64_t channels_padded =
+      api::utils::align_up(api::utils::val_at(-3, original_sizes), INT64_C(4));
+
+  switch (method) {
+    case Conv2dMethod::Depthwise:
+      return std::vector<int64_t>{-1, batch_padded};
+    case Conv2dMethod::SlidingWindow:
+    case Conv2dMethod::Transposed:
+      return std::vector<int64_t>{batch_padded, channels_padded};
+  }
+}
+
+ValueRef prepack_weights(
+    ComputeGraph& graph,
+    const ValueRef vref,
+    const Conv2dMethod method) {
+  const auto original_sizes = graph.get_val(vref).toTensorRef().sizes;
+  const auto final_sizes = get_final_sizes(original_sizes, method);
 
   ValueRef v = graph.add_tensor(
       final_sizes,
@@ -127,9 +169,9 @@ ValueRef prepack_weights(
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   api::ShaderInfo shader =
-      get_conv2d_shader(t, /*prepack_weights = */ true, transposed);
+      get_conv2d_shader(t, /*prepack_weights = */ true, method);
 
-  const auto padded_sizes = std::vector<int64_t>{batch_padded, channels_padded};
+  const auto padded_sizes = get_padded_sizes(original_sizes, method);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -197,6 +239,24 @@ void check_conv2d_params(const KernelParams& p, const bool transposed) {
   }
 }
 
+Conv2dMethod get_conv2d_method(
+    ComputeGraph& graph,
+    const ValueRef weight,
+    const int64_t groups,
+    const bool transposed) {
+  const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
+  if (!transposed && weight_sizes.at(0) == groups && weight_sizes.at(1) == 1) {
+    return Conv2dMethod::Depthwise;
+  }
+  if (groups > 1) {
+    VK_THROW("aten.convolution.default: groups > 1 is not supported yet!");
+  }
+  if (transposed) {
+    return Conv2dMethod::Transposed;
+  }
+  return Conv2dMethod::SlidingWindow;
+}
+
 void add_conv2d_node(
     ComputeGraph& graph,
     const ValueRef in,
@@ -207,11 +267,16 @@ void add_conv2d_node(
     const ValueRef dilation,
     const ValueRef transposed,
     const ValueRef output_padding,
+    const ValueRef groups,
     const ValueRef out) {
   const bool transposed_val = graph.get_val(transposed).toBool();
+  const int64_t groups_val = graph.get_val(groups).toInt();
+
+  const Conv2dMethod method =
+      get_conv2d_method(graph, weight, groups_val, transposed_val);
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight = prepack_weights(graph, weight, transposed_val);
+  ValueRef arg_weight = prepack_weights(graph, weight, method);
   ValueRef arg_bias = prepack_biases(graph, bias);
 
   vTensor& t_in = graph.get_val(arg_in).toTensor();
@@ -234,7 +299,7 @@ void add_conv2d_node(
   check_conv2d_params(kernel_params, transposed_val);
 
   api::ShaderInfo shader =
-      get_conv2d_shader(t_out, /*prepack_weights = */ false, transposed_val);
+      get_conv2d_shader(t_out, /*prepack_weights = */ false, method);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
@@ -258,9 +323,7 @@ void add_conv2d_node(
 
 void conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
   const int64_t groups = graph.get_val(args[8]).toInt();
-  if (groups > 1) {
-    VK_THROW("aten.convolution.default: groups > 1 is not supported yet!");
-  }
+
   return add_conv2d_node(
       graph,
       args[0],
@@ -271,6 +334,7 @@ void conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
       args[5],
       args[6],
       args[7],
+      args[8],
       args[9]);
 }
 
