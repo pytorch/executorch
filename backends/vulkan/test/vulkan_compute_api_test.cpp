@@ -1173,11 +1173,12 @@ TEST(VulkanComputeGraphOpsTest, max_pool2d_smoke_test) {
       kernel);
 }
 
-TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
-  const auto original_sizes = std::vector<int64_t>{2, 3, 1, 2};
-  const auto padded_sizes = std::vector<int64_t>{4, 4};
-  const auto gpu_sizes = std::vector<int64_t>{4, 1, 8};
-
+void test_conv2d(
+    const std::vector<int64_t>& original_sizes,
+    const std::vector<int64_t>& padded_sizes,
+    const std::vector<int64_t>& gpu_sizes,
+    const bool transposed,
+    const std::vector<float>& data_out_expected) {
   vTensor vten = vTensor(
       api::context(),
       gpu_sizes,
@@ -1207,7 +1208,8 @@ TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
       staging_buffer_in.buffer(),
       vten,
       original_sizes,
-      padded_sizes);
+      padded_sizes,
+      transposed);
   record_image_to_nchw_op(api::context(), vten, staging_buffer_out.buffer());
 
   // Execute command buffer
@@ -1219,10 +1221,26 @@ TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
       staging_buffer_out, data_out.data(), sizeof(float) * out_numel);
 
   // Check data matches results copied from ATen-VK
-  std::vector<float> data_out_expected = {1, 3, 5,  0,  2, 4, 6, 0, 7, 9, 11,
-                                          0, 8, 10, 12, 0, 0, 0, 0, 0, 0, 0,
-                                          0, 0, 0,  0,  0, 0, 0, 0, 0, 0};
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, data_out_expected[i]);
   }
+}
+
+TEST(VulkanComputeGraphOpsTest, conv2d_prepack_test) {
+  test_conv2d(
+      /*original_sizes = */ {2, 3, 1, 2},
+      /*padded_sizes = */ {4, 4},
+      /*gpu_sizes = */ {4, 1, 8},
+      /*transposed = */ false,
+      /*data_out_expected = */ {1, 3, 5,  0,  2, 4, 6, 0, 7, 9, 11,
+                                0, 8, 10, 12, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0,  0,  0, 0, 0, 0, 0, 0});
+  test_conv2d(
+      /*original_sizes = */ {2, 3, 1, 2},
+      /*padded_sizes = */ {4, 4},
+      /*gpu_sizes = */ {4, 1, 8},
+      /*transposed = */ true,
+      /*data_out_expected = */ {2, 8, 0, 0, 1, 7, 0,  0, 4, 10, 0,
+                                0, 3, 9, 0, 0, 6, 12, 0, 0, 5,  11,
+                                0, 0, 0, 0, 0, 0, 0,  0, 0, 0});
 }
