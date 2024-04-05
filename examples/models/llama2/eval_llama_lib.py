@@ -11,6 +11,9 @@ from typing import Optional
 import lm_eval
 
 import torch
+
+from executorch.extension.pybindings.portable_lib import _load_for_executorch
+
 from lm_eval.api.model import LM
 from lm_eval.evaluator import evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
@@ -33,7 +36,7 @@ class GPTFastEvalWrapper(eval_wrapper):
     def __init__(
         self,
         model: nn.Module,
-        tokenizer,
+        tokenizer: SentencePieceProcessor,
         max_seq_length: Optional[int] = None,
     ):
         super().__init__()
@@ -97,16 +100,15 @@ class ETEagerEvalWrapper(GPTFastEvalWrapper):
         max_seq_length: Optional[int] = None,
     ):
         super().__init__(None, tokenizer, max_seq_length)
-        self._model = model
+        self._model = model  # Expects model to be path to a .pte file
 
     def _model_call(self, inps):
-        # Given inps (tokens), return the logits from a single
-        # forward call
-
-        # Example:
-        # inps: Tensor of shape (1, N)
-        # logits: Tensor of shape (1, N, 32000)
-        pass
+        # Given inps (tokens), return the logits from a single forward call
+        # inps: Tensor of shape (1, max_seq_len - 1)
+        # logits: Tensor of shape (1, max_seq_len - 1, 32000)
+        et_model = _load_for_executorch(self._model)
+        result = et_model.forward((inps,))
+        return result[0]
 
 
 class ETRunnerEvalWrapper(GPTFastEvalWrapper):
@@ -198,7 +200,7 @@ def gen_eval_wrapper(
         return ETEagerEvalWrapper(
             model=model,
             tokenizer=tokenizer,
-            max_seq_length=args.max_seq_length,
+            max_seq_length=args.max_seq_length - 1,
         )
 
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
