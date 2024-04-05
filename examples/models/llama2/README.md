@@ -104,10 +104,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
 
 ## Step 4: Run on your computer to validate
 
-1. Build executorch with XNNPACK enabled. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
+1. Build executorch with optimized CPU performance as follows. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
     ```
-    cmake -DBUCK2=/tmp/buck2 \
-        -DPYTHON_EXECUTABLE=python \
+    cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DEXECUTORCH_ENABLE_LOGGING=1 \
         -DCMAKE_BUILD_TYPE=Release \
@@ -122,8 +121,7 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
 
 2. Build llama runner.
     ```
-    cmake -DBUCK2=/tmp/buck2 \
-        -DPYTHON_EXECUTABLE=python \
+    cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
