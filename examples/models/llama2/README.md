@@ -17,9 +17,37 @@ Please note that the models are subject to the [acceptable use policy](https://g
 
 # Results
 
-TODO - Will fill in table of results.
+Since 7B Llama2 model needs at least 4-bit quantization to fit even within some of the highend phones, results presented here correspond to 4-bit groupwise post-training quantized model.
+
+## Quantization:
+We employed 4-bit groupwise per token dynamic quantization of all the linear layers of the model. Dynamic quantization refers to quantizating activations dynamically, such that quantization parameters for activations are calculated, from min/max range, at runtime. Here we quantized activations with 8bits (signed integer). Furthermore, weights are statically quantized. In our case weights were per-channel groupwise quantized with 4bit signed integer. For more information refer to this [page](https://pytorch.org/tutorials/recipes/recipes/dynamic_quantization.html).
+
+We evaluated WikiText perplexity using [LM Eval](https://github.com/EleutherAI/lm-evaluation-harness). Below are the results for two different groupsizes.
+
+|Llama 2 | Baseline (FP32) | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------|-----------------| ---------------------- | ---------------
+|Wikitext Perplexity | 9.16 | 10.2 | 10.7
+
+Note that groupsize less than 128 was not enabled, since such model were still too large. This is because our current efforts have focused on enabling FP32 and support for FP16 is under way. What this implies for model size is that 1) embedding table is in FP32 and 2) quantized weights scales are FP32.
+
+## Performance
+
+Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measurement performance is in terms of tokens/second.
+
+|Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
+|--------| ---------------------- | ---------------
+|Galaxy S22 | x | x |
+|Galaxy S24 | x | x |
+|One plus 12 | x | x |
+|iPhone 15 pro | x | x |
+
 
 # Instructions
+
+## Tested on
+
+- MacOS M1/M2, Linux.
+- For Llama7b, your device may require at least 32GB RAM. If this is a constraint for you, please try the smaller stories model.
 
 ## Step 1: Setup
 1. Follow the [tutorial](https://pytorch.org/executorch/main/getting-started-setup) to set up ExecuTorch
@@ -59,29 +87,64 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 4. Create tokenizer.bin.
 
-    Build with buck2:
     ```
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
-## Step 3: Run on your computer to validate
+## Step 3: Evaluate model accuracy
 
-1. Build llama runner. TODO
+> Forewarning: Model evaluation without a GPU may take a long time, especially on larger models.
 
-2. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L13).
-    Build with buck2:
+Using the same arguments from above
+```
+python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
+```
+
+The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
+
+## Step 4: Run on your computer to validate
+
+1. Build executorch with XNNPACK enabled. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
     ```
-    buck2 run examples/models/llama2:main -- --model_path=llama2.pte --tokenizer_path=tokenizer.bin --prompt="Once"
-    ```
-    Build with cmake: TODO
+    cmake -DBUCK2=/tmp/buck2 \
+        -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DEXECUTORCH_ENABLE_LOGGING=1 \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+        -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -Bcmake-out .
 
-## Step 4: Run benchmark on Android phone
+    cmake --build cmake-out -j16 --target install --config Release
+    ```
+
+2. Build llama runner.
+    ```
+    cmake -DBUCK2=/tmp/buck2 \
+        -DPYTHON_EXECUTABLE=python \
+        -DCMAKE_INSTALL_PREFIX=cmake-out \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -Bcmake-out/examples/models/llama2 \
+        examples/models/llama2
+
+    cmake --build cmake-out/examples/models/llama2 -j16 --config Release
+    ```
+
+3. Run model. Run options available [here](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/main.cpp#L18-L40).
+    ```
+    cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
+    ```
+
+## Step 5: Run benchmark on Android phone
 
 1. Build llama runner binary for Android
 
 2. Run on Android via adb shell
 
-## Step 5: Build iOS and/or Android apps
+## Step 6: Build iOS and/or Android apps
 
 TODO
 
@@ -94,3 +157,14 @@ This example tries to reuse the Python code, with minimal modifications to make 
 1. Since ExecuTorch does not support complex Tensor data type, use the customized functions to have rotary embedding with real numbers. Please see [GitHub issue: Support complex data type in ExecuTorch](https://github.com/pytorch/executorch/issues/886).
 2. No CUDA. ExecuTorch is focused on Edge use cases where CUDA is not available on most of the edge devices.
 3. No dependencies on fairscale. The ColumnParallelLinear, ParallelEmbedding and training are not needed and supported in ExecuTorch.
+
+
+# Clean
+To clean your build:
+```
+git clean -xfd
+pip uninstall executorch
+./install_requirements.sh <options>
+
+rm -rf cmake-out
+```
