@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import unittest
 
 from itertools import product
@@ -552,6 +553,7 @@ class TestLinear(unittest.TestCase):
         use_bias: bool = False,
         atol: float = 1e-3,
         rtol: float = 1e-3,
+        num_linear_nodes: int = 1,
     ):
         linear_edge_op = (
             "executorch_exir_dialects_edge__ops_aten_addmm_default"
@@ -571,17 +573,17 @@ class TestLinear(unittest.TestCase):
             .to_edge()
             .check_count(
                 {
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_per_token_asymmetric_default": 1,
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_token_default": 1,
-                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_token_default": 1,
-                    weight_dq_edge_op: 1,
-                    linear_edge_op: 1,
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_choose_qparams_per_token_asymmetric_default": num_linear_nodes,
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_token_default": num_linear_nodes,
+                    "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_token_default": num_linear_nodes,
+                    weight_dq_edge_op: num_linear_nodes,
+                    linear_edge_op: num_linear_nodes,
                 }
             )
             .partition(Partition(partitioner=XnnpackDynamicallyQuantizedPartitioner()))
             .check_count(
                 {
-                    "torch.ops.higher_order.executorch_call_delegate": 1,
+                    "torch.ops.higher_order.executorch_call_delegate": num_linear_nodes,
                 }
             )
             .check_not(
@@ -673,6 +675,55 @@ class TestLinear(unittest.TestCase):
                     use_bias=use_bias,
                 )
 
+    def test_qd8_fp32_per_token_weight_per_channel_group_int4_large(self):
+        M_sizes = [126, 127, 128, 129]
+        K_sizes = [1024, 1024, 4096, 1024]
+        bl_sizes = [32, 256, 32, 256]
+        N_sizes = [1024, 1024, 1024, 4096]
+
+        for use_bias in [True, False]:
+            for i, _ in enumerate(M_sizes):
+                M = int(M_sizes[i])
+                K = int(K_sizes[i])
+                N = int(N_sizes[i])
+                bl = int(bl_sizes[i])
+
+                class TwoLinears(torch.nn.Module):
+                    def __init__(self, K, N, bl, use_bias):
+                        super().__init__()
+                        self.linear = TestLinear().ManualDQLinear(
+                            input_channels=K,
+                            output_channels=N,
+                            weight_n_bit=4,
+                            dtype=torch.float,
+                            group_size=bl,
+                            force_groupwise_quant=True,
+                            use_bias=use_bias,
+                        )
+                        self.linear2 = copy.deepcopy(self.linear)
+
+                    def forward(self, x):
+                        return self.linear(x) + self.linear2(x)
+
+                inputs = (torch.randn(1, M, K),)
+                mod = TwoLinears(K, N, bl, use_bias)
+
+                # NB:
+                # Large atol/rtol because of the large number of elements.
+                # And also the fact that we are doing comparison against dq->fp32->q in eager mode.
+                # That might not be 100% accurate as a reference when comparing against XNNPACK implemention which accumulates
+                # in int32 and scales to fp32 at each group. For comparison, in XNNPACK DQLinear unit-tests (a single op)
+                # we can get away with atol=1.0e-3, rtol=1.0e-3, where the reference kernel is somewhat representative.
+                self._test_manual_dq_linear(
+                    mod,
+                    inputs,
+                    weight_groupwise=True,
+                    use_bias=use_bias,
+                    atol=0.1,  # TODO - need to fine tune this to represent actual error
+                    rtol=0.1,  # abs(a - b) <= atol + rtol * abs(b)
+                    num_linear_nodes=2,
+                )
+
     def _test_linear(
         self,
         make_module,
@@ -733,7 +784,6 @@ class TestLinear(unittest.TestCase):
             tester.serialize()
             tester.run_method()
             tester.compare_outputs(qtol=quant, atol=atol)
-            print("success")
 
     def _test_dqlinear(
         self,
