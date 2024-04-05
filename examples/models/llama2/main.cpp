@@ -83,10 +83,11 @@ int32_t main(int32_t argc, char** argv) {
   if (eval_mode) {
     eval_callback = [](const exec_aten::Tensor& logits_tensor) -> void {
       float* logits_data = logits_tensor.mutable_data_ptr<float>();
-      printf("\n(Logits: %zd)\n", logits_tensor.numel());
+      printf("\n=====START_EVAL=====\n");
       for (int i = 0; i < logits_tensor.numel(); ++i) {
         printf(" %f", logits_data[i]);
       }
+      printf("\n=====END_EVAL=====\n");
       exit(0);
     };
   }
