@@ -32,17 +32,31 @@ PrepackNode::PrepackNode(
   graph.update_descriptor_counts(shader, /*execute = */ false);
 }
 
-void PrepackNode::encode(ComputeGraph* graph) {
-  api::Context* const context = graph->context();
-  api::PipelineBarrier pipeline_barrier{};
-
-  TensorRef& tref = graph->get_val(tref_).toTensorRef();
+api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   vTensor& packed = graph->get_val(packed_).toTensor();
 
+  // If no TensorRef is provided, create a zeroed staging buffer according to
+  // the vTensor metadata.
+  if (graph->get_val(tref_).isNone()) {
+    size_t numel = api::utils::multiply_integers(packed.sizes());
+    api::StorageBuffer staging(graph->context(), packed.dtype(), numel);
+    return staging;
+  }
+
+  TensorRef& tref = graph->get_val(tref_).toTensorRef();
   size_t numel = api::utils::multiply_integers(tref.sizes);
   api::StorageBuffer staging(graph->context(), tref.dtype, numel);
   size_t nbytes = numel * api::element_size(tref.dtype);
   copy_ptr_to_staging(tref.data, staging, nbytes);
+  return staging;
+}
+
+void PrepackNode::encode(ComputeGraph* graph) {
+  api::Context* const context = graph->context();
+  api::PipelineBarrier pipeline_barrier{};
+
+  vTensor& packed = graph->get_val(packed_).toTensor();
+  api::StorageBuffer staging = create_staging_buffer(graph);
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
