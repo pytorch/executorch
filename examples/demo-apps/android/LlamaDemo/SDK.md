@@ -28,7 +28,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 ```
 macOS:
 ```bash
-export JAVA_HOME="$DEV_HOME"/jdk-17.0.10/Contents/Home
+export JAVA_HOME="$DEV_HOME"/jdk-17.0.10.jdk/Contents/Home
 export PATH="$JAVA_HOME/bin:$PATH"
 ```
 
