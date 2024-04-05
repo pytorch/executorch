@@ -52,13 +52,17 @@ void resize_conv2d_node(
   out.virtual_resize(new_out_sizes);
 }
 
-ValueRef prepack_biases(ComputeGraph& graph, const ValueRef vref) {
-  if (graph.get_val(vref).isNone()) {
-    VK_THROW("aten.convolution.default: Null bias is not supported yet!");
-  }
+ValueRef prepack_biases(
+    ComputeGraph& graph,
+    const ValueRef vref,
+    const ValueRef weight,
+    const bool transposed) {
+  TensorRef& tref = graph.get_val(weight).toTensorRef();
+  const int64_t out_channels = transposed ? tref.sizes.at(1) : tref.sizes.at(0);
 
-  ValueRef v = graph.add_tensor_like(
-      vref,
+  ValueRef v = graph.add_tensor(
+      {out_channels},
+      tref.dtype,
       api::StorageType::TEXTURE_2D,
       api::GPUMemoryLayout::TENSOR_WIDTH_PACKED);
   vTensor& t = graph.get_val(v).toTensor();
@@ -301,7 +305,7 @@ void add_conv2d_node(
 
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
   ValueRef arg_weight = prepack_weights(graph, weight, method);
-  ValueRef arg_bias = prepack_biases(graph, bias);
+  ValueRef arg_bias = prepack_biases(graph, bias, weight, transposed_val);
 
   vTensor& t_in = graph.get_val(arg_in).toTensor();
   vTensor& t_out = graph.get_val(out).toTensor();
