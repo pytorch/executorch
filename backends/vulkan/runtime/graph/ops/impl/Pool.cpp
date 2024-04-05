@@ -40,10 +40,7 @@ void resize_max_pool2d_node(
       self.sizes(),
       extra_args[0],
       /*kernel_size_only = */ true,
-      extra_args[1],
-      extra_args[2],
-      extra_args[3],
-      extra_args[4]);
+      {extra_args[1], extra_args[2], extra_args[3], extra_args[4]});
   new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 

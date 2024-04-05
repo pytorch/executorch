@@ -113,11 +113,17 @@ void record_conv2d_prepack_weights_op(
     api::VulkanBuffer& src_buffer,
     vTensor& v_dst,
     const std::vector<int64_t>& original_sizes,
-    const std::vector<int64_t>& padded_sizes) {
+    const std::vector<int64_t>& padded_sizes,
+    const bool transposed) {
   api::PipelineBarrier pipeline_barrier{};
 
   std::stringstream kernel_name;
-  kernel_name << "conv2d_prepack_weights";
+  if (transposed) {
+    kernel_name << "conv_transpose2d";
+  } else {
+    kernel_name << "conv2d";
+  }
+  kernel_name << "_prepack_weights";
   apply_dtype_suffix(kernel_name, v_dst);
   api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name.str());
 
