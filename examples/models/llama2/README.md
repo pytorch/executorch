@@ -140,15 +140,79 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
 
 ## Step 5: Run benchmark on Android phone
 
-1. Build llama runner binary for Android
+**1. Build llama runner binary for Android**
 
-2. Run on Android via adb shell
+*Pre-requisite*: Android NDK (tested with r26c) which can be downloaded from [here](https://developer.android.com/ndk/downloads). Note that the mac binary can be unpackaged and you can locate NDK folder from it.
 
+**1.1 Set Android NDK**
+```
+export ANDROID_NDK=<path-to-android-ndk>
+```
+**1.2 Build executorch and associated libraries for android.**
+```
+cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-23 \
+    -DCMAKE_INSTALL_PREFIX=cmake-out-android \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
+    -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
+    -DEXECUTORCH_ENABLE_LOGGING=1 \
+    -DEXECUTORCH_BUILD_XNNPACK=ON \
+    -DPYTHON_EXECUTABLE=python \
+    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -Bcmake-out-android .
+
+cmake --build cmake-out-android -j16 --target install --config Release
+```
+
+**1.2 Build llama runner for android**
+```
+cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI=arm64-v8a \
+    -DANDROID_PLATFORM=android-23 \
+    -DCMAKE_INSTALL_PREFIX=cmake-out-android \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DPYTHON_EXECUTABLE=python \
+    -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+    -Bcmake-out-android/examples/models/llama2 \
+    examples/models/llama2
+```
+
+**2. Run on Android via adb shell**
+
+*Pre-requisite*: Make sure you enable USB debugging via developer options on your phone
+
+**2.1 Connect your android phone**
+
+**2.2 Upload model, tokenizer and llama runner binary to phone**
+```
+adb push <model.pte> /data/local/tmp/
+adb push <tokenizer.bin> /data/local/tmp/
+adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/
+```
+
+**2.3 Run model**
+```
+adb shell "cd /data/local/tmp && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
+```
 ## Step 6: Build iOS and/or Android apps
 
 TODO
 
 # What is coming next?
+## Quantization
+- Enabling FP16 model to leverage smaller groupsize for 4-bit quantization.
+- Enabling GPTQ for 4-bit groupwise quantization
+- Enabling custom quantization
+- Lower bit quantization
+## Models
+- Enabling more generative AI models and architectures.
+- Enable support for mult-modal models like LlaVa.
+## Performance
+- Performance improvement via techniques such as speculative decoding
+- Enabling LLama2 7b and other architectures via Vulkan
+- Enabling performant execution of widely used quantization schemes.
 
 TODO
 
