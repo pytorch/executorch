@@ -27,6 +27,7 @@ public class LlamaModule {
   private static native HybridData initHybrid(
       String modulePath, String tokenizerPath, float temperature);
 
+  /** Constructs a LLAMA Module for a model with given path, tokenizer, and temperature. */
   public LlamaModule(String modulePath, String tokenizerPath, float temperature) {
     mHybridData = initHybrid(modulePath, tokenizerPath, temperature);
   }
@@ -35,12 +36,20 @@ public class LlamaModule {
     mHybridData.resetNative();
   }
 
+  /**
+   * Start generating tokens from the module.
+   *
+   * @param prompt Input prompt
+   * @param llamaCallback callback object to receive results.
+   */
   @DoNotStrip
   public native int generate(String prompt, LlamaCallback llamaCallback);
 
+  /** Stop current generate() before it finishes. */
   @DoNotStrip
   public native void stop();
 
+  /** Force loading the module. Otherwise the model is loaded during first generate(). */
   @DoNotStrip
   public native int load();
 }
