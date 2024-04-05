@@ -2,7 +2,7 @@
 
 Follow this doc if you haven't set up Java/SDK/NDK for Android development
 already.
-This doc provides a CLI tutorial to set them up. Usually, you can do the same
+This doc provides a CLI tutorial to set them up. Otherwise, you can do the same
 thing with Android Studio GUI.
 
 ## Set up Java 17
