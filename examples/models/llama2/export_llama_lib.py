@@ -134,7 +134,7 @@ def quantize(
         from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
         model = Int8DynActInt4WeightQuantizer(
-            precision=torch_dtype, group_size=group_size
+            precision=torch_dtype, groupsize=group_size
         ).quantize(model)
         if verbose_export():
             print("quantized model:", model)
@@ -153,6 +153,7 @@ def quantize(
         if calibration_tasks is None:
             calibration_tasks = ["wikitext"]
 
+        from torchao.quantization.GPTQ import InputRecorder
         from torchao.quantization.quant_api import Int8DynActInt4WeightGPTQQuantizer
 
         if tokenizer_path is None:
@@ -161,17 +162,28 @@ def quantize(
         tokenizer = SentencePieceProcessor(  # pyre-ignore[28]
             model_file=str(tokenizer_path)
         )
+
+        inputs = (
+            InputRecorder(
+                tokenizer,
+                calibration_seq_length,
+                None,  # input_prep_func
+                pad_calibration_inputs,
+                model.vocab_size,
+            )
+            .record_inputs(
+                calibration_tasks,
+                calibration_limit,
+            )
+            .get_inputs()
+        )
+
         gptq_quantizer = Int8DynActInt4WeightGPTQQuantizer(
-            tokenizer,
             blocksize,
             percdamp,
             group_size,
-            calibration_tasks,
-            calibration_limit,
-            calibration_seq_length,
-            pad_calibration_inputs,
         )
-        model = gptq_quantizer.quantize(model)
+        model = gptq_quantizer.quantize(model, inputs)
         return model
     else:
         raise Exception(f"Unrecognized quantize mode: {qmode}")
