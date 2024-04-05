@@ -20,6 +20,7 @@ curl https://download.oracle.com/java/17/archive/jdk-17.0.10_macos-aarch64_bin.t
 tar xf jdk-17.0.10.tar.gz
 ```
 3. Set `JAVA_HOME` and update `PATH`.
+
 Linux:
 ```bash
 export JAVA_HOME="$DEV_HOME"/jdk-17.0.10
