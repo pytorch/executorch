@@ -11,9 +11,11 @@ import PackageDescription
 
 let version = "0.1.0"
 let url = "https://ossci-ios.s3.amazonaws.com/executorch/"
+let debug = "_debug"
 let deliverables = [
   "coreml_backend": [
-    "sha256": "78d853d87be478696e56e658aa4ff17d47ae185a9a6a36316c821fa8b2d3aacd",
+    "sha256": "0e5973bbc547e3a39f988f9a7a68b47bda0a6a17b04516fff6957fd527f8cd48",
+    "sha256" + debug: "c63773f0098625f884fecb11b4a5f6318b97d566329fef8b013444829cd7c421",
     "frameworks": [
       "Accelerate",
       "CoreML",
@@ -23,13 +25,16 @@ let deliverables = [
     ],
   ],
   "custom_backend": [
-    "sha256": "f059f6716298403dff89a952a70e323c54911be140d05f2467bd5cc61aaefae3",
+    "sha256": "c8405e21324262cd6590046096ddeb3ac33a598f88afc817a2f2fdee821da150",
+    "sha256" + debug: "a08a6aa15ddce61a76cd1bf2206d017cc4ac7dcb9ca312ad7750a36814448eaa",
   ],
   "executorch": [
-    "sha256": "ba9a0c2b061afaedbc3c5454040a598b1371170bd9d9a30b7163c20e23339841",
+    "sha256": "57269f9b81d56a3d96ece2012e2ece3af24174846abd98de9a3bee07f3b9583d",
+    "sha256" + debug: "66975caf3d9c1238d29945288f23ddb6e07e16386d4dedf429c0f2d81cfbe0cc",
   ],
   "mps_backend": [
-    "sha256": "39542a8671cca1aa627102aa47785d0f6e2dfe9a40e2c22288a755057b00fbfa",
+    "sha256": "bb7531172252b6535429fbde429de208665f933d0f509982872eada86839e734",
+    "sha256" + debug: "6d41437e40cb794b4b7a0d971931773de263370463b38a014f38e99bd1c5d52b",
     "frameworks": [
       "Metal",
       "MetalPerformanceShaders",
@@ -37,18 +42,36 @@ let deliverables = [
     ],
   ],
   "optimized_backend": [
-    "sha256": "1d84fa16197bb6f0dec01aaa29d2a140c0e14d8e5e92630a7b4dd6f48012506d",
+    "sha256": "bdab593fb49c9000291dbf691ad578d771883745ed2851f00492e828d089d1ea",
+    "sha256" + debug: "8316ad259d6aafecf2e9abc91a04fc1fa3e0398597e043119b4c29c21e9f2029",
   ],
   "portable_backend": [
-    "sha256": "4993904f89ecb4476677ff3c072ed1a314a608170f10d364cfd23947851ccbf3",
+    "sha256": "38ebdad7d5cd24ca44cd950d561dcf9a9b883dff626c167bc6f5f28f041b8406",
+    "sha256" + debug: "9e68b3e92e5c920875845f59821ee984b87486d05c1bf8a461b011530e02dd55",
   ],
   "quantized_backend": [
-    "sha256": "8d35ee0e7ca77c19782eaea07a1888f576cda679f8a4a5edb03d80ebe858047e",
+    "sha256": "245a3acbf06c6afe9cfb6b03eddfa015390e582ffdfb76efd23b7c810f080f10",
+    "sha256" + debug: "134d759fe708a4ffbf7efbd25c6020186e1a13abc0dac0a897e2fe13aac3e76a",
   ],
   "xnnpack_backend": [
-    "sha256": "380e5185c4c48ede7cc0d0f0657ffb26df83cd9f55813d78593aea8a93942caf",
+    "sha256": "a1c9cf8347c17f3e50e45d7f37f64ee040f0a1b0a40fa4748d90b45c4150e3b2",
+    "sha256" + debug: "e92a15c2982630951e5ae5e927d548049db25d89e8b639e8901c5f4650f3a7d0",
   ],
-]
+].reduce(into: [String: [String: Any]]()) {
+  $0[$1.key] = $1.value
+  $0[$1.key + debug] = $1.value
+}
+.reduce(into: [String: [String: Any]]()) {
+  var newValue = $1.value
+  if $1.key.hasSuffix(debug) {
+    $1.value.forEach { key, value in
+      if key.hasSuffix(debug) {
+        newValue[String(key.dropLast(debug.count))] = value
+      }
+    }
+  }
+  $0[$1.key] = newValue.filter { key, _ in !key.hasSuffix(debug) }
+}
 
 let package = Package(
   name: "executorch",
