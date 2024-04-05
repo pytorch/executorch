@@ -42,7 +42,8 @@ Android has a command line tool [sdkmanager](https://developer.android.com/tools
 helps users managing SDK and other tools related to Android development.
 
 1. Go to https://developer.android.com/studio and download the archive from "Command line tools
-only" section. Make sure you have read and agree with the terms and conditions from the website, then
+only" section. Make sure you have read and agree with the terms and conditions from the website.
+
 Linux:
 ```bash
 curl https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o commandlinetools.zip
