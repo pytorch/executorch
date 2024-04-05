@@ -18,7 +18,6 @@
 
 using namespace ::testing;
 using exec_aten::ArrayRef;
-using exec_aten::optional;
 using exec_aten::Scalar;
 using exec_aten::ScalarType;
 using exec_aten::Tensor;
@@ -44,14 +43,7 @@ void test_dtype() {
   // (100 - 30) * 0.5
   Tensor expected = tfo.full({3, 5}, 35);
   dequantize_per_tensor_out(
-      input,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      DTYPE,
-      optional<ScalarType>(),
-      out);
+      input, scale, zero_point, quant_min, quant_max, DTYPE, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }
@@ -74,14 +66,7 @@ TEST(OpDequantizeOutTest, NonWholeNumbers) {
   // (100 - 30) * 0.5
   Tensor expected = tfo.full({3, 5}, 31.5);
   dequantize_per_tensor_out(
-      input,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      ScalarType::Byte,
-      optional<ScalarType>(),
-      out);
+      input, scale, zero_point, quant_min, quant_max, ScalarType::Byte, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }
@@ -102,14 +87,7 @@ TEST(OpDequantizeOutTest, TensorArgOverload) {
   // (100 - 30) * 0.5
   Tensor expected = tfo.full({3, 5}, 31.5);
   dequantize_per_tensor_tensor_args_out(
-      input,
-      scale,
-      zero_point,
-      quant_min,
-      quant_max,
-      ScalarType::Byte,
-      optional<ScalarType>(),
-      out);
+      input, scale, zero_point, quant_min, quant_max, ScalarType::Byte, out);
 
   EXPECT_TENSOR_EQ(out, expected);
 }
@@ -138,7 +116,6 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
@@ -159,7 +136,6 @@ TEST(OpDequantizeOutTest, DequantizePerChannel) {
       quant_min,
       quant_max,
       ScalarType::Byte,
-      optional<ScalarType>(),
       out);
 
   EXPECT_TENSOR_EQ(out, expected);
