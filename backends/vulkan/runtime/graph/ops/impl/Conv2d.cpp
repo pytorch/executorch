@@ -82,6 +82,7 @@ ValueRef prepack_biases(ComputeGraph& graph, const ValueRef vref) {
 
 enum class Conv2dMethod : uint8_t {
   Depthwise,
+  Pointwise,
   SlidingWindow,
   Transposed,
 };
@@ -104,6 +105,13 @@ api::ShaderInfo get_conv2d_shader(
         if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
           kernel_name << "_output_tile_5x5";
         }
+      }
+      break;
+    case Conv2dMethod::Pointwise:
+      if (prepack_weights) {
+        kernel_name << "conv2d";
+      } else {
+        kernel_name << "conv2d_pw";
       }
       break;
     case Conv2dMethod::SlidingWindow:
@@ -136,6 +144,7 @@ std::vector<int64_t> get_final_sizes(
     case Conv2dMethod::Depthwise:
       return std::vector<int64_t>{
           4, batch_padded * channels / 4, height * width};
+    case Conv2dMethod::Pointwise:
     case Conv2dMethod::SlidingWindow:
       return std::vector<int64_t>{
           4, batch_padded * height / 4, channels_padded * width};
@@ -156,6 +165,7 @@ std::vector<int64_t> get_padded_sizes(
   switch (method) {
     case Conv2dMethod::Depthwise:
       return std::vector<int64_t>{-1, batch_padded};
+    case Conv2dMethod::Pointwise:
     case Conv2dMethod::SlidingWindow:
     case Conv2dMethod::Transposed:
       return std::vector<int64_t>{batch_padded, channels_padded};
@@ -264,6 +274,9 @@ Conv2dMethod get_conv2d_method(
   }
   if (transposed) {
     return Conv2dMethod::Transposed;
+  }
+  if (weight_sizes.at(2) == 1 && weight_sizes.at(3) == 1) {
+    return Conv2dMethod::Pointwise;
   }
   return Conv2dMethod::SlidingWindow;
 }
