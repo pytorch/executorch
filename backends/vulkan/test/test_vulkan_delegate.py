@@ -17,6 +17,9 @@ from executorch.backends.vulkan.vulkan_preprocess import VulkanBackend
 
 from executorch.exir import EdgeProgramManager, to_edge
 from torch.export import Dim, export, ExportedProgram
+from wearables.camera.ml.model_experimentation.person_segmentation.cunet.cunet import (
+    C_UNet,
+)
 
 ctypes.CDLL("libvulkan.so.1")
 
@@ -625,6 +628,16 @@ class TestBackends(unittest.TestCase):
 
         self.lower_module_and_test_output(
             conv2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
+    def test_vulkan_backend_cunet(self):
+        module = C_UNet()
+        sample_inputs = (torch.rand((1, 3, 96, 72), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )

@@ -20,6 +20,7 @@ python_unittest(
         "//executorch/extension/pybindings:portable_lib",  # @manual
         "//executorch/extension/pytree:pylib",
         "//executorch/kernels/portable:custom_ops_generated_lib",
+        "//wearables/camera/ml/model_experimentation/person_segmentation/cunet:cunet_lib",
     ],
 )
 
