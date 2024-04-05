@@ -7,8 +7,8 @@
 
 set -eu
 
-CMAKE_OUT="${CMAKE_OUT:-cmake-out}"
-# Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC
+CMAKE_OUT="${CMAKE_OUT:-cmake-out-android}"
+# Note: Set up ANDROID_NDK and ANDROID_ABI
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
