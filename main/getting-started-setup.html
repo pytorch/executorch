@@ -449,22 +449,35 @@
    </div>
 </div>
 <!---- DO NOT MODIFY Progress Bar End--->
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Before diving in, make sure you understand the concepts in the <a class="reference internal" href="intro-overview.html"><span class="doc std std-doc">ExecuTorch Overview</span></a></p>
+</div>
 <div class="section" id="setting-up-executorch">
 <h1>Setting Up ExecuTorch<a class="headerlink" href="#setting-up-executorch" title="Permalink to this heading">¶</a></h1>
-<p>This tutorial walks you through an end-to-end example of configuring your
-environment for ExecuTorch, installing ExecuTorch,
-exporting your model, and finally building and running a runtime.</p>
+<p>In this section, we’ll learn how to</p>
+<ul class="simple">
+<li><p>Set up an environment to work on ExecuTorch</p></li>
+<li><p>Generate a sample ExecuTorch program</p></li>
+<li><p>Build and run a program with the ExecuTorch runtime</p></li>
+</ul>
+<div class="section" id="system-requirements">
+<h2>System Requirements<a class="headerlink" href="#system-requirements" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="operating-system">
+<h3>Operating System<a class="headerlink" href="#operating-system" title="Permalink to this heading">¶</a></h3>
+<p>We’ve tested these instructions on the following systems, although they should
+also work in similar environments.</p>
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
 <div class="sd-col sd-d-flex-row docutils">
 <div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
-What you will learn</div>
+Linux (x86_64)</div>
 <ul class="simple">
-<li><p class="sd-card-text">How to set up your environment to work on ExecuTorch</p></li>
-<li><p class="sd-card-text">How to generate a sample ExecuTorch program</p></li>
-<li><p class="sd-card-text">How to build and run an ExecuTorch runtime</p></li>
+<li><p class="sd-card-text">CentOS 8+</p></li>
+<li><p class="sd-card-text">Ubuntu 20.04.6 LTS+</p></li>
+<li><p class="sd-card-text">RHEL 8+</p></li>
 </ul>
 </div>
 </div>
@@ -473,33 +486,37 @@ What you will learn</div>
 <div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
 <div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
-Prerequisites</div>
+macOS (x86_64/M1/M2)</div>
 <ul class="simple">
-<li><p class="sd-card-text">Understand the concepts defined in <a class="reference internal" href="intro-overview.html"><span class="doc std std-doc">ExecuTorch Overview</span></a></p></li>
+<li><p class="sd-card-text">Big Sur (11.0)+</p></li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Windows (x86_64)</div>
+<ul class="simple">
+<li><p class="sd-card-text">Windows Subsystem for Linux (WSL) with any of the Linux options</p></li>
 </ul>
 </div>
 </div>
 </div>
 </div>
 </div>
-<div class="section" id="supported-host-environments">
-<h2>Supported Host Environments<a class="headerlink" href="#supported-host-environments" title="Permalink to this heading">¶</a></h2>
-<p>We have tested these instructions on the following systems, although they should
-also work on other systems with similar environments.</p>
-<p><strong>Linux (x86_64)</strong></p>
+</div>
+<div class="section" id="software">
+<h3>Software<a class="headerlink" href="#software" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
-<li><p>CentOS 8 or later</p></li>
-<li><p>Ubuntu 20.04.6 LTS or later</p></li>
-<li><p>RHEL 8 or later</p></li>
-<li><p>Windows Subsystem for Linux running any of the above</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">conda</span></code> or another virtual environment manager</p>
+<ul>
+<li><p>We recommend <code class="docutils literal notranslate"><span class="pre">conda</span></code> as it provides cross-language
+support and integrates smoothly with <code class="docutils literal notranslate"><span class="pre">pip</span></code> (Python’s built-in package manager)</p></li>
+<li><p>Otherwise, Python’s built-in virtual environment manager <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">venv</span></code> is a good alternative.</p></li>
 </ul>
-<p><strong>macOS (x86_64/M1/M2)</strong></p>
-<ul class="simple">
-<li><p>Big Sur or later</p></li>
-</ul>
-<p>The most critical requirements are:</p>
-<ul class="simple">
-<li><p>The ability to install a recent version of <code class="docutils literal notranslate"><span class="pre">conda</span></code>, described below.</p></li>
+</li>
 <li><p><code class="docutils literal notranslate"><span class="pre">g++</span></code> version 8 or higher, <code class="docutils literal notranslate"><span class="pre">clang++</span></code> version 8 or higher, or another
 C++17-compatible toolchain that supports GNU C-style <a class="reference external" href="https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html">statement
 expressions</a> (<code class="docutils literal notranslate"><span class="pre">({</span> <span class="pre">...</span> <span class="pre">})</span></code> syntax).</p></li>
@@ -508,205 +525,111 @@ expressions</a> (<code class="docutils literal notranslate"><span class="pre">({
 toolchains, down to C++11. See the <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a> for
 portability details.</p>
 </div>
-<div class="section" id="set-up-your-environment">
-<h2>Set up Your Environment<a class="headerlink" href="#set-up-your-environment" title="Permalink to this heading">¶</a></h2>
-<p>Before you can start working with ExecuTorch, you’ll need to set up your
-environment. This is an important step to ensure that everything runs
-smoothly and efficiently. We recommend using <code class="docutils literal notranslate"><span class="pre">conda</span></code> to create and
-manage your virtual environment. Conda is a package management system
-and environment manager for Python and other programming languages,
-which is built on top of the Python package manager pip, and provides
-a more convenient and flexible way to manage packages and environments.
-In this section, you will set up your <code class="docutils literal notranslate"><span class="pre">conda</span></code> environment and install
-the required dependencies.</p>
-<p>Follow these steps:</p>
-<ol class="arabic">
-<li><p>If you do not have it already, install conda on your machine by following the
-steps in the
-<a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">conda installation guide</a>.</p></li>
-<li><p>Clone the <code class="docutils literal notranslate"><span class="pre">executorch</span></code> repository:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pytorch/executorch.git
-</pre></div>
 </div>
-</li>
-<li><p>Update the submodules:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-git<span class="w"> </span>submodule<span class="w"> </span>sync
-git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
-</pre></div>
-</div>
-</li>
-<li><p>Create and activate your conda environment:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
+<div class="section" id="environment-setup">
+<h2>Environment Setup<a class="headerlink" href="#environment-setup" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="create-a-virtual-environment">
+<h3>Create a Virtual Environment<a class="headerlink" href="#create-a-virtual-environment" title="Permalink to this heading">¶</a></h3>
+<p><a class="reference external" href="https://conda.io/projects/conda/en/latest/user-guide/install/index.html">Install conda on your machine</a>. Then, create a virtual environment to manage our dependencies.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Create and activate a conda environment named &quot;executorch&quot;</span>
+conda<span class="w"> </span>create<span class="w"> </span>-yn<span class="w"> </span>executorch<span class="w"> </span><span class="nv">python</span><span class="o">=</span><span class="m">3</span>.10.0
 conda<span class="w"> </span>activate<span class="w"> </span>executorch
 </pre></div>
 </div>
-<p>Or alternatively use a Python virtual environment:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.executorch
-<span class="nb">source</span><span class="w"> </span>.executorch/bin/activate
+</div>
+<div class="section" id="clone-and-install-executorch-requirements">
+<h3>Clone and install ExecuTorch requirements<a class="headerlink" href="#clone-and-install-executorch-requirements" title="Permalink to this heading">¶</a></h3>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clone the ExecuTorch repo from GitHub</span>
+git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pytorch/executorch.git
+<span class="nb">cd</span><span class="w"> </span>executorch
+
+<span class="c1"># Update and pull submodules</span>
+git<span class="w"> </span>submodule<span class="w"> </span>sync
+git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
+
+<span class="c1"># Install ExecuTorch pip package and its dependencies, as well as</span>
+<span class="c1"># development tools like CMake.</span>
+./install_requirements.sh
 </pre></div>
 </div>
-</li>
-<li><p>Install ExecuTorch and dependencies:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
-</pre></div>
-</div>
-<p>To install with pybindings and dependencies for other backends. See options <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29">here</a>:</p>
+<p>Use the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29"><code class="docutils literal notranslate"><span class="pre">--pybind</span></code> flag</a> to install with pybindings and dependencies for other backends.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh<span class="w"> </span>--pybind<span class="w"> </span>&lt;coreml<span class="w"> </span><span class="p">|</span><span class="w"> </span>mps<span class="w"> </span><span class="p">|</span><span class="w"> </span>xnnpack&gt;
 </pre></div>
 </div>
-</li>
-</ol>
-<p>You have successfully set up your environment to work with ExecuTorch. The next
-step is to generate a sample ExecuTorch program.</p>
+<p>After setting up your environment, you are ready to convert your PyTorch programs
+to ExecuTorch.</p>
 </div>
-<div class="section" id="generate-a-sample-executorch-program">
-<h2>Generate a Sample ExecuTorch program<a class="headerlink" href="#generate-a-sample-executorch-program" title="Permalink to this heading">¶</a></h2>
-<p>After you set up your environment, you are ready to convert your programs
-into ExecuTorch programs. You will need to use <code class="docutils literal notranslate"><span class="pre">torch.export</span></code> and the
-<code class="docutils literal notranslate"><span class="pre">executorch.exir</span></code> to export your program. Then, you can save your program as
-a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file, which is the file extension ExecuTorch expects. To demonstrate
-how to do it, we will generate an ExecuTorch program file from an <code class="docutils literal notranslate"><span class="pre">nn.Module</span></code>.</p>
-<p>You can generate an ExecuTorch program by using a sample script or by using
-the Python interpreter.</p>
-<p>We have created the <code class="docutils literal notranslate"><span class="pre">export.py</span></code> script that demonstrates a simple model
-export to flatbuffer. This script is available
-in the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples/portable">pytorch/executorch</a>
-repository.</p>
-<p>To generate a sample program, complete the following steps:</p>
+</div>
+<div class="section" id="create-an-executorch-program">
+<h2>Create an ExecuTorch program<a class="headerlink" href="#create-an-executorch-program" title="Permalink to this heading">¶</a></h2>
+<p>After setting up your environment, you are ready to convert your PyTorch programs
+to ExecuTorch.</p>
+<div class="section" id="export-a-program">
+<h3>Export a Program<a class="headerlink" href="#export-a-program" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch provides APIs to compile a PyTorch <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Module.html"><code class="docutils literal notranslate"><span class="pre">nn.Module</span></code></a> to a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> binary consumed by the ExecuTorch runtime.</p>
 <ol class="arabic simple">
-<li><p>Run the <code class="docutils literal notranslate"><span class="pre">export.py</span></code> script:</p></li>
+<li><p><a class="reference external" href="https://pytorch.org/docs/stable/export.html"><code class="docutils literal notranslate"><span class="pre">torch.export</span></code></a></p></li>
+<li><p><a class="reference external" href="https://pytorch.org/executorch/stable/export-to-executorch-api-reference.html#exir.to_edge"><code class="docutils literal notranslate"><span class="pre">exir.to_edge</span></code></a></p></li>
+<li><p><a class="reference internal" href="ir-exir.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">exir.to_executorch</span></code></span></a></p></li>
+<li><p>Save the result as a <a class="reference internal" href="pte-file-format.html"><span class="doc std std-doc"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> binary</span></a> to be consumed by the ExecuTorch runtime.</p></li>
 </ol>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
+<p>Let’s try this using with a simple PyTorch model that adds its inputs. Create a file called <code class="docutils literal notranslate"><span class="pre">export_add.py</span></code> with the following code:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
+
+<span class="c1"># Start with a PyTorch model that adds two input tensors (matrices)</span>
+<span class="k">class</span> <span class="nc">Add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+  <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="nb">super</span><span class="p">(</span><span class="n">Add</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+  <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+      <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+
+<span class="c1"># 1. torch.export: Defines the program with the ATen operator set.</span>
+<span class="n">aten_dialect</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">Add</span><span class="p">(),</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)))</span>
+
+<span class="c1"># 2. to_edge: Make optimizations for Edge devices</span>
+<span class="n">edge_program</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">aten_dialect</span><span class="p">)</span>
+
+<span class="c1"># 3. to_executorch: Convert the graph to an ExecuTorch program</span>
+<span class="n">executorch_program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># 4. Save the compiled .pte program</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;add.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">executorch_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+
 </pre></div>
 </div>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-Output<div class="sd-summary-down docutils">
-<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
-<div class="sd-summary-up docutils">
-<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
-</summary><div class="sd-summary-content sd-card-body docutils">
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Exported</span> <span class="n">graph</span><span class="p">:</span>
- <span class="n">graph</span><span class="p">():</span>
-   <span class="o">%</span><span class="n">arg0_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg0_1</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">arg1_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg1_1</span><span class="p">]</span>
-    <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">arg0_1</span><span class="p">,</span> <span class="o">%</span><span class="n">arg1_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">aten_add_tensor_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor</span><span class="p">,</span> <span class="o">%</span><span class="n">arg0_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">aten_add_tensor_2</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor_1</span><span class="p">,</span> <span class="o">%</span><span class="n">arg0_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="o">%</span><span class="n">aten_add_tensor_3</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor_2</span><span class="p">,</span> <span class="o">%</span><span class="n">aten_add_tensor_2</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">aten_add_tensor_3</span><span class="p">,)</span>
-<span class="n">Saving</span> <span class="n">exported</span> <span class="n">program</span> <span class="n">to</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span>
+<p>Then, execute it from your terminal.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python3<span class="w"> </span>export_add.py
 </pre></div>
 </div>
+<p>See the <a class="reference download internal" download="" href="_downloads/61ed220d05d7ddafc350911b0dfa2e8d/export-to-executorch-tutorial.py"><span class="xref download myst">ExecuTorch export tutorial</span></a> to learn more about the export process.</p>
 </div>
-</details><p>This command has created a <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> file that contains your sample program,
-which adds its inputs multiple times.</p>
-<p>Alternatively, you can use a Python interpreter to perform similar steps, this
-time creating a <code class="docutils literal notranslate"><span class="pre">mul.pte</span></code> program file that multiplies its inputs:</p>
-<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
-<span class="kn">from</span> <span class="nn">executorch.exir.tests.models</span> <span class="kn">import</span> <span class="n">Mul</span>
-<span class="n">m</span> <span class="o">=</span> <span class="n">Mul</span><span class="p">()</span>
-<span class="nb">open</span><span class="p">(</span><span class="s2">&quot;mul.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">m</span><span class="o">.</span><span class="n">get_random_inputs</span><span class="p">()))</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</div>
+<div class="section" id="build-run">
+<h2>Build &amp; Run<a class="headerlink" href="#build-run" title="Permalink to this heading">¶</a></h2>
+<p>After creating a program, we can use the ExecuTorch runtime to execute it.</p>
+<p>For now, let’s use <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp"><code class="docutils literal notranslate"><span class="pre">executor_runner</span></code></a>, an example that runs the <code class="docutils literal notranslate"><span class="pre">forward</span></code> method on your program using the ExecuTorch runtime.</p>
+<div class="section" id="build-tooling-setup">
+<h3>Build Tooling Setup<a class="headerlink" href="#build-tooling-setup" title="Permalink to this heading">¶</a></h3>
+<p>The ExecuTorch repo uses CMake to build its C++ code. Here, we’ll configure it to build the <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> tool to run it on our desktop OS.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.</span>
+<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+
+<span class="c1"># Build the executor_runner target</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>--target<span class="w"> </span>executor_runner<span class="w"> </span>-j9
 </pre></div>
 </div>
-<p>In this step, you learned how you can export your PyTorch program to an ExecuTorch
-program. You can apply the same principle to your own PyTorch programs.</p>
-<p>The next step is to run your program by setting up Buck2 and building an
-<code class="docutils literal notranslate"><span class="pre">executor_runner</span></code>.</p>
-</div>
-<div class="section" id="building-a-runtime">
-<h2>Building a Runtime<a class="headerlink" href="#building-a-runtime" title="Permalink to this heading">¶</a></h2>
-<p>After you have exported your program, you are almost ready to run it.
-The next step involves using Buck2 to build a runtime.</p>
-<p><strong>Buck2</strong> is an open-source build system that enables developers to manage
-project dependencies easily and efficiently. We will use Buck2 to build the
-<code class="docutils literal notranslate"><span class="pre">executor_runner</span></code>, a sample wrapper for the ExecuTorch runtime which includes
-all the operators and backends.</p>
-<p>You will need the following prerequisits for this section:</p>
-<ul>
-<li><p>The <code class="docutils literal notranslate"><span class="pre">zstd</span></code> command line tool — install by running</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>pip3<span class="w"> </span>install<span class="w"> </span>zstd
-</pre></div>
-</div>
-</li>
-<li><p>Version <code class="docutils literal notranslate"><span class="pre">2024-02-15</span></code> of the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> commandline tool — you can download a
-prebuilt archive for your system from <a class="reference external" href="https://github.com/facebook/buck2/releases/tag/2024-02-15">the Buck2
-repo</a>. Note that
-the version is important, and newer or older versions may not work with the
-version of the buck2 prelude used by the ExecuTorch repo.</p></li>
-</ul>
-<p>Complete the following steps:</p>
-<ol class="arabic">
-<li><p>Ensure that Git has fetched and updated the submodules. This is necessary
-whenever the commit hash of a submodule changes. Therefore, you need
-to periodically sync your submodules with upstream:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-git<span class="w"> </span>submodule<span class="w"> </span>sync
-git<span class="w"> </span>submodule<span class="w"> </span>update<span class="w"> </span>--init
-</pre></div>
-</div>
-</li>
-<li><p>Install ExecuTorch and dependencies:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./install_requirements.sh
-</pre></div>
-</div>
-</li>
-<li><p>Configure Buck2 by decompressing with the following command (filename depends
-on your system):</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst</span>
-zstd<span class="w"> </span>-cdq<span class="w"> </span>buck2-DOWNLOADED_FILENAME.zst<span class="w"> </span>&gt;<span class="w"> </span>/tmp/buck2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>chmod<span class="w"> </span>+x<span class="w"> </span>/tmp/buck2
-</pre></div>
-</div>
-<p>You may want to copy the <code class="docutils literal notranslate"><span class="pre">buck2</span></code> binary into your <code class="docutils literal notranslate"><span class="pre">$PATH</span></code> so you can run it
-as <code class="docutils literal notranslate"><span class="pre">buck2</span></code>.</p>
-</li>
-<li><p>Build a binary:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>/tmp/buck2<span class="w"> </span>build<span class="w"> </span>//examples/portable/executor_runner:executor_runner<span class="w"> </span>--show-output
-</pre></div>
-</div>
-<details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
-<summary class="sd-summary-title sd-card-header">
-Output<div class="sd-summary-down docutils">
-<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-down" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5.22 8.72a.75.75 0 000 1.06l6.25 6.25a.75.75 0 001.06 0l6.25-6.25a.75.75 0 00-1.06-1.06L12 14.44 6.28 8.72a.75.75 0 00-1.06 0z"></path></svg></div>
-<div class="sd-summary-up docutils">
-<svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
-</summary><div class="sd-summary-content sd-card-body docutils">
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>File changed: root//.git/config.lock
-File changed: root//.git/config
-File changed: root//.git/modules
-27036 additional file change events
-Build ID: e725eb0d-f4a1-484e-b0d3-8133d67b6fdd
-Network: Up:   0 B              Down: 670 KiB
-Command: build.                 Remaining: 340/954. Cache hits: 0%. Time elapsed: 13.2s
-…
-Cache hits: 0%. Commands: 376 (cached: 0, remote: 0, local: 376)
-BUILD SUCCEEDED
-</pre></div>
-</div>
-</div>
-</details><p>The <code class="docutils literal notranslate"><span class="pre">--show-output</span></code> flag prints the path to the executable if you want to run it directly.</p>
-<p>If you run into <code class="docutils literal notranslate"><span class="pre">Stderr:</span> <span class="pre">clang-14:</span> <span class="pre">error:</span> <span class="pre">invalid</span> <span class="pre">linker</span> <span class="pre">name</span> <span class="pre">in</span> <span class="pre">argument</span> <span class="pre">'-fuse-ld=lld'</span></code>, <code class="docutils literal notranslate"><span class="pre">lld</span></code> is not available on your system. Try installing it
-with <code class="docutils literal notranslate"><span class="pre">conda</span></code> or with your system’s package manager.</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>conda<span class="w"> </span>install<span class="w"> </span>-c<span class="w"> </span>conda-forge<span class="w"> </span>lld
-</pre></div>
-</div>
-</li>
-</ol>
-<p>Now that you have built our sample programs, you can proceed to
-run them.</p>
 </div>
 <div class="section" id="run-your-program">
-<h2>Run Your Program<a class="headerlink" href="#run-your-program" title="Permalink to this heading">¶</a></h2>
-<p>After you build your program, you are ready to run it. We will use
-the <code class="docutils literal notranslate"><span class="pre">buck</span> <span class="pre">run</span></code> command to run our program.</p>
-<ol class="arabic">
-<li><p>Run the binary:</p>
-<ul>
-<li><p>To run the <code class="docutils literal notranslate"><span class="pre">add.pte</span></code> program:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>/tmp/buck2<span class="w"> </span>run<span class="w"> </span>//examples/portable/executor_runner:executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>add.pte
+<h3>Run Your Program<a class="headerlink" href="#run-your-program" title="Permalink to this heading">¶</a></h3>
+<p>Now that we’ve exported a program and built the runtime, let’s execute it!</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/executor_runner<span class="w"> </span>--model_path<span class="w"> </span>add.pte
 </pre></div>
 </div>
+<p>Our output is a <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code> with a size of 1. The <code class="docutils literal notranslate"><span class="pre">executor_runner</span></code> sets all input values to a <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.ones.html"><code class="docutils literal notranslate"><span class="pre">torch.ones</span></code></a> tensor, so when <code class="docutils literal notranslate"><span class="pre">x=[1]</span></code> and <code class="docutils literal notranslate"><span class="pre">y=[1]</span></code>, we get <code class="docutils literal notranslate"><span class="pre">[1]+[1]=[2]</span></code></p>
 <details class="sd-sphinx-override sd-dropdown sd-card sd-mb-3">
 <summary class="sd-summary-title sd-card-header">
 Sample Output<div class="sd-summary-down docutils">
@@ -714,42 +637,23 @@ Sample Output<div class="sd-summary-down docutils">
 <div class="sd-summary-up docutils">
 <svg version="1.1" width="1.5em" height="1.5em" class="sd-octicon sd-octicon-chevron-up" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M18.78 15.28a.75.75 0 000-1.06l-6.25-6.25a.75.75 0 00-1.06 0l-6.25 6.25a.75.75 0 101.06 1.06L12 9.56l5.72 5.72a.75.75 0 001.06 0z"></path></svg></div>
 </summary><div class="sd-summary-content sd-card-body docutils">
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Build</span> <span class="n">ID</span><span class="p">:</span> <span class="mi">4</span><span class="n">a23602b</span><span class="o">-</span><span class="mi">25</span><span class="n">ba</span><span class="o">-</span><span class="mi">4</span><span class="n">b95</span><span class="o">-</span><span class="n">a212</span><span class="o">-</span><span class="mi">3</span><span class="n">cd077136062</span>
-<span class="n">Network</span><span class="p">:</span> <span class="n">Up</span><span class="p">:</span> <span class="mi">0</span> <span class="n">B</span>  <span class="n">Down</span><span class="p">:</span> <span class="mi">0</span> <span class="n">B</span>
-<span class="n">Jobs</span> <span class="n">completed</span><span class="p">:</span> <span class="mf">3.</span> <span class="n">Time</span> <span class="n">elapsed</span><span class="p">:</span> <span class="mf">0.0</span><span class="n">s</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005837</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">75</span><span class="p">]</span> <span class="n">Model</span> <span class="n">file</span> <span class="n">add</span><span class="o">.</span><span class="n">pte</span> <span class="ow">is</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005852</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">85</span><span class="p">]</span> <span class="n">Running</span> <span class="n">method</span> <span class="n">forward</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005860</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">140</span><span class="p">]</span> <span class="n">Setting</span> <span class="n">up</span> <span class="n">non</span><span class="o">-</span><span class="n">const</span> <span class="n">buffer</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span> <span class="mf">48.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005909</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">181</span><span class="p">]</span> <span class="n">Method</span> <span class="n">loaded</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005913</span> <span class="n">executorch</span><span class="p">:</span><span class="n">util</span><span class="o">.</span><span class="n">h</span><span class="p">:</span><span class="mi">104</span><span class="p">]</span> <span class="nb">input</span> <span class="n">already</span> <span class="n">initialized</span><span class="p">,</span> <span class="n">refilling</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005915</span> <span class="n">executorch</span><span class="p">:</span><span class="n">util</span><span class="o">.</span><span class="n">h</span><span class="p">:</span><span class="mi">104</span><span class="p">]</span> <span class="nb">input</span> <span class="n">already</span> <span class="n">initialized</span><span class="p">,</span> <span class="n">refilling</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005917</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">186</span><span class="p">]</span> <span class="n">Inputs</span> <span class="n">prepared</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005949</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">195</span><span class="p">]</span> <span class="n">Model</span> <span class="n">executed</span> <span class="n">successfully</span><span class="o">.</span>
-<span class="n">I</span> <span class="mi">00</span><span class="p">:</span><span class="mi">00</span><span class="p">:</span><span class="mf">00.005954</span> <span class="n">executorch</span><span class="p">:</span><span class="n">executor_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">:</span><span class="mi">210</span><span class="p">]</span> <span class="mf">8.000000</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Output</span> <span class="mi">0</span><span class="p">:</span> <span class="n">tensor</span><span class="p">(</span><span class="n">sizes</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="p">[</span><span class="mf">2.</span><span class="p">])</span>
 </pre></div>
 </div>
 </div>
-</details></li>
-</ul>
-</li>
-</ol>
-<p>Alternatively, you can execute the binary directly from the <code class="docutils literal notranslate"><span class="pre">--show-output</span></code> path
-shown in the build step. For example, you can run the following command for the
-<code class="docutils literal notranslate"><span class="pre">add.pte</span></code> program:</p>
-<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./buck-out/.../executor_runner<span class="w"> </span>--model_path<span class="w"> </span>add.pte
-</pre></div>
+</details><p>To learn how to build a similar program, visit the <a class="reference internal" href="running-a-model-cpp-tutorial.html"><span class="doc std std-doc">ExecuTorch in C++ Tutorial</span></a>.</p>
 </div>
 </div>
 <div class="section" id="next-steps">
 <h2>Next Steps<a class="headerlink" href="#next-steps" title="Permalink to this heading">¶</a></h2>
 <p>Congratulations! You have successfully exported, built, and run your first
-ExecuTorch program. Now that you have a basic understanding of how ExecuTorch
-works, you can start exploring its advanced features and capabilities. Here
-is a list of sections you might want to read next:</p>
+ExecuTorch program. Now that you have a basic understanding of ExecuTorch,
+explore its advanced features and capabilities below.</p>
 <ul class="simple">
-<li><p><a class="reference internal" href="export-overview.html"><span class="doc std std-doc">Exporting a model</span></a></p></li>
-<li><p>Using <a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">EXIR</span></a> for advanced exports</p></li>
-<li><p>Review more advanced examples in the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples">executorch/examples</a> directory</p></li>
+<li><p>Build an <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">Android</span></a> or <a class="reference internal" href="demo-apps-ios.html"><span class="doc std std-doc">iOS</span></a> demo app</p></li>
+<li><p>Learn more about the <a class="reference internal" href="export-overview.html"><span class="doc std std-doc">export process</span></a></p></li>
+<li><p>Dive deeper into the <a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">Export Intermediate Representation (EXIR)</span></a> for complex export workflows</p></li>
+<li><p>Refer to <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/examples">advanced examples in executorch/examples</a></p></li>
 </ul>
 </div>
 </div>
@@ -800,11 +704,25 @@ is a list of sections you might want to read next:</p>
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
 <li><a class="reference internal" href="#">Setting Up ExecuTorch</a><ul>
-<li><a class="reference internal" href="#supported-host-environments">Supported Host Environments</a></li>
-<li><a class="reference internal" href="#set-up-your-environment">Set up Your Environment</a></li>
-<li><a class="reference internal" href="#generate-a-sample-executorch-program">Generate a Sample ExecuTorch program</a></li>
-<li><a class="reference internal" href="#building-a-runtime">Building a Runtime</a></li>
+<li><a class="reference internal" href="#system-requirements">System Requirements</a><ul>
+<li><a class="reference internal" href="#operating-system">Operating System</a></li>
+<li><a class="reference internal" href="#software">Software</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#environment-setup">Environment Setup</a><ul>
+<li><a class="reference internal" href="#create-a-virtual-environment">Create a Virtual Environment</a></li>
+<li><a class="reference internal" href="#clone-and-install-executorch-requirements">Clone and install ExecuTorch requirements</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#create-an-executorch-program">Create an ExecuTorch program</a><ul>
+<li><a class="reference internal" href="#export-a-program">Export a Program</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#build-run">Build &amp; Run</a><ul>
+<li><a class="reference internal" href="#build-tooling-setup">Build Tooling Setup</a></li>
 <li><a class="reference internal" href="#run-your-program">Run Your Program</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#next-steps">Next Steps</a></li>
 </ul>
 </li>
