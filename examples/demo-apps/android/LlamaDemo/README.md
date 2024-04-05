@@ -4,9 +4,13 @@ This app demonstrates the use of the LLaMA chat app demonstrating local inferenc
 
 ## Prerequisites
 * Set up your ExecuTorch repo and environment if you haven’t done so by following the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
-* Download and install the [Android Studio](https://developer.android.com/studio).
-* Use Android Studio to install the [Android SDK API Level 34](https://developer.android.com/about/versions/14/setup-sdk).
-* Use Android Studio to install the [Android NDK 25](https://developer.android.com/studio/projects/install-ndk). You can install it with Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
+* Install [Java 17 JDK](https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html).
+* Install the [Android SDK API Level 34](https://developer.android.com/about/versions/14/setup-sdk) and
+  [Android NDK 25](https://developer.android.com/studio/projects/install-ndk).
+ * If you have Android Studio set up, you can install them with
+   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Platforms -> Check the row with API Level 34.
+   * Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
+ * Alternatively, you can follow [this guide](https://github.com/pytorch/executorch/blob/856e085b9344c8b0bf220a97976140a5b76356aa/examples/demo-apps/android/LlamaDemo/SDK.md) to set up Java/SDK/NDK with CLI.
 * Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.
 
 ```{note}
@@ -33,7 +37,7 @@ The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAM
 ```{note}
 <path_to_android_ndk> is the root for the NDK, which is usually located under
 /Users/<user>/Library/Android/sdk/ndk/<version> for macOS, and contains NOTICE and README.md.
-We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.  
+We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.
 ```
 ```bash
 export ANDROID_NDK=<path_to_android_ndk>
