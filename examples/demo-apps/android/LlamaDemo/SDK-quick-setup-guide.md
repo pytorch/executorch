@@ -1,5 +1,10 @@
 # Guide to set up Java/SDK/NDK for Android
 
+Follow this doc if you haven't set up Java/SDK/NDK for Android development
+already.
+This doc provides a CLI tutorial to set them up. Usually, you can do the same
+thing with Android Studio GUI.
+
 ## Set up Java 17
 1. Download the archive from Oracle website.
 Make sure you have read and agree with the terms and conditions from the website before downloading.
@@ -69,3 +74,21 @@ export ANDROID_HOME="$(realpath $DEV_HOME/sdk)"
 # The NDK root is then under `ndk/<version>`.
 export ANDROID_NDK="$ANDROID_HOME/ndk/25.0.8775105"
 ```
+
+### (Optional) Android Studio Setup
+If you want to use Android Studio and never set up Java/SDK/NDK before, or if
+you use the newly installed ones, follow these steps to set Android Studio to use
+them.
+
+Copy these output paths to be used by Android Studio
+```bash
+echo $ANDROID_HOME
+echo $ANDROID_NDK
+echo $JAVA_HOME
+```
+
+Open a project in Android Studio. In Project Structure (File -> Project
+Structure, or `⌘;`) -> SDK Location,
+* Set Android SDK Location to the path of $ANDROID_HOME
+* Set Android NDK Location to the path of $ANDROID_NDK
+* Set JDK location (Click Gradle Settings link) -> Gradle JDK -> Add JDK... to the path of $JAVA_HOME
