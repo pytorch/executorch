@@ -36,9 +36,9 @@ Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measur
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
-|Galaxy S22 | x | x |
-|Galaxy S24 | x | x |
-|One plus 12 | x | x |
+|Galaxy S22 | 8.15 tokens/second | 8.3 tokens/second |
+|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
+|One plus 12 | 11.55 tokens/second | 11.6 tokens/second |
 |iPhone 15 pro | x | x |
 
 
@@ -63,7 +63,7 @@ You can export and run the original Llama2 7B model.
 
 2. Export model and generate `.pte` file:
     ```
-    python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w -d fp32
+    python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
     ```
 
 ### Option B: Download and export stories110M model
