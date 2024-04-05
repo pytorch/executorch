@@ -520,6 +520,6 @@ class TestPartitioner(unittest.TestCase):
             _ = edge.to_backend(PartitionerTagData())
 
         self.assertEqual(
-            "constant data node (arg0_1) is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)",
+            "constant data node (b_const) is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)",
             str(error.exception),
         )
