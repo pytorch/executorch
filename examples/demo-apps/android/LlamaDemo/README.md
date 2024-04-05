@@ -3,8 +3,10 @@
 This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.
 
 ## Prerequisites
-* Refer to [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
-* Download and install [Android Studio and SDK](https://developer.android.com/studio).
+* Set up your ExecuTorch repo and environment if you haven’t done so by following the [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
+* Download and install the [Android Studio](https://developer.android.com/studio).
+* Use Android Studio to install the [Android SDK API Level 34](https://developer.android.com/about/versions/14/setup-sdk).
+* Use Android Studio to install the [Android NDK 25](https://developer.android.com/studio/projects/install-ndk). You can install it with Android Studio Settings -> Language & Frameworks -> Android SDK -> SDK Tools -> Check NDK (Side by side) row.
 * Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.
 
 ```{note}
@@ -28,6 +30,11 @@ The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAM
 ## Build JNI library
 1. Open a terminal window and navigate to the root directory of the `executorch`.
 2. Set the following environment variables:
+```{note}
+<path_to_android_ndk> is the root for the NDK, which is usually located under
+/Users/<user>/Library/Android/sdk/ndk/<version> for macOS, and contains NOTICE and README.md.
+We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.  
+```
 ```bash
 export ANDROID_NDK=<path_to_android_ndk>
 export ANDROID_ABI=arm64-v8a
@@ -40,7 +47,7 @@ popd
 ```
 This is running the shell script [setup.sh](./setup.sh) which configures the required core ExecuTorch, LLAMA2, and Android libraries, builds them, and copy to jniLibs.
 
-## Build Java app
+## Build APK
 ### Alternative 1: Android Studio (Recommended)
 1. Open Android Studio and select "Open an existing Android Studio project" to open examples/demo-apps/android/LlamaDemo.
 2. Run the app (^R). This builds and launches the app on the phone.
