@@ -91,7 +91,18 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
-## Step 3: Run on your computer to validate
+## Step 3: Evaluate model accuracy
+
+> Forewarning: Model evaluation without a GPU may take a long time, especially on larger models.
+
+Using the same arguments from above
+```
+python -m examples.models.llama2.eval_llama -c <checkpoint.pth> -p <params.json> -t <tokenizer.model> -d fp32 --max_seq_len <max sequence length> --limit <number of samples>
+```
+
+The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
+
+## Step 4: Run on your computer to validate
 
 1. Build executorch with XNNPACK enabled. Build options available [here](https://github.com/pytorch/executorch/blob/main/CMakeLists.txt#L59).
     ```
@@ -127,13 +138,13 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     cmake-out/examples/models/llama2/llama_main --model_path=<model pte file> --tokenizer_path=<tokenizer.bin> --prompt=<prompt>
     ```
 
-## Step 4: Run benchmark on Android phone
+## Step 5: Run benchmark on Android phone
 
 1. Build llama runner binary for Android
 
 2. Run on Android via adb shell
 
-## Step 5: Build iOS and/or Android apps
+## Step 6: Build iOS and/or Android apps
 
 TODO
 
