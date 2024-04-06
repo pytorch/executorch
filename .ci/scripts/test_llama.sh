@@ -139,6 +139,7 @@ if [[ "${MODE}" == "xnnpack+kv+custom" ]]; then
 fi
 # Add dynamically linked library location
 export LD_LIBRARY_PATH=${PWD}/cmake-out/lib
+export DYLD_LIBRARY_PATH=${PWD}/cmake-out/lib
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
