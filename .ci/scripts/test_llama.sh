@@ -64,6 +64,7 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
+        -DEXECUTORCH_BUILD_SDK=ON \
         -Bcmake-out .
     cmake --build cmake-out -j9 --target install --config Release
 }

@@ -78,9 +78,9 @@ add_subdirectory(custom_ops)
 add_subdirectory(runner)
 
 target_include_directories(llama_main PUBLIC
-${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/cpuinfo/include)
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/cpuinfo/include etdump)
 target_include_directories(llama_main PUBLIC
-${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/pthreadpool/include)
+${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/pthreadpool/include etdump)
 
 set(link_libraries)
 
