@@ -431,13 +431,22 @@
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>Refer to <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
-<li><p>Download and install <a class="reference external" href="https://developer.android.com/studio">Android Studio and SDK</a>.</p></li>
+<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
+<li><p>Install <a class="reference external" href="https://www.oracle.com/java/technologies/javase/jdk17-archive-downloads.html">Java 17 JDK</a>.</p></li>
+<li><p>Install the <a class="reference external" href="https://developer.android.com/about/versions/14/setup-sdk">Android SDK API Level 34</a> and
+<a class="reference external" href="https://developer.android.com/studio/projects/install-ndk">Android NDK 25.0.8775105</a>.</p></li>
+<li><p>If you have Android Studio set up, you can install them with</p>
+<ul>
+<li><p>Android Studio Settings -&gt; Language &amp; Frameworks -&gt; Android SDK -&gt; SDK Platforms -&gt; Check the row with API Level 34.</p></li>
+<li><p>Android Studio Settings -&gt; Language &amp; Frameworks -&gt; Android SDK -&gt; SDK Tools -&gt; Check NDK (Side by side) row.</p></li>
+</ul>
+</li>
+<li><p>Alternatively, you can follow <a class="reference external" href="https://github.com/pytorch/executorch/blob/856e085b9344c8b0bf220a97976140a5b76356aa/examples/demo-apps/android/LlamaDemo/SDK.md">this guide</a> to set up Java/SDK/NDK with CLI.</p></li>
 <li><p>Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.</p></li>
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>, with NDK 25.</p>
+<p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>, with NDK 25.0.8775105.</p>
 </div>
 </div>
 <div class="section" id="getting-models">
@@ -460,6 +469,12 @@ adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class=
 <li><p>Open a terminal window and navigate to the root directory of the <code class="docutils literal notranslate"><span class="pre">executorch</span></code>.</p></li>
 <li><p>Set the following environment variables:</p></li>
 </ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>&lt;path_to_android_ndk&gt; is the root for the NDK, which is usually under
+~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md.
+We use &lt;path_to_android_ndk&gt;/build/cmake/android.toolchain.cmake for CMake to cross-compile.</p>
+</div>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_android_ndk&gt;
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 </pre></div>
@@ -474,8 +489,8 @@ adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class=
 </div>
 <p>This is running the shell script <span class="xref myst">setup.sh</span> which configures the required core ExecuTorch, LLAMA2, and Android libraries, builds them, and copy to jniLibs.</p>
 </div>
-<div class="section" id="build-java-app">
-<h2>Build Java app<a class="headerlink" href="#build-java-app" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="build-apk">
+<h2>Build APK<a class="headerlink" href="#build-apk" title="Permalink to this heading">¶</a></h2>
 <div class="section" id="alternative-1-android-studio-recommended">
 <h3>Alternative 1: Android Studio (Recommended)<a class="headerlink" href="#alternative-1-android-studio-recommended" title="Permalink to this heading">¶</a></h3>
 <ol class="arabic simple">
@@ -546,7 +561,7 @@ adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class=
 <li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li><a class="reference internal" href="#getting-models">Getting models</a></li>
 <li><a class="reference internal" href="#build-jni-library">Build JNI library</a></li>
-<li><a class="reference internal" href="#build-java-app">Build Java app</a><ul>
+<li><a class="reference internal" href="#build-apk">Build APK</a><ul>
 <li><a class="reference internal" href="#alternative-1-android-studio-recommended">Alternative 1: Android Studio (Recommended)</a></li>
 <li><a class="reference internal" href="#alternative-2-command-line">Alternative 2: Command line</a></li>
 </ul>
