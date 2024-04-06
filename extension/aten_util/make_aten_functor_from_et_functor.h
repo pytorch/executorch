@@ -149,8 +149,7 @@ struct type_convert<
     }
     c10::ScalarType scalar_type =
         static_cast<c10::ScalarType>(val.scalar_type());
-    converted =
-        at::from_blob(val.mutable_data_ptr(), val.numel(), sizes, scalar_type);
+    converted = at::from_blob(val.mutable_data_ptr(), sizes, scalar_type);
   }
   ATensor call() {
     return converted;
