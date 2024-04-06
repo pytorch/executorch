@@ -8,7 +8,8 @@
 
 #include <limits>
 
-#include <executorch/examples/models/llama2/custom_ops/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/examples/models/llama2/custom_ops/op_sdpa.h>
+
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -28,7 +29,7 @@ exec_aten::Tensor op_scaled_dot_product_attention(
     exec_aten::optional<double> scale,
     exec_aten::Tensor& out) {
   exec_aten::RuntimeContext context{};
-  return torch::executor::llama::sdpa_outf(
+  return torch::executor::native::flash_attention_kernel_out(
       context, query, key, value, attn_mask, dropout_p, is_causal, scale, out);
 }
 
