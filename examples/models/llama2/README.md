@@ -221,6 +221,9 @@ adb shell "cd /data/local/tmp && ./llama_main --model_path <model.pte> --tokeniz
 
 TODO
 
+### Android app
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
+
 # What is coming next?
 ## Quantization
 - Enabling FP16 model to leverage smaller groupsize for 4-bit quantization.
