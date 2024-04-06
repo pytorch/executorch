@@ -27,6 +27,7 @@ def define_common_targets():
         ],
         exported_deps = [
             "//executorch/extension/kernel_util:kernel_util",
+            "//executorch/extension/runner_util:managed_tensor",
             "//executorch/runtime/core:core",
             "//executorch/runtime/core:evalue",
             "//executorch/runtime/core/exec_aten:lib",
