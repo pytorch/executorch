@@ -47,12 +47,15 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
+option(EXECUTORCH_BUILD_SDK "" ON) # Needed for etdump
+
 set(llama_runner_deps executorch extension_module extension_data_loader
-  custom_ops)
+  custom_ops etdump)
 
 target_link_libraries(
   llama_runner PUBLIC ${llama_runner_deps})
 
 target_include_directories(llama_runner
                            INTERFACE ${_common_include_directories}
-                           ${EXECUTORCH_ROOT})
+                           ${EXECUTORCH_ROOT}
+                           etdump)

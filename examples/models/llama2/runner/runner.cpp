@@ -12,6 +12,7 @@
 #include <executorch/examples/models/llama2/runner/runner.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
+#include <executorch/sdk/etdump/etdump_flatcc.h>
 
 #include <ctime>
 #include <memory>
@@ -37,11 +38,14 @@ Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
     const float temperature)
-    : module_(std::make_unique<Module>(
-          model_path,
-          Module::MlockConfig::UseMlockIgnoreErrors)),
-      tokenizer_path_(tokenizer_path),
-      temperature_(temperature) {
+    : tokenizer_path_(tokenizer_path), temperature_(temperature) {
+  std::unique_ptr<torch::executor::ETDumpGen> etdump_gen_ =
+      std::make_unique<torch::executor::ETDumpGen>();
+
+  module_ = std::make_unique<Module>(
+      model_path,
+      Module::MlockConfig::UseMlockIgnoreErrors,
+      std::move(etdump_gen_));
   ET_LOG(
       Info,
       "Creating LLaMa runner: model_path=%s, tokenizer_path=%s",
@@ -397,6 +401,25 @@ Error Runner::generate(
   }
 
   delete[] prompt_tokens;
+  return Error::Ok;
+}
+
+Error Runner::dump_etdump(std::string etdump_path) {
+#ifdef ET_EVENT_TRACER_ENABLED
+  torch::executor::ETDumpGen* etdump_gen =
+      static_cast<torch::executor::ETDumpGen*>(module_->event_tracer());
+
+  ET_LOG(Info, "ETDump size: %zu blocks", etdump_gen->get_num_blocks());
+  etdump_result result = etdump_gen->get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    // On a device with a file system users can just write it out
+    // to the file-system.
+    FILE* f = fopen(etdump_path.c_str(), "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
+  }
+#endif
   return Error::Ok;
 }
 
