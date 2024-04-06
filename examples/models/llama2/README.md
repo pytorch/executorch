@@ -89,6 +89,29 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
+
+## (Optional) Finetuning
+
+If you want to finetune your model based on a specific dataset, PyTorch provides [TorchTune](https://github.com/pytorch/torchtune) - a native-Pytorch library for easily authoring, fine-tuning and experimenting with LLMs.
+
+Once you have [TorchTune installed](https://github.com/pytorch/torchtune?tab=readme-ov-file#get-started) you can finetune Llama2 7B model using LoRA on a single GPU, using the following command. This will produce a checkpoint where the LoRA weights are merged with the base model and so the output checkpoint will be in the same format as the original Llama2 model.
+
+```
+tune run lora_finetune_single_device \
+--config llama2/7B_lora_single_device \
+checkpointer.checkpoint_dir=<path_to_checkpoint_folder>  \
+tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
+```
+
+To run full finetuning with Llama2 7B on a single device, you can use the following command.
+
+```
+tune run full_finetune_single_device \
+--config llama2/7B_full_single_device \
+checkpointer.checkpoint_dir=<path_to_checkpoint_folder> \
+tokenizer.path=<path_to_checkpoint_folder>/tokenizer.model
+```
+
 ## Step 3: Evaluate model accuracy
 
 > Forewarning: Model evaluation without a GPU may take a long time, especially on larger models.
