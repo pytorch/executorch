@@ -81,7 +81,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json
+    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
     ```
 4. Create tokenizer.bin.
 
