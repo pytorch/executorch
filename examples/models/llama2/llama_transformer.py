@@ -277,7 +277,7 @@ class Attention(nn.Module):
                 y = self.wo(y)
                 return y
             else:
-                from .custom_ops import sdpa_with_kv_cache  # noqa
+                from .custom_ops.sdpa_with_kv_cache import sdpa_with_kv_cache  # noqa
 
                 output = torch.ops.llama.sdpa_with_kv_cache(
                     q,
