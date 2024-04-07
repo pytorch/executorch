@@ -30,6 +30,7 @@ class QuantizeOpBase(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         quant_input_tensors.append(inp_tensor_wrapper)
 
@@ -45,6 +46,7 @@ class QuantizeOpBase(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         quant_output_tensors = [output_tensor_wrapper]
 
