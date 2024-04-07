@@ -515,20 +515,29 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
             or is_buffer(edge_program, node)
             or is_lifted_tensor_constant(edge_program, node)
         ):
-            user_tags = set()
-            for user in node.users:
-                user_tag = user.meta.get("delegation_tag", None)
-                if user_tag is not None:
-                    user_tags.add(user_tag)
-            if len(user_tags) > 1:
-                logging.info(
-                    f"The data node is used across multiple partitions, including {user_tags}. "
-                    "If the data is too large and it's not preferred to copy, please tag the "
-                    "constant node like node.['no_copy'] = True and they won't be copied."
-                )
-            # tag the data node with the same tag as the last user
-            if len(user_tags) > 0:
-                node.meta["delegation_tag"] = user_tags.pop()
+            is_mutated = False
+            for node_user in node.users:
+                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                    logging.info(
+                        "The buffer node is a mutated buffer node, which is not constant."
+                    )
+                    is_mutated = True
+                    break
+            if not is_mutated:
+                user_tags = set()
+                for user in node.users:
+                    user_tag = user.meta.get("delegation_tag", None)
+                    if user_tag is not None:
+                        user_tags.add(user_tag)
+                if len(user_tags) > 1:
+                    logging.info(
+                        f"The data node is used across multiple partitions, including {user_tags}. "
+                        "If the data is too large and it's not preferred to copy, please tag the "
+                        "constant node like node.['no_copy'] = True and they won't be copied."
+                    )
+                # tag the data node with the same tag as the last user
+                if len(user_tags) > 0:
+                    node.meta["delegation_tag"] = user_tags.pop()
 
 
 # TODO - style: use templated types
