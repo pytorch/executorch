@@ -90,7 +90,7 @@ jobs:
       matrix:
         dtype: [fp32]
         build-tool: [buck2, cmake]
-        mode: [portable, xnnpack+kv+custom]
+        mode: [portable, xnnpack]
       fail-fast: false
     with:
       runner: linux.2xlarge

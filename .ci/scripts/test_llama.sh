@@ -37,18 +37,6 @@ if [[ -z "${MODE:-}" ]]; then
   exit 1
 fi
 
-if [[ "${MODE}" =~ xnnpack.* ]]; then
-  XNNPACK=ON
-else
-  XNNPACK=OFF
-fi
-
-if [[ "${MODE}" =~ .*custom.* ]]; then
-  CUSTOM=ON
-else
-  CUSTOM=OFF
-fi
-
 if [[ -z "${BUCK:-}" ]]; then
   BUCK=buck2
 fi
@@ -59,23 +47,25 @@ fi
 
 which "${PYTHON_EXECUTABLE}"
 
-CMAKE_PREFIX_PATH=$($PYTHON_EXECUTABLE -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")
 
 cmake_install_executorch_libraries() {
     echo "Installing libexecutorch.a, libextension_module.so, libportable_ops_lib.a"
     rm -rf cmake-out
+    if [[ "${MODE}" == "xnnpack" ]]; then
+      XNNPACK=ON
+    else
+      XNNPACK=OFF
+    fi
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-        -DCMAKE_BUILD_TYPE=Debug \
+        -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-        -DEXECUTORCH_BUILD_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
-    cmake --build cmake-out -j9 --target install --config Debug
+    cmake --build cmake-out -j9 --target install --config Release
 }
 
 cmake_build_llama_runner() {
@@ -83,15 +73,12 @@ cmake_build_llama_runner() {
     dir="examples/models/llama2"
     retry cmake -DBUCK2="$BUCK" \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
-        -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
-        -DCMAKE_BUILD_TYPE=Debug \
-        -DEXECUTORCH_BUILD_CUSTOM="$CUSTOM" \
+        -DCMAKE_BUILD_TYPE=Release \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
-    cmake --build cmake-out/${dir} -j9 --config Debug
+    cmake --build cmake-out/${dir} -j9 --config Release
 
 }
 
@@ -126,20 +113,13 @@ else
   exit 1
 fi
 
-# Install custom ops before exporting
-echo "Installing executorch libraries"
-cmake_install_executorch_libraries
-
 # Export model.
 EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME}"
-if [[ "${MODE}" == "xnnpack+kv+custom" ]]; then
+if [[ "${MODE}" == "xnnpack" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} -kv --use_sdpa_with_kv_cache -X -qmode 8da4w -G 128"
 fi
-# Add dynamically linked library location
-export LD_LIBRARY_PATH=${PWD}/cmake-out/lib
-export DYLD_LIBRARY_PATH=${PWD}/cmake-out/lib
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
 # Create tokenizer.bin.
@@ -155,6 +135,7 @@ if [[ "${BUILD_TOOL}" == "buck2" ]]; then
   # shellcheck source=/dev/null
   $BUCK run examples/models/llama2:main -- ${RUNTIME_ARGS} > result.txt
 elif [[ "${BUILD_TOOL}" == "cmake" ]]; then
+  cmake_install_executorch_libraries
   cmake_build_llama_runner
   # Run llama runner
   NOW=$(date +"%H:%M:%S")

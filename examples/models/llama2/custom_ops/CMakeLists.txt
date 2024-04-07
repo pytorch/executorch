@@ -25,7 +25,7 @@ if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations -fPIC)
+set(_common_compile_options -Wno-deprecated-declarations)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
@@ -44,11 +44,20 @@ include(${EXECUTORCH_SRCS_FILE})
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # Custom op libraries
-set(custom_ops_libs executorch)
+set(custom_ops_libs extension_module)
 list(APPEND custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
+
+# Generate C++ bindings to register kernels into both PyTorch (for AOT) and
+# Executorch (for runtime). Here select all ops in optimized.yaml
+set(_yaml "${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml")
+gen_selected_ops("${_yaml}" "" "")
+
+generate_bindings_for_kernels(FUNCTIONS_YAML
+                              ${CMAKE_CURRENT_SOURCE_DIR}/custom_ops.yaml)
+message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
@@ -61,8 +70,6 @@ if(NOT EXECUTORCH_BUILD_XNNPACK)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
   )
-else()
-  list(APPEND custom_ops_libs xnnpack_backend)
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
@@ -75,16 +82,7 @@ target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
 target_compile_options(custom_ops PUBLIC ${_common_compile_options}
                                          -DET_USE_THREADPOOL)
 
-# Add a AOT library
-find_package(Torch CONFIG REQUIRED)
-add_library(custom_ops_aot_lib SHARED
-            ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp)
-target_include_directories(custom_ops_aot_lib
-                           PUBLIC "${_common_include_directories}")
-target_include_directories(
-  custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
-target_link_libraries(custom_ops_aot_lib PUBLIC custom_ops torch)
-target_compile_options(custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations
-                                                 -fPIC -frtti -fexceptions)
-
-install(TARGETS custom_ops custom_ops_aot_lib DESTINATION lib)
+# Build a library for _custom_ops_srcs
+#
+# custom_ops_lib: Register optimized ops kernels into Executorch runtime
+gen_operators_lib("custom_ops_lib" KERNEL_LIBS custom_ops DEPS executorch)

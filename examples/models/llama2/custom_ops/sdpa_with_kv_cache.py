@@ -4,36 +4,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# Import custom op defined in op_sdpa_aot.cpp. Those ops are using PyTorch
-# C++ APIs for registration so here we need to import the shared library.
-# This is only needed for OSS.
-
-import os
-from ctypes.util import find_library
-
 import torch
+from torch.library import impl, impl_abstract
 
-from torch.library import impl
+custom_ops_lib = torch.library.Library("llama", "DEF")
+custom_ops_lib.define(
+    "sdpa_with_kv_cache(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
+    "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
+    "float drpout_p=0.0, bool is_causal=False, float? scale=None) -> Tensor"
+)
 
-try:
-    op = torch.ops.llama.sdpa_with_kv_cache.default
-    assert op is not None
-except:
-    # assuming we only hit this in OSS, find the default install path
-    full_name = find_library("custom_ops_aot_lib")
-    ld_library_path = os.environ.get("LD_LIBRARY_PATH", None)
-    assert (
-        full_name and ld_library_path
-    ), f"custom_ops_aot_lib does not exist, please set LD_LIBRARY_PATH: {ld_library_path} correctly"
-    # find the true path
-    for p in ld_library_path.split(":"):
-        full_path = os.path.join(p, full_name)
-        if os.path.exists(full_path):
-            torch.ops.load_library(full_path)
-            op = torch.ops.llama.sdpa_with_kv_cache.default
-            assert op is not None
-
-custom_ops_lib = torch.library.Library("llama", "IMPL")
+custom_ops_lib.define(
+    "sdpa_with_kv_cache.out(Tensor query, Tensor key, Tensor value, Tensor(a!) key_cache, "
+    "Tensor(b!) value_cache, SymInt start_pos, SymInt seq_len, Tensor? attn_mask=None, "
+    "float drpout_p=0.0, bool is_causal=False, float? scale=None, *, Tensor(c!) out) -> Tensor(c!)"
+)
 
 
 def _validate_params(
@@ -133,3 +118,82 @@ def sdpa_with_kv_cache_meta(
     )
 
     return torch.empty_like(query)
+
+
+@impl(custom_ops_lib, "sdpa_with_kv_cache", "CompositeExplicitAutograd")
+def sdpa_with_kv_cache(
+    query,
+    key,
+    value,
+    key_cache,
+    value_cache,
+    start_pos,
+    seq_len,
+    attn_mask=None,
+    drpout_p=0.0,
+    is_causal=False,
+    scale=None,
+):
+    _validate_params(
+        query,
+        key,
+        value,
+        key_cache,
+        value_cache,
+        start_pos,
+        seq_len,
+        attn_mask,
+        drpout_p,
+        is_causal,
+        scale,
+    )
+
+    if attn_mask is not None:
+        attn_mask = attn_mask[start_pos].view((1, -1))
+        attn_mask = attn_mask[:, : start_pos + seq_len]
+    q = query.transpose(1, 2)
+    key_cache[:, start_pos] = key
+    value_cache[:, start_pos] = value
+
+    sliced_k_cache = key_cache
+    sliced_v_cache = value_cache
+    sliced_k_cache = sliced_k_cache[:, : start_pos + seq_len, :, :]
+    sliced_v_cache = sliced_v_cache[:, : start_pos + seq_len, :, :]
+    sliced_k_cache = sliced_k_cache.transpose(1, 2)
+    sliced_v_cache = sliced_v_cache.transpose(1, 2)
+    out = torch.nn.functional.scaled_dot_product_attention(
+        q, sliced_k_cache, sliced_v_cache, attn_mask=attn_mask
+    )
+    out = out.transpose(1, 2)
+    return out
+
+
+@impl_abstract("llama::sdpa_with_kv_cache.out")
+def sdpa_with_kv_cache_out(
+    query,
+    key,
+    value,
+    key_cache,
+    value_cache,
+    start_pos,
+    seq_len,
+    attn_mask,
+    drpout_p,
+    is_causal,
+    scale,
+    out,
+):
+    out = sdpa_with_kv_cache_meta(
+        query,
+        key,
+        value,
+        key_cache,
+        value_cache,
+        start_pos,
+        seq_len,
+        attn_mask,
+        drpout_p,
+        is_causal,
+        scale,
+    )
+    return out
