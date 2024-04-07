@@ -74,7 +74,9 @@ target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
 
 target_compile_options(custom_ops PUBLIC ${_common_compile_options}
                                          -DET_USE_THREADPOOL)
+install(TARGETS custom_ops DESTINATION lib)
 
+if(EXECUTORCH_BUILD_PYBIND)
 # Add a AOT library
 find_package(Torch CONFIG REQUIRED)
 add_library(custom_ops_aot_lib SHARED
@@ -87,4 +89,5 @@ target_link_libraries(custom_ops_aot_lib PUBLIC custom_ops torch)
 target_compile_options(custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations
                                                  -fPIC -frtti -fexceptions)
 
-install(TARGETS custom_ops custom_ops_aot_lib DESTINATION lib)
+install(TARGETS custom_ops_aot_lib DESTINATION lib)
+endif()
