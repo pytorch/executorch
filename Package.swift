@@ -15,7 +15,7 @@ let debug = "_debug"
 let deliverables = [
   "coreml_backend": [
     "sha256": "5bfa35cb5143b4af6840e0e5dd2d40bce93dff331b8eb5798a46274239391a5d",
-    "sha256" + debug: "1422019da9000f8ff7be597de9e0e3b2482f99cdaa75c2d179835778647be1a6 ",
+    "sha256" + debug: "1422019da9000f8ff7be597de9e0e3b2482f99cdaa75c2d179835778647be1a6",
     "frameworks": [
       "Accelerate",
       "CoreML",
