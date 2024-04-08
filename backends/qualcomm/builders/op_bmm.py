@@ -35,6 +35,7 @@ class BMM(NodeVisitor):
                 input_tensor,
                 PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                 nodes_to_wrappers,
+                is_input_tensor=True,
             )
             bmm_input_tensors.append(input_tensor_wrapper)
 
@@ -44,6 +45,7 @@ class BMM(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         bmm_output_tensors = [output_tensor_wrapper]
 
