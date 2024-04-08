@@ -72,6 +72,18 @@ class ExecuTorchLlamaCallbackJni
     facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
     method(self(), s);
   }
+
+  void onStats(const Runner::Stats& result) const {
+    static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
+    static const auto method = cls->getMethod<void(jfloat)>("onStats");
+    double eval_time =
+        (double)(result.inference_end_ms - result.prompt_eval_end_ms);
+
+    float tps = result.num_generated_tokens / eval_time *
+        result.SCALING_FACTOR_UNITS_PER_SECOND;
+
+    method(self(), tps);
+  }
 };
 
 class ExecuTorchLlamaJni
@@ -117,9 +129,10 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
     runner_->generate(
-        prompt->toStdString(), 128, [callback](std::string result) {
-          callback->onResult(result);
-        });
+        prompt->toStdString(),
+        128,
+        [callback](std::string result) { callback->onResult(result); },
+        [callback](const Runner::Stats& result) { callback->onStats(result); });
     return 0;
   }
 
