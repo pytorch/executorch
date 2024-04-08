@@ -29,6 +29,14 @@ target_include_directories(extension_module PUBLIC ${EXECUTORCH_ROOT}/..)
 target_compile_options(extension_module PUBLIC -Wno-deprecated-declarations
                                                -fPIC)
 
+# Module extension built as a static library.
+# TODO(gjcomer) Remove this target after cleaning up CMake targets.
+add_library(extension_module_static STATIC ${_extension_module__srcs})
+target_link_libraries(extension_module_static PRIVATE executorch extension_data_loader)
+target_include_directories(extension_module_static PUBLIC ${EXECUTORCH_ROOT}/..)
+target_compile_options(extension_module_static PUBLIC -Wno-deprecated-declarations
+                                               -fPIC)
+
 # Install libraries
 install(
   TARGETS extension_module

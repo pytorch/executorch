@@ -54,8 +54,8 @@ endforeach()
 
 set(FLATCC_TEST OFF CACHE BOOL "")
 set(FLATCC_REFLECTION OFF CACHE BOOL "")
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc
-                 ${CMAKE_BINARY_DIR}/third-party/flatcc)
+set(_flatcc_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/../third-party/flatcc)
+add_subdirectory(${_flatcc_source_dir} ${CMAKE_BINARY_DIR}/third-party/flatcc)
 
 # Fix for "relocation R_X86_64_32 against `.rodata' can not be used when making
 # a shared object; recompile with -fPIC" when building on some x86 linux
@@ -74,7 +74,7 @@ set(_bundled_schema__include_dir "${CMAKE_BINARY_DIR}/sdk/bundled_program")
 ExternalProject_Add(
   flatcc_project
   PREFIX ${CMAKE_BINARY_DIR}/_host_build
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/third-party/flatcc
+  SOURCE_DIR ${_flatcc_source_dir}
   BINARY_DIR ${CMAKE_BINARY_DIR}/_host_build
   CMAKE_CACHE_ARGS -DFLATCC_TEST:BOOL=OFF -DFLATCC_REFLECTION:BOOL=OFF
       # See above comment about POSITION_INDEPENDENT_CODE.
@@ -117,7 +117,10 @@ file(MAKE_DIRECTORY
 add_custom_command(
   OUTPUT ${_etdump_schema__outputs}
   COMMAND
-    ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/flatcc -cwr -o
+    # Note that the flatcc project actually writes its outputs into the source
+    # tree instead of under the binary directory, and there's no way to change
+    # that behavior.
+    ${_flatcc_source_dir}/bin/flatcc -cwr -o
     ${_program_schema__include_dir}/executorch/sdk/etdump
     ${_etdump_schema__srcs}
   # TODO(dbort): flatcc installs its files directly in its source directory
@@ -134,8 +137,8 @@ add_custom_command(
   # try to remove this hack, ideally by submitting an upstream PR that adds an
   # option to change the installation location.
   COMMAND
-    rm -f ${CMAKE_SOURCE_DIR}/third-party/flatcc/bin/*
-    ${CMAKE_SOURCE_DIR}/third-party/flatcc/lib/*
+    rm -f ${_flatcc_source_dir}/bin/*
+    ${_flatcc_source_dir}/lib/*
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/sdk
   DEPENDS flatcc_project
   COMMENT "Generating etdump headers"
@@ -172,7 +175,7 @@ target_include_directories(
 
 target_include_directories(
   etdump PUBLIC ${_program_schema__include_dir}
-                ${CMAKE_SOURCE_DIR}/third-party/flatcc/include)
+                ${_flatcc_source_dir}/include)
 
 # Install libraries
 install(
