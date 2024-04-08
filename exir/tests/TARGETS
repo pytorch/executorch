@@ -3,6 +3,8 @@ load("@fbcode_macros//build_defs:python_binary.bzl", "python_binary")
 load("@fbcode_macros//build_defs:python_library.bzl", "python_library")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 
+oncall("executorch")
+
 python_library(
     name = "lib",
     srcs = [
@@ -10,7 +12,6 @@ python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/exir:lib",
         "//executorch/exir:schema",
     ],
 )
@@ -162,32 +163,13 @@ python_unittest(
     supports_static_listing = False,
     deps = [
         "fbsource//third-party/pypi/parameterized:parameterized",
-        ":asr_joiner",
         "//caffe2:torch",
-        "//executorch/backends/fb/qnnpack/partition:qnnpack_partitioner",
         "//executorch/exir:lib",
         "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",
         "//executorch/exir:pass_manager",
-        "//executorch/exir:print_program",
-        "//executorch/exir:schema",
-        "//executorch/exir/backend:backend_api",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:sym_shape_eval_pass",
-    ],
-)
-
-python_unittest(
-    name = "experimental",
-    srcs = [
-        "test_experimental.py",
-    ],
-    deps = [
-        "//caffe2:torch",
-        "//executorch/exir:error",
-        "//executorch/exir:lib",
-        "//executorch/exir/experimental:export_pt2",
-        "//executorch/exir/experimental:lib",
     ],
 )
 
@@ -208,6 +190,7 @@ python_unittest(
         "//executorch/exir:memory",
         "//executorch/exir:memory_planning",
         "//executorch/exir:pass_base",
+        "//executorch/exir:schema",
         "//executorch/exir:tensor",
         "//executorch/exir/dialects:lib",
         "//executorch/exir/dialects/edge:lib",
@@ -216,9 +199,11 @@ python_unittest(
         "//executorch/exir/passes:debug_handle_generator_pass",
         "//executorch/exir/passes:insert_write_back_for_buffers_pass",
         "//executorch/exir/passes:lib",
+        "//executorch/exir/passes:normalize_view_copy_base_pass",
         "//executorch/exir/passes:remove_graph_asserts_pass",
         "//executorch/exir/passes:remove_mixed_type_operators",
         "//executorch/exir/passes:replace_edge_with_backend_pass",
+        "//executorch/exir/passes:replace_view_copy_with_view_pass",
         "//executorch/exir/passes:scalar_to_tensor_pass",
         "//executorch/exir/passes:spec_prop_pass",
         "//executorch/exir/passes:sym_to_tensor_pass",
@@ -238,25 +223,6 @@ python_unittest(
         "//executorch/exir:pass_manager",
         "//executorch/exir/passes:lib",
         "//executorch/exir/passes:pass_registry",
-    ],
-)
-
-python_unittest(
-    name = "quant_lowering_custom_backend_pass",
-    srcs = [
-        "test_quant_lowering_custom_backend_pass.py",
-    ],
-    deps = [
-        "//caffe2:test-lib",  # @manual
-        "//caffe2:torch",
-        "//executorch/exir:lib",
-        "//executorch/exir:pass_base",
-        "//executorch/exir/backend:backend_details",
-        "//executorch/exir/backend:compile_spec_schema",
-        "//executorch/exir/backend:partitioner",
-        "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
-        "//executorch/exir/dialects:lib",
-        "//executorch/exir/passes:replace_aten_with_edge_pass",
     ],
 )
 

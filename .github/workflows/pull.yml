@@ -232,6 +232,7 @@ jobs:
         # build module for executorch.extension.pybindings.portable_lib
         BUILD_TOOL=${{ matrix.build-tool }}
         PYTHON_EXECUTABLE=python \
+        EXECUTORCH_BUILD_XNNPACK=ON \
         EXECUTORCH_BUILD_PYBIND=ON \
         bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
 
