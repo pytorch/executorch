@@ -10,7 +10,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Computation times &mdash; ExecuTorch main documentation</title>
+  <title>Building ExecuTorch LLaMA iOS Demo App &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -274,13 +274,13 @@
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Working with LLMs</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="../llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
@@ -387,13 +387,13 @@
       </li>
 
         
-      <li>Computation times</li>
+      <li>Building ExecuTorch LLaMA iOS Demo App</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="../_sources/tutorials/sg_execution_times.rst.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
+            <a href="../_sources/llm/llama-demo-ios.md.txt" rel="nofollow"><img src="../_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -415,28 +415,6 @@
         
 
 
-<div class="pytorch-call-to-action-links">
-  <div id="tutorial-type">tutorials/sg_execution_times</div>
-
-  <div id="google-colab-link">
-    <img class="call-to-action-img" src="../_static/images/pytorch-colab.svg" />
-    <div class="call-to-action-desktop-view">Run in Google Colab</div>
-    <div class="call-to-action-mobile-view">Colab</div>
-  </div>
-  <div id="download-notebook-link">
-    <img class="call-to-action-notebook-img" src="../_static/images/pytorch-download.svg" />
-    <div class="call-to-action-desktop-view">Download Notebook</div>
-    <div class="call-to-action-mobile-view">Notebook</div>
-  </div>
-  <div id="github-view-link">
-    <img class="call-to-action-img" src="../_static/images/pytorch-github.svg" />
-    <div class="call-to-action-desktop-view">View on GitHub</div>
-    <div class="call-to-action-mobile-view">GitHub</div>
-  </div>
-</div>
-
-
-
           <!-- Google Tag Manager (noscript) -->
           <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-T8XT4PS"
           height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
@@ -447,26 +425,53 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="computation-times">
-<span id="sphx-glr-tutorials-sg-execution-times"></span><h1>Computation times<a class="headerlink" href="#computation-times" title="Permalink to this heading">¶</a></h1>
-<p><strong>00:03.329</strong> total execution time for <strong>tutorials</strong> files:</p>
-<table class="docutils align-default">
-<colgroup>
-<col style="width: 84%" />
-<col style="width: 9%" />
-<col style="width: 7%" />
-</colgroup>
-<tbody>
-<tr class="row-odd"><td><p><a class="reference internal" href="export-to-executorch-tutorial.html#sphx-glr-tutorials-export-to-executorch-tutorial-py"><span class="std std-ref">Exporting to ExecuTorch Tutorial</span></a> (<code class="docutils literal notranslate"><span class="pre">export-to-executorch-tutorial.py</span></code>)</p></td>
-<td><p>00:02.290</p></td>
-<td><p>0.0 MB</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="sdk-integration-tutorial.html#sphx-glr-tutorials-sdk-integration-tutorial-py"><span class="std std-ref">Using the ExecuTorch SDK to Profile a Model</span></a> (<code class="docutils literal notranslate"><span class="pre">sdk-integration-tutorial.py</span></code>)</p></td>
-<td><p>00:01.039</p></td>
-<td><p>0.0 MB</p></td>
-</tr>
-</tbody>
-</table>
+  <div class="section" id="building-executorch-llama-ios-demo-app">
+<h1>Building ExecuTorch LLaMA iOS Demo App<a class="headerlink" href="#building-executorch-llama-ios-demo-app" title="Permalink to this heading">¶</a></h1>
+<p>This app demonstrates the use of the LLaMA chat app demonstrating local inference use case with ExecuTorch.</p>
+<p><img src="../_static/img/llama_ios_app.png" alt="iOS LLaMA App" /><br></p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="https://developer.apple.com/xcode">Xcode 15</a>.</p></li>
+<li><p><a class="reference external" href="https://developer.apple.com/ios">iOS 17 SDK</a>.</p></li>
+<li><p>Set up your ExecuTorch repo and environment if you haven’t done so by following the <a class="reference external" href="https://pytorch.org/executorch/stable/getting-started-setup">Setting up ExecuTorch</a> to set up the repo and dev environment.</p></li>
+</ul>
+</div>
+<div class="section" id="exporting-models">
+<h2>Exporting models<a class="headerlink" href="#exporting-models" title="Permalink to this heading">¶</a></h2>
+<p>Please refer to the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md">ExecuTorch Llama2 docs</a> to export the model.</p>
+</div>
+<div class="section" id="run-the-app">
+<h2>Run the App<a class="headerlink" href="#run-the-app" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Open the <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/demo-apps/apple_ios/LLaMA/LLaMA.xcodeproj">project</a> in Xcode.</p></li>
+<li><p>Run the app (cmd+R).</p></li>
+<li><p>In app UI pick a model and tokenizer to use, type a prompt and tap the arrow buton as on the <a class="reference download internal" download="" href="../_downloads/ce106e0d60e98c1996ce66a0e7cce48c/llama_ios_app.mp4"><span class="xref download myst">video</span></a>.</p></li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>ExecuTorch runtime is distributed as a Swift package providing some .xcframework as prebuilt binary targets. Xcode will dowload and cache the package on the first run, which will take some time.</p>
+</div>
+</div>
+<div class="section" id="copy-the-model-to-simulator">
+<h2>Copy the model to Simulator<a class="headerlink" href="#copy-the-model-to-simulator" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Drag&amp;drop the model and tokenizer files onto the Simulator window and save them somewhere inside the iLLaMA folder.</p></li>
+<li><p>Pick the files in the app dialog, type a prompt and click the arrow-up button.</p></li>
+</ol>
+</div>
+<div class="section" id="copy-the-model-to-device">
+<h2>Copy the model to Device<a class="headerlink" href="#copy-the-model-to-device" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Wire-connect the device and open the contents in Finder.</p></li>
+<li><p>Navigate to the Files tab and drag&amp;drop the model and tokenizer files onto the iLLaMA folder.</p></li>
+<li><p>Wait until the files are copied.</p></li>
+</ol>
+</div>
+<div class="section" id="reporting-issues">
+<h2>Reporting Issues<a class="headerlink" href="#reporting-issues" title="Permalink to this heading">¶</a></h2>
+<p>If you encountered any bugs or issues following this tutorial please file a bug/issue here on <a class="reference external" href="https://github.com/pytorch/executorch/issues/new">Github</a>.</p>
+</div>
 </div>
 
 
@@ -505,7 +510,15 @@
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Computation times</a></li>
+<li><a class="reference internal" href="#">Building ExecuTorch LLaMA iOS Demo App</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#exporting-models">Exporting models</a></li>
+<li><a class="reference internal" href="#run-the-app">Run the App</a></li>
+<li><a class="reference internal" href="#copy-the-model-to-simulator">Copy the model to Simulator</a></li>
+<li><a class="reference internal" href="#copy-the-model-to-device">Copy the model to Device</a></li>
+<li><a class="reference internal" href="#reporting-issues">Reporting Issues</a></li>
+</ul>
+</li>
 </ul>
 
             </div>
