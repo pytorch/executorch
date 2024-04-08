@@ -194,8 +194,8 @@ class Module final {
           // This can error if the outputs are already pre-allocated. Ignore
           // this error because it doesn't affect correctness, but log it.
           ET_LOG(
-              Error,
-              "ignoring error from set_output_data_ptr(): 0x%" PRIx32,
+              Info,
+              "Cannot set_output_data_ptr(): this likely means the outputs were MemoryPlanned inspect the error code to know for sure, but likely this is not an issue. 0x%" PRIx32,
               static_cast<uint32_t>(output_status));
         }
       }
