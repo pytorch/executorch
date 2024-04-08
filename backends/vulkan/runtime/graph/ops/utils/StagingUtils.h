@@ -25,6 +25,8 @@ void copy_staging_to_ptr(
     void* dst,
     const size_t nbytes);
 
+void copy_zeros_to_staging(api::StorageBuffer& staging, const size_t nbytes);
+
 //
 // Functions to get shaders
 //

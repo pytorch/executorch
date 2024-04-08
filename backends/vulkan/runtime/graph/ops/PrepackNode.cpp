@@ -35,11 +35,13 @@ PrepackNode::PrepackNode(
 api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
   vTensor& packed = graph->get_val(packed_).toTensor();
 
-  // If no TensorRef is provided, create a zeroed staging buffer according to
+  // If no TensorRef is provided, create a staging buffer of zeros according to
   // the vTensor metadata.
   if (graph->get_val(tref_).isNone()) {
     size_t numel = api::utils::multiply_integers(packed.sizes());
     api::StorageBuffer staging(graph->context(), packed.dtype(), numel);
+    size_t nbytes = numel * api::element_size(packed.dtype());
+    copy_zeros_to_staging(staging, nbytes);
     return staging;
   }
 
