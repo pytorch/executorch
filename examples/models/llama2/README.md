@@ -32,15 +32,19 @@ Note that groupsize less than 128 was not enabled, since such model were still t
 
 ## Performance
 
-Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measurement performance is in terms of tokens/second.
+Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 max Pro. Measurement performance is in terms of tokens/second.
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
-|Galaxy S22 | 8.15 tokens/second | 8.3 tokens/second |
-|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
-|One plus 12 | 11.55 tokens/second | 11.6 tokens/second |
-|iPhone 15 pro | x | x |
+|Galaxy S22*  | 8.15 tokens/second | 8.3 tokens/second |
+|Galaxy S24* | 10.66 tokens/second | 11.26 tokens/second |
+|One plus 12* | 11.55 tokens/second | 11.6 tokens/second |
+|Galaxy S22** | 5.5 tokens/second | 5.9 tokens/second |
+|iPhone 15 pro** | ~6 tokens/second | ~6 tokens/second |
 
+*: Measured via adb binary based [workflow](#step-5-run-benchmark-on)
+
+**: Measured via app based [workflow](#step-6-build-mobile-apps)
 
 # Instructions
 
@@ -238,7 +242,6 @@ Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-de
 - Enabling LLama2 7b and other architectures via Vulkan
 - Enabling performant execution of widely used quantization schemes.
 
-TODO
 
 # Notes
 This example tries to reuse the Python code, with minimal modifications to make it compatible with current ExecuTorch:
