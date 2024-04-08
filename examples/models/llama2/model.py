@@ -146,10 +146,11 @@ the checkpoint format to avoid generating faulty models.
             self.model_ = simple_quantizer.convert_for_runtime()
         elif "8da4w" in str(checkpoint_path):
             print("Using int4 weight and int8 dynamic activation quantization!")
-            from .quantize import Int8DynActInt4WeightQuantHandler
+            from torchao.quantization.quant_api import Int8DynActInt4WeightQuantizer
 
-            simple_quantizer = Int8DynActInt4WeightQuantHandler(self.model_)
-            self.model_ = simple_quantizer.convert_for_runtime()
+            self.model_ = Int8DynActInt4WeightQuantizer()._convert_for_runtime(
+                self.model_
+            )
 
         # assign=True: load params/buffers by assignment instead of performing an in-place copy.
         # Because we are using device="meta", tensors do not have memory associated with them

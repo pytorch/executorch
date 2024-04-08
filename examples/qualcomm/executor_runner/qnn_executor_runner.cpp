@@ -413,5 +413,20 @@ int main(int argc, char** argv) {
     ET_LOG(Info, "Model executed successfully.");
   }
 
+  // Dump the etdump data containing profiling/debugging data to the specified
+  // file.
+  etdump_result result = etdump_gen.get_etdump_data();
+  if (result.buf != nullptr && result.size > 0) {
+    ET_LOG(
+        Info,
+        "Write etdump to %s, Size = %zu",
+        FLAGS_etdump_path.c_str(),
+        result.size);
+    FILE* f = fopen(FLAGS_etdump_path.c_str(), "w+");
+    fwrite((uint8_t*)result.buf, 1, result.size, f);
+    fclose(f);
+    free(result.buf);
+  }
+
   return 0;
 }

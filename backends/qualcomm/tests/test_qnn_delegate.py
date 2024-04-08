@@ -981,7 +981,7 @@ class TestQNNQuantizedModel(TestQNN):
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
-        # check if requantization work
+        # check if requantization work by reusing the 8bit qdq module
         module = self.get_qdq_module(
             module, sample_input, quant_dtype=QuantDtype.use_16a16w
         )
