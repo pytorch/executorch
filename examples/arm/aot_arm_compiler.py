@@ -202,7 +202,9 @@ if __name__ == "__main__":
         edge = edge.to_backend(
             ArmPartitioner(
                 generate_ethosu_compile_spec(
-                    "ethos-u55-128", permute_memory_to_nhwc=True
+                    "ethos-u55-128",
+                    permute_memory_to_nhwc=True,
+                    quantize_io=True,
                 )
             )
         )

@@ -45,6 +45,7 @@ class ArmCompileSpecBuilder:
         self.output_format = None
         self.path_for_intermediates = None
         self.permute_nhwc = False
+        self.quantize_io = False
 
     def ethosu_compile_spec(
         self,
@@ -104,6 +105,10 @@ class ArmCompileSpecBuilder:
         self.permute_nhwc = set_nhwc_permutation
         return self
 
+    def set_quantize_io(self, quantize_io: bool = False):
+        self.quantize_io = quantize_io
+        return self
+
     def build(self):
         """
         Generate a list of compile spec objects from the builder
@@ -124,6 +129,11 @@ class ArmCompileSpecBuilder:
         if self.permute_nhwc:
             self.compile_spec.append(
                 CompileSpec("permute_memory_format", "nhwc".encode())
+            )
+
+        if self.quantize_io:
+            self.compile_spec.append(
+                CompileSpec("quantize_io", "True".encode())
             )
 
         return self.compile_spec
@@ -153,6 +163,7 @@ def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
 def generate_ethosu_compile_spec(
     config: str,
     permute_memory_to_nhwc: Optional[bool] = None,
+    quantize_io: Optional[bool] = None,
     system_config: Optional[str] = None,
     memory_mode: Optional[str] = None,
     extra_flags: Optional[str] = None,
@@ -168,9 +179,9 @@ def generate_ethosu_compile_spec(
             config_ini=config_ini,
         )
         .set_permute_memory_format(permute_memory_to_nhwc)
+        .set_quantize_io(quantize_io)
         .build()
     )
-
 
 def generate_tosa_compile_spec(
     permute_memory_to_nhwc: Optional[bool] = None,

@@ -53,6 +53,10 @@ class TOSASupportedOperators(OperatorSupportBase):
 
         supported &= self.is_node_supported_custom(node)
 
+        # Override partitioning based on pre partition passes
+        if supported and "arm_partition" in node.meta:
+            supported = supported & node.meta["arm_partition"]
+
         return supported
 
     def is_node_supported_custom(self, node: torch.fx.Node) -> bool:
@@ -62,6 +66,54 @@ class TOSASupportedOperators(OperatorSupportBase):
             if dim != [-1, -2] or keep_dim is False:
                 return False
         return True
+
+
+from executorch.exir.pass_base import ExportPass, PassResult
+from executorch.exir.passes import PassManager
+
+
+class TagIOQuant(ExportPass):
+    """
+    Pass run before partitioning to tag Q/DQ on any placeholder and output
+    to ensure we don't greedily partition them for device. Float conversion
+    has to happen outside a TOSA base inference profile.
+    """
+
+    def __init__(self, edge_program: torch.export.ExportedProgram):
+        super(TagIOQuant, self).__init__()
+        self.edge_program = edge_program
+
+    def is_quant_node(self, node: torch.fx.node.Node):
+        return node.target in {
+            exir_ops.edge.quantized_decomposed.quantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.quantize_per_tensor.tensor,
+        }
+
+    def is_dequant_node(self, node: torch.fx.node.Node):
+        return node.target in {
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.default,
+            exir_ops.edge.quantized_decomposed.dequantize_per_tensor.tensor,
+        }
+
+    def call(self, graph_module: torch.fx.GraphModule):
+        for node in graph_module.graph.nodes:
+            # tag q of input
+            if node.op == "placeholder":
+                for user in node.users.keys():
+                    # if we have an input going into a quantize
+                    if self.is_quant_node(user):
+                        user.meta["arm_partition"] = False
+
+            # tag dq of outputs
+            if node.op == "output":
+                quant, *_ = node.args[0]
+                if self.is_dequant_node(quant):
+                    quant.meta["arm_partition"] = False
+
+        graph_module.recompile()
+        return PassResult(graph_module, True)
 
 
 @final
@@ -74,6 +126,16 @@ class ArmPartitioner(Partitioner):
         # subgraphs containing the nodes with the tags
         logger.info("ArmPartitioner::partition")
         partition_tags = {}
+
+        for spec in self.delegation_spec.compile_specs:
+            if spec.key == "quantize_io" and spec.value.decode() == "True":
+                # Exclude IO quantization from the partition
+                passes = PassManager(
+                    passes=[
+                        TagIOQuant(exported_program),
+                    ]
+                )
+                passes(exported_program.graph_module)
 
         capability_partitioner = CapabilityBasedPartitioner(
             exported_program.graph_module,
