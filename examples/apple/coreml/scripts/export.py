@@ -19,9 +19,11 @@ from executorch.backends.apple.coreml.compiler import CoreMLBackend
 from executorch.backends.apple.coreml.partition.coreml_partitioner import (
     CoreMLPartitioner,
 )
+from executorch.exir import to_edge
 
 from executorch.exir.backend.backend_api import to_backend
 from executorch.sdk.etrecord import generate_etrecord
+from torch.export import export
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent.parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
@@ -32,7 +34,6 @@ from models.model_factory import EagerModelFactory
 
 # Script to export a model with coreml delegation.
 
-_CAPTURE_CONFIG = exir.CaptureConfig(enable_aot=True, _unlift=False)
 _EDGE_COMPILE_CONFIG = exir.EdgeCompileConfig(
     _check_ir_validity=False,
 )
@@ -84,9 +85,7 @@ def partition_module_to_coreml(module):
 
 def lower_module_to_coreml(module, compile_specs):
     module = module.eval()
-    edge = exir.capture(module, example_inputs, _CAPTURE_CONFIG).to_edge(
-        _EDGE_COMPILE_CONFIG
-    )
+    edge = to_edge(export(module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG)
     # All of the subsequent calls on the edge_dialect_graph generated above (such as delegation or
     # to_executorch()) are done in place and the graph is also modified in place. For debugging purposes
     # we would like to keep a copy of the original edge dialect graph and hence we create a deepcopy of
@@ -95,7 +94,7 @@ def lower_module_to_coreml(module, compile_specs):
 
     lowered_module = to_backend(
         CoreMLBackend.__name__,
-        edge.exported_program,
+        edge.exported_program(),
         compile_specs,
     )
 
@@ -104,13 +103,11 @@ def lower_module_to_coreml(module, compile_specs):
 
 def export_lowered_module_to_executorch_program(lowered_module, example_inputs):
     lowered_module(*example_inputs)
-    exec_prog = (
-        exir.capture(lowered_module, example_inputs, _CAPTURE_CONFIG)
-        .to_edge(_EDGE_COMPILE_CONFIG)
-        .to_executorch(
-            config=exir.ExecutorchBackendConfig(
-                extract_constant_segment=False, extract_delegate_segments=True
-            )
+    exec_prog = to_edge(
+        export(lowered_module, example_inputs), compile_config=_EDGE_COMPILE_CONFIG
+    ).to_executorch(
+        config=exir.ExecutorchBackendConfig(
+            extract_constant_segment=False, extract_delegate_segments=True
         )
     )
 
