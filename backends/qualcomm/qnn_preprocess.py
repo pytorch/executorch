@@ -44,8 +44,8 @@ class QnnBackend(BackendDetails):
         qnn_compiler_passes = PassManager(
             passes=[
                 ConvertToLinear(),
+                InsertRequantize(edge_program),
                 InsertIOQDQ(edge_program),
-                InsertRequantize(edge_program, insert_requantize=True),
                 LayoutTransform(edge_program, insert_permute=True),
             ]
         )
@@ -83,7 +83,6 @@ class QnnBackend(BackendDetails):
                 continue
             else:
                 raise RuntimeError(f"{node.op} is not supported in Qnn")
-
         qnn_context_binary = qnn_manager.Compile(
             [py_op_wrapper.GetOpWrapper() for py_op_wrapper in py_op_wrapper_list]
         )
