@@ -65,9 +65,16 @@ You can export and run the original Llama2 7B model.
 
 1. Llama2 pretrained parameters can be downloaded from [Meta's official website](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) or from [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b).
 
-2. Export model and generate `.pte` file:
+2. Edit `params.json` file. Replace `"vocab_size": -1` with `"vocab_size": 32000`. This is a short-term workaround.
+
+3. Export model and generate `.pte` file:
     ```
     python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    ```
+4. Create tokenizer.bin.
+
+    ```
+    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
 ### Option B: Download and export stories110M model
