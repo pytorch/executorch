@@ -508,6 +508,20 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
     subgraph. Throw error when const/param/buffers is used across different partitions. That is the
     underlying data will be owned by multiple delegates.
     """
+    mutated_buffer = set()
+    for node in edge_program.graph.nodes:
+        if node.op == "placeholder" and (
+            is_param(edge_program, node)
+            or is_buffer(edge_program, node)
+            or is_lifted_tensor_constant(edge_program, node)
+        ):
+            for node_user in node.users:
+                if node_user.name in edge_program.graph_signature.buffers_to_mutate:
+                    logging.info(
+                        "The buffer node is a mutated buffer node, which is not constant."
+                    )
+                    mutated_buffer.add(node)
+
     for node in edge_program.graph.nodes:
         # go through const/param/buffer nodes, if all users of const/param/buffer nodes are partitioned then partition
         if node.op == "placeholder" and (
@@ -515,20 +529,21 @@ def tag_constant_data(edge_program: ExportedProgram) -> None:
             or is_buffer(edge_program, node)
             or is_lifted_tensor_constant(edge_program, node)
         ):
-            user_tags = set()
-            for user in node.users:
-                user_tag = user.meta.get("delegation_tag", None)
-                if user_tag is not None:
-                    user_tags.add(user_tag)
-            if len(user_tags) > 1:
-                logging.info(
-                    f"The data node is used across multiple partitions, including {user_tags}. "
-                    "If the data is too large and it's not preferred to copy, please tag the "
-                    "constant node like node.['no_copy'] = True and they won't be copied."
-                )
-            # tag the data node with the same tag as the last user
-            if len(user_tags) > 0:
-                node.meta["delegation_tag"] = user_tags.pop()
+            if node not in mutated_buffer:
+                user_tags = set()
+                for user in node.users:
+                    user_tag = user.meta.get("delegation_tag", None)
+                    if user_tag is not None:
+                        user_tags.add(user_tag)
+                if len(user_tags) > 1:
+                    logging.info(
+                        f"The data node is used across multiple partitions, including {user_tags}. "
+                        "If the data is too large and it's not preferred to copy, please tag the "
+                        "constant node like node.['no_copy'] = True and they won't be copied."
+                    )
+                # tag the data node with the same tag as the last user
+                if len(user_tags) > 0:
+                    node.meta["delegation_tag"] = user_tags.pop()
 
 
 # TODO - style: use templated types
