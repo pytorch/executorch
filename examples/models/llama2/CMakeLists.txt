@@ -108,6 +108,12 @@ if(TARGET vulkan_backend)
   target_link_options_shared_lib(vulkan_backend)
 endif()
 
+# Qnn backend
+if(TARGET qnn_executorch_backend)
+  list(APPEND link_libraries qnn_executorch_backend)
+  target_link_options_shared_lib(qnn_executorch_backend)
+endif()
+
 # This one is needed for cpuinfo where it uses android
 # specific log lib
 if(ANDROID)

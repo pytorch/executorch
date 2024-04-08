@@ -14,45 +14,6 @@
 #
 # The targets in this file will be built if EXECUTORCH_BUILD_VULKAN is ON
 
-if(NOT PYTORCH_PATH)
-  set(PYTORCH_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../../third-party/pytorch)
-endif()
-
-if(NOT VULKAN_THIRD_PARTY_PATH)
-  set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../third-party)
-endif()
-
-# Source file paths
-
-set(ATEN_PATH ${PYTORCH_PATH}/aten/src)
-set(ATEN_VULKAN_PATH ${ATEN_PATH}/ATen/native/vulkan)
-
-set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
-set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
-set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
-
-# Compile settings
-
-set(VULKAN_CXX_FLAGS "")
-list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_API")
-list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
-list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
-list(APPEND VULKAN_CXX_FLAGS "-DVK_NO_PROTOTYPES")
-list(APPEND VULKAN_CXX_FLAGS "-DVOLK_DEFAULT_VISIBILITY")
-
-# vulkan_api source files
-
-file(GLOB vulkan_api_cpp ${ATEN_VULKAN_PATH}/api/*.cpp)
-list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
-
-set(VULKAN_API_HEADERS)
-list(APPEND VULKAN_API_HEADERS ${ATEN_PATH})
-list(APPEND VULKAN_API_HEADERS ${VULKAN_HEADERS_PATH})
-list(APPEND VULKAN_API_HEADERS ${VOLK_PATH})
-list(APPEND VULKAN_API_HEADERS ${VMA_PATH})
-
-# Find GLSL compiler executable
-
 if(ANDROID)
   if(NOT ANDROID_NDK)
     message(FATAL_ERROR "ANDROID_NDK not set")
@@ -84,7 +45,8 @@ macro(VULKAN_SHADER_LIBRARY shaders_path library_name)
 
   execute_process(
     COMMAND
-      "${PYTHON_EXECUTABLE}" ${PYTORCH_PATH}/tools/gen_vulkan_spv.py --glsl-path
+      "${PYTHON_EXECUTABLE}"
+      ${CMAKE_CURRENT_SOURCE_DIR}/runtime/api/gen_vulkan_spv.py --glsl-path
       ${shaders_path} --output-path ${VULKAN_SHADERGEN_OUT_PATH}
       --glslc-path=${GLSLC_PATH} --tmp-dir-path=${VULKAN_SHADERGEN_OUT_PATH}
       --env ${VULKAN_GEN_ARG_ENV}

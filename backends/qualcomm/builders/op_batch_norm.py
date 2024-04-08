@@ -38,6 +38,7 @@ class BatchNorm(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         bias_node = node.args[2]
@@ -52,6 +53,7 @@ class BatchNorm(NodeVisitor):
             bias_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         filter_tensor = filter_tensor / torch.sqrt(var_tensor + eps)
@@ -60,6 +62,7 @@ class BatchNorm(NodeVisitor):
             filter_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         batch_norm_input_tensors = [
@@ -74,6 +77,7 @@ class BatchNorm(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         batch_norm_output_tensors = [output_tensor_wrapper]
 
