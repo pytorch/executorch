@@ -6,11 +6,9 @@
 
 # pyre-strict
 import typing
-from typing import Any, Callable, List
+from typing import List
 
-import executorch.exir as exir
 import torch
-import torch.utils._pytree as pytree
 
 from executorch.exir.schema import (
     AllocationDetails,
@@ -84,37 +82,6 @@ def get_test_program() -> Program:
         segments=[],
         constant_segment=SubsegmentOffsets(segment_index=0, offsets=[]),
     )
-
-
-# pyre-ignore
-def get_graph_module_with_op(op: Callable, args: Any) -> torch.fx.GraphModule:
-    """
-    Constructs an torch.fx.GraphModule containing just a call to the given op.
-
-    Args:
-        op: A callable op
-        args: Sample arguments to this given op
-
-    Returns:
-        torch.fx.GraphModule with a graph like: inputs -> op -> output
-    """
-
-    trace_args, in_spec = pytree.tree_flatten(args)
-
-    graph = torch.fx.Graph()
-    with graph.inserting_before(graph._root):
-        input_nodes = []
-        for i in range(len(trace_args)):
-            input_nodes.append(graph.placeholder(f"ph_{i}"))
-
-        op_node = graph.call_function(op, tuple(input_nodes))
-        graph.output(op_node)
-
-    graph_module = torch.fx.GraphModule(torch.nn.Module(), graph)
-    graph_module.recompile()
-
-    graph_module = exir.capture(graph_module, args).to_edge().module
-    return graph_module
 
 
 def register_additional_test_aten_ops() -> None:

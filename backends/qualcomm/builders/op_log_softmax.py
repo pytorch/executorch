@@ -34,6 +34,7 @@ class LogSoftmax(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         log_softmax_input_tensors = [log_softmax_inp_tensor_wrapper]
         output_tensor = self.get_tensor(node, node)
@@ -43,6 +44,7 @@ class LogSoftmax(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         log_softmax_output_tensors = [log_softmax_output_tensor_wrapper]
 

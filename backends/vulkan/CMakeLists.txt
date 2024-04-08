@@ -20,14 +20,12 @@ if(NOT EXECUTORCH_ROOT)
   set(EXECUTORCH_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 endif()
 
-include(${EXECUTORCH_ROOT}/build/Utils.cmake)
-
 if(NOT RUNTIME_PATH)
   set(RUNTIME_PATH ${CMAKE_CURRENT_SOURCE_DIR}/runtime)
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
-  resolve_python_executable()
+  set(PYTHON_EXECUTABLE python3)
 endif()
 
 if(NOT FLATC_EXECUTABLE)
@@ -40,13 +38,29 @@ endif()
 # perform dynamic registration via static initialization.
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 
-# ATen Vulkan Libs
+include(cmake/ShaderLibrary.cmake)
 
-set(PYTORCH_PATH ${EXECUTORCH_ROOT}/third-party/pytorch)
+# Third party libs
+
 set(VULKAN_THIRD_PARTY_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third-party)
-include(cmake/ATenVulkan.cmake)
 
-set(COMMON_INCLUDES ${VULKAN_API_HEADERS} ${EXECUTORCH_ROOT}/..)
+set(VULKAN_HEADERS_PATH ${VULKAN_THIRD_PARTY_PATH}/Vulkan-Headers/include)
+set(VOLK_PATH ${VULKAN_THIRD_PARTY_PATH}/volk)
+set(VMA_PATH ${VULKAN_THIRD_PARTY_PATH}/VulkanMemoryAllocator)
+
+# Compile settings
+
+set(VULKAN_CXX_FLAGS "")
+list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_WRAPPER")
+list(APPEND VULKAN_CXX_FLAGS "-DUSE_VULKAN_VOLK")
+
+# Vulkan Compute API
+
+file(GLOB vulkan_api_cpp ${RUNTIME_PATH}/api/*.cpp)
+list(APPEND vulkan_api_cpp ${VOLK_PATH}/volk.c)
+
+set(COMMON_INCLUDES ${EXECUTORCH_ROOT}/.. ${VULKAN_HEADERS_PATH} ${VOLK_PATH}
+                    ${VMA_PATH})
 
 # vulkan_graph_lib
 
