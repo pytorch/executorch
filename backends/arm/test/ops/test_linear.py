@@ -19,40 +19,43 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(42)
 
-test_data_suite = [
+test_data_suite_rank1 = [
     # (test_name, test_data, out_features)
     (
         "model_linear_rank1_zeros",
-        torch.zeros(10, 10),
+        torch.zeros(10),
         10,
     ),
     (
         "model_linear_rank1_ones",
-        torch.ones(10, 10),
+        torch.ones(10),
         10,
     ),
     (
         "model_linear_rank1_negative_ones",
-        torch.ones(10, 10) * (-1),
+        torch.ones(10) * (-1),
         10,
     ),
     (
         "model_linear_rank1_rand",
-        torch.rand(10, 10),
+        torch.rand(10),
         10,
     ),
     (
         "model_linear_rank1_negative_large_rand",
-        torch.rand(10, 10) * (-100),
+        torch.rand(10) * (-100),
         10,
     ),
     (
         "model_linear_rank1_large_randn",
-        torch.randn(10, 10) * 100,
+        torch.randn(10) * 100,
         10,
     ),
+]
+
+test_data_suite_rank4 = [
+    # (test_name, test_data, out_features)
     (
         "model_linear_rank4_zeros",
         torch.zeros(5, 10, 25, 20),
@@ -175,7 +178,7 @@ class TestLinear(unittest.TestCase):
             .to_executorch()
         )
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
     def test_linear_tosa_MI(
         self,
         test_name: str,
@@ -192,7 +195,7 @@ class TestLinear(unittest.TestCase):
             test_data,
         )
 
-    @parameterized.expand(test_data_suite)
+    @parameterized.expand(test_data_suite_rank1 + test_data_suite_rank4)
     def test_linear_tosa_BI(
         self,
         test_name: str,
@@ -205,8 +208,11 @@ class TestLinear(unittest.TestCase):
             self.Linear(in_features=in_features, out_features=out_features), test_data
         )
 
-    @parameterized.expand(test_data_suite)
-    @unittest.skip("This does not work as of now")
+    @parameterized.expand(test_data_suite_rank1)
+    @unittest.skipIf(
+        not common.VELA_INSTALLED,
+        "There is no point in running U55 tests if the Vela tool is not installed",
+    )
     def test_linear_tosa_u55_BI(
         self,
         test_name: str,

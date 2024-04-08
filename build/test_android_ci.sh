@@ -20,8 +20,6 @@ build_executorch() {
   rm -rf cmake-out && mkdir cmake-out
   ANDROID_NDK=/opt/ndk BUCK2=$(which buck2) FLATC=$(which flatc) ANDROID_ABI=arm64-v8a \
     bash examples/demo-apps/android/ExecuTorchDemo/setup.sh
-  ANDROID_NDK=/opt/ndk BUCK2=$(which buck2) FLATC=$(which flatc) ANDROID_ABI=arm64-v8a \
-    bash examples/demo-apps/android/LlamaDemo/setup.sh
 }
 
 build_android_demo_app() {
@@ -32,6 +30,7 @@ build_android_demo_app() {
 
 build_android_llama_demo_app() {
   pushd examples/demo-apps/android/LlamaDemo
+  ANDROID_NDK=/opt/ndk ANDROID_ABI=arm64-v8a ./gradlew setup
   ANDROID_HOME=/opt/android/sdk ./gradlew build
   popd
 }

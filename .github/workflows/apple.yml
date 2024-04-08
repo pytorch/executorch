@@ -100,6 +100,17 @@ jobs:
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}-${VERSION}.zip" "${FRAMEWORK}.xcframework"
         ) done
 
+        # Build Debug iOS Frameworks
+        PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
+        build/build_apple_frameworks.sh --coreml --custom --mps --optimized --portable --quantized --xnnpack --Debug
+
+        # Bundle Debug iOS Frameworks
+        for FRAMEWORK in "${FRAMEWORKS[@]}"; do (
+          cd cmake-out && \
+          mv "${FRAMEWORK}.xcframework" "${FRAMEWORK}_debug.xcframework" && \
+          zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}_debug-${VERSION}.zip" "${FRAMEWORK}_debug.xcframework"
+        ) done
+
         popd
 
   upload-frameworks-ios:
@@ -146,5 +157,6 @@ jobs:
 
           for FILENAME in "${RUNNER_TEMP}"/frameworks-ios/*.zip; do
             [ -e "${FILENAME}" ] || continue
+            shasum -a 256 "${FILENAME}"
             ${AWS_CMD} "${FILENAME}" s3://ossci-ios/executorch/ --acl public-read
           done

@@ -35,6 +35,7 @@ class StrideSlice(NodeVisitor):
             input_tensor,
             tensor_type,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor = self.get_tensor(node, node)
@@ -43,6 +44,7 @@ class StrideSlice(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         dim = cast(int, node.args[1])

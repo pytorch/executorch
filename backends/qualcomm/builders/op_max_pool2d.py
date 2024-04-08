@@ -33,6 +33,7 @@ class MaxPool2d(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         users = list(node.users.keys())
@@ -51,6 +52,7 @@ class MaxPool2d(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         # kernel info
         filter_size = cast(List[int], node.args[1])
