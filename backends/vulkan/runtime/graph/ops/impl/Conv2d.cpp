@@ -346,8 +346,6 @@ void add_conv2d_node(
 }
 
 void conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  const int64_t groups = graph.get_val(args[8]).toInt();
-
   return add_conv2d_node(
       graph,
       args[0],

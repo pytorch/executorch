@@ -19,8 +19,6 @@ from parameterized import parameterized
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-torch.manual_seed(42)
-
 """
 The configuration when
   groups == in_channels and
