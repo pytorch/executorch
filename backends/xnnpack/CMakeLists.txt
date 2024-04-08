@@ -33,7 +33,7 @@ if(NOT PYTHON_EXECUTABLE)
 endif()
 
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
-set(_common_compile_options -Wno-deprecated-declarations)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 set(_xnnpack_schema__include_dir "${CMAKE_BINARY_DIR}/schema/include")
 # Paths to headers generated from the .fbs files.
@@ -72,7 +72,7 @@ target_include_directories(
   xnnpack_schema INTERFACE ${_xnnpack_schema__include_dir}
                            ${EXECUTORCH_ROOT}/third-party/flatbuffers/include)
 
-set(xnnpack_third_party)
+set(xnnpack_third_party pthreadpool cpuinfo)
 
 include(cmake/Dependencies.cmake)
 
@@ -105,8 +105,7 @@ if(NOT CMAKE_TOOLCHAIN_FILE MATCHES ".*iOS\.cmake$")
   list(TRANSFORM _xnn_executor_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
   add_executable(xnn_executor_runner ${_xnn_executor_runner__srcs})
   target_link_libraries(xnn_executor_runner
-                        xnnpack_backend gflags portable_ops_lib
-                        pthreadpool cpuinfo)
+                        xnnpack_backend gflags portable_ops_lib)
   target_compile_options(xnn_executor_runner PUBLIC ${_common_compile_options})
 endif()
 

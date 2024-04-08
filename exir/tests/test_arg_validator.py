@@ -8,11 +8,11 @@
 import unittest
 
 import torch
-from executorch import exir
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.dialects._ops import ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.verification.arg_validator import EdgeOpArgValidator
+from torch.export import export
 
 
 class TestArgValidator(unittest.TestCase):
@@ -31,11 +31,7 @@ class TestArgValidator(unittest.TestCase):
 
         m = TestModel()
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.int),)
-        egm = (
-            exir.capture(m, inputs, exir.CaptureConfig())
-            .to_edge(EdgeCompileConfig(_check_ir_validity=False))
-            .exported_program.graph_module
-        )
+        egm = to_edge(export(m, inputs)).exported_program().graph_module
         validator = EdgeOpArgValidator(egm)
         validator.run(*inputs)
         self.assertEqual(len(validator.violating_ops), 0)
@@ -52,9 +48,12 @@ class TestArgValidator(unittest.TestCase):
 
         inputs = (torch.randn(1, 3, 100, 100).to(dtype=torch.bfloat16),)
         egm = (
-            exir.capture(M(), inputs, exir.CaptureConfig())
-            .to_edge(EdgeCompileConfig(_check_ir_validity=False))
-            .exported_program.graph_module
+            to_edge(
+                export(M(), inputs),
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            )
+            .exported_program()
+            .graph_module
         )
         validator = EdgeOpArgValidator(egm)
         validator.run(*inputs)
