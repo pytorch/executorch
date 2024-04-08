@@ -88,6 +88,8 @@ QnnBackendCache::QnnBackendCache(
     QNN_EXECUTORCH_LOG_INFO("Caching: Caching is in SAVE MODE.");
     return;
   } else {
+    // TODO: need fix on this since qnn context binary could somehow
+    //       pass the check of flatbuffer verifier
     // check if context binary came from flatbuffer
     flatbuffers::FlatBufferBuilder builder;
     flatbuffers::Verifier verifier(

@@ -34,7 +34,7 @@ class Embedding(NodeVisitor):
             weight_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_STATIC,
             nodes_to_wrappers,
-            is_input_tensor=False,
+            is_input_tensor=True,
         )
 
         indices_node = node.args[1]

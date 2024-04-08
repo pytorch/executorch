@@ -248,6 +248,13 @@ class OpSoftmax:
 
 
 @dataclass(init=False, frozen=True)
+class OpSplit:
+    op_name: str = "Split"
+    param_axis: str = "axis"
+    param_split_index: str = "split_index"
+
+
+@dataclass(init=False, frozen=True)
 class OpSqueeze:
     op_name: str = "Squeeze"
 

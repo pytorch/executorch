@@ -283,6 +283,7 @@ class NodeVisitor:
         nodes_to_wrappers: Dict[str, PyQnnWrapper.TensorWrapper],
         is_input_tensor: bool,
         node_name: str = None,
+        wrapper_idx: int = 0,
         is_tensor: bool = True,
     ) -> PyQnnWrapper.TensorWrapper:
         """
@@ -299,8 +300,9 @@ class NodeVisitor:
         if node_name is None:
             node_name = node.name
 
-        if node_name in nodes_to_wrappers:
-            return nodes_to_wrappers[node_name]
+        if cached := nodes_to_wrappers[node_name].get(wrapper_idx, None):
+            return cached
+
         tensor_name = node.name
         if is_graph_output(node):
             tensor_name = "output_" + tensor_name
@@ -341,7 +343,7 @@ class NodeVisitor:
                 tensor.detach().numpy(),
                 True,
             )
-        nodes_to_wrappers[node_name] = tensor_wrapper
+        nodes_to_wrappers[node_name][wrapper_idx] = tensor_wrapper
         return tensor_wrapper
 
     def define_node(
