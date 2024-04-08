@@ -758,6 +758,6 @@ The remaining steps are the same as the normal flow. Now you can run this module
 ## How to build Mobile Apps
 You can execute an LLM using ExecuTorch on iOS and Android.
 
-**For iOS details see the [iOS Sample App](https://github.com/pytorch/executorch/tree/main/examples/demo-apps/apple_ios).**
+**For iOS see the [iLLaMA App](https://pytorch.org/executorch/main/llm/llama-demo-ios.html).**
 
 **For Android, see the [Android Sample App](https://pytorch.org/executorch/main/llm/llama-demo-android.html).**

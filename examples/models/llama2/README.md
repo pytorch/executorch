@@ -218,11 +218,13 @@ adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/lla
 ```
 adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
 ```
-## Step 6: Build iOS and/or Android apps
+## Step 6: Build Mobile apps
 
-TODO
+### iOS
 
-### Android app
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App.
+
+### Android
 Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
 
 # What is coming next?
