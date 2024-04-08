@@ -30,17 +30,24 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
   private LlamaModule mModule = null;
   private Message mResultMessage = null;
 
-  private int mNumTokens = 0;
-  private long mRunStartTime = 0;
   private String mModelFilePath = "";
   private String mTokenizerFilePath = "";
 
   @Override
   public void onResult(String result) {
-    System.out.println("onResult: " + result);
     mResultMessage.appendText(result);
-    mNumTokens++;
     run();
+  }
+
+  @Override
+  public void onStats(float tps) {
+    runOnUiThread(
+        () -> {
+          if (mResultMessage != null) {
+            mResultMessage.setTokensPerSecond(tps);
+            mMessageAdapter.notifyDataSetChanged();
+          }
+        });
   }
 
   private static String[] listLocalFile(String path, String suffix) {
@@ -79,14 +86,14 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
           });
     }
 
-    long runDuration = System.currentTimeMillis() - runStartTime;
+    long loadDuration = System.currentTimeMillis() - runStartTime;
     String modelInfo =
         "Model path: "
             + modelPath
             + "\nTokenizer path: "
             + tokenizerPath
             + "\nModel loaded time: "
-            + runDuration
+            + loadDuration
             + " ms";
     Message modelLoadedMessage = new Message(modelInfo, false);
     runOnUiThread(
@@ -117,20 +124,20 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
     tokenizerPathBuilder.setTitle("Select tokenizer path");
     modelPathBuilder.setSingleChoiceItems(
-        binFiles,
+        pteFiles,
         -1,
         (dialog, item) -> {
-          mTokenizerFilePath = binFiles[item];
+          mModelFilePath = pteFiles[item];
           mEditTextMessage.setText("");
           dialog.dismiss();
           tokenizerPathBuilder.create().show();
         });
 
     tokenizerPathBuilder.setSingleChoiceItems(
-        pteFiles,
+        binFiles,
         -1,
         (dialog, item) -> {
-          mModelFilePath = pteFiles[item];
+          mTokenizerFilePath = binFiles[item];
           Runnable runnable =
               new Runnable() {
                 @Override
@@ -175,16 +182,10 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
         view -> {
           mModule.stop();
         });
-
-    mRunStartTime = System.currentTimeMillis();
   }
 
   private void onModelRunStopped() {
     setTitle(memoryInfo());
-    long runDuration = System.currentTimeMillis() - mRunStartTime;
-    if (mResultMessage != null) {
-      mResultMessage.setTokensPerSecond(1.0f * mNumTokens / (runDuration / 1000.0f));
-    }
     mSendButton.setText("Generate");
     mSendButton.setOnClickListener(
         view -> {
@@ -219,8 +220,6 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
               };
           new Thread(runnable).start();
         });
-    mNumTokens = 0;
-    mRunStartTime = 0;
     mMessageAdapter.notifyDataSetChanged();
   }
 

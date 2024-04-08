@@ -7,18 +7,16 @@
 
 set -eu
 
-CMAKE_OUT=cmake-out
-# Note: Set up ANDROID_NDK, ANDROID_ABI, BUCK2, and FLATC
+CMAKE_OUT="${CMAKE_OUT:-cmake-out-android}"
+# Note: Set up ANDROID_NDK and ANDROID_ABI
 cmake . -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DCMAKE_TOOLCHAIN_FILE="${ANDROID_NDK}/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="${ANDROID_ABI}" \
-  -DBUCK2="${BUCK2}" \
   -DEXECUTORCH_BUILD_XNNPACK=ON \
-  -DEXECUTORCH_BUILD_FLATC=OFF \
   -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
-  -DFLATC_EXECUTABLE="${FLATC}" \
   -DEXECUTORCH_BUILD_EXTENSION_MODULE=ON \
   -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+  -DCMAKE_BUILD_TYPE=Release \
   -B"${CMAKE_OUT}"
 
 if [ "$(uname)" == "Darwin" ]; then
@@ -26,24 +24,26 @@ if [ "$(uname)" == "Darwin" ]; then
 else
   CMAKE_JOBS=$(( $(nproc) - 1 ))
 fi
-cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install
+cmake --build "${CMAKE_OUT}" -j "${CMAKE_JOBS}" --target install --config Release
 
-cmake examples/models/llama2 -DBUCK2="${BUCK2}" \
+cmake examples/models/llama2 \
          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
          -DANDROID_ABI="$ANDROID_ABI" \
          -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
+         -DCMAKE_BUILD_TYPE=Release \
          -B"${CMAKE_OUT}"/examples/models/llama2
 
-cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}"
+cmake --build "${CMAKE_OUT}"/examples/models/llama2 -j "${CMAKE_JOBS}" --config Release
 
-cmake extension/android -DBUCK2="${BUCK2}" \
+cmake extension/android \
   -DCMAKE_TOOLCHAIN_FILE=${ANDROID_NDK}/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI="${ANDROID_ABI}" \
   -DCMAKE_INSTALL_PREFIX="${CMAKE_OUT}" \
   -DEXECUTORCH_BUILD_LLAMA_JNI=ON \
+  -DCMAKE_BUILD_TYPE=Release \
   -B"${CMAKE_OUT}"/extension/android
 
-cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}"
+cmake --build "${CMAKE_OUT}"/extension/android -j "${CMAKE_JOBS}" --config Release
 
 JNI_LIBS_PATH="examples/demo-apps/android/LlamaDemo/app/src/main/jniLibs"
 mkdir -p "${JNI_LIBS_PATH}/${ANDROID_ABI}"
