@@ -11,6 +11,8 @@ from executorch.backends.qualcomm.builders.utils import is_parameter
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
+from .utils import dq_ops, q_ops
+
 
 class InsertIOQDQ(ExportPass):
     """
@@ -50,7 +52,7 @@ class InsertIOQDQ(ExportPass):
             ret.append(value)
         return ret
 
-    def _insert_node(
+    def _create_node(
         self,
         graph_module: torch.fx.GraphModule,
         node: torch.fx.node,
@@ -84,9 +86,11 @@ class InsertIOQDQ(ExportPass):
     ) -> torch.fx.Node:
         with graph_module.graph.inserting_after(node):
             users = list(node.users.keys())
-            inserted_node = self._insert_node(graph_module, node, target, quant_attrs)
+            inserted_node = self._create_node(graph_module, node, target, quant_attrs)
             for user in users:
-                user.replace_input_with(node, inserted_node)
+                # If we found mix quantization pattern and reuse the existing q_node, we skip adding a new q node.
+                if user.target not in q_ops:
+                    user.replace_input_with(node, inserted_node)
 
         return inserted_node
 
@@ -98,31 +102,65 @@ class InsertIOQDQ(ExportPass):
     ) -> None:
         with graph_module.graph.inserting_after(node):
             users = list(node.users.keys())
-            inserted_node = self._insert_node(graph_module, node, target)
+            inserted_node = self._create_node(graph_module, node, target)
             for user in users:
                 if user.op == "output":
                     user.replace_input_with(node, inserted_node)
 
+    # When having requantization dq/q nodes at the input,
+    # such as the case: input1 -> dq_node1 -> q_node1 -> node1,
+    # we should fold the dq_node1 and connect input -> q_node1 -> node1.
+    def _fold_mix_quantization_dq_node(self, graph_module, input_node):
+        input_users = list(input_node.users.keys())
+        for input_user in input_users:
+            if input_user.target not in dq_ops:
+                continue
+            dq_users = list(input_user.users.keys())
+            for dq_user in dq_users:
+                dq_user.replace_input_with(input_user, input_node)
+
+    # When having requantization dq/q nodes at the output,
+    # such as the case: node(int32) -> dq(int32) -> q(uint8) -> output(int32),
+    # we should fold the q node and connect node(int32) -> dq(int32) -> output(int32).
+    def _fold_mix_quantization_q_node(self, graph_module, node, users):
+        for user in users:
+            if user.op == "output":
+                output_node = user
+                break
+
+        dq_node = node.args[0]
+        for out_node in output_node.meta["val"]:
+            if dq_node.meta["val"].dtype == out_node.dtype:
+                user.replace_input_with(node, dq_node)
+
     def _insert(self, graph_module: torch.fx.GraphModule) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
-            # insert q after input
+            # insert q after input or fold mix_quantization dq if applicable
             if (
                 n.op == "placeholder"
                 and n.meta.get("quant_attrs")
                 and not is_parameter(n, self.edge_program)
             ):
+                self._fold_mix_quantization_dq_node(graph_module, n)
                 self._insert_quant_node(
                     graph_module, n, n.meta["quant_attrs"]["encoding"]
                 )
 
-            # insert dq before output
+            # insert dq before output or fold mix_quantization q if applicable
             users = list(n.users.keys())
             if n.meta.get("quant_attrs") and any(user.op == "output" for user in users):
+                if n.target in q_ops:
+                    self._fold_mix_quantization_q_node(graph_module, n, users)
+                # If q_node is fold, it will have no users,
+                # so it won't insert dequant node in following function.
                 self._insert_dequant_node(
-                    graph_module, n, self.q_dq_map[n.meta["quant_attrs"]["encoding"]]
+                    graph_module,
+                    n,
+                    self.q_dq_map[n.meta["quant_attrs"]["encoding"]],
                 )
 
     def call(self, graph_module: torch.fx.GraphModule):
         self._insert(graph_module)
+        graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)

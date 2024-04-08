@@ -10,8 +10,7 @@ import unittest
 
 import torch
 import torchvision
-from executorch import exir
-from executorch.exir import EdgeCompileConfig
+from executorch.exir import EdgeCompileConfig, to_edge
 from executorch.exir.passes.quant_fusion_pass import QuantFusionPass
 from executorch.exir.passes.spec_prop_pass import SpecPropPass
 from torch.ao.ns.fx.utils import compute_sqnr
@@ -29,6 +28,7 @@ from torch.ao.quantization.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
     XNNPACKQuantizer,
 )
+from torch.export import export
 from torch.testing import FileCheck
 from torch.testing._internal.common_quantized import override_quantized_engine
 
@@ -70,19 +70,17 @@ class TestQuantization(unittest.TestCase):
             compile_config = EdgeCompileConfig(
                 _check_ir_validity=False,
             )
-            m = (
-                exir.capture(m, example_inputs)
-                .to_edge(config=compile_config)
-                .transform(QuantFusionPass(), SpecPropPass())
-            )
+            m = to_edge(
+                export(m, example_inputs), compile_config=compile_config
+            ).transform([QuantFusionPass(), SpecPropPass()])
 
-            after_quant_result = m(*example_inputs)[0]
+            after_quant_result = m.exported_program().module()(*example_inputs)[0]
             FileCheck().check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_quantize_per_tensor"
             ).check(
                 "executorch_exir_dialects_edge__ops_quantized_decomposed_dequantize_per_tensor"
             ).run(
-                m.exported_program.graph_module.code
+                m.exported_program().graph_module.code
             )
             # after_quant_fusion_result = m(*example_inputs)[0]
 

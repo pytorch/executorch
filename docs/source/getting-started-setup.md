@@ -20,43 +20,46 @@
 </div>
 
 <!---- DO NOT MODIFY Progress Bar End--->
+```{note}
+  Before diving in, make sure you understand the concepts in the [ExecuTorch Overview](intro-overview.md)
+```
 
 # Setting Up ExecuTorch
+In this section, we'll learn how to
+* Set up an environment to work on ExecuTorch
+* Generate a sample ExecuTorch program
+* Build and run a program with the ExecuTorch runtime
 
-This tutorial walks you through an end-to-end example of configuring your
-environment for ExecuTorch, installing ExecuTorch,
-exporting your model, and finally building and running a runtime.
+## System Requirements
+### Operating System
 
-::::{grid} 2
-:::{grid-item-card}  What you will learn
+We've tested these instructions on the following systems, although they should
+also work in similar environments.
+
+
+::::{grid} 3
+:::{grid-item-card}  Linux (x86_64)
 :class-card: card-prerequisites
-* How to set up your environment to work on ExecuTorch
-* How to generate a sample ExecuTorch program
-* How to build and run an ExecuTorch runtime
+- CentOS 8+
+- Ubuntu 20.04.6 LTS+
+- RHEL 8+
 :::
-:::{grid-item-card} Prerequisites
+:::{grid-item-card} macOS (x86_64/M1/M2)
 :class-card: card-prerequisites
-* Understand the concepts defined in [ExecuTorch Overview](intro-overview.md)
+- Big Sur (11.0)+
+:::
+:::{grid-item-card} Windows (x86_64)
+:class-card: card-prerequisites
+- Windows Subsystem for Linux (WSL) with any of the Linux options
 :::
 ::::
 
-## Supported Host Environments
-
-We have tested these instructions on the following systems, although they should
-also work on other systems with similar environments.
-
-**Linux (x86_64)**
-- CentOS 8 or later
-- Ubuntu 20.04.6 LTS or later
-- RHEL 8 or later
-- Windows Subsystem for Linux running any of the above
-
-**macOS (x86_64/M1/M2)**
-- Big Sur or later
-
-The most critical requirements are:
-- The ability to install a recent version of `conda`, described below.
-- `g++` version 8 or higher, `clang++` version 8 or higher, or another
+### Software
+* `conda` or another virtual environment manager
+  - We recommend `conda` as it provides cross-language
+    support and integrates smoothly with `pip` (Python's built-in package manager)
+  - Otherwise, Python's built-in virtual environment manager `python venv` is a good alternative.
+* `g++` version 8 or higher, `clang++` version 8 or higher, or another
   C++17-compatible toolchain that supports GNU C-style [statement
   expressions](https://gcc.gnu.org/onlinedocs/gcc/Statement-Exprs.html) (`({ ...
   })` syntax).
@@ -65,250 +68,129 @@ Note that the cross-compilable core runtime code supports a wider range of
 toolchains, down to C++11. See the [Runtime Overview](./runtime-overview.md) for
 portability details.
 
-## Set up Your Environment
+## Environment Setup
 
-Before you can start working with ExecuTorch, you'll need to set up your
-environment. This is an important step to ensure that everything runs
-smoothly and efficiently. We recommend using `conda` to create and
-manage your virtual environment. Conda is a package management system
-and environment manager for Python and other programming languages,
-which is built on top of the Python package manager pip, and provides
-a more convenient and flexible way to manage packages and environments.
-In this section, you will set up your `conda` environment and install
-the required dependencies.
+### Create a Virtual Environment
 
-Follow these steps:
-
-1. If you do not have it already, install conda on your machine by following the
-   steps in the
-   [conda installation guide](https://conda.io/projects/conda/en/latest/user-guide/install/index.html).
-
-1. Clone the `executorch` repository:
-
+[Install conda on your machine](https://conda.io/projects/conda/en/latest/user-guide/install/index.html). Then, create a virtual environment to manage our dependencies.
    ```bash
-   git clone https://github.com/pytorch/executorch.git
-   ```
-
-1. Update the submodules:
-
-   ```bash
-   cd executorch
-   git submodule sync
-   git submodule update --init
-   ```
-
-1. Create and activate your conda environment:
-
-   ```bash
+   # Create and activate a conda environment named "executorch"
    conda create -yn executorch python=3.10.0
    conda activate executorch
    ```
 
-   Or alternatively use a Python virtual environment:
+### Clone and install ExecuTorch requirements
 
    ```bash
-   python3 -m venv .executorch
-   source .executorch/bin/activate
-   ```
+   # Clone the ExecuTorch repo from GitHub
+   git clone https://github.com/pytorch/executorch.git
+   cd executorch
 
-1. Install ExecuTorch and dependencies:
+   # Update and pull submodules
+   git submodule sync
+   git submodule update --init
 
-   ```bash
+   # Install ExecuTorch pip package and its dependencies, as well as
+   # development tools like CMake.
    ./install_requirements.sh
    ```
 
-You have successfully set up your environment to work with ExecuTorch. The next
-step is to generate a sample ExecuTorch program.
+   Use the [`--pybind` flag](https://github.com/pytorch/executorch/blob/main/install_requirements.sh#L26-L29) to install with pybindings and dependencies for other backends.
+   ```bash
+   ./install_requirements.sh --pybind <coreml | mps | xnnpack>
+   ```
+After setting up your environment, you are ready to convert your PyTorch programs
+to ExecuTorch.
+## Create an ExecuTorch program
 
-## Generate a Sample ExecuTorch program
+After setting up your environment, you are ready to convert your PyTorch programs
+to ExecuTorch.
 
-After you set up your environment, you are ready to convert your programs
-into ExecuTorch programs. You will need to use `torch.export` and the
-`executorch.exir` to export your program. Then, you can save your program as
-a `.pte` file, which is the file extension ExecuTorch expects. To demonstrate
-how to do it, we will generate an ExecuTorch program file from an `nn.Module`.
+### Export a Program
+ExecuTorch provides APIs to compile a PyTorch [`nn.Module`](https://pytorch.org/docs/stable/generated/torch.nn.Module.html) to a `.pte` binary consumed by the ExecuTorch runtime.
+1. [`torch.export`](https://pytorch.org/docs/stable/export.html)
+1. [`exir.to_edge`](https://pytorch.org/executorch/stable/export-to-executorch-api-reference.html#exir.to_edge)
+1. [`exir.to_executorch`](ir-exir.md)
+1. Save the result as a [`.pte` binary](pte-file-format.md) to be consumed by the ExecuTorch runtime.
 
-You can generate an ExecuTorch program by using a sample script or by using
-the Python interpreter.
 
-We have created the `export.py` script that demonstrates a simple model
-export to flatbuffer. This script is available
-in the [pytorch/executorch](https://github.com/pytorch/executorch/tree/main/examples/portable)
-repository.
+Let's try this using with a simple PyTorch model that adds its inputs. Create a file called `export_add.py` with the following code:
+```python
+import torch
+from torch.export import export
+from executorch.exir import to_edge
 
-To generate a sample program, complete the following steps:
+# Start with a PyTorch model that adds two input tensors (matrices)
+class Add(torch.nn.Module):
+  def __init__(self):
+    super(Add, self).__init__()
 
-1. Run the `export.py` script:
+  def forward(self, x: torch.Tensor, y: torch.Tensor):
+      return x + y
+
+# 1. torch.export: Defines the program with the ATen operator set.
+aten_dialect = export(Add(), (torch.ones(1), torch.ones(1)))
+
+# 2. to_edge: Make optimizations for Edge devices
+edge_program = to_edge(aten_dialect)
+
+# 3. to_executorch: Convert the graph to an ExecuTorch program
+executorch_program = edge_program.to_executorch()
+
+# 4. Save the compiled .pte program
+with open("add.pte", "wb") as file:
+    file.write(executorch_program.buffer)
+
+```
+
+Then, execute it from your terminal.
+```bash
+python3 export_add.py
+```
+
+See the [ExecuTorch export tutorial](tutorials_source/export-to-executorch-tutorial.py) to learn more about the export process.
+
+
+## Build & Run
+
+After creating a program, we can use the ExecuTorch runtime to execute it.
+
+For now, let's use [`executor_runner`](https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp), an example that runs the `forward` method on your program using the ExecuTorch runtime.
+
+### Build Tooling Setup
+The ExecuTorch repo uses CMake to build its C++ code. Here, we'll configure it to build the `executor_runner` tool to run it on our desktop OS.
+  ```bash
+  # Clean and configure the CMake build system. Compiled programs will appear in the executorch/cmake-out directory we create here.
+  (rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+
+  # Build the executor_runner target
+  cmake --build cmake-out --target executor_runner -j9
+  ```
+
+### Run Your Program
+
+Now that we've exported a program and built the runtime, let's execute it!
 
   ```bash
-  python3 -m examples.portable.scripts.export --model_name="add"
+  ./cmake-out/executor_runner --model_path add.pte
   ```
+Our output is a `torch.Tensor` with a size of 1. The `executor_runner` sets all input values to a [`torch.ones`](https://pytorch.org/docs/stable/generated/torch.ones.html) tensor, so when `x=[1]` and `y=[1]`, we get `[1]+[1]=[2]`
+  :::{dropdown} Sample Output
 
-  :::{dropdown} Output
   ```
-  Exported graph:
-   graph():
-     %arg0_1 : [num_users=3] = placeholder[target=arg0_1]
-      %arg1_1 : [num_users=1] = placeholder[target=arg1_1]
-      %aten_add_tensor : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%arg0_1, %arg1_1), kwargs = {})
-      %aten_add_tensor_1 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor, %arg0_1), kwargs = {})
-      %aten_add_tensor_2 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_1, %arg0_1), kwargs = {})
-      %aten_add_tensor_3 : [num_users=1] = call_function[target=executorch.exir.dialects.edge._ops.aten.add.Tensor](args = (%aten_add_tensor_2, %aten_add_tensor_2), kwargs = {})
-      return (aten_add_tensor_3,)
-  Saving exported program to add.pte
+Output 0: tensor(sizes=[1], [2.])
   ```
   :::
 
-  This command has created a `add.pte` file that contains your sample program,
-  which adds its inputs multiple times.
-
-Alternatively, you can use a Python interpreter to perform similar steps, this
-time creating a `mul.pte` program file that multiplies its inputs:
-
-```python
-import executorch.exir as exir
-from executorch.exir.tests.models import Mul
-m = Mul()
-open("mul.pte", "wb").write(to_edge(export(m, m.get_random_inputs())).to_executorch().buffer)
-```
-
-In this step, you learned how you can export your PyTorch program to an ExecuTorch
-program. You can apply the same principle to your own PyTorch programs.
-
-The next step is to run your program by setting up Buck2 and building an
-`executor_runner`.
-
-## Building a Runtime
-
-After you have exported your program, you are almost ready to run it.
-The next step involves using Buck2 to build a runtime.
-
-**Buck2** is an open-source build system that enables developers to manage
-project dependencies easily and efficiently. We will use Buck2 to build the
-`executor_runner`, a sample wrapper for the ExecuTorch runtime which includes
-all the operators and backends.
-
-You will need the following prerequisits for this section:
-
-* The `zstd` command line tool — install by running
-   ```bash
-   pip3 install zstd
-   ```
-* Version `${executorch_version:buck2}` of the `buck2` commandline tool — you can download a
-  prebuilt archive for your system from [the Buck2
-  repo](https://github.com/facebook/buck2/releases/tag/2024-02-15). Note that
-  the version is important, and newer or older versions may not work with the
-  version of the buck2 prelude used by the ExecuTorch repo.
-
-Complete the following steps:
-
-1. Ensure that Git has fetched and updated the submodules. This is necessary
-   whenever the commit hash of a submodule changes. Therefore, you need
-   to periodically sync your submodules with upstream:
-
-   ```bash
-   cd executorch
-   git submodule sync
-   git submodule update --init
-   ```
-
-1. Install ExecuTorch and dependencies:
-
-   ```bash
-   ./install_requirements.sh
-   ```
-
-1. Configure Buck2 by decompressing with the following command (filename depends
-   on your system):
-
-   ```bash
-   # For example, buck2-x86_64-unknown-linux-musl.zst or buck2-aarch64-apple-darwin.zst
-   zstd -cdq buck2-DOWNLOADED_FILENAME.zst > /tmp/buck2 && chmod +x /tmp/buck2
-   ```
-
-   You may want to copy the `buck2` binary into your `$PATH` so you can run it
-   as `buck2`.
-
-1. Build a binary:
-
-   ```bash
-   /tmp/buck2 build //examples/portable/executor_runner:executor_runner --show-output
-   ```
-
-   :::{dropdown} Output
-
-   ```
-   File changed: root//.git/config.lock
-   File changed: root//.git/config
-   File changed: root//.git/modules
-   27036 additional file change events
-   Build ID: e725eb0d-f4a1-484e-b0d3-8133d67b6fdd
-   Network: Up:   0 B              Down: 670 KiB
-   Command: build.                 Remaining: 340/954. Cache hits: 0%. Time elapsed: 13.2s
-   …
-   Cache hits: 0%. Commands: 376 (cached: 0, remote: 0, local: 376)
-   BUILD SUCCEEDED
-   ```
-   :::
-
-   The `--show-output` flag prints the path to the executable if you want to run it directly.
-
-   If you run into `Stderr: clang-14: error: invalid linker name in argument
-   '-fuse-ld=lld'`, `lld` is not available on your system. Try installing it
-   with `conda` or with your system's package manager.
-   ```bash
-   conda install -c conda-forge lld
-   ```
-
-Now that you have built our sample programs, you can proceed to
-run them.
-
-## Run Your Program
-
-After you build your program, you are ready to run it. We will use
-the `buck run` command to run our program.
-
-1. Run the binary:
-
-   * To run the `add.pte` program:
-
-     ```bash
-     /tmp/buck2 run //examples/portable/executor_runner:executor_runner -- --model_path add.pte
-     ```
-
-     :::{dropdown} Sample Output
-
-     ```
-     Build ID: 4a23602b-25ba-4b95-a212-3cd077136062
-     Network: Up: 0 B  Down: 0 B
-     Jobs completed: 3. Time elapsed: 0.0s.
-     I 00:00:00.005837 executorch:executor_runner.cpp:75] Model file add.pte is loaded.
-     I 00:00:00.005852 executorch:executor_runner.cpp:85] Running method forward
-     I 00:00:00.005860 executorch:executor_runner.cpp:140] Setting up non-const buffer 1, size 48.
-     I 00:00:00.005909 executorch:executor_runner.cpp:181] Method loaded.
-     I 00:00:00.005913 executorch:util.h:104] input already initialized, refilling.
-     I 00:00:00.005915 executorch:util.h:104] input already initialized, refilling.
-     I 00:00:00.005917 executorch:executor_runner.cpp:186] Inputs prepared.
-     I 00:00:00.005949 executorch:executor_runner.cpp:195] Model executed successfully.
-     I 00:00:00.005954 executorch:executor_runner.cpp:210] 8.000000
-     ```
-     :::
-
-Alternatively, you can execute the binary directly from the `--show-output` path
-shown in the build step. For example, you can run the following command for the
-`add.pte` program:
-
-```bash
-./buck-out/.../executor_runner --model_path add.pte
-```
+To learn how to build a similar program, visit the [ExecuTorch in C++ Tutorial](running-a-model-cpp-tutorial.md).
 
 ## Next Steps
 
 Congratulations! You have successfully exported, built, and run your first
-ExecuTorch program. Now that you have a basic understanding of how ExecuTorch
-works, you can start exploring its advanced features and capabilities. Here
-is a list of sections you might want to read next:
+ExecuTorch program. Now that you have a basic understanding of ExecuTorch,
+explore its advanced features and capabilities below.
 
-* [Exporting a model](export-overview.md)
-* Using [EXIR](ir-exir.md) for advanced exports
-* Review more advanced examples in the [executorch/examples](https://github.com/pytorch/executorch/tree/main/examples) directory
+* Build an [Android](demo-apps-android.md) or [iOS](demo-apps-ios.md) demo app
+* Learn more about the [export process](export-overview.md)
+* Dive deeper into the [Export Intermediate Representation (EXIR)](ir-exir.md) for complex export workflows
+* Refer to [advanced examples in executorch/examples](https://github.com/pytorch/executorch/tree/main/examples)
