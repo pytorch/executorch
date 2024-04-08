@@ -129,14 +129,6 @@ class vTensor final {
   vTensor(vTensor&& other) = default;
   vTensor& operator=(vTensor&& other) = default;
 
-  // Used for passing buffer sizes and strides data to shaders
-  struct BufferMetadata {
-    api::utils::uvec4 sizes;
-    api::utils::uvec4 strides;
-    uint32_t ndim;
-    uint32_t buffer_length;
-  };
-
  private:
   // Tensor Options
   api::ScalarType dtype_;
@@ -158,10 +150,6 @@ class vTensor final {
   // vTensor can be virtually resized via virtual_resize() which will cause it
   // to be interpreted as a tensor with a different size.
   api::utils::uvec3 virtual_extents_;
-
-  // A Vulkan uniform buffer containing sizes and strides of the GPU buffer that
-  // can be passed into a shader.
-  api::UniformParamsBuffer metadata_uniform_;
 
   // A Vulkan uniform buffer containing the tensor sizes that can be passed into
   // a shader.
@@ -286,12 +274,6 @@ class vTensor final {
   }
 
   /*
-   * Get a uniform buffer containing sizes and strides information of the GPU
-   * buffer
-   */
-  api::VulkanBuffer& buffer_metadata();
-
-  /*
    * Get a uniform buffer object containing the tensor sizes to use in a compute
    * shader. Note that the UBO will be created the first time this function is
    * called.
@@ -311,12 +293,6 @@ class vTensor final {
    * function is called.
    */
   std::shared_ptr<api::UniformParamsBuffer> extents_ubo();
-
-  /*
-   * Constructs a BufferMetdata struct based on the original sizes and strides
-   * to pass into a shader.
-   */
-  BufferMetadata get_cpu_buffer_metadata() const;
 
   inline void set_is_quantized() {
     is_quantized_ = true;
