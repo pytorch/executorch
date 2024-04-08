@@ -444,10 +444,7 @@
 <li><p>Alternatively, you can follow <a class="reference external" href="https://github.com/pytorch/executorch/blob/856e085b9344c8b0bf220a97976140a5b76356aa/examples/demo-apps/android/LlamaDemo/SDK.md">this guide</a> to set up Java/SDK/NDK with CLI.</p></li>
 <li><p>Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.</p></li>
 </ul>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>, with NDK 25.0.8775105.</p>
-</div>
+<p>Note: This demo app and tutorial has only been validated with arm64-v8a <a class="reference external" href="https://developer.android.com/ndk/guides/abis">ABI</a>, with NDK 25.0.8775105.</p>
 </div>
 <div class="section" id="getting-models">
 <h2>Getting models<a class="headerlink" href="#getting-models" title="Permalink to this heading">¶</a></h2>
@@ -458,10 +455,7 @@ adb<span class="w"> </span>push<span class="w"> </span>llama2.pte<span class="w"
 adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class="w"> </span>/data/local/tmp/llama
 </pre></div>
 </div>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>The demo app searches in <code class="docutils literal notranslate"><span class="pre">/data/local/tmp/llama</span></code> for .pte and .bin files as LLAMA model and tokenizer.</p>
-</div>
+<p>Note: The demo app searches in <code class="docutils literal notranslate"><span class="pre">/data/local/tmp/llama</span></code> for .pte and .bin files as LLAMA model and tokenizer.</p>
 </div>
 <div class="section" id="build-jni-library">
 <h2>Build JNI library<a class="headerlink" href="#build-jni-library" title="Permalink to this heading">¶</a></h2>
@@ -469,16 +463,13 @@ adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class=
 <li><p>Open a terminal window and navigate to the root directory of the <code class="docutils literal notranslate"><span class="pre">executorch</span></code>.</p></li>
 <li><p>Set the following environment variables:</p></li>
 </ol>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>&lt;path_to_android_ndk&gt; is the root for the NDK, which is usually under
-~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md.
-We use &lt;path_to_android_ndk&gt;/build/cmake/android.toolchain.cmake for CMake to cross-compile.</p>
-</div>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_android_ndk&gt;
 <span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
 </pre></div>
 </div>
+<p>Note: <code class="docutils literal notranslate"><span class="pre">&lt;path_to_android_ndk&gt;</span></code> is the root for the NDK, which is usually under
+<code class="docutils literal notranslate"><span class="pre">~/Library/Android/sdk/ndk/XX.Y.ZZZZZ</span></code> for macOS, and contains NOTICE and README.md.
+We use <code class="docutils literal notranslate"><span class="pre">&lt;path_to_android_ndk&gt;/build/cmake/android.toolchain.cmake</span></code> for CMake to cross-compile.</p>
 <ol class="arabic simple" start="3">
 <li><p>Run the following command set up the required JNI library:</p></li>
 </ol>
