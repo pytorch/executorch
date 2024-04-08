@@ -119,15 +119,19 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
         return
 
     input_act_qspec = quantization_config.input_activation
-    output_act_qspec = quantization_config.output_activation
+    output_act_qspec = (
+        quantization_config.output_activation
+        if node.meta["val"].dtype == torch.float32
+        else None
+    )
 
     input_qspec_map = {}
     input_act0 = node.args[0]
-    if isinstance(input_act0, Node):
+    if isinstance(input_act0, Node) and input_act0.meta["val"].dtype == torch.float32:
         input_qspec_map[input_act0] = input_act_qspec
 
     input_act1 = node.args[1]
-    if isinstance(input_act1, Node):
+    if isinstance(input_act1, Node) and input_act1.meta["val"].dtype == torch.float32:
         input_qspec_map[input_act1] = input_act_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(

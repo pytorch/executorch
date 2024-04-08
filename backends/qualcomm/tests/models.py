@@ -29,7 +29,7 @@ class AddConstantLong(torch.nn.Module):
         super().__init__()
 
     def forward(self, x):
-        return 10.0 + x
+        return 10 + x
 
 
 class Arange(torch.nn.Module):
