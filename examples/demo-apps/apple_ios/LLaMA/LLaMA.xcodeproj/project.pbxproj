@@ -17,6 +17,21 @@
 		0324D6922BAACB6900DEF36F /* ResourceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6872BAACB6900DEF36F /* ResourceManager.swift */; };
 		0324D6932BAACB6900DEF36F /* ResourceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324D6882BAACB6900DEF36F /* ResourceMonitor.swift */; };
 		0324D6962BAACB7000DEF36F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0324D6942BAACB7000DEF36F /* Assets.xcassets */; };
+		03312C192BBFC940002106EF /* coreml_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C182BBFC940002106EF /* coreml_backend */; };
+		03312C1B2BBFC940002106EF /* coreml_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1A2BBFC940002106EF /* coreml_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C1D2BBFC940002106EF /* custom_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1C2BBFC940002106EF /* custom_backend */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C1F2BBFC940002106EF /* custom_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C1E2BBFC940002106EF /* custom_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C252BBFC940002106EF /* mps_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C242BBFC940002106EF /* mps_backend */; };
+		03312C272BBFC940002106EF /* mps_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C262BBFC940002106EF /* mps_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C292BBFC940002106EF /* optimized_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C282BBFC940002106EF /* optimized_backend */; };
+		03312C2B2BBFC940002106EF /* optimized_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2A2BBFC940002106EF /* optimized_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C2D2BBFC940002106EF /* portable_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2C2BBFC940002106EF /* portable_backend */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C2F2BBFC940002106EF /* portable_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C2E2BBFC940002106EF /* portable_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C312BBFC940002106EF /* quantized_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C302BBFC940002106EF /* quantized_backend */; };
+		03312C332BBFC940002106EF /* quantized_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C322BBFC940002106EF /* quantized_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C352BBFC940002106EF /* xnnpack_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C342BBFC940002106EF /* xnnpack_backend */; };
+		03312C372BBFC940002106EF /* xnnpack_backend_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C362BBFC940002106EF /* xnnpack_backend_debug */; settings = {ATTRIBUTES = (Required, ); }; };
+		03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */ = {isa = PBXBuildFile; productRef = 03312C3D2BBFD076002106EF /* executorch_debug */; };
 		03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; };
 		03729EDC2BB1F8DE00152F2E /* LLaMARunner.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		03729EE12BB1F93800152F2E /* LLaMARunner.mm in Sources */ = {isa = PBXBuildFile; fileRef = 0324D69A2BAACB7C00DEF36F /* LLaMARunner.mm */; };
@@ -28,12 +43,6 @@
 		03729F132BB2042B00152F2E /* sampler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F112BB2042B00152F2E /* sampler.cpp */; };
 		03729F162BB2043600152F2E /* tokenizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03729F142BB2043600152F2E /* tokenizer.cpp */; };
 		03729F172BB2043600152F2E /* tokenizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 03729F152BB2043600152F2E /* tokenizer.h */; };
-		0395C6D32BB34ED10090705A /* coreml_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 0395C6D22BB34ED10090705A /* coreml_backend */; };
-		0395C6D52BB34ED10090705A /* executorch in Frameworks */ = {isa = PBXBuildFile; productRef = 0395C6D42BB34ED10090705A /* executorch */; };
-		0395C6D72BB34ED10090705A /* mps_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 0395C6D62BB34ED10090705A /* mps_backend */; };
-		0395C6DB2BB34ED10090705A /* portable_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 0395C6DA2BB34ED10090705A /* portable_backend */; };
-		0395C6DD2BB34ED10090705A /* quantized_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 0395C6DC2BB34ED10090705A /* quantized_backend */; };
-		0395C6DF2BB34ED10090705A /* xnnpack_backend in Frameworks */ = {isa = PBXBuildFile; productRef = 0395C6DE2BB34ED10090705A /* xnnpack_backend */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,12 +100,21 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0395C6D72BB34ED10090705A /* mps_backend in Frameworks */,
-				0395C6DD2BB34ED10090705A /* quantized_backend in Frameworks */,
-				0395C6DB2BB34ED10090705A /* portable_backend in Frameworks */,
+				03312C272BBFC940002106EF /* mps_backend_debug in Frameworks */,
+				03312C312BBFC940002106EF /* quantized_backend in Frameworks */,
+				03312C252BBFC940002106EF /* mps_backend in Frameworks */,
+				03312C2D2BBFC940002106EF /* portable_backend in Frameworks */,
+				03312C1D2BBFC940002106EF /* custom_backend in Frameworks */,
+				03312C352BBFC940002106EF /* xnnpack_backend in Frameworks */,
+				03312C372BBFC940002106EF /* xnnpack_backend_debug in Frameworks */,
+				03312C1B2BBFC940002106EF /* coreml_backend_debug in Frameworks */,
 				03729EDB2BB1F8DE00152F2E /* LLaMARunner.framework in Frameworks */,
-				0395C6DF2BB34ED10090705A /* xnnpack_backend in Frameworks */,
-				0395C6D32BB34ED10090705A /* coreml_backend in Frameworks */,
+				03312C2B2BBFC940002106EF /* optimized_backend_debug in Frameworks */,
+				03312C2F2BBFC940002106EF /* portable_backend_debug in Frameworks */,
+				03312C292BBFC940002106EF /* optimized_backend in Frameworks */,
+				03312C192BBFC940002106EF /* coreml_backend in Frameworks */,
+				03312C332BBFC940002106EF /* quantized_backend_debug in Frameworks */,
+				03312C1F2BBFC940002106EF /* custom_backend_debug in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,7 +122,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0395C6D52BB34ED10090705A /* executorch in Frameworks */,
+				03312C3E2BBFD076002106EF /* executorch_debug in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,11 +283,20 @@
 			);
 			name = LLaMA;
 			packageProductDependencies = (
-				0395C6D22BB34ED10090705A /* coreml_backend */,
-				0395C6D62BB34ED10090705A /* mps_backend */,
-				0395C6DA2BB34ED10090705A /* portable_backend */,
-				0395C6DC2BB34ED10090705A /* quantized_backend */,
-				0395C6DE2BB34ED10090705A /* xnnpack_backend */,
+				03312C182BBFC940002106EF /* coreml_backend */,
+				03312C1A2BBFC940002106EF /* coreml_backend_debug */,
+				03312C1C2BBFC940002106EF /* custom_backend */,
+				03312C1E2BBFC940002106EF /* custom_backend_debug */,
+				03312C242BBFC940002106EF /* mps_backend */,
+				03312C262BBFC940002106EF /* mps_backend_debug */,
+				03312C282BBFC940002106EF /* optimized_backend */,
+				03312C2A2BBFC940002106EF /* optimized_backend_debug */,
+				03312C2C2BBFC940002106EF /* portable_backend */,
+				03312C2E2BBFC940002106EF /* portable_backend_debug */,
+				03312C302BBFC940002106EF /* quantized_backend */,
+				03312C322BBFC940002106EF /* quantized_backend_debug */,
+				03312C342BBFC940002106EF /* xnnpack_backend */,
+				03312C362BBFC940002106EF /* xnnpack_backend_debug */,
 			);
 			productName = LLaMA;
 			productReference = 036CAF9D2BB1444500D6C2D5 /* LLaMA.app */;
@@ -290,7 +317,7 @@
 			);
 			name = LLaMARunner;
 			packageProductDependencies = (
-				0395C6D42BB34ED10090705A /* executorch */,
+				03312C3D2BBFD076002106EF /* executorch_debug */,
 			);
 			productName = LLaMARunner;
 			productReference = 03729ED52BB1F8DE00152F2E /* LLaMARunner.framework */;
@@ -324,7 +351,7 @@
 			);
 			mainGroup = 032C01662AC228E5002955E1;
 			packageReferences = (
-				0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */,
+				03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */,
 			);
 			productRefGroup = 032C01662AC228E5002955E1;
 			projectDirPath = "";
@@ -456,7 +483,6 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				OTHER_LDFLAGS = "-all_load";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -520,7 +546,6 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				OTHER_LDFLAGS = "-all_load";
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 5.0;
@@ -549,6 +574,31 @@
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Debug-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Debug-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Debug-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Debug-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Debug-0.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Debug-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Debug-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Debug-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Debug-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Debug-1.a",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -582,6 +632,31 @@
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Release-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Release-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Release-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Release-0.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Release-0.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libportable_backend-Release-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcustom_backend-Release-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libxnnpack_backend-Release-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libcoreml_backend-Release-1.a",
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libmps_backend-Release-1.a",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama;
 				PRODUCT_NAME = "$(PROJECT_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -616,6 +691,15 @@
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-0.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-1.a",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
@@ -652,6 +736,15 @@
 				MARKETING_VERSION = 1.0;
 				MODULE_VERIFIER_SUPPORTED_LANGUAGES = "objective-c objective-c++";
 				MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS = "gnu17 gnu++20";
+				OTHER_LDFLAGS = "";
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-0.a",
+				);
+				"OTHER_LDFLAGS[sdk=iphonesimulator*]" = (
+					"-force_load",
+					"$(BUILT_PRODUCTS_DIR)/libexecutorch-Debug-1.a",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.pytorch.executorch.llama.LLaMARunner;
 				PRODUCT_NAME = "$(TARGET_NAME:c99extidentifier)";
 				SKIP_INSTALL = YES;
@@ -699,7 +792,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */ = {
+		03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pytorch/executorch";
 			requirement = {
@@ -710,35 +803,80 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0395C6D22BB34ED10090705A /* coreml_backend */ = {
+		03312C182BBFC940002106EF /* coreml_backend */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = coreml_backend;
 		};
-		0395C6D42BB34ED10090705A /* executorch */ = {
+		03312C1A2BBFC940002106EF /* coreml_backend_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */;
-			productName = executorch;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = coreml_backend_debug;
 		};
-		0395C6D62BB34ED10090705A /* mps_backend */ = {
+		03312C1C2BBFC940002106EF /* custom_backend */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = custom_backend;
+		};
+		03312C1E2BBFC940002106EF /* custom_backend_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = custom_backend_debug;
+		};
+		03312C242BBFC940002106EF /* mps_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = mps_backend;
 		};
-		0395C6DA2BB34ED10090705A /* portable_backend */ = {
+		03312C262BBFC940002106EF /* mps_backend_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = mps_backend_debug;
+		};
+		03312C282BBFC940002106EF /* optimized_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = optimized_backend;
+		};
+		03312C2A2BBFC940002106EF /* optimized_backend_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = optimized_backend_debug;
+		};
+		03312C2C2BBFC940002106EF /* portable_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = portable_backend;
 		};
-		0395C6DC2BB34ED10090705A /* quantized_backend */ = {
+		03312C2E2BBFC940002106EF /* portable_backend_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = portable_backend_debug;
+		};
+		03312C302BBFC940002106EF /* quantized_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = quantized_backend;
 		};
-		0395C6DE2BB34ED10090705A /* xnnpack_backend */ = {
+		03312C322BBFC940002106EF /* quantized_backend_debug */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 0395C6D12BB34ED10090705A /* XCRemoteSwiftPackageReference "executorch" */;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = quantized_backend_debug;
+		};
+		03312C342BBFC940002106EF /* xnnpack_backend */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
 			productName = xnnpack_backend;
+		};
+		03312C362BBFC940002106EF /* xnnpack_backend_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = xnnpack_backend_debug;
+		};
+		03312C3D2BBFD076002106EF /* executorch_debug */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03312C172BBFC940002106EF /* XCRemoteSwiftPackageReference "executorch" */;
+			productName = executorch_debug;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -12,9 +12,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 ExecuteNode::ExecuteNode(
     ComputeGraph& graph,
@@ -53,6 +51,4 @@ void ExecuteNode::encode(ComputeGraph* graph) {
       descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

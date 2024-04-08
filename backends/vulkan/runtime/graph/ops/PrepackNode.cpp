@@ -13,9 +13,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/BindingUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/StagingUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 PrepackNode::PrepackNode(
     ComputeGraph& graph,
@@ -41,10 +39,8 @@ void PrepackNode::encode(ComputeGraph* graph) {
   TensorRef tref = graph->get_val(tref_).toTensorRef();
   vTensor packed = graph->get_val(packed_).toTensor();
 
-  // TODO: Extract to standalone function, to support other types of prepacking.
-  api::StorageBuffer staging(
-      graph->context(), packed.dtype(), packed.gpu_nbytes());
   size_t numel = api::utils::multiply_integers(tref.sizes);
+  api::StorageBuffer staging(graph->context(), tref.dtype, numel);
   size_t nbytes = numel * api::element_size(tref.dtype);
   copy_ptr_to_staging(tref.data, staging, nbytes);
 
@@ -67,6 +63,4 @@ void PrepackNode::encode(ComputeGraph* graph) {
       descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

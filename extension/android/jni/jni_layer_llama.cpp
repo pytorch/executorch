@@ -20,6 +20,11 @@
 #include <executorch/runtime/platform/platform.h>
 #include <executorch/runtime/platform/runtime.h>
 
+#if defined(ET_USE_THREADPOOL)
+#include <executorch/backends/xnnpack/threadpool/cpuinfo_utils.h>
+#include <executorch/backends/xnnpack/threadpool/threadpool.h>
+#endif
+
 #include <fbjni/ByteBuffer.h>
 #include <fbjni/fbjni.h>
 
@@ -67,6 +72,18 @@ class ExecuTorchLlamaCallbackJni
     facebook::jni::local_ref<jstring> s = facebook::jni::make_jstring(result);
     method(self(), s);
   }
+
+  void onStats(const Runner::Stats& result) const {
+    static auto cls = ExecuTorchLlamaCallbackJni::javaClassStatic();
+    static const auto method = cls->getMethod<void(jfloat)>("onStats");
+    double eval_time =
+        (double)(result.inference_end_ms - result.prompt_eval_end_ms);
+
+    float tps = result.num_generated_tokens / eval_time *
+        result.SCALING_FACTOR_UNITS_PER_SECOND;
+
+    method(self(), tps);
+  }
 };
 
 class ExecuTorchLlamaJni
@@ -91,6 +108,17 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> model_path,
       facebook::jni::alias_ref<jstring> tokenizer_path,
       jfloat temperature) {
+#if defined(ET_USE_THREADPOOL)
+    // Reserve 1 thread for the main thread.
+    uint32_t num_performant_cores =
+        torch::executorch::cpuinfo::get_num_performant_cores() - 1;
+    if (num_performant_cores > 0) {
+      ET_LOG(Info, "Resetting threadpool to %d threads", num_performant_cores);
+      torch::executorch::threadpool::get_threadpool()->_unsafe_reset_threadpool(
+          num_performant_cores);
+    }
+#endif
+
     runner_ = std::make_unique<Runner>(
         model_path->toStdString().c_str(),
         tokenizer_path->toStdString().c_str(),
@@ -101,9 +129,10 @@ class ExecuTorchLlamaJni
       facebook::jni::alias_ref<jstring> prompt,
       facebook::jni::alias_ref<ExecuTorchLlamaCallbackJni> callback) {
     runner_->generate(
-        prompt->toStdString(), 128, [callback](std::string result) {
-          callback->onResult(result);
-        });
+        prompt->toStdString(),
+        128,
+        [callback](std::string result) { callback->onResult(result); },
+        [callback](const Runner::Stats& result) { callback->onStats(result); });
     return 0;
   }
 

@@ -34,7 +34,8 @@ from executorch.examples.models.deeplab_v3 import DeepLabV3ResNet101Model
 from executorch.examples.models.edsr import EdsrModel
 from executorch.examples.models.inception_v3 import InceptionV3Model
 from executorch.examples.models.inception_v4 import InceptionV4Model
-from executorch.examples.models.llama2 import Llama2Model
+
+# from executorch.examples.models.llama2 import Llama2Model
 from executorch.examples.models.mobilebert import MobileBertModelExample
 from executorch.examples.models.mobilenet_v2 import MV2Model
 from executorch.examples.models.mobilenet_v3 import MV3Model
@@ -441,7 +442,8 @@ class TestQNNFloatingPointModel(TestQNN):
             EdsrModel(),
             InceptionV3Model(),
             InceptionV4Model(),
-            Llama2Model(),
+            # The module of llama is changing frequently. Reopen it when it's stable
+            # Llama2Model(),
             MV2Model(),
             MV3Model(),
             MobileBertModelExample(),
@@ -924,7 +926,8 @@ class TestQNNQuantizedModel(TestQNN):
             {"module": EdsrModel(), "annotation": ()},
             {"module": InceptionV3Model(), "annotation": ()},
             {"module": InceptionV4Model(), "annotation": ()},
-            {"module": Llama2Model(), "annotation": ()},
+            # The module of llama is changing frequently. Reopen it when it's stable
+            # {"module": Llama2Model(), "annotation": ()},
             {"module": MV2Model(), "annotation": ()},
             {"module": MV3Model(), "annotation": ()},
             # only works on QNN 2.12 so far
@@ -980,7 +983,7 @@ class TestQNNQuantizedModel(TestQNN):
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
-        # check if requantization work
+        # check if requantization work by reusing the 8bit qdq module
         module = self.get_qdq_module(
             module, sample_input, quant_dtype=QuantDtype.use_16a16w
         )
@@ -1250,6 +1253,51 @@ class TestQNNQuantizedUtils(TestQNN):
         self.lower_module_and_test_output(module, sample_input)
 
 
+class TestExampleOssScript(TestQNN):
+    def required_envs(self, conditions=None) -> bool:
+        conditions = [] if conditions is None else conditions
+        return all(
+            [
+                self.executorch_root,
+                self.artifact_dir,
+                *conditions,
+            ]
+        )
+
+    def test_fbnet(self):
+        if not self.required_envs([self.image_dataset]):
+            self.skipTest("missing required envs")
+
+        cmds = [
+            "python",
+            f"{self.executorch_root}/examples/qualcomm/oss_scripts/fbnet.py",
+            "--dataset",
+            self.image_dataset,
+            "--artifact",
+            self.artifact_dir,
+            "--build_folder",
+            self.build_folder,
+            "--device",
+            self.device,
+            "--model",
+            self.model,
+            "--ip",
+            self.ip,
+            "--port",
+            str(self.port),
+        ]
+        if self.host:
+            cmds.extend(["--host", self.host])
+
+        p = subprocess.Popen(cmds, stdout=subprocess.DEVNULL)
+        with Listener((self.ip, self.port)) as listener:
+            conn = listener.accept()
+            p.communicate()
+            msg = json.loads(conn.recv())
+            self.assertGreaterEqual(msg["top_1"], 60)
+            self.assertGreaterEqual(msg["top_5"], 90)
+
+
 class TestExampleScript(TestQNN):
     def required_envs(self, conditions=None) -> bool:
         conditions = [] if conditions is None else conditions
@@ -1471,6 +1519,9 @@ class TestExampleScript(TestQNN):
             self.assertGreaterEqual(msg["MIoU"], 0.55)
 
     def test_dummy_llama2(self):
+        self.skipTest(
+            "The module of llama is changing frequently. Reopen it when it's stable"
+        )
         if not self.required_envs():
             self.skipTest("missing required envs")
 
@@ -1505,6 +1556,9 @@ class TestExampleScript(TestQNN):
 
     @unittest.expectedFailure
     def test_ptq_dummy_llama2(self):
+        self.skipTest(
+            "The module of llama is changing frequently. Reopen it when it's stable"
+        )
         if not self.required_envs():
             self.skipTest("missing required envs")
 

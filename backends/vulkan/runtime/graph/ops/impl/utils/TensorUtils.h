@@ -8,13 +8,9 @@
 
 #pragma once
 
-#ifdef USE_VULKAN_API
+#include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <ATen/native/vulkan/api/api.h>
-
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 //
 // Tensor output size calculation functions
@@ -60,8 +56,12 @@ api::utils::ivec2 create_broadcast_params(const vTensor& t1, const vTensor& t2);
 api::utils::uvec3 adaptive_work_group_size(
     const api::utils::uvec3& global_work_group);
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+//
+// Tensor dim utilities
+//
 
-#endif /* USE_VULKAN_API */
+inline int64_t normalize(const int64_t dimension, const int64_t n) {
+  return (dimension % n + n) % n;
+}
+
+} // namespace vkcompute

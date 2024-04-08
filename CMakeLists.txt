@@ -56,45 +56,6 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-# --- cpuinfo
-set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
-set(CPUINFO_BUILD_TOOLS
-    OFF
-    CACHE BOOL "")
-set(CPUINFO_BUILD_UNIT_TESTS
-    OFF
-    CACHE BOOL "")
-set(CPUINFO_BUILD_MOCK_TESTS
-    OFF
-    CACHE BOOL "")
-set(CPUINFO_BUILD_BENCHMARKS
-    OFF
-    CACHE BOOL "")
-set(CPUINFO_LIBRARY_TYPE
-    "static"
-    CACHE STRING "")
-set(CPUINFO_LOG_LEVEL
-    "error"
-    CACHE STRING "")
-set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
-add_subdirectory("${CPUINFO_SOURCE_DIR}")
-
-# --- pthreadpool
-set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
-set(PTHREADPOOL_BUILD_TESTS
-    OFF
-    CACHE BOOL "")
-set(PTHREADPOOL_BUILD_BENCHMARKS
-    OFF
-    CACHE BOOL "")
-set(PTHREADPOOL_LIBRARY_TYPE
-    "static"
-    CACHE STRING "")
-set(PTHREADPOOL_ALLOW_DEPRECATED_API
-    ON
-    CACHE BOOL "")
-add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
-
 # ------------------------------ OPTIONS -------------------------------------
 # WARNING: Please don't add example specific options in this CMakeLists.txt.
 # Instead please use `find_package(executorch REQUIRED)` in the example
@@ -210,6 +171,66 @@ option(EXECUTORCH_BUILD_SIZE_TEST "Build the size test" OFF)
 option(EXECUTORCH_BUILD_XNNPACK "Build the XNNPACK backend" OFF)
 
 option(EXECUTORCH_BUILD_VULKAN "Build the Vulkan backend" OFF)
+
+#
+# pthreadpool: build pthreadpool library. Disable on unsupported platforms
+#
+cmake_dependent_option(EXECUTORCH_BUILD_PTHREADPOOL "Build pthreadpool library."
+                       ON "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+
+#
+# cpuinfo: build cpuinfo library. Disable on unsupported platforms
+#
+cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
+                       "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
+
+if(EXECUTORCH_BUILD_CPUINFO)
+  # --- cpuinfo
+  set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
+  set(CPUINFO_BUILD_TOOLS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_UNIT_TESTS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_MOCK_TESTS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL "")
+  set(CPUINFO_LIBRARY_TYPE
+      "static"
+      CACHE STRING "")
+  set(CPUINFO_LOG_LEVEL
+      "error"
+      CACHE STRING "")
+  set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
+  add_subdirectory("${CPUINFO_SOURCE_DIR}")
+endif()
+
+if(EXECUTORCH_BUILD_PTHREADPOOL)
+  # --- pthreadpool
+  set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
+  set(PTHREADPOOL_BUILD_TESTS
+      OFF
+      CACHE BOOL "")
+  set(PTHREADPOOL_BUILD_BENCHMARKS
+      OFF
+      CACHE BOOL "")
+  set(PTHREADPOOL_LIBRARY_TYPE
+      "static"
+      CACHE STRING "")
+  set(PTHREADPOOL_ALLOW_DEPRECATED_API
+      ON
+      CACHE BOOL "")
+  if(APPLE)
+    set(PTHREADPOOL_SYNC_PRIMITIVE
+       "condvar"
+       CACHE STRING "")
+  endif()
+  add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+endif()
 
 if(NOT PYTHON_EXECUTABLE)
   resolve_python_executable()
@@ -492,7 +513,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    set(PYBIND_LINK_XNNPACK "xnnpack_backend")
+    # need to explicitly specify XNNPACK here
+    # otherwise uses XNNPACK symbols from libtorch_cpu
+    set(PYBIND_LINK_XNNPACK xnnpack_backend XNNPACK)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output

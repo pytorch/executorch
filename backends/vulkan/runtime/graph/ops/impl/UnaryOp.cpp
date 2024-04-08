@@ -15,9 +15,7 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
-namespace at {
-namespace native {
-namespace vulkan {
+namespace vkcompute {
 
 constexpr float kDummyFloat = -1.0f;
 const std::string kClampShaderName = "clamp";
@@ -117,6 +115,4 @@ REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.tanh.default, tanh);
 }
 
-} // namespace vulkan
-} // namespace native
-} // namespace at
+} // namespace vkcompute

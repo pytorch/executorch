@@ -1503,7 +1503,7 @@ class GraphModuleDeserializer:
                     if a.type == "as_none":
                         return None
                     elif a.type == "as_tensor":
-                        return self.serialized_name_to_node[a.value]
+                        return self.serialized_name_to_node[a.value.name]
                     else:
                         raise SerializeError(f"Unhandled argument {inp}")
 
