@@ -5,7 +5,10 @@
 # License, Version 2.0 found in the LICENSE-APACHE file in the root directory
 # of this source tree.
 
-# @lint-ignore FBCODEBZLADDLOADS
+# @lint-ignore-every FBCODEBZLADDLOADS
+
+prelude = native
+
 _SELECT_TYPE = type(select({"DEFAULT": []}))
 
 def is_select(thing):
@@ -17,10 +20,9 @@ def cpp_library(
         undefined_symbols = None,
         visibility = ["PUBLIC"],
         **kwargs):
-    _unused = (undefined_symbols)  # @unused
+    _unused = undefined_symbols  # @unused
 
-    # @lint-ignore BUCKLINT: avoid "native is forbidden in fbcode"
-    native.cxx_library(
+    prelude.cxx_library(
         deps = _maybe_select_map(deps + external_deps_to_targets(external_deps), _fix_deps),
         visibility = visibility,
         preferred_linkage = "static",
@@ -49,9 +51,8 @@ def rust_library(
     # Reset visibility because internal and external paths are different.
     visibility = ["PUBLIC"]
 
-    # @lint-ignore BUCKLINT: avoid "Direct usage of native rules is not allowed."
-    native.rust_library(
-        rustc_flags = rustc_flags + [_CFG_BUCK_OSS_BUILD],
+    prelude.rust_library(
+        rustc_flags = rustc_flags + [_CFG_BUCK_BUILD],
         deps = deps,
         visibility = visibility,
         mapped_srcs = mapped_srcs,
@@ -71,8 +72,8 @@ def rust_binary(
     deps = _maybe_select_map(deps, _fix_deps)
 
     # @lint-ignore BUCKLINT: avoid "Direct usage of native rules is not allowed."
-    native.rust_binary(
-        rustc_flags = rustc_flags + [_CFG_BUCK_OSS_BUILD],
+    prelude.rust_binary(
+        rustc_flags = rustc_flags + [_CFG_BUCK_BUILD],
         deps = deps,
         visibility = visibility,
         **kwargs
@@ -85,9 +86,8 @@ def rust_unittest(
         **kwargs):
     deps = _maybe_select_map(deps, _fix_deps)
 
-    # @lint-ignore BUCKLINT: avoid "Direct usage of native rules is not allowed."
-    native.rust_test(
-        rustc_flags = rustc_flags + [_CFG_BUCK_OSS_BUILD],
+    prelude.rust_test(
+        rustc_flags = rustc_flags + [_CFG_BUCK_BUILD],
         deps = deps,
         visibility = visibility,
         **kwargs
@@ -129,8 +129,7 @@ def rust_protobuf_library(
         },
     )
 
-    # @lint-ignore BUCKLINT: avoid "Direct usage of native rules is not allowed."
-    native.genrule(
+    prelude.genrule(
         name = proto_name,
         srcs = protos + [
             "buck//third-party/proto:google_protobuf",
@@ -157,8 +156,7 @@ def rust_protobuf_library(
 
     # For python tests only
     for proto in protos:
-        # @lint-ignore BUCKLINT: avoid "Direct usage of native rules is not allowed."
-        native.export_file(
+        prelude.export_file(
             name = proto,
             visibility = ["PUBLIC"],
         )
@@ -169,17 +167,13 @@ def ocaml_binary(
         **kwargs):
     deps = _maybe_select_map(deps, _fix_deps)
 
-    # @lint-ignore BUCKLINT: avoid "native is forbidden in fbcode"
-    native.ocaml_binary(
+    prelude.ocaml_binary(
         deps = deps,
         visibility = visibility,
         **kwargs
     )
 
-# Configuration that is used when building open source using Buck2 as the build system.
-# E.g. not applied either internally, or when using Cargo to build the open source code.
-# At the moment of writing, mostly used to disable jemalloc.
-_CFG_BUCK_OSS_BUILD = "--cfg=buck_oss_build"
+_CFG_BUCK_BUILD = "--cfg=buck_build"
 
 def _maybe_select_map(v, mapper):
     if is_select(v):
