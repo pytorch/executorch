@@ -114,8 +114,8 @@ class TestQNN(unittest.TestCase):
         module: torch.nn.Module,
         sample_inputs: Tuple[torch.Tensor],
         executorch_prog: ExecutorchProgram,
-        etrecord_path: str,
-        expected_profile_events: int,
+        etrecord_path: str = "etrecord.bin",
+        expected_profile_events: int = -1,
     ):
         with tempfile.TemporaryDirectory() as tmp_dir:
             (

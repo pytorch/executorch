@@ -42,41 +42,66 @@ class AnnotateQuantAttrs(ExportPass):
         order[axis], order[0] = order[0], order[axis]
         return tensor.permute(order)
 
+    # Find the the last dq node between regular op nodes
+    # Return dq2 in example below when q1 is given as node parameter:
+    # ... -> n1 -> q1 -> dq1 -> q2 -> dq2 -> n2 -> ...
+    def _find_last_dq_node(self, node: torch.fx.node.Node) -> torch.fx.node.Node:
+        if list(node.users)[0].target in q_ops.union(dq_ops):
+            return self._find_last_dq_node(list(node.users)[0])
+        return node
+
+    def _annotate_requant(self, n):
+        # Record requant attributes:
+        # node1 -> q_ui8 -> dq_ui8 -> q_int32 -> dq_int32 -> node2 -> ....
+        # We store quant info for dq_ui8 and q_int32 in node1.meta
+        if n.target in q_ops and n.args[0].target not in dq_ops:
+            dq_node = self._find_last_dq_node(n)
+            q_attrs = get_quant_attrs(self.edge_program, n)
+            dq_attrs = get_quant_attrs(self.edge_program, dq_node)
+
+            # TODO: Store multiple pairs of requantize attributes when we have an op builder
+            # that has multiple outputs that requires quant attributes.
+            if q_attrs["dtype"] != dq_attrs["dtype"]:
+                dq_attrs["encoding"] = q_attrs["encoding"]
+                n.args[0].meta["requantize"] = dq_attrs
+
+    # Dequant all the fold_quant parameters back to fp32.
+    # If an operation is not supported by QNN and got fallback, it will expect a fp32 param.
+    def _dequant_fold_params(self, n, quant_attrs, param):
+        if quant_attrs["encoding"] in [
+            exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
+        ]:
+            dim, axis = param.dim(), quant_attrs["axis"]
+            scales = self._expand(quant_attrs["scales"], dim, axis)
+            offsets = self._expand(quant_attrs["zero_points"], dim, axis)
+            param = param.sub(offsets).mul(scales).to(torch.float32).contiguous()
+            set_parameter(param, n.args[0], self.edge_program)
+        else:
+            scale = quant_attrs["scale"]
+            offset = quant_attrs["zero_point"]
+            param = param.sub(offset).mul(scale).to(torch.float32).contiguous()
+            set_parameter(param, n.args[0], self.edge_program)
+
+        n.args[0].meta["val"] = param
+
     def _annotate_quant_attrs(
         self, graph_module: torch.fx.GraphModule
     ) -> torch.fx.GraphModule:
         for n in graph_module.graph.nodes:
+            self._annotate_requant(n)
+
             # With fold_quant enabled, check if the input of dq op is quantized param.
             param = None
             if n.target in dq_ops:
                 param = get_parameter(n.args[0], self.edge_program)
-
             if n.target not in q_ops and param is None:
                 continue
-
             quant_attrs = get_quant_attrs(self.edge_program, n)
             self._annotate_source_nodes(n, quant_attrs)
 
-            # We need to dequant all the fold_quant parameters.
-            # If an operation is not supported by QNN and got fallback, it will expect a fp32 param.
             if param is not None:
-                if quant_attrs["encoding"] in [
-                    exir_ops.edge.quantized_decomposed.dequantize_per_channel.default
-                ]:
-                    dim, axis = param.dim(), quant_attrs["axis"]
-                    scales = self._expand(quant_attrs["scales"], dim, axis)
-                    offsets = self._expand(quant_attrs["zero_points"], dim, axis)
-                    param = (
-                        param.sub(offsets).mul(scales).to(torch.float32).contiguous()
-                    )
-                    set_parameter(param, n.args[0], self.edge_program)
-                else:
-                    scale = quant_attrs["scale"]
-                    offset = quant_attrs["zero_point"]
-                    param = param.sub(offset).mul(scale).to(torch.float32).contiguous()
-                    set_parameter(param, n.args[0], self.edge_program)
+                self._dequant_fold_params(n, quant_attrs, param)
 
-                n.args[0].meta["val"] = param
         return graph_module
 
     def call(self, graph_module: torch.fx.GraphModule):

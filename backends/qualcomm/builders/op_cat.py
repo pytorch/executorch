@@ -37,6 +37,7 @@ class Cat(NodeVisitor):
                     input_tensor,
                     PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
                     nodes_to_wrappers,
+                    is_input_tensor=True,
                 )
             )
 
@@ -52,6 +53,7 @@ class Cat(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         # node args[1] might not exist
