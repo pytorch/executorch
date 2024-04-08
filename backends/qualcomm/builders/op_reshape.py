@@ -32,6 +32,7 @@ class Reshape(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
 
         output_tensor_wrapper = self.define_tensor(
@@ -39,6 +40,7 @@ class Reshape(NodeVisitor):
             node.meta["val"],
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
 
         reshape_op = PyQnnWrapper.PyQnnOpWrapper(
