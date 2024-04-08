@@ -16,60 +16,6 @@
 // Operator Recording Functions
 //
 
-void record_nchw_to_buffer_op(
-    api::Context* const context,
-    api::VulkanBuffer& src_buffer,
-    vTensor& v_dst) {
-  uint32_t buf_len = api::utils::safe_downcast<uint32_t>(v_dst.gpu_numel());
-  api::utils::uvec3 global_size = {buf_len, 1u, 1u};
-  api::utils::uvec3 local_size = {32u, 1u, 1u};
-
-  api::UniformParamsBuffer cpu_buffer_metadata(
-      context, v_dst.get_cpu_buffer_metadata());
-  api::PipelineBarrier pipeline_barrier{};
-
-  context->submit_compute_job(
-      VK_KERNEL(buffer_to_buffer),
-      pipeline_barrier,
-      global_size,
-      local_size,
-      VK_NULL_HANDLE,
-      v_dst.buffer(
-          pipeline_barrier,
-          api::PipelineStage::COMPUTE,
-          api::MemoryAccessType::WRITE),
-      v_dst.buffer_metadata(),
-      src_buffer,
-      cpu_buffer_metadata.buffer());
-}
-
-bool record_buffer_to_nchw_op(
-    api::Context* const context,
-    vTensor& v_src,
-    api::VulkanBuffer& dst_buffer) {
-  uint32_t buf_len = api::utils::safe_downcast<uint32_t>(v_src.numel());
-  api::utils::uvec3 global_size = {buf_len, 1u, 1u};
-  api::utils::uvec3 local_size = {4u, 1u, 1u};
-
-  api::UniformParamsBuffer cpu_buffer_metadata(
-      context, v_src.get_cpu_buffer_metadata());
-  api::PipelineBarrier pipeline_barrier{};
-
-  return context->submit_compute_job(
-      VK_KERNEL(buffer_to_buffer),
-      pipeline_barrier,
-      global_size,
-      local_size,
-      VK_NULL_HANDLE,
-      dst_buffer,
-      cpu_buffer_metadata.buffer(),
-      v_src.buffer(
-          pipeline_barrier,
-          api::PipelineStage::COMPUTE,
-          api::MemoryAccessType::WRITE),
-      v_src.buffer_metadata());
-}
-
 void record_nchw_to_image_op(
     api::Context* const context,
     api::VulkanBuffer& src_buffer,
@@ -206,7 +152,7 @@ void fill_vtensor(vTensor& vten, std::vector<float>& data) {
   copy_ptr_to_staging(data.data(), staging_buffer, vten.gpu_nbytes());
 
   if (vten.storage_type() == api::StorageType::BUFFER) {
-    record_nchw_to_buffer_op(api::context(), staging_buffer.buffer(), vten);
+    VK_THROW("Not supported!");
   } else {
     record_nchw_to_image_op(api::context(), staging_buffer.buffer(), vten);
   }
@@ -232,7 +178,7 @@ void extract_vtensor(vTensor& vten, std::vector<float>& data) {
       api::context(), api::kFloat, vten.gpu_numel());
 
   if (vten.storage_type() == api::StorageType::BUFFER) {
-    record_buffer_to_nchw_op(api::context(), vten, staging_buffer.buffer());
+    VK_THROW("Not supported!");
   } else {
     record_image_to_nchw_op(api::context(), vten, staging_buffer.buffer());
   }
