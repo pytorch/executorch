@@ -37,9 +37,6 @@
 [submodule "third-party/flatcc"]
 	path = third-party/flatcc
 	url = https://github.com/dvidelabs/flatcc.git
-[submodule "examples/third-party/llama"]
-	path = examples/third-party/llama
-	url = https://github.com/facebookresearch/llama.git
 [submodule "examples/third-party/fbjni"]
 	path = examples/third-party/fbjni
 	url = https://github.com/facebookincubator/fbjni.git

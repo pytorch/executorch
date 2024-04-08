@@ -9,8 +9,8 @@ import argparse
 from typing import Optional
 
 import lm_eval
-
 import torch
+
 from lm_eval.api.model import LM
 from lm_eval.evaluator import evaluate
 from lm_eval.models.huggingface import HFLM as eval_wrapper
@@ -33,7 +33,7 @@ class GPTFastEvalWrapper(eval_wrapper):
     def __init__(
         self,
         model: nn.Module,
-        tokenizer,
+        tokenizer: SentencePieceProcessor,
         max_seq_length: Optional[int] = None,
     ):
         super().__init__()
@@ -84,6 +84,60 @@ class GPTFastEvalWrapper(eval_wrapper):
         raise Exception("unimplemented")
 
 
+class ETEagerEvalWrapper(GPTFastEvalWrapper):
+    """
+    A wrapper class for ExecuTorch Eager integration with the
+    lm-evaluation-harness library.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        tokenizer: SentencePieceProcessor,
+        max_seq_length: Optional[int] = None,
+    ):
+        super().__init__(None, tokenizer, max_seq_length)
+        self._model = model  # Expects model to be path to a .pte file
+
+        from executorch.extension.pybindings.portable_lib import _load_for_executorch
+
+        self._et_model = _load_for_executorch(self._model)
+
+    def _model_call(self, inps):
+        # Given inps (tokens), return the logits from a single forward call
+        # inps: Tensor of shape (1, max_seq_len - 1)
+        # logits: Tensor of shape (1, max_seq_len - 1, 32000)
+        result = self._et_model.forward((inps,))
+        return result[0]
+
+
+class ETRunnerEvalWrapper(GPTFastEvalWrapper):
+    """
+    A wrapper class for ExecuTorch Runtime integration with the
+    lm-evaluation-harness library.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        tokenizer: SentencePieceProcessor,
+        tokenizer_bin: str,
+        max_seq_length: Optional[int] = None,
+    ):
+        super().__init__(None, tokenizer, max_seq_length)
+        self._model = model
+        self._tokenizer_bin = tokenizer_bin
+
+    def _model_call(self, inps):
+        # Given inps (tokens), return the logits from a single
+        # forward call
+
+        # Example:
+        # inps: Tensor of shape (1, N)
+        # logits: Tensor of shape (1, N, 32000)
+        pass
+
+
 @torch.no_grad()
 def eval(
     eval_wrapper: LM,
@@ -131,6 +185,26 @@ def gen_eval_wrapper(
     """
     tokenizer = SentencePieceProcessor(model_file=str(args.tokenizer_path))
 
+    # ExecuTorch Binary Evaluation
+    if (model := args.pte) is not None:
+        if (tokenizer_bin := args.tokenizer_bin) is not None:
+            # ETRunnerEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated at runtime
+            return ETRunnerEvalWrapper(
+                model=model,
+                tokenizer=tokenizer,
+                tokenizer_bin=tokenizer_bin,
+                max_seq_length=args.max_seq_length,
+            )
+
+        # ETRunnerEvalWrapper: Create a wrapper around an ExecuTorch model, evaluated eagerly
+        return ETEagerEvalWrapper(
+            model=model,
+            tokenizer=tokenizer,
+            # Exported model takes at most (max_seq_length - 1) tokens.
+            # Note that the eager model takes at most max_seq_length tokens.
+            max_seq_length=args.max_seq_length - 1,
+        )
+
     # GPTFastEvalWrapper: Create a wrapper around a pre-exported model
     manager: LlamaEdgeManager = _prepare_for_llama_export(model_name, args)
     model = (
@@ -159,6 +233,21 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--limit", type=int, default=5, help="number of samples to evalulate"
+    )
+
+    # Add additional args specific to eval via an ET Runner
+    # Note: For initial integration, the tokenizer.model is also required
+    parser.add_argument(
+        "--pte",
+        type=str,
+        default=None,
+        help="[For ExecuTorch] Path to the ExecuTorch model being evaluated. If provided, don't go through the export flow",
+    )
+    parser.add_argument(
+        "--tokenizer_bin",
+        type=str,
+        default=None,
+        help="[For ExecuTorch] Path to the Tokenizer binary for evaluating ExecuTorch models via runtime",
     )
 
     return parser

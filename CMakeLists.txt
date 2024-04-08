@@ -224,6 +224,11 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
   set(PTHREADPOOL_ALLOW_DEPRECATED_API
       ON
       CACHE BOOL "")
+  if(APPLE)
+    set(PTHREADPOOL_SYNC_PRIMITIVE
+       "condvar"
+       CACHE STRING "")
+  endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
 endif()
 
@@ -508,7 +513,9 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_XNNPACK)
-    set(PYBIND_LINK_XNNPACK "xnnpack_backend")
+    # need to explicitly specify XNNPACK here
+    # otherwise uses XNNPACK symbols from libtorch_cpu
+    set(PYBIND_LINK_XNNPACK xnnpack_backend XNNPACK)
   endif()
 
   # find pytorch lib, to allow pybind to take at::Tensor as input/output

@@ -31,6 +31,7 @@ class Add(NodeVisitor):
             out_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         add_output_tensors = [output_tensor_wrapper]
 
@@ -45,6 +46,7 @@ class Add(NodeVisitor):
                 input_tensor,
                 tensor_type,
                 nodes_to_wrappers,
+                is_input_tensor=True,
             )
             add_input_tensors.append(input_tensor_wrapper)
 

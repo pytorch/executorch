@@ -118,7 +118,7 @@ EXPORTED_MODEL_NAME="${EXPORTED_MODEL_NAME}.pte"
 echo "Exporting ${EXPORTED_MODEL_NAME}"
 EXPORT_ARGS="-c stories110M.pt -p ${PARAMS} -d ${DTYPE} -n ${EXPORTED_MODEL_NAME}"
 if [[ "${MODE}" == "xnnpack" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} --pt2e_quantize xnnpack_dynamic"
+  EXPORT_ARGS="${EXPORT_ARGS} -kv --use_sdpa_with_kv_cache -X -qmode 8da4w -G 128"
 fi
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
 
