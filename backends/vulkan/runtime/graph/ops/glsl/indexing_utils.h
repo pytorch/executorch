@@ -44,3 +44,14 @@
 #define STRIDE_WIDTH_PACKED(vec) (1)
 
 #define STRIDE_HEIGHT_PACKED(vec) (vec.x)
+
+// Given a buffer(1-D) index cur, compute a new index where the corresponding
+// tensor(N-D)'s adjacent dimensions are swapped. The parameters x,y and plane
+// describe sizes. As an example, let's say we want to swap dimensions 0,1 for a
+// tensor of shape {4,3,2,24} to obtain {3,4,2,24}. Then, x=4, y=3 and
+// plane=2*24=48.
+#define SWAP_ADJ_DIMS(cur, x, y, plane)                       \
+  cur +                                                       \
+      plane*(                                                 \
+          (1 - y) * ((cur % (x * y * plane)) / (y * plane)) + \
+          (x - 1) * ((cur % (y * plane)) / plane))
