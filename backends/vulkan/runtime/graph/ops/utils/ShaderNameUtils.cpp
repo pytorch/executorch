@@ -28,10 +28,10 @@ void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor) {
 
 void apply_ndim_suffix(std::stringstream& kernel_name, const vTensor& tensor) {
   switch (tensor.storage_type()) {
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture3D:
       kernel_name << "_3d";
       break;
-    case api::StorageType::TEXTURE_2D:
+    case api::kTexture2D:
       kernel_name << "_2d";
       break;
     default:
@@ -43,13 +43,13 @@ void apply_memory_layout_suffix(
     std::stringstream& kernel_name,
     const vTensor& tensor) {
   switch (tensor.gpu_memory_layout()) {
-    case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
+    case api::kChannelsPacked:
       kernel_name << "_C_packed";
       break;
-    case api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED:
+    case api::kHeightPacked:
       kernel_name << "_H_packed";
       break;
-    case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
+    case api::kWidthPacked:
       kernel_name << "_W_packed";
       break;
     default:

@@ -162,12 +162,15 @@ VK_FORALL_SCALAR_TYPES(SPECIALIZE_ScalarTypeToCType)
  *
  * UNKNOWN is not expected to be used.
  */
-enum class StorageType {
+enum class StorageType : uint8_t {
   BUFFER,
   TEXTURE_3D,
   TEXTURE_2D,
-  UNKNOWN,
 };
+
+static constexpr StorageType kBuffer = StorageType::BUFFER;
+static constexpr StorageType kTexture3D = StorageType::TEXTURE_3D;
+static constexpr StorageType kTexture2D = StorageType::TEXTURE_2D;
 
 /**
  * The enum below is used to describe how tensor data is laid out when stored in
@@ -182,11 +185,20 @@ enum class StorageType {
  * strides of the tensor will be used instead to convert between logical tensor
  * coordinates and linear access indices.
  */
-enum class GPUMemoryLayout : uint32_t {
+enum class GPUMemoryLayout : uint8_t {
   TENSOR_WIDTH_PACKED = 0u,
   TENSOR_HEIGHT_PACKED = 1u,
   TENSOR_CHANNELS_PACKED = 2u,
 };
+
+static constexpr GPUMemoryLayout kWidthPacked =
+    GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+
+static constexpr GPUMemoryLayout kHeightPacked =
+    GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+
+static constexpr GPUMemoryLayout kChannelsPacked =
+    GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
 } // namespace api
 } // namespace vkcompute

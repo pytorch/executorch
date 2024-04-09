@@ -57,10 +57,7 @@ ValueRef prepack_biases(ComputeGraph& graph, const ValueRef vref) {
     VK_THROW("aten.convolution.default: Null bias is not supported yet!");
   }
 
-  ValueRef v = graph.add_tensor_like(
-      vref,
-      api::StorageType::TEXTURE_2D,
-      api::GPUMemoryLayout::TENSOR_WIDTH_PACKED);
+  ValueRef v = graph.add_tensor_like(vref, api::kTexture2D, api::kWidthPacked);
   vTensor& t = graph.get_val(v).toTensor();
 
   api::ShaderInfo shader = get_nchw_to_image_shader(t);
@@ -161,8 +158,8 @@ ValueRef prepack_weights(
   ValueRef v = graph.add_tensor(
       final_sizes,
       graph.get_val(vref).toTensorRef().dtype,
-      api::StorageType::TEXTURE_2D,
-      api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+      api::kTexture2D,
+      api::kChannelsPacked);
   vTensor& t = graph.get_val(v).toTensor();
 
   api::utils::uvec3 global_size = t.extents();
@@ -194,10 +191,8 @@ void check_conv2d_args(const vTensor& in, const vTensor& out) {
     VK_THROW(
         "aten.convolution.default: input batch size > 1 is not supported yet!");
   }
-  VK_CHECK_COND(
-      check_memory_layout_is(in, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
-  VK_CHECK_COND(check_memory_layout_is(
-      out, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
+  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }
 
 struct Conv2dParams final {
