@@ -89,11 +89,10 @@ void copy_staging_to_ptr(
   memcpy_from_mapping(mapping, dst, nbytes, staging.dtype());
 }
 
-void copy_zeros_to_staging(api::StorageBuffer& staging, const size_t nbytes) {
-  void* data = malloc(nbytes);
-  memset(data, 0, nbytes);
-  copy_ptr_to_staging(data, staging, nbytes);
-  free(data);
+void set_staging_zeros(api::StorageBuffer& staging, const size_t nbytes) {
+  api::MemoryMap mapping(staging.buffer(), api::MemoryAccessType::WRITE);
+  uint8_t* data_ptr = mapping.template data<uint8_t>();
+  memset(data_ptr, 0, staging.nbytes());
 }
 
 api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
