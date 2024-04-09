@@ -20,6 +20,18 @@ buck_targets = [
   "//runtime/executor:program",
 ]
 deps = [
+  "executorch_no_prim_ops",
+]
+filters = [
+  ".cpp$",
+]
+
+
+[targets.executorch_no_prim_ops]
+buck_targets = [
+  "//runtime/executor:program_no_prim_ops",
+]
+deps = [
   "program_schema",
 ]
 filters = [
@@ -43,6 +55,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 [targets.optimized_kernels]
@@ -59,6 +72,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "portable_kernels",
 ]
 
@@ -76,6 +90,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "portable_kernels",
 ]
 
@@ -97,6 +112,7 @@ filters = [
 excludes = [
 ]
 deps = [
+  "executorch_no_prim_ops",
   "executorch",
 ]
 
@@ -113,6 +129,7 @@ filters = [
   ".cpp$",
 ]
 deps = [
+  "executorch_no_prim_ops",
   "executorch",
 ]
 
@@ -125,6 +142,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "extension_data_loader",
 ]
 
@@ -137,6 +155,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 # ---------------------------------- extension end ----------------------------------
@@ -154,6 +173,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "portable_kernels",
   "quantized_kernels",
 ]
@@ -169,6 +189,7 @@ excludes = [
   "^codegen",
 ]
 deps = [
+  "executorch_no_prim_ops",
   "executorch",
 ]
 # ---------------------------------- binary end ----------------------------------
@@ -185,6 +206,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "portable_kernels",
 ]
 
@@ -197,6 +219,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 [targets.mps_schema]
@@ -222,6 +245,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "xnnpack_backend",
   "portable_kernels",
 ]
@@ -235,6 +259,7 @@ filters = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
 ]
 
 [targets.xnnpack_dynamic_quant_utils]
@@ -275,6 +300,7 @@ excludes = [
 ]
 deps = [
   "executorch",
+  "executorch_no_prim_ops",
   "optimized_kernels",
   "xnnpack_backend",
 ]
@@ -292,6 +318,7 @@ excludes = [
 deps = [
   "custom_ops",
   "executorch",
+  "executorch_no_prim_ops",
   "extension_data_loader",
   "extension_module",
   "portable_kernels",
