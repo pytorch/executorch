@@ -523,3 +523,31 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_conv_transpose2d(self):
+        class ConvTranspose2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.ConvTranspose2d(
+                    in_channels=6,
+                    out_channels=8,
+                    kernel_size=(3, 3),
+                    padding=(2, 3),
+                    stride=(1, 2),
+                    output_padding=(0, 1),
+                    dilation=1,
+                    groups=1,
+                    bias=True,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv_transpose2d_module = ConvTranspose2dModule()
+        sample_inputs = (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv_transpose2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

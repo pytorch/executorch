@@ -56,7 +56,81 @@ int64_t calc_out_size(
   if (ceil_mode && (out_size - 1) * stride >= in_size + padding) {
     --out_size;
   }
+  VK_CHECK_COND(out_size >= 1);
   return out_size;
+}
+
+std::vector<int64_t> calc_out_sizes_hw(
+    const std::vector<int64_t>& in_sizes,
+    const api::utils::ivec2& kernel_size,
+    const api::utils::ivec2& stride,
+    const api::utils::ivec2& padding,
+    const api::utils::ivec2& dilation,
+    const bool ceil_mode) {
+  const int64_t ndim = in_sizes.size();
+  std::vector<int64_t> out_sizes(2);
+
+  // Height
+  out_sizes.at(0) = calc_out_size(
+      in_sizes.at(ndim - 2),
+      kernel_size.data[1],
+      stride.data[1],
+      padding.data[1],
+      dilation.data[1],
+      ceil_mode);
+  // Width
+  out_sizes.at(1) = calc_out_size(
+      in_sizes.at(ndim - 1),
+      kernel_size.data[0],
+      stride.data[0],
+      padding.data[0],
+      dilation.data[0],
+      ceil_mode);
+
+  return out_sizes;
+}
+
+int64_t calc_transpose_out_size(
+    const int64_t in_size,
+    const int64_t kernel,
+    const int64_t stride,
+    const int64_t padding,
+    const int64_t dilation,
+    const int64_t output_padding) {
+  int64_t out_size = (in_size - 1) * stride - 2 * padding +
+      dilation * (kernel - 1) + output_padding + 1;
+  VK_CHECK_COND(out_size >= 1);
+  return out_size;
+}
+
+std::vector<int64_t> calc_transpose_out_sizes_hw(
+    const std::vector<int64_t>& in_sizes,
+    const api::utils::ivec2& kernel_size,
+    const api::utils::ivec2& stride,
+    const api::utils::ivec2& padding,
+    const api::utils::ivec2& dilation,
+    const api::utils::ivec2& output_padding) {
+  const int64_t ndim = in_sizes.size();
+  std::vector<int64_t> out_sizes(2);
+
+  // Height
+  out_sizes.at(0) = calc_transpose_out_size(
+      in_sizes.at(ndim - 2),
+      kernel_size.data[1],
+      stride.data[1],
+      padding.data[1],
+      dilation.data[1],
+      output_padding.data[1]);
+  // Width
+  out_sizes.at(1) = calc_transpose_out_size(
+      in_sizes.at(ndim - 1),
+      kernel_size.data[0],
+      stride.data[0],
+      padding.data[0],
+      dilation.data[0],
+      output_padding.data[0]);
+
+  return out_sizes;
 }
 
 std::vector<int64_t> calc_out_sizes_hw(
@@ -64,42 +138,24 @@ std::vector<int64_t> calc_out_sizes_hw(
     const std::vector<int64_t>& in_sizes,
     const ValueRef weight,
     const bool kernel_size_only,
-    const ValueRef stride,
-    const ValueRef padding,
-    const ValueRef dilation,
-    const ValueRef ceil_mode) {
-  const int64_t ndim = in_sizes.size();
-  std::vector<int64_t> out_sizes(2);
-
-  const auto kernel_vec =
+    const std::vector<ValueRef>& args,
+    const bool transposed) {
+  const auto kernel_size =
       make_ivec2_kernel_size(graph, weight, kernel_size_only);
-  const auto stride_vec = make_ivec2_from_list(graph, stride);
-  const auto padding_vec = make_ivec2_from_list(graph, padding);
-  const auto dilation_vec = make_ivec2_from_list(graph, dilation);
-  const bool ceil_mode_val =
-      ceil_mode == kDummyValueRef ? false : graph.get_val(ceil_mode).toBool();
+  const auto stride = make_ivec2_from_list(graph, args[0]);
+  const auto padding = make_ivec2_from_list(graph, args[1]);
+  const auto dilation = make_ivec2_from_list(graph, args[2]);
 
-  // Height
-  out_sizes.at(0) = calc_out_size(
-      in_sizes.at(ndim - 2),
-      kernel_vec.data[1],
-      stride_vec.data[1],
-      padding_vec.data[1],
-      dilation_vec.data[1],
-      ceil_mode_val);
-  // Width
-  out_sizes.at(1) = calc_out_size(
-      in_sizes.at(ndim - 1),
-      kernel_vec.data[0],
-      stride_vec.data[0],
-      padding_vec.data[0],
-      dilation_vec.data[0],
-      ceil_mode_val);
-
-  VK_CHECK_COND(out_sizes.at(0) >= 1);
-  VK_CHECK_COND(out_sizes.at(1) >= 1);
-
-  return out_sizes;
+  if (transposed) {
+    const auto output_padding = make_ivec2_from_list(graph, args[3]);
+    return calc_transpose_out_sizes_hw(
+        in_sizes, kernel_size, stride, padding, dilation, output_padding);
+  } else {
+    Value& vref = graph.get_val(args[3]);
+    const bool ceil_mode = vref.isBool() ? vref.toBool() : false;
+    return calc_out_sizes_hw(
+        in_sizes, kernel_size, stride, padding, dilation, ceil_mode);
+  }
 }
 
 } // namespace vkcompute
