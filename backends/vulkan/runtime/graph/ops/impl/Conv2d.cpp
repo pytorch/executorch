@@ -34,12 +34,12 @@ void resize_conv2d_node(
   if (ndim == 4) {
     new_out_sizes.at(ndim - 4) = self.sizes().at(ndim - 4);
   }
-  const auto weight_sizes = graph->get_val(extra_args[0]).toTensorRef().sizes;
+  const auto& weight_sizes = graph->get_val(extra_args[0]).toTensorRef().sizes;
   new_out_sizes.at(ndim - 3) =
       transposed ? weight_sizes.at(ndim - 3) : weight_sizes.at(ndim - 4);
 
   // Height, Width
-  const auto new_out_sizes_hw = calc_out_sizes_hw(
+  const auto& new_out_sizes_hw = calc_out_sizes_hw(
       *graph,
       self.sizes(),
       extra_args[0],
@@ -98,7 +98,7 @@ api::ShaderInfo get_conv2d_shader(
     case Conv2dMethod::Depthwise:
       kernel_name << "conv2d_dw";
       if (!prepack_weights) {
-        const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
+        const auto& weight_sizes = graph.get_val(weight).toTensorRef().sizes;
         if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
           kernel_name << "_output_tile_3x3";
         }
@@ -177,7 +177,7 @@ ValueRef prepack_weights(
     const ValueRef vref,
     const Conv2dMethod method) {
   const auto original_sizes = graph.get_val(vref).toTensorRef().sizes;
-  const auto final_sizes = get_final_sizes(original_sizes, method);
+  const auto& final_sizes = get_final_sizes(original_sizes, method);
 
   ValueRef v = graph.add_tensor(
       final_sizes,
@@ -192,7 +192,7 @@ ValueRef prepack_weights(
   api::ShaderInfo shader =
       get_conv2d_shader(graph, t, /*prepack_weights = */ true, method, vref);
 
-  const auto padded_sizes = get_padded_sizes(original_sizes, method);
+  const auto& padded_sizes = get_padded_sizes(original_sizes, method);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
       graph,
@@ -231,13 +231,13 @@ Conv2dParams create_conv2d_params(
     const ValueRef weight,
     const KernelParams& p,
     const bool transposed) {
-  const auto overlay_region = api::utils::make_ivec2({
+  const auto& overlay_region = api::utils::make_ivec2({
       p.kernel_size.data[0] +
           (p.kernel_size.data[0] - 1) * (p.dilation.data[0] - 1),
       p.kernel_size.data[1] +
           (p.kernel_size.data[1] - 1) * (p.dilation.data[1] - 1),
   });
-  const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
+  const auto& weight_sizes = graph.get_val(weight).toTensorRef().sizes;
   const int32_t in_group_size =
       api::utils::safe_downcast<int32_t>(api::utils::align_up(
           transposed ? weight_sizes.at(0) : weight_sizes.at(1), INT64_C(4)));
@@ -265,7 +265,7 @@ Conv2dMethod get_conv2d_method(
     const ValueRef weight,
     const int64_t groups,
     const bool transposed) {
-  const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
+  const auto& weight_sizes = graph.get_val(weight).toTensorRef().sizes;
   if (!transposed && weight_sizes.at(0) == groups && weight_sizes.at(1) == 1) {
     return Conv2dMethod::Depthwise;
   }
