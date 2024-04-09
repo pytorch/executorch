@@ -30,6 +30,7 @@ class DequantizeOpBase(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         dequant_input_tensors.append(inp_tensor_wrapper)
 
@@ -39,6 +40,7 @@ class DequantizeOpBase(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         dequant_output_tensors = [output_tensor_wrapper]
 
@@ -54,20 +56,16 @@ class DequantizeOpBase(NodeVisitor):
 
 
 @register_node_visitor
-class PerTensorDequantizeDefault(DequantizeOpBase):
-    target = ["quantized_decomposed.dequantize_per_tensor.default"]
+class PerTensorDequantize(DequantizeOpBase):
+    target = [
+        "quantized_decomposed.dequantize_per_tensor.default",
+        "quantized_decomposed.dequantize_per_tensor.tensor",
+    ]
 
 
 @register_node_visitor
-class PerTensorDequantizeTensor(DequantizeOpBase):
-    target = ["quantized_decomposed.dequantize_per_tensor.tensor"]
-
-
-@register_node_visitor
-class PerChannelDequantizeDefault(DequantizeOpBase):
-    target = ["quantized_decomposed.dequantize_per_channel.default"]
-
-
-@register_node_visitor
-class PerChannelDequantizeTensor(DequantizeOpBase):
-    target = ["quantized_decomposed.dequantize_per_channel.tensor"]
+class PerChannelDequantize(DequantizeOpBase):
+    target = [
+        "quantized_decomposed.dequantize_per_channel.default",
+        "quantized_decomposed.dequantize_per_channel.tensor",
+    ]

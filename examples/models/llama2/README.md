@@ -32,15 +32,19 @@ Note that groupsize less than 128 was not enabled, since such model were still t
 
 ## Performance
 
-Performance was measured on Samsung Galaxy S22, S23, S24 and One Plus 12. Measurement performance is in terms of tokens/second.
+Performance was measured on Samsung Galaxy S22, S24, One Plus 12 and iPhone 15 max Pro. Measurement performance is in terms of tokens/second.
 
 |Device  | Groupwise 4-bit (128) | Groupwise 4-bit (256)
 |--------| ---------------------- | ---------------
-|Galaxy S22 | 8.15 tokens/second | 8.3 tokens/second |
-|Galaxy S24 | 10.66 tokens/second | 11.26 tokens/second |
-|One plus 12 | 11.55 tokens/second | 11.6 tokens/second |
-|iPhone 15 pro | x | x |
+|Galaxy S22*  | 8.15 tokens/second | 8.3 tokens/second |
+|Galaxy S24* | 10.66 tokens/second | 11.26 tokens/second |
+|One plus 12* | 11.55 tokens/second | 11.6 tokens/second |
+|Galaxy S22** | 5.5 tokens/second | 5.9 tokens/second |
+|iPhone 15 pro** | ~6 tokens/second | ~6 tokens/second |
 
+*: Measured via adb binary based [workflow](#step-5-run-benchmark-on)
+
+**: Measured via app based [workflow](#step-6-build-mobile-apps)
 
 # Instructions
 
@@ -61,9 +65,16 @@ You can export and run the original Llama2 7B model.
 
 1. Llama2 pretrained parameters can be downloaded from [Meta's official website](https://ai.meta.com/resources/models-and-libraries/llama-downloads/) or from [Hugging Face](https://huggingface.co/meta-llama/Llama-2-7b).
 
-2. Export model and generate `.pte` file:
+2. Edit `params.json` file. Replace `"vocab_size": -1` with `"vocab_size": 32000`. This is a short-term workaround.
+
+3. Export model and generate `.pte` file:
     ```
     python -m examples.models.llama2.export_llama --checkpoint <checkpoint.pth> --params <params.json> -kv --use_sdpa_with_kv_cache -X -qmode 8da4w --group_size 128 -d fp32
+    ```
+4. Create tokenizer.bin.
+
+    ```
+    python -m examples.models.llama2.tokenizer.tokenizer -t tokenizer.model -o tokenizer.bin
     ```
 
 ### Option B: Download and export stories110M model
@@ -81,7 +92,7 @@ If you want to deploy and run a smaller model for educational purposes. From `ex
     ```
 3. Export model and generate `.pte` file.
     ```
-    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json
+    python -m examples.models.llama2.export_llama -c stories110M.pt -p params.json -X
     ```
 4. Create tokenizer.bin.
 
@@ -196,6 +207,8 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
     -DEXECUTORCH_BUILD_OPTIMIZED=ON \
     -Bcmake-out-android/examples/models/llama2 \
     examples/models/llama2
+
+cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 ```
 
 **2. Run on Android via adb shell**
@@ -206,18 +219,24 @@ cmake  -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
 
 **2.2 Upload model, tokenizer and llama runner binary to phone**
 ```
-adb push <model.pte> /data/local/tmp/
-adb push <tokenizer.bin> /data/local/tmp/
-adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/
+adb shell mkdir -p /data/local/tmp/llama
+adb push <model.pte> /data/local/tmp/llama/
+adb push <tokenizer.bin> /data/local/tmp/llama/
+adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/llama/
 ```
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
 ```
-## Step 6: Build iOS and/or Android apps
+## Step 6: Build Mobile apps
 
-TODO
+### iOS
+
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-ios.html) to for full instructions on building the iOS LLAMA Demo App.
+
+### Android
+Please refer to [this tutorial](https://pytorch.org/executorch/main/llm/llama-demo-android.html) to for full instructions on building the Android LLAMA Demo App.
 
 # What is coming next?
 ## Quantization
@@ -233,7 +252,6 @@ TODO
 - Enabling LLama2 7b and other architectures via Vulkan
 - Enabling performant execution of widely used quantization schemes.
 
-TODO
 
 # Notes
 This example tries to reuse the Python code, with minimal modifications to make it compatible with current ExecuTorch:

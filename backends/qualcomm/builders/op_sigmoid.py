@@ -32,6 +32,7 @@ class Sigmoid(NodeVisitor):
             input_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=True,
         )
         sigmoid_input_tensors = [sigmoid_inp_tensor_wrapper]
 
@@ -41,6 +42,7 @@ class Sigmoid(NodeVisitor):
             output_tensor,
             PyQnnWrapper.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE,
             nodes_to_wrappers,
+            is_input_tensor=False,
         )
         sigmoid_output_tensors = [output_tensor_wrapper]
 

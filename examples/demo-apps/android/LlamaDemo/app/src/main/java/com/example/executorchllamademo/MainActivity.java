@@ -124,20 +124,20 @@ public class MainActivity extends Activity implements Runnable, LlamaCallback {
     AlertDialog.Builder tokenizerPathBuilder = new AlertDialog.Builder(this);
     tokenizerPathBuilder.setTitle("Select tokenizer path");
     modelPathBuilder.setSingleChoiceItems(
-        binFiles,
+        pteFiles,
         -1,
         (dialog, item) -> {
-          mTokenizerFilePath = binFiles[item];
+          mModelFilePath = pteFiles[item];
           mEditTextMessage.setText("");
           dialog.dismiss();
           tokenizerPathBuilder.create().show();
         });
 
     tokenizerPathBuilder.setSingleChoiceItems(
-        pteFiles,
+        binFiles,
         -1,
         (dialog, item) -> {
-          mModelFilePath = pteFiles[item];
+          mTokenizerFilePath = binFiles[item];
           Runnable runnable =
               new Runnable() {
                 @Override

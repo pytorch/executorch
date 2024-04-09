@@ -13,9 +13,7 @@ This app demonstrates the use of the LLaMA chat app demonstrating local inferenc
  * Alternatively, you can follow [this guide](https://github.com/pytorch/executorch/blob/856e085b9344c8b0bf220a97976140a5b76356aa/examples/demo-apps/android/LlamaDemo/SDK.md) to set up Java/SDK/NDK with CLI.
 * Supported Host OS: CentOS, macOS Sonoma on Apple Silicon.
 
-```{note}
-This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK 25.0.8775105.
-```
+Note: This demo app and tutorial has only been validated with arm64-v8a [ABI](https://developer.android.com/ndk/guides/abis), with NDK 25.0.8775105.
 
 ## Getting models
 Please refer to the [ExecuTorch Llama2 docs](https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md) to export the model.
@@ -27,22 +25,19 @@ adb push llama2.pte /data/local/tmp/llama
 adb push tokenizer.bin /data/local/tmp/llama
 ```
 
-```{note}
-The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAMA model and tokenizer.
-```
+Note: The demo app searches in `/data/local/tmp/llama` for .pte and .bin files as LLAMA model and tokenizer.
 
 ## Build JNI library
 1. Open a terminal window and navigate to the root directory of the `executorch`.
 2. Set the following environment variables:
-```{note}
-<path_to_android_ndk> is the root for the NDK, which is usually under
-~/Library/Android/sdk/ndk/XX.Y.ZZZZZ for macOS, and contains NOTICE and README.md.
-We use <path_to_android_ndk>/build/cmake/android.toolchain.cmake for CMake to cross-compile.
-```
 ```bash
 export ANDROID_NDK=<path_to_android_ndk>
 export ANDROID_ABI=arm64-v8a
 ```
+Note: `<path_to_android_ndk>` is the root for the NDK, which is usually under
+`~/Library/Android/sdk/ndk/XX.Y.ZZZZZ` for macOS, and contains NOTICE and README.md.
+We use `<path_to_android_ndk>/build/cmake/android.toolchain.cmake` for CMake to cross-compile.
+
 3. Run the following command set up the required JNI library:
 ```bash
 pushd examples/demo-apps/android/LlamaDemo
