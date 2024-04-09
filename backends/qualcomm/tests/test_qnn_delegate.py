@@ -6,8 +6,10 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from multiprocessing.connection import Listener
+from pathlib import Path
 
 import torch
 from executorch.backends.qualcomm.tests.utils import (
@@ -981,7 +983,7 @@ class TestQNNQuantizedModel(TestQNN):
         sample_input = (torch.randn([1, 8, 512]), torch.randn([1, 2, 8, 256]))
         module = self.get_qdq_module(module, sample_input)
         self.lower_module_and_test_output(module, sample_input)
-        # check if requantization work
+        # check if requantization work by reusing the 8bit qdq module
         module = self.get_qdq_module(
             module, sample_input, quant_dtype=QuantDtype.use_16a16w
         )
@@ -1101,6 +1103,19 @@ class TestQNNFloatingPointUtils(TestQNN):
             sample_input,
             expected_partitions=1,
         )
+
+    def test_qnn_backend_online_prepare(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=True)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            debug=False,
+            saver=False,
+            online_prepare=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        self.lower_module_and_test_output(module, sample_input)
 
 
 class TestQNNQuantizedUtils(TestQNN):
@@ -1222,6 +1237,20 @@ class TestQNNQuantizedUtils(TestQNN):
             sample_input,
             expected_partitions=1,
         )
+
+    def test_qnn_backend_online_prepare(self):
+        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        TestQNN.compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=self.arch_table[TestQNN.model],
+            backend_options=backend_options,
+            debug=False,
+            saver=False,
+            online_prepare=True,
+        )
+        module = SimpleModel()  # noqa: F405
+        sample_input = (torch.ones(1, 32, 28, 28), torch.ones(1, 32, 28, 28))
+        module = self.get_qdq_module(module, sample_input)
+        self.lower_module_and_test_output(module, sample_input)
 
 
 class TestExampleOssScript(TestQNN):
@@ -1640,6 +1669,29 @@ class TestExampleScript(TestQNN):
             for k, v in cpu.items():
                 self.assertLessEqual(abs(v[0] - htp[k][0]), 5)
 
+    def test_export_example(self):
+        if not self.required_envs([self.model_name]):
+            self.skipTest("missing required envs")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cmds = [
+                "python",
+                "qualcomm/scripts/export_example.py",
+                "--model_name",
+                self.model_name,
+                "--output_folder",
+                "{}/".format(tmp_dir),
+                "--generate_etrecord",
+            ]
+
+            p = subprocess.Popen(
+                cmds, stdout=subprocess.DEVNULL, cwd=f"{self.executorch_root}/examples"
+            )
+            p.communicate()
+            self.assertTrue(
+                Path("{0}/{1}.pte".format(tmp_dir, self.model_name)).exists()
+            )
+
 
 def setup_environment():
     parser = setup_common_args_and_variables()
@@ -1670,6 +1722,12 @@ def setup_environment():
         type=str,
     )
     parser.add_argument(
+        "-n",
+        "--model_name",
+        help="Input the model to export",
+        type=str,
+    )
+    parser.add_argument(
         "-o",
         "--online_prepare",
         help="Conduct on-device graph compilation",
@@ -1697,6 +1755,7 @@ def setup_environment():
     TestQNN.artifact_dir = args.artifact_dir
     TestQNN.image_dataset = args.image_dataset
     TestQNN.pretrained_weight = args.pretrained_weight
+    TestQNN.model_name = args.model_name
     TestQNN.online_prepare = args.online_prepare
     TestQNN.enable_profile = args.enable_profile
     TestQNN.error_only = args.error_only

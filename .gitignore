@@ -2,6 +2,7 @@
 buck-out/
 cmake-out/
 cmake-android-out/
+cmake-out-android/
 cmake-ios-out/
 ethos-u-scratch/
 executorch.egg-info
