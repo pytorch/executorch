@@ -208,14 +208,15 @@ cmake --build cmake-out-android/examples/models/llama2 -j16 --config Release
 
 **2.2 Upload model, tokenizer and llama runner binary to phone**
 ```
-adb push <model.pte> /data/local/tmp/
-adb push <tokenizer.bin> /data/local/tmp/
-adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/
+adb shell mkdir -p /data/local/tmp/llama
+adb push <model.pte> /data/local/tmp/llama/
+adb push <tokenizer.bin> /data/local/tmp/llama/
+adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/llama/
 ```
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
 ```
 ## Step 6: Build iOS and/or Android apps
 
