@@ -62,20 +62,20 @@ void main() {
   const ivec2 ipos = pos.xy * params.stride - params.padding;
 
   // Compute the start and end of the input indices to load. Padding is assumed
-  // to be constant 0 padding, so reads from the padding region are skipped.
+  // to be constant 0 padding, so any reads from the padding region is skipped.
   const ivec2 start = ipos;
   const ivec2 end = ipos + extra_params.overlay_region.xy;
 
   ${VEC4_T[DTYPE]} sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
   int kx = 0;
-  for (int y = start.y; y < end.y; y += params.dilation.y) {
-    for (int x = start.x; x < end.x; x += params.dilation.x) {
+  for (int y = start.y, i = 0; i < ${TILE_SIZE}; y += params.dilation.y, i++) {
+    for (int x = start.x, j = 0; j < ${TILE_SIZE}; x += params.dilation.x, j++) {
       // The weight kernel was rearranged such that every NxN filter is
       // flattened to fit in one row. Each filter was then stacked on top of
       // each other vertically.
-      const ${VEC4_T[DTYPE]} in_texel = texelFetch(image_in, ivec3(x, y, pos.z), 0);
+      const vec4 in_texel = texelFetch(image_in, ivec3(x, y, pos.z), 0);
       sum = fma(in_texel, texelFetch(kernel_in, ivec2(kx, pos.z), 0), sum);
-      ++kx;
+      kx++;
     }
   }
 
