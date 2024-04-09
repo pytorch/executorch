@@ -26,6 +26,19 @@ void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor) {
   }
 }
 
+void apply_ndim_suffix(std::stringstream& kernel_name, const vTensor& tensor) {
+  switch (tensor.storage_type()) {
+    case api::StorageType::TEXTURE_3D:
+      kernel_name << "_3d";
+      break;
+    case api::StorageType::TEXTURE_2D:
+      kernel_name << "_2d";
+      break;
+    default:
+      break;
+  }
+}
+
 void apply_memory_layout_suffix(
     std::stringstream& kernel_name,
     const vTensor& tensor) {
