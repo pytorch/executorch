@@ -473,7 +473,6 @@
     <span class="n">unsafe_remove_auto_functionalized_pass</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span> <span class="nn">torch.export.exported_program</span> <span class="kn">import</span> <span class="p">(</span>
-    <span class="n">_get_updated_range_constraints</span><span class="p">,</span>
     <span class="n">ConstantArgument</span><span class="p">,</span>
     <span class="n">ExportGraphSignature</span><span class="p">,</span>
     <span class="n">InputKind</span><span class="p">,</span>
@@ -487,6 +486,39 @@
 <span class="kn">from</span> <span class="nn">torch.utils</span> <span class="kn">import</span> <span class="n">_pytree</span> <span class="k">as</span> <span class="n">pytree</span>
 
 <span class="n">Val</span> <span class="o">=</span> <span class="n">Any</span>
+
+
+<span class="k">def</span> <span class="nf">_get_updated_range_constraints</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">get_shape_env</span><span class="p">(</span><span class="n">gm</span><span class="p">):</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;val&quot;</span><span class="p">]</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">gm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span>
+            <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;val&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+        <span class="p">]</span>
+        <span class="kn">from</span> <span class="nn">torch._guards</span> <span class="kn">import</span> <span class="n">detect_fake_mode</span>  <span class="c1"># type: ignore[21]</span>
+
+        <span class="n">fake_mode</span> <span class="o">=</span> <span class="n">detect_fake_mode</span><span class="p">(</span><span class="n">vals</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">fake_mode</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">fake_mode</span><span class="o">.</span><span class="n">shape_env</span>
+        <span class="k">for</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">vals</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">SymInt</span><span class="p">):</span>
+                <span class="k">return</span> <span class="n">v</span><span class="o">.</span><span class="n">node</span><span class="o">.</span><span class="n">shape_env</span>
+
+    <span class="n">shape_env</span> <span class="o">=</span> <span class="n">get_shape_env</span><span class="p">(</span><span class="n">gm</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">shape_env</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="n">range_constraints</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="n">k</span><span class="p">:</span> <span class="n">v</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">var_to_range</span><span class="o">.</span><span class="n">items</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">replacements</span>
+    <span class="p">}</span>
+    <span class="c1"># Only when we have an unbacked symint, and it&#39;s used as constructor inputs,</span>
+    <span class="c1"># runtime_var_to_range will make a difference compated to var_to_range.</span>
+    <span class="c1"># e.g. [2, oo) -&gt; [0, oo)</span>
+    <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">var_to_range</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+        <span class="k">if</span> <span class="n">k</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">shape_env</span><span class="o">.</span><span class="n">replacements</span><span class="p">:</span>
+            <span class="n">range_constraints</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+    <span class="k">return</span> <span class="n">range_constraints</span>
 
 
 <span class="k">def</span> <span class="nf">_get_updated_graph_signature</span><span class="p">(</span>
