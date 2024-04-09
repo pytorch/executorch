@@ -92,8 +92,8 @@ else()
 endif()
 
 if(EXECUTORCH_BUILD_CUSTOM)
-  target_link_options_shared_lib(custom_ops_lib)
-  list(APPEND link_libraries custom_ops_lib)
+  target_link_options_shared_lib(custom_ops)
+  list(APPEND link_libraries custom_ops)
 endif()
 
 # XNNPACK pthreadpool cpuinfo

@@ -8,7 +8,7 @@
 
 #include <limits>
 
-#include <executorch/examples/models/llama2/custom_ops/FunctionHeaderWrapper.h> // Declares the operator
+#include <executorch/examples/models/llama2/custom_ops/op_sdpa.h> // Declares the operator
 #include <executorch/kernels/test/TestUtil.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_factory.h>
@@ -32,7 +32,7 @@ exec_aten::Tensor op_sdpa_with_kv_cache(
     exec_aten::optional<double> scale,
     exec_aten::Tensor& out) {
   exec_aten::RuntimeContext context{};
-  return torch::executor::llama::sdpa_with_kv_cache_outf(
+  return torch::executor::native::sdpa_with_kv_cache_out(
       context,
       query,
       key,
