@@ -11,6 +11,8 @@
 #include <executorch/runtime/core/tag.h>
 #include <executorch/runtime/platform/assert.h>
 
+#include <variant>
+
 namespace torch {
 namespace executor {
 
@@ -80,292 +82,237 @@ BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>::get() const;
 // functionality, no dependencies on atomic, and fewer supported types to better
 // suit embedded systems (ie no intrusive ptr)
 struct EValue {
-  union Payload {
-    // When in ATen mode at::Tensor is not trivially copyable, this nested union
-    // lets us handle tensor as a special case while leaving the rest of the
-    // fields in a simple state instead of requiring a switch on tag everywhere.
-    union TriviallyCopyablePayload {
-      TriviallyCopyablePayload() : as_int(0) {}
-      // Scalar supported through these 3 types
-      int64_t as_int;
-      double as_double;
-      bool as_bool;
+ private:
+  struct None {};
+  std::variant<
+      None,
+      int64_t,
+      double,
+      bool,
       // TODO(jakeszwe): convert back to pointers to optimize size of this
       // struct
-      exec_aten::ArrayRef<char> as_string;
-      exec_aten::ArrayRef<double> as_double_list;
-      exec_aten::ArrayRef<bool> as_bool_list;
-      BoxedEvalueList<int64_t> as_int_list;
-      BoxedEvalueList<exec_aten::Tensor> as_tensor_list;
-      BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>
-          as_list_optional_tensor;
-    } copyable_union;
+      exec_aten::ArrayRef<char>,
+      exec_aten::ArrayRef<double>,
+      exec_aten::ArrayRef<bool>,
+      BoxedEvalueList<int64_t>,
+      BoxedEvalueList<exec_aten::Tensor>,
+      BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>,
+      exec_aten::Tensor>
+      repr_;
 
-    // Since a Tensor just holds a TensorImpl*, there's no value to use Tensor*
-    // here.
-    exec_aten::Tensor as_tensor;
-
-    Payload() {}
-    ~Payload() {}
-  };
-
-  // Data storage and type tag
-  Payload payload;
-  Tag tag;
-
+ public:
   // Basic ctors and assignments
-  EValue(const EValue& rhs) : EValue(rhs.payload, rhs.tag) {}
+  EValue(const EValue& rhs) = default;
 
-  EValue(EValue&& rhs) noexcept : tag(rhs.tag) {
-    moveFrom(std::move(rhs));
-  }
+  EValue(EValue&& rhs) noexcept = default;
 
-  EValue& operator=(EValue&& rhs) & noexcept {
-    if (&rhs == this) {
-      return *this;
-    }
+  EValue& operator=(EValue&& rhs) noexcept = default;
 
-    destroy();
-    moveFrom(std::move(rhs));
-    return *this;
-  }
+  EValue& operator=(EValue const& rhs) = default;
 
-  EValue& operator=(EValue const& rhs) & {
-    // Define copy assignment through copy ctor and move assignment
-    *this = EValue(rhs);
-    return *this;
-  }
-
-  ~EValue() {
-    destroy();
-  }
+  ~EValue() = default;
 
   /****** None Type ******/
-  EValue() : tag(Tag::None) {
-    payload.copyable_union.as_int = 0;
-  }
+  EValue() = default;
 
   bool isNone() const {
-    return tag == Tag::None;
+    return std::holds_alternative<None>(repr_);
   }
 
   /****** Int Type ******/
-  /*implicit*/ EValue(int64_t i) : tag(Tag::Int) {
-    payload.copyable_union.as_int = i;
-  }
+  /*implicit*/ EValue(int64_t i) : repr_(i) {}
 
   bool isInt() const {
-    return tag == Tag::Int;
+    return std::holds_alternative<int64_t>(repr_);
   }
 
   int64_t toInt() const {
     ET_CHECK_MSG(isInt(), "EValue is not an int.");
-    return payload.copyable_union.as_int;
+    return std::get<int64_t>(repr_);
   }
 
   /****** Double Type ******/
-  /*implicit*/ EValue(double d) : tag(Tag::Double) {
-    payload.copyable_union.as_double = d;
-  }
+  /*implicit*/ EValue(double d) : repr_(d) {}
 
   bool isDouble() const {
-    return tag == Tag::Double;
+    return std::holds_alternative<double>(repr_);
   }
 
   double toDouble() const {
     ET_CHECK_MSG(isDouble(), "EValue is not a Double.");
-    return payload.copyable_union.as_double;
+    return std::get<double>(repr_);
   }
 
   /****** Bool Type ******/
-  /*implicit*/ EValue(bool b) : tag(Tag::Bool) {
-    payload.copyable_union.as_bool = b;
-  }
+  /*implicit*/ EValue(bool b) : repr_(b) {}
 
   bool isBool() const {
-    return tag == Tag::Bool;
+    return std::holds_alternative<bool>(repr_);
   }
 
   bool toBool() const {
     ET_CHECK_MSG(isBool(), "EValue is not a Bool.");
-    return payload.copyable_union.as_bool;
+    return std::get<bool>(repr_);
   }
 
   /****** Scalar Type ******/
   /// Construct an EValue using the implicit value of a Scalar.
   /*implicit*/ EValue(exec_aten::Scalar s) {
     if (s.isIntegral(false)) {
-      tag = Tag::Int;
-      payload.copyable_union.as_int = s.to<int64_t>();
+      repr_ = s.to<int64_t>();
     } else if (s.isFloatingPoint()) {
-      tag = Tag::Double;
-      payload.copyable_union.as_double = s.to<double>();
+      repr_ = s.to<double>();
     } else if (s.isBoolean()) {
-      tag = Tag::Bool;
-      payload.copyable_union.as_bool = s.to<bool>();
+      repr_ = s.to<bool>();
     } else {
       ET_CHECK_MSG(false, "Scalar passed to EValue is not initialized.");
     }
   }
 
   bool isScalar() const {
-    return tag == Tag::Int || tag == Tag::Double || tag == Tag::Bool;
+    return isInt() || isDouble() || isBool();
   }
 
   exec_aten::Scalar toScalar() const {
-    // Convert from implicit value to Scalar using implicit constructors.
-
-    if (isDouble()) {
-      return toDouble();
-    } else if (isInt()) {
-      return toInt();
-    } else if (isBool()) {
-      return toBool();
-    } else {
-      ET_CHECK_MSG(false, "EValue is not a Scalar.");
-    }
+    return std::visit(
+        [](auto&& val) {
+          using T = std::decay_t<decltype(val)>;
+          if constexpr (
+              std::is_same_v<T, double> || std::is_same_v<T, int> ||
+              std::is_same_v<T, bool>) {
+            return exec_aten::Scalar(val);
+          }
+          ET_CHECK_MSG(false, "Evalue is not a Scalar.");
+          return exec_aten::Scalar(0);
+        },
+        repr_);
   }
 
   /****** Tensor Type ******/
-  /*implicit*/ EValue(exec_aten::Tensor t) : tag(Tag::Tensor) {
-    // When built in aten mode, at::Tensor has a non trivial constructor
-    // destructor, so regular assignment to a union field is UB. Instead we must
-    // go through placement new (which causes a refcount bump).
-    new (&payload.as_tensor) exec_aten::Tensor(t);
-  }
+  /*implicit*/ EValue(exec_aten::Tensor t) : repr_(std::move(t)) {}
 
   bool isTensor() const {
-    return tag == Tag::Tensor;
+    return std::holds_alternative<exec_aten::Tensor>(repr_);
   }
 
   exec_aten::Tensor toTensor() && {
     ET_CHECK_MSG(isTensor(), "EValue is not a Tensor.");
-    auto res = std::move(payload.as_tensor);
-    clearToNone();
-    return res;
+    auto result = std::get<exec_aten::Tensor>(std::move(repr_));
+    repr_ = None{};
+    return result;
   }
 
   exec_aten::Tensor& toTensor() & {
     ET_CHECK_MSG(isTensor(), "EValue is not a Tensor.");
-    return payload.as_tensor;
+    return std::get<exec_aten::Tensor>(repr_);
   }
 
   const exec_aten::Tensor& toTensor() const& {
     ET_CHECK_MSG(isTensor(), "EValue is not a Tensor.");
-    return payload.as_tensor;
+    return std::get<exec_aten::Tensor>(repr_);
   }
 
   /****** String Type ******/
-  /*implicit*/ EValue(const char* s, size_t size) : tag(Tag::String) {
-    payload.copyable_union.as_string = exec_aten::ArrayRef<char>(s, size);
-  }
+  /*implicit*/ EValue(const char* s, size_t size)
+      : repr_(exec_aten::ArrayRef<char>(s, size)) {}
 
   bool isString() const {
-    return tag == Tag::String;
+    return std::holds_alternative<exec_aten::ArrayRef<char>>(repr_);
   }
 
   exec_aten::string_view toString() const {
     ET_CHECK_MSG(isString(), "EValue is not a String.");
-    return exec_aten::string_view(
-        payload.copyable_union.as_string.data(),
-        payload.copyable_union.as_string.size());
+    const auto& str = std::get<exec_aten::ArrayRef<char>>(repr_);
+    return exec_aten::string_view(str.data(), str.size());
   }
 
   /****** Int List Type ******/
-  /*implicit*/ EValue(BoxedEvalueList<int64_t> i) : tag(Tag::ListInt) {
-    payload.copyable_union.as_int_list = i;
-  }
+  /*implicit*/ EValue(BoxedEvalueList<int64_t> i) : repr_(std::move(i)) {}
 
   bool isIntList() const {
-    return tag == Tag::ListInt;
+    return std::holds_alternative<BoxedEvalueList<int64_t>>(repr_);
   }
 
   exec_aten::ArrayRef<int64_t> toIntList() const {
     ET_CHECK_MSG(isIntList(), "EValue is not an Int List.");
-    return payload.copyable_union.as_int_list.get();
+    return std::get<BoxedEvalueList<int64_t>>(repr_).get();
   }
 
   /****** Bool List Type ******/
-  /*implicit*/ EValue(exec_aten::ArrayRef<bool> b) : tag(Tag::ListBool) {
-    payload.copyable_union.as_bool_list = b;
-  }
+  /*implicit*/ EValue(exec_aten::ArrayRef<bool> b) : repr_(b) {}
 
   bool isBoolList() const {
-    return tag == Tag::ListBool;
+    return std::holds_alternative<exec_aten::ArrayRef<bool>>(repr_);
   }
 
   exec_aten::ArrayRef<bool> toBoolList() const {
     ET_CHECK_MSG(isBoolList(), "EValue is not a Bool List.");
-    return payload.copyable_union.as_bool_list;
+    return std::get<exec_aten::ArrayRef<bool>>(repr_);
   }
 
   /****** Double List Type ******/
-  /*implicit*/ EValue(exec_aten::ArrayRef<double> d) : tag(Tag::ListDouble) {
-    payload.copyable_union.as_double_list = d;
-  }
+  /*implicit*/ EValue(exec_aten::ArrayRef<double> d) : repr_(d) {}
 
   bool isDoubleList() const {
-    return tag == Tag::ListDouble;
+    return std::holds_alternative<exec_aten::ArrayRef<double>>(repr_);
   }
 
   exec_aten::ArrayRef<double> toDoubleList() const {
     ET_CHECK_MSG(isDoubleList(), "EValue is not a Double List.");
-    return payload.copyable_union.as_double_list;
+    return std::get<exec_aten::ArrayRef<double>>(repr_);
   }
 
   /****** Tensor List Type ******/
   /*implicit*/ EValue(BoxedEvalueList<exec_aten::Tensor> t)
-      : tag(Tag::ListTensor) {
-    payload.copyable_union.as_tensor_list = t;
-  }
+      : repr_(std::move(t)) {}
 
   bool isTensorList() const {
-    return tag == Tag::ListTensor;
+    return std::holds_alternative<BoxedEvalueList<exec_aten::Tensor>>(repr_);
   }
 
   exec_aten::ArrayRef<exec_aten::Tensor> toTensorList() const {
     ET_CHECK_MSG(isTensorList(), "EValue is not a Tensor List.");
-    return payload.copyable_union.as_tensor_list.get();
+    return std::get<BoxedEvalueList<exec_aten::Tensor>>(repr_).get();
   }
 
   /****** List Optional Tensor Type ******/
   /*implicit*/ EValue(BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>> t)
-      : tag(Tag::ListOptionalTensor) {
-    payload.copyable_union.as_list_optional_tensor = t;
-  }
+      : repr_(std::move(t)) {}
 
   bool isListOptionalTensor() const {
-    return tag == Tag::ListOptionalTensor;
+    return std::holds_alternative<
+        BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>>(repr_);
   }
 
   exec_aten::ArrayRef<exec_aten::optional<exec_aten::Tensor>>
   toListOptionalTensor() const {
-    return payload.copyable_union.as_list_optional_tensor.get();
+    return std::get<BoxedEvalueList<exec_aten::optional<exec_aten::Tensor>>>(
+               repr_)
+        .get();
   }
 
   /****** ScalarType Type ******/
   exec_aten::ScalarType toScalarType() const {
     ET_CHECK_MSG(isInt(), "EValue is not a ScalarType.");
-    return static_cast<exec_aten::ScalarType>(payload.copyable_union.as_int);
+    return static_cast<exec_aten::ScalarType>(toInt());
   }
 
   /****** MemoryFormat Type ******/
   exec_aten::MemoryFormat toMemoryFormat() const {
     ET_CHECK_MSG(isInt(), "EValue is not a MemoryFormat.");
-    return static_cast<exec_aten::MemoryFormat>(payload.copyable_union.as_int);
+    return static_cast<exec_aten::MemoryFormat>(toInt());
   }
 
   /****** Layout Type ******/
   exec_aten::Layout toLayout() const {
     ET_CHECK_MSG(isInt(), "EValue is not a Layout.");
-    return static_cast<exec_aten::Layout>(payload.copyable_union.as_int);
+    return static_cast<exec_aten::Layout>(toInt());
   }
 
   /****** Device Type ******/
   exec_aten::Device toDevice() const {
     ET_CHECK_MSG(isInt(), "EValue is not a Device.");
-    return exec_aten::Device(
-        static_cast<exec_aten::DeviceType>(payload.copyable_union.as_int), -1);
+    return exec_aten::Device(static_cast<exec_aten::DeviceType>(toInt()), -1);
   }
 
   template <typename T>
@@ -385,53 +332,6 @@ struct EValue {
       return exec_aten::nullopt;
     }
     return this->to<T>();
-  }
-
- private:
-  // Pre cond: the payload value has had its destructor called
-  void clearToNone() noexcept {
-    payload.copyable_union.as_int = 0;
-    tag = Tag::None;
-  }
-
-  // Shared move logic
-  void moveFrom(EValue&& rhs) noexcept {
-    if (rhs.isTensor()) {
-      new (&payload.as_tensor)
-          exec_aten::Tensor(std::move(rhs.payload.as_tensor));
-      rhs.payload.as_tensor.~Tensor();
-    } else {
-      payload.copyable_union = rhs.payload.copyable_union;
-    }
-    tag = rhs.tag;
-    rhs.clearToNone();
-  }
-
-  // Destructs stored tensor if there is one
-  void destroy() {
-    // Necessary for ATen tensor to refcount decrement the intrusive_ptr to
-    // tensorimpl that got a refcount increment when we placed it in the evalue,
-    // no-op if executorch tensor #ifdef could have a
-    // minor performance bump for a code maintainability hit
-    if (isTensor()) {
-      payload.as_tensor.~Tensor();
-    } else if (isTensorList()) {
-      for (auto& tensor : toTensorList()) {
-        tensor.~Tensor();
-      }
-    } else if (isListOptionalTensor()) {
-      for (auto& optional_tensor : toListOptionalTensor()) {
-        optional_tensor.~optional();
-      }
-    }
-  }
-
-  EValue(const Payload& p, Tag t) : tag(t) {
-    if (isTensor()) {
-      new (&payload.as_tensor) exec_aten::Tensor(p.as_tensor);
-    } else {
-      payload.copyable_union = p.copyable_union;
-    }
   }
 };
 
