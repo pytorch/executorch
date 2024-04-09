@@ -115,8 +115,12 @@ Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct b
 
 ```bash
 cd $EXECUTORCH_ROOT
-mkdir build_x86_64
-cd build_x86_64
+# Workaround for fbs files in exir/_serialize
+cp schema/program.fbs exir/_serialize/program.fbs
+cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+
+mkdir cmake_out
+cd cmake_out
 cmake .. -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=${QNN_SDK_ROOT}
 cmake --build . -t "PyQnnManagerAdaptor" "PyQnnWrapperAdaptor" -j8
 
@@ -134,12 +138,12 @@ Commands to build `qnn_executor_runner` for Android:
 
 ```bash
 cd $EXECUTORCH_ROOT
-mkdir build_android
-cd build_android
+mkdir cmake_android_out
+cd cmake_android_out
 # build executorch & qnn_executorch_backend
 cmake .. \
-    -DBUCK2=buck2 \
     -DCMAKE_INSTALL_PREFIX=$PWD \
+    -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_BUILD_QNN=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
@@ -162,7 +166,7 @@ cmake --build examples/qualcomm -j16
 
 **Note:** If you want to build for release, add `-DCMAKE_BUILD_TYPE=Release` to the `cmake` command options.
 
-You can find `qnn_executor_runner` under `build_android/examples/qualcomm/`.
+You can find `qnn_executor_runner` under `cmake_android_out/examples/qualcomm/`.
 
 
 ## Deploying and running on device
@@ -174,7 +178,7 @@ We use deeplab-v3-resnet101 as an example in this tutorial. Run below commands t
 
 ```
 cd $EXECUTORCH_ROOT
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 --compile_only --download
+python -m examples.qualcomm.scripts.deeplab_v3 -b cmake_android_out -m SM8550 --compile_only --download
 ```
 
 You might see something like below:
@@ -219,7 +223,8 @@ So, we can run `qnn_executor_runner` like
 
 ```bash
 adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
-adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/cmake_android_out/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/cmake_android_out/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \
