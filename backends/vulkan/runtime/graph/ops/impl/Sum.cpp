@@ -120,7 +120,7 @@ void add_sum_dim_IntList(
   vTensor& in_tensor = graph.get_val(in).toTensor();
 
   std::set<int64_t> dims_set;
-  auto dims_to_sum = graph.get_val(opt_dim).toIntList();
+  const auto& dims_to_sum = graph.get_val(opt_dim).toIntList();
   int64_t in_dim = in_tensor.sizes().size();
 
   for (const auto& dim : dims_to_sum) {
