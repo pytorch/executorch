@@ -28,13 +28,15 @@ void resize_conv2d_node(
 
   size_t ndim = self.sizes().size();
   std::vector<int64_t> new_out_sizes(ndim);
+  const bool transposed = graph->get_val(extra_args[4]).toBool();
 
   // Batch, Channel
   if (ndim == 4) {
     new_out_sizes.at(ndim - 4) = self.sizes().at(ndim - 4);
   }
   const auto weight_sizes = graph->get_val(extra_args[0]).toTensorRef().sizes;
-  new_out_sizes.at(ndim - 3) = weight_sizes.at(ndim - 4);
+  new_out_sizes.at(ndim - 3) =
+      transposed ? weight_sizes.at(ndim - 3) : weight_sizes.at(ndim - 4);
 
   // Height, Width
   const auto new_out_sizes_hw = calc_out_sizes_hw(
@@ -42,9 +44,8 @@ void resize_conv2d_node(
       self.sizes(),
       extra_args[0],
       /*kernel_size_only = */ false,
-      extra_args[1],
-      extra_args[2],
-      extra_args[3]);
+      {extra_args[1], extra_args[2], extra_args[3], extra_args[5]},
+      transposed);
   new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
@@ -79,9 +80,16 @@ ValueRef prepack_biases(ComputeGraph& graph, const ValueRef vref) {
   return v;
 }
 
-api::ShaderInfo get_conv2d_shader(const vTensor& t_out, bool prepack_weights) {
+api::ShaderInfo get_conv2d_shader(
+    const vTensor& t_out,
+    const bool prepack_weights,
+    const bool transposed) {
   std::stringstream kernel_name;
-  kernel_name << "conv2d";
+  if (transposed) {
+    kernel_name << "conv_transpose2d";
+  } else {
+    kernel_name << "conv2d";
+  }
   if (prepack_weights) {
     kernel_name << "_prepack_weights";
   }
@@ -90,7 +98,10 @@ api::ShaderInfo get_conv2d_shader(const vTensor& t_out, bool prepack_weights) {
   return VK_KERNEL_FROM_STR(kernel_name.str());
 }
 
-ValueRef prepack_weights(ComputeGraph& graph, const ValueRef vref) {
+ValueRef prepack_weights(
+    ComputeGraph& graph,
+    const ValueRef vref,
+    const bool transposed) {
   const auto original_sizes = graph.get_val(vref).toTensorRef().sizes;
 
   int64_t batch_padded =
@@ -101,7 +112,9 @@ ValueRef prepack_weights(ComputeGraph& graph, const ValueRef vref) {
   int64_t width = api::utils::val_at(-1, original_sizes);
 
   const auto final_sizes = std::vector<int64_t>{
-      4, batch_padded * height / 4, channels_padded * width};
+      4,
+      transposed ? channels_padded * height / 4 : batch_padded * height / 4,
+      transposed ? batch_padded * width : channels_padded * width};
 
   ValueRef v = graph.add_tensor(
       final_sizes,
@@ -113,7 +126,8 @@ ValueRef prepack_weights(ComputeGraph& graph, const ValueRef vref) {
   api::utils::uvec3 global_size = t.extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  api::ShaderInfo shader = get_conv2d_shader(t, /*prepack_weights = */ true);
+  api::ShaderInfo shader =
+      get_conv2d_shader(t, /*prepack_weights = */ true, transposed);
 
   const auto padded_sizes = std::vector<int64_t>{batch_padded, channels_padded};
 
@@ -152,7 +166,8 @@ struct Conv2dParams final {
 Conv2dParams create_conv2d_params(
     ComputeGraph& graph,
     const ValueRef weight,
-    const KernelParams& p) {
+    const KernelParams& p,
+    const bool transposed) {
   const auto overlay_region = api::utils::make_ivec2({
       p.kernel_size.data[0] +
           (p.kernel_size.data[0] - 1) * (p.dilation.data[0] - 1),
@@ -160,12 +175,19 @@ Conv2dParams create_conv2d_params(
           (p.kernel_size.data[1] - 1) * (p.dilation.data[1] - 1),
   });
   const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
-  const int32_t in_group_size = api::utils::safe_downcast<int32_t>(
-      api::utils::align_up(weight_sizes.at(1), INT64_C(4)));
+  const int32_t in_group_size =
+      api::utils::safe_downcast<int32_t>(api::utils::align_up(
+          transposed ? weight_sizes.at(0) : weight_sizes.at(1), INT64_C(4)));
   return {overlay_region, in_group_size};
 }
 
-void check_conv2d_params(const KernelParams& p) {
+void check_conv2d_params(const KernelParams& p, const bool transposed) {
+  if (transposed) {
+    if (p.dilation.data[0] > 1 || p.dilation.data[1] > 1) {
+      VK_THROW(
+          "aten.convolution.default: transposed = true, dilation > 1 is not supported yet!");
+    }
+  }
   if ((p.padding.data[0] > 0 && p.kernel_size.data[0] > 1 &&
        p.dilation.data[0] > 1) ||
       (p.padding.data[1] > 0 && p.kernel_size.data[1] > 1 &&
@@ -183,14 +205,17 @@ void add_conv2d_node(
     const ValueRef stride,
     const ValueRef padding,
     const ValueRef dilation,
+    const ValueRef transposed,
+    const ValueRef output_padding,
     const ValueRef out) {
+  const bool transposed_val = graph.get_val(transposed).toBool();
+
   ValueRef arg_in = prepack_if_tensor_ref(graph, in);
-  ValueRef arg_weight = prepack_weights(graph, weight);
+  ValueRef arg_weight = prepack_weights(graph, weight, transposed_val);
   ValueRef arg_bias = prepack_biases(graph, bias);
 
   vTensor& t_in = graph.get_val(arg_in).toTensor();
   vTensor& t_out = graph.get_val(out).toTensor();
-
   check_conv2d_args(t_in, t_out);
 
   api::utils::uvec3 global_size = t_out.virtual_extents();
@@ -204,12 +229,12 @@ void add_conv2d_node(
       padding,
       dilation);
   Conv2dParams extra_params =
-      create_conv2d_params(graph, weight, kernel_params);
+      create_conv2d_params(graph, weight, kernel_params, transposed_val);
 
-  check_conv2d_params(kernel_params);
+  check_conv2d_params(kernel_params, transposed_val);
 
   api::ShaderInfo shader =
-      get_conv2d_shader(t_out, /*prepack_weights = */ false);
+      get_conv2d_shader(t_out, /*prepack_weights = */ false, transposed_val);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
@@ -228,20 +253,25 @@ void add_conv2d_node(
       },
       // Resizing
       resize_conv2d_node,
-      {weight, stride, padding, dilation}));
+      {weight, stride, padding, dilation, transposed, output_padding}));
 }
 
 void conv2d(ComputeGraph& graph, const std::vector<ValueRef>& args) {
-  const bool transposed = graph.get_val(args[6]).toBool();
-  if (transposed) {
-    VK_THROW("aten.convolution.default: transpose is not supported yet!");
-  }
   const int64_t groups = graph.get_val(args[8]).toInt();
   if (groups > 1) {
     VK_THROW("aten.convolution.default: groups > 1 is not supported yet!");
   }
   return add_conv2d_node(
-      graph, args[0], args[1], args[2], args[3], args[4], args[5], args[9]);
+      graph,
+      args[0],
+      args[1],
+      args[2],
+      args[3],
+      args[4],
+      args[5],
+      args[6],
+      args[7],
+      args[9]);
 }
 
 REGISTER_OPERATORS {
