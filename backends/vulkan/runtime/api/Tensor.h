@@ -103,9 +103,8 @@ class vTensor final {
       api::Context* context,
       const std::vector<int64_t>& sizes,
       const api::ScalarType dtype,
-      const api::StorageType storage_type = api::StorageType::TEXTURE_3D,
-      const api::GPUMemoryLayout memory_layout =
-          api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
+      const api::StorageType storage_type = api::kTexture3D,
+      const api::GPUMemoryLayout memory_layout = api::kChannelsPacked,
       const bool allocate_memory = true);
 
   // Default constructor for quantized vTensor
@@ -115,9 +114,8 @@ class vTensor final {
       double q_scale,
       int64_t q_zero_point,
       const api::ScalarType dtype,
-      const api::StorageType storage_type = api::StorageType::TEXTURE_3D,
-      const api::GPUMemoryLayout memory_layout =
-          api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+      const api::StorageType storage_type = api::kTexture3D,
+      const api::GPUMemoryLayout memory_layout = api::kChannelsPacked);
 
   // Copy Constructor and Assignment; Ideally copying  would be disabled
   // (see the reasoning for move assignment below) but it is required for

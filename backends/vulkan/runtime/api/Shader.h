@@ -62,25 +62,14 @@ struct ShaderInfo final {
   // Shader Metadata
   utils::uvec3 out_tile_size{1u, 1u, 1u};
 
-  std::vector<uint32_t> tile_size;
-  StorageType bias_storage_type{StorageType::UNKNOWN};
-  StorageType weight_storage_type{StorageType::UNKNOWN};
-
   explicit ShaderInfo();
-  explicit ShaderInfo(std::string, const char*);
-  explicit ShaderInfo(
-      std::string,
-      const uint32_t*,
-      const uint32_t,
-      std::vector<VkDescriptorType>);
+
   explicit ShaderInfo(
       std::string,
       const uint32_t*,
       const uint32_t,
       std::vector<VkDescriptorType>,
-      const std::vector<uint32_t>& tile_size,
-      const StorageType bias_storage_type,
-      const StorageType weight_storage_type);
+      const utils::uvec3 tile_size);
 };
 
 bool operator==(const ShaderInfo& _1, const ShaderInfo& _2);
