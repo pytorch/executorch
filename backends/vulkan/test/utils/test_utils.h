@@ -81,6 +81,13 @@ void record_image_to_nchw_op(
     vTensor& v_src,
     api::VulkanBuffer& dst_buffer);
 
+void record_conv2d_prepack_weights_op(
+    api::Context* const context,
+    api::VulkanBuffer& src_buffer,
+    vTensor& v_dst,
+    const std::vector<int64_t>& original_sizes,
+    const std::vector<int64_t>& padded_sizes);
+
 void record_binary_op(
     api::Context* const context,
     const std::string& op_name,

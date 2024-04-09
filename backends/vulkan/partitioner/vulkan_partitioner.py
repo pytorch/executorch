@@ -48,6 +48,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.max_pool2d_with_indices.default,
             # Sum
             exir_ops.edge.aten.sum.dim_IntList,
+            # Convolution operators
+            exir_ops.edge.aten.convolution.default,
             # Other
             operator.getitem,
         ]
