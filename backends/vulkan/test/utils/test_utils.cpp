@@ -54,6 +54,40 @@ void record_image_to_nchw_op(
       v_src.cpu_sizes_ubo()->buffer());
 }
 
+void record_conv2d_prepack_weights_op(
+    api::Context* const context,
+    api::VulkanBuffer& src_buffer,
+    vTensor& v_dst,
+    const std::vector<int64_t>& original_sizes,
+    const std::vector<int64_t>& padded_sizes) {
+  api::PipelineBarrier pipeline_barrier{};
+
+  std::stringstream kernel_name;
+  kernel_name << "conv2d_prepack_weights";
+  apply_dtype_suffix(kernel_name, v_dst);
+  api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name.str());
+
+  api::UniformParamsBuffer original_sizes_ubo(
+      context, api::utils::make_ivec4(original_sizes, /*reverse = */ true));
+  api::UniformParamsBuffer padded_sizes_ubo(
+      context, api::utils::make_ivec2(padded_sizes, /*reverse = */ true));
+
+  context->submit_compute_job(
+      shader,
+      pipeline_barrier,
+      v_dst.virtual_extents(),
+      adaptive_work_group_size(v_dst.virtual_extents()),
+      VK_NULL_HANDLE,
+      v_dst.image(
+          pipeline_barrier,
+          api::PipelineStage::COMPUTE,
+          api::MemoryAccessType::WRITE),
+      src_buffer,
+      v_dst.gpu_sizes_ubo()->buffer(),
+      original_sizes_ubo.buffer(),
+      padded_sizes_ubo.buffer());
+}
+
 void record_binary_op(
     api::Context* const context,
     const std::string& op_name,
