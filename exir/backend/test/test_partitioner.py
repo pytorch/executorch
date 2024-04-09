@@ -26,7 +26,7 @@ from executorch.exir.backend.test.demos.rpc.executor_backend_partitioner import 
 from executorch.exir.backend.test.demos.rpc.executor_backend_preprocess import (
     ExecutorBackend,
 )
-from executorch.exir.backend.utils import get_delegates
+from executorch.exir.backend.utils import get_delegates, tag_constant_data
 
 from executorch.exir.dialects._ops import ops as exir_ops
 
@@ -520,6 +520,88 @@ class TestPartitioner(unittest.TestCase):
             _ = edge.to_backend(PartitionerTagData())
 
         self.assertEqual(
-            "constant data node (arg0_1) is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)",
+            "constant data node (b_const) is tagged with (tag0) but has user (aten_sub_tensor) which has tag (None)",
             str(error.exception),
         )
+
+    def test_not_delegate_mutable_buffers(self) -> None:
+        """
+        A test case to check the mutated buffer is not delegated. We'll need to add a test case
+        to consider when the delegate can consume the mutable buffer.
+        """
+
+        class MutableStateModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("my_state", torch.zeros(1))
+
+            def forward(self, x):
+                y = x + self.my_state
+                self.my_state.add_(1)
+                return y
+
+        edge = exir.to_edge(
+            torch.export.export(
+                MutableStateModule(),
+                (torch.zeros(1),),
+            )
+        )
+        self.assertGreater(
+            len(edge.exported_program().graph_signature.buffers_to_mutate),
+            0,
+            "The test case should at leaset one mutable buffer",
+        )
+
+        class PartitionerTagData(Partitioner):
+            def __init__(self):
+                super().__init__()
+                self.delegation_spec = DelegationSpec(
+                    ExecutorBackend.__name__,
+                    [CompileSpec(key, value) for key, value in self.spec.items()],
+                )
+
+            def partition(
+                self, edge_exported_program: ExportedProgram
+            ) -> PartitionResult:
+                partition_tags = {}
+                for node in edge_exported_program.graph.nodes:
+                    if node.op == "call_function" and node.target in [
+                        exir_ops.edge.aten.add.Tensor
+                    ]:
+                        delegation_tag = "tag0"
+                        node.meta["delegation_tag"] = delegation_tag
+                        partition_tags[delegation_tag] = self.delegation_spec
+                tag_constant_data(edge_exported_program)
+                return PartitionResult(
+                    tagged_exported_program=edge_exported_program,
+                    partition_tags=partition_tags,
+                )
+
+        # Check the edge program inital buffers_to_mutate
+        mutate_op = "aten_add_tensor_1"
+        self.assertEqual(
+            edge.exported_program().graph_signature.buffers_to_mutate[mutate_op],
+            "my_state",
+        )
+        edge = edge.to_backend(PartitionerTagData())
+        # After to_backend, add is delegated and is no longer in buffers_to_mutate.
+        self.assertNotIn(
+            mutate_op,
+            edge.exported_program().graph_signature.buffers_to_mutate,
+        )
+
+        mutate_op = "getitem_1"
+        # Ensure the mutated buffer is not delegated, and the new mutate node is getitem (from call_delegate)
+        self.assertEqual(
+            edge.exported_program().graph_signature.buffers_to_mutate[mutate_op],
+            "my_state",
+        )
+        # Check the copy_ node is inserted
+        edge = edge.to_executorch()
+        copy_node = [
+            node
+            for node in edge.exported_program().graph.nodes
+            if node.op == "call_function"
+            and node.target == torch.ops.aten.copy_.default
+        ]
+        self.assertEqual(len(copy_node), 1)

@@ -21,7 +21,4 @@ layout(set = 0, binding = 0) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_i
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
-void main() {
-  const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  ${VEC4_T[DTYPE]} tex = texelFetch(image_in, ${GET_POS[NDIM]("pos")}, 0);
-}
+void main() {}

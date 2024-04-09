@@ -75,6 +75,10 @@ void PrepackNode::encode(ComputeGraph* graph) {
         descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);
   }
 
+  // Submit a compute shader that performs a no-op with the packed tensor in
+  // order to trigger a image layout transition from GENERAL to
+  // READ_ONLY_OPTIMAL. This ensures that future uses of the tensor will be
+  // bound with the correct image layout.
   {
     api::PipelineBarrier pipeline_barrier{};
     api::DescriptorSet descriptor_set =

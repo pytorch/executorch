@@ -215,7 +215,7 @@ struct ContentView: View {
           tokens.append(token)
           if tokens.count > 2 {
             let text = tokens.joined()
-            let count = text.count
+            let count = tokens.count
             tokens = []
             DispatchQueue.main.async {
               withAnimation {
