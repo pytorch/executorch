@@ -422,11 +422,10 @@ To delegate to the XNNPACK backend, call `to_backend` with an instance of
 
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
-from executorch.exir import EdgeCompileConfig, to_edge
 
 #...
 
-edge_config = edge_config = get_xnnpack_edge_compile_config()
+edge_config = get_xnnpack_edge_compile_config()
 edge_manager = to_edge(traced_model, compile_config=edge_config)
 
 # Delegate to the XNNPACK backend.
@@ -554,6 +553,7 @@ model after the `to_backend()` call:
 from executorch.exir.backend.utils import get_delegation_info
 from tabulate import tabulate
 
+# ... After call to to_backend(), but before to_executorch()
 graph_module = edge_manager.exported_program().graph_module
 delegation_info = get_delegation_info(graph_module)
 print(delegation_info.get_summary())
@@ -564,9 +564,9 @@ print(tabulate(df, headers="keys", tablefmt="fancy_grid"))
 For NanoGPT targeting the XNNPACK backend, you might see the following:
 
 ```
-Total  delegated  subgraphs:  86
-Number  of  delegated  nodes:  473
-Number  of  non-delegated  nodes:  430
+Total  delegated  subgraphs:  110
+Number  of  delegated  nodes:  305
+Number  of  non-delegated  nodes:  646
 ```
 
 |     | op_type                 | occurrences_in_delegated_graphs | occurrences_in_non_delegated_graphs |
@@ -576,12 +576,12 @@ Number  of  non-delegated  nodes:  430
 | 2   | aten_addmm_default      | 48                              | 0                                   |
 | 3   | aten_arange_start_step  | 0                               | 25                                  |
 |     | ...                     |                                 |                                     |
-| 23  | aten_view_copy_default  | 170                             | 48                                  |
+| 23  | aten_view_copy_default  | 98                              | 120                                 |
 |     | ...                     |                                 |                                     |
-| 26  | Total                   | 473                             | 430                                 |
+| 26  | Total                   | 305                             | 646                                 |
 
-From the table, the operator `aten_view_copy_default` appears 170 times in
-delegate graphs and 48 times in non-delegated graphs. To see a more detailed
+From the table, the operator `aten_view_copy_default` appears 98 times in
+delegate graphs and 120 times in non-delegated graphs. To see a more detailed
 view, use the `print_delegated_graph()` method to display a printout of the
 whole graph.
 
@@ -638,12 +638,12 @@ In your export script, after calling `to_edge()` and `to_executorch()`, call
 import copy
 
 # Make the deep copy immediately after to to_edge()
-edge_program_manager_copy = copy.deepcopy(edge_program_manager)
+edge_manager_copy = copy.deepcopy(edge_manager)
 
 # ...
 # Generate ETRecord right after to_executorch()
 etrecord_path = "etrecord.bin"
-generate_etrecord(etrecord_path, edge_program_manager_copy, et_program_manager)
+generate_etrecord(etrecord_path, edge_manager_copy, et_program)
 ```
 
 Run the export script and the ETRecord will be generated as `etrecord.bin`.
@@ -666,15 +666,15 @@ Create an Instance of the ETDumpGen class and pass it to the Module constructor.
 
 ```cpp
 std::unique_ptr<torch::executor::ETDumpGen> etdump_gen_ = std::make_unique<torch::executor::ETDumpGen>();
-Module llm_model("nanogpt.pte", Module::MlockConfig::UseMlock, std::move(etdump_gen_));
+Module model("nanogpt.pte", torch::executor::Module::MlockConfig::UseMlockIgnoreErrors, std::move(etdump_gen_));
 ```
 
-After execution, save the ETDump to a file. You can capture multiple model runs
-in a single trace, if desired.
+After calling `generate()`, save the ETDump to a file. You can capture multiple
+model runs in a single trace, if desired.
 
 ```cpp
 torch::executor::ETDumpGen* etdump_gen =
-    static_cast<torch::executor::ETDumpGen*>(llm_model.event_tracer());
+    static_cast<torch::executor::ETDumpGen*>(model.event_tracer());
 
 ET_LOG(Info, "ETDump size: %zu blocks", etdump_gen->get_num_blocks());
 etdump_result result = etdump_gen->get_etdump_data();
@@ -706,22 +706,18 @@ can use the Inspector API to view performance information.
 ```python
 from executorch.sdk import Inspector
 
-inspector = Inspector(etdump_path="etdump.etdp", etrecord="etrecord.bin")
-# If you did not generate an ETRecord, then just pass in the ETDump: `inspector = Inspector(etdump_path="etdump.etdp")`
+inspector = Inspector(etdump_path="etdump.etdp")
+# If you did not generate an ETRecord, then just pass in the ETDump: `inspector = Inspector(etdump_path="etdump.etdp")`	# If you also generated an ETRecord, then you can pass that in as well: `inspector = Inspector(etdump_path="etdump.etdp", etrecord="etrecord.bin")`
 
-inspector.print_data_tabular()
+with open("inspector_out.txt", "w") as file:
+    inspector.print_data_tabular(file)
 ```
 
 This prints the performance data in a tabular format in “inspector_out.txt”,
 with each row being a profiling event.
 
-|     | event_block_name | event_name                   | p10 (ms) | p50 (ms) | p90 (ms) | avg (ms) | min (ms) | max (ms) | op_types | is_delegated_op | delegate_backend_name |
-| --- | ---------------- | ---------------------------- | -------- | -------- | -------- | -------- | -------- | -------- | -------- | --------------- | --------------------- |
-| 0   | Default          | Method::init                 | 60.502   | 60.502   | 60.502   | 60.502   | 60.502   | 60.502   | []       | False           |                       |
-| 1   | Default          | Program::load_method         | 60.5114  | 60.5114  | 60.5114  | 60.5114  | 60.5114  | 60.5114  | []       | False           |                       |
-| 2   | Execute          | native_call_arange.start_out | 0.029583 | 0.029583 | 0.029583 | 0.029583 | 0.029583 | 0.029583 | []       | False           |                       |
-| 3   | Execute          | native_call_embedding.out    | 0.022916 | 0.022916 | 0.022916 | 0.022916 | 0.022916 | 0.022916 | []       | False           |                       |
-| 4   | Execute          | native_call_embedding.out    | 0.001084 | 0.001084 | 0.001084 | 0.001084 | 0.001084 | 0.001084 | []       | False           |                       |
+<a href="./_static/img/llm_manual_print_data_tabular.png" target="_blank">View
+in full size</a>
 
 To learn more about the Inspector and the rich functionality it provides, see
 the
