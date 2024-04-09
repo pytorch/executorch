@@ -51,13 +51,13 @@ GraphConfig::GraphConfig() {
   // For now, force TEXTURE_3D storage as we are still developing shader
   // support for buffer storage type.
   enableStorageTypeOverride = true;
-  storageTypeOverride = api::StorageType::TEXTURE_3D;
+  storageTypeOverride = api::kTexture3D;
 
   // For now, force TENSOR_WIDTH_PACKED memory layout by default as we are still
   // developing support for other memory layouts. In the future memory layout
   // settings will be serialized as part of the graph.
   enableMemoryLayoutOverride = true;
-  memoryLayoutOverride = api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+  memoryLayoutOverride = api::kWidthPacked;
 }
 
 void GraphConfig::setStorageTypeOverride(api::StorageType storage_type) {

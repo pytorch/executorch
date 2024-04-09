@@ -166,8 +166,11 @@ enum class StorageType {
   BUFFER,
   TEXTURE_3D,
   TEXTURE_2D,
-  UNKNOWN,
 };
+
+static constexpr StorageType kBuffer = StorageType::BUFFER;
+static constexpr StorageType kTexture3D = StorageType::TEXTURE_3D;
+static constexpr StorageType kTexture2D = StorageType::TEXTURE_2D;
 
 /**
  * The enum below is used to describe how tensor data is laid out when stored in
@@ -187,6 +190,15 @@ enum class GPUMemoryLayout : uint32_t {
   TENSOR_HEIGHT_PACKED = 1u,
   TENSOR_CHANNELS_PACKED = 2u,
 };
+
+static constexpr GPUMemoryLayout kWidthPacked =
+    GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+
+static constexpr GPUMemoryLayout kHeightPacked =
+    GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+
+static constexpr GPUMemoryLayout kChannelsPacked =
+    GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
 
 } // namespace api
 } // namespace vkcompute

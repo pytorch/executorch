@@ -543,13 +543,6 @@ typeIdMapping = {
     r"\buniform\b": "VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER",
 }
 
-storageTypeToEnum = {
-    "TEXTURE_2D": "api::StorageType::TEXTURE_2D",
-    "TEXTURE_3D": "api::StorageType::TEXTURE_3D",
-    "BUFFER": "api::StorageType::BUFFER",
-    "": "api::StorageType::UNKNOWN",
-}
-
 
 def determineDescriptorType(lineStr: str) -> str:
     for identifier, typeNum in typeIdMapping.items():
@@ -632,7 +625,7 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
     tile_size = (
         f"{{{', '.join(str(x) for x in shader_info.tile_size)}}}"
         if (len(shader_info.tile_size) > 0)
-        else "std::vector<uint32_t>()"
+        else "{1, 1, 1}"
     )
 
     shader_info_layouts = "{{{}}}".format(",\n ".join(shader_info.layouts))
@@ -643,8 +636,6 @@ def generateShaderInfoStr(shader_info: ShaderInfo, name: str, sizeBytes: int) ->
         str(sizeBytes),
         shader_info_layouts,
         tile_size,
-        storageTypeToEnum[shader_info.weight_storage_type],
-        storageTypeToEnum[shader_info.bias_storage_type],
     ]
 
     shader_info_str = textwrap.indent(
