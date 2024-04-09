@@ -35,7 +35,7 @@
  */
 #define ET_CHECK_MSG(_cond, _format, ...)                               \
   ({                                                                    \
-    if (!(_cond)) {                                                     \
+    if __ET_UNLIKELY (!(_cond)) {                                       \
       ET_ASSERT_MESSAGE_EMIT(" (%s): " _format, #_cond, ##__VA_ARGS__); \
       torch::executor::runtime_abort();                                 \
     }                                                                   \
@@ -49,7 +49,7 @@
  */
 #define ET_CHECK(_cond)                       \
   ({                                          \
-    if (!(_cond)) {                           \
+    if __ET_UNLIKELY (!(_cond)) {             \
       ET_ASSERT_MESSAGE_EMIT(": %s", #_cond); \
       torch::executor::runtime_abort();       \
     }                                         \
