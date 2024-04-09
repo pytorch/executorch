@@ -41,7 +41,7 @@ api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
     size_t numel = api::utils::multiply_integers(packed.sizes());
     api::StorageBuffer staging(graph->context(), packed.dtype(), numel);
     size_t nbytes = numel * api::element_size(packed.dtype());
-    copy_zeros_to_staging(staging, nbytes);
+    set_staging_zeros(staging, nbytes);
     return staging;
   }
 
