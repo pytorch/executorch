@@ -16,6 +16,8 @@ namespace vkcompute {
 
 void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor);
 
+void apply_ndim_suffix(std::stringstream& kernel_name, const vTensor& tensor);
+
 void apply_memory_layout_suffix(
     std::stringstream& kernel_name,
     const vTensor& tensor);
