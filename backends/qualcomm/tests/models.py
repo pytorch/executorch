@@ -409,9 +409,9 @@ class LayerNorm(torch.nn.Module):
 
 
 class Linear(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, use_bias: bool = True):
         super().__init__()
-        self.linear = torch.nn.Linear(4, 5).eval()
+        self.linear = torch.nn.Linear(4, 5, use_bias).eval()
 
     def forward(self, x):
         return self.linear(x)

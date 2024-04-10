@@ -225,6 +225,7 @@ class TestQNN(unittest.TestCase):
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
         is_conv_per_channel: Optional[bool] = True,
+        is_linear_per_channel: Optional[bool] = False,
         custom_quant_annotations: Tuple[Callable] = (),
         quant_dtype: QuantDtype = QuantDtype.use_8a8w,
     ) -> torch.fx.GraphModule:
@@ -232,7 +233,8 @@ class TestQNN(unittest.TestCase):
 
         quantizer = QnnQuantizer()
         quantizer.add_custom_quant_annotations(custom_quant_annotations)
-        quantizer.set_per_channel_quant(is_conv_per_channel)
+        quantizer.set_per_channel_conv_quant(is_conv_per_channel)
+        quantizer.set_per_channel_linear_quant(is_linear_per_channel)
 
         if quant_dtype == QuantDtype.use_8a8w:
             pass  # default setting
