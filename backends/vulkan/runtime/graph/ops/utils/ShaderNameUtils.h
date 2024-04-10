@@ -10,16 +10,16 @@
 
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
-#include <sstream>
+#include <string>
 
 namespace vkcompute {
 
-void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor);
+constexpr size_t kShaderNameReserve = 64u;
 
-void apply_ndim_suffix(std::stringstream& kernel_name, const vTensor& tensor);
+void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor);
 
-void apply_memory_layout_suffix(
-    std::stringstream& kernel_name,
-    const vTensor& tensor);
+void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor);
+
+void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor);
 
 } // namespace vkcompute

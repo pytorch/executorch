@@ -49,9 +49,8 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   std::vector<int64_t> sizes = {4, 4, 2};
   vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ true);
 
-  std::stringstream kernel_name;
-  kernel_name << "fill_texture__test";
-  apply_dtype_suffix(kernel_name, a);
+  std::string kernel_name("fill_texture__test");
+  add_dtype_suffix(kernel_name, a);
 
   struct Params final {
     api::utils::ivec3 size;
@@ -70,7 +69,7 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   {
     api::PipelineBarrier pipeline_barrier{};
     api::context()->submit_compute_job(
-        VK_KERNEL_FROM_STR(kernel_name.str()),
+        VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         {4, 4, 4},
         {4, 4, 4},
@@ -748,15 +747,14 @@ void run_from_gpu_test(
   vTensor vten =
       vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
 
-  std::stringstream kernel_name;
-  kernel_name << "idx_fill_texture";
-  apply_memory_layout_suffix(kernel_name, vten);
-  apply_dtype_suffix(kernel_name, vten);
+  std::string kernel_name("idx_fill_texture");
+  add_memory_layout_suffix(kernel_name, vten);
+  add_dtype_suffix(kernel_name, vten);
 
   {
     api::PipelineBarrier pipeline_barrier{};
     api::context()->submit_compute_job(
-        VK_KERNEL_FROM_STR(kernel_name.str()),
+        VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         vten.virtual_extents(),
         {4, 4, 4},

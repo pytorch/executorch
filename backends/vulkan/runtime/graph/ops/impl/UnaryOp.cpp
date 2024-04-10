@@ -44,13 +44,12 @@ void add_unary_op_node(
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << op_name;
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name(op_name);
+  add_dtype_suffix(kernel_name, t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
