@@ -76,6 +76,10 @@ BUCK_PLATFORM_MAP = {
         archive_name="buck2-aarch64-apple-darwin.zst",
         target_versions=["99e407b49dc432eda0cbddd67ea78346"],
     ),
+    ("darwin", "x86_64"): BuckInfo(
+        archive_name="buck2-x86_64-apple-darwin.zst",
+        target_versions=["9150d78e7a7531799a1b06ce58623bbc"],
+    ),
 }
 
 
