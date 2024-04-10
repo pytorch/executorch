@@ -73,9 +73,8 @@ void add_max_pool2d_node(
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << "max_pool2d";
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name("max_pool2d");
+  add_dtype_suffix(kernel_name, t_out);
 
   KernelParams kernel_params = create_kernel_params(
       graph,
@@ -87,7 +86,7 @@ void add_max_pool2d_node(
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs

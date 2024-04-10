@@ -63,15 +63,15 @@ void record_conv2d_prepack_weights_op(
     const bool transposed) {
   api::PipelineBarrier pipeline_barrier{};
 
-  std::stringstream kernel_name;
+  std::string kernel_name;
   if (transposed) {
-    kernel_name << "conv_transpose2d";
+    kernel_name = "conv_transpose2d";
   } else {
-    kernel_name << "conv2d";
+    kernel_name = "conv2d";
   }
-  kernel_name << "_prepack_weights";
-  apply_dtype_suffix(kernel_name, v_dst);
-  api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name.str());
+  kernel_name += "_prepack_weights";
+  add_dtype_suffix(kernel_name, v_dst);
+  api::ShaderInfo shader = VK_KERNEL_FROM_STR(kernel_name);
 
   api::UniformParamsBuffer original_sizes_ubo(
       context, api::utils::make_ivec4(original_sizes, /*reverse = */ true));
@@ -100,13 +100,12 @@ void record_binary_op(
     vTensor& v_in1,
     vTensor& v_in2,
     vTensor& v_dst) {
-  std::stringstream kernel_name;
-  kernel_name << "binary_" << op_name << "_nobroadcast__test";
-  apply_dtype_suffix(kernel_name, v_dst);
+  std::string kernel_name = "binary_" + op_name + "_nobroadcast__test";
+  add_dtype_suffix(kernel_name, v_dst);
 
   api::PipelineBarrier pipeline_barrier{};
   context->submit_compute_job(
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
