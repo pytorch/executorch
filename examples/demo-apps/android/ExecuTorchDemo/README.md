@@ -17,7 +17,7 @@ This guide explains how to setup ExecuTorch for Android using a demo app. The ap
 * Refer to [Setting up ExecuTorch](https://pytorch.org/executorch/stable/getting-started-setup) to set up the repo and dev environment.
 * Download and install [Android Studio and SDK](https://developer.android.com/studio).
 * Supported Host OS: CentOS, macOS Ventura (M1/x86_64). See below for Qualcomm HTP specific requirements.
-* *Qualcomm HTP Only[^1]:* To build and run on Qualcomm's AI Engine Direct, please follow [Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend](build-run-qualcomm-ai-engine-direct-backend.md) for hardware and software pre-requisites.
+* *Qualcomm HTP Only[^1]:* To build and run on Qualcomm's AI Engine Direct, please follow [Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend](build-run-qualcomm-ai-engine-direct-backend.md) for hardware and software pre-requisites. The version we use for this tutorial is 2.19. The chip we use for this tutorial is SM8450.
 :::
 ::::
 
@@ -54,7 +54,7 @@ For delegating to Qualcomm Hexagon NPU, please follow the tutorial [here](build-
 After generating the model, copy the model to `assets` directory.
 
 ```bash
-python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8550 -s <adb_connected_device_serial>
+python -m examples.qualcomm.scripts.deeplab_v3 -b build_android -m SM8450 -s <adb_connected_device_serial>
 cp deeplab_v3/dlv3_qnn.pte examples/demo-apps/android/ExecuTorchDemo/app/src/main/assets/
 ```
 
@@ -161,7 +161,7 @@ mkdir -p ../examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64
 We need to push some additional Qualcomm HTP backend libraries to the app. Please refer to [Qualcomm docs](build-run-qualcomm-ai-engine-direct-backend.md) here.
 
 ```bash
-cp ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Skel.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpStub.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so \
+cp ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${QNN_SDK_ROOT}/lib/hexagon-v69/unsigned/libQnnHtpV69Skel.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtpV69Stub.so ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so \
    examples/demo-apps/android/ExecuTorchDemo/app/src/main/jniLibs/arm64-v8a
 ```
 
