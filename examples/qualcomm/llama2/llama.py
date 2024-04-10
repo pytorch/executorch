@@ -168,7 +168,9 @@ if __name__ == "__main__":
     input_list = create_device_inputs(inputs)
     pte_filename = "llama2_qnn"
 
-    if args.ptq == "16a16w":
+    if args.ptq == "8a8w":
+        quant_dtype = QuantDtype.use_8a8w
+    elif args.ptq == "16a16w":
         quant_dtype = QuantDtype.use_16a16w
     elif args.ptq == "16a4w":
         quant_dtype = QuantDtype.use_16a4w
