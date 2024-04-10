@@ -27,34 +27,15 @@ ShaderInfo::ShaderInfo(
     std::string name,
     const uint32_t* const spirv_bin,
     const uint32_t size,
-    std::vector<VkDescriptorType>  layout)
-    : src_code{
-          spirv_bin,
-          size,
-      },
-      kernel_name{std::move(name)},
-      kernel_layout{std::move(layout)} {}
-
-ShaderInfo::ShaderInfo(
-    std::string name,
-    const uint32_t* const spirv_bin,
-    const uint32_t size,
     std::vector<VkDescriptorType>  layout,
-    const std::vector<uint32_t>& tile_size,
-    const StorageType bias_storage_type,
-    const StorageType weight_storage_type)
+    const utils::uvec3 tile_size)
     : src_code{
           spirv_bin,
           size,
       },
       kernel_name{std::move(name)},
       kernel_layout{std::move(layout)},
-      tile_size(tile_size),
-      bias_storage_type(bias_storage_type),
-      weight_storage_type(weight_storage_type) {
-  for (uint64_t i = 0; i < tile_size.size(); ++i) {
-    out_tile_size.data[i] = tile_size[i];
-  }
+      out_tile_size(tile_size) {
 }
 
 bool operator==(const ShaderInfo& _1, const ShaderInfo& _2) {

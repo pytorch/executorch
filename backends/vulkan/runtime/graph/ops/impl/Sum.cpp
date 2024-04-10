@@ -46,10 +46,8 @@ void resize_sum_node(
 }
 
 void check_sum_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(
-      check_memory_layout_is(in, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
-  VK_CHECK_COND(check_memory_layout_is(
-      out, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
+  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }
 
 void add_sum_dim_node(
@@ -106,8 +104,7 @@ ValueRef add_node(
     const api::ScalarType dtype = api::kFloat) {
   vTensor& v_input = graph.get_val(input).toTensor();
   std::vector<int64_t> output_size = calc_out_sizes(v_input, dim, keepdim);
-  return graph.add_tensor(
-      output_size, dtype, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  return graph.add_tensor(output_size, dtype, api::kChannelsPacked);
 }
 
 void add_sum_dim_IntList(

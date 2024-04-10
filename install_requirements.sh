@@ -9,13 +9,21 @@
 # Dependencies are defined in .pyproject.toml
 if [[ -z $PYTHON_EXECUTABLE ]];
 then
-  if [[ -z $CONDA_DEFAULT_ENV ]] || [[ $CONDA_DEFAULT_ENV == "base" ]];
+  if [[ -z $CONDA_DEFAULT_ENV ]] || [[ $CONDA_DEFAULT_ENV == "base" ]] || [[ ! -x "$(command -v python)" ]];
   then
     PYTHON_EXECUTABLE=python3
   else
     PYTHON_EXECUTABLE=python
   fi
 fi
+
+if [[ "$PYTHON_EXECUTABLE" == "python" ]];
+then
+  PIP_EXECUTABLE=pip
+else
+  PIP_EXECUTABLE=pip3
+fi
+
 
 # Parse options.
 EXECUTORCH_BUILD_PYBIND=OFF
@@ -53,7 +61,7 @@ done
 # NOTE: If a newly-fetched version of the executorch repo changes the value of
 # NIGHTLY_VERSION, you should re-run this script to install the necessary
 # package versions.
-NIGHTLY_VERSION=dev20240324
+NIGHTLY_VERSION=dev20240406
 
 # The pip repository that hosts nightly torch packages.
 TORCH_NIGHTLY_URL="https://download.pytorch.org/whl/nightly/cpu"
@@ -92,7 +100,7 @@ REQUIREMENTS_TO_INSTALL=(
 
 # Install the requirements. `--extra-index-url` tells pip to look for package
 # versions on the provided URL if they aren't available on the default URL.
-pip install --extra-index-url "${TORCH_NIGHTLY_URL}" \
+$PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
     "${REQUIREMENTS_TO_INSTALL[@]}"
 
 #
@@ -101,4 +109,4 @@ pip install --extra-index-url "${TORCH_NIGHTLY_URL}" \
 
 EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
     CMAKE_ARGS="${CMAKE_ARGS}" \
-    pip install . --no-build-isolation -v
+    $PIP_EXECUTABLE install . --no-build-isolation -v
