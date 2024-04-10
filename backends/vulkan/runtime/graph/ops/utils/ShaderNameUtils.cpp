@@ -10,34 +10,45 @@
 
 namespace vkcompute {
 
-void apply_dtype_suffix(std::stringstream& kernel_name, const vTensor& tensor) {
+void add_dtype_suffix(std::string& kernel_name, const vTensor& tensor) {
   switch (tensor.image().format()) {
     case VK_FORMAT_R32G32B32A32_SFLOAT:
-      kernel_name << "_float";
+      kernel_name += "_float";
       break;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
-      kernel_name << "_half";
+      kernel_name += "_half";
       break;
     case VK_FORMAT_R32G32B32A32_SINT:
-      kernel_name << "_int";
+      kernel_name += "_int";
       break;
     default:
       break;
   }
 }
 
-void apply_memory_layout_suffix(
-    std::stringstream& kernel_name,
-    const vTensor& tensor) {
+void add_ndim_suffix(std::string& kernel_name, const vTensor& tensor) {
+  switch (tensor.storage_type()) {
+    case api::kTexture3D:
+      kernel_name += "_3d";
+      break;
+    case api::kTexture2D:
+      kernel_name += "_2d";
+      break;
+    default:
+      break;
+  }
+}
+
+void add_memory_layout_suffix(std::string& kernel_name, const vTensor& tensor) {
   switch (tensor.gpu_memory_layout()) {
-    case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
-      kernel_name << "_C_packed";
+    case api::kChannelsPacked:
+      kernel_name += "_C_packed";
       break;
-    case api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED:
-      kernel_name << "_H_packed";
+    case api::kHeightPacked:
+      kernel_name += "_H_packed";
       break;
-    case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
-      kernel_name << "_W_packed";
+    case api::kWidthPacked:
+      kernel_name += "_W_packed";
       break;
     default:
       break;

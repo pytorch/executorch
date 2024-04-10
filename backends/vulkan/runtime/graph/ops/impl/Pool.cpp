@@ -35,15 +35,12 @@ void resize_max_pool2d_node(
   new_out_sizes.at(ndim - 3) = self.sizes().at(ndim - 3);
 
   // Height, Width
-  const auto new_out_sizes_hw = calc_out_sizes_hw(
+  const auto& new_out_sizes_hw = calc_out_sizes_hw(
       *graph,
       self.sizes(),
       extra_args[0],
       /*kernel_size_only = */ true,
-      extra_args[1],
-      extra_args[2],
-      extra_args[3],
-      extra_args[4]);
+      {extra_args[1], extra_args[2], extra_args[3], extra_args[4]});
   new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
@@ -52,10 +49,8 @@ void resize_max_pool2d_node(
 }
 
 void check_max_pool2d_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(
-      check_memory_layout_is(in, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
-  VK_CHECK_COND(check_memory_layout_is(
-      out, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
+  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }
 
 void add_max_pool2d_node(
@@ -78,9 +73,8 @@ void add_max_pool2d_node(
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << "max_pool2d";
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name("max_pool2d");
+  add_dtype_suffix(kernel_name, t_out);
 
   KernelParams kernel_params = create_kernel_params(
       graph,
@@ -92,7 +86,7 @@ void add_max_pool2d_node(
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs

@@ -324,7 +324,7 @@ table ExecutionPlan {
   delegates: [BackendDelegate];
 
   // List of buffer sizes for non_constant memory allocations. (Think neural net activations)
-  // A list instead of a single buffer to account for complex memory heirarchies.
+  // A list instead of a single buffer to account for complex memory hierarchies.
   // TODO(jakeszwe, razy): How to reconcile this with the ability for the hierarchical memory allocator
   // to be id based instead of index based.
   // Runtime should use the len(constant_buffer) as the ground truth of the

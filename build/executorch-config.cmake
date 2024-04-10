@@ -13,27 +13,20 @@
 cmake_minimum_required(VERSION 3.19)
 
 set(_root "${CMAKE_CURRENT_LIST_DIR}/../..")
-add_library(executorch STATIC IMPORTED)
-find_library(
-    EXECUTORCH_LIBRARY_PATH executorch
-    HINTS "${_root}"
-    CMAKE_FIND_ROOT_PATH_BOTH
-)
-set_target_properties(
-    executorch PROPERTIES IMPORTED_LOCATION "${EXECUTORCH_LIBRARY_PATH}"
-)
-target_include_directories(executorch INTERFACE ${_root})
+set(required_lib_list executorch executorch_no_prim_ops portable_kernels)
+foreach(lib ${required_lib_list})
+    set(lib_var "LIB_${lib}")
+    add_library(${lib} STATIC IMPORTED)
+    find_library(
+        ${lib_var} ${lib} HINTS "${_root}" CMAKE_FIND_ROOT_PATH_BOTH
+    )
+    set_target_properties(
+        ${lib} PROPERTIES IMPORTED_LOCATION "${${lib_var}}"
+    )
+    target_include_directories(${lib} INTERFACE ${_root})
+endforeach()
 
-add_library(portable_kernels STATIC IMPORTED)
-find_library(
-    PORTABLE_KERNELS_PATH portable_kernels
-    HINTS "${_root}"
-    CMAKE_FIND_ROOT_PATH_BOTH
-)
-set_target_properties(
-    portable_kernels PROPERTIES IMPORTED_LOCATION "${PORTABLE_KERNELS_PATH}"
-)
-target_include_directories(portable_kernels INTERFACE ${_root})
+target_link_libraries(executorch INTERFACE executorch_no_prim_ops)
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
     set(FLATCCRT_LIB flatccrt_d)
