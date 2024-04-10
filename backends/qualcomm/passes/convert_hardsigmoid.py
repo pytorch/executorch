@@ -25,6 +25,10 @@ class ConvertHardsigmoid(ExportPass):
         partitions = get_source_partitions(graph, [torch.nn.Hardsigmoid])
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
+                if exir_ops.edge.aten.hardswish.default in [
+                    node.target for node in src_partition.nodes
+                ]:
+                    continue
                 if self.quantization_capture:
                     # only one hardsigmoid op will be seen
                     input_nodes = src_partition.input_nodes
@@ -34,8 +38,6 @@ class ConvertHardsigmoid(ExportPass):
                 else:
                     in_ops_target = exir_ops.edge.aten.add.Tensor
                     out_ops_target = exir_ops.edge.aten.div.Tensor
-                    # see the reverse engineering logic hardswish
-                    # https://shorturl.at/pACEL
                     input_nodes = [
                         n for n in src_partition.nodes if n.target is in_ops_target
                     ]
