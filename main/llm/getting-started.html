@@ -454,8 +454,9 @@
 <div class="section" id="prerequisites">
 <h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
 <p>To follow this guide, you’ll need to clone the ExecuTorch repository and install dependencies.
-ExecuTorch requires Python 3.10, as well as  This example uses
-conda to manage the Python environment.</p>
+ExecuTorch recommends Python 3.10 and the use of Conda to manage your environment. Conda is not
+required, though be aware that you may need to replace the use of python/pip with python3/pip3
+depending on your environment.</p>
 <div class="sd-tab-set docutils">
 <input checked="checked" id="sd-tab-item-0" name="sd-tab-set-0" type="radio">
 </input><label class="sd-tab-label" for="sd-tab-item-0">
@@ -495,7 +496,7 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 <span class="n">mkdir</span> <span class="n">et</span><span class="o">-</span><span class="n">nanogpt</span>
 <span class="n">cd</span> <span class="n">et</span><span class="o">-</span><span class="n">nanogpt</span>
 
-<span class="n">pyenv</span> <span class="n">install</span> <span class="mf">3.10</span>
+<span class="n">pyenv</span> <span class="n">install</span> <span class="o">-</span><span class="n">s</span> <span class="mf">3.10</span>
 <span class="n">pyenv</span> <span class="n">virtualenv</span> <span class="mf">3.10</span> <span class="n">executorch</span>
 <span class="n">pyenv</span> <span class="n">activate</span> <span class="n">executorch</span>
 
@@ -506,8 +507,8 @@ See the pyenv-virtualenv installation guide above on how to add this to your .ba
 <span class="n">git</span> <span class="n">submodule</span> <span class="n">update</span> <span class="o">--</span><span class="n">init</span>
 
 <span class="c1"># Install requirements.</span>
-<span class="n">pip3</span> <span class="n">install</span> <span class="n">cmake</span> <span class="n">zstd</span>
-<span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
+<span class="n">pip</span> <span class="n">install</span> <span class="n">cmake</span> <span class="n">zstd</span>
+<span class="n">PYTHON_EXECUTABLE</span><span class="o">=</span><span class="n">python</span> <span class="o">./</span><span class="n">install_requirements</span><span class="o">.</span><span class="n">sh</span>
 
 <span class="n">cd</span> <span class="o">../..</span>
 </pre></div>
@@ -741,7 +742,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
 option(EXECUTORCH_BUILD_OPTIMIZED &quot;&quot; ON)
-option(EXECUTORCH_BUILD_XNNPACK &quot;&quot; ON)
 
 # Include the executorch subdirectory.
 add_subdirectory(
@@ -812,6 +812,22 @@ portable or optimized ExecuTorch implementations.</p>
 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
 
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+</pre></div>
+</div>
+<p>Additionally, update CMakeLists.txt to build and link the XNNPACK backend.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_XNNPACK</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
+
+<span class="c1"># ...</span>
+
+<span class="n">add_executable</span><span class="p">(</span><span class="n">nanogpt_runner</span> <span class="n">main</span><span class="o">.</span><span class="n">cpp</span><span class="p">)</span>
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">nanogpt_runner</span>
+    <span class="n">PRIVATE</span>
+    <span class="n">executorch</span>
+    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
+    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
+    <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
 
 </pre></div>
 </div>
