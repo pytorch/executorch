@@ -1,10 +1,19 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = [
+  "cmake",  # For building binary targets in the wheel.
+  "setuptools",  # For building the pip package contents.
+  "tomli",  # Imported by extract_sources.py when using python < 3.11.
+  "wheel",  # For building the pip package archive.
+  "zstd",  # Imported by resolve_buck.py.
+]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "executorch"
-version = "0.1.0"
+# TODO(dbort): Use setuptools-git-versioning or setuptools-scm to get the
+# version from the git branch state. For now, use a version that doesn't look
+# like a real release.
+version = "0.2.0.dev0+unknown"
 # Python dependencies required for development
 dependencies=[
   "expecttest",
