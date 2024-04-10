@@ -561,7 +561,7 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span>  <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
 <span class="kn">from</span> <span class="nn">torch.nn.attention</span> <span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
 <span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
 <span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
@@ -571,7 +571,7 @@ file which can be loaded by a desktop or mobile application at runtime.</p>
 <span class="c1"># Load the model.</span>
 <span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
 
-<span class="c1"># Create example inputs. This is used in the export process to provide </span>
+<span class="c1"># Create example inputs. This is used in the export process to provide</span>
 <span class="c1"># hints on the expected shape of the model input.</span>
 <span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span> <span class="p">)</span>
 
@@ -636,8 +636,8 @@ output token by token. Each generated token is passed as input for the next run.
 <span class="w">    </span><span class="n">BasicSampler</span><span class="o">&amp;</span><span class="w"> </span><span class="n">sampler</span><span class="p">,</span>
 <span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">max_output_length</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 
-<span class="w">    </span><span class="c1">// Convert the input text into a list of integers (tokens) that represents </span>
-<span class="w">    </span><span class="c1">// it, using the string-to-token mapping that the model was trained on. </span>
+<span class="w">    </span><span class="c1">// Convert the input text into a list of integers (tokens) that represents</span>
+<span class="w">    </span><span class="c1">// it, using the string-to-token mapping that the model was trained on.</span>
 <span class="w">    </span><span class="c1">// Each token is an integer that represents a word or part of a word.</span>
 <span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">input_tokens</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">tokenizer</span><span class="p">.</span><span class="n">encode</span><span class="p">(</span><span class="n">prompt</span><span class="p">);</span>
 <span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">int64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">output_tokens</span><span class="p">;</span>
@@ -646,8 +646,8 @@ output token by token. Each generated token is passed as input for the next run.
 <span class="w">        </span><span class="c1">// Convert the input_tokens from a vector of int64_t to EValue.</span>
 <span class="w">        </span><span class="c1">// EValue is a unified data type in the ExecuTorch runtime.</span>
 <span class="w">        </span><span class="n">ManagedTensor</span><span class="w"> </span><span class="n">tensor_tokens</span><span class="p">(</span>
-<span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span>
-<span class="w">            </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">())},</span><span class="w"> </span>
+<span class="w">            </span><span class="n">input_tokens</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span>
+<span class="w">            </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">input_tokens</span><span class="p">.</span><span class="n">size</span><span class="p">())},</span>
 <span class="w">            </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Long</span><span class="p">);</span>
 <span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">EValue</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inputs</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="n">tensor_tokens</span><span class="p">.</span><span class="n">get_tensor</span><span class="p">()};</span>
 
@@ -657,7 +657,7 @@ output token by token. Each generated token is passed as input for the next run.
 <span class="w">        </span><span class="c1">// Convert the output logits from EValue to std::vector, which is what</span>
 <span class="w">        </span><span class="c1">// the sampler expects.</span>
 <span class="w">        </span><span class="n">Tensor</span><span class="w"> </span><span class="n">logits_tensor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">logits_evalue</span><span class="p">.</span><span class="n">get</span><span class="p">()[</span><span class="mi">0</span><span class="p">].</span><span class="n">toTensor</span><span class="p">();</span>
-<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="w"> </span><span class="n">logits</span><span class="p">(</span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">(),</span><span class="w"> </span>
+<span class="w">        </span><span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="w"> </span><span class="n">logits</span><span class="p">(</span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">(),</span>
 <span class="w">            </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">data_ptr</span><span class="o">&lt;</span><span class="kt">float</span><span class="o">&gt;</span><span class="p">()</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">logits_tensor</span><span class="p">.</span><span class="n">numel</span><span class="p">());</span>
 
 <span class="w">        </span><span class="c1">// Sample the next token from the logits.</span>
@@ -801,11 +801,10 @@ portable or optimized ExecuTorch implementations.</p>
 
 <span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
 <span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.utils.configs</span> <span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
-<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
 
 <span class="c1">#...</span>
 
-<span class="n">edge_config</span> <span class="o">=</span> <span class="n">edge_config</span> <span class="o">=</span> <span class="n">get_xnnpack_edge_compile_config</span><span class="p">()</span>
+<span class="n">edge_config</span> <span class="o">=</span> <span class="n">get_xnnpack_edge_compile_config</span><span class="p">()</span>
 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
 
 <span class="c1"># Delegate to the XNNPACK backend.</span>
@@ -897,14 +896,14 @@ optimize the model for CPU execution via the XNNPACK backend.</p>
 </pre></div>
 </div>
 <p>Finally, ensure that the runner links against the <code class="docutils literal notranslate"><span class="pre">xnnpack_backend</span></code> target in CMakeLists.txt.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">add_executable</span><span class="p">(</span><span class="n">nanogpt_runner</span> <span class="n">nanogpt_runner</span><span class="o">.</span><span class="n">cpp</span><span class="p">)</span>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">add_executable</span><span class="p">(</span><span class="n">nanogpt_runner</span> <span class="n">main</span><span class="o">.</span><span class="n">cpp</span><span class="p">)</span>
 <span class="n">target_link_libraries</span><span class="p">(</span>
     <span class="n">nanogpt_runner</span>
     <span class="n">PRIVATE</span>
-    <span class="n">etdump</span>
-    <span class="n">extension_module</span>
-    <span class="n">portable_ops_lib</span>
-    <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Link the XNNPACK backend</span>
+    <span class="n">executorch</span>
+    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
+    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
+    <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
 </pre></div>
 </div>
 <p>For more information, see <a class="reference external" href="https://pytorch.org/executorch/stable/quantization-overview.html">Quantization in ExecuTorch</a>.</p>
@@ -921,6 +920,7 @@ structure the model in a way that is compatible with the target backend.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.utils</span> <span class="kn">import</span> <span class="n">get_delegation_info</span>
 <span class="kn">from</span> <span class="nn">tabulate</span> <span class="kn">import</span> <span class="n">tabulate</span>
 
+<span class="c1"># ... After call to to_backend(), but before to_executorch()</span>
 <span class="n">graph_module</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span>
 <span class="n">delegation_info</span> <span class="o">=</span> <span class="n">get_delegation_info</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">delegation_info</span><span class="o">.</span><span class="n">get_summary</span><span class="p">())</span>
@@ -1021,12 +1021,12 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
 
 <span class="c1"># Make the deep copy immediately after to to_edge()</span>
-<span class="n">edge_program_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_program_manager</span><span class="p">)</span>
+<span class="n">edge_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_manager</span><span class="p">)</span>
 
 <span class="c1"># ...</span>
 <span class="c1"># Generate ETRecord right after to_executorch()</span>
 <span class="n">etrecord_path</span> <span class="o">=</span> <span class="s2">&quot;etrecord.bin&quot;</span>
-<span class="n">generate_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="n">edge_program_manager_copy</span><span class="p">,</span> <span class="n">et_program_manager</span><span class="p">)</span>
+<span class="n">generate_etrecord</span><span class="p">(</span><span class="n">etrecord_path</span><span class="p">,</span> <span class="n">edge_manager_copy</span><span class="p">,</span> <span class="n">et_program</span><span class="p">)</span>
 </pre></div>
 </div>
 <p>Run the export script and the ETRecord will be generated as <code class="docutils literal notranslate"><span class="pre">etrecord.bin</span></code>.</p>
@@ -1042,12 +1042,13 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 </div>
 <p>Create an Instance of the ETDumpGen class and pass it to the Module constructor.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="w"> </span><span class="n">etdump_gen_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Module</span><span class="w"> </span><span class="n">llm_model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">Module</span><span class="o">::</span><span class="n">MlockConfig</span><span class="o">::</span><span class="n">UseMlock</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">etdump_gen_</span><span class="p">));</span>
+<span class="n">Module</span><span class="w"> </span><span class="n">model</span><span class="p">(</span><span class="s">&quot;nanogpt.pte&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Module</span><span class="o">::</span><span class="n">MlockConfig</span><span class="o">::</span><span class="n">UseMlockIgnoreErrors</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">etdump_gen_</span><span class="p">));</span>
 </pre></div>
 </div>
-<p>After execution, save the ETDump to a file. You can capture multiple model runs in a single trace, if desired.</p>
+<p>After calling <code class="docutils literal notranslate"><span class="pre">generate()</span></code>, save the ETDump to a file. You can capture multiple
+model runs in a single trace, if desired.</p>
 <div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">*</span><span class="w"> </span><span class="n">etdump_gen</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">llm_model</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">());</span>
+<span class="w">    </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">ETDumpGen</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">model</span><span class="p">.</span><span class="n">event_tracer</span><span class="p">());</span>
 
 <span class="n">ET_LOG</span><span class="p">(</span><span class="n">Info</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ETDump size: %zu blocks&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_num_blocks</span><span class="p">());</span>
 <span class="n">etdump_result</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">etdump_gen</span><span class="o">-&gt;</span><span class="n">get_etdump_data</span><span class="p">();</span>
@@ -1060,8 +1061,21 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <span class="p">}</span>
 </pre></div>
 </div>
-<p>Compile the ExecuTorch runtime with the <code class="docutils literal notranslate"><span class="pre">ET_EVENT_TRACER_ENABLED</span></code> pre-processor flag to enable events to be traced and logged into ETDump inside the ExecuTorch runtime. Add these to your CMakeLists.txt</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
+<p>Additionally, update CMakeLists.txt to build with SDK and enable events to be traced and logged into ETDump:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_SDK</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
+
+<span class="c1"># ...</span>
+
+<span class="n">target_link_libraries</span><span class="p">(</span>
+    <span class="n">nanogpt_runner</span>
+    <span class="n">PRIVATE</span>
+    <span class="n">executorch</span>
+    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
+    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
+    <span class="n">xnnpack_backend</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
+    <span class="n">etdump</span><span class="p">)</span> <span class="c1"># Provides event tracing and logging</span>
+
+<span class="n">target_compile_options</span><span class="p">(</span><span class="n">executorch</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
 <span class="n">target_compile_options</span><span class="p">(</span><span class="n">portable_ops_lib</span> <span class="n">PUBLIC</span> <span class="o">-</span><span class="n">DET_EVENT_TRACER_ENABLED</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -1073,97 +1087,16 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <p>Once you’ve collected debug artifacts ETDump (and optionally an ETRecord), you can use the Inspector API to view performance information.</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">Inspector</span>
 
-<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;etdump.etdp&quot;</span><span class="p">,</span> <span class="n">etrecord</span><span class="o">=</span><span class="s2">&quot;etrecord.bin&quot;</span><span class="p">)</span>
-<span class="c1"># If you did not generate an ETRecord, then just pass in the ETDump: `inspector = Inspector(etdump_path=&quot;etdump.etdp&quot;)`</span>
+<span class="n">inspector</span> <span class="o">=</span> <span class="n">Inspector</span><span class="p">(</span><span class="n">etdump_path</span><span class="o">=</span><span class="s2">&quot;etdump.etdp&quot;</span><span class="p">)</span>
+<span class="c1"># If you also generated an ETRecord, then pass that in as well: `inspector = Inspector(etdump_path=&quot;etdump.etdp&quot;, etrecord=&quot;etrecord.bin&quot;)`</span>
 
-<span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">()</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;inspector_out.txt&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event.</p>
-<table class="colwidths-auto docutils align-default">
-<thead>
-<tr class="row-odd"><th class="head"><p></p></th>
-<th class="head"><p>event_block_name</p></th>
-<th class="head"><p>event_name</p></th>
-<th class="head"><p>p10  (ms)</p></th>
-<th class="head"><p>p50  (ms)</p></th>
-<th class="head"><p>p90  (ms)</p></th>
-<th class="head"><p>avg  (ms)</p></th>
-<th class="head"><p>min  (ms)</p></th>
-<th class="head"><p>max  (ms)</p></th>
-<th class="head"><p>op_types</p></th>
-<th class="head"><p>is_delegated_op</p></th>
-<th class="head"><p>delegate_backend_name</p></th>
-</tr>
-</thead>
-<tbody>
-<tr class="row-even"><td><p>0</p></td>
-<td><p>Default</p></td>
-<td><p>Method::init</p></td>
-<td><p>60.502</p></td>
-<td><p>60.502</p></td>
-<td><p>60.502</p></td>
-<td><p>60.502</p></td>
-<td><p>60.502</p></td>
-<td><p>60.502</p></td>
-<td><p>[]</p></td>
-<td><p>False</p></td>
-<td><p></p></td>
-</tr>
-<tr class="row-odd"><td><p>1</p></td>
-<td><p>Default</p></td>
-<td><p>Program::load_method</p></td>
-<td><p>60.5114</p></td>
-<td><p>60.5114</p></td>
-<td><p>60.5114</p></td>
-<td><p>60.5114</p></td>
-<td><p>60.5114</p></td>
-<td><p>60.5114</p></td>
-<td><p>[]</p></td>
-<td><p>False</p></td>
-<td><p></p></td>
-</tr>
-<tr class="row-even"><td><p>2</p></td>
-<td><p>Execute</p></td>
-<td><p>native_call_arange.start_out</p></td>
-<td><p>0.029583</p></td>
-<td><p>0.029583</p></td>
-<td><p>0.029583</p></td>
-<td><p>0.029583</p></td>
-<td><p>0.029583</p></td>
-<td><p>0.029583</p></td>
-<td><p>[]</p></td>
-<td><p>False</p></td>
-<td><p></p></td>
-</tr>
-<tr class="row-odd"><td><p>3</p></td>
-<td><p>Execute</p></td>
-<td><p>native_call_embedding.out</p></td>
-<td><p>0.022916</p></td>
-<td><p>0.022916</p></td>
-<td><p>0.022916</p></td>
-<td><p>0.022916</p></td>
-<td><p>0.022916</p></td>
-<td><p>0.022916</p></td>
-<td><p>[]</p></td>
-<td><p>False</p></td>
-<td><p></p></td>
-</tr>
-<tr class="row-even"><td><p>4</p></td>
-<td><p>Execute</p></td>
-<td><p>native_call_embedding.out</p></td>
-<td><p>0.001084</p></td>
-<td><p>0.001084</p></td>
-<td><p>0.001084</p></td>
-<td><p>0.001084</p></td>
-<td><p>0.001084</p></td>
-<td><p>0.001084</p></td>
-<td><p>[]</p></td>
-<td><p>False</p></td>
-<td><p></p></td>
-</tr>
-</tbody>
-</table>
+<p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event.
+<img alt="" src="../_images/llm_manual_print_data_tabular.png" />
+<a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a></p>
 <p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference external" href="https://pytorch.org/executorch/main/sdk-inspector.html">Inspector API Reference</a>.</p>
 </div>
 </div>
