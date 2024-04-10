@@ -18,6 +18,7 @@ from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuf
 
 from torch import Tensor
 from torch._ops import OpOverload
+from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch.ao.quantization.observer import (
     HistogramObserver,
     MinMaxObserver,
@@ -371,6 +372,50 @@ class QnnQuantizer(Quantizer):
     def set_per_channel_quant(self, enable: bool) -> None:
         self.enable_per_channel_conv_quant = enable
 
+    def _lift_constant_scalar_operands(self, gm: torch.fx.GraphModule) -> None:
+        """
+        For the case like mul(x, 2), convert the the scalr to tensor
+        """
+        for n in gm.graph.nodes:
+            if n.op != "call_function" or n.target not in (
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.sub.Tensor,
+                torch.ops.aten.mul.Tensor,
+                torch.ops.aten.mul.Scalar,
+                torch.ops.aten.rsub.Scalar,
+            ):
+                continue
+
+            const_arg = None
+            non_const_arg = None
+            for arg in n.args:
+                if isinstance(arg, torch.fx.Node):
+                    non_const_arg = arg
+                else:
+                    const_arg = arg
+
+            if non_const_arg is None or const_arg is None:
+                continue
+
+            tensor_constant = torch.tensor([const_arg], dtype=torch.float32)
+            tensor_constant_name = get_new_attr_name_with_prefix("_tensor_constant_")(
+                gm
+            )
+            gm.register_buffer(tensor_constant_name, tensor_constant)
+
+            fake_mode = n.meta["val"].fake_mode
+            with gm.graph.inserting_before(n):
+                get_attr_node = gm.graph.get_attr(tensor_constant_name)
+                get_attr_node.meta["val"] = fake_mode.from_tensor(tensor_constant)
+
+            if n.target == torch.ops.aten.rsub.Scalar:
+                n.args = (get_attr_node, non_const_arg) + n.args[2:]
+                n.target = torch.ops.aten.sub.Tensor
+            else:
+                n.args = (non_const_arg, get_attr_node) + n.args[2:]
+
+        gm.recompile()
+
     def transform_for_annotation(self, model: GraphModule) -> GraphModule:
         model = RemoveClone()(model).graph_module
         model = ReduceDynamicRange()(model).graph_module
@@ -378,7 +423,7 @@ class QnnQuantizer(Quantizer):
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
-
+        self._lift_constant_scalar_operands(model)
         return model
 
     def validate(self, model: GraphModule) -> None:
