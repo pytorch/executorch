@@ -15,8 +15,9 @@
 ## Prerequisites
 
 To follow this guide, you'll need to clone the ExecuTorch repository and install dependencies. 
-ExecuTorch requires Python 3.10, as well as  This example uses
-conda to manage the Python environment. 
+ExecuTorch recommends Python 3.10 and the use of Conda to manage your environment. Conda is not
+required, though be aware that you may need to replace the use of python/pip with python3/pip3
+depending on your environment.
 
 ::::{tab-set}
 :::{tab-item} conda
@@ -57,7 +58,7 @@ eval "$(pyenv virtualenv-init -)"
 mkdir et-nanogpt
 cd et-nanogpt
 
-pyenv install 3.10
+pyenv install -s 3.10
 pyenv virtualenv 3.10 executorch
 pyenv activate executorch
 
@@ -68,8 +69,8 @@ cd third-party/executorch
 git submodule update --init
 
 # Install requirements.
-pip3 install cmake zstd
-./install_requirements.sh
+pip install cmake zstd
+PYTHON_EXECUTABLE=python ./install_requirements.sh
 
 cd ../..
 ```
@@ -328,7 +329,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
 option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
 option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
-option(EXECUTORCH_BUILD_XNNPACK "" ON)
 
 # Include the executorch subdirectory.
 add_subdirectory(
@@ -406,6 +406,24 @@ edge_manager = to_edge(traced_model, compile_config=edge_config)
 edge_manager = edge_manager.to_backend(XnnpackPartitioner())
 
 et_program = edge_manager.to_executorch()
+
+```
+
+Additionally, update CMakeLists.txt to build and link the XNNPACK backend.
+
+```
+option(EXECUTORCH_BUILD_XNNPACK "" ON)
+
+# ...
+
+add_executable(nanogpt_runner main.cpp)
+target_link_libraries(
+    nanogpt_runner
+    PRIVATE
+    executorch
+    extension_module_static # Provides the Module class
+    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
+    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
 
 ```
 
