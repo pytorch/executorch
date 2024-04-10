@@ -28,6 +28,7 @@ def _to_core_aten(
     example_inputs: Tuple[Value, ...],
     dynamic_shapes: Optional[Union[Dict[str, Any], Tuple[Any]]] = None,
     verbose=True,
+    strict: Optional[bool] = None,
 ) -> ExportedProgram:
     # post autograd export. eventually this will become .to_core_aten
     if not isinstance(model, torch.fx.GraphModule) and not isinstance(
@@ -36,7 +37,17 @@ def _to_core_aten(
         raise ValueError(
             f"Expected passed in model to be an instance of fx.GraphModule, got {type(model)}"
         )
-    core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
+
+    if strict is None:
+        # Fallbak to default behavior if strict is not specified
+        core_aten_ep = export(model, example_inputs, dynamic_shapes=dynamic_shapes)
+    else:
+        core_aten_ep = export(
+            model,
+            example_inputs,
+            dynamic_shapes=dynamic_shapes,
+            strict=strict,
+        )
     if verbose:
         logging.info(f"Core ATen graph:\n{core_aten_ep.graph}")
     return core_aten_ep
@@ -69,8 +80,11 @@ def export_to_edge(
     edge_constant_methods: Optional[Dict[str, Any]] = None,
     edge_compile_config=_EDGE_COMPILE_CONFIG,
     verbose=True,
+    strict: Optional[bool] = None,
 ) -> EdgeProgramManager:
-    core_aten_ep = _to_core_aten(model, example_inputs, dynamic_shapes, verbose=verbose)
+    core_aten_ep = _to_core_aten(
+        model, example_inputs, dynamic_shapes, verbose=verbose, strict=strict
+    )
     return _core_aten_to_edge(
         core_aten_ep, edge_constant_methods, edge_compile_config, verbose=verbose
     )
