@@ -1,19 +1,22 @@
 [build-system]
 requires = [
   "cmake",  # For building binary targets in the wheel.
-  "setuptools",  # For building the pip package contents.
+  "setuptools>=41",  # For building the pip package contents.
   "tomli",  # Imported by extract_sources.py when using python < 3.11.
   "wheel",  # For building the pip package archive.
   "zstd",  # Imported by resolve_buck.py.
+  "setuptools-git-versioning>=2.0,<3",  # For constructing the version string.
 ]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools-git-versioning]
+# Resolves the dynamic version in the project section.
+enabled = true
+
 [project]
 name = "executorch"
-# TODO(dbort): Use setuptools-git-versioning or setuptools-scm to get the
-# version from the git branch state. For now, use a version that doesn't look
-# like a real release.
-version = "0.2.0.dev0+unknown"
+# setuptools-git-versioning will derive the version from the git repo state.
+dynamic = ["version"]
 # Python dependencies required for development
 dependencies=[
   "expecttest",
