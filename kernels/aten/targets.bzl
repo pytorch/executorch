@@ -35,18 +35,3 @@ def define_common_targets():
             "@EXECUTORCH_CLIENTS",
         ],
     )
-
-    # TODO(T149415783): temporarily testing portable kernel "in aten mode" and remove after migration is done
-    executorch_generated_lib(
-        name = "generated_lib_aten",
-        aten_mode = True,
-        deps = [
-            ":executorch_aten_ops",
-        ],
-        functions_yaml_target = None,
-        define_static_targets = True,
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-    )
