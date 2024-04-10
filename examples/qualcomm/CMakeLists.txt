@@ -35,7 +35,6 @@ endif()
 # portable_ops_lib, etdump, bundled_program.
 find_package(executorch CONFIG REQUIRED)
 target_compile_options(executorch INTERFACE -DET_EVENT_TRACER_ENABLED)
-set(gflags_DIR ${CMAKE_CURRENT_BINARY_DIR}/../../third-party/gflags)
 find_package(gflags REQUIRED)
 
 set(_common_compile_options -Wno-deprecated-declarations -fPIC)
