@@ -523,12 +523,13 @@ Tutorials we recommend you complete before this:</div>
 ├── aot
 ├── kernels
 ├── ops
+├── tests
 ├── third-party
 └── utils
 </pre></div>
 </div>
 <p><em><strong>AoT (Ahead-of-Time) Components</strong></em>:</p>
-<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py">export_example.py</a> defines a model and some example inputs (set to a vector of ones), and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/meta_registrations.py">meta_registrations.py</a> and have corresponding implemetations in the other folders.</p>
+<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py">export_example.py</a> is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/meta_registrations.py">meta_registrations.py</a> and have corresponding implemetations in the other folders.</p>
 <p><em><strong>Operators</strong></em>:</p>
 <p>The operators folder contains two kinds of operators: existing operators from the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu">ExecuTorch portable library</a> and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.</p>
 <p><em><strong>Kernels</strong></em>:</p>
@@ -543,13 +544,25 @@ Tutorials we recommend you complete before this:</div>
 python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scripts.export<span class="w"> </span>--model_name<span class="o">=</span><span class="s2">&quot;add&quot;</span>
 </pre></div>
 </div>
-<p><em><strong>Quantized Linear</strong></em>:</p>
-<p>The second, more complex model is a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py#L88">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p>
-<p>The generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
+<p><em><strong>Quantized Operators</strong></em>:</p>
+<p>The other, more complex model are custom operators, including:</p>
+<ul class="simple">
+<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/tests/quantized_linear_example.py#L28">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p></li>
+<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html">conv1d</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/tests/quantized_conv1d_example.py#L36">here</a>. Convolutions are important in wake word and many denoising models.</p></li>
+</ul>
+<p>In both cases the generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.aot.export_example
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.tests.quantized_&lt;linear,conv1d&gt;_example
 </pre></div>
 </div>
+<p><em><strong>Small Model: RNNT predictor</strong></em>:</p>
+<p>The torchaudio <a class="reference external" href="https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
+The predictor is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
+python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.tests.rnnt_predictor_quantized_example
+</pre></div>
+</div>
+<p>The generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
 <div class="section" id="runtime">
 <h3>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h3>
 <p><strong>Building the DSP firmware image</strong>
@@ -578,12 +591,14 @@ cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_HOST_TARGETS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_EXECUTOR_RUNNER<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_PTHREADPOOL<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_CPUINFO<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span>OFF<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_RUNNER_UTIL<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-Bcmake-out<span class="w"> </span>.
 
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j8<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Debug
@@ -630,7 +645,7 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
 <div class="section" id="conclusion-and-future-work">
 <h2>Conclusion and Future Work<a class="headerlink" href="#conclusion-and-future-work" title="Permalink to this heading">¶</a></h2>
 <p>In this tutorial, you have learned how to export a quantized operation, build the ExecuTorch runtime and run this model on the Xtensa HiFi4 DSP chip.</p>
-<p>The model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py">export_example.py</a> and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/ops">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/kernels">kernels</a>.</p>
+<p>The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/ops">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/kernels">kernels</a>.</p>
 <p>Other models can be created following the same structure, always assuming that operators and kernels are available.</p>
 </div>
 </div>
