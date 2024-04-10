@@ -601,3 +601,30 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_conv2d_bias_false(self):
+        class Conv2dModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = torch.nn.Conv2d(
+                    in_channels=6,
+                    out_channels=8,
+                    kernel_size=(3, 3),
+                    padding=(2, 3),
+                    stride=(1, 2),
+                    dilation=1,
+                    groups=1,
+                    bias=False,
+                )
+
+            def forward(self, x):
+                return self.conv(x)
+
+        conv2d_module = Conv2dModule()
+        sample_inputs = (torch.randn(size=(1, 6, 40, 50), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            conv2d_module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
