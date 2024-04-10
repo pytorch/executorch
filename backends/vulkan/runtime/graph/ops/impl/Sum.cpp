@@ -120,10 +120,17 @@ void add_sum_dim_IntList(
   const auto& dims_to_sum = graph.get_val(opt_dim).toIntList();
   int64_t in_dim = in_tensor.sizes().size();
 
-  for (const auto& dim : dims_to_sum) {
-    // Normalize (negative) dim into range [0, self.dim() - 1]
-    int64_t dim_normalized = normalize(dim, in_dim);
-    dims_set.insert(dim_normalized);
+  if (dims_to_sum.empty()) {
+    // If dim is not specified, reduce over all dims
+    for (int64_t i = 0; i < in_dim; ++i) {
+      dims_set.insert(i);
+    }
+  } else {
+    for (const auto& dim : dims_to_sum) {
+      // Normalize (negative) dim into range [0, self.dim() - 1]
+      int64_t dim_normalized = normalize(dim, in_dim);
+      dims_set.insert(dim_normalized);
+    }
   }
 
   // Reduce the higher dimensionalities first, otherwise when keepdim is

@@ -497,6 +497,25 @@ class TestBackends(unittest.TestCase):
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
 
+    def test_vulkan_backend_sum(self):
+        class SumModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                x = torch.sum(x, (), keepdim=True)
+                x = torch.sum(x)
+                return x
+
+        module = SumModule()
+        sample_inputs = (torch.rand(size=(3, 2, 7, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            module,
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )
+
     def test_vulkan_backend_conv2d(self):
         class Conv2dModule(torch.nn.Module):
             def __init__(self):
