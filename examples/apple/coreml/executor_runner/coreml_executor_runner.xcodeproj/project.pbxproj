@@ -16,6 +16,7 @@
 		C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51652ACFCBCB00AF47FD /* Accelerate.framework */; };
 		C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */; };
 		C988D69D2B998CDE00979CF6 /* libprotobuf-lite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */; };
+		F24817E72BC65B2000E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24817E62BC65B2000E80D98 /* libexecutorch_no_prim_ops.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -41,6 +42,7 @@
 		C94D51652ACFCBCB00AF47FD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoremldelegate.a; path = libraries/libcoremldelegate.a; sourceTree = "<group>"; };
 		C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libprotobuf-lite.a"; path = "libraries/libprotobuf-lite.a"; sourceTree = "<group>"; };
+		F24817E62BC65B2000E80D98 /* libexecutorch_no_prim_ops.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch_no_prim_ops.a; path = libraries/libexecutorch_no_prim_ops.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +51,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				38626BB52B225A890059413D /* libetdump.a in Frameworks */,
+				F24817E72BC65B2000E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */,
 				38626BB42B225A560059413D /* libflatccrt.a in Frameworks */,
 				C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */,
 				C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */,
@@ -90,6 +93,7 @@
 				C94D515C2ACFCBA000AF47FD /* libexecutorch.a */,
 				C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */,
 				C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */,
+				F24817E62BC65B2000E80D98 /* libexecutorch_no_prim_ops.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
