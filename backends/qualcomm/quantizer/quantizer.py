@@ -397,7 +397,6 @@ class QnnQuantizer(Quantizer):
             if non_const_arg is None or const_arg is None:
                 continue
 
-            # print("                n'args are all constant: ", n)
             tensor_constant = torch.tensor([const_arg], dtype=torch.float32)
             tensor_constant_name = get_new_attr_name_with_prefix("_tensor_constant_")(
                 gm

@@ -101,9 +101,9 @@ functions_yaml_target = "//executorch/kernels/portable:functions.yaml",
     deps = [
         "//executorch/examples/portable/custom_ops:custom_ops_1", # kernel library
         "//executorch/examples/portable/custom_ops:custom_ops_2", # kernel library
-  "//executorch/kernels/portable:operators", # kernel library
+        "//executorch/kernels/portable:operators", # kernel library
         ":select_ops_from_yaml",
-  ":select_ops_in_list",
+        ":select_ops_in_list",
     ],
 )
 ```

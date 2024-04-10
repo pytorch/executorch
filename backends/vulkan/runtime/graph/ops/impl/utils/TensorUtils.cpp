@@ -78,13 +78,13 @@ bool is_packed_dim_broadcasted(const vTensor& sndr, const vTensor& rcvr) {
   // We assume that the tensors are broadcastable. If values aren't equal at
   // some index, then the value of rcvr is 1 and hence should be broadcasted.
   switch (sndr.gpu_memory_layout()) {
-    case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
+    case api::kChannelsPacked:
       return api::utils::val_at(-3, sndr.sizes()) >
           api::utils::val_at(-3, rcvr.sizes());
-    case api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED:
+    case api::kHeightPacked:
       return api::utils::val_at(-2, sndr.sizes()) >
           api::utils::val_at(-2, rcvr.sizes());
-    case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
+    case api::kWidthPacked:
       return api::utils::val_at(-1, sndr.sizes()) >
           api::utils::val_at(-1, rcvr.sizes());
   }

@@ -42,13 +42,13 @@ def register_annotator(ops: List[OpOverload]):
 
     return decorator
 
-def _is_input_non_float_tensor(node: Node):
+def _is_input_float_tensor(node: Node):
     """Check if the input is not a float tensor, so that we can skip quantization for the node
     since observers only works with float Tensors
     """
     if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
         return True
-    return node.meta["val"].dtype != torch.float32
+    return node.meta["val"].dtype == torch.float32
 
 
 def _is_annotated(nodes: List[Node]):
@@ -132,11 +132,11 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
 
     input_qspec_map = {}
     input_act0 = node.args[0]
-    if isinstance(input_act0, Node) and not _is_input_non_float_tensor(input_act0):
+    if isinstance(input_act0, Node) and _is_input_float_tensor(input_act0):
         input_qspec_map[input_act0] = input_act_qspec
 
     input_act1 = node.args[1]
-    if isinstance(input_act1, Node) and not _is_input_non_float_tensor(input_act1):
+    if isinstance(input_act1, Node) and _is_input_float_tensor(input_act1):
         input_qspec_map[input_act1] = input_act_qspec
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(

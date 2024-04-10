@@ -25,9 +25,8 @@ void check_matmul_args(
   VK_CHECK_COND(check_same_ndim(mat1, mat2));
 
   VK_CHECK_COND(
-      check_memory_layout_is(
-          mat1, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED) ||
-      check_memory_layout_is(mat1, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED));
+      check_memory_layout_is(mat1, api::kChannelsPacked) ||
+      check_memory_layout_is(mat1, api::kWidthPacked));
   VK_CHECK_COND(check_same_memory_layout(mat1, out));
 
   VK_CHECK_COND(check_same_sizes_at(mat1, -1, mat2, -2));
@@ -61,13 +60,12 @@ void add_matmul_node(
     const ValueRef mat1,
     const ValueRef mat2,
     const ValueRef out) {
-  ValueRef arg1 = prepack_if_tensor_ref(
-      graph, mat1, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED);
+  ValueRef arg1 = prepack_if_tensor_ref(graph, mat1, api::kWidthPacked);
 
-  api::GPUMemoryLayout mat2_layout = graph.memory_layout_of(arg1) ==
-          api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED
-      ? api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED
-      : api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+  api::GPUMemoryLayout mat2_layout =
+      graph.memory_layout_of(arg1) == api::kChannelsPacked
+      ? api::kChannelsPacked
+      : api::kHeightPacked;
 
   ValueRef arg2 = prepack_if_tensor_ref(graph, mat2, mat2_layout);
 
@@ -80,15 +78,15 @@ void add_matmul_node(
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << "matmul";
-  apply_memory_layout_suffix(kernel_name, t_mat1);
-  apply_memory_layout_suffix(kernel_name, t_mat2);
-  apply_dtype_suffix(kernel_name, t_out);
+  std::string kernel_name("matmul");
+  kernel_name.reserve(kShaderNameReserve);
+  add_memory_layout_suffix(kernel_name, t_mat1);
+  add_memory_layout_suffix(kernel_name, t_mat2);
+  add_dtype_suffix(kernel_name, t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs

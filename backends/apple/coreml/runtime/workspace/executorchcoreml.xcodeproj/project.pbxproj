@@ -100,6 +100,7 @@
 		C9E7D7952AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78D2AB3F9BF00CCAE5D /* ETCoreMLModelManagerTests.mm */; };
 		C9E7D7962AB3F9BF00CCAE5D /* KeyValueStoreTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D78E2AB3F9BF00CCAE5D /* KeyValueStoreTests.mm */; };
 		C9E7D7A22AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm in Sources */ = {isa = PBXBuildFile; fileRef = C9E7D7A12AB3FBB200CCAE5D /* CoreMLBackendDelegateTests.mm */; };
+		F24817E52BC655E100E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -297,6 +298,7 @@
 		C9EA3DB22B71A2B200B7D7BD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		C9EA3FDE2B73EEA000B7D7BD /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		C9EA3FE52B73EF6300B7D7BD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
+		F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch_no_prim_ops.a; path = ../libraries/libexecutorch_no_prim_ops.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -305,6 +307,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C94D510F2ABDF87500AF47FD /* Accelerate.framework in Frameworks */,
+				F24817E52BC655E100E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */,
 				C94D510E2ABDF86800AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D50D92ABD7B2400AF47FD /* CoreML.framework in Frameworks */,
 				C99883862B95AD7D000953A3 /* libprotobuf-lite.a in Frameworks */,
@@ -523,6 +526,7 @@
 				C96560942AABFDCE005F8126 /* libsqlite3.tbd */,
 				C96560922AABF992005F8126 /* CoreML.framework */,
 				C96560902AABF982005F8126 /* Accelerate.framework */,
+				F24817E42BC655E100E80D98 /* libexecutorch_no_prim_ops.a */,
 				C965608D2AABF72A005F8126 /* libexecutorch.a */,
 			);
 			name = "Recovered References";

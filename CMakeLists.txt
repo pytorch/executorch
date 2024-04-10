@@ -352,22 +352,26 @@ add_subdirectory(schema)
 # Only contains primitive operators; does not contain portable kernels or other
 # full operators. Does not contain any backends.
 #
-
-add_library(executorch ${_executorch__srcs})
-target_link_libraries(executorch PRIVATE program_schema)
-target_link_options_shared_lib(executorch)
+add_library(executorch_no_prim_ops ${_executorch_no_prim_ops__srcs})
+target_link_libraries(executorch_no_prim_ops PRIVATE program_schema)
 # Check if dl exists for this toolchain and only then link it.
 find_library(DL_LIBRARY_EXISTS NAMES dl)
 # Check if the library was found
 if(DL_LIBRARY_EXISTS)
-  target_link_libraries(executorch PRIVATE dl) # For dladdr()
+  target_link_libraries(executorch_no_prim_ops PRIVATE dl) # For dladdr()
 endif()
-target_include_directories(executorch PUBLIC ${_common_include_directories})
-target_compile_options(executorch PUBLIC ${_common_compile_options})
+target_include_directories(executorch_no_prim_ops PUBLIC ${_common_include_directories})
+target_compile_options(executorch_no_prim_ops PUBLIC ${_common_compile_options})
 if(MAX_KERNEL_NUM)
-  target_compile_definitions(executorch
+  target_compile_definitions(executorch_no_prim_ops
                              PRIVATE MAX_KERNEL_NUM=${MAX_KERNEL_NUM})
 endif()
+
+add_library(executorch ${_executorch__srcs})
+target_link_libraries(executorch PRIVATE executorch_no_prim_ops)
+target_include_directories(executorch PUBLIC ${_common_include_directories})
+target_compile_options(executorch PUBLIC ${_common_compile_options})
+target_link_options_shared_lib(executorch)
 
 #
 # portable_ops_lib: A library to register core ATen ops using portable kernels,
@@ -406,7 +410,7 @@ endif()
 # Install `executorch` library as well as `executorch-config.cmake` under
 # ${CMAKE_INSTALL_PREFIX}/
 install(
-  TARGETS executorch
+  TARGETS executorch executorch_no_prim_ops
   DESTINATION lib
   INCLUDES
   DESTINATION ${_common_include_directories})

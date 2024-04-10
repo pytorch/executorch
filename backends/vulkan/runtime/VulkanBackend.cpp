@@ -77,26 +77,26 @@ api::StorageType get_storage_type(
     const vkgraph::VkStorageType& vk_storage_type) {
   switch (vk_storage_type) {
     case vkgraph::VkStorageType::BUFFER:
-      return api::StorageType::BUFFER;
+      return api::kBuffer;
     case vkgraph::VkStorageType::TEXTURE_3D:
-      return api::StorageType::TEXTURE_3D;
+      return api::kTexture3D;
     case vkgraph::VkStorageType::TEXTURE_2D:
-      return api::StorageType::TEXTURE_2D;
+      return api::kTexture2D;
     default:
       break;
   }
-  return api::StorageType::UNKNOWN;
+  VK_THROW("Invalid storage type encountered!");
 }
 
 api::GPUMemoryLayout get_memory_layout(
     const vkgraph::VkMemoryLayout& vk_memory_layout) {
   switch (vk_memory_layout) {
     case vkgraph::VkMemoryLayout::TENSOR_WIDTH_PACKED:
-      return api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+      return api::kWidthPacked;
     case vkgraph::VkMemoryLayout::TENSOR_HEIGHT_PACKED:
-      return api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+      return api::kHeightPacked;
     case vkgraph::VkMemoryLayout::TENSOR_CHANNELS_PACKED:
-      return api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+      return api::kChannelsPacked;
     default:
       break;
   }

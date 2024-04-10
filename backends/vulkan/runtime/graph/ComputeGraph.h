@@ -312,6 +312,12 @@ class ComputeGraph final {
 
   void resize_input(const int64_t idx, const std::vector<int64_t>& new_sizes);
   void propagate_resize();
+
+  //
+  // Debug support (implemented in Logging.cpp)
+  //
+
+  void print_readable();
 };
 
 template <typename T>
