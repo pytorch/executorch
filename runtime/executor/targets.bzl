@@ -44,9 +44,20 @@ def define_common_targets():
 
     for aten_mode in (True, False):
         aten_suffix = "_aten" if aten_mode else ""
-
         runtime.cxx_library(
             name = "program" + aten_suffix,
+            exported_deps = [
+                ":program_no_prim_ops" + aten_suffix,
+                "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
+            ],
+            visibility = [
+                "//executorch/runtime/executor/...",
+                "@EXECUTORCH_CLIENTS",
+            ],
+        )
+
+        runtime.cxx_library(
+            name = "program_no_prim_ops" + aten_suffix,
             srcs = [
                 "method.cpp",
                 "method_meta.cpp",
@@ -54,34 +65,26 @@ def define_common_targets():
                 "tensor_parser_exec_aten.cpp",
                 "tensor_parser{}.cpp".format(aten_suffix if aten_mode else "_portable"),
             ],
-            headers = [
-                "tensor_parser.h",
-            ],
             exported_headers = [
                 "method.h",
                 "method_meta.h",
                 "program.h",
+                "tensor_parser.h",
             ],
-            deps = [
-                "//executorch/kernels/prim_ops:prim_ops_registry" + aten_suffix,
+            preprocessor_flags = _program_preprocessor_flags(),
+            exported_deps = [
+                ":memory_manager",
                 "//executorch/runtime/backend:interface",
-                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/runtime/core:core",
+                "//executorch/runtime/core:evalue" + aten_suffix,
+                "//executorch/runtime/core:event_tracer" + aten_suffix,
+                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
+                "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
                 "//executorch/runtime/kernel:kernel_runtime_context" + aten_suffix,
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/platform:platform",
                 "//executorch/schema:extended_header",
                 "//executorch/schema:program",
-                ":memory_manager",
-            ],
-            preprocessor_flags = _program_preprocessor_flags(),
-            exported_deps = [
-                "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
-                "//executorch/runtime/core:core",
-                "//executorch/runtime/core:evalue" + aten_suffix,
-                "//executorch/runtime/platform:platform",
-                "//executorch/runtime/core:event_tracer" + aten_suffix,
-                ":memory_manager",
             ],
             visibility = [
                 "//executorch/runtime/executor/...",

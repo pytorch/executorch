@@ -54,6 +54,70 @@ def get_pool2d_inputs():
     return test_suite
 
 
+def get_conv2d_inputs():
+    test_suite = VkTestSuite(
+        [
+            (
+                (1, 6, 40, 50),
+                (8, 6, 3, 3),
+                (8,),
+                [1, 2],
+                [2, 3],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
+            ),
+            (
+                (1, 6, 40, 50),
+                (6, 8, 3, 3),
+                (8,),
+                [1, 2],
+                [2, 3],
+                [1, 1],
+                True,
+                [0, 1],
+                1,
+            ),
+            (
+                (1, 8, 72, 96),
+                (8, 1, 3, 3),
+                (8,),
+                [1, 1],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                8,
+            ),
+            (
+                (1, 8, 72, 96),
+                (8, 8, 1, 1),
+                (8,),
+                [1, 1],
+                [1, 1],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
+            ),
+            (
+                (1, 6, 40, 50),
+                (8, 6, 3, 3),
+                None,
+                [1, 2],
+                [2, 3],
+                [1, 1],
+                False,
+                [0, 0],
+                1,
+            ),
+        ]
+    )
+    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -61,6 +125,7 @@ test_suites = {
     "aten.mul.Tensor": get_binary_elementwise_inputs(),
     "aten.mm.default": get_mm_inputs(),
     "aten.max_pool2d_with_indices.default": get_pool2d_inputs(),
+    "aten.convolution.default": get_conv2d_inputs(),
 }
 
 prepacked_args = {"aten.mm.default": {"mat2"}}

@@ -67,20 +67,20 @@ std::vector<int64_t> calc_strides(
     const api::GPUMemoryLayout memory_layout,
     const api::StorageType storage_type) {
   switch (storage_type) {
-    case api::StorageType::BUFFER:
+    case api::kBuffer:
       switch (memory_layout) {
-        case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
+        case api::kWidthPacked:
           return calc_contiguous_strides(sizes);
           break;
-        case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
+        case api::kChannelsPacked:
           return calc_channels_last_strides(sizes);
           break;
         default:
           VK_THROW("Invalid memory format used to create vTensor!");
       }
       break;
-    case api::StorageType::TEXTURE_3D:
-    case api::StorageType::TEXTURE_2D:
+    case api::kTexture3D:
+    case api::kTexture2D:
       return std::vector<int64_t>(sizes.size());
     default:
       VK_THROW("Invalid storage type used to create vTensor!");
@@ -99,10 +99,8 @@ std::vector<int64_t> calc_gpu_sizes(
     const std::vector<int64_t>& sizes,
     const api::GPUMemoryLayout memory_layout,
     const api::StorageType storage_type) {
-  VK_CHECK_COND(storage_type != api::StorageType::UNKNOWN);
-
   std::vector<int64_t> gpu_sizes;
-  if (storage_type == api::StorageType::BUFFER) {
+  if (storage_type == api::kBuffer) {
     gpu_sizes.resize(sizes.size());
     for (size_t i = 0; i < sizes.size(); i++) {
       gpu_sizes.at(i) = sizes.at(i);
@@ -127,21 +125,21 @@ std::vector<int64_t> calc_gpu_sizes(
 
   size_t ndim = gpu_sizes.size();
   switch (memory_layout) {
-    case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
+    case api::kWidthPacked:
       if (ndim >= 1) {
         gpu_sizes.at(ndim - 1) =
             api::utils::align_up(api::utils::val_at(-1, sizes), INT64_C(4));
       }
       break;
 
-    case api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED:
+    case api::kHeightPacked:
       if (ndim >= 2) {
         gpu_sizes.at(ndim - 2) =
             api::utils::align_up(api::utils::val_at(-2, sizes), INT64_C(4));
       }
       break;
 
-    case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
+    case api::kChannelsPacked:
       if (ndim >= 3) {
         gpu_sizes.at(ndim - 3) =
             api::utils::align_up(api::utils::val_at(-3, sizes), INT64_C(4));
@@ -162,7 +160,7 @@ api::utils::uvec3 create_image_extents(
     const api::GPUMemoryLayout memory_layout) {
   size_t ndim = gpu_sizes.size();
 
-  if (storage_type == api::StorageType::BUFFER) {
+  if (storage_type == api::kBuffer) {
     // image extents do not apply to buffer storage
     return {0u, 0u, 0u};
   } else {
@@ -177,15 +175,15 @@ api::utils::uvec3 create_image_extents(
     uint32_t batch = safe_downcast<uint32_t>(val_at(-4, gpu_sizes));
 
     switch (memory_layout) {
-      case api::GPUMemoryLayout::TENSOR_WIDTH_PACKED:
+      case api::kWidthPacked:
         VK_CHECK_COND(width % 4 == 0, "Channels must be divisible by 4!");
         width /= 4;
         break;
-      case api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED:
+      case api::kHeightPacked:
         VK_CHECK_COND(height % 4 == 0, "Channels must be divisible by 4!");
         height /= 4;
         break;
-      case api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED:
+      case api::kChannelsPacked:
         VK_CHECK_COND(channels % 4 == 0, "Channels must be divisible by 4!");
         channels /= 4;
         break;
@@ -326,40 +324,34 @@ std::shared_ptr<api::UniformParamsBuffer> vTensor::extents_ubo() {
 
 VmaAllocationCreateInfo vTensor::get_allocation_create_info() const {
   switch (storage_type()) {
-    case api::StorageType::BUFFER:
+    case api::kBuffer:
       return view_->buffer_.allocation_create_info();
-    case api::StorageType::TEXTURE_2D:
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture2D:
+    case api::kTexture3D:
       return view_->image_.allocation_create_info();
-    case api::StorageType::UNKNOWN:
-      break;
   }
   return {};
 }
 
 VkMemoryRequirements vTensor::get_memory_requirements() const {
   switch (storage_type()) {
-    case api::StorageType::BUFFER:
+    case api::kBuffer:
       return view_->buffer_.get_memory_requirements();
-    case api::StorageType::TEXTURE_2D:
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture2D:
+    case api::kTexture3D:
       return view_->image_.get_memory_requirements();
-    case api::StorageType::UNKNOWN:
-      break;
   }
   return {};
 }
 
 void vTensor::bind_allocation(const api::MemoryAllocation& allocation) {
   switch (storage_type()) {
-    case api::StorageType::BUFFER:
+    case api::kBuffer:
       view_->buffer_.bind_allocation(allocation);
       break;
-    case api::StorageType::TEXTURE_2D:
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture2D:
+    case api::kTexture3D:
       view_->image_.bind_allocation(allocation);
-      break;
-    case api::StorageType::UNKNOWN:
       break;
   }
 }
@@ -397,7 +389,7 @@ void vTensor::reallocate(const std::vector<int64_t>& new_sizes) {
 
 void vTensor::virtual_resize(const std::vector<int64_t>& new_sizes) {
   update_size_metadata(new_sizes);
-  if (storage_type() == api::StorageType::BUFFER) {
+  if (storage_type() == api::kBuffer) {
     if (gpu_nbytes() > view_->buffer_.mem_size()) {
       VK_THROW(
           "Cannot virtual_resize a vTensor with sizes that require a larger "
@@ -446,11 +438,11 @@ api::VulkanImage allocate_image(
   VkImageViewType image_view_type = VK_IMAGE_VIEW_TYPE_3D;
 
   switch (storage_type) {
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture3D:
       image_type = VK_IMAGE_TYPE_3D;
       image_view_type = VK_IMAGE_VIEW_TYPE_3D;
       break;
-    case api::StorageType::TEXTURE_2D:
+    case api::kTexture2D:
       image_type = VK_IMAGE_TYPE_2D;
       image_view_type = VK_IMAGE_VIEW_TYPE_2D;
       break;
@@ -481,7 +473,7 @@ api::VulkanBuffer allocate_buffer(
   api::Adapter* adapter_ptr = context_ptr->adapter_ptr();
 
   switch (storage_type) {
-    case api::StorageType::BUFFER:
+    case api::kBuffer:
       break;
     default:
       // Return an empty VulkanBuffer if Buffer storage is not used

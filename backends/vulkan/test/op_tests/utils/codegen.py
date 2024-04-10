@@ -12,8 +12,10 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     AT_INT_ARRAY_REF,
     AT_SCALAR,
     AT_TENSOR,
+    AT_TENSOR_OPT,
     BOOL,
     CppTestFileGen,
+    INT,
     TENSOR_TUPLE,
     TestSuite,
     TestSuiteGen,
@@ -96,7 +98,7 @@ class ComputeGraphGen:
                 ATenArg(name=arg.name, cpp_type=cpp_type, default=arg.default)
             )
 
-            requires_prepack = "weight" in arg.name
+            requires_prepack = "weight" in arg.name or "bias" in arg.name
             supports_prepack = False
             if arg.name in self.suite_def.prepacked_args:
                 supports_prepack = True
@@ -173,6 +175,23 @@ class ComputeGraphGen:
         prepack = self.prepack_ref(ref)
 
         cpp_type = "IOValueRef" if (ref.is_in and not prepack) else "ValueRef"
+
+        if ref.src_cpp_type == AT_TENSOR_OPT:
+            ret_str = f"{cpp_type} {ref.name} = "
+            ret_str += f"!{ref.src_cpp_name}.has_value() ? "
+            ret_str += f"{self.graph}{self.dot}add_none() : "
+            if not prepack:
+                ret_str += f"{self.graph}{self.dot}"
+                ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
+                ret_str += f"{ref.src_cpp_name}->sizes().vec(), "
+                ret_str += f"from_at_scalartype({ref.src_cpp_name}->scalar_type())); \n"
+            elif prepack:
+                ret_str += f"{self.graph}{self.dot}"
+                ret_str += f"add_tensorref({ref.src_cpp_name}->sizes().vec(), "
+                ret_str += f"from_at_scalartype({ref.src_cpp_name}->scalar_type()), "
+                ret_str += f"{ref.src_cpp_name}->const_data_ptr()); \n"
+            return ret_str
+
         ret_str = f"{cpp_type} {ref.name} = {self.graph}{self.dot}"
         if ref.src_cpp_type == AT_TENSOR and not prepack:
             ret_str += "add_input_tensor(" if ref.is_in else "add_tensor("
@@ -189,6 +208,8 @@ class ComputeGraphGen:
             ret_str += f"add_scalar_list({ref.src_cpp_name}.vec()); \n"
         elif ref.src_cpp_type == BOOL:
             ret_str += f"add_scalar<bool>({ref.src_cpp_name}); \n"
+        elif ref.src_cpp_type == INT:
+            ret_str += f"add_scalar<int64_t>({ref.src_cpp_name}); \n"
         elif ref.src_cpp_type == TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"
         else:

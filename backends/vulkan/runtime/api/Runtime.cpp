@@ -16,6 +16,22 @@
 namespace vkcompute {
 namespace api {
 
+#define PRINT_CASE(name)       \
+  case MemoryAccessType::name: \
+    out << #name;              \
+    break;
+
+std::ostream& operator<<(std::ostream& out, const MemoryAccessType& tag) {
+  switch (tag) {
+    PRINT_CASE(NONE)
+    PRINT_CASE(READ)
+    PRINT_CASE(WRITE)
+  }
+  return out;
+}
+
+#undef PRINT_CASE
+
 namespace {
 
 void find_requested_layers_and_extensions(

@@ -15,10 +15,12 @@ from torchgen.model import Argument, NativeFunction
 ## ATen code patterns ##
 ########################
 
-AT_TENSOR = "at::Tensor"
-AT_SCALAR = "at::Scalar"
 AT_INT_ARRAY_REF = "at::IntArrayRef"
+AT_SCALAR = "at::Scalar"
+AT_TENSOR = "at::Tensor"
+AT_TENSOR_OPT = "::std::optional<at::Tensor>"
 BOOL = "bool"
+INT = "int64_t"
 TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
 
 ###########################
@@ -116,11 +118,18 @@ class TestSuiteGen:
 
         if cpp_type == AT_TENSOR:
             ret_str += f"make_rand_tensor({init_list_str(data)}, test_dtype);"
+        elif cpp_type == AT_TENSOR_OPT:
+            if str(data) == "None":
+                ret_str += "std::nullopt;"
+            else:
+                ret_str += f"make_rand_tensor({init_list_str(data)}, test_dtype);"
         elif cpp_type == AT_SCALAR:
             ret_str += f"{data};"
         elif cpp_type == AT_INT_ARRAY_REF:
             ret_str += f"{init_list_str(data)};"
         elif cpp_type == BOOL:
+            ret_str += f"{str(data).lower()};"
+        elif cpp_type == INT:
             ret_str += f"{str(data).lower()};"
         else:
             raise RuntimeError(f"Unsupported cpp type {cpp_type}")

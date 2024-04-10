@@ -46,10 +46,8 @@ void resize_sum_node(
 }
 
 void check_sum_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(
-      check_memory_layout_is(in, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
-  VK_CHECK_COND(check_memory_layout_is(
-      out, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
+  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }
 
 void add_sum_dim_node(
@@ -73,17 +71,17 @@ void add_sum_dim_node(
   api::utils::uvec3 global_size = t_out.virtual_extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
-  std::stringstream kernel_name;
-  kernel_name << "sum_dim";
+  std::string kernel_name("sum_dim");
+  kernel_name.reserve(kShaderNameReserve);
   if (keepdim) {
-    kernel_name << "_keepdim";
+    kernel_name += "_keepdim";
   }
 
-  apply_dtype_suffix(kernel_name, t_out);
+  add_dtype_suffix(kernel_name, t_out);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
       graph,
-      VK_KERNEL_FROM_STR(kernel_name.str()),
+      VK_KERNEL_FROM_STR(kernel_name),
       global_size,
       local_size,
       // Inputs and Outputs
@@ -106,8 +104,7 @@ ValueRef add_node(
     const api::ScalarType dtype = api::kFloat) {
   vTensor& v_input = graph.get_val(input).toTensor();
   std::vector<int64_t> output_size = calc_out_sizes(v_input, dim, keepdim);
-  return graph.add_tensor(
-      output_size, dtype, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
+  return graph.add_tensor(output_size, dtype, api::kChannelsPacked);
 }
 
 void add_sum_dim_IntList(
@@ -123,10 +120,17 @@ void add_sum_dim_IntList(
   const auto& dims_to_sum = graph.get_val(opt_dim).toIntList();
   int64_t in_dim = in_tensor.sizes().size();
 
-  for (const auto& dim : dims_to_sum) {
-    // Normalize (negative) dim into range [0, self.dim() - 1]
-    int64_t dim_normalized = normalize(dim, in_dim);
-    dims_set.insert(dim_normalized);
+  if (dims_to_sum.empty()) {
+    // If dim is not specified, reduce over all dims
+    for (int64_t i = 0; i < in_dim; ++i) {
+      dims_set.insert(i);
+    }
+  } else {
+    for (const auto& dim : dims_to_sum) {
+      // Normalize (negative) dim into range [0, self.dim() - 1]
+      int64_t dim_normalized = normalize(dim, in_dim);
+      dims_set.insert(dim_normalized);
+    }
   }
 
   // Reduce the higher dimensionalities first, otherwise when keepdim is

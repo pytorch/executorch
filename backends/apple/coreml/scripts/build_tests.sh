@@ -59,6 +59,7 @@ cmake --build "$CMAKE_PROTOBUF_BUILD_DIR_PATH"  -j9 -t libprotobuf-lite
 echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch.a" "$LIBRARIES_DIR_PATH"
+cp -f "$CMAKE_EXECUTORCH_BUILD_DIR_PATH/libexecutorch_no_prim_ops.a" "$LIBRARIES_DIR_PATH"
 cp -f "$CMAKE_PROTOBUF_BUILD_DIR_PATH/libprotobuf-lite.a" "$LIBRARIES_DIR_PATH"
 
 #Copy ExecuTorch headers
