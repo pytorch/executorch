@@ -58,11 +58,6 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   add_library(llama_runner STATIC IMPORTED)
   set_property(TARGET llama_runner PROPERTY IMPORTED_LOCATION ${LLAMA_RUNNER_PATH})
 
-  # set(CUSTOM_OPS_LIB_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/custom_ops/libcustom_ops_lib.a)
-  # add_library(custom_ops_lib STATIC IMPORTED)
-  # set_property(TARGET custom_ops_lib PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_LIB_PATH})
-  # target_link_options_shared_lib(custom_ops_lib)
-
   set(CUSTOM_OPS_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/custom_ops/libcustom_ops.a)
   add_library(custom_ops STATIC IMPORTED)
   set_property(TARGET custom_ops PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_PATH})
