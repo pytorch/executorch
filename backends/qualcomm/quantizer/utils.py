@@ -520,11 +520,11 @@ def annotate_linear(node: Node, quantization_config: QuantizationConfig) -> None
     )
     nodes_to_mark_annotated = [node, weight_node]
     if bias_node:
-        _annotate_input_qspec_map(
-            node,
-            bias_node,
-            quantization_config.bias,
-        )
+        if callable(quantization_config.bias):
+            bias_config = quantization_config.bias(node)
+        else:
+            bias_config = quantization_config.bias
+        _annotate_input_qspec_map(node, bias_node, bias_config)
         nodes_to_mark_annotated.append(bias_node)
     _annotate_output_qspec(node, quantization_config.output_activation)
     _mark_nodes_as_annotated(nodes_to_mark_annotated)
