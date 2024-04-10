@@ -8,9 +8,11 @@
 def _lbl(*_args):
     return ""
 
-def _package(_values, overwrite = False):
-    # @lint-ignore BUILDIFIERLINT
-    _ = overwrite
+def _package(
+        _values,
+        # starlark-lint-disable unused-argument
+        overwrite = False):  # @unused
+    pass
 
 ci = struct(
     package = _package,

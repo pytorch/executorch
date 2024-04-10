@@ -86,7 +86,7 @@ api::StorageType ComputeGraph::suggested_storage_type() {
   if (config_.enableStorageTypeOverride) {
     return config_.storageTypeOverride;
   }
-  return api::StorageType::TEXTURE_3D;
+  return api::kTexture3D;
 }
 
 api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
@@ -95,14 +95,14 @@ api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
     return config_.memoryLayoutOverride;
   }
   if (sizes.size() < 3) {
-    return api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+    return api::kWidthPacked;
   }
   // For 3 dimensional tensors that only have a channels dimension of 1, still
   // prefer width packed.
   if (api::utils::val_at(-3, sizes) == 1) {
-    return api::GPUMemoryLayout::TENSOR_WIDTH_PACKED;
+    return api::kWidthPacked;
   }
-  return api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  return api::kChannelsPacked;
 }
 
 ValueRef ComputeGraph::add_tensor(

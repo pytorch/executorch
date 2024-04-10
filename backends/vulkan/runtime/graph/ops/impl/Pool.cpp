@@ -49,10 +49,8 @@ void resize_max_pool2d_node(
 }
 
 void check_max_pool2d_args(const vTensor& in, const vTensor& out) {
-  VK_CHECK_COND(
-      check_memory_layout_is(in, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
-  VK_CHECK_COND(check_memory_layout_is(
-      out, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED));
+  VK_CHECK_COND(check_memory_layout_is(in, api::kChannelsPacked));
+  VK_CHECK_COND(check_memory_layout_is(out, api::kChannelsPacked));
 }
 
 void add_max_pool2d_node(

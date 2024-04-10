@@ -97,10 +97,10 @@ api::ShaderInfo get_nchw_to_image_shader(const vTensor& v_dst) {
   std::stringstream kernel_name;
 
   switch (v_dst.storage_type()) {
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture3D:
       kernel_name << "nchw_to_image3d";
       break;
-    case api::StorageType::TEXTURE_2D:
+    case api::kTexture2D:
       kernel_name << "nchw_to_image2d";
       break;
     default:
@@ -121,10 +121,10 @@ api::ShaderInfo get_image_to_nchw_shader(const vTensor& v_src) {
   std::stringstream kernel_name;
 
   switch (v_src.storage_type()) {
-    case api::StorageType::TEXTURE_3D:
+    case api::kTexture3D:
       kernel_name << "image3d_to_nchw";
       break;
-    case api::StorageType::TEXTURE_2D:
+    case api::kTexture2D:
       kernel_name << "image2d_to_nchw";
       break;
     default:

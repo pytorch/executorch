@@ -25,9 +25,8 @@ void check_matmul_args(
   VK_CHECK_COND(check_same_ndim(mat1, mat2));
 
   VK_CHECK_COND(
-      check_memory_layout_is(
-          mat1, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED) ||
-      check_memory_layout_is(mat1, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED));
+      check_memory_layout_is(mat1, api::kChannelsPacked) ||
+      check_memory_layout_is(mat1, api::kWidthPacked));
   VK_CHECK_COND(check_same_memory_layout(mat1, out));
 
   VK_CHECK_COND(check_same_sizes_at(mat1, -1, mat2, -2));
@@ -61,13 +60,12 @@ void add_matmul_node(
     const ValueRef mat1,
     const ValueRef mat2,
     const ValueRef out) {
-  ValueRef arg1 = prepack_if_tensor_ref(
-      graph, mat1, api::GPUMemoryLayout::TENSOR_WIDTH_PACKED);
+  ValueRef arg1 = prepack_if_tensor_ref(graph, mat1, api::kWidthPacked);
 
-  api::GPUMemoryLayout mat2_layout = graph.memory_layout_of(arg1) ==
-          api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED
-      ? api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED
-      : api::GPUMemoryLayout::TENSOR_HEIGHT_PACKED;
+  api::GPUMemoryLayout mat2_layout =
+      graph.memory_layout_of(arg1) == api::kChannelsPacked
+      ? api::kChannelsPacked
+      : api::kHeightPacked;
 
   ValueRef arg2 = prepack_if_tensor_ref(graph, mat2, mat2_layout);
 

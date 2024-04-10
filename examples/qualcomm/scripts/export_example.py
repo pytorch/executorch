@@ -40,6 +40,14 @@ if __name__ == "__main__":
         help="Generate ETRecord metadata to link with runtime results (used for profiling)",
     )
 
+    parser.add_argument(
+        "-f",
+        "--output_folder",
+        type=str,
+        default="",
+        help="The folder to store the exported program",
+    )
+
     args = parser.parse_args()
 
     if args.model_name not in MODEL_NAME_TO_MODEL:
@@ -92,7 +100,7 @@ if __name__ == "__main__":
     )
 
     if args.generate_etrecord:
-        etrecord_path = "etrecord.bin"
+        etrecord_path = args.output_folder + "etrecord.bin"
         generate_etrecord(etrecord_path, edge_copy, executorch_program)
 
-    save_pte_program(executorch_program, args.model_name)
+    save_pte_program(executorch_program, args.model_name, args.output_folder)
