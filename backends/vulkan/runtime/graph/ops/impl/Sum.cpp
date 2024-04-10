@@ -102,7 +102,8 @@ ValueRef add_node(
     const int dim,
     const bool keepdim,
     const api::ScalarType dtype = api::kFloat) {
-  std::vector<int64_t> output_size = calc_out_sizes(*(graph.get_tensor(input)), dim, keepdim);
+  std::vector<int64_t> output_size =
+      calc_out_sizes(*(graph.get_tensor(input)), dim, keepdim);
   return graph.add_tensor(output_size, dtype, api::kChannelsPacked);
 }
 

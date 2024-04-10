@@ -150,7 +150,9 @@ std::vector<int64_t> calc_out_sizes_hw(
     return calc_transpose_out_sizes_hw(
         in_sizes, kernel_size, stride, padding, dilation, output_padding);
   } else {
-    const bool ceil_mode = graph.extract_scalar<bool>(args[3]);
+    const bool ceil_mode =
+        graph.val_is_bool(args[3]) ? graph.get_bool(args[3]) : false;
+
     return calc_out_sizes_hw(
         in_sizes, kernel_size, stride, padding, dilation, ceil_mode);
   }
