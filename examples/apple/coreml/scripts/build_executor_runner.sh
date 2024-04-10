@@ -61,6 +61,7 @@ cp -rf "$COREML_DIR_PATH/runtime/include/" "$INCLUDE_DIR_PATH"
 echo "ExecuTorch: Copying libraries"
 mkdir "$LIBRARIES_DIR_PATH"
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH"  \;
+find "$CMAKE_BUILD_DIR_PATH/" -name 'libexecutorch_no_prim_ops.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libetdump.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libcoremldelegate.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH"  \;
 find "$CMAKE_BUILD_DIR_PATH/" -name 'libprotobuf-lite.a' -exec cp -f "{}" "$LIBRARIES_DIR_PATH"  \;
