@@ -58,14 +58,9 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   add_library(llama_runner STATIC IMPORTED)
   set_property(TARGET llama_runner PROPERTY IMPORTED_LOCATION ${LLAMA_RUNNER_PATH})
 
-  set(CUSTOM_OPS_LIB_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/custom_ops/libcustom_ops_lib.a)
-  add_library(custom_ops_lib STATIC IMPORTED)
-  set_property(TARGET custom_ops_lib PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_LIB_PATH})
-
   set(CUSTOM_OPS_PATH ${CMAKE_CURRENT_BINARY_DIR}/../../examples/models/llama2/custom_ops/libcustom_ops.a)
   add_library(custom_ops STATIC IMPORTED)
   set_property(TARGET custom_ops PROPERTY IMPORTED_LOCATION ${CUSTOM_OPS_PATH})
-  target_link_options_shared_lib(custom_ops_lib)
 
   if(TARGET pthreadpool)
     set(LLAMA_JNI_SRCS jni/jni_layer_llama.cpp ../../backends/xnnpack/threadpool/cpuinfo_utils.cpp)
@@ -82,6 +77,6 @@ if(EXECUTORCH_BUILD_LLAMA_JNI)
   endif()
   target_include_directories(executorch_llama_jni PRIVATE ${_common_include_directories})
   target_link_libraries(executorch_llama_jni ${link_libraries} llama_runner
-                        custom_ops custom_ops_lib cpublas eigen_blas)
+                        custom_ops cpublas eigen_blas)
   target_compile_options(executorch_llama_jni PUBLIC ${_common_compile_options})
 endif()
