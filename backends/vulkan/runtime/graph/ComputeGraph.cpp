@@ -17,6 +17,36 @@
 
 namespace vkcompute {
 
+//
+// VTensorPtr
+//
+
+vTensorPtr::vTensorPtr(ComputeGraph* graph, const ValueRef idx)
+    : graph_(graph), tensor_(&(graph_->values_.at(idx).toTensor())) {
+  graph_->values_in_use_++;
+}
+
+vTensorPtr::~vTensorPtr() {
+  graph_->values_in_use_--;
+}
+
+//
+// StagingPtr
+//
+
+StagingPtr::StagingPtr(ComputeGraph* graph, const ValueRef idx)
+    : graph_(graph), storage_(&(graph_->values_.at(idx).toStaging())) {
+  graph_->values_in_use_++;
+}
+
+StagingPtr::~StagingPtr() {
+  graph_->values_in_use_--;
+}
+
+//
+// ComputeGraph
+//
+
 ComputeGraph::ComputeGraph(GraphConfig config)
     : config_{config},
       prepack_descriptor_counts_{},
@@ -105,6 +135,15 @@ api::GPUMemoryLayout ComputeGraph::suggested_memory_layout(
   return api::kChannelsPacked;
 }
 
+void ComputeGraph::check_no_active_value_ptrs() {
+  VK_CHECK_COND(
+      values_in_use_ == 0,
+      "Make sure that there are no pointers stored from the return values of "
+      "`ComputeGraph::get_*()` functions in scope before adding Values to the "
+      "graph. Modifying the graph's values may cause existing pointers to be "
+      "invalidated.");
+}
+
 ValueRef ComputeGraph::add_tensor(
     const std::vector<int64_t>& sizes,
     const api::ScalarType dtype,
@@ -114,6 +153,7 @@ ValueRef ComputeGraph::add_tensor(
   bool allocate_memory = shared_object_idx < 0;
 
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(vTensor(
       context(), sizes, dtype, storage_type, memory_layout, allocate_memory));
 
@@ -136,14 +176,14 @@ ValueRef ComputeGraph::add_tensor_like(
     const ValueRef vref,
     const api::StorageType storage_type,
     const api::GPUMemoryLayout memory_layout) {
-  TensorRef& tref = get_val(vref).toTensorRef();
+  TensorRef tref = get_tref(vref);
   return add_tensor(tref.sizes, tref.dtype, storage_type, memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
     const ValueRef vref,
     const api::GPUMemoryLayout memory_layout) {
-  TensorRef& tref = get_val(vref).toTensorRef();
+  TensorRef tref = get_tref(vref);
   return add_tensor(tref.sizes, tref.dtype, memory_layout);
 }
 
@@ -160,6 +200,7 @@ ValueRef ComputeGraph::add_tensorref(
     const api::ScalarType dtype,
     const void* const data) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(TensorRef(sizes, dtype, data));
   return idx;
 }
@@ -168,24 +209,28 @@ ValueRef ComputeGraph::add_staging(
     const api::ScalarType dtype,
     const size_t numel) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(api::StorageBuffer(context(), dtype, numel));
   return idx;
 }
 
 ValueRef ComputeGraph::add_none() {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back();
   return idx;
 }
 
 ValueRef ComputeGraph::add_value_list(std::vector<ValueRef>&& value) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(std::move(value));
   return idx;
 }
 
 ValueRef ComputeGraph::add_string(std::string&& str) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(std::move(str));
   return idx;
 }
@@ -194,8 +239,9 @@ ValueRef ComputeGraph::set_input_tensor(
     const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
-    vTensor& tensor = get_val(idx).toTensor();
-    ValueRef staging_idx = add_staging(tensor.dtype(), tensor.gpu_numel());
+    api::ScalarType dtype = get_tensor(idx)->dtype();
+    size_t gpu_numel = get_tensor(idx)->gpu_numel();
+    ValueRef staging_idx = add_staging(dtype, gpu_numel);
     add_staging_to_tensor_node(*this, staging_idx, idx);
     inputs_.push_back({idx, staging_idx});
     return staging_idx;
@@ -208,8 +254,9 @@ ValueRef ComputeGraph::set_output_tensor(
     const ValueRef idx,
     const bool use_staging) {
   if (use_staging) {
-    vTensor& tensor = get_val(idx).toTensor();
-    ValueRef staging_idx = add_staging(tensor.dtype(), tensor.gpu_numel());
+    api::ScalarType dtype = get_tensor(idx)->dtype();
+    size_t gpu_numel = get_tensor(idx)->gpu_numel();
+    ValueRef staging_idx = add_staging(dtype, gpu_numel);
     add_tensor_to_staging_node(*this, idx, staging_idx);
     outputs_.push_back({idx, staging_idx});
     return staging_idx;
@@ -229,20 +276,18 @@ void ComputeGraph::copy_into_staging(
     const ValueRef idx,
     const void* data,
     const size_t numel) {
-  Value& in_val = get_val(idx);
-  api::StorageBuffer& staging = in_val.toStaging();
-  size_t nbytes = numel * api::element_size(staging.dtype());
-  copy_ptr_to_staging(data, staging, nbytes);
+  StagingPtr staging = get_staging(idx);
+  size_t nbytes = numel * api::element_size(staging->dtype());
+  copy_ptr_to_staging(data, *staging, nbytes);
 }
 
 void ComputeGraph::copy_from_staging(
     const ValueRef idx,
     void* data,
     const size_t numel) {
-  Value& out_val = get_val(idx);
-  api::StorageBuffer& staging = out_val.toStaging();
-  size_t nbytes = numel * api::element_size(staging.dtype());
-  copy_staging_to_ptr(staging, data, nbytes);
+  StagingPtr staging = get_staging(idx);
+  size_t nbytes = numel * api::element_size(staging->dtype());
+  copy_staging_to_ptr(*staging, data, nbytes);
 }
 
 void ComputeGraph::prepare() {
@@ -308,7 +353,7 @@ void ComputeGraph::resize_input(
     const int64_t idx,
     const std::vector<int64_t>& new_sizes) {
   IOValueRef io_val = inputs_.at(idx);
-  get_val(io_val.value).toTensor().virtual_resize(new_sizes);
+  get_tensor(io_val.value)->virtual_resize(new_sizes);
 }
 
 void ComputeGraph::propagate_resize() {
