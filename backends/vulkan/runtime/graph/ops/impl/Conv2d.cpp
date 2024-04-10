@@ -90,40 +90,41 @@ api::ShaderInfo get_conv2d_shader(
     const bool prepack_weights,
     const Conv2dMethod method,
     const ValueRef weight) {
-  std::stringstream kernel_name;
+  std::string kernel_name;
+  kernel_name.reserve(kShaderNameReserve);
   switch (method) {
     case Conv2dMethod::Depthwise:
-      kernel_name << "conv2d_dw";
+      kernel_name = "conv2d_dw";
       if (!prepack_weights) {
         const auto& weight_sizes = graph.get_val(weight).toTensorRef().sizes;
         if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
-          kernel_name << "_output_tile_3x3";
+          kernel_name += "_output_tile_3x3";
         }
         if (weight_sizes.at(2) == 5 && weight_sizes.at(3) == 5) {
-          kernel_name << "_output_tile_5x5";
+          kernel_name += "_output_tile_5x5";
         }
       }
       break;
     case Conv2dMethod::Pointwise:
       if (prepack_weights) {
-        kernel_name << "conv2d";
+        kernel_name = "conv2d";
       } else {
-        kernel_name << "conv2d_pw";
+        kernel_name = "conv2d_pw";
       }
       break;
     case Conv2dMethod::SlidingWindow:
-      kernel_name << "conv2d";
+      kernel_name = "conv2d";
       break;
     case Conv2dMethod::Transposed:
-      kernel_name << "conv_transpose2d";
+      kernel_name = "conv_transpose2d";
       break;
   }
   if (prepack_weights) {
-    kernel_name << "_prepack_weights";
+    kernel_name += "_prepack_weights";
   }
-  apply_dtype_suffix(kernel_name, t_out);
+  add_dtype_suffix(kernel_name, t_out);
 
-  return VK_KERNEL_FROM_STR(kernel_name.str());
+  return VK_KERNEL_FROM_STR(kernel_name);
 }
 
 std::vector<int64_t> get_final_sizes(

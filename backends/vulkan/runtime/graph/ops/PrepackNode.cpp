@@ -17,11 +17,10 @@
 namespace vkcompute {
 
 api::ShaderInfo get_noop_shader(ComputeGraph& graph, const ValueRef packed) {
-  std::stringstream noop_shader_name;
-  noop_shader_name << "no_op";
-  apply_ndim_suffix(noop_shader_name, graph.get_val(packed).toTensor());
-  apply_dtype_suffix(noop_shader_name, graph.get_val(packed).toTensor());
-  return VK_KERNEL_FROM_STR(noop_shader_name.str());
+  std::string noop_shader_name("no_op");
+  add_ndim_suffix(noop_shader_name, graph.get_val(packed).toTensor());
+  add_dtype_suffix(noop_shader_name, graph.get_val(packed).toTensor());
+  return VK_KERNEL_FROM_STR(noop_shader_name);
 }
 
 PrepackNode::PrepackNode(
