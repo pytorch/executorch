@@ -11,6 +11,7 @@
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/Staging.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/KernelUtils.h>
+#include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/StatsUtils.h>
 #include <executorch/backends/vulkan/runtime/graph/ops/impl/utils/TensorUtils.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
@@ -18,16 +19,6 @@
 #include <set>
 
 namespace vkcompute {
-
-std::vector<int64_t> calc_out_sizes(vTensor& self, int64_t dim, bool keepdim) {
-  std::vector<int64_t> output_size = self.sizes();
-  if (keepdim) {
-    output_size.at(dim) = 1;
-  } else {
-    output_size.erase(output_size.begin() + dim);
-  }
-  return output_size;
-}
 
 void resize_sum_node(
     ComputeGraph* graph,
@@ -40,7 +31,7 @@ void resize_sum_node(
   const auto dim = extra_args[2];
   const auto keepdim = extra_args[3];
 
-  std::vector<int64_t> output_size = calc_out_sizes(in, dim, keepdim);
+  std::vector<int64_t> output_size = calc_out_sizes(in.sizes(), dim, keepdim);
 
   out.virtual_resize(output_size);
 }
@@ -73,9 +64,6 @@ void add_sum_dim_node(
 
   std::string kernel_name("sum_dim");
   kernel_name.reserve(kShaderNameReserve);
-  if (keepdim) {
-    kernel_name += "_keepdim";
-  }
 
   add_dtype_suffix(kernel_name, t_out);
 
@@ -90,21 +78,11 @@ void add_sum_dim_node(
       {t_out.extents_ubo(),
        graph.create_params_buffer(dim + 4 - in_dim),
        graph.create_params_buffer(dim_size),
-       graph.create_params_buffer(int(ceil(channel / 4.0)))},
+       graph.create_params_buffer(int(ceil(channel / 4.0))),
+       graph.create_params_buffer(keepdim)},
       // Resizing
       resize_sum_node,
       {out, in, static_cast<int>(dim), keepdim}));
-}
-
-ValueRef add_node(
-    ComputeGraph& graph,
-    const ValueRef input,
-    const int dim,
-    const bool keepdim,
-    const api::ScalarType dtype = api::kFloat) {
-  vTensor& v_input = graph.get_val(input).toTensor();
-  std::vector<int64_t> output_size = calc_out_sizes(v_input, dim, keepdim);
-  return graph.add_tensor(output_size, dtype, api::kChannelsPacked);
 }
 
 void add_sum_dim_IntList(
@@ -116,22 +94,9 @@ void add_sum_dim_IntList(
   bool keepdim_val = graph.get_val(keepdim).toBool();
   vTensor& in_tensor = graph.get_val(in).toTensor();
 
-  std::set<int64_t> dims_set;
   const auto& dims_to_sum = graph.get_val(opt_dim).toIntList();
   int64_t in_dim = in_tensor.sizes().size();
-
-  if (dims_to_sum.empty()) {
-    // If dim is not specified, reduce over all dims
-    for (int64_t i = 0; i < in_dim; ++i) {
-      dims_set.insert(i);
-    }
-  } else {
-    for (const auto& dim : dims_to_sum) {
-      // Normalize (negative) dim into range [0, self.dim() - 1]
-      int64_t dim_normalized = normalize(dim, in_dim);
-      dims_set.insert(dim_normalized);
-    }
-  }
+  std::set<int64_t> dims_set = calc_dims_to_aggregate(dims_to_sum, in_dim);
 
   // Reduce the higher dimensionalities first, otherwise when keepdim is
   // false, it will be reducing the wrong dimension.
@@ -140,7 +105,12 @@ void add_sum_dim_IntList(
   // the for loop.
   ValueRef input = in;
   for (auto dim = dims_set.rbegin(); dim != std::prev(dims_set.rend()); ++dim) {
-    ValueRef tmp_node = add_node(graph, input, *dim, keepdim_val);
+    const auto in_sizes = graph.get_val(input).toTensor().sizes();
+    std::vector<int64_t> out_sizes =
+        calc_out_sizes(in_sizes, *dim, keepdim_val);
+
+    ValueRef tmp_node = graph.add_tensor(
+        out_sizes, api::kFloat, api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED);
     add_sum_dim_node(graph, input, *dim, keepdim_val, tmp_node);
     input = tmp_node;
   }
