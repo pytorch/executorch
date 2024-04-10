@@ -23,7 +23,7 @@ static int compare_tokens(const void* a, const void* b) {
   return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-Tokenizer::Tokenizer(int32_t vocab_size, int32_t bos_tok, int32_t eos_tok)
+Tokenizer::Tokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok)
     : initialized_(false),
       vocab_size_(vocab_size),
       bos_tok_(bos_tok),
@@ -142,10 +142,10 @@ Tokenizer::~Tokenizer() {
  *
  * @param prev_token The previous token.
  * @param token The current token.
- * @return Result<const char*> A pointer to the string representation of the
+ * @return Result<std::string> A pointer to the string representation of the
  * token.
  */
-Result<const char*> Tokenizer::decode(int32_t prev_token, int32_t token) {
+Result<std::string> Tokenizer::decode(uint64_t prev_token, uint64_t token) {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;
@@ -162,7 +162,8 @@ Result<const char*> Tokenizer::decode(int32_t prev_token, int32_t token) {
   if (sscanf(piece, "<0x%02hhX>", &byte_val) == 1) {
     piece = (char*)byte_pieces_ + byte_val * 2;
   }
-  return piece;
+  std::string res(piece);
+  return res;
 }
 
 static int32_t
@@ -183,14 +184,10 @@ str_lookup(const char* str, TokenIndex* sorted_vocab, int32_t vocab_size) {
  * @param eos The number of EOS to append to the token list.
  * @param tokens The output tokens.
  * @param n_tokens The number of tokens.
- * @return Error
+ * @return Result<std::vector<uint64_t>>
  */
-Error Tokenizer::encode(
-    const char* text,
-    int8_t bos,
-    int8_t eos,
-    int32_t* tokens,
-    int32_t* n_tokens) {
+Result<std::vector<uint64_t>>
+Tokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;
@@ -198,8 +195,8 @@ Error Tokenizer::encode(
   // encode the string text (input) into an upper-bound preallocated tokens[]
   // array bos != 0 means prepend the BOS token (=1), eos != 0 means append the
   // EOS token (=2)
-  if (text == nullptr) {
-    ET_LOG(Error, "cannot encode null text");
+  if (text.empty()) {
+    ET_LOG(Error, "cannot encode empty text");
     return Error::InvalidArgument;
   }
 
@@ -210,12 +207,12 @@ Error Tokenizer::encode(
   size_t str_len = 0;
 
   // start at 0 tokens
-  *n_tokens = 0;
+  std::vector<uint64_t> tokens;
 
   // add optional BOS token, if desired
   if (bos > 0) {
     while (bos--) {
-      tokens[(*n_tokens)++] = bos_tok_;
+      tokens.push_back(bos_tok_);
     }
   } else {
     ET_LOG(Error, "bos %d should be >= 0", bos);
@@ -230,7 +227,7 @@ Error Tokenizer::encode(
   const char* space = " ";
   if (text[0] != '\0') {
     int dummy_prefix = str_lookup(space, sorted_vocab_.get(), vocab_size_);
-    tokens[(*n_tokens)++] = dummy_prefix;
+    tokens.push_back(dummy_prefix);
   }
 
   // Okay UTF-8 time. This will get messy. Here is the reference from Wikipedia:
@@ -242,7 +239,7 @@ Error Tokenizer::encode(
   // U+10000	U+10FFFF    11110xxx	10xxxxxx	10xxxxxx	10xxxxxx
 
   // process the raw (UTF-8) byte sequence of the input string
-  for (const char* c = text; *c != '\0'; c++) {
+  for (const char* c = text.c_str(); *c != '\0'; c++) {
     // reset buffer if the current byte is ASCII or a leading byte
     // 0xC0 is 11000000, so (*c & 0xC0) keeps the first 2 bits and zeros the
     // rest 0x80 is 10000000 in UTF-8, all continuation bytes start with "10" in
@@ -271,13 +268,13 @@ Error Tokenizer::encode(
     int id = str_lookup(str_buffer, sorted_vocab_.get(), vocab_size_);
     if (id != -1) {
       // we found this codepoint in vocab, add it as a token
-      tokens[(*n_tokens)++] = id;
+      tokens.push_back(id);
     } else {
       // byte_fallback encoding: just encode each byte as a token
       // +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
       // so the individual bytes only start at index 3
       for (int i = 0; i < str_len; i++) {
-        tokens[(*n_tokens)++] = (unsigned char)str_buffer[i] + 3;
+        tokens.push_back((unsigned char)str_buffer[i] + 3);
       }
     }
     str_len = 0; // protect against a sequence of stray UTF8 continuation bytes
@@ -290,7 +287,7 @@ Error Tokenizer::encode(
     int best_id = -1;
     int best_idx = -1;
 
-    for (int i = 0; i < (*n_tokens - 1); i++) {
+    for (int i = 0; i < tokens.size() - 1; i++) {
       // check if we can merge the pair (tokens[i], tokens[i+1])
       snprintf(
           str_buffer,
@@ -314,16 +311,16 @@ Error Tokenizer::encode(
     // merge the consecutive pair (best_idx, best_idx+1) into new token best_id
     tokens[best_idx] = best_id;
     // delete token at position best_idx+1, shift the entire sequence back 1
-    for (int i = best_idx + 1; i < (*n_tokens - 1); i++) {
+    for (int i = best_idx + 1; i < tokens.size() - 1; i++) {
       tokens[i] = tokens[i + 1];
     }
-    (*n_tokens)--; // token length decreased
+    tokens.pop_back(); // token length decreased
   }
 
   // add optional EOS (=2) token, if desired
   if (eos >= 0) {
     while (eos--) {
-      tokens[(*n_tokens)++] = eos_tok_;
+      tokens.push_back(eos_tok_);
     }
   } else {
     ET_LOG(Error, "eos %d should be >= 0", eos);
@@ -331,7 +328,7 @@ Error Tokenizer::encode(
   }
 
   delete[] str_buffer;
-  return Error::Ok;
+  return Result(tokens);
 }
 
 } // namespace executor
