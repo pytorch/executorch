@@ -554,6 +554,10 @@ Python APIs.</p>
 <h3>AOT (Ahead-of-time) components:<a class="headerlink" href="#aot-ahead-of-time-components" title="Permalink to this heading">¶</a></h3>
 <p>Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct binary.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span><span class="nv">$EXECUTORCH_ROOT</span>
+<span class="c1"># Workaround for fbs files in exir/_serialize</span>
+cp<span class="w"> </span>schema/program.fbs<span class="w"> </span>exir/_serialize/program.fbs
+cp<span class="w"> </span>schema/scalar_type.fbs<span class="w"> </span>exir/_serialize/scalar_type.fbs
+
 mkdir<span class="w"> </span>build_x86_64
 <span class="nb">cd</span><span class="w"> </span>build_x86_64
 cmake<span class="w"> </span>..<span class="w"> </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="si">${</span><span class="nv">QNN_SDK_ROOT</span><span class="si">}</span>
@@ -575,8 +579,8 @@ mkdir<span class="w"> </span>build_android
 <span class="nb">cd</span><span class="w"> </span>build_android
 <span class="c1"># build executorch &amp; qnn_executorch_backend</span>
 cmake<span class="w"> </span>..<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span><span class="nv">$PWD</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_SDK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DEXECUTORCH_BUILD_QNN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DQNN_SDK_ROOT<span class="o">=</span><span class="nv">$QNN_SDK_ROOT</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
@@ -647,6 +651,7 @@ where to find these libraries by setting <code class="docutils literal notransla
 So, we can run <code class="docutils literal notranslate"><span class="pre">qnn_executor_runner</span></code> like</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>./deeplab_v3/dlv3_qnn.pte<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build_android/examples/qualcomm/qnn_executor_runner<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
+adb<span class="w"> </span>push<span class="w"> </span><span class="si">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="si">}</span>/build_android/lib/libqnn_executorch_backend.so<span class="w"> </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span>
 adb<span class="w"> </span>shell<span class="w"> </span><span class="s2">&quot;cd </span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
 <span class="s2">           &amp;&amp; export LD_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
 <span class="s2">           &amp;&amp; export ADSP_LIBRARY_PATH=</span><span class="si">${</span><span class="nv">DEVICE_DIR</span><span class="si">}</span><span class="s2"> \</span>
