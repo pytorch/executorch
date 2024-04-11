@@ -75,3 +75,7 @@ class ExecutorchBackendConfig:
     # be a power of 2. If not provided, uses the value in the schema file.
     delegate_alignment: Optional[int] = None
     sym_shape_eval_pass: PassType = HintBasedSymShapeEvalPass()
+
+    # If set to true, view_copy operations will be converted to lightweight
+    # view operations in the ET runtime
+    remove_view_copy: bool = True
