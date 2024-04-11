@@ -12,7 +12,7 @@ from torch.library import impl, Library
 
 from .utils import get_conv1d_output_size
 
-lib = Library("xtensa", "DEF")
+lib = Library("cadence", "DEF")
 
 lib.define(
     "quantize_per_tensor(Tensor input, float scale, int zero_point, int quant_min, int quant_max, ScalarType dtype) -> (Tensor Z)"
@@ -56,7 +56,7 @@ lib.define(
     "quantized_conv.out(Tensor input, Tensor weight, Tensor bias, int[] stride, SymInt[] padding, int[] dilation, int groups, int input_zero_point, Tensor weight_zero_point, Tensor bias_scale, float out_scale, int out_zero_point, Tensor out_multiplier, Tensor out_shift, bool channel_last=False, *, Tensor(a!) out) -> Tensor(a!)"
 )
 
-m = Library("xtensa", "IMPL", "Meta")
+m = Library("cadence", "IMPL", "Meta")
 
 
 @impl(m, "quantize_per_tensor")

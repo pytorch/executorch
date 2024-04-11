@@ -12,7 +12,7 @@ from ..aot.meta_registrations import *  # noqa
 
 import torch
 
-from ..aot.export_example import export_xtensa_model
+from ..aot.export_example import export_model
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -55,4 +55,4 @@ if __name__ == "__main__":
 
     example_inputs = (torch.randn(shape),)
 
-    export_xtensa_model(model, example_inputs)
+    export_model(model, example_inputs)
