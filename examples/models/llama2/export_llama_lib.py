@@ -647,17 +647,17 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
                 generate_qnn_executorch_compiler_spec(
                     # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-                    soc_model=QcomChipset.SM8650,  # default to SM8650
+                    soc_model=QcomChipset.SM8450,  # default to SM8650
                     backend_options=backend_options,
                     debug=False,
                     saver=False,
                 ),
                 skip_node_id_set={},
-                skip_node_op_set={},
+                skip_node_op_set={"aten.unsqueeze_copy.default", "aten.permute_copy.default"},
             )
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        _transform(builder_exported_to_edge.export_program())
+        _transform(builder_exported_to_edge.edge_manager.exported_program())
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
@@ -678,7 +678,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             logging.info("Generated etrecord.bin")
     else:
         builder = builder_exported_to_edge.to_backend(partitioners).to_executorch()
-
+    print("graph after to_backend")
+    builder.edge_manager.exported_program().graph.print_tabular()
     if args.profile_memory:
         generate_memory_trace(builder.export_program, "memory_profile.json")
 

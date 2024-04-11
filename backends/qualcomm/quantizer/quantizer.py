@@ -15,7 +15,8 @@ from executorch.backends.qualcomm.passes.decompose_silu import DecomposeSilu
 from executorch.backends.qualcomm.passes.reduce_dynamic_range import ReduceDynamicRange
 from executorch.backends.qualcomm.passes.remove_clone import RemoveClone
 from executorch.backends.qualcomm.passes.replace_inf_buffer import ReplaceInfBuffer
-
+from executorch.backends.qualcomm.passes.convert_constants_to_attrs import ConvertConstantsToAttrs
+from torch.ao.quantization.fx.utils import get_new_attr_name_with_prefix
 from torch import Tensor
 from torch._ops import OpOverload
 from torch.ao.quantization.observer import (
@@ -378,8 +379,58 @@ class QnnQuantizer(Quantizer):
         model = DecomposeScaledDotProductAttention()(model).graph_module
         model = DecomposeSilu()(model).graph_module
         model = ReplaceInfBuffer()(model).graph_module
+        # ConvertConstantsToAttrs(model)
+        self._lift_constant_scalar_operands(model)
+        # model = ConvertBinaryOpsWithScalar()(model).graph_module
 
         return model
+
+    def _lift_constant_scalar_operands(self, gm: torch.fx.GraphModule) -> None:
+        # print("running _lift_constant_scalar_operands...")
+        for n in gm.graph.nodes:
+            # if n.name == "mul_78":
+            # print("                n.name: ", n.name)
+
+            if n.op != "call_function" or n.target not in (
+                torch.ops.aten.add.Tensor,
+                torch.ops.aten.sub.Tensor,
+                torch.ops.aten.mul.Tensor,
+                torch.ops.aten.mul.Scalar,
+                torch.ops.aten.rsub.Scalar,
+            ):
+                continue
+
+            # print("                handling n: ", n, " n.target: ", n.target, " n.args: ", n.args)
+            const_arg = None
+            non_const_arg = None
+            for arg in n.args:
+                if isinstance(arg, torch.fx.Node):
+                    non_const_arg = arg
+                else:
+                    const_arg = arg
+
+            if non_const_arg is None or const_arg is None:
+                continue
+
+            # print("                n'args are all constant: ", n)
+            tensor_constant = torch.tensor([const_arg], dtype=torch.float32)
+            tensor_constant_name = get_new_attr_name_with_prefix("_tensor_constant_")(
+                gm
+            )
+            gm.register_buffer(tensor_constant_name, tensor_constant)
+
+            fake_mode = n.meta["val"].fake_mode
+            with gm.graph.inserting_before(n):
+                get_attr_node = gm.graph.get_attr(tensor_constant_name)
+                get_attr_node.meta["val"] = fake_mode.from_tensor(tensor_constant)
+
+            if n.target == torch.ops.aten.rsub.Scalar:
+                n.args = (get_attr_node, non_const_arg) + n.args[2:]
+                n.target = torch.ops.aten.sub.Tensor
+            else:
+                n.args = (non_const_arg, get_attr_node) + n.args[2:]
+
+        gm.recompile()
 
     def validate(self, model: GraphModule) -> None:
         pass

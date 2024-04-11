@@ -14,7 +14,7 @@ import torch
 import torch.nn.functional as F
 
 from torch import nn
-
+import math
 
 class RMSNorm(torch.nn.Module):
     def __init__(self, dim: int, eps: float = 1e-6):
@@ -216,15 +216,23 @@ class Attention(nn.Module):
         self.use_sdpa_with_kv_cache_op = args.use_sdpa_with_kv_cache_op
         self.layer_id = layer_id
 
-        causal_mask = torch.tril(
-            torch.ones(
-                self.max_seq_len,
-                self.max_seq_len,
-                dtype=torch.bool,
-                device="cpu",
-            )
+        # causal_mask = torch.tril(
+        #     torch.ones(
+        #         self.max_seq_len,
+        #         self.max_seq_len,
+        #         dtype=torch.bool,
+        #         device="cpu",
+        #     )
+        # )
+        # self.register_buffer("mask", causal_mask, persistent=False)
+        mask = torch.full(
+            (1, 1, args.max_seq_len, args.max_seq_len),
+            float("-inf"),
+            device="cpu",
         )
-        self.register_buffer("mask", causal_mask, persistent=False)
+
+        mask = torch.triu(mask, diagonal=1)
+        self.register_buffer("mask", mask)
 
         if self.use_kv_cache:
             self.kv_cache = KVCache(
@@ -264,18 +272,33 @@ class Attention(nn.Module):
                 v = v.transpose(1, 2)
 
                 k, v = self.kv_cache.update(input_pos, k, v)
-                mask = self.mask[None, None, input_pos]
+                mask = torch.squeeze(self.mask, [0, 1])
+                mask = mask[None, None, input_pos]
+                # mask = self.mask[None, None, input_pos]
 
                 k = k.repeat_interleave(self.n_rep, dim=1)
                 v = v.repeat_interleave(self.n_rep, dim=1)
-                y = F.scaled_dot_product_attention(
-                    q, k, v, attn_mask=mask, dropout_p=0.0
-                )
 
-                y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
-                y = self.wo(y)
-                return y
+                scores = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
+                scores = F.softmax(scores.float(), dim=-1).type_as(q)
+                scores = scores + mask
+                output = torch.matmul(
+                    scores, v
+                )  # (bs, n_local_heads, seqlen, head_dim)
+
+                output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
+
+                output = self.wo(output)
+                return output
+                # y = F.scaled_dot_product_attention(
+                #     q, k, v, attn_mask=mask, dropout_p=0.0
+                # )
+
+                # y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+                # y = self.wo(y)
+                # return y
             else:
                 from .custom_ops.sdpa_with_kv_cache import sdpa_with_kv_cache  # noqa
 
