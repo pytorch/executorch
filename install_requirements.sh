@@ -95,7 +95,7 @@ REQUIREMENTS_TO_INSTALL=(
 
 # Install the requirements. `--extra-index-url` tells pip to look for package
 # versions on the provided URL if they aren't available on the default URL.
-$PIP_EXECUTABLE install --extra-index-url "${TORCH_NIGHTLY_URL}" \
+$PIP_EXECUTABLE install --extra-index-url "${TORCH_URL}" \
     "${REQUIREMENTS_TO_INSTALL[@]}"
 
 #
