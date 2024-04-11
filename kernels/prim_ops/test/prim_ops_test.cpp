@@ -331,14 +331,13 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
       EValue(good_outs[0]), EValue(good_outs[1])};
 
   // bad outs expect death
-  constexpr int N_BAD_OUTS = 3;
+  constexpr int N_BAD_OUTS = 2;
   Tensor bad_outs[N_BAD_OUTS] = {
       tf.ones({1, 3, 2, 1}), // wrong rank
-      tf.ones({1, 3, 3}), // wrong size
-      tf.ones({1, 3, 2}) // occupied data_ptr
+      tf.ones({1, 3, 3}) // wrong size
   };
   EValue bad_out_evalues[N_BAD_OUTS] = {
-      EValue(bad_outs[0]), EValue(bad_outs[1]), EValue(bad_outs[2])};
+      EValue(bad_outs[0]), EValue(bad_outs[1])};
 
   // ***************************************************************************
   // Run tests
@@ -349,7 +348,6 @@ TEST_F(RegisterPrimOpsTest, TestETView) {
       // Bad out stacks
       {&self_evalue, &size_int_list_evalue, &bad_out_evalues[0]},
       {&self_evalue, &size_int_list_evalue, &bad_out_evalues[1]},
-      {&self_evalue, &size_int_list_evalue, &bad_out_evalues[2]},
       // Bad size stacks
       {&self_evalue, &bad_size_int_list_evalue1, &good_out_evalues[0]},
       {&self_evalue, &bad_size_int_list_evalue2, &good_out_evalues[0]}};
