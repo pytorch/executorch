@@ -68,3 +68,12 @@ dependencies {
   debugImplementation("androidx.compose.ui:ui-tooling")
   debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+tasks.register("setup") {
+  doFirst {
+    exec {
+      commandLine("sh", "examples/demo-apps/android/LlamaDemo/setup.sh")
+      workingDir("../../../../../")
+    }
+  }
+}

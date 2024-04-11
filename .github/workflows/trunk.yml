@@ -46,9 +46,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: ${{ matrix.timeout }}
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
         MODEL_NAME=${{ matrix.model }}
         BUILD_TOOL=${{ matrix.build-tool }}
         BACKEND=${{ matrix.backend }}
@@ -59,7 +56,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test xecutorch
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test.sh "${MODEL_NAME}" "${BUILD_TOOL}" "${BACKEND}" "${DEMO_BACKEND_DELEGATION}"
-        popd
 
   test-custom-ops-macos:
     name: test-custom-ops-macos
@@ -75,9 +71,6 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
         BUILD_TOOL=${{ matrix.build-tool }}
 
         bash .ci/scripts/setup-conda.sh
@@ -85,7 +78,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test custom ops
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/portable/custom_ops/test_custom_ops.sh "${BUILD_TOOL}"
-        popd
 
   test-selective-build-macos:
     name: test-selective-build-macos
@@ -101,9 +93,6 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
         BUILD_TOOL=${{ matrix.build-tool }}
 
         bash .ci/scripts/setup-conda.sh
@@ -111,7 +100,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test selective build
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/selective_build/test_selective_build.sh "${BUILD_TOOL}"
-        popd
 
   test-demo-backend-delegation:
     name: test-demo-backend-delegation
@@ -208,9 +196,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
         BUILD_TOOL=cmake
 
         bash .ci/scripts/setup-conda.sh
@@ -218,7 +203,6 @@ jobs:
         GITHUB_RUNNER=1 PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/setup-macos.sh "${BUILD_TOOL}"
         # Build and test coreml delegate
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash backends/apple/coreml/scripts/build_all.sh
-        popd
 
   test-pybind-build-macos:
     name: test-pybind-build-macos
@@ -235,8 +219,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 180
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
         bash .ci/scripts/setup-conda.sh
 
         # build module for executorch.extension.pybindings.portable_lib
@@ -245,7 +227,6 @@ jobs:
 
         # see if we can import the module successfully
         ${CONDA_RUN} python -c "from executorch.extension.pybindings import portable_lib; print('success!')"
-        popd
 
   test-llama-runner-macos:
     name: test-llama-runner-mac
@@ -254,7 +235,7 @@ jobs:
       matrix:
         dtype: [fp32]
         build-tool: [buck2, cmake]
-        mode: [portable, xnnpack]
+        mode: [portable, xnnpack+kv+custom]
       fail-fast: false
     with:
       runner: macos-m1-stable
@@ -263,8 +244,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 900
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
         bash .ci/scripts/setup-conda.sh
 
         DTYPE=${{ matrix.dtype }}
@@ -278,4 +257,3 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash examples/models/llama2/install_requirements.sh
         # Test llama2
         PYTHON_EXECUTABLE=python ${CONDA_RUN} bash .ci/scripts/test_llama.sh stories110M.pt "${BUILD_TOOL}" "${DTYPE}" "${MODE}"
-        popd

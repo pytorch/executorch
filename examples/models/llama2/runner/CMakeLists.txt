@@ -47,8 +47,7 @@ else()
   add_library(llama_runner SHARED ${_llama_runner__srcs})
 endif()
 
-set(llama_runner_deps executorch extension_module extension_data_loader
-  custom_ops)
+set(llama_runner_deps executorch extension_module extension_data_loader)
 
 target_link_libraries(
   llama_runner PUBLIC ${llama_runner_deps})
