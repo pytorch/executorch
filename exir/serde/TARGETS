@@ -5,11 +5,9 @@ oncall("executorch")
 python_library(
     name = "serialize",
     srcs = [
-        "export_serialize.py",
         "serialize.py",
     ],
     deps = [
-        "fbsource//third-party/pypi/sympy:sympy",
         ":schema",
         "//caffe2:torch",
         "//executorch/exir:delegate",
