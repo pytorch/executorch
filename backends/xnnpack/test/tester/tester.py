@@ -7,6 +7,7 @@
 import copy
 
 import logging
+import random
 import sys
 from abc import ABC, abstractmethod
 from collections import Counter, OrderedDict
@@ -26,7 +27,7 @@ from executorch.exir import (
 )
 from executorch.exir.backend.backend_api import validation_disabled
 from executorch.exir.backend.partitioner import Partitioner
-from executorch.exir.passes.spec_prop_pass import SpecPropPass
+from executorch.exir.passes.sym_shape_eval_pass import ConstraintBasedSymShapeEvalPass
 from executorch.exir.print_program import pretty_print, print_program
 
 logger = logging.getLogger(__name__)
@@ -177,11 +178,18 @@ class Quantize(Stage):
 
 @register_stage
 class Export(Stage):
-    def __init__(self):
+    def __init__(self, dynamic_shapes: Optional[Tuple[Any]] = None):
         self.exported_program = None
+        self.dynamic_shapes = dynamic_shapes
 
-    def run(self, artifact: torch.nn.Module, inputs) -> None:
-        self.exported_program = export(artifact, inputs)
+    def run(
+        self,
+        artifact: torch.nn.Module,
+        inputs: Tuple[torch.Tensor],
+    ) -> None:
+        self.exported_program = export(
+            artifact, inputs, dynamic_shapes=self.dynamic_shapes
+        )
 
     @property
     def artifact(self) -> ExportedProgram:
@@ -261,8 +269,8 @@ class ToExecutorch(Stage):
         config: Optional[ExecutorchBackendConfig] = None,
     ):
         self.config = config or ExecutorchBackendConfig(
-            passes=[SpecPropPass()],
             extract_delegate_segments=True,
+            sym_shape_eval_pass=ConstraintBasedSymShapeEvalPass(),
         )
         self.executorch_program = None
 
@@ -334,11 +342,13 @@ class Tester:
         self,
         module: torch.nn.Module,
         inputs: Tuple[torch.Tensor],
+        dynamic_shapes: Optional[Tuple[Any]] = None,
     ):
         module.eval()
 
         self.original_module = module
         self.inputs = inputs
+        self.dynamic_shapes = dynamic_shapes
         self.stages: Dict[str, Stage] = OrderedDict.fromkeys(list(_stages_.keys()))
         self.pipeline = {
             self.stage_name(Quantize): [self.stage_name(Export)],
@@ -370,6 +380,59 @@ class Tester:
 
         # Artifact output from stage
         self.stage_output = None
+
+    def generate_random_inputs(self):
+        # Get shapes of inputs
+        input_shapes = []
+        if self.dynamic_shapes is None:
+            for tensor_arg in self.inputs:
+                assert isinstance(tensor_arg, torch.Tensor)
+                input_shapes.append(tensor_arg.shape)
+        else:
+            # Random shapes depending on dynamic shape constraint
+            dim_name_to_size = {}
+            for arg_idx in range(len(self.inputs)):
+                assert isinstance(self.inputs[arg_idx], torch.Tensor)
+                ex_shape = list(self.inputs[arg_idx].shape)
+                dynamic_dim_spec = self.dynamic_shapes[arg_idx]
+                for dim_idx, dim_spec in dynamic_dim_spec.items():
+                    assert dim_idx < len(ex_shape)
+                    if isinstance(dim_spec, torch.export.dynamic_shapes._DerivedDim):
+                        # derived dims are of the form {0: 2 * torch.export.Dim() // 2}
+                        # The root contains the min/max of the export dim and fn contains
+                        # the function to compute the derived dim.
+                        dim_spec = dim_spec.root
+                        fn = dim_spec.fn
+                    elif isinstance(dim_spec, torch.export.dynamic_shapes._Dim):
+                        # Not derived dim so fn is just itself
+                        def fn(x):
+                            return x
+
+                    else:
+                        raise RuntimeError(
+                            f"Expected Dynamic Dims to be of type _DerivedDim or _Dim but got {type(dim_spec)}"
+                        )
+                    dim_name = dim_spec.__name__
+                    if dim_name not in dim_name_to_size:
+                        upper_bound = min(
+                            dim_spec.max, 1000
+                        )  # unbounded int max is too large
+                        lower_bound = (
+                            dim_spec.min if dim_spec.min != 2 else 1
+                        )  # 0/1 specialization means dim_spec.min can never be 1
+                        dim_name_to_size[dim_name] = fn(
+                            random.randint(lower_bound, upper_bound)
+                        )
+                    ex_shape[dim_idx] = dim_name_to_size[dim_spec.__name__]
+                input_shapes.append(torch.Size(ex_shape))
+        # create random tensor inputs with the shapes given above:
+        random_inputs = []
+        for arg_idx in range(len(self.inputs)):
+            random_inputs.append(
+                torch.randn(input_shapes[arg_idx]).to(dtype=self.inputs[arg_idx].dtype)
+            )
+
+        yield tuple(random_inputs)
 
     @staticmethod
     def stage_name(stage) -> str:
@@ -406,7 +469,9 @@ class Tester:
         return self._run_stage(quantize_stage or Quantize(), self.inputs)
 
     def export(self, export_stage: Optional[Export] = None):
-        return self._run_stage(export_stage or Export(), self.inputs)
+        return self._run_stage(
+            export_stage or Export(dynamic_shapes=self.dynamic_shapes), self.inputs
+        )
 
     def to_edge(self, to_edge_stage: Optional[ToEdge] = None):
         return self._run_stage(to_edge_stage or ToEdge())
@@ -469,21 +534,39 @@ class Tester:
 
         return self
 
-    def run_method(
-        self, stage: Optional[str] = None, inputs: Optional[Tuple[torch.Tensor]] = None
+    def run_method_and_compare_outputs(
+        self,
+        stage: Optional[str] = None,
+        inputs: Optional[Tuple[torch.Tensor]] = None,
+        num_runs=1,
+        atol=1e-03,
+        rtol=1e-03,
+        qtol=0,
     ):
-        inputs_to_run = inputs or self.inputs
-        export_stage = self.stages[self.stage_name(Export)]
+        number_of_runs = 1 if inputs is not None else num_runs
+        reference_stage = self.stages[self.stage_name(Export)]
 
-        # Reference output (and quantization scale)
-        (
-            self.reference_output,
-            self.quantization_scale,
-        ) = self._calculate_reference_output(export_stage.artifact, inputs_to_run)
-
-        # Output from running artifact at stage
         stage = stage or self.cur
-        self.stage_output = self.stages[stage].run_artifact(inputs_to_run)
+
+        print(f"Comparing Stage {stage} with Stage {reference_stage}")
+        for run_iteration in range(number_of_runs):
+            inputs_to_run = inputs if inputs else next(self.generate_random_inputs())
+            input_shapes = [generated_input.shape for generated_input in inputs_to_run]
+            print(f"Run {run_iteration} with input shapes: {input_shapes}")
+
+            # Reference output (and quantization scale)
+            (
+                reference_output,
+                quantization_scale,
+            ) = self._calculate_reference_output(
+                reference_stage.artifact, inputs_to_run
+            )
+
+            # Output from running artifact at stage
+            stage_output = self.stages[stage].run_artifact(inputs_to_run)
+            self._compare_outputs(
+                reference_output, stage_output, quantization_scale, atol, rtol, qtol
+            )
 
         return self
 
@@ -521,33 +604,37 @@ class Tester:
                 f"\t   Min: {model.min()}, {ref.min()}\n"
             )
 
-    def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
+    @staticmethod
+    def _compare_outputs(
+        reference_output,
+        stage_output,
+        quantization_scale=None,
+        atol=1e-03,
+        rtol=1e-03,
+        qtol=0,
+    ):
         """
         Compares the original of the original nn module with the output of the generated artifact.
         This requres calling run_method before calling compare_outputs. As that runs the generated
         artifact on the sample inputs and sets the stage output to be compared against the reference.
         """
-        assert self.reference_output is not None
-        assert self.stage_output is not None
-
         # Wrap both outputs as tuple, since executor output is always a tuple even if single tensor
-        if isinstance(self.reference_output, torch.Tensor):
-            self.reference_output = (self.reference_output,)
-        if isinstance(self.stage_output, torch.Tensor):
-            self.stage_output = (self.stage_output,)
+        if isinstance(reference_output, torch.Tensor):
+            reference_output = (reference_output,)
+        if isinstance(stage_output, torch.Tensor):
+            stage_output = (stage_output,)
 
         # If a qtol is provided and we found an dequantization node prior to the output, relax the
         # atol by qtol quant units.
-        if self.quantization_scale is not None:
-            atol += self.quantization_scale * qtol
+        if quantization_scale is not None:
+            atol += quantization_scale * qtol
 
-        self._assert_outputs_equal(
-            self.stage_output,
-            self.reference_output,
+        Tester._assert_outputs_equal(
+            stage_output,
+            reference_output,
             atol=atol,
             rtol=rtol,
         )
-        return self
 
     @staticmethod
     def _calculate_reference_output(
