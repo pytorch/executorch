@@ -34,8 +34,7 @@ class TestW2L(unittest.TestCase):
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_w2l(self):
@@ -54,6 +53,5 @@ class TestW2L(unittest.TestCase):
             .check(["torch.ops.higher_order.executorch_call_delegate"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
