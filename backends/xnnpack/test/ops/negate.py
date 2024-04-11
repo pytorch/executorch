@@ -31,8 +31,7 @@ class TestNegate(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_neg_default"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_negate(self):

@@ -152,8 +152,7 @@ class TestConv2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(qtol=1)
+            .run_method_and_compare_outputs(qtol=1)
         )
 
     def test_fp16_conv2d(self) -> None:

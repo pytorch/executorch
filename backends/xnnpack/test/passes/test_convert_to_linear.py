@@ -35,6 +35,5 @@ class TestConvertToLinear(unittest.TestCase):
                 .check_count(
                     {"executorch_exir_dialects_edge__ops_aten_linear_default": 1}
                 )
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )

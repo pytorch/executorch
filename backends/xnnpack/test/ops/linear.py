@@ -595,8 +595,7 @@ class TestLinear(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(atol=atol, rtol=rtol)
+            .run_method_and_compare_outputs(atol=atol, rtol=rtol)
         )
 
     def _run_manual_dqlinear_tests(self, weight_n_bit: int, op_dtype: torch.dtype):
@@ -731,9 +730,7 @@ class TestLinear(unittest.TestCase):
 
             tester.to_executorch()
             tester.serialize()
-            tester.run_method()
-            tester.compare_outputs(qtol=quant, atol=atol)
-            print("success")
+            tester.run_method_and_compare_outputs(qtol=quant, atol=atol)
 
     def _test_dqlinear(
         self,
@@ -779,5 +776,4 @@ class TestLinear(unittest.TestCase):
 
         tester.to_executorch()
         tester.serialize()
-        tester.run_method()
-        tester.compare_outputs(atol=5e-02)
+        tester.run_method_and_compare_outputs(atol=5e-02)

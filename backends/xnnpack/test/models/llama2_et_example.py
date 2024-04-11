@@ -45,6 +45,5 @@ class TestLlama2ETExample(unittest.TestCase):
             .dump_artifact()
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs(atol=5e-2)
+            .run_method_and_compare_outputs(atol=5e-2)
         )

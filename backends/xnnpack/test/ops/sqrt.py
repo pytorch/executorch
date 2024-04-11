@@ -16,6 +16,7 @@ class TestSqrt(unittest.TestCase):
             super().__init__()
 
         def forward(self, x):
+            x = torch.abs(x)
             z = torch.sqrt(x)
             return z
 
@@ -31,14 +32,13 @@ class TestSqrt(unittest.TestCase):
             .check_not(["executorch_exir_dialects_edge__ops_aten_sqrt_default"])
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_sqrt(self):
-        inputs = (torch.randn(20).to(torch.float16).abs(),)
+        inputs = (torch.randn(20).to(torch.float16),)
         self._test_sqrt(inputs)
 
     def test_fp32_sqrt(self):
-        inputs = (torch.randn(20).abs(),)
+        inputs = (torch.randn(20),)
         self._test_sqrt(inputs)
