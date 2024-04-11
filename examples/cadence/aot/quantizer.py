@@ -437,7 +437,7 @@ class LinearPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.default
 
 
 class LinearFunctionalPattern(QuantizationPattern):
@@ -457,7 +457,7 @@ class LinearFunctionalPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.default
 
 
 class LayerNormPattern(QuantizationPattern):
@@ -476,7 +476,7 @@ class LayerNormPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_layer_norm.default
+        return torch.ops.cadence.quantized_layer_norm.default
 
 
 class Conv1dPattern(QuantizationPattern):
@@ -503,7 +503,7 @@ class Conv1dPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_conv.default
+        return torch.ops.cadence.quantized_conv.default
 
 
 class Conv2dPattern(QuantizationPattern):
@@ -530,7 +530,7 @@ class Conv2dPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_conv.default
+        return torch.ops.cadence.quantized_conv.default
 
 
 class AddmmPattern(QuantizationPattern):
@@ -550,7 +550,7 @@ class AddmmPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_linear.default
+        return torch.ops.cadence.quantized_linear.default
 
 
 class ReluPattern(QuantizationPattern):
@@ -573,7 +573,7 @@ class ReluPattern(QuantizationPattern):
         )
 
     def replacement_op(self):
-        return torch.ops.xtensa.quantized_relu.default
+        return torch.ops.cadence.quantized_relu.default
 
 
 class GenericQuantizer(Quantizer):
@@ -657,7 +657,7 @@ wgt_qspec = QuantizationSpec(
 )
 
 
-class XtensaBaseQuantizer(ComposableQuantizer):
+class CadenceBaseQuantizer(ComposableQuantizer):
     def __init__(self):
         static_qconfig = QuantizationConfig(
             act_qspec,
@@ -821,9 +821,9 @@ class QuantFusion(ExportPass):
             n.meta["QuantFusion"] = True
 
 
-class ReplacePT2QuantWithXtensaQuant(ExportPass):
+class ReplacePT2QuantWithCadenceQuant(ExportPass):
     """
-    Replace the pt2 quantization ops with custom xtensa quantization ops.
+    Replace the pt2 quantization ops with custom cadence quantization ops.
     """
 
     def call_operator(self, op, args, kwargs, meta):
@@ -831,16 +831,16 @@ class ReplacePT2QuantWithXtensaQuant(ExportPass):
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(
-            exir_ops.edge.xtensa.quantize_per_tensor.default,
+            exir_ops.edge.cadence.quantize_per_tensor.default,
             args,
             kwargs,
             meta,
         )
 
 
-class ReplacePT2DequantWithXtensaDequant(ExportPass):
+class ReplacePT2DequantWithCadenceDequant(ExportPass):
     """
-    Replace the pt2 dequantization ops with custom xtensa dequantization ops.
+    Replace the pt2 dequantization ops with custom cadence dequantization ops.
     """
 
     def call_operator(self, op, args, kwargs, meta):
@@ -848,7 +848,7 @@ class ReplacePT2DequantWithXtensaDequant(ExportPass):
             return super().call_operator(op, args, kwargs, meta)
 
         return super().call_operator(
-            exir_ops.edge.xtensa.dequantize_per_tensor.default,
+            exir_ops.edge.cadence.dequantize_per_tensor.default,
             args,
             kwargs,
             meta,
