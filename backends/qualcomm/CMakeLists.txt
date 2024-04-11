@@ -253,7 +253,7 @@ target_link_libraries(qnn_executorch_backend
     qnn_executorch_header
     qnn_schema
     qnn_manager
-    executorch
+    executorch_no_prim_ops
     qcir_utils
 )
 target_link_libraries(utils

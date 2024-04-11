@@ -202,8 +202,10 @@ int main(int argc, char** argv) {
   // be used by a single thread at at time, but it can be reused.
   //
   torch::executor::ETDumpGen etdump_gen = torch::executor::ETDumpGen();
+  // TODO: So far we have issues with etdump_gen during load_method. Enable it
+  // after the issues are fixed.
   Result<Method> method =
-      program->load_method(method_name, &memory_manager, &etdump_gen);
+      program->load_method(method_name, &memory_manager, nullptr);
   ET_CHECK_MSG(
       method.ok(),
       "Loading of method %s failed with status 0x%" PRIx32,
