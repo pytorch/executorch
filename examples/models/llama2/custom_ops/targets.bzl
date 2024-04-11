@@ -6,20 +6,6 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
-    runtime.python_library(
-        name = "llama_custom_ops_aot_lib",
-        srcs = [
-            "sdpa_with_kv_cache.py",
-        ],
-        visibility = [
-            "//executorch/...",
-            "@EXECUTORCH_CLIENTS",
-        ],
-        deps = [
-            "//caffe2:torch",
-        ],
-    )
-
     runtime.cxx_library(
         name = "custom_ops",
         srcs = ["op_sdpa.cpp"],
@@ -42,6 +28,35 @@ def define_common_targets():
         # @lint-ignore BUCKLINT link_whole
         link_whole = True,
         force_static = True,
+    )
+
+    runtime.cxx_library(
+        name = "custom_ops_aot_lib",
+        srcs = [
+            "op_sdpa_aot.cpp",
+        ],
+        visibility = [
+            "//executorch/...",
+            "@EXECUTORCH_CLIENTS",
+        ],
+        external_deps = [
+            "libtorch",
+        ],
+        deps = [
+            ":custom_ops",
+            "//executorch/extension/aten_util:aten_bridge",
+        ],
+    )
+
+    runtime.python_library(
+        name = "custom_ops_aot_py",
+        srcs = [
+            "sdpa_with_kv_cache.py",
+        ],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//caffe2:torch",
+        ],
     )
 
     runtime.cxx_test(
