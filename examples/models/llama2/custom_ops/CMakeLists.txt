@@ -50,15 +50,6 @@ list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
 list(APPEND custom_ops_libs eigen_blas)
 
-# Generate C++ bindings to register kernels into both PyTorch (for AOT) and
-# Executorch (for runtime). Here select all ops in optimized.yaml
-set(_yaml "${CMAKE_CURRENT_LIST_DIR}/custom_ops.yaml")
-gen_selected_ops("${_yaml}" "" "")
-
-generate_bindings_for_kernels(FUNCTIONS_YAML
-                              ${CMAKE_CURRENT_SOURCE_DIR}/custom_ops.yaml)
-message("Generated files ${gen_command_sources}")
-
 list(TRANSFORM _custom_ops__srcs PREPEND "${EXECUTORCH_ROOT}/")
 
 # TODO: Consider moving xnnpack/threadpool in a separate lib since it's now used
@@ -70,6 +61,8 @@ if(NOT EXECUTORCH_BUILD_XNNPACK)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../backends/xnnpack/threadpool/threadpool_guard.cpp"
   )
+else()
+  list(APPEND custom_ops_libs xnnpack_backend)
 endif()
 
 add_library(custom_ops ${_custom_ops__srcs})
@@ -82,7 +75,4 @@ target_link_libraries(custom_ops PUBLIC ${custom_ops_libs})
 target_compile_options(custom_ops PUBLIC ${_common_compile_options}
                                          -DET_USE_THREADPOOL)
 
-# Build a library for _custom_ops_srcs
-#
-# custom_ops_lib: Register optimized ops kernels into Executorch runtime
-gen_operators_lib("custom_ops_lib" KERNEL_LIBS custom_ops DEPS executorch)
+install(TARGETS custom_ops DESTINATION lib)

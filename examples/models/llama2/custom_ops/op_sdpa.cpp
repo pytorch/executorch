@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/runtime/kernel/kernel_includes.h>
+#include <executorch/examples/models/llama2/custom_ops/op_sdpa.h>
 
 #include <executorch/kernels/optimized/blas/CPUBlas.h>
 #include <executorch/kernels/optimized/vec/functional.h>
@@ -22,6 +22,7 @@
 #include <executorch/backends/xnnpack/threadpool/threadpool.h>
 #include <executorch/extension/parallel/thread_parallel.h>
 #endif
+#include <executorch/extension/kernel_util/make_boxed_from_unboxed_functor.h>
 
 namespace torch {
 namespace executor {
@@ -843,3 +844,8 @@ Tensor& sdpa_with_kv_cache_out(
 } // namespace native
 } // namespace executor
 } // namespace torch
+
+EXECUTORCH_LIBRARY(
+    llama,
+    "sdpa_with_kv_cache.out",
+    torch::executor::native::sdpa_with_kv_cache_out);
