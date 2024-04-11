@@ -6,6 +6,7 @@
 
 # pyre-strict
 
+import io
 import unittest
 from typing import Tuple
 
@@ -56,10 +57,22 @@ class TestSerde(unittest.TestCase):
         edge_new = deserialize(serialize(edge.exported_program()))
         self.check_ep(edge.exported_program(), edge_new, inputs)
 
+        buffer = io.BytesIO()
+        exir.save(edge.exported_program(), buffer)
+        buffer.seek(0)
+        loaded_ep = exir.load(buffer)
+        self.check_ep(edge.exported_program(), loaded_ep, inputs)
+
         executorch = edge.to_executorch().exported_program()
         executorch_new = deserialize(serialize(executorch))
         with torch.no_grad():
             self.check_ep(executorch, executorch_new, inputs)
+
+            buffer = io.BytesIO()
+            exir.save(executorch, buffer)
+            buffer.seek(0)
+            loaded_ep = exir.load(buffer)
+            self.check_ep(executorch, loaded_ep, inputs)
 
     def test_basic(self) -> None:
         class MyModule(torch.nn.Module):
