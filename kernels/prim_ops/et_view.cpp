@@ -87,18 +87,7 @@ void et_view(RuntimeContext& context, EValue** stack) {
   // Do some checks
   ET_CHECK(self.numel() == out.numel());
 
-  // If out has a data_ptr, it must match self
-  // We hit this path for memory-planned tensors
-  if (out.const_data_ptr() != nullptr) {
-    ET_CHECK_MSG(
-        self.const_data_ptr() == out.const_data_ptr(),
-        "out has a non-null data_ptr, but it does not equal self's data_ptr.");
-
-    // nothing else to do
-    return;
-  }
-
-  // out.const_data_ptr() == nullptr now
+  // Update data ptr
   ET_CHECK_MSG(
       internal::set_tensor_data(
           out,
