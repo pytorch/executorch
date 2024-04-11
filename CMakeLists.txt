@@ -543,7 +543,7 @@ if(EXECUTORCH_BUILD_PYBIND)
   endif()
 
   if(EXECUTORCH_BUILD_CUSTOM)
-    list(APPEND _dep_libs custom_ops_lib)
+    list(APPEND _dep_libs custom_ops)
   endif()
 
   # compile options for pybind
