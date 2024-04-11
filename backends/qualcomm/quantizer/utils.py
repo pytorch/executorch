@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence
 
 import torch
+from torch._subclasses import FakeTensor
 
 from torch._ops import OpOverload
 
@@ -41,6 +42,13 @@ def register_annotator(ops: List[OpOverload]):
 
     return decorator
 
+def _is_input_non_float_tensor(node: Node):
+    """Check if the input is not a float tensor, so that we can skip quantization for the node
+    since observers only works with float Tensors
+    """
+    if "val" not in node.meta or not isinstance(node.meta["val"], FakeTensor):
+        return True
+    return node.meta["val"].dtype != torch.float32
 
 def _is_annotated(nodes: List[Node]):
     """
@@ -115,6 +123,7 @@ def annotate_single_in_single_out(
 
 
 def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None:
+    print(f"annotate_binary running for node {node}...")
     if _is_annotated([node]):
         return
 
@@ -123,12 +132,14 @@ def annotate_binary(node: Node, quantization_config: QuantizationConfig) -> None
 
     input_qspec_map = {}
     input_act0 = node.args[0]
-    if isinstance(input_act0, Node):
+    if isinstance(input_act0, Node) and not _is_input_non_float_tensor(input_act0):
         input_qspec_map[input_act0] = input_act_qspec
+        print("         input_act0: ", input_act0, " _is_input_non_float_tensor: ", _is_input_non_float_tensor(input_act0))
 
     input_act1 = node.args[1]
-    if isinstance(input_act1, Node):
+    if isinstance(input_act1, Node) and not _is_input_non_float_tensor(input_act1):
         input_qspec_map[input_act1] = input_act_qspec
+        print("         input_act1: ", input_act1, " _is_input_non_float_tensor: ", _is_input_non_float_tensor(input_act1))
 
     node.meta[QUANT_ANNOTATION_KEY] = QuantizationAnnotation(
         input_qspec_map=input_qspec_map,
@@ -147,7 +158,8 @@ def annotate_sub(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
 
-@register_annotator([torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar])
+# @register_annotator([torch.ops.aten.mul.Tensor, torch.ops.aten.mul.Scalar])
+@register_annotator([torch.ops.aten.mul.Tensor])
 def annotate_mul(node: Node, quantization_config: QuantizationConfig) -> None:
     annotate_binary(node, quantization_config)
 
