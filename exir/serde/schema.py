@@ -25,3 +25,4 @@ class LoweredBackendModule:
     compile_specs: List[CompileSpec]
     original_module: export_schema.ExportedProgram
     original_state_dict: str
+    original_constants: str
