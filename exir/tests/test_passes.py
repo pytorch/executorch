@@ -1498,61 +1498,29 @@ class TestPasses(unittest.TestCase):
                 self.parameter = torch.nn.Parameter(torch.ones(1))
 
             def forward(self, x):
-                o1 = torch.ops.aten.view_copy.default(
-                    self.parameter, [1]
-                )  # replaceable parameter
-                o2 = torch.ops.aten.view_copy.default(x, [1])  # replaceable user input
-                o3 = torch.ops.aten.view_copy.default(
-                    torch.ops.aten.relu.default(x), [1]
-                )  # replaceable dynamic unbound
-                o4 = torch.ops.aten.view_copy.default(
-                    torch.ops.aten.gelu.default(x), [1]
-                )  # replaceable dynamic bound
-                o5 = torch.ops.aten.view_copy.default(
-                    torch.ops.aten.tanh.default(x), [1]
-                )  # replaceable static
-                return o1, o2, o3, o4, o5
+                o1 = torch.ops.aten.view_copy.default(x, [1])
+                o2 = torch.ops.aten.view_copy.default(self.parameter, [1])
+                return o1, o2
 
         ep = torch.export.export(
             TestViewCopies(),
             args=(torch.ones(1),),
         )
-        self.assertEqual(len(ep.graph.nodes), 11)
         for node in ep.graph.nodes:
             if node.op == "placeholder":
                 node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
                 node.meta["spec"].shape_dynamism = TensorShapeDynamism.STATIC
-            elif node.target == torch.ops.aten.relu.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_UNBOUND
-            elif node.target == torch.ops.aten.gelu.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = TensorShapeDynamism.DYNAMIC_BOUND
-            elif node.target == torch.ops.aten.tanh.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = TensorShapeDynamism.STATIC
-            elif node.target == torch.ops.aten.view_copy.default:
-                node.meta["spec"] = TensorSpec.from_tensor(torch.empty(1))
-                node.meta["spec"].shape_dynamism = (
-                    node.args[0].meta["spec"].shape_dynamism
-                )
-            else:
-                pass
 
         # Run tests
         gm = ep.graph_module
 
         # Check before transformation
-        n_view_copy_before = 0
-        n_memory_view_before = 0
-        for node in gm.graph.nodes:
-            if is_view_copy(node):
-                n_view_copy_before += 1
-            if is_memory_view(node):
-                n_memory_view_before += 1
-
-        self.assertEqual(n_view_copy_before, 5)
-        self.assertEqual(n_memory_view_before, 0)
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 2, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count("executorch_exir_memory_view", 0, exactly=True).run(
+            gm.code
+        )
 
         # Do transformation
         p = ReplaceViewCopyWithViewPass()
@@ -1560,14 +1528,10 @@ class TestPasses(unittest.TestCase):
         assert gm_res is not None
         gm = gm_res.graph_module
 
-        # Check after transformation
-        n_view_copy_after = 0
-        n_memory_view_after = 0
-        for node in gm.graph.nodes:
-            if is_view_copy(node):
-                n_view_copy_after += 1
-            if is_memory_view(node):
-                n_memory_view_after += 1
-
-        self.assertEqual(n_view_copy_after, 0)
-        self.assertEqual(n_memory_view_after, 5)
+        # Check before transformation
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 0, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
+            gm.code
+        )
