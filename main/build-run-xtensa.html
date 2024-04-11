@@ -519,7 +519,7 @@ Tutorials we recommend you complete before this:</div>
 <div class="section" id="working-tree-description">
 <h2>Working Tree Description<a class="headerlink" href="#working-tree-description" title="Permalink to this heading">¶</a></h2>
 <p>The working tree is:</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>examples/xtensa/
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>examples/cadence/
 ├── aot
 ├── kernels
 ├── ops
@@ -529,7 +529,7 @@ Tutorials we recommend you complete before this:</div>
 </pre></div>
 </div>
 <p><em><strong>AoT (Ahead-of-Time) Components</strong></em>:</p>
-<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/export_example.py">export_example.py</a> is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/aot/meta_registrations.py">meta_registrations.py</a> and have corresponding implemetations in the other folders.</p>
+<p>The AoT folder contains all of the python scripts and functions needed to export the model to an ExecuTorch <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. In our case, <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/export_example.py">export_example.py</a> is an API that takes a model (nn.Module) and representative inputs and runs it through the quantizer (from <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/quantizer.py">quantizer.py</a>). Then a few compiler passes, also defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/quantizer.py">quantizer.py</a>, will replace operators with custom ones that are supported and optimized on the chip. Any operator needed to compute things should be defined in <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/aot/meta_registrations.py">meta_registrations.py</a> and have corresponding implemetations in the other folders.</p>
 <p><em><strong>Operators</strong></em>:</p>
 <p>The operators folder contains two kinds of operators: existing operators from the <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/kernels/portable/cpu">ExecuTorch portable library</a> and new operators that define custom computations. The former is simply dispatching the operator to the relevant ExecuTorch implementation, while the latter acts as an interface, setting up everything needed for the custom kernels to compute the outputs.</p>
 <p><em><strong>Kernels</strong></em>:</p>
@@ -547,19 +547,19 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.portable.scrip
 <p><em><strong>Quantized Operators</strong></em>:</p>
 <p>The other, more complex model are custom operators, including:</p>
 <ul class="simple">
-<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/tests/quantized_linear_example.py#L28">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p></li>
-<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html">conv1d</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/tests/quantized_conv1d_example.py#L36">here</a>. Convolutions are important in wake word and many denoising models.</p></li>
+<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Linear.html">linear</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/tests/quantized_linear_example.py#L28">here</a>. Linear is the backbone of most Automatic Speech Recognition (ASR) models.</p></li>
+<li><p>a quantized <a class="reference external" href="https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html">conv1d</a> operation. The model is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/tests/quantized_conv1d_example.py#L36">here</a>. Convolutions are important in wake word and many denoising models.</p></li>
 </ul>
 <p>In both cases the generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.tests.quantized_&lt;linear,conv1d&gt;_example
+python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.tests.quantized_&lt;linear,conv1d&gt;_example
 </pre></div>
 </div>
 <p><em><strong>Small Model: RNNT predictor</strong></em>:</p>
 <p>The torchaudio <a class="reference external" href="https://pytorch.org/audio/stable/tutorials/online_asr_tutorial.html">RNNT-emformer</a> model is an Automatic Speech Recognition (ASR) model, comprised of three different submodels: an encoder, a predictor and a joiner.
 The predictor is a sequence of basic ops (embedding, ReLU, linear, layer norm) and can be exported using:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="nb">cd</span><span class="w"> </span>executorch
-python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.tests.rnnt_predictor_quantized_example
+python3<span class="w"> </span>-m<span class="w"> </span>examples.cadence.tests.rnnt_predictor_quantized_example
 </pre></div>
 </div>
 <p>The generated file is called <code class="docutils literal notranslate"><span class="pre">XtensaDemoModel.pte</span></code>.</p>
@@ -569,7 +569,7 @@ python3<span class="w"> </span>-m<span class="w"> </span>examples.xtensa.tests.r
 In this step, you’ll be building the DSP firmware image that consists of the sample ExecuTorch runner along with the Program generated from the previous step. This image when loaded onto the DSP will run through the model that this Program consists of.</p>
 <p><em><strong>Step 1</strong></em>. Configure the environment variables needed to point to the Xtensa toolchain that you have installed in the previous step. The three environment variables that need to be set include:</p>
 <div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># Directory in which the Xtensa toolchain was installed</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_TOOLCHAIN</span><span class="o">=</span>/home/user_name/xtensa/XtDevTools/install/tools
+<span class="nb">export</span><span class="w"> </span><span class="nv">XTENSA_TOOLCHAIN</span><span class="o">=</span>/home/user_name/cadence/XtDevTools/install/tools
 <span class="c1"># The version of the toolchain that was installed. This is essentially the name of the directory</span>
 <span class="c1"># that is present in the XTENSA_TOOLCHAIN directory from above.</span>
 <span class="nb">export</span><span class="w"> </span><span class="nv">TOOLCHAIN_VER</span><span class="o">=</span>RI-2021.8-linux
@@ -588,7 +588,7 @@ In order to run the CMake build, you need the path to the following:</p>
 rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out
 <span class="c1"># prebuild and install executorch library</span>
 cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python3<span class="w"> </span><span class="se">\</span>
@@ -602,18 +602,18 @@ cmake<span class="w"> </span>-DBUCK2<span class="o">=</span>buck2<span class="w"
 <span class="w">    </span>-Bcmake-out<span class="w"> </span>.
 
 cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j8<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Debug
-<span class="c1"># build xtensa runner</span>
+<span class="c1"># build cadence runner</span>
 cmake<span class="w"> </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Debug<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/xtensa/xtensa.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span>&lt;path_to_executorch&gt;/examples/cadence/cadence.cmake<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DCMAKE_PREFIX_PATH<span class="o">=</span>&lt;path_to_executorch&gt;/cmake-out<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DMODEL_PATH<span class="o">=</span>&lt;path_to_program_file_generated_in_previous_step&gt;<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DNXP_SDK_ROOT_DIR<span class="o">=</span>&lt;path_to_nxp_sdk_root&gt;<span class="w"> </span>-DEXECUTORCH_BUILD_FLATC<span class="o">=</span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DFLATC_EXECUTABLE<span class="o">=</span><span class="s2">&quot;</span><span class="k">$(</span>which<span class="w"> </span>flatc<span class="k">)</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>-DNN_LIB_BASE_DIR<span class="o">=</span>&lt;path_to_nnlib_cloned_in_step_2&gt;<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-Bcmake-out/examples/xtensa<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>examples/xtensa
+<span class="w">    </span>-Bcmake-out/examples/cadence<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>examples/cadence
 
-cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out/examples/xtensa<span class="w"> </span>-j8<span class="w"> </span>-t<span class="w"> </span>xtensa_executorch_example
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out/examples/cadence<span class="w"> </span>-j8<span class="w"> </span>-t<span class="w"> </span>cadence_executorch_example
 </pre></div>
 </div>
 <p>After having succesfully run the above step you should see two binary files in their CMake output directory.</p>
@@ -645,7 +645,7 @@ First<span class="w"> </span><span class="m">20</span><span class="w"> </span>el
 <div class="section" id="conclusion-and-future-work">
 <h2>Conclusion and Future Work<a class="headerlink" href="#conclusion-and-future-work" title="Permalink to this heading">¶</a></h2>
 <p>In this tutorial, you have learned how to export a quantized operation, build the ExecuTorch runtime and run this model on the Xtensa HiFi4 DSP chip.</p>
-<p>The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/ops">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/xtensa/kernels">kernels</a>.</p>
+<p>The (quantized linear) model in this tutorial is a typical operation appearing in ASR models, and can be extended to a complete ASR model by creating the model as a new test and adding the needed operators/kernels to <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/ops">operators</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/cadence/kernels">kernels</a>.</p>
 <p>Other models can be created following the same structure, always assuming that operators and kernels are available.</p>
 </div>
 </div>
