@@ -16,6 +16,11 @@ namespace impl {
 namespace HiFi {
 namespace kernels {
 
+__attribute__((always_inline)) void
+memcpy(void* dst, const void* src, size_t num_bytes) {
+  MEMCPY_8b(dst, src, num_bytes);
+}
+
 // Quantize a fp32 value to an int8_t/uint8_t value
 template <typename T>
 __attribute__((always_inline)) T

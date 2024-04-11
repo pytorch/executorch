@@ -16,6 +16,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/exec_aten/exec_aten.h>
@@ -32,37 +33,33 @@ struct TokenIndex {
 
 class Tokenizer {
  public:
-  explicit Tokenizer(int32_t vocab_size, int32_t bos_tok, int32_t eos_tok);
+  explicit Tokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok);
   ~Tokenizer();
 
   Error load(const std::string& tokenizer_path);
 
-  Error encode(
-      const char* text,
-      int8_t bos,
-      int8_t eos,
-      int32_t* tokens,
-      int32_t* n_tokens);
+  Result<std::vector<uint64_t>>
+  encode(const std::string& input, int8_t bos, int8_t eos);
 
-  Result<const char*> decode(int prev_token, int token);
+  Result<std::string> decode(uint64_t prev_token, uint64_t token);
 
   // getters
   int32_t vocab_size() const {
     return vocab_size_;
   }
 
-  int32_t bos_tok() const {
+  uint64_t bos_tok() const {
     return bos_tok_;
   }
 
-  int32_t eos_tok() const {
+  uint64_t eos_tok() const {
     return eos_tok_;
   }
 
  private:
   bool initialized_;
   const int32_t vocab_size_;
-  int32_t bos_tok_, eos_tok_;
+  uint64_t bos_tok_, eos_tok_;
   std::unique_ptr<char*[]> vocab_;
   std::unique_ptr<float[]> vocab_scores_;
   std::unique_ptr<TokenIndex[]> sorted_vocab_;

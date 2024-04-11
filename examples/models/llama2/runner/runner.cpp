@@ -81,14 +81,16 @@ Error Runner::load() {
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(
         Error,
-        "Tokenizer's BOS id %d does not match model's BOS id %d, will override tokenizer's BOS.",
+        "Tokenizer's BOS id %" PRIu64
+        " does not match model's BOS id %d, will override tokenizer's BOS.",
         tokenizer_->bos_tok(),
         bos_id_);
   }
   if (tokenizer_->eos_tok() != eos_id_) {
     ET_LOG(
         Error,
-        "Tokenizer's EOS id %d does not match model's EOS id %d, will override tokenizer's EOS.",
+        "Tokenizer's EOS id %" PRIu64
+        " does not match model's EOS id %d, will override tokenizer's EOS.",
         tokenizer_->eos_tok(),
         eos_id_);
   }
@@ -227,20 +229,18 @@ Error Runner::generate(
   stats_.inference_start_ms = util::time_in_ms();
   shouldStop_ = false;
 
-  // encode the (string) prompt into tokens sequence
-  int num_prompt_tokens = 0;
-  // max # of prompt tokens: len(prompt) + '\0', ?BOS, ?EOS
-  int* prompt_tokens = new int[prompt.size() + 1 + n_bos_ + n_eos_];
-
   // Set the sequence length to the max seq length if not provided
   seq_len = (seq_len > 0 && seq_len <= max_seq_len_) ? seq_len : max_seq_len_;
 
-  tokenizer_->encode(
-      prompt.c_str(),
-      n_bos_,
-      append_eos_ ? n_eos_ : 0,
-      prompt_tokens,
-      &num_prompt_tokens);
+  Result<std::vector<uint64_t>> encode_res =
+      tokenizer_->encode(prompt, n_bos_, append_eos_ ? n_eos_ : 0);
+
+  ET_CHECK_OK_OR_RETURN_ERROR(
+      encode_res.error(), "Failed to encode prompt %s", prompt.c_str());
+
+  // encode the (string) prompt into tokens sequence
+  std::vector<uint64_t> prompt_tokens = encode_res.get();
+  int num_prompt_tokens = prompt_tokens.size();
 
   ET_CHECK_MSG(num_prompt_tokens >= 1, "Expected at least 1 prompt token");
   ET_CHECK_MSG(
@@ -303,13 +303,13 @@ Error Runner::generate(
 
     // Print the prompt for consistent output between single token prefill and
     // batch prefill.
-    int prev = prompt_tokens[0];
-    int cur;
+    uint64_t prev = prompt_tokens[0];
+    uint64_t cur;
     for (int i = 1; i < num_prompt_tokens; i++) {
       cur = prompt_tokens[i];
       auto piece_res = tokenizer_->decode(prev, cur);
       ET_CHECK_OK_OR_RETURN_ERROR(piece_res.error());
-      util::safe_printf(piece_res.get());
+      util::safe_printf(piece_res.get().c_str());
       fflush(stdout);
       prev = cur;
     }
@@ -361,7 +361,7 @@ Error Runner::generate(
     // print the token as string, decode it with the Tokenizer object
     auto piece_res = tokenizer_->decode(prev_token, cur_token);
     ET_CHECK(piece_res.ok());
-    const char* piece = piece_res.get();
+    const char* piece = piece_res.get().c_str();
 
     // same as printf("%s", piece), but skips "unsafe" bytes
     util::safe_printf(piece);
@@ -396,7 +396,6 @@ Error Runner::generate(
     stats_callback(stats_);
   }
 
-  delete[] prompt_tokens;
   return Error::Ok;
 }
 
