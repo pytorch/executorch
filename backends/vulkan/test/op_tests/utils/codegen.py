@@ -165,7 +165,7 @@ class ComputeGraphGen:
         else:
             return ref.supports_prepack and self.should_prepack
 
-    def create_value_for(self, ref: ValueRefList) -> str:
+    def create_value_for(self, ref: ValueRefList) -> str:  # noqa: C901
         if isinstance(ref, list):
             ret_str = ""
             for r in ref:

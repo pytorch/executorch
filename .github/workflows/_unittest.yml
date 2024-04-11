@@ -57,9 +57,6 @@ jobs:
       script: |
         set -eux
 
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
-
         BUILD_TOOL=${{ matrix.build-tool }}
 
         bash .ci/scripts/setup-conda.sh
@@ -75,5 +72,3 @@ jobs:
         ${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml
         # Run gtest
         ${CONDA_RUN} buck2 test runtime/core/... runtime/platform/...
-
-        popd

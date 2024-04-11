@@ -19,18 +19,7 @@ namespace native {
 using Tensor = exec_aten::Tensor;
 using RuntimeContext = torch::executor::RuntimeContext;
 
-namespace linear_util {
-// This function compute the product of dim[0:dim] where dim is not inclusive
-size_t getLeadingDims(const Tensor& tensor, int64_t dim) {
-  size_t dims = 1;
-  for (size_t i = 0; i < dim; ++i) {
-    dims *= tensor.size(i);
-  }
-  return dims;
-}
-} // namespace linear_util
-
-void quantized_linear_pt2_out(
+void quantized_linear_out(
     RuntimeContext& ctx,
     const Tensor& src,
     const Tensor& weight,
@@ -47,7 +36,7 @@ void quantized_linear_pt2_out(
   // weight comes in shape [out_dim, in_dim]
   // output comes in empty with shape [leading_dims, out_dim]
   // Perform matrix multiply (M x N) x (N x P)' => M x P
-  int64_t leading_dims = linear_util::getLeadingDims(src, src.dim() - 1);
+  int64_t leading_dims = getLeadingDims(src, src.dim() - 1);
   int64_t out_dim = weight.size(0); // = out_dim
   int64_t in_dim = weight.size(1); // = in_dim
 

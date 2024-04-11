@@ -9,6 +9,7 @@
 #include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <gtest/gtest.h>
+#include <vector>
 
 using namespace ::testing;
 
@@ -28,8 +29,8 @@ class TokenizerExtensionTest : public Test {
 };
 
 TEST_F(TokenizerExtensionTest, EncodeWithoutLoadFails) {
-  Error error = tokenizer_->encode("hello world", 0, 0, nullptr, nullptr);
-  EXPECT_EQ(error, Error::NotSupported);
+  Result<std::vector<uint64_t>> res = tokenizer_->encode("hello world", 0, 0);
+  EXPECT_EQ(res.error(), Error::NotSupported);
 }
 
 TEST_F(TokenizerExtensionTest, DecodeWithoutLoadFails) {
