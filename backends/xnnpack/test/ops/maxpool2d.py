@@ -64,8 +64,7 @@ class TestMaxPool2d(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_maxpool2d(self):
@@ -135,6 +134,5 @@ class TestMaxPool2d(unittest.TestCase):
                 )
                 .to_executorch()
                 .serialize()
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )

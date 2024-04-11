@@ -87,8 +87,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp32_static_resize_bilinear2d_with_align_cornesr(self):
@@ -103,8 +102,7 @@ class TestUpsampleBilinear2d(unittest.TestCase):
             .check_count({"torch.ops.higher_order.executorch_call_delegate": 1})
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp32_static_resize_bilinear2d_antialiased(self):
