@@ -33,7 +33,7 @@ namespace vkcompute {
     return *ptr_;                                                         \
   }                                                                       \
   classname::~classname() {                                               \
-    graph_->values_in_use_--;                                           \
+    graph_->values_in_use_--;                                             \
   }
 
 VALUE_PTR_CLASS_IMPL(vTensorPtr, vTensor, Tensor)
