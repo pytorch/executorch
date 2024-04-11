@@ -456,8 +456,14 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.insert_write_back_for_buffers_pass</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">insert_write_back_for_buffers_pass</span><span class="p">,</span>
 <span class="p">)</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.passes.normalize_view_copy_base_pass</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">NormalizeViewCopyBasePass</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_graph_asserts_pass</span> <span class="kn">import</span> <span class="n">RemoveGraphAssertsPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.remove_mixed_type_operators</span> <span class="kn">import</span> <span class="n">RemoveMixedTypeOperators</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.passes.replace_view_copy_with_view_pass</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.passes.spec_prop_pass</span> <span class="kn">import</span> <span class="n">SpecPropPass</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.print_program</span> <span class="kn">import</span> <span class="n">pretty_print</span><span class="p">,</span> <span class="n">print_program</span>
 <span class="kn">from</span> <span class="nn">executorch.exir.schema</span> <span class="kn">import</span> <span class="n">Program</span>
@@ -1040,8 +1046,24 @@
     <span class="k">return</span> <span class="n">new_ep</span>
 
 
+<span class="k">def</span> <span class="nf">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
+    <span class="k">if</span> <span class="n">config</span><span class="o">.</span><span class="n">remove_view_copy</span><span class="p">:</span>
+        <span class="c1"># pyre-ignore</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">NormalizeViewCopyBasePass</span><span class="p">(),</span>
+            <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">(),</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
+        <span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="c1"># pyre-ignore</span>
+        <span class="k">return</span> <span class="p">[</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
+            <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
+        <span class="p">]</span>
+
+
 <span class="k">def</span> <span class="nf">edge_to_executorch_passes</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">ExecutorchBackendConfig</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]:</span>
-    <span class="c1"># pyre-ignore</span>
     <span class="n">passes</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">PassType</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">passes</span><span class="p">,</span>
         <span class="n">SpecPropPass</span><span class="p">(),</span>
@@ -1050,9 +1072,8 @@
         <span class="c1"># there exists an unbacked symint operation.</span>
         <span class="n">EdgeToBackendOpsPass</span><span class="p">(),</span>
         <span class="n">RemoveGraphAssertsPass</span><span class="p">(),</span>
-        <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
-        <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
-    <span class="p">]</span>
+    <span class="p">]</span> <span class="o">+</span> <span class="n">pre_memory_planning_passes</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+
     <span class="k">return</span> <span class="n">passes</span>
 
 
