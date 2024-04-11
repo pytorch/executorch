@@ -598,6 +598,7 @@ In your export script, after calling `to_edge()` and `to_executorch()`, call `ge
 
 ```
 import copy
+from executorch.sdk import generate_etrecord
 
 # Make the deep copy immediately after to to_edge()
 edge_manager_copy = copy.deepcopy(edge_manager)
@@ -678,7 +679,7 @@ inspector = Inspector(etdump_path="etdump.etdp")
 with open("inspector_out.txt", "w") as file:
     inspector.print_data_tabular(file)
 ```
-This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event.
+This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
 ![](../_static/img/llm_manual_print_data_tabular.png)
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a>
 

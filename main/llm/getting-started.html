@@ -1019,6 +1019,7 @@ To see a more detailed view, use the <code class="docutils literal notranslate">
 <p>An ETRecord is an artifact generated at the time of export that contains model graphs and source-level metadata linking the ExecuTorch program to the original PyTorch model. You can view all profiling events without an ETRecord, though with an ETRecord, you will also be able to link each event to the types of operators being executed, module hierarchy, and stack traces of the original PyTorch source code. For more information, see <a class="reference external" href="https://pytorch.org/executorch/main/sdk-etrecord.html">https://pytorch.org/executorch/main/sdk-etrecord.html</a></p>
 <p>In your export script, after calling <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>, call <code class="docutils literal notranslate"><span class="pre">generate_etrecord()</span></code> with the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_edge()</span></code> and the <code class="docutils literal notranslate"><span class="pre">ExecuTorchProgramManager</span></code> from <code class="docutils literal notranslate"><span class="pre">to_executorch()</span></code>. Make sure to copy the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>, as the call to <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> mutates the graph in-place.</p>
 <div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">copy</span>
+<span class="kn">from</span> <span class="nn">executorch.sdk</span> <span class="kn">import</span> <span class="n">generate_etrecord</span>
 
 <span class="c1"># Make the deep copy immediately after to to_edge()</span>
 <span class="n">edge_manager_copy</span> <span class="o">=</span> <span class="n">copy</span><span class="o">.</span><span class="n">deepcopy</span><span class="p">(</span><span class="n">edge_manager</span><span class="p">)</span>
@@ -1094,7 +1095,7 @@ model runs in a single trace, if desired.</p>
     <span class="n">inspector</span><span class="o">.</span><span class="n">print_data_tabular</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
 </pre></div>
 </div>
-<p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event.
+<p>This prints the performance data in a tabular format in “inspector_out.txt”, with each row being a profiling event. Top rows look like this:
 <img alt="" src="../_images/llm_manual_print_data_tabular.png" />
 <a href="../_static/img/llm_manual_print_data_tabular.png" target="_blank">View in full size</a></p>
 <p>To learn more about the Inspector and the rich functionality it provides, see the <a class="reference external" href="https://pytorch.org/executorch/main/sdk-inspector.html">Inspector API Reference</a>.</p>
