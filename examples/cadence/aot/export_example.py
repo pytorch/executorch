@@ -17,10 +17,10 @@ from ...portable.utils import save_pte_program
 
 from .compiler import export_to_edge
 from .quantizer import (
+    CadenceBaseQuantizer,
     QuantFusion,
-    ReplacePT2DequantWithXtensaDequant,
-    ReplacePT2QuantWithXtensaQuant,
-    XtensaBaseQuantizer,
+    ReplacePT2DequantWithCadenceDequant,
+    ReplacePT2QuantWithCadenceQuant,
 )
 
 
@@ -28,9 +28,9 @@ FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
 logging.basicConfig(level=logging.INFO, format=FORMAT)
 
 
-def export_xtensa_model(model, example_inputs):
+def export_model(model, example_inputs):
     # Quantizer
-    quantizer = XtensaBaseQuantizer()
+    quantizer = CadenceBaseQuantizer()
 
     # Export
     model_exp = capture_pre_autograd_graph(model, example_inputs)
@@ -42,24 +42,24 @@ def export_xtensa_model(model, example_inputs):
     # Convert
     converted_model = convert_pt2e(prepared_model)
 
-    # pyre-fixme[16]: Pyre doesn't get that XtensaQuantizer has a patterns attribute
+    # pyre-fixme[16]: Pyre doesn't get that CadenceQuantizer has a patterns attribute
     patterns = [q.pattern for q in quantizer.quantizers]
     QuantFusion(patterns)(converted_model)
 
-    # Get edge program (note: the name will change to export_to_xtensa in future PRs)
+    # Get edge program (note: the name will change to export_to_cadence in future PRs)
     edge_prog_manager = export_to_edge(converted_model, example_inputs, pt2_quant=True)
 
     # Run a couple required passes for quant/dequant ops
-    xtensa_prog_manager = edge_prog_manager.transform(
-        [ReplacePT2QuantWithXtensaQuant(), ReplacePT2DequantWithXtensaDequant()],
+    cadence_prog_manager = edge_prog_manager.transform(
+        [ReplacePT2QuantWithCadenceQuant(), ReplacePT2DequantWithCadenceDequant()],
         check_ir_validity=False,
     )
 
-    exec_prog = xtensa_prog_manager.to_executorch()
+    exec_prog = cadence_prog_manager.to_executorch()
 
     logging.info(
         f"Final exported graph module:\n{exec_prog.exported_program().graph_module}"
     )
 
-    # Save the program as XtensaDemoModel.pte
-    save_pte_program(exec_prog, "XtensaDemoModel")
+    # Save the program as CadenceDemoModel.pte
+    save_pte_program(exec_prog, "CadenceDemoModel")

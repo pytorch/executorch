@@ -56,11 +56,11 @@ api::StorageBuffer PrepackNode::create_staging_buffer(ComputeGraph* graph) {
     return staging;
   }
 
-  TensorRef tref = graph->get_tref(tref_);
-  size_t numel = api::utils::multiply_integers(tref.sizes);
-  api::StorageBuffer staging(graph->context(), tref.dtype, numel);
-  size_t nbytes = numel * api::element_size(tref.dtype);
-  copy_ptr_to_staging(tref.data, staging, nbytes);
+  TensorRefPtr tref = graph->get_tref(tref_);
+  size_t numel = api::utils::multiply_integers(tref->sizes);
+  api::StorageBuffer staging(graph->context(), tref->dtype, numel);
+  size_t nbytes = numel * api::element_size(tref->dtype);
+  copy_ptr_to_staging(tref->data, staging, nbytes);
   return staging;
 }
 

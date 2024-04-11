@@ -17,6 +17,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/ops/utils/ShaderNameUtils.h>
 
+#include <iostream>
+
 namespace vkcompute {
 
 void resize_conv2d_node(
@@ -35,8 +37,8 @@ void resize_conv2d_node(
     new_out_sizes.at(ndim - 4) = self->sizes().at(ndim - 4);
   }
 
-  TensorRef weight_ref = graph->get_tref(extra_args[0]);
-  const auto& weight_sizes = weight_ref.sizes;
+  TensorRefPtr weight_ref = graph->get_tref(extra_args[0]);
+  const auto& weight_sizes = weight_ref->sizes;
   new_out_sizes.at(ndim - 3) =
       transposed ? weight_sizes.at(ndim - 3) : weight_sizes.at(ndim - 4);
 
@@ -59,11 +61,14 @@ ValueRef prepack_biases(
     const ValueRef vref,
     const ValueRef weight,
     const bool transposed) {
-  TensorRef tref = graph.get_tref(weight);
-  const int64_t out_channels = transposed ? tref.sizes.at(1) : tref.sizes.at(0);
+  auto sizes = graph.get_sizes_of(weight);
+  const int64_t out_channels = transposed ? sizes.at(1) : sizes.at(0);
 
   ValueRef v = graph.add_tensor(
-      {out_channels}, tref.dtype, api::kTexture2D, api::kWidthPacked);
+      {out_channels},
+      graph.get_dtype_of(weight),
+      api::kTexture2D,
+      api::kWidthPacked);
   vTensorPtr t = graph.get_tensor(v);
 
   api::ShaderInfo shader = get_nchw_to_image_shader(*t);
@@ -102,7 +107,7 @@ api::ShaderInfo get_conv2d_shader(
     case Conv2dMethod::Depthwise:
       kernel_name = "conv2d_dw";
       if (!prepack_weights) {
-        const auto weight_sizes = graph.get_tref(weight).sizes;
+        const auto& weight_sizes = graph.get_tref(weight)->sizes;
         if (weight_sizes.at(2) == 3 && weight_sizes.at(3) == 3) {
           kernel_name += "_output_tile_3x3";
         }
@@ -180,12 +185,12 @@ ValueRef prepack_weights(
     ComputeGraph& graph,
     const ValueRef vref,
     const Conv2dMethod method) {
-  const auto original_sizes = graph.get_tref(vref).sizes;
-  const auto final_sizes = get_final_sizes(graph.get_tref(vref).sizes, method);
+  const auto original_sizes = graph.get_sizes_of(vref);
+  const auto final_sizes = get_final_sizes(original_sizes, method);
 
   ValueRef v = graph.add_tensor(
       final_sizes,
-      graph.get_tref(vref).dtype,
+      graph.get_dtype_of(vref),
       api::kTexture2D,
       api::kChannelsPacked);
   vTensorPtr t = graph.get_tensor(v);
@@ -239,7 +244,7 @@ Conv2dParams create_conv2d_params(
       p.kernel_size.data[1] +
           (p.kernel_size.data[1] - 1) * (p.dilation.data[1] - 1),
   });
-  const auto weight_sizes = graph.get_tref(weight).sizes;
+  const auto weight_sizes = graph.get_sizes_of(weight);
   const int32_t in_group_size =
       api::utils::safe_downcast<int32_t>(api::utils::align_up(
           transposed ? weight_sizes.at(0) : weight_sizes.at(1), INT64_C(4)));
@@ -267,7 +272,7 @@ Conv2dMethod get_conv2d_method(
     const ValueRef weight,
     const int64_t groups,
     const bool transposed) {
-  const auto weight_sizes = graph.get_tref(weight).sizes;
+  const auto weight_sizes = graph.get_sizes_of(weight);
   if (!transposed && weight_sizes.at(0) == groups && weight_sizes.at(1) == 1) {
     return Conv2dMethod::Depthwise;
   }

@@ -144,6 +144,8 @@ option(EXECUTORCH_BUILD_COREML "Build the Core ML backend" OFF)
 
 option(EXECUTORCH_BUILD_CUSTOM "Build the custom kernels" OFF)
 
+option(EXECUTORCH_BUILD_CUSTOM_OPS_AOT "Build the custom ops lib for AOT" OFF)
+
 option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "Build the Data Loader extension"
        OFF)
 
@@ -185,12 +187,19 @@ cmake_dependent_option(
 cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
                        "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
 
+if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
+  set(EXECUTORCH_BUILD_CUSTOM ON)
+endif()
+
 if(EXECUTORCH_BUILD_CUSTOM)
   set(EXECUTORCH_BUILD_OPTIMIZED ON)
 endif()
 
 if(EXECUTORCH_BUILD_CPUINFO)
   # --- cpuinfo
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(CPUINFO_SOURCE_DIR "backends/xnnpack/third-party/cpuinfo")
   set(CPUINFO_BUILD_TOOLS
       OFF
@@ -212,10 +221,15 @@ if(EXECUTORCH_BUILD_CPUINFO)
       CACHE STRING "")
   set(CLOG_SOURCE_DIR "${CPUINFO_SOURCE_DIR}/deps/clog")
   add_subdirectory("${CPUINFO_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG})
 endif()
 
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   # --- pthreadpool
+  set(ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG
+      ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   set(PTHREADPOOL_SOURCE_DIR "backends/xnnpack/third-party/pthreadpool")
   set(PTHREADPOOL_BUILD_TESTS
       OFF
@@ -235,6 +249,8 @@ if(EXECUTORCH_BUILD_PTHREADPOOL)
        CACHE STRING "")
   endif()
   add_subdirectory("${PTHREADPOOL_SOURCE_DIR}")
+  set(CMAKE_POSITION_INDEPENDENT_CODE
+      ${ORIGINAL_CMAKE_POSITION_INDEPENDENT_CODE_FLAG})
 endif()
 
 if(NOT PYTHON_EXECUTABLE)
@@ -546,6 +562,9 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs custom_ops)
   endif()
 
+  if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
+    list(APPEND _dep_libs custom_ops_aot_lib)
+  endif()
   # compile options for pybind
 
   set(_pybind_compile_options -Wno-deprecated-declarations -fPIC -frtti

@@ -55,6 +55,7 @@ class ComputeGraph;
   };
 
 DECL_VALUE_PTR_CLASS(vTensorPtr, vTensor)
+DECL_VALUE_PTR_CLASS(TensorRefPtr, TensorRef)
 DECL_VALUE_PTR_CLASS(StagingPtr, api::StorageBuffer)
 DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
 DECL_VALUE_PTR_CLASS(DoubleListPtr, std::vector<double>)
@@ -132,6 +133,7 @@ class ComputeGraph final {
   }
 
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(TensorRefPtr, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
   GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(DoubleListPtr, double_list, DoubleList)
@@ -148,7 +150,6 @@ class ComputeGraph final {
     return values_.at(idx).is##type_name();                         \
   }
 
-  GET_AND_CHECK_VAL_AS_TYPE_FNS(TensorRef, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(int64_t, int, Int)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(double, double, Double)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(bool, bool, Bool)
@@ -392,6 +393,7 @@ class ComputeGraph final {
   //
 
   friend class vTensorPtr;
+  friend class TensorRefPtr;
   friend class StagingPtr;
   friend class IntListPtr;
   friend class DoubleListPtr;

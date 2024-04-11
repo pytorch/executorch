@@ -97,7 +97,7 @@ ValueRef prepack_if_tensor_ref(
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
   if (graph.val_is_tref(v)) {
     api::GPUMemoryLayout layout =
-        graph.suggested_memory_layout(graph.get_tref(v).sizes);
+        graph.suggested_memory_layout(graph.get_tref(v)->sizes);
     return prepack(graph, v, layout);
   } else {
     return v;

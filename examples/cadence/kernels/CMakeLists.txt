@@ -5,10 +5,10 @@
 # LICENSE file in the root directory of this source tree.
 
 # lint_cmake: -linelength
-add_library(xtensa_kernels kernels.cpp ${EXECUTORCH_ROOT}/examples/xtensa/third-party/nnlib-hifi4/matmul_asym8uxasym8u_asym8u.cpp)
+add_library(cadence_kernels kernels.cpp ${EXECUTORCH_ROOT}/examples/cadence/third-party/nnlib-hifi4/matmul_asym8uxasym8u_asym8u.cpp)
 
 target_include_directories(
-  xtensa_kernels
+  cadence_kernels
   PUBLIC .
          ${NN_LIB_BASE_DIR}/xa_nnlib/algo/common/include/
          ${NN_LIB_BASE_DIR}/xa_nnlib/include/nnlib

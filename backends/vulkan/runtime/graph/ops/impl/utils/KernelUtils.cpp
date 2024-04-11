@@ -21,7 +21,7 @@ api::utils::ivec2 make_ivec2_kernel_size(
   if (kernel_size_only) {
     return make_ivec2_from_list(graph, weight);
   } else {
-    const auto weight_sizes = graph.get_tref(weight).sizes;
+    const auto weight_sizes = graph.get_tref(weight)->sizes;
     return api::utils::make_ivec2({weight_sizes.at(3), weight_sizes.at(2)});
   }
 }

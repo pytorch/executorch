@@ -37,6 +37,7 @@ namespace vkcompute {
   }
 
 VALUE_PTR_CLASS_IMPL(vTensorPtr, vTensor, Tensor)
+VALUE_PTR_CLASS_IMPL(TensorRefPtr, TensorRef, TensorRef)
 VALUE_PTR_CLASS_IMPL(StagingPtr, api::StorageBuffer, Staging)
 VALUE_PTR_CLASS_IMPL(IntListPtr, std::vector<int64_t>, IntList)
 VALUE_PTR_CLASS_IMPL(DoubleListPtr, std::vector<double>, DoubleList)
@@ -195,18 +196,17 @@ ValueRef ComputeGraph::add_tensor(
 }
 
 ValueRef ComputeGraph::add_tensor_like(
-    const ValueRef vref,
+    const ValueRef idx,
     const api::StorageType storage_type,
     const api::GPUMemoryLayout memory_layout) {
-  TensorRef tref = get_tref(vref);
-  return add_tensor(tref.sizes, tref.dtype, storage_type, memory_layout);
+  return add_tensor(
+      get_sizes_of(idx), get_dtype_of(idx), storage_type, memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor_like(
-    const ValueRef vref,
+    const ValueRef idx,
     const api::GPUMemoryLayout memory_layout) {
-  TensorRef tref = get_tref(vref);
-  return add_tensor(tref.sizes, tref.dtype, memory_layout);
+  return add_tensor(get_sizes_of(idx), get_dtype_of(idx), memory_layout);
 }
 
 ValueRef ComputeGraph::add_tensor(
