@@ -11,7 +11,7 @@
 namespace vkcompute {
 
 api::utils::ivec2 make_ivec2_from_list(ComputeGraph& graph, ValueRef vref) {
-  return api::utils::make_ivec2(graph.get_int_list(vref), /*reverse = */ true);
+  return api::utils::make_ivec2(*graph.get_int_list(vref), /*reverse = */ true);
 }
 
 api::utils::ivec2 make_ivec2_kernel_size(

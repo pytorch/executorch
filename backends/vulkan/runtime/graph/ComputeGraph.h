@@ -37,50 +37,31 @@ template <>
 struct is_valid_scalar_type<bool> : std::true_type {};
 
 //
-// vTensorPtr
+// Guarded Pointer Classes
 //
 
 class ComputeGraph;
 
-class vTensorPtr final {
-  ComputeGraph* graph_;
-  vTensor* tensor_;
+#define DECL_VALUE_PTR_CLASS(classname, ctype)                         \
+  class classname final {                                              \
+    ComputeGraph* const graph_;                                        \
+    ctype* ptr_;                                                       \
+                                                                       \
+   public:                                                             \
+    explicit classname(ComputeGraph* const graph, const ValueRef idx); \
+    ctype* operator->() const;                                         \
+    ctype& operator*() const;                                          \
+    ~classname();                                                      \
+  };
 
- public:
-  explicit vTensorPtr(ComputeGraph* graph, const ValueRef idx);
+DECL_VALUE_PTR_CLASS(vTensorPtr, vTensor)
+DECL_VALUE_PTR_CLASS(StagingPtr, api::StorageBuffer)
+DECL_VALUE_PTR_CLASS(IntListPtr, std::vector<int64_t>)
+DECL_VALUE_PTR_CLASS(DoubleListPtr, std::vector<double>)
+DECL_VALUE_PTR_CLASS(BoolListPtr, std::vector<bool>)
+DECL_VALUE_PTR_CLASS(ValueListPtr, std::vector<ValueRef>)
 
-  vTensor* operator->() const {
-    return tensor_;
-  }
-
-  vTensor& operator*() const {
-    return *tensor_;
-  }
-
-  ~vTensorPtr();
-};
-
-//
-// StagingPtr
-//
-
-class StagingPtr final {
-  ComputeGraph* graph_;
-  api::StorageBuffer* storage_;
-
- public:
-  explicit StagingPtr(ComputeGraph* graph, const ValueRef idx);
-
-  api::StorageBuffer* operator->() const {
-    return storage_;
-  }
-
-  api::StorageBuffer& operator*() const {
-    return *storage_;
-  }
-
-  ~StagingPtr();
-};
+#undef DECL_VALUE_PTR_CLASS
 
 //
 // ComputeGraph
@@ -142,39 +123,38 @@ class ComputeGraph final {
       const api::ShaderInfo& shader_info,
       bool execute);
 
-#define GET_AND_CHECK_VAL_AS_TYPE_FNS(cpptype, short_name, type_name) \
-  inline cpptype get_##short_name(const ValueRef idx) {               \
-    return values_.at(idx).to##type_name();                           \
-  }                                                                   \
-  inline bool val_is_##short_name(const ValueRef idx) {               \
-    return values_.at(idx).is##type_name();                           \
+#define GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ptr_type, short_name, type_name) \
+  inline ptr_type get_##short_name(const ValueRef idx) {                   \
+    return ptr_type(this, idx);                                            \
+  }                                                                        \
+  inline bool val_is_##short_name(const ValueRef idx) {                    \
+    return values_.at(idx).is##type_name();                                \
+  }
+
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(vTensorPtr, tensor, Tensor)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(StagingPtr, staging, Staging)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(IntListPtr, int_list, IntList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(DoubleListPtr, double_list, DoubleList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(BoolListPtr, bool_list, BoolList)
+  GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS(ValueListPtr, value_list, ValueList)
+
+#undef GET_AND_CHECK_VAL_AS_PTR_TYPE_FNS
+
+#define GET_AND_CHECK_VAL_AS_TYPE_FNS(ctype, short_name, type_name) \
+  inline ctype get_##short_name(const ValueRef idx) {               \
+    return values_.at(idx).to##type_name();                         \
+  }                                                                 \
+  inline bool val_is_##short_name(const ValueRef idx) {             \
+    return values_.at(idx).is##type_name();                         \
   }
 
   GET_AND_CHECK_VAL_AS_TYPE_FNS(TensorRef, tref, TensorRef)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(int64_t, int, Int)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(double, double, Double)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(bool, bool, Bool)
-  GET_AND_CHECK_VAL_AS_TYPE_FNS(std::vector<int64_t>, int_list, IntList)
-  GET_AND_CHECK_VAL_AS_TYPE_FNS(std::vector<double>, double_list, DoubleList)
-  GET_AND_CHECK_VAL_AS_TYPE_FNS(std::vector<bool>, bool_list, BoolList)
-  GET_AND_CHECK_VAL_AS_TYPE_FNS(std::vector<ValueRef>, value_list, ValueList)
   GET_AND_CHECK_VAL_AS_TYPE_FNS(std::string, string, String)
 
-  inline vTensorPtr get_tensor(const ValueRef idx) {
-    return vTensorPtr(this, idx);
-  }
-
-  inline StagingPtr get_staging(const ValueRef idx) {
-    return StagingPtr(this, idx);
-  }
-
-  inline bool val_is_tensor(const ValueRef idx) {
-    return values_.at(idx).isTensor();
-  }
-
-  inline bool val_is_staging(const ValueRef idx) {
-    return values_.at(idx).isStaging();
-  }
+#undef GET_AND_CHECK_VAL_AS_TYPE_FNS
 
   inline bool val_is_none(const ValueRef idx) {
     return values_.at(idx).isNone();
@@ -183,6 +163,10 @@ class ComputeGraph final {
   inline TypeTag get_val_type(const ValueRef idx) {
     return values_.at(idx).type();
   }
+
+  std::vector<int64_t> get_sizes_of(ValueRef idx);
+
+  api::ScalarType get_dtype_of(ValueRef idx);
 
   template <typename T>
   T extract_scalar(const ValueRef idx) {
@@ -198,8 +182,6 @@ class ComputeGraph final {
     }
     VK_THROW("Cannot extract scalar from Value with type ", value.type());
   }
-
-#undef GET_AND_CHECK_VAL_AS_TYPE_FNS
 
   inline std::vector<std::unique_ptr<PrepackNode>>& prepack_nodes() {
     return prepack_nodes_;
@@ -411,12 +393,17 @@ class ComputeGraph final {
 
   friend class vTensorPtr;
   friend class StagingPtr;
+  friend class IntListPtr;
+  friend class DoubleListPtr;
+  friend class BoolListPtr;
+  friend class ValueListPtr;
 };
 
 template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
 ComputeGraph::add_scalar(T value) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(value);
   return idx;
 }
@@ -425,6 +412,7 @@ template <typename T>
 inline typename std::enable_if<is_valid_scalar_type<T>::value, ValueRef>::type
 ComputeGraph::add_scalar_list(std::vector<T>&& value) {
   ValueRef idx(static_cast<int>(values_.size()));
+  check_no_active_value_ptrs();
   values_.emplace_back(std::move(value));
   return idx;
 }

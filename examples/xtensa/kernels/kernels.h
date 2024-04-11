@@ -16,6 +16,8 @@ namespace impl {
 namespace HiFi {
 namespace kernels {
 
+void memcpy(void* dst, const void* src, size_t num_bytes);
+
 WORD32 matmul_asym8uxasym8u_asym8u(
     UWORD8* __restrict__ p_out, // output uint8 matrix
     const UWORD8* __restrict__ p_mat1, // weight uint8 matrix
@@ -34,6 +36,12 @@ WORD32 matmul_asym8uxasym8u_asym8u(
     const WORD32* __restrict__ out_shift,
     WORD32 out_zero_bias,
     bool per_channel_quantized = false); // per-channel quantized weight
+
+template <typename T>
+T quantize(const float x, float scale, int32_t zero_point);
+
+template <typename T>
+float dequantize(const T x, float scale, int32_t zero_point);
 
 template <typename T>
 void quantize(

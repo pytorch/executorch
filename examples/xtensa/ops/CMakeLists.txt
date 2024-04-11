@@ -26,11 +26,14 @@ endif()
 # ATen compliant ops that are needed to run this model.
 set(_aten_ops__srcs
     "${CMAKE_CURRENT_SOURCE_DIR}/op_add.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_embedding.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/op_full.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/op_view_copy.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/broadcast_util.cpp"
     "${EXECUTORCH_ROOT}/kernels/portable/cpu/util/repeat_util.cpp")
 add_library(aten_ops_xtensa ${_aten_ops__srcs})
 target_link_libraries(aten_ops_xtensa PUBLIC executorch)
+target_link_libraries(aten_ops_xtensa PRIVATE xtensa_kernels)
 
 # Let files say "include <executorch/path/to/header.h>".
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
@@ -41,8 +44,9 @@ target_include_directories(aten_ops_xtensa PUBLIC ${ROOT_DIR}/..
 
 # Custom ops that are needed to run the test model.
 add_library(
-  custom_ops "quantized_linear_out.cpp" "quantize_per_tensor.cpp"
-  "dequantize_per_tensor.cpp")
+  custom_ops "quantized_linear_out.cpp" "quantized_conv_out.cpp"
+  "quantized_relu_out.cpp" "quantized_layer_norm.cpp"
+  "quantize_per_tensor.cpp" "dequantize_per_tensor.cpp")
 target_include_directories(custom_ops PUBLIC ${ROOT_DIR}/..
                                              ${CMAKE_BINARY_DIR}
                                              ${_common_include_directories})

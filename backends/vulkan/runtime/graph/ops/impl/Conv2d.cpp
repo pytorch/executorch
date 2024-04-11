@@ -181,7 +181,7 @@ ValueRef prepack_weights(
     const ValueRef vref,
     const Conv2dMethod method) {
   const auto original_sizes = graph.get_tref(vref).sizes;
-  const auto final_sizes = get_final_sizes(original_sizes, method);
+  const auto final_sizes = get_final_sizes(graph.get_tref(vref).sizes, method);
 
   ValueRef v = graph.add_tensor(
       final_sizes,

@@ -21,27 +21,29 @@ namespace vkcompute {
 // VTensorPtr
 //
 
-vTensorPtr::vTensorPtr(ComputeGraph* graph, const ValueRef idx)
-    : graph_(graph), tensor_(&(graph_->values_.at(idx).toTensor())) {
-  graph_->values_in_use_++;
-}
+#define VALUE_PTR_CLASS_IMPL(classname, ctype, type_name)                 \
+  classname::classname(ComputeGraph* const graph, const ValueRef idx)     \
+      : graph_(graph), ptr_(&(graph_->values_.at(idx).to##type_name())) { \
+    graph_->values_in_use_++;                                             \
+  }                                                                       \
+  ctype* classname::operator->() const {                                  \
+    return ptr_;                                                          \
+  }                                                                       \
+  ctype& classname::operator*() const {                                   \
+    return *ptr_;                                                         \
+  }                                                                       \
+  classname::~classname() {                                               \
+    graph_->values_in_use_--;                                           \
+  }
 
-vTensorPtr::~vTensorPtr() {
-  graph_->values_in_use_--;
-}
+VALUE_PTR_CLASS_IMPL(vTensorPtr, vTensor, Tensor)
+VALUE_PTR_CLASS_IMPL(StagingPtr, api::StorageBuffer, Staging)
+VALUE_PTR_CLASS_IMPL(IntListPtr, std::vector<int64_t>, IntList)
+VALUE_PTR_CLASS_IMPL(DoubleListPtr, std::vector<double>, DoubleList)
+VALUE_PTR_CLASS_IMPL(BoolListPtr, std::vector<bool>, BoolList)
+VALUE_PTR_CLASS_IMPL(ValueListPtr, std::vector<ValueRef>, ValueList)
 
-//
-// StagingPtr
-//
-
-StagingPtr::StagingPtr(ComputeGraph* graph, const ValueRef idx)
-    : graph_(graph), storage_(&(graph_->values_.at(idx).toStaging())) {
-  graph_->values_in_use_++;
-}
-
-StagingPtr::~StagingPtr() {
-  graph_->values_in_use_--;
-}
+#undef VALUE_PTR_CLASS_IMPL
 
 //
 // ComputeGraph
@@ -142,6 +144,26 @@ void ComputeGraph::check_no_active_value_ptrs() {
       "`ComputeGraph::get_*()` functions in scope before adding Values to the "
       "graph. Modifying the graph's values may cause existing pointers to be "
       "invalidated.");
+}
+
+std::vector<int64_t> ComputeGraph::get_sizes_of(ValueRef idx) {
+  Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toTensor().sizes();
+  } else if (val.isTensorRef()) {
+    return val.toTensorRef().sizes;
+  }
+  VK_THROW("Could not get sizes of value with type ", val.type());
+}
+
+api::ScalarType ComputeGraph::get_dtype_of(ValueRef idx) {
+  Value& val = values_.at(idx);
+  if (val.isTensor()) {
+    return val.toTensor().dtype();
+  } else if (val.isTensorRef()) {
+    return val.toTensorRef().dtype;
+  }
+  VK_THROW("Could not get dtype of value with type ", val.type());
 }
 
 ValueRef ComputeGraph::add_tensor(

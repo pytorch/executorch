@@ -65,8 +65,8 @@ void add_max_pool2d_node(
   ValueRef arg = prepack_if_tensor_ref(graph, in);
   vTensorPtr t_in = graph.get_tensor(arg);
 
-  const auto& out_val = graph.get_value_list(out);
-  vTensorPtr t_out = graph.get_tensor(out_val[0]);
+  const auto out_val = graph.get_value_list(out);
+  vTensorPtr t_out = graph.get_tensor(out_val->at(0));
 
   check_max_pool2d_args(*t_in, *t_out);
 
@@ -90,7 +90,7 @@ void add_max_pool2d_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{{out_val[0], out_val[1]}, api::MemoryAccessType::WRITE},
+      {{{out_val->at(0), out_val->at(1)}, api::MemoryAccessType::WRITE},
        {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
       {

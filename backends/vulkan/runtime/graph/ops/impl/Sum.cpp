@@ -116,7 +116,7 @@ void add_sum_dim_IntList(
   bool keepdim_val = graph.get_bool(keepdim);
 
   std::set<int64_t> dims_set;
-  const auto& dims_to_sum = graph.get_int_list(opt_dim);
+  const auto dims_to_sum = *graph.get_int_list(opt_dim);
   int64_t in_dim = graph.get_tensor(in)->sizes().size();
 
   if (dims_to_sum.empty()) {

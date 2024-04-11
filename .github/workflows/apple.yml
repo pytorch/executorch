@@ -34,8 +34,6 @@ jobs:
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
         BUILD_TOOL=cmake
 
         .ci/scripts/setup-conda.sh
@@ -48,8 +46,6 @@ jobs:
         PYTHON_EXECUTABLE=python ${CONDA_RUN} --no-capture-output \
         build/test_ios_ci.sh
 
-        popd
-
   build-frameworks-ios:
     name: build-frameworks-ios
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -61,8 +57,6 @@ jobs:
       upload-artifact: executorch-frameworks-ios
       timeout: 90
       script: |
-        WORKSPACE=$(pwd)
-        pushd "${WORKSPACE}/pytorch/executorch"
         BUILD_TOOL=cmake
         VERSION="0.1.0"
         FRAMEWORKS=(
@@ -110,8 +104,6 @@ jobs:
           mv "${FRAMEWORK}.xcframework" "${FRAMEWORK}_debug.xcframework" && \
           zip -r "${RUNNER_TEMP}/artifacts/${FRAMEWORK}_debug-${VERSION}.zip" "${FRAMEWORK}_debug.xcframework"
         ) done
-
-        popd
 
   upload-frameworks-ios:
     runs-on: ubuntu-22.04

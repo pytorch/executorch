@@ -400,9 +400,9 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
 
   ValueRef idx = graph.add_scalar_list<int64_t>({1, 2, 3, 4});
   const auto arr = graph.get_int_list(idx);
-  EXPECT_TRUE(arr.size() == 4);
+  EXPECT_TRUE(arr->size() == 4);
   for (int i = 0; i < 4; i++) {
-    EXPECT_TRUE(arr[i] == i + 1);
+    EXPECT_TRUE(arr->at(i) == i + 1);
   }
 }
 
@@ -416,9 +416,9 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
     idx = graph.add_scalar_list(std::move(data));
   }
   const auto& arr = graph.get_double_list(idx);
-  EXPECT_TRUE(arr.size() == 5);
+  EXPECT_TRUE(arr->size() == 5);
   for (int i = 0; i < 5; i++) {
-    EXPECT_TRUE(arr[i] == (5 - i));
+    EXPECT_TRUE(arr->at(i) == (5 - i));
   }
 }
 

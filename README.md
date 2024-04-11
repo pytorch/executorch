@@ -18,7 +18,7 @@ Key value propositions of ExecuTorch are:
   capabilities such as CPUs, NPUs, and DSPs.
 
 For a comprehensive technical overview of ExecuTorch and step-by-step tutorials,
-please visit our [documentation website](https://pytorch.org/executorch).
+please visit our documentation website [for the latest release](https://pytorch.org/executorch/stable/index.html) (or the [main branch](https://pytorch.org/executorch/main/index.html)).
 
 ## Important: This is a preview release
 
