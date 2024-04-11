@@ -84,6 +84,8 @@ def define_common_targets():
                 "//executorch/runtime/kernel:operator_registry",
                 "//executorch/runtime/platform:platform",
                 "//executorch/schema:extended_header",
+            ],
+            deps = [
                 "//executorch/schema:program",
             ],
             visibility = [
