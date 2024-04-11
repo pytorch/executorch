@@ -117,7 +117,7 @@ class TestQuantFusionPass(unittest.TestCase):
             m.exported_program.graph_module.code
         )
 
-        m = m.to_executorch()
+        m = m.to_executorch(exir.ExecutorchBackendConfig(remove_view_copy=False))
         # check that we are using out variant of q/dq/add
         FileCheck().check("torch.ops.quantized_decomposed.add.out").check(
             "torch.ops.aten.view_copy.out"
