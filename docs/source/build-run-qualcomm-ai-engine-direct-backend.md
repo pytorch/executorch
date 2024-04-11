@@ -115,6 +115,10 @@ Python APIs on x64 are required to compile models to Qualcomm AI Engine Direct b
 
 ```bash
 cd $EXECUTORCH_ROOT
+# Workaround for fbs files in exir/_serialize
+cp schema/program.fbs exir/_serialize/program.fbs
+cp schema/scalar_type.fbs exir/_serialize/scalar_type.fbs
+
 mkdir build_x86_64
 cd build_x86_64
 cmake .. -DEXECUTORCH_BUILD_QNN=ON -DQNN_SDK_ROOT=${QNN_SDK_ROOT}
@@ -138,8 +142,8 @@ mkdir build_android
 cd build_android
 # build executorch & qnn_executorch_backend
 cmake .. \
-    -DBUCK2=buck2 \
     -DCMAKE_INSTALL_PREFIX=$PWD \
+    -DEXECUTORCH_BUILD_SDK=ON \
     -DEXECUTORCH_BUILD_QNN=ON \
     -DQNN_SDK_ROOT=$QNN_SDK_ROOT \
     -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
@@ -220,6 +224,7 @@ So, we can run `qnn_executor_runner` like
 ```bash
 adb push ./deeplab_v3/dlv3_qnn.pte ${DEVICE_DIR}
 adb push ${EXECUTORCH_ROOT}/build_android/examples/qualcomm/qnn_executor_runner ${DEVICE_DIR}
+adb push ${EXECUTORCH_ROOT}/build_android/lib/libqnn_executorch_backend.so ${DEVICE_DIR}
 adb shell "cd ${DEVICE_DIR} \
            && export LD_LIBRARY_PATH=${DEVICE_DIR} \
            && export ADSP_LIBRARY_PATH=${DEVICE_DIR} \

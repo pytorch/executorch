@@ -844,6 +844,32 @@ class _Emitter(torch.fx.Interpreter):
                 )
             )
 
+    def _emit_view(self, args: Tuple[_Argument, ...]) -> _EmitterValue:
+        assert len(args) == 2
+
+        self_arg = self._emit_argument(args[0], torch.TensorType)  # pyre-ignore[6]
+        size_arg = self._emit_argument(args[1], torch.ListType.ofInts())
+        out_arg = self._emit_argument(
+            self._emit_spec(self.node.meta["spec"]), torch.TensorType  # pyre-ignore[6]
+        )
+
+        op_idx, op = self._get_operator(
+            name="executorch_prim::et_view",
+            overload="default",
+        )
+        kernel = Instruction(
+            KernelCall(
+                op_idx,
+                args=[
+                    self_arg.id,
+                    size_arg.id,
+                    out_arg.id,
+                ],
+            )
+        )
+        self.chain.instructions.append(kernel)
+        return out_arg
+
     def _add_debug_handle(self, emitter_id: int, target: _Target) -> None:
         """Updates the debug handle information for the current node.
 
@@ -1197,6 +1223,9 @@ class _Emitter(torch.fx.Interpreter):
         elif target == memory.alloc:
             assert len(args) == 1
             return self._emit_spec(self.node.meta["spec"])
+
+        elif target == memory.view:
+            return self._emit_view(args)
 
         elif target == memory.free:
             assert len(args) == 1

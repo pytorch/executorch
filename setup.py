@@ -88,6 +88,11 @@ class ShouldBuild:
     def xnnpack(cls) -> bool:
         return cls._is_env_enabled("EXECUTORCH_BUILD_XNNPACK", default=False)
 
+    @classmethod
+    @property
+    def llama_custom_ops(cls) -> bool:
+        return cls._is_env_enabled("EXECUTORCH_BUILD_CUSTOM_OPS_AOT", default=True)
+
 
 class _BaseExtension(Extension):
     """A base class that maps an abstract source to an abstract destination."""
@@ -380,6 +385,11 @@ class CustomBuild(build):
                 # into the portable_lib target.
             # TODO(dbort): Add MPS/CoreML backends when building on macos.
 
+        if ShouldBuild.llama_custom_ops:
+            cmake_args += [
+                "-DEXECUTORCH_BUILD_CUSTOM_OPS_AOT=ON",
+            ]
+            build_args += ["--target", "custom_ops_aot_lib"]
         # Allow adding extra cmake args through the environment. Used by some
         # tests and demos to expand the set of targets included in the pip
         # package.
@@ -435,6 +445,14 @@ def get_ext_modules() -> list[Extension]:
             # load and execute .pte files from python.
             BuiltExtension(
                 "portable_lib.*", "executorch.extension.pybindings.portable_lib"
+            )
+        )
+    if ShouldBuild.llama_custom_ops:
+        ext_modules.append(
+            # Install the prebuilt library for custom ops used in llama.
+            BuiltFile(
+                "examples/models/llama2/custom_ops/libcustom_ops_aot_lib.*",
+                "executorch/examples/models/llama2/custom_ops",
             )
         )
 

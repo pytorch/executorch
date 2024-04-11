@@ -25,7 +25,7 @@ if(NOT TORCH_ROOT)
   set(TORCH_ROOT ${EXECUTORCH_ROOT}/third-party/pytorch)
 endif()
 
-set(_common_compile_options -Wno-deprecated-declarations)
+set(_common_compile_options -Wno-deprecated-declarations -fPIC)
 
 include(${EXECUTORCH_ROOT}/build/Utils.cmake)
 include(${EXECUTORCH_ROOT}/build/Codegen.cmake)
@@ -44,7 +44,7 @@ include(${EXECUTORCH_SRCS_FILE})
 set(_common_include_directories ${EXECUTORCH_ROOT}/..)
 
 # Custom op libraries
-set(custom_ops_libs extension_module)
+set(custom_ops_libs executorch_no_prim_ops)
 list(APPEND custom_ops_libs pthreadpool)
 list(APPEND custom_ops_libs cpuinfo)
 list(APPEND custom_ops_libs cpublas)
@@ -76,3 +76,19 @@ target_compile_options(custom_ops PUBLIC ${_common_compile_options}
                                          -DET_USE_THREADPOOL)
 
 install(TARGETS custom_ops DESTINATION lib)
+
+if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
+  # Add a AOT library
+  find_package(Torch CONFIG REQUIRED)
+  add_library(custom_ops_aot_lib SHARED
+              ${CMAKE_CURRENT_SOURCE_DIR}/op_sdpa_aot.cpp)
+  target_include_directories(custom_ops_aot_lib
+                            PUBLIC "${_common_include_directories}")
+  target_include_directories(
+    custom_ops_aot_lib PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/../../../../include")
+  target_link_libraries(custom_ops_aot_lib PUBLIC custom_ops torch)
+  target_compile_options(custom_ops_aot_lib PUBLIC -Wno-deprecated-declarations
+                                                  -fPIC -frtti -fexceptions)
+
+  install(TARGETS custom_ops_aot_lib DESTINATION lib)
+endif()

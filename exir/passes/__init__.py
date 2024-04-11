@@ -248,6 +248,7 @@ to_out_var_skiplist: Set[Callable[[Any], Any]] = {
     # we won't see it in the input graph to the to_out_variant pass, unless
     # it's retraced after running to_out_variant with the first trace.
     memory.alloc,
+    memory.view,
     executorch_call_delegate,
     torch.ops.aten.copy_.default,
 }

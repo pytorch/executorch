@@ -12,7 +12,7 @@
  * This is a simple executor_runner that boots up the DSP, configures the serial
  * port, sends a bunch of test messages to the M33 core and then loads the model
  * defined in model_pte.h. It runs this model using the ops available in
- * xtensa/ops directory.
+ * cadence/ops directory.
  */
 
 #include <fsl_debug_console.h>

@@ -12,7 +12,7 @@ if(NOT CMAKE_CXX_STANDARD)
 endif()
 
 # Set the project name.
-project(xtensa_executorch_example)
+project(cadence_executorch_example)
 
 # Source root directory for executorch.
 if(NOT EXECUTORCH_ROOT)
@@ -100,21 +100,21 @@ add_custom_command(
 
 add_custom_target(gen_model_header DEPENDS ${CMAKE_BINARY_DIR}/model_pte.h)
 
-add_executable(xtensa_executorch_example executor_runner.cpp)
-add_dependencies(xtensa_executorch_example gen_model_header)
+add_executable(cadence_executorch_example executor_runner.cpp)
+add_dependencies(cadence_executorch_example gen_model_header)
 
 # lint_cmake: -linelength
-target_include_directories(xtensa_executorch_example PUBLIC ${ROOT_DIR}/..
+target_include_directories(cadence_executorch_example PUBLIC ${ROOT_DIR}/..
                                                             ${CMAKE_BINARY_DIR}
                                                             ${_common_include_directories})
 
-target_link_options(xtensa_executorch_example PRIVATE
+target_link_options(cadence_executorch_example PRIVATE
                     -mlsp=${NXP_SDK_ROOT_DIR}/devices/MIMXRT685S/xtensa/min-rt)
-target_link_libraries(xtensa_executorch_example dsp_mu_polling_libs
-                      xtensa_ops_lib extension_runner_util executorch)
+target_link_libraries(cadence_executorch_example dsp_mu_polling_libs
+                      cadence_ops_lib extension_runner_util executorch)
 
 add_custom_command(
-  TARGET xtensa_executorch_example
+  TARGET cadence_executorch_example
   POST_BUILD
   COMMAND
     ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/utils/post_compilation.py
