@@ -34,7 +34,6 @@ cmake_dependent_option(
 cmake_dependent_option(EXECUTORCH_BUILD_CPUINFO "Build cpuinfo library." ON
                        "NOT EXECUTORCH_BUILD_ARM_BAREMETAL" OFF)
 
-
 if(NOT PYTHON_EXECUTABLE)
   set(PYTHON_EXECUTABLE python3)
 endif()
@@ -111,32 +110,26 @@ if(EXECUTORCH_BUILD_CUSTOM)
   list(APPEND link_libraries custom_ops_lib)
 endif()
 
+set(XNNPACK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack)
 # Extra compile option and include dir for pthreadpool
 if(EXECUTORCH_BUILD_PTHREADPOOL)
   list(APPEND _common_compile_options -DET_USE_THREADPOOL)
   list(APPEND link_libraries pthreadpool)
-  list(
-    APPEND
-    _srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/threadpool_guard.cpp
-  )
-  list(APPEND _common_include_directories ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/pthreadpool/include)
+  # These 2 source files are included in xnnpack_backend
+  if(NOT TARGET xnnpack_backend)
+    list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/threadpool.cpp
+         ${XNNPACK_ROOT}/threadpool/threadpool_guard.cpp)
+  endif()
+  list(APPEND _common_include_directories
+       ${XNNPACK_ROOT}/third-party/pthreadpool/include)
 endif()
 
 # Extra sources for cpuinfo
 if(EXECUTORCH_BUILD_CPUINFO)
   list(APPEND link_libraries cpuinfo)
-  list(
-    APPEND
-    _srcs
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/threadpool/cpuinfo_utils.cpp
-  )
-  list(
-    APPEND
-    _common_include_directories
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../backends/xnnpack/third-party/cpuinfo/include
-  )
+  list(APPEND _srcs ${XNNPACK_ROOT}/threadpool/cpuinfo_utils.cpp)
+  list(APPEND _common_include_directories
+       ${XNNPACK_ROOT}/third-party/cpuinfo/include)
 endif()
 
 # XNNPACK
