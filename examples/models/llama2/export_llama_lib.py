@@ -242,6 +242,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
+
+    parser.add_argument(
+        "--checkpoint_dir",
+        default=None,
+        help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
     parser.add_argument(
         "--calibration_tasks",
         nargs="+",
@@ -417,7 +424,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     """
 
     # load model from checkpoint and params.json
-    checkpoint_path = canonical_path(args.checkpoint)
+    checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
+    checkpoint_dir = (
+        canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
+    )
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
     modelname = "llama2"
@@ -485,6 +495,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     return (
         load_llama_model(
             checkpoint=checkpoint_path,
+            checkpoint_dir=checkpoint_dir,
             params_path=params_path,
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,
