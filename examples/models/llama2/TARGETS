@@ -18,7 +18,7 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/examples/models/llama2/custom_ops:llama_custom_ops_aot_lib",
+        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_py",
     ],
 )
 
@@ -52,6 +52,7 @@ runtime.python_binary(
     main_module = "executorch.examples.models.llama2.export_llama",
     # visibility = ["//executorch/examples/..."],
     preload_deps = [
+        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_lib",
         "//executorch/kernels/quantized:aot_lib",
     ],
     deps = [

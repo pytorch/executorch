@@ -81,7 +81,7 @@ add_library(xnnpack_backend STATIC ${_xnnpack_backend__srcs})
 target_link_libraries(xnnpack_backend
                       PRIVATE
                       ${xnnpack_third_party}
-                      executorch
+                      executorch_no_prim_ops
                       xnnpack_schema)
 
 target_include_directories(xnnpack_backend

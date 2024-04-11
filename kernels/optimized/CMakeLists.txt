@@ -47,7 +47,7 @@ endif()
 # Build cpublas.
 list(TRANSFORM _optimized_cpublas__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(cpublas STATIC ${_optimized_cpublas__srcs})
-target_link_libraries(cpublas PRIVATE executorch eigen_blas)
+target_link_libraries(cpublas PRIVATE executorch_no_prim_ops eigen_blas)
 target_compile_options(cpublas PUBLIC ${_common_compile_options})
 
 # Generate C++ bindings to register kernels into both PyTorch (for AOT) and
@@ -61,7 +61,7 @@ message("Generated files ${gen_command_sources}")
 
 list(TRANSFORM _optimized_kernels__srcs PREPEND "${EXECUTORCH_ROOT}/")
 add_library(optimized_kernels ${_optimized_kernels__srcs})
-target_link_libraries(optimized_kernels PRIVATE executorch cpublas)
+target_link_libraries(optimized_kernels PRIVATE executorch_no_prim_ops cpublas)
 target_compile_options(optimized_kernels PUBLIC ${_common_compile_options})
 # Build a library for _optimized_kernels_srcs
 #
