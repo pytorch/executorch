@@ -43,7 +43,14 @@ def vela_compile(tosa_graph, args: List[str]):
 
         # invoke vela
         vela_command = f"cd {tmpdir}; vela {' '.join(args)} {tosaname}"
-        subprocess.run([vela_command], shell=True, check=True)
+        try:
+            subprocess.run([vela_command], shell=True, check=True, capture_output=True)
+        except subprocess.CalledProcessError as process_error:
+            raise RuntimeError(
+                f"Vela compiler ('{vela_command}') failed with error:\n \
+                                     {process_error.stderr.decode()}\n \
+                                      Stdout:\n{process_error.stdout.decode()}"
+            )
 
         np_path = os.path.join(tmpdir, "output", "out_sg0_vela.npz")
         blocks = b""
