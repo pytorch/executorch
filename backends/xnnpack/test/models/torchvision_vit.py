@@ -57,6 +57,5 @@ class TestViT(unittest.TestCase):
             .check_not(list(lowerable_xnn_operators))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
