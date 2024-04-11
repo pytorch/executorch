@@ -20,11 +20,11 @@ from executorch.exir import (
 )
 from executorch.exir.emit._emitter import _DelegateDebugIdentifierMap
 
-from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.serialize import deserialize, serialize
 from executorch.sdk.bundled_program.core import BundledProgram
 
 from executorch.sdk.bundled_program.schema.bundled_program_schema import Value
+from torch._export.serde.serialize import SerializedArtifact
 
 ProgramOutput = List[Value]
 
@@ -290,6 +290,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
                 ),
                 etrecord_zip.read(f"{entry}_state_dict"),
                 b"",
+                b"",
             )
             edge_dialect_program = deserialize(serialized_artifact)
         elif entry == ETRecordReservedFileNames.REFERENCE_OUTPUTS:
@@ -311,6 +312,7 @@ def parse_etrecord(etrecord_path: str) -> ETRecord:
         serialized_artifact = SerializedArtifact(
             etrecord_zip.read(serialized_file),
             etrecord_zip.read(serialized_state_dict_file),
+            b"",
             b"",
         )
         graph_map[serialized_file] = deserialize(serialized_artifact)
