@@ -394,7 +394,7 @@ acceleration and optimization. Any portions of the computation graph not
 delegated will be executed by the ExecuTorch operator implementations.
 
 To delegate the exported model to the specific backend, we need to import its
-partitioner as well as edge compile config from Executorch Codebase first, then
+partitioner as well as edge compile config from ExecuTorch Codebase first, then
 call `to_backend` with an instance of partitioner on the `EdgeProgramManager`
 object `to_edge` function created.
 
@@ -482,7 +482,7 @@ target_link_libraries(
 ```
 
 Keep the rest of the code the same. For more details refer to
-[Exporting to Executorch](https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch)
+[Exporting to ExecuTorch](https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch)
 and
 [Invoking the Runtime](https://pytorch.org/executorch/main/llm/getting-started.html#step-2-invoking-the-runtime)
 for more details
