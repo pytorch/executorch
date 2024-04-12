@@ -72,14 +72,13 @@ jobs:
 
       - name: Upload the artifacts to S3
         uses: seemethere/upload-artifact-s3@v5
-        working-directory: ${{ runner.temp }}/artifacts/
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
             ${{ github.repository }}/${{ github.run_id }}/${{ github.run_attempt }}/artifact
           retention-days: 14
           if-no-files-found: ignore
-          path: *.apk
+          path: ${{ runner.temp }}/artifacts/**/*.apk
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
