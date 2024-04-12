@@ -90,13 +90,17 @@ jobs:
     with:
       device-type: android
       runner: ubuntu-latest
+      # TODO: FOR TESTING
+      test-infra-ref: add-android-device-farm-support
       # This is the ARN of ExecuTorch project on AWS
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       # This is the custom Android device pool that only includes Samsung Galaxy S2x
       device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
-      # Uploaded to S3 from the previous job
-      android-app-archive: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/8a7276b7-03ac-4053-8b09-1305c429f59d
-      android-test-archive: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/528113d6-2003-420b-aedb-4242b6d14254
+      # Uploaded to S3 from the previous job, the name of the app comes from the project itself
+      android-app-archive: |
+        https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/${{ github.run_attempt }}/artifact/app-debug.apk
+      android-test-archive: |
+        https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/${{ github.run_attempt }}/artifact/app-debug-androidTest.apk
       # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
       test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/414cb54d-4d83-4576-8317-93244e4dc50e
       # The exported llama2 model and its tokenizer, can be downloaded from https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b.zip.
