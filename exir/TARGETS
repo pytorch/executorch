@@ -144,6 +144,7 @@ python_library(
         "//executorch/exir/capture:lib",
         "//executorch/exir/emit:lib",
         "//executorch/exir/program:lib",
+        "//executorch/exir/serde:serialize",
     ],
 )
 

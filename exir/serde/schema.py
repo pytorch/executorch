@@ -25,3 +25,7 @@ class LoweredBackendModule:
     compile_specs: List[CompileSpec]
     original_module: export_schema.ExportedProgram
     original_state_dict: str
+
+
+# NOTE: Please update this value if any modifications are made to the schema
+SCHEMA_VERSION = (1, 0)
