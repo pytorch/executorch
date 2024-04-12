@@ -802,7 +802,7 @@ computation graph that can be accelerated by the target backend，and
 acceleration and optimization. Any portions of the computation graph not
 delegated will be executed by the ExecuTorch operator implementations.</p>
 <p>To delegate the exported model to the specific backend, we need to import its
-partitioner as well as edge compile config from Executorch Codebase first, then
+partitioner as well as edge compile config from ExecuTorch Codebase first, then
 call <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> with an instance of partitioner on the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>
 object <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> function created.</p>
 <p>Here’s an example of how to delegate NanoGPT to XNNPACK (if you’re deploying to an Android Phone for instance):</p>
@@ -885,7 +885,7 @@ target_link_libraries(
 </pre></div>
 </div>
 <p>Keep the rest of the code the same. For more details refer to
-<a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch">Exporting to Executorch</a>
+<a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch">Exporting to ExecuTorch</a>
 and
 <a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-2-invoking-the-runtime">Invoking the Runtime</a>
 for more details</p>
