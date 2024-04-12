@@ -82,7 +82,7 @@ jobs:
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
-    needs: upload-to-s3
+    needs: upload-artifacts
     permissions:
       id-token: write
       contents: read
