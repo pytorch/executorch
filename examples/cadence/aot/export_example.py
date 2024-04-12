@@ -22,6 +22,7 @@ from .quantizer import (
     ReplacePT2DequantWithCadenceDequant,
     ReplacePT2QuantWithCadenceQuant,
 )
+from .utils import print_ops_info
 
 
 FORMAT = "[%(levelname)s %(asctime)s %(filename)s:%(lineno)s] %(message)s"
@@ -47,7 +48,9 @@ def export_model(model, example_inputs):
     QuantFusion(patterns)(converted_model)
 
     # Get edge program (note: the name will change to export_to_cadence in future PRs)
-    edge_prog_manager = export_to_edge(converted_model, example_inputs, pt2_quant=True)
+    edge_prog_manager, expo_prog = export_to_edge(
+        converted_model, example_inputs, pt2_quant=True
+    )
 
     # Run a couple required passes for quant/dequant ops
     cadence_prog_manager = edge_prog_manager.transform(
@@ -59,6 +62,13 @@ def export_model(model, example_inputs):
 
     logging.info(
         f"Final exported graph module:\n{exec_prog.exported_program().graph_module}"
+    )
+
+    # Print some information to terminal
+    print_ops_info(
+        expo_prog.graph_module,
+        edge_prog_manager.exported_program().graph_module,
+        cadence_prog_manager.exported_program().graph_module,
     )
 
     # Save the program as CadenceDemoModel.pte

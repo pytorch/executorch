@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import logging
-from typing import Any, Callable
+from typing import Any, Callable, Tuple
 
 import torch
 
@@ -48,7 +48,7 @@ def export_to_edge(
     inputs: Any,
     pt2_quant: bool = False,
     dump_graphs: bool = False,
-) -> EdgeProgramManager:
+) -> Tuple[EdgeProgramManager, ExportedProgram]:
     # Export the model into an ExportedProgram.
     expo_program = export_program(model, inputs, pt2_quant)
 
@@ -65,4 +65,4 @@ def export_to_edge(
             f"Edge graph:\n{edge_prog_manager.exported_program().graph_module.graph}"
         )
 
-    return edge_prog_manager
+    return edge_prog_manager, expo_program
