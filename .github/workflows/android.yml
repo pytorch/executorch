@@ -21,7 +21,7 @@ concurrency:
 jobs:
   test-demo-android:
     name: test-demo-android
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@support-custom-artifact-upload
     strategy:
       matrix:
         include:
@@ -47,11 +47,10 @@ jobs:
         # Build Android demo app
         bash build/test_android_ci.sh
 
+        mkdir -p artifacts-to-be-uploaded
         # Copy the app and its test suite to S3
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk "${RUNNER_TEMP}/artifacts"
-        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk "${RUNNER_TEMP}/artifacts"
-
-        sleep 300
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
@@ -61,6 +60,7 @@ jobs:
       - name: Download the artifacts
         uses: actions/download-artifact@v3
         with:
+          # The name here needs to match the name of the upload-artifact parameter
           name: android-apps
           path: ${{ runner.temp }}/artifacts/
 
