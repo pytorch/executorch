@@ -88,7 +88,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@add-android-device-farm-support
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
     with:
       device-type: android
       runner: ubuntu-latest
