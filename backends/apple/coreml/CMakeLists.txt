@@ -144,7 +144,7 @@ target_include_directories(
 )
 target_link_libraries(
   coremldelegate PRIVATE
-  executorch
+  executorch_no_prim_ops
 )
 
 if(EXECUTORCH_BUILD_SDK)
@@ -174,7 +174,7 @@ find_library(SQLITE_LIBRARY sqlite3)
 
 target_link_libraries(coremldelegate
   PRIVATE
-  executorch
+  executorch_no_prim_ops
   ${ACCELERATE_FRAMEWORK}
   ${COREML_FRAMEWORK}
   ${FOUNDATION_FRAMEWORK}
@@ -185,7 +185,7 @@ target_compile_options(coremldelegate PRIVATE "-fobjc-arc")
 target_compile_options(coremldelegate PRIVATE "-fno-exceptions")
 
 if(EXECUTORCH_BUILD_SDK)
-target_compile_options(executorch PUBLIC -DET_EVENT_TRACER_ENABLED)
+target_compile_options(executorch_no_prim_ops PUBLIC -DET_EVENT_TRACER_ENABLED)
 target_compile_options(coremldelegate PRIVATE "-frtti")
 target_compile_options(libprotobuf-lite PRIVATE "-frtti")
 else()
