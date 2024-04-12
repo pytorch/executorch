@@ -14,6 +14,8 @@
 
 layout(std430) buffer;
 
+#define VEC4_T ${texel_type(DTYPE)}
+
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 
 layout(set = 0, binding = 1) uniform PRECISION restrict GpuSizes {
@@ -40,7 +42,7 @@ void main() {
   const ivec4 buf_indices =
       base_index + ivec4(0, 1, 2, 3) * PLANE_SIZE_${PACKING}(gpu_sizes.data);
 
-  ${VEC4_T[DTYPE]} texel = ${VEC4_T[DTYPE]}(buf_indices);
+  VEC4_T texel = VEC4_T(buf_indices);
 
-  imageStore(image_out, ${GET_POS[NDIM]("pos")}, texel);
+  imageStore(image_out, ${get_pos[NDIM]("pos")}, texel);
 }

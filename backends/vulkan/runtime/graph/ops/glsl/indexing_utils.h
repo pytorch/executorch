@@ -6,6 +6,52 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#define divup4(x) ((x + 3) / 4)
+
+#define coord_to_buffer_idx(coord, sizes)                  \
+  coord.x + coord.y* sizes.x + coord.z* sizes.y* sizes.x + \
+      coord.w* sizes.z* sizes.y* sizes.x;
+
+#define get_packed_dim_C_packed(vec) vec.z
+#define get_packed_dim_W_packed(vec) vec.x
+#define get_packed_dim_H_packed(vec) vec.y
+
+#define get_packed_stride_C_packed(vec) (vec.x * vec.y)
+#define get_packed_stride_W_packed(vec) (1)
+#define get_packed_stride_H_packed(vec) (vec.x)
+
+#define pos_to_coord_C_packed(pos, sizes) \
+  ivec4(pos.x, pos.y, (pos.z * 4) % sizes.z, (pos.z * 4) / sizes.z)
+
+#define pos_to_coord_W_packed(pos, sizes) \
+  ivec4((pos.x * 4), pos.y, pos.z % sizes.z, pos.z / sizes.z)
+
+#define pos_to_coord_H_packed(pos, sizes) \
+  ivec4(pos.x, (pos.y * 4), pos.z % sizes.z, pos.z / sizes.z)
+
+#define coord_to_pos_C_packed(coord, sizes) \
+  ivec3(coord.x, coord.y, (coord.z + coord.w * sizes.z) / 4)
+
+#define coord_to_pos_W_packed(coord, sizes) \
+  ivec3(coord.x / 4, coord.y, (coord.z + coord.w * sizes.z))
+
+#define coord_to_pos_H_packed(coord, sizes) \
+  ivec3(coord.x, coord.y / 4, (coord.z + coord.w * sizes.z))
+
+// Given a buffer(1-D) index cur, compute a new index where the corresponding
+// tensor(N-D)'s adjacent dimensions are swapped. The parameters x,y and plane
+// describe sizes. As an example, let's say we want to swap dimensions 0,1 for a
+// tensor of shape {4,3,2,24} to obtain {3,4,2,24}. Then, x=4, y=3 and
+// plane=2*24=48.
+#define swap_adj_dims(cur, x, y, plane)                       \
+  cur +                                                       \
+      plane*(                                                 \
+          (1 - y) * ((cur % (x * y * plane)) / (y * plane)) + \
+          (x - 1) * ((cur % (y * plane)) / plane))
+
+// Kept for backwards compatibility
+// TODO(ssjia): remove once there are no shaders that use these macros
+
 #define DIVUP4(x) ((x + 3) / 4)
 
 #define PACKED_DIM_CHANNELS_PACKED(vec) vec.z
@@ -44,14 +90,3 @@
 #define STRIDE_WIDTH_PACKED(vec) (1)
 
 #define STRIDE_HEIGHT_PACKED(vec) (vec.x)
-
-// Given a buffer(1-D) index cur, compute a new index where the corresponding
-// tensor(N-D)'s adjacent dimensions are swapped. The parameters x,y and plane
-// describe sizes. As an example, let's say we want to swap dimensions 0,1 for a
-// tensor of shape {4,3,2,24} to obtain {3,4,2,24}. Then, x=4, y=3 and
-// plane=2*24=48.
-#define SWAP_ADJ_DIMS(cur, x, y, plane)                       \
-  cur +                                                       \
-      plane*(                                                 \
-          (1 - y) * ((cur % (x * y * plane)) / (y * plane)) + \
-          (x - 1) * ((cur % (y * plane)) / plane))

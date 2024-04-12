@@ -14,7 +14,9 @@
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
+#define VEC4_T ${texel_type(DTYPE)}
+
+layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[ND][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
 layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
@@ -66,7 +68,7 @@ void main() {
   const ivec2 start = ipos;
   const ivec2 end = ipos + extra_params.overlay_region.xy;
 
-  ${VEC4_T[DTYPE]} sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
+  VEC4_T sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
   int kx = 0;
   for (int y = start.y, i = 0; i < ${TILE_SIZE}; y += params.dilation.y, i++) {
     for (int x = start.x, j = 0; j < ${TILE_SIZE}; x += params.dilation.x, j++) {

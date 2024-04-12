@@ -14,7 +14,9 @@
 
 layout(std430) buffer;
 
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
+#define VEC4_T ${texel_type(DTYPE)}
+
+layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[ND][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 
 layout(set = 0, binding = 2) uniform PRECISION restrict OutExtents {
@@ -41,6 +43,6 @@ void main() {
     return;
   }
 
-  vec4 in_texel = texelFetch(image_in, pos, 0);
+  VEC4_T in_texel = texelFetch(image_in, pos, 0);
   imageStore(image_out, pos, OP(in_texel, minimum.data, maximum.data));
 }

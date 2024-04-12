@@ -34,22 +34,13 @@ except ImportError:
 CPP_H_NAME = "spv.h"
 CPP_SRC_NAME = "spv.cpp"
 
+# Basic configuration settings for shaders
 DEFAULT_ENV: Dict[str, Any] = {
     "PRECISION": "highp",
-    "FLOAT_IMAGE_FORMAT": "rgba16f",
-    "INT_IMAGE_FORMAT": "rgba32i",
-    "UINT_IMAGE_FORMAT": "rgba32ui",
 }
 
-TYPES_ENV: Dict[str, Any] = {
-    "IMAGE_FORMAT": {
-        "float": "rgba32f",
-        "half": "rgba16f",
-        "int": "rgba32i",
-        "uint": "rgba32ui",
-        "int8": "rgba8i",
-        "uint8": "rgba8ui",
-    },
+# Establishes relationships between different tensor types and different GLSL types
+TYPE_MAPPINGS: Dict[str, Any] = {
     "IMAGE_T": {
         3: {
             "float": "image3D",
@@ -78,6 +69,37 @@ TYPES_ENV: Dict[str, Any] = {
             "uint": "usampler2D",
         },
     },
+    "IMAGE_FORMAT": {
+        "float": "rgba32f",
+        "half": "rgba16f",
+        "int": "rgba32i",
+        "uint": "rgba32ui",
+        "int8": "rgba8i",
+        "uint8": "rgba8ui",
+    },
+    "TEXEL_EXTRACT_TYPE": {
+        "rgba32f": "vec4",
+        "rgba16f": "vec4",
+        "rgba32i": "ivec4",
+        "rgba32ui": "uvec4",
+        "int8": "ivec4",
+        "uint8": "uvec4",
+    },
+    "TEXEL_COMPONENT_TYPE": {
+        "vec4": "float",
+        "ivec4": "int",
+        "uvec4": "uint",
+    },
+    "BUFFER_SCALAR_TYPE": {
+        "float": "float",
+        "half": "float",
+        "int": "int",
+        "uint": "uint",
+        "int8": "int",
+        "uint8": "uint",
+    },
+    # Kept for backwards compatibility
+    # TODO(ssjia): remove when no more shaders use these
     "VEC4_T": {
         "float": "vec4",
         "half": "vec4",
@@ -96,11 +118,28 @@ TYPES_ENV: Dict[str, Any] = {
     },
 }
 
-FUNCS_ENV: Dict[str, Any] = {
-    "GET_POS": {
+
+def get_buffer_scalar_type(dtype: str) -> str:
+    return TYPE_MAPPINGS["BUFFER_SCALAR_TYPE"][dtype]
+
+
+def get_texel_type(dtype: str) -> str:
+    image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
+    return TYPE_MAPPINGS["TEXEL_EXTRACT_TYPE"][image_format]
+
+
+def get_texel_component_type(dtype: str) -> str:
+    return TYPE_MAPPINGS["TEXEL_COMPONENT_TYPE"][get_texel_type(dtype)]
+
+
+UTILITY_FNS: Dict[str, Any] = {
+    "get_pos": {
         3: lambda pos: pos,
         2: lambda pos: f"{pos}.xy",
-    }
+    },
+    "buffer_scalar_type": get_buffer_scalar_type,
+    "texel_type": get_texel_type,
+    "texel_component_type": get_texel_component_type,
 }
 
 
@@ -375,26 +414,6 @@ class SPVGenerator:
         shader_params = copy.deepcopy(self.env)
         for key, value in variant_params.items():
             shader_params[key] = value
-
-        shader_dtype = shader_params.get("DTYPE", "float")
-
-        if shader_dtype == "int":
-            shader_params["FORMAT"] = self.env["INT_IMAGE_FORMAT"]
-        elif shader_dtype == "uint":
-            shader_params["FORMAT"] = self.env["UINT_IMAGE_FORMAT"]
-        elif shader_dtype == "int32":
-            shader_params["FORMAT"] = "rgba32i"
-        elif shader_dtype == "uint32":
-            shader_params["FORMAT"] = "rgba32ui"
-        elif shader_dtype == "int8":
-            shader_params["FORMAT"] = "rgba8i"
-        elif shader_dtype == "uint8":
-            shader_params["FORMAT"] = "rgba8ui"
-        elif shader_dtype == "float32":
-            shader_params["FORMAT"] = "rgba32f"
-        # Assume float by default
-        else:
-            shader_params["FORMAT"] = self.env["FLOAT_IMAGE_FORMAT"]
 
         return shader_params
 
@@ -732,9 +751,9 @@ def main(argv: List[str]) -> int:
     )
     options = parser.parse_args()
 
-    DEFAULT_ENV.update(TYPES_ENV)
-    DEFAULT_ENV.update(FUNCS_ENV)
     env = DEFAULT_ENV
+    env.update(TYPE_MAPPINGS)
+    env.update(UTILITY_FNS)
 
     for key, value in parse_arg_env(options.env).items():
         env[key] = value
