@@ -785,53 +785,141 @@ specific hardware (delegation), and because it is doing all of the calculations 
 </div>
 <div class="section" id="delegation">
 <h2>Delegation<a class="headerlink" href="#delegation" title="Permalink to this heading">¶</a></h2>
-<p>While ExecuTorch provides a portable, cross-platform implementation for all operators, it also provides specialized
-backends for a number of different targets. These include, but are not limited to, x86 and ARM CPU acceleration via
-the XNNPACK backend, Apple acceleration via the CoreML backend and Metal Performance Shader (MPS) backend, and GPU
-acceleration via the Vulkan backend.</p>
-<p>Because optimizations are specific to a given backend, each pte file is specific to the backend(s) targeted at
-export. To support multiple devices, such as XNNPACK acceleration for Android and CoreML for iOS, export a separate
-PTE file for each backend.</p>
-<p>To delegate to a backend at export time, ExecuTorch provides the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> function, which takes a backend-
-specific partitioner object. The partitioner is responsible for finding parts of the computation graph that can
-be accelerated by the target backend. Any portions of the computation graph not delegated will be executed by the
-portable or optimized ExecuTorch implementations.</p>
-<p>To delegate to the XNNPACK backend, call <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> with an instance of <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner()</span></code>.</p>
+<p>While ExecuTorch provides a portable, cross-platform implementation for all
+operators, it also provides specialized backends for a number of different
+targets. These include, but are not limited to, x86 and ARM CPU acceleration via
+the XNNPACK backend, Apple acceleration via the CoreML backend and Metal
+Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.</p>
+<p>Because optimizations are specific to a given backend, each pte file is specific
+to the backend(s) targeted at export. To support multiple devices, such as
+XNNPACK acceleration for Android and CoreML for iOS, export a separate PTE file
+for each backend.</p>
+<p>To delegate to a backend at export time, ExecuTorch provides the <code class="docutils literal notranslate"><span class="pre">to_backend()</span></code>
+function in the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code> object, which takes a backend-specific
+partitioner object. The partitioner is responsible for finding parts of the
+computation graph that can be accelerated by the target backend，and
+<code class="docutils literal notranslate"><span class="pre">to_backend()</span></code> function will delegate matched part to given backend for
+acceleration and optimization. Any portions of the computation graph not
+delegated will be executed by the ExecuTorch operator implementations.</p>
+<p>To delegate the exported model to the specific backend, we need to import its
+partitioner as well as edge compile config from Executorch Codebase first, then
+call <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> with an instance of partitioner on the <code class="docutils literal notranslate"><span class="pre">EdgeProgramManager</span></code>
+object <code class="docutils literal notranslate"><span class="pre">to_edge</span></code> function created.</p>
+<p>Here’s an example of how to delegate NanoGPT to XNNPACK (if you’re deploying to an Android Phone for instance):</p>
 <div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># export_nanogpt.py</span>
 
+<span class="c1"># Load partitioner for Xnnpack backend</span>
 <span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+
+<span class="c1"># Model to be delegated to specific backend should use specific edge compile config</span>
 <span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.utils.configs</span> <span class="kn">import</span> <span class="n">get_xnnpack_edge_compile_config</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span><span class="p">,</span> <span class="n">to_edge</span>
 
-<span class="c1">#...</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span> <span class="nn">torch.nn.attention</span> <span class="kn">import</span> <span class="n">sdpa_kernel</span><span class="p">,</span> <span class="n">SDPBackend</span>
+<span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
 
+<span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">GPT</span>
+
+<span class="c1"># Load the NanoGPT model.</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">GPT</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s1">&#39;gpt2&#39;</span><span class="p">)</span>
+
+<span class="c1"># Create example inputs. This is used in the export process to provide</span>
+<span class="c1"># hints on the expected shape of the model input.</span>
+<span class="n">example_inputs</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">100</span><span class="p">,</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">8</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">long</span><span class="p">),</span>
+    <span class="p">)</span>
+
+<span class="c1"># Trace the model, converting it to a portable intermediate representation.</span>
+<span class="c1"># The torch.no_grad() call tells PyTorch to exclude training-specific logic.</span>
+<span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">sdpa_kernel</span><span class="p">([</span><span class="n">SDPBackend</span><span class="o">.</span><span class="n">MATH</span><span class="p">]),</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+    <span class="n">traced_model</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">m</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">)</span>
+
+<span class="c1"># Convert the model into a runnable ExecuTorch program.</span>
+<span class="c1"># To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config</span>
 <span class="n">edge_config</span> <span class="o">=</span> <span class="n">get_xnnpack_edge_compile_config</span><span class="p">()</span>
 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">traced_model</span><span class="p">,</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">edge_config</span><span class="p">)</span>
 
-<span class="c1"># Delegate to the XNNPACK backend.</span>
+<span class="c1"># Delegate exported model to Xnnpack backend by invoking `to_backend` function with Xnnpack partitioner.</span>
 <span class="n">edge_manager</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
-
 <span class="n">et_program</span> <span class="o">=</span> <span class="n">edge_manager</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
 
-</pre></div>
-</div>
-<p>Additionally, update CMakeLists.txt to build and link the XNNPACK backend.</p>
-<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">option</span><span class="p">(</span><span class="n">EXECUTORCH_BUILD_XNNPACK</span> <span class="s2">&quot;&quot;</span> <span class="n">ON</span><span class="p">)</span>
+<span class="c1"># Save the Xnnpack-delegated ExecuTorch program to a file.</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;nanogpt.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">file</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">et_program</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
 
-<span class="c1"># ...</span>
-
-<span class="n">add_executable</span><span class="p">(</span><span class="n">nanogpt_runner</span> <span class="n">main</span><span class="o">.</span><span class="n">cpp</span><span class="p">)</span>
-<span class="n">target_link_libraries</span><span class="p">(</span>
-    <span class="n">nanogpt_runner</span>
-    <span class="n">PRIVATE</span>
-    <span class="n">executorch</span>
-    <span class="n">extension_module_static</span> <span class="c1"># Provides the Module class</span>
-    <span class="n">optimized_native_cpu_ops_lib</span> <span class="c1"># Provides baseline cross-platform kernels</span>
-    <span class="n">xnnpack_backend</span><span class="p">)</span> <span class="c1"># Provides the XNNPACK CPU acceleration backend</span>
 
 </pre></div>
 </div>
-<p>For more information, see the ExecuTorch guides for the <a class="reference external" href="https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend</a>
-and <a class="reference external" href="https://pytorch.org/executorch/stable/build-run-coreml.html">CoreML Backend</a>.</p>
+<p>Additionally, update CMakeLists.txt to build and link the XNNPACK backend to
+ExecuTorch runner.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cmake_minimum_required(VERSION 3.19)
+project(nanogpt_runner)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Set options for executorch build.
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER &quot;&quot; ON)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE &quot;&quot; ON)
+option(EXECUTORCH_BUILD_OPTIMIZED &quot;&quot; ON)
+option(EXECUTORCH_BUILD_XNNPACK &quot;&quot; ON) # Build with Xnnpack backend
+
+# Include the executorch subdirectory.
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+    ${CMAKE_BINARY_DIR}/executorch)
+
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+add_executable(nanogpt_runner main.cpp)
+target_link_libraries(
+    nanogpt_runner
+    PRIVATE
+    executorch
+    extension_module_static # Provides the Module class
+    optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
+    xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
+</pre></div>
+</div>
+<p>Keep the rest of the code the same. For more details refer to
+<a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch">Exporting to Executorch</a>
+and
+<a class="reference external" href="https://pytorch.org/executorch/main/llm/getting-started.html#step-2-invoking-the-runtime">Invoking the Runtime</a>
+for more details</p>
+<p>At this point, the working directory should contain the following files:</p>
+<ul class="simple">
+<li><p>CMakeLists.txt</p></li>
+<li><p>main.cpp</p></li>
+<li><p>basic_tokenizer.h</p></li>
+<li><p>basic_sampler.h</p></li>
+<li><p>managed_tensor.h</p></li>
+<li><p>export_nanogpt.py</p></li>
+<li><p>model.py</p></li>
+<li><p>vocab.json</p></li>
+</ul>
+<p>If all of these are present, you can now export Xnnpack delegated pte model:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>python<span class="w"> </span>export_nanogpt.py
+</pre></div>
+</div>
+<p>It will generate <code class="docutils literal notranslate"><span class="pre">nanogpt.pte</span></code>, under the same working directory.</p>
+<p>Then we can build and run the model by:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>mkdir<span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>cmake-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>..<span class="o">)</span>
+cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j10
+./cmake-out/nanogpt_runner
+</pre></div>
+</div>
+<p>You should see something like the following:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">Once</span> <span class="n">upon</span> <span class="n">a</span> <span class="n">time</span><span class="p">,</span> <span class="n">there</span> <span class="n">was</span> <span class="n">a</span> <span class="n">man</span> <span class="n">who</span> <span class="n">was</span> <span class="n">a</span> <span class="n">member</span> <span class="n">of</span> <span class="n">the</span> <span class="n">military</span><span class="o">...</span>
+</pre></div>
+</div>
+<p>For more information regarding backend delegateion, see the ExecuTorch guides
+for the
+<a class="reference external" href="https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html">XNNPACK Backend</a>
+and
+<a class="reference external" href="https://pytorch.org/executorch/stable/build-run-coreml.html">CoreML Backend</a>.</p>
 </div>
 <div class="section" id="quantization">
 <h2>Quantization<a class="headerlink" href="#quantization" title="Permalink to this heading">¶</a></h2>
