@@ -374,46 +374,102 @@ specific hardware (delegation), and because it is doing all of the calculations 
 
 ## Delegation
 
-While ExecuTorch provides a portable, cross-platform implementation for all operators, it also provides specialized
-backends for a number of different targets. These include, but are not limited to, x86 and ARM CPU acceleration via
-the XNNPACK backend, Apple acceleration via the CoreML backend and Metal Performance Shader (MPS) backend, and GPU
-acceleration via the Vulkan backend.
+While ExecuTorch provides a portable, cross-platform implementation for all
+operators, it also provides specialized backends for a number of different
+targets. These include, but are not limited to, x86 and ARM CPU acceleration via
+the XNNPACK backend, Apple acceleration via the CoreML backend and Metal
+Performance Shader (MPS) backend, and GPU acceleration via the Vulkan backend.
 
-Because optimizations are specific to a given backend, each pte file is specific to the backend(s) targeted at
-export. To support multiple devices, such as XNNPACK acceleration for Android and CoreML for iOS, export a separate
-PTE file for each backend.
+Because optimizations are specific to a given backend, each pte file is specific
+to the backend(s) targeted at export. To support multiple devices, such as
+XNNPACK acceleration for Android and CoreML for iOS, export a separate PTE file
+for each backend.
 
-To delegate to a backend at export time, ExecuTorch provides the `to_backend()` function, which takes a backend-
-specific partitioner object. The partitioner is responsible for finding parts of the computation graph that can
-be accelerated by the target backend. Any portions of the computation graph not delegated will be executed by the
-portable or optimized ExecuTorch implementations.
+To delegate to a backend at export time, ExecuTorch provides the `to_backend()`
+function in the `EdgeProgramManager` object, which takes a backend-specific
+partitioner object. The partitioner is responsible for finding parts of the
+computation graph that can be accelerated by the target backend，and
+`to_backend()` function will delegate matched part to given backend for
+acceleration and optimization. Any portions of the computation graph not
+delegated will be executed by the ExecuTorch operator implementations.
 
-To delegate to the XNNPACK backend, call `to_backend` with an instance of `XnnpackPartitioner()`.
+To delegate the exported model to the specific backend, we need to import its
+partitioner as well as edge compile config from Executorch Codebase first, then
+call `to_backend` with an instance of partitioner on the `EdgeProgramManager`
+object `to_edge` function created.
+
+Here's an example of how to delegate NanoGPT to XNNPACK (if you're deploying to an Android Phone for instance):
 
 ```python
 # export_nanogpt.py
 
+# Load partitioner for Xnnpack backend
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import XnnpackPartitioner
+
+# Model to be delegated to specific backend should use specific edge compile config
 from executorch.backends.xnnpack.utils.configs import get_xnnpack_edge_compile_config
+from executorch.exir import EdgeCompileConfig, to_edge
 
-#...
+import torch
+from torch.export import export
+from torch.nn.attention import sdpa_kernel, SDPBackend
+from torch._export import capture_pre_autograd_graph
 
+from model import GPT
+
+# Load the NanoGPT model.
+model = GPT.from_pretrained('gpt2')
+
+# Create example inputs. This is used in the export process to provide
+# hints on the expected shape of the model input.
+example_inputs = (
+        torch.randint(0, 100, (1, 8), dtype=torch.long),
+    )
+
+# Trace the model, converting it to a portable intermediate representation.
+# The torch.no_grad() call tells PyTorch to exclude training-specific logic.
+with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]), torch.no_grad():
+    m = capture_pre_autograd_graph(model, example_inputs)
+    traced_model = export(m, example_inputs)
+
+# Convert the model into a runnable ExecuTorch program.
+# To be further lowered to Xnnpack backend, `traced_model` needs xnnpack-specific edge compile config
 edge_config = get_xnnpack_edge_compile_config()
 edge_manager = to_edge(traced_model, compile_config=edge_config)
 
-# Delegate to the XNNPACK backend.
+# Delegate exported model to Xnnpack backend by invoking `to_backend` function with Xnnpack partitioner.
 edge_manager = edge_manager.to_backend(XnnpackPartitioner())
-
 et_program = edge_manager.to_executorch()
 
+# Save the Xnnpack-delegated ExecuTorch program to a file.
+with open("nanogpt.pte", "wb") as file:
+    file.write(et_program.buffer)
+
+
 ```
 
-Additionally, update CMakeLists.txt to build and link the XNNPACK backend.
+Additionally, update CMakeLists.txt to build and link the XNNPACK backend to
+ExecuTorch runner.
 
 ```
-option(EXECUTORCH_BUILD_XNNPACK "" ON)
+cmake_minimum_required(VERSION 3.19)
+project(nanogpt_runner)
 
-# ...
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# Set options for executorch build.
+option(EXECUTORCH_BUILD_EXTENSION_DATA_LOADER "" ON)
+option(EXECUTORCH_BUILD_EXTENSION_MODULE "" ON)
+option(EXECUTORCH_BUILD_OPTIMIZED "" ON)
+option(EXECUTORCH_BUILD_XNNPACK "" ON) # Build with Xnnpack backend
+
+# Include the executorch subdirectory.
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/executorch
+    ${CMAKE_BINARY_DIR}/executorch)
+
+# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 add_executable(nanogpt_runner main.cpp)
 target_link_libraries(
@@ -423,11 +479,51 @@ target_link_libraries(
     extension_module_static # Provides the Module class
     optimized_native_cpu_ops_lib # Provides baseline cross-platform kernels
     xnnpack_backend) # Provides the XNNPACK CPU acceleration backend
-
 ```
 
-For more information, see the ExecuTorch guides for the [XNNPACK Backend](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html)
-and [CoreML Backend](https://pytorch.org/executorch/stable/build-run-coreml.html).
+Keep the rest of the code the same. For more details refer to
+[Exporting to Executorch](https://pytorch.org/executorch/main/llm/getting-started.html#step-1-exporting-to-executorch)
+and
+[Invoking the Runtime](https://pytorch.org/executorch/main/llm/getting-started.html#step-2-invoking-the-runtime)
+for more details
+
+At this point, the working directory should contain the following files:
+
+- CMakeLists.txt
+- main.cpp
+- basic_tokenizer.h
+- basic_sampler.h
+- managed_tensor.h
+- export_nanogpt.py
+- model.py
+- vocab.json
+
+If all of these are present, you can now export Xnnpack delegated pte model:
+```bash
+python export_nanogpt.py
+```
+
+It will generate `nanogpt.pte`, under the same working directory.
+
+Then we can build and run the model by:
+```bash
+(rm -rf cmake-out && mkdir cmake-out && cd cmake-out && cmake ..)
+cmake --build cmake-out -j10
+./cmake-out/nanogpt_runner
+```
+
+You should see something like the following:
+
+```
+Once upon a time, there was a man who was a member of the military...
+```
+
+
+For more information regarding backend delegateion, see the ExecuTorch guides
+for the
+[XNNPACK Backend](https://pytorch.org/executorch/stable/tutorial-xnnpack-delegate-lowering.html)
+and
+[CoreML Backend](https://pytorch.org/executorch/stable/build-run-coreml.html).
 
 ## Quantization
 
