@@ -52,7 +52,7 @@ jobs:
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
         # Also copy the share libraries
-        cp cmake-android-out/lib/*.a artifacts-to-be-uploaded/
+        cp cmake-out-android/lib/*.a artifacts-to-be-uploaded/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
