@@ -424,7 +424,17 @@ class CustomBuild(build):
         if not self.dry_run:
             # Dry run should log the command but not actually run it.
             (Path(cmake_cache_dir) / "CMakeCache.txt").unlink(missing_ok=True)
-        self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+        try:
+            # This script is sometimes run as root in docker containers. buck2
+            # doesn't allow running as root unless $HOME is owned by root or
+            # does not exist. So temporarily undefine it while configuring
+            # cmake, which runs buck2 to get some source lists.
+            old_home = os.environ.pop("HOME", None)
+            # Generate the build system files.
+            self.spawn(["cmake", "-S", repo_root, "-B", cmake_cache_dir, *cmake_args])
+        finally:
+            if old_home is not None:
+                os.environ["HOME"] = old_home
 
         # Build the system.
         self.spawn(["cmake", "--build", cmake_cache_dir, *build_args])
