@@ -11,8 +11,7 @@
 namespace vkcompute {
 
 api::utils::ivec2 make_ivec2_from_list(ComputeGraph& graph, ValueRef vref) {
-  return api::utils::make_ivec2(
-      graph.get_val(vref).toIntList(), /*reverse = */ true);
+  return api::utils::make_ivec2(*graph.get_int_list(vref), /*reverse = */ true);
 }
 
 api::utils::ivec2 make_ivec2_kernel_size(
@@ -22,7 +21,7 @@ api::utils::ivec2 make_ivec2_kernel_size(
   if (kernel_size_only) {
     return make_ivec2_from_list(graph, weight);
   } else {
-    const auto weight_sizes = graph.get_val(weight).toTensorRef().sizes;
+    const auto weight_sizes = graph.get_tref(weight)->sizes;
     return api::utils::make_ivec2({weight_sizes.at(3), weight_sizes.at(2)});
   }
 }
@@ -151,8 +150,9 @@ std::vector<int64_t> calc_out_sizes_hw(
     return calc_transpose_out_sizes_hw(
         in_sizes, kernel_size, stride, padding, dilation, output_padding);
   } else {
-    Value& vref = graph.get_val(args[3]);
-    const bool ceil_mode = vref.isBool() ? vref.toBool() : false;
+    const bool ceil_mode =
+        graph.val_is_bool(args[3]) ? graph.get_bool(args[3]) : false;
+
     return calc_out_sizes_hw(
         in_sizes, kernel_size, stride, padding, dilation, ceil_mode);
   }

@@ -19,12 +19,12 @@ void add_staging_to_tensor_node(
     ComputeGraph& graph,
     const ValueRef in_staging,
     const ValueRef out_tensor) {
-  vTensor& t_out = graph.get_val(out_tensor).toTensor();
-  VK_CHECK_COND(graph.get_val(in_staging).isStaging());
+  vTensorPtr t_out = graph.get_tensor(out_tensor);
+  VK_CHECK_COND(graph.val_is_staging(in_staging));
 
-  api::ShaderInfo shader = get_nchw_to_image_shader(t_out);
+  api::ShaderInfo shader = get_nchw_to_image_shader(*t_out);
 
-  api::utils::uvec3 global_size = t_out.extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -34,19 +34,19 @@ void add_staging_to_tensor_node(
       local_size,
       {{out_tensor, api::MemoryAccessType::WRITE},
        {in_staging, api::MemoryAccessType::READ}},
-      {t_out.gpu_sizes_ubo(), t_out.cpu_sizes_ubo()}));
+      {t_out->gpu_sizes_ubo(), t_out->cpu_sizes_ubo()}));
 }
 
 void add_tensor_to_staging_node(
     ComputeGraph& graph,
     const ValueRef in_tensor,
     const ValueRef out_staging) {
-  vTensor& t_in = graph.get_val(in_tensor).toTensor();
-  VK_CHECK_COND(graph.get_val(out_staging).isStaging());
+  vTensorPtr t_in = graph.get_tensor(in_tensor);
+  VK_CHECK_COND(graph.val_is_staging(out_staging));
 
-  api::ShaderInfo shader = get_image_to_nchw_shader(t_in);
+  api::ShaderInfo shader = get_image_to_nchw_shader(*t_in);
 
-  api::utils::uvec3 global_size = t_in.extents();
+  api::utils::uvec3 global_size = t_in->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.execute_nodes().emplace_back(new ExecuteNode(
@@ -56,7 +56,7 @@ void add_tensor_to_staging_node(
       local_size,
       {{in_tensor, api::MemoryAccessType::READ},
        {out_staging, api::MemoryAccessType::WRITE}},
-      {t_in.gpu_sizes_ubo(), t_in.cpu_sizes_ubo()}));
+      {t_in->gpu_sizes_ubo(), t_in->cpu_sizes_ubo()}));
 }
 
 ValueRef prepack(
@@ -64,11 +64,11 @@ ValueRef prepack(
     const ValueRef vref,
     const api::GPUMemoryLayout layout) {
   ValueRef v = graph.add_tensor_like(vref, layout);
-  vTensor& t = graph.get_val(v).toTensor();
+  vTensorPtr t = graph.get_tensor(v);
 
-  api::ShaderInfo shader = get_nchw_to_image_shader(t);
+  api::ShaderInfo shader = get_nchw_to_image_shader(*t);
 
-  api::utils::uvec3 global_size = t.extents();
+  api::utils::uvec3 global_size = t->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   graph.prepack_nodes().emplace_back(new PrepackNode(
@@ -78,7 +78,7 @@ ValueRef prepack(
       local_size,
       vref,
       v,
-      {t.gpu_sizes_ubo(), t.cpu_sizes_ubo()}));
+      {t->gpu_sizes_ubo(), t->cpu_sizes_ubo()}));
 
   return v;
 }
@@ -87,7 +87,7 @@ ValueRef prepack_if_tensor_ref(
     ComputeGraph& graph,
     const ValueRef v,
     const api::GPUMemoryLayout layout) {
-  if (graph.get_val(v).isTensorRef()) {
+  if (graph.val_is_tref(v)) {
     return prepack(graph, v, layout);
   } else {
     return v;
@@ -95,9 +95,9 @@ ValueRef prepack_if_tensor_ref(
 }
 
 ValueRef prepack_if_tensor_ref(ComputeGraph& graph, const ValueRef v) {
-  if (graph.get_val(v).isTensorRef()) {
+  if (graph.val_is_tref(v)) {
     api::GPUMemoryLayout layout =
-        graph.suggested_memory_layout(graph.get_val(v).toTensorRef().sizes);
+        graph.suggested_memory_layout(graph.get_tref(v)->sizes);
     return prepack(graph, v, layout);
   } else {
     return v;
