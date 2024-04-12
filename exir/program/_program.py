@@ -24,6 +24,7 @@ from executorch.exir.pass_manager import PassType
 from executorch.exir.passes import (
     base_post_op_replace_passes,
     base_pre_op_replace_passes,
+    dead_code_elimination_pass,
     EdgeToBackendOpsPass,
     MemoryFormatOpsPass,
     OpReplacePass,
@@ -626,6 +627,7 @@ def pre_memory_planning_passes(config: ExecutorchBackendConfig) -> List[PassType
         # pyre-ignore
         return [
             NormalizeViewCopyBasePass(),
+            dead_code_elimination_pass,
             ReplaceViewCopyWithViewPass(),
             config.sym_shape_eval_pass,
             config.to_out_var_pass,
