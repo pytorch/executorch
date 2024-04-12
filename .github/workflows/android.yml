@@ -21,7 +21,7 @@ concurrency:
 jobs:
   test-demo-android:
     name: test-demo-android
-    uses: pytorch/test-infra/.github/workflows/linux_job.yml@support-custom-artifact-upload
+    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
     strategy:
       matrix:
         include:
@@ -51,6 +51,8 @@ jobs:
         # Copy the app and its test suite to S3
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
         cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
+        # Also copy the share libraries
+        cp cmake-android-out/lib/*.a artifacts-to-be-uploaded/
 
   # Upload the app and its test suite to S3 so that they can be downloaded by the test job
   upload-artifacts:
@@ -75,10 +77,10 @@ jobs:
         with:
           s3-bucket: gha-artifacts
           s3-prefix: |
-            ${{ github.repository }}/${{ github.run_id }}/${{ github.run_attempt }}/artifact
+            ${{ github.repository }}/${{ github.run_id }}/artifact
           retention-days: 14
           if-no-files-found: ignore
-          path: ${{ runner.temp }}/artifacts/**/*.apk
+          path: ${{ runner.temp }}/artifacts/
 
   # Let's see how expensive this job is, we might want to tone it down by running it periodically
   test-llama-app:
@@ -97,8 +99,8 @@ jobs:
       # This is the custom Android device pool that only includes Samsung Galaxy S2x
       device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
       # Uploaded to S3 from the previous job, the name of the app comes from the project itself
-      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/${{ github.run_attempt }}/artifact/app-debug.apk
-      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/${{ github.run_attempt }}/artifact/app-debug-androidTest.apk
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/app-debug-androidTest.apk
       # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
       test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/414cb54d-4d83-4576-8317-93244e4dc50e
       # The exported llama2 model and its tokenizer, can be downloaded from https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b.zip.
