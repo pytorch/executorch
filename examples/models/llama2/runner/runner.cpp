@@ -10,6 +10,7 @@
 // The module takes in a string as input and emits a string as output.
 
 #include <executorch/examples/models/llama2/runner/runner.h>
+#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
@@ -76,7 +77,7 @@ Error Runner::load() {
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
-  tokenizer_ = std::make_unique<Tokenizer>(vocab_size_, bos_id_, eos_id_);
+  tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
   tokenizer_->load(tokenizer_path_);
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(
@@ -105,7 +106,7 @@ Error Runner::load() {
 }
 
 template <typename T>
-T Runner::getMetadataHelper(std::string method_name, T default_val) {
+T Runner::getMetadataHelper(const std::string& method_name, T default_val) {
   T res = default_val;
   if (model_methods_.count(method_name)) {
     Result<std::vector<EValue>> outputs = module_->execute(method_name);
@@ -484,9 +485,9 @@ void Runner::stop() {
 
 // explicit instantiation of template methods
 template int64_t Runner::getMetadataHelper<int64_t>(
-    std::string method_name,
+    const std::string& method_name,
     int64_t default_val);
 template bool Runner::getMetadataHelper<bool>(
-    std::string method_name,
+    const std::string& method_name,
     bool default_val);
 } // namespace torch::executor

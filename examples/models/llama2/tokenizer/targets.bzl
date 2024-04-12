@@ -4,10 +4,11 @@ def define_common_targets():
     runtime.cxx_library(
         name = "tokenizer",
         srcs = [
-            "tokenizer.cpp",
+            "bpe_tokenizer.cpp",
         ],
         exported_headers = [
             "tokenizer.h",
+            "bpe_tokenizer.h",
         ],
         exported_deps = [
             "//executorch/runtime/core/exec_aten:lib",

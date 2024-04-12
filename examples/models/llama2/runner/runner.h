@@ -69,7 +69,7 @@ class Runner {
  private:
   // metadata
   template <typename T>
-  T getMetadataHelper(std::string method_name, T default_val);
+  T getMetadataHelper(const std::string& method_name, T default_val);
   template <typename T>
   int32_t
   logitsToToken(const exec_aten::Tensor& logits_tensor, int64_t pos, T _);
