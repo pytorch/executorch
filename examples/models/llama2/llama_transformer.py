@@ -198,68 +198,16 @@ class SDPA(nn.Module):
         self,
         kv_cache: KVCache,
         mask,
-        use_sdpa_with_kv_cache_op: bool,
         dim: int,
         n_rep: int,
     ):
         super().__init__()
         self.kv_cache = kv_cache
         self.mask = mask
-        self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
         self.dim = dim
         self.n_rep = n_rep
 
     def forward(
-        self,
-        input_pos: torch.Tensor,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        bsz,
-        seqlen,
-    ) -> torch.Tensor:
-        if not self.use_sdpa_with_kv_cache_op:
-            return self._forward_default(
-                input_pos,
-                q,
-                k,
-                v,
-                bsz,
-                seqlen,
-            )
-        else:
-            return self._forward_custom(
-                input_pos,
-                q,
-                k,
-                v,
-                bsz,
-                seqlen,
-            )
-
-    def _forward_custom(
-        self,
-        input_pos: torch.Tensor,
-        q: torch.Tensor,
-        k: torch.Tensor,
-        v: torch.Tensor,
-        bsz,
-        seqlen,
-    ):
-        from .custom_ops import sdpa_with_kv_cache  # noqa
-
-        output = torch.ops.llama.sdpa_with_kv_cache(
-            q,
-            k,
-            v,
-            self.kv_cache.k_cache,
-            self.kv_cache.v_cache,
-            input_pos[-1].item(),
-            seqlen,
-        )
-        return output.view(bsz, seqlen, self.dim)
-
-    def _forward_default(
         self,
         input_pos: torch.Tensor,
         q: torch.Tensor,
@@ -325,7 +273,6 @@ class Attention(nn.Module):
             self.SDPA = SDPA(
                 self.kv_cache,
                 self.mask,
-                args.use_sdpa_with_kv_cache_op,
                 self.dim,
                 self.n_rep,
             )
