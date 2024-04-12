@@ -62,6 +62,12 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
+def find_multiple(n: int, k: int) -> int:
+    if n % k == 0:
+        return n
+    return n + k - (n % k)
+
+
 @dataclass
 class ModelArgs:
     dim: int = 4096
@@ -95,6 +101,16 @@ class ModelArgs:
 
         if self.use_sdpa_with_kv_cache_op:
             assert self.use_kv_cache, "use_sdpa_with_kv_cache_op requires use_kv_cache"
+
+        if self.hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = self.multiple_of
+            hidden_dim = 4 * self.dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            if self.ffn_dim_multiplier is not None:
+                hidden_dim = int(self.ffn_dim_multiplier * hidden_dim)
+            self.hidden_dim = find_multiple(hidden_dim, multiple_of)
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -316,19 +332,11 @@ class Attention(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        dim = args.dim
-        hidden_dim = args.hidden_dim
-        if hidden_dim is None:
-            # If hidden_dim is not explicitly set in the ModelArgs,
-            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
-            multiple_of = args.multiple_of
-            hidden_dim = 4 * dim
-            hidden_dim = int(2 * hidden_dim / 3)
-            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
-
-        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        assert args.hidden_dim is not None
+        hidden_dim: int = args.hidden_dim
+        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -425,7 +433,11 @@ class Transformer(nn.Module):
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             params.dim // params.n_heads,
-            params.max_seq_len,
+            (
+                params.max_seq_len  # Normal llama2.
+                if params.ffn_dim_multiplier is None
+                else params.max_seq_len * 2  # Sharded checkpoint.
+            ),
             params.rope_freq_base,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)
