@@ -12,6 +12,8 @@ def define_common_targets():
     for aten in (True, False):
         aten_suffix = "_aten" if aten else ""
 
+        etdump_flatcc_static = "//executorch/sdk/etdump:etdump_flatcc_aten_static" if aten else "//executorch/sdk/etdump:etdump_flatcc_static"
+
         runtime.cxx_library(
             name = "runner" + aten_suffix,
             srcs = [
@@ -37,11 +39,14 @@ def define_common_targets():
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
+                "//executorch/sdk/etdump:etdump_flatcc" + aten_suffix,
+                "//executorch/sdk/etdump:etdump_schema_flatcc",
+                "//executorch/sdk/etdump:etdump_schema_flatcc_static",
             ] + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests
                 "//executorch/backends/vulkan:vulkan_backend_lib",
-            ] if native.read_config("llama", "use_vulkan", "0") == "1" else []),
+            ] if native.read_config("llama", "use_vulkan", "0") == "1" else []) + ([etdump_flatcc_static]),
             external_deps = [
                 "libtorch",
             ] if aten else [],
