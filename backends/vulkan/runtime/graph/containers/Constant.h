@@ -28,12 +28,6 @@ struct TensorRef final {
       const std::vector<int64_t>& t_sizes,
       api::ScalarType t_dtype,
       const void* const t_data);
-
-  TensorRef(const TensorRef&) = default;
-  TensorRef& operator=(const TensorRef&) = default;
-
-  TensorRef(TensorRef&&) = default;
-  TensorRef& operator=(TensorRef&&) = default;
 };
 
 } // namespace vkcompute

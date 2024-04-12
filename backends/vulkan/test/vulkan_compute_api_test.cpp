@@ -377,9 +377,8 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
 // Compute Graph Tests
 //
 
-#define EXTRACT_TENSOR(name)                             \
-  std::vector<float> data_##name(                        \
-      graph.get_val(name.value).toTensor().gpu_numel()); \
+#define EXTRACT_TENSOR(name)                                                 \
+  std::vector<float> data_##name(graph.get_tensor(name.value)->gpu_numel()); \
   graph.copy_from_staging(name.staging, data_##name.data(), data_##name.size());
 
 TEST(VulkanComputeGraphTest, test_values_scalars) {
@@ -389,10 +388,10 @@ TEST(VulkanComputeGraphTest, test_values_scalars) {
   ValueRef idx;
 
   idx = graph.add_scalar<int64_t>(4);
-  EXPECT_TRUE(graph.get_val(idx).toInt() == 4);
+  EXPECT_TRUE(graph.get_int(idx) == 4);
 
   idx = graph.add_scalar<double>(5.5f);
-  EXPECT_TRUE(graph.get_val(idx).toDouble() == 5.5f);
+  EXPECT_TRUE(graph.get_double(idx) == 5.5f);
 }
 
 TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
@@ -400,10 +399,10 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_inplace_constructed) {
   ComputeGraph graph(config);
 
   ValueRef idx = graph.add_scalar_list<int64_t>({1, 2, 3, 4});
-  const auto& arr = graph.get_val(idx).toIntList();
-  EXPECT_TRUE(arr.size() == 4);
+  const auto arr = graph.get_int_list(idx);
+  EXPECT_TRUE(arr->size() == 4);
   for (int i = 0; i < 4; i++) {
-    EXPECT_TRUE(arr[i] == i + 1);
+    EXPECT_TRUE(arr->at(i) == i + 1);
   }
 }
 
@@ -416,10 +415,10 @@ TEST(VulkanComputeGraphTest, test_values_scalar_list_outside_constructed) {
     std::vector<double> data = {5.0, 4.0, 3.0, 2.0, 1.0};
     idx = graph.add_scalar_list(std::move(data));
   }
-  const auto& arr = graph.get_val(idx).toDoubleList();
-  EXPECT_TRUE(arr.size() == 5);
+  const auto& arr = graph.get_double_list(idx);
+  EXPECT_TRUE(arr->size() == 5);
   for (int i = 0; i < 5; i++) {
-    EXPECT_TRUE(arr[i] == (5 - i));
+    EXPECT_TRUE(arr->at(i) == (5 - i));
   }
 }
 
@@ -432,7 +431,7 @@ TEST(VulkanComputeGraphTest, test_values_string) {
     std::string data = "hello, world";
     idx = graph.add_string(std::move(data));
   }
-  std::string& stored = graph.get_val(idx).toString();
+  std::string stored = graph.get_string(idx);
   EXPECT_TRUE(stored == "hello, world");
 }
 
@@ -475,7 +474,7 @@ TEST(VulkanComputeGraphTest, test_simple_graph) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); ++i) {
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_c);
     }
   }
@@ -533,7 +532,7 @@ TEST(VulkanComputeGraphTest, test_simple_prepacked_graph) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); ++i) {
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); ++i) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -608,11 +607,11 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
       {8, 44, 34}, {4, 13, 56}, {8, 12, 64}, {12, 55, 33}, {4, 54, 10}};
 
   for (auto& new_sizes : new_sizes_list) {
-    graph.get_val(a.value).toTensor().virtual_resize(new_sizes);
-    graph.get_val(b.value).toTensor().virtual_resize(new_sizes);
-    graph.get_val(c).toTensor().virtual_resize(new_sizes);
-    graph.get_val(d.value).toTensor().virtual_resize(new_sizes);
-    graph.get_val(e).toTensor().virtual_resize(new_sizes);
+    graph.get_tensor(a.value)->virtual_resize(new_sizes);
+    graph.get_tensor(b.value)->virtual_resize(new_sizes);
+    graph.get_tensor(c)->virtual_resize(new_sizes);
+    graph.get_tensor(d.value)->virtual_resize(new_sizes);
+    graph.get_tensor(e)->virtual_resize(new_sizes);
 
     float val_a = new_sizes[1] + 4.0f;
     float val_b = new_sizes[2] + 1.5f;
@@ -629,7 +628,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); i++) {
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -644,7 +643,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     graph.propagate_resize();
 
     // Check output shape
-    EXPECT_TRUE(graph.get_val(out.value).toTensor().sizes() == new_sizes);
+    EXPECT_TRUE(graph.get_tensor(out.value)->sizes() == new_sizes);
 
     float val_a = new_sizes[1] + 6.0f;
     float val_b = new_sizes[2] + 2.5f;
@@ -661,7 +660,7 @@ TEST(VulkanComputeGraphTest, test_simple_shared_objects_with_resize) {
     EXTRACT_TENSOR(out);
 
     // Sanity check that the values are correct
-    for (size_t i = 0; i < graph.get_val(out.value).toTensor().numel(); i++) {
+    for (size_t i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
       CHECK_VALUE(data_out, i, val_out);
     }
   }
@@ -716,7 +715,7 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
 
     EXTRACT_TENSOR(out);
 
-    for (int i = 0; i < graph.get_val(out.value).toTensor().numel(); i++) {
+    for (int i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
       CHECK_VALUE(data_out, i, val_e);
     }
   }
@@ -1130,19 +1129,19 @@ void test_max_pool2d(
 
   fill_vtensor(graph, graph.inputs().at(0), base_val, /*iota = */ true);
 
-  vTensor& t_in = graph.get_val(in_ioval.value).toTensor();
-  std::vector<float> input_data(t_in.gpu_numel());
+  vTensorPtr t_in = graph.get_tensor(in_ioval.value);
+  std::vector<float> input_data(t_in->gpu_numel());
   graph.copy_from_staging(
       in_ioval.staging, input_data.data(), input_data.size());
 
   graph.execute();
 
-  vTensor& t_out = graph.get_val(out_ioval.value).toTensor();
-  std::vector<float> output_data(t_out.gpu_numel());
+  vTensorPtr t_out = graph.get_tensor(out_ioval.value);
+  std::vector<float> output_data(t_out->gpu_numel());
   graph.copy_from_staging(
       out_ioval.staging, output_data.data(), output_data.size());
-  vTensor& t_idx = graph.get_val(idx_ioval.value).toTensor();
-  std::vector<int> index_data(t_idx.gpu_numel());
+  vTensorPtr t_idx = graph.get_tensor(idx_ioval.value);
+  std::vector<int> index_data(t_idx->gpu_numel());
   graph.copy_from_staging(
       idx_ioval.staging, index_data.data(), index_data.size());
 
@@ -1150,9 +1149,9 @@ void test_max_pool2d(
 
   int h_offset = kernel_copy[0] - 1;
   int w_offset = kernel_copy[1] - 1;
-  int h_out = api::utils::val_at(-2, t_out.sizes());
-  int w_out = api::utils::val_at(-1, t_out.sizes());
-  int w_in = api::utils::val_at(-1, t_in.sizes());
+  int h_out = api::utils::val_at(-2, t_out->sizes());
+  int w_out = api::utils::val_at(-1, t_out->sizes());
+  int w_in = api::utils::val_at(-1, t_in->sizes());
   for (size_t i = 0; i < h_out; ++i) {
     for (size_t j = 0; j < w_out; ++j) {
       size_t idx_out = i * w_out + j;

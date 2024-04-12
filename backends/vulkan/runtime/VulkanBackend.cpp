@@ -334,18 +334,18 @@ bool maybe_resize_input(
     const size_t input_i,
     exec_aten::Tensor& et_tensor) {
   ValueRef in_tensor_ref = graph->inputs()[input_i].value;
-  vTensor& in_tensor = graph->get_val(in_tensor_ref).toTensor();
+  vTensorPtr in_tensor = graph->get_tensor(in_tensor_ref);
 
   ET_CHECK_MSG(
-      et_tensor.dim() == in_tensor.sizes().size(),
+      et_tensor.dim() == in_tensor->sizes().size(),
       "Cannot resize input tensor: old ndim %zu does not match new ndim %zu",
-      static_cast<size_t>(in_tensor.sizes().size()),
+      static_cast<size_t>(in_tensor->sizes().size()),
       static_cast<size_t>(et_tensor.dim()));
 
   bool should_resize = false;
   std::vector<int64_t> new_sizes(et_tensor.dim());
   for (size_t i = 0; i < et_tensor.dim(); i++) {
-    if (in_tensor.sizes()[i] != et_tensor.sizes()[i]) {
+    if (in_tensor->sizes()[i] != et_tensor.sizes()[i]) {
       should_resize = true;
     }
     new_sizes.at(i) = et_tensor.sizes()[i];
@@ -356,9 +356,9 @@ bool maybe_resize_input(
   }
 
   ET_CHECK_MSG(
-      in_tensor.numel() == et_tensor.numel(),
+      in_tensor->numel() == et_tensor.numel(),
       "Vulkan tensor numel %zu does not match ET tensor numel %zu",
-      static_cast<size_t>(in_tensor.numel()),
+      static_cast<size_t>(in_tensor->numel()),
       static_cast<size_t>(et_tensor.numel()));
 
   return should_resize;
@@ -369,12 +369,12 @@ void maybe_resize_output(
     const size_t output_i,
     exec_aten::Tensor& et_tensor) {
   ValueRef out_tensor_ref = graph->outputs()[output_i].value;
-  vTensor& out_tensor = graph->get_val(out_tensor_ref).toTensor();
+  vTensorPtr out_tensor = graph->get_tensor(out_tensor_ref);
 
   exec_aten::SizesType new_output_size[kTensorDimensionLimit];
-  size_t ndim = out_tensor.sizes().size();
+  size_t ndim = out_tensor->sizes().size();
   for (int i = 0; i < ndim; ++i) {
-    new_output_size[i] = out_tensor.sizes()[i];
+    new_output_size[i] = out_tensor->sizes()[i];
   }
 
   exec_aten::ArrayRef<exec_aten::SizesType> output_size{new_output_size, ndim};
