@@ -23,7 +23,11 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
 
-from executorch.examples.models.llama2.llama_transformer import Transformer
+from executorch.examples.models.llama2.llama_transformer import (
+    KVCache,
+    SDPA,
+    Transformer,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
@@ -85,6 +89,58 @@ def materialze_broadcast_of_rope_freq_cis(
     ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
     module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
     module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
+    return module
+
+
+class SDPACustom(torch.nn.Module):
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        mask,
+        dim: int,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.mask = mask
+        self.dim = dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+    ):
+        output = torch.ops.llama.sdpa_with_kv_cache(
+            q,
+            k,
+            v,
+            self.kv_cache.k_cache,
+            self.kv_cache.v_cache,
+            input_pos[-1].item(),
+            seqlen,
+        )
+        return output.view(bsz, seqlen, self.dim)
+
+
+def _replace_sdpa_with_custom_op(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, SDPA):
+            setattr(
+                module,
+                name,
+                SDPACustom(child.kv_cache, child.mask, child.dim),
+            )
+        else:
+            _replace_sdpa_with_custom_op(child)
+
+
+def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
+    from executorch.examples.models.llama2.custom_ops import sdpa_with_kv_cache  # noqa
+
+    _replace_sdpa_with_custom_op(module)
     return module
 
 
@@ -242,6 +298,13 @@ def build_args_parser() -> argparse.ArgumentParser:
         default=f"{ckpt_dir}/params/demo_rand_params.pth",
         help="checkpoint path",
     )
+
+    parser.add_argument(
+        "--checkpoint_dir",
+        default=None,
+        help="checkpoint directory. Use with a sharded checkpoint, not for the standard llama2 model. Note, checkpoint_dir takes precedence over checkpoint if both are set.",
+    )
+
     parser.add_argument(
         "--calibration_tasks",
         nargs="+",
@@ -417,7 +480,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     """
 
     # load model from checkpoint and params.json
-    checkpoint_path = canonical_path(args.checkpoint)
+    checkpoint_path = canonical_path(args.checkpoint) if args.checkpoint else None
+    checkpoint_dir = (
+        canonical_path(args.checkpoint_dir) if args.checkpoint_dir else None
+    )
     params_path = canonical_path(args.params)
     output_dir_path = canonical_path(args.output_dir, dir=True)
     modelname = "llama2"
@@ -482,9 +548,13 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
+    if args.use_sdpa_with_kv_cache:
+        transforms.append(replace_sdpa_with_custom_op)
+
     return (
         load_llama_model(
             checkpoint=checkpoint_path,
+            checkpoint_dir=checkpoint_dir,
             params_path=params_path,
             use_kv_cache=args.use_kv_cache,
             use_sdpa_with_kv_cache=args.use_sdpa_with_kv_cache,

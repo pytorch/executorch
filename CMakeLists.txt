@@ -562,7 +562,8 @@ if(EXECUTORCH_BUILD_PYBIND)
     list(APPEND _dep_libs custom_ops)
   endif()
 
-  if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT)
+  # TODO(larryliu): Fix macOS 2 dylibs having 2 sets of static variables issue
+  if(EXECUTORCH_BUILD_CUSTOM_OPS_AOT AND NOT APPLE)
     list(APPEND _dep_libs custom_ops_aot_lib)
   endif()
   # compile options for pybind

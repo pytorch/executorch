@@ -29,9 +29,15 @@ class TestMobileNetV2(unittest.TestCase):
     }
 
     def test_fp32_mv2(self):
+        dynamic_shapes = (
+            {
+                2: torch.export.Dim("height", min=224, max=455),
+                3: torch.export.Dim("width", min=224, max=455),
+            },
+        )
 
         (
-            Tester(self.mv2, self.model_inputs)
+            Tester(self.mv2, self.model_inputs, dynamic_shapes=dynamic_shapes)
             .export()
             .to_edge()
             .check(list(self.all_operators))
@@ -40,8 +46,7 @@ class TestMobileNetV2(unittest.TestCase):
             .check_not(list(self.all_operators))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=10)
         )
 
     def test_qs8_mv2(self):
@@ -50,8 +55,15 @@ class TestMobileNetV2(unittest.TestCase):
             "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
         }
 
+        dynamic_shapes = (
+            {
+                2: torch.export.Dim("height", min=224, max=455),
+                3: torch.export.Dim("width", min=224, max=455),
+            },
+        )
+
         (
-            Tester(self.mv2, self.model_inputs)
+            Tester(self.mv2, self.model_inputs, dynamic_shapes=dynamic_shapes)
             .quantize(Quantize(calibrate=False))
             .export()
             .to_edge()
@@ -61,6 +73,5 @@ class TestMobileNetV2(unittest.TestCase):
             .check_not(list(ops_after_quantization))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=10)
         )

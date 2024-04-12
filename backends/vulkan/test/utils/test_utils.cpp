@@ -162,7 +162,7 @@ void fill_vtensor(
     const IOValueRef idx,
     float val,
     bool iota) {
-  std::vector<float> data(graph.get_val(idx.value).toTensor().gpu_numel());
+  std::vector<float> data(graph.get_tensor(idx.value)->gpu_numel());
   if (iota) {
     std::iota(data.begin(), data.end(), val);
   } else {
@@ -231,13 +231,13 @@ void execute_graph_and_check_output(
 
   for (size_t i = 0; i < graph.outputs().size(); ++i) {
     IOValueRef out_ioval = graph.outputs().at(i);
-    vTensor& t_out = graph.get_val(out_ioval.value).toTensor();
+    vTensorPtr t_out = graph.get_tensor(out_ioval.value);
 
-    std::vector<float> output_data(t_out.gpu_numel());
+    std::vector<float> output_data(t_out->gpu_numel());
     graph.copy_from_staging(
         out_ioval.staging, output_data.data(), output_data.size());
 
-    for (size_t j = 0; j < t_out.numel(); ++j) {
+    for (size_t j = 0; j < t_out->numel(); ++j) {
       CHECK_VALUE(output_data, j, expected_outputs.at(i));
     }
   }

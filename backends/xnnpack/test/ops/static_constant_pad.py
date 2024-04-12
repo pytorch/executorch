@@ -99,8 +99,7 @@ class TestStaticConstantPad(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_fp16_static_constant_pad_functional(self):
@@ -154,8 +153,7 @@ class TestStaticConstantPad(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_static_constant_pad_2d(self):
@@ -180,6 +178,5 @@ class TestStaticConstantPad(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )

@@ -62,6 +62,12 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
+def find_multiple(n: int, k: int) -> int:
+    if n % k == 0:
+        return n
+    return n + k - (n % k)
+
+
 @dataclass
 class ModelArgs:
     dim: int = 4096
@@ -95,6 +101,16 @@ class ModelArgs:
 
         if self.use_sdpa_with_kv_cache_op:
             assert self.use_kv_cache, "use_sdpa_with_kv_cache_op requires use_kv_cache"
+
+        if self.hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = self.multiple_of
+            hidden_dim = 4 * self.dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            if self.ffn_dim_multiplier is not None:
+                hidden_dim = int(self.ffn_dim_multiplier * hidden_dim)
+            self.hidden_dim = find_multiple(hidden_dim, multiple_of)
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -193,6 +209,43 @@ class KVCache(nn.Module):
         return k_out, v_out
 
 
+class SDPA(nn.Module):
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        mask,
+        dim: int,
+        n_rep: int,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.mask = mask
+        self.dim = dim
+        self.n_rep = n_rep
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+    ) -> torch.Tensor:
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        k, v = self.kv_cache.update(input_pos, k, v)
+        mask = self.mask[None, None, input_pos]
+
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
@@ -213,7 +266,6 @@ class Attention(nn.Module):
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
-        self.use_sdpa_with_kv_cache_op = args.use_sdpa_with_kv_cache_op
         self.layer_id = layer_id
 
         causal_mask = torch.tril(
@@ -233,6 +285,12 @@ class Attention(nn.Module):
                 self.n_kv_heads,
                 self.head_dim,
                 not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
+            )
+            self.SDPA = SDPA(
+                self.kv_cache,
+                self.mask,
+                self.dim,
+                self.n_rep,
             )
 
     def forward(
@@ -256,41 +314,8 @@ class Attention(nn.Module):
 
         if self.use_kv_cache:
             assert input_pos is not None
-
-            if not self.use_sdpa_with_kv_cache_op:
-
-                q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-                k = k.transpose(1, 2)
-                v = v.transpose(1, 2)
-
-                k, v = self.kv_cache.update(input_pos, k, v)
-                mask = self.mask[None, None, input_pos]
-
-                k = k.repeat_interleave(self.n_rep, dim=1)
-                v = v.repeat_interleave(self.n_rep, dim=1)
-                y = F.scaled_dot_product_attention(
-                    q, k, v, attn_mask=mask, dropout_p=0.0
-                )
-
-                y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
-
-                y = self.wo(y)
-                return y
-            else:
-                from .custom_ops import sdpa_with_kv_cache  # noqa
-
-                output = torch.ops.llama.sdpa_with_kv_cache(
-                    q,
-                    k,
-                    v,
-                    self.kv_cache.k_cache,
-                    self.kv_cache.v_cache,
-                    input_pos[-1].item(),
-                    seqlen,
-                )
-                output = output.view(bsz, seqlen, -1)
-                output = self.wo(output)
-                return output
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen)
+            return self.wo(output)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
@@ -316,19 +341,11 @@ class Attention(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        dim = args.dim
-        hidden_dim = args.hidden_dim
-        if hidden_dim is None:
-            # If hidden_dim is not explicitly set in the ModelArgs,
-            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
-            multiple_of = args.multiple_of
-            hidden_dim = 4 * dim
-            hidden_dim = int(2 * hidden_dim / 3)
-            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
-
-        self.w1 = nn.Linear(dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
-        self.w3 = nn.Linear(dim, hidden_dim, bias=False)
+        assert args.hidden_dim is not None
+        hidden_dim: int = args.hidden_dim
+        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
+        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
+        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -425,7 +442,11 @@ class Transformer(nn.Module):
 
         freqs_cos, freqs_sin = precompute_freqs_cis(
             params.dim // params.n_heads,
-            params.max_seq_len,
+            (
+                params.max_seq_len  # Normal llama2.
+                if params.ffn_dim_multiplier is None
+                else params.max_seq_len * 2  # Sharded checkpoint.
+            ),
             params.rope_freq_base,
         )
         self.register_buffer("freqs_cos", freqs_cos, persistent=False)

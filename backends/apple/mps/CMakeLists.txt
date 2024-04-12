@@ -70,7 +70,7 @@ target_link_libraries(mpsdelegate
   PRIVATE
   bundled_program
   mps_schema
-  ${_executor_runner_libs}
+  executorch_no_prim_ops
   ${FOUNDATION_FRAMEWORK}
   ${METAL_FRAMEWORK}
   ${MPS_FRAMEWORK}

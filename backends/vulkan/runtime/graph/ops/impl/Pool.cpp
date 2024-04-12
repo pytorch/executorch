@@ -21,31 +21,31 @@ void resize_max_pool2d_node(
     ComputeGraph* graph,
     const std::vector<ArgGroup>& args,
     const std::vector<ValueRef>& extra_args) {
-  vTensor& out = graph->get_val(args[0].refs[0]).toTensor();
-  vTensor& indices = graph->get_val(args[0].refs[1]).toTensor();
-  vTensor& self = graph->get_val(args[1].refs[0]).toTensor();
+  vTensorPtr out = graph->get_tensor(args[0].refs[0]);
+  vTensorPtr indices = graph->get_tensor(args[0].refs[1]);
+  vTensorPtr self = graph->get_tensor(args[1].refs[0]);
 
-  size_t ndim = self.sizes().size();
+  size_t ndim = self->sizes().size();
   std::vector<int64_t> new_out_sizes(ndim);
 
   // Batch, Channel
   if (ndim == 4) {
-    new_out_sizes.at(ndim - 4) = self.sizes().at(ndim - 4);
+    new_out_sizes.at(ndim - 4) = self->sizes().at(ndim - 4);
   }
-  new_out_sizes.at(ndim - 3) = self.sizes().at(ndim - 3);
+  new_out_sizes.at(ndim - 3) = self->sizes().at(ndim - 3);
 
   // Height, Width
   const auto& new_out_sizes_hw = calc_out_sizes_hw(
       *graph,
-      self.sizes(),
+      self->sizes(),
       extra_args[0],
       /*kernel_size_only = */ true,
       {extra_args[1], extra_args[2], extra_args[3], extra_args[4]});
   new_out_sizes.at(ndim - 2) = new_out_sizes_hw.at(0);
   new_out_sizes.at(ndim - 1) = new_out_sizes_hw.at(1);
 
-  out.virtual_resize(new_out_sizes);
-  indices.virtual_resize(new_out_sizes);
+  out->virtual_resize(new_out_sizes);
+  indices->virtual_resize(new_out_sizes);
 }
 
 void check_max_pool2d_args(const vTensor& in, const vTensor& out) {
@@ -63,18 +63,18 @@ void add_max_pool2d_node(
     const ValueRef ceil_mode,
     const ValueRef out) {
   ValueRef arg = prepack_if_tensor_ref(graph, in);
-  vTensor& t_in = graph.get_val(arg).toTensor();
+  vTensorPtr t_in = graph.get_tensor(arg);
 
-  const auto& out_val = graph.get_val(out).toValueList();
-  vTensor& t_out = graph.get_val(out_val[0]).toTensor();
+  const auto out_val = graph.get_value_list(out);
+  vTensorPtr t_out = graph.get_tensor(out_val->at(0));
 
-  check_max_pool2d_args(t_in, t_out);
+  check_max_pool2d_args(*t_in, *t_out);
 
-  api::utils::uvec3 global_size = t_out.virtual_extents();
+  api::utils::uvec3 global_size = t_out->extents();
   api::utils::uvec3 local_size = adaptive_work_group_size(global_size);
 
   std::string kernel_name("max_pool2d");
-  add_dtype_suffix(kernel_name, t_out);
+  add_dtype_suffix(kernel_name, *t_out);
 
   KernelParams kernel_params = create_kernel_params(
       graph,
@@ -90,12 +90,12 @@ void add_max_pool2d_node(
       global_size,
       local_size,
       // Inputs and Outputs
-      {{{out_val[0], out_val[1]}, api::MemoryAccessType::WRITE},
+      {{{out_val->at(0), out_val->at(1)}, api::MemoryAccessType::WRITE},
        {arg, api::MemoryAccessType::READ}},
       // Shader params buffers
       {
-          t_out.extents_ubo(),
-          t_in.extents_ubo(),
+          t_out->extents_ubo(),
+          t_in->extents_ubo(),
           graph.create_params_buffer(kernel_params),
       },
       // Resizing

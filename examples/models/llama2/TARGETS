@@ -18,7 +18,6 @@ runtime.python_library(
     ],
     deps = [
         "//caffe2:torch",
-        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_py",
     ],
 )
 
@@ -86,6 +85,7 @@ runtime.python_library(
         "//executorch/backends/vulkan/partitioner:vulkan_partitioner",
         "//executorch/examples/models:model_base",
         "//executorch/examples/models:models",
+        "//executorch/examples/models/llama2/custom_ops:custom_ops_aot_py",
         "//executorch/examples/portable:utils",
         "//executorch/exir:lib",
         "//executorch/sdk/etrecord:etrecord",

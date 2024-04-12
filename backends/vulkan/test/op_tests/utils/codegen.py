@@ -248,8 +248,8 @@ class ComputeGraphGen:
         assert ref.src_cpp_type == AT_TENSOR and ref.is_in
         if self.prepack_ref(ref):
             return ""
-        ret_str = f"{self.graph}{self.dot}get_val({ref.name}.value).toTensor()"
-        ret_str += f".virtual_resize({ref.src_cpp_name}.sizes().vec());\n"
+        ret_str = f"{self.graph}{self.dot}get_tensor({ref.name}.value)"
+        ret_str += f"->virtual_resize({ref.src_cpp_name}.sizes().vec());\n"
         return ret_str
 
     def copy_into_staging(self, ref: ValueRefList) -> str:

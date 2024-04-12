@@ -16,6 +16,12 @@ class TestMobileNetV3(unittest.TestCase):
     mv3 = models.mobilenetv3.mobilenet_v3_small(pretrained=True)
     mv3 = mv3.eval()
     model_inputs = (torch.ones(1, 3, 224, 224),)
+    dynamic_shapes = (
+        {
+            2: torch.export.Dim("height", min=224, max=455),
+            3: torch.export.Dim("width", min=224, max=455),
+        },
+    )
 
     all_operators = {
         "executorch_exir_dialects_edge__ops_aten__native_batch_norm_legit_no_training_default",
@@ -33,7 +39,7 @@ class TestMobileNetV3(unittest.TestCase):
 
     def test_fp32_mv3(self):
         (
-            Tester(self.mv3, self.model_inputs)
+            Tester(self.mv3, self.model_inputs, dynamic_shapes=self.dynamic_shapes)
             .export()
             .to_edge()
             .check(list(self.all_operators))
@@ -42,8 +48,7 @@ class TestMobileNetV3(unittest.TestCase):
             .check_not(list(self.all_operators))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=5)
         )
 
     def test_qs8_mv3(self):
@@ -53,7 +58,7 @@ class TestMobileNetV3(unittest.TestCase):
         ops_after_lowering = self.all_operators
 
         (
-            Tester(self.mv3, self.model_inputs)
+            Tester(self.mv3, self.model_inputs, dynamic_shapes=self.dynamic_shapes)
             .quantize(Quantize(calibrate=False))
             .export()
             .to_edge()
@@ -63,6 +68,5 @@ class TestMobileNetV3(unittest.TestCase):
             .check_not(list(ops_after_lowering))
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs(num_runs=5)
         )

@@ -11,7 +11,8 @@ pip install snakeviz sentencepiece
 pip install torchao==0.1
 
 # Install lm-eval for Model Evaluation with lm-evalution-harness
-pip install lm-eval
+# Install tiktoken for tokenizer
+pip install lm-eval tiktoken blobfile
 
 # Call the install helper for further setup
 python examples/models/llama2/install_requirement_helper.py

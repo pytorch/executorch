@@ -4,7 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -48,6 +50,12 @@ class Llama2Model(EagerModelBase):
             # The 1st way
             ckpt_dir = Path(__file__).absolute().parent / "params"
 
+        # Check if checkpoint_dir was provided for a sharded checkpoint.
+        checkpoint_dir = (
+            kwargs["checkpoint_dir"] if "checkpoint_dir" in kwargs else None
+        )
+
+        # Use single checkpoint file.
         checkpoint_path = (
             kwargs["checkpoint"]
             if "checkpoint" in kwargs
@@ -72,7 +80,35 @@ class Llama2Model(EagerModelBase):
         # Follow the instruction in https://github.com/facebookresearch/llama to download the model
         device = "cpu"
         # flake8: noqa: TOR102
-        checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
+        cps = []
+        if checkpoint_dir is not None:
+            # Load multiple checkpoint; ignore the single path.
+            checkpoint_path = None
+            for i in range(4):
+                cp_name = f"consolidated.{i}.pth"
+                print(f"Loading {cp_name}")
+                cps.append(
+                    torch.load(
+                        os.path.join(checkpoint_dir, cp_name),
+                        map_location=device,
+                        mmap=True,
+                    )
+                )
+            checkpoint = {}
+            for key in cps[0].keys():
+                if not torch.allclose(cps[0][key], cps[1][key]):
+                    values = (cps[0][key], cps[1][key], cps[2][key], cps[3][key])
+                    if "wo" in key or "w2" in key:
+                        # Concat on dim=1 for "wo" and "w2".
+                        checkpoint[key] = torch.cat(values, dim=1)
+                    else:
+                        # Concat on dim=0 for everything else.
+                        checkpoint[key] = torch.cat(values, dim=0)
+                else:
+                    # Do not duplicate layers shared between each checkpoint.
+                    checkpoint[key] = cps[0][key]
+        else:
+            checkpoint = torch.load(checkpoint_path, map_location=device, mmap=True)
         fairseq2_checkpoint = kwargs.get("fairseq2", False)
         if fairseq2_checkpoint:
             print("Using fairseq2 checkpoint")
@@ -173,11 +209,7 @@ the checkpoint format to avoid generating faulty models.
 
     def get_example_inputs(self):
         if self.use_kv_cache:
-            if self.use_sdpa_with_kv_cache_op:
-                return self.get_example_inputs_kvcache_sdpa()
-            else:
-                # return self.get_example_inputs_kvcache() TODO xnnpack does not handle forwarding symints, update partitioner to not partition symints
-                return self.get_example_inputs_kvcache_sdpa()
+            return self.get_example_inputs_kvcache_sdpa()
         else:
             return (
                 torch.tensor(
@@ -194,14 +226,4 @@ the checkpoint format to avoid generating faulty models.
             torch.tensor(
                 [0], dtype=torch.long
             ),  # start_pos, what token of output are we on.)
-        )
-
-    def get_example_inputs_kvcache(self):
-        return (
-            torch.tensor(
-                [[1, 2, 3]], dtype=torch.long
-            ),  # tokens, with kv cache our input token length is always just 1 token.
-            torch.tensor(
-                [0, 1, 2], dtype=torch.long
-            ),  # start_pos, what token of output are we on.
         )
