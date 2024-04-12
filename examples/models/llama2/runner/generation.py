@@ -72,31 +72,43 @@ class LlamaRunner:
         max_gen_len: int,
         temperature: float = 0.6,
         top_p: float = 0.9,
+        use_kv_cache = False,
         logprobs: bool = False,
         echo: bool = False,
     ) -> Tuple[List[List[int]], Optional[List[List[float]]]]:
         bsz = len(prompt_tokens)
         params = self.params
+        print(f"Params: {params}")
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
 
         min_prompt_len = min(len(t) for t in prompt_tokens)
         max_prompt_len = max(len(t) for t in prompt_tokens)
 
+        print(f"min {min_prompt_len}, max {max_prompt_len}")
+
         assert max_prompt_len <= params.max_seq_len
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
         pad_id = self.tokenizer.pad_id
         tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cpu")
+        print(f"starting tokens: {tokens.shape}, tokens {tokens}")
+        num_prompt_tokens = len(prompt_tokens[0])
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cpu")
         if logprobs:
             token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
 
         prev_pos = 0
+        if use_kv_cache:
+            min_prompt_len = 1
 
         eos_reached = torch.tensor([False] * bsz, device="cpu")
         input_text_mask = tokens != pad_id
+        print(f"input_text_mask: {input_text_mask.shape}, {input_text_mask}")
         if min_prompt_len == total_len:
-            inputs = (tokens,)
+            if use_kv_cache:
+                inputs = (tokens, prev_pos)
+            else:
+                inputs = (tokens,)
             logits = self.model.forward(inputs) # updated forward call.
             logits = logits[0]
             token_logprobs = -F.cross_entropy(
@@ -109,24 +121,37 @@ class LlamaRunner:
         stop_tokens = torch.tensor(list(self.tokenizer.stop_tokens))
 
         for cur_pos in range(min_prompt_len, total_len):
+            print(f"prev_pos: {prev_pos}, cur_pos {cur_pos}")
             pos = torch.tensor([prev_pos], dtype=torch.int64)
-            inputs = (tokens[:, :cur_pos],)
+            input_tok = tokens[:, prev_pos:cur_pos]
+            # print(f"input tok {input_tok}, decoded {self.tokenizer.decode([input_tok])}")
+            if use_kv_cache:
+                inputs = (tokens[:, prev_pos:cur_pos], pos)
+            else:
+                inputs = (tokens[:, :cur_pos],)
             logits = self.model.forward(inputs) # Update forward call.
+            print(f"logits: {logits[0].shape}, logits: {logits}")
             logits = logits[0]
             if temperature > 0:
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
             else:
                 next_token = torch.argmax(logits[:, -1], dim=-1)
+            print(f"{cur_pos}: next token: {next_token}, decoded: {self.tokenizer.decode([next_token])}")
 
             next_token = next_token.reshape(-1)
 
             # only replace token if prompt has already been generated
-            next_token = torch.where(
-                input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
-            )
+            # set this if i < len(prompt)
+            if not use_kv_cache or cur_pos < num_prompt_tokens:
+                print(f"replace next_token with prompt")
+                next_token = torch.where(
+                    input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
+                )
 
             tokens[:, cur_pos] = next_token
+            print(f"tokens: {tokens.shape}, tokens {tokens}")
+
             if logprobs:
                 token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
                     input=logits.transpose(1, 2),
@@ -172,6 +197,7 @@ class LlamaRunner:
         max_gen_len: Optional[int] = None,
         logprobs: bool = False,
         echo: bool = False,
+        use_kv_cache = False,
     ) -> List[CompletionPrediction]:
         """
         Perform text completion for a list of prompts using the language generation model.
@@ -195,6 +221,8 @@ class LlamaRunner:
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
+        print(f"text_completion: prompt_tokens: {prompt_tokens}")
+
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=max_gen_len,
@@ -202,8 +230,11 @@ class LlamaRunner:
             top_p=top_p,
             logprobs=logprobs,
             echo=echo,
+            use_kv_cache = use_kv_cache,
         )
-
+        print(f"text_completion: generation_tokens: {generation_tokens}")
+        for t in generation_tokens:
+            print(f"decoded: {self.tokenizer.decode(t)}")
         if logprobs:
             return [
                 {
@@ -285,16 +316,27 @@ def build_args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
+        "-f",
         "--pte",
         type=str,
         default=None,
-        help="[For ExecuTorch] Path to the ExecuTorch model being evaluated. If provided, don't go through the export flow",
+        help="pte model file",
     )
 
     parser.add_argument(
+        "-p",
+        "--params",
+        type=str,
+        default=None,
+        help="model params file",
+    )
+
+    parser.add_argument(
+        "-t",
         "--tokenizer",
         type=str,
         default=None,
+        help="tokenizer file",
     )
 
     parser.add_argument(
@@ -310,7 +352,8 @@ def build_args_parser() -> argparse.ArgumentParser:
     )
 
     parser.add_argument(
-        "--kv_cache",
+        "-kv",
+        "--use_kv_cache",
         default=False,
         action="store_true",
     )
@@ -330,8 +373,8 @@ def main() -> None:
         n_layers=32.,
     )
     runner = LlamaRunner(args.pte, model_args, args.tokenizer)
-    result = runner.text_completion(prompts=[args.prompt], max_gen_len=10, temperature=args.temperature)
-    print(f"Result: {result}")
+    res = runner.text_completion(prompts=[args.prompt], max_gen_len=10, temperature=args.temperature, use_kv_cache=args.use_kv_cache)
+    print(f"result: {res}")
 
 if __name__ == "__main__":
     main()  # pragma: no cover
