@@ -97,6 +97,7 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
     optimized_native_cpu_ops_lib
     optimized_kernels
     portable_kernels
+    quantized_kernels
     cpublas
     eigen_blas)
   target_link_options_shared_lib(optimized_native_cpu_ops_lib)
