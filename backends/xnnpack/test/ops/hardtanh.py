@@ -38,8 +38,7 @@ class TestHardTanh(unittest.TestCase):
                 .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
                 .to_executorch()
                 .serialize()
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )
 
     def test_fp32_hardtanh_bound(self):
@@ -58,8 +57,7 @@ class TestHardTanh(unittest.TestCase):
                 .check_not(["executorch_exir_dialects_edge__ops_aten_hardtanh_default"])
                 .to_executorch()
                 .serialize()
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )
 
     def test_qs8_hardtanh(self):
@@ -90,6 +88,5 @@ class TestHardTanh(unittest.TestCase):
                 )
                 .to_executorch()
                 .serialize()
-                .run_method()
-                .compare_outputs()
+                .run_method_and_compare_outputs()
             )
