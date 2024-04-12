@@ -209,11 +209,7 @@ the checkpoint format to avoid generating faulty models.
 
     def get_example_inputs(self):
         if self.use_kv_cache:
-            if self.use_sdpa_with_kv_cache_op:
-                return self.get_example_inputs_kvcache_sdpa()
-            else:
-                # return self.get_example_inputs_kvcache() TODO xnnpack does not handle forwarding symints, update partitioner to not partition symints
-                return self.get_example_inputs_kvcache_sdpa()
+            return self.get_example_inputs_kvcache_sdpa()
         else:
             return (
                 torch.tensor(
@@ -230,14 +226,4 @@ the checkpoint format to avoid generating faulty models.
             torch.tensor(
                 [0], dtype=torch.long
             ),  # start_pos, what token of output are we on.)
-        )
-
-    def get_example_inputs_kvcache(self):
-        return (
-            torch.tensor(
-                [[1, 2, 3]], dtype=torch.long
-            ),  # tokens, with kv cache our input token length is always just 1 token.
-            torch.tensor(
-                [0, 1, 2], dtype=torch.long
-            ),  # start_pos, what token of output are we on.
         )

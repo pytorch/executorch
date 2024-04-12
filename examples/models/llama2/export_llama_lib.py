@@ -492,6 +492,10 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.expand_rope_table:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
+    if args.use_sdpa_with_kv_cache:
+        pass
+        # TODO: Next diff transforms.append()
+
     return (
         load_llama_model(
             checkpoint=checkpoint_path,

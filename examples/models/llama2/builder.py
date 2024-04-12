@@ -206,11 +206,7 @@ class LlamaEdgeManager:
     def _get_dynamic_shape(self) -> Any:
         dim = torch.export.Dim("token_dim", max=self.model.params.max_seq_len - 1)
         if self.use_kv_cache:
-            if self.use_sdpa_with_kv_cache:
-                return None
-            else:
-                # return {1: dim}, {0: dim}} TODO update xnnpack to be able to handle dynamic shape kv cache
-                return None
+            return None
         else:
             return ({1: dim},)
 
