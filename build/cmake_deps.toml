@@ -302,6 +302,7 @@ deps = [
   "executorch",
   "executorch_no_prim_ops",
   "optimized_kernels",
+  "quantized_kernels",
   "xnnpack_backend",
 ]
 
