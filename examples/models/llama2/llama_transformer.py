@@ -332,12 +332,17 @@ class Attention(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, args: ModelArgs):
         super().__init__()
-        assert args.hidden_dim is not None
-        hidden_dim: int = args.hidden_dim
-        self.w1 = nn.Linear(args.dim, hidden_dim, bias=False)
-        self.w2 = nn.Linear(hidden_dim, args.dim, bias=False)
-        self.w3 = nn.Linear(args.dim, hidden_dim, bias=False)
-
+        dim = args.dim
+        hidden_dim = args.hidden_dim
+        if hidden_dim is None:
+            # If hidden_dim is not explicitly set in the ModelArgs,
+            # then calculate implicitly based on dim and also multiple of `args.multiple_of`
+            multiple_of = args.multiple_of
+            hidden_dim = 4 * dim
+            hidden_dim = int(2 * hidden_dim / 3)
+            if args.ffn_dim_multiplier is not None:
+                hidden_dim = int(args.ffn_dim_multiplier * hidden_dim)
+            hidden_dim = multiple_of * ((hidden_dim + multiple_of - 1) // multiple_of)
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 

@@ -48,7 +48,7 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
   # optimized_native_cpu_ops_lib: Register optimized op kernels into the runtime
   gen_operators_lib(
     "optimized_native_cpu_ops_lib"
-    KERNEL_LIBS portable_kernels optimized_kernels
+    KERNEL_LIBS portable_kernels optimized_kernels quantized_kernels
     DEPS executorch)
 
   install(TARGETS optimized_native_cpu_ops_lib DESTINATION lib)
