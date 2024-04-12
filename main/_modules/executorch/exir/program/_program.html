@@ -449,6 +449,7 @@
 <span class="kn">from</span> <span class="nn">executorch.exir.passes</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">base_post_op_replace_passes</span><span class="p">,</span>
     <span class="n">base_pre_op_replace_passes</span><span class="p">,</span>
+    <span class="n">dead_code_elimination_pass</span><span class="p">,</span>
     <span class="n">EdgeToBackendOpsPass</span><span class="p">,</span>
     <span class="n">MemoryFormatOpsPass</span><span class="p">,</span>
     <span class="n">OpReplacePass</span><span class="p">,</span>
@@ -1051,6 +1052,7 @@
         <span class="c1"># pyre-ignore</span>
         <span class="k">return</span> <span class="p">[</span>
             <span class="n">NormalizeViewCopyBasePass</span><span class="p">(),</span>
+            <span class="n">dead_code_elimination_pass</span><span class="p">,</span>
             <span class="n">ReplaceViewCopyWithViewPass</span><span class="p">(),</span>
             <span class="n">config</span><span class="o">.</span><span class="n">sym_shape_eval_pass</span><span class="p">,</span>
             <span class="n">config</span><span class="o">.</span><span class="n">to_out_var_pass</span><span class="p">,</span>
