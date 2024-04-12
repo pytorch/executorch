@@ -39,8 +39,7 @@ class TestQuantizePerTensor(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
 
     def test_qs8_dequantize_per_tenstor(self):
@@ -76,6 +75,5 @@ class TestQuantizePerTensor(unittest.TestCase):
             )
             .to_executorch()
             .serialize()
-            .run_method()
-            .compare_outputs()
+            .run_method_and_compare_outputs()
         )
