@@ -209,6 +209,95 @@ class KVCache(nn.Module):
         return k_out, v_out
 
 
+class SDPA(nn.Module):
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        mask,
+        use_sdpa_with_kv_cache_op: bool,
+        dim: int,
+        n_rep: int,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.mask = mask
+        self.use_sdpa_with_kv_cache_op = use_sdpa_with_kv_cache_op
+        self.dim = dim
+        self.n_rep = n_rep
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+    ) -> torch.Tensor:
+        if not self.use_sdpa_with_kv_cache_op:
+            return self._forward_default(
+                input_pos,
+                q,
+                k,
+                v,
+                bsz,
+                seqlen,
+            )
+        else:
+            return self._forward_custom(
+                input_pos,
+                q,
+                k,
+                v,
+                bsz,
+                seqlen,
+            )
+
+    def _forward_custom(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+    ):
+        from .custom_ops import sdpa_with_kv_cache  # noqa
+
+        output = torch.ops.llama.sdpa_with_kv_cache(
+            q,
+            k,
+            v,
+            self.kv_cache.k_cache,
+            self.kv_cache.v_cache,
+            input_pos[-1].item(),
+            seqlen,
+        )
+        return output.view(bsz, seqlen, self.dim)
+
+    def _forward_default(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+    ) -> torch.Tensor:
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        k, v = self.kv_cache.update(input_pos, k, v)
+        mask = self.mask[None, None, input_pos]
+
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
+
+
 class Attention(nn.Module):
     def __init__(self, args: ModelArgs, layer_id: int):
         super().__init__()
@@ -229,7 +318,6 @@ class Attention(nn.Module):
         self.wv = nn.Linear(args.dim, self.n_kv_heads * self.head_dim, bias=False)
         self.wo = nn.Linear(args.n_heads * self.head_dim, args.dim, bias=False)
 
-        self.use_sdpa_with_kv_cache_op = args.use_sdpa_with_kv_cache_op
         self.layer_id = layer_id
 
         causal_mask = torch.tril(
@@ -249,6 +337,13 @@ class Attention(nn.Module):
                 self.n_kv_heads,
                 self.head_dim,
                 not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
+            )
+            self.SDPA = SDPA(
+                self.kv_cache,
+                self.mask,
+                args.use_sdpa_with_kv_cache_op,
+                self.dim,
+                self.n_rep,
             )
 
     def forward(
@@ -272,41 +367,8 @@ class Attention(nn.Module):
 
         if self.use_kv_cache:
             assert input_pos is not None
-
-            if not self.use_sdpa_with_kv_cache_op:
-
-                q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
-                k = k.transpose(1, 2)
-                v = v.transpose(1, 2)
-
-                k, v = self.kv_cache.update(input_pos, k, v)
-                mask = self.mask[None, None, input_pos]
-
-                k = k.repeat_interleave(self.n_rep, dim=1)
-                v = v.repeat_interleave(self.n_rep, dim=1)
-                y = F.scaled_dot_product_attention(
-                    q, k, v, attn_mask=mask, dropout_p=0.0
-                )
-
-                y = y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
-
-                y = self.wo(y)
-                return y
-            else:
-                from .custom_ops import sdpa_with_kv_cache  # noqa
-
-                output = torch.ops.llama.sdpa_with_kv_cache(
-                    q,
-                    k,
-                    v,
-                    self.kv_cache.k_cache,
-                    self.kv_cache.v_cache,
-                    input_pos[-1].item(),
-                    seqlen,
-                )
-                output = output.view(bsz, seqlen, -1)
-                output = self.wo(output)
-                return output
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen)
+            return self.wo(output)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
