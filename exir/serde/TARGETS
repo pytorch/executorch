@@ -13,7 +13,6 @@ python_library(
         ":schema",
         "//caffe2:torch",
         "//executorch/exir:delegate",
-        "//executorch/exir:lib",
         "//executorch/exir:lowered_backend_module",
         "//executorch/exir:memory",
         "//executorch/exir/backend:compile_spec_schema",
