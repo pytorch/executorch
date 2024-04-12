@@ -92,8 +92,7 @@ jobs:
     with:
       device-type: android
       runner: ubuntu-latest
-      # TODO: FOR TESTING
-      test-infra-ref: add-android-device-farm-support
+      test-infra-ref: ''
       # This is the ARN of ExecuTorch project on AWS
       project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
       # This is the custom Android device pool that only includes Samsung Galaxy S2x
