@@ -30,6 +30,9 @@ examples
 
 A user's journey may commence by exploring the demos located in the [`portable/`](./portable) directory. Here, you will gain insights into the fundamental end-to-end workflow to generate a binary file from a ML model in [portable mode](../docs/source/concepts.md##portable-mode-lean-mode) and run it on the ExecuTorch runtime.
 
+## Demo of Llama2
+
+[This page](./models/llama2/README.md) demonstrates how to run a Llama 2 7B model on mobile via ExecuTorch. We use XNNPACK to accelerate the performance and 4-bit groupwise PTQ quantization to fit the model on Android and iOS mobile phones.
 
 ## Demo of Selective Build
 
@@ -37,7 +40,7 @@ To understand how to deploy the ExecuTorch runtime with optimization for binary 
 
 ## Demo of ExecuTorch SDK
 
-You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification, and ETDump generation.
+You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
 
 ## Demo Apps
 
@@ -62,11 +65,6 @@ You will find demos of [ExecuTorch QNN Backend](./qualcomm) in the [`qualcomm/`]
 ## Demo of ExecuTorch on Xtensa HiFi4 DSP
 
 The [`xtensa/`](./xtensa) directory hosts a demo that showcases the process of exporting and executing a model on Xtensa Hifi4 DSP. You can utilize [this tutorial](../docs/source/build-run-xtensa.md) to guide you in configuring the demo and running it.
-
-
-## Demo of ExecuTorch SDK
-
-You will find demos of [ExecuTorch SDK](./sdk/) in the [`sdk/`](./sdk/) directory. The examples focuses on exporting and executing BundledProgram for ExecuTorch model verification and ETDump for collecting profiling and debug data.
 
 ## Dependencies
 
