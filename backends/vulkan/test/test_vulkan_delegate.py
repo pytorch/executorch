@@ -647,3 +647,21 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_native_layer_norm(self):
+        class NativeLayerNormModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.native_layer_norm(
+                    x, [5], torch.ones(5), torch.zeros(5), 1e-5
+                )
+
+        sample_inputs = (torch.randn(size=(3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            NativeLayerNormModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

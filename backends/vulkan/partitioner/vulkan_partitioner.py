@@ -50,6 +50,8 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.sum.dim_IntList,
             # Convolution operators
             exir_ops.edge.aten.convolution.default,
+            # Normalization
+            exir_ops.edge.aten.native_layer_norm.default,
             # Other
             operator.getitem,
         ]
