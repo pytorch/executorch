@@ -10,7 +10,8 @@ on:
       - .ci/docker/**
       - .github/workflows/android.yml
       - install_requirements.sh
-      - examples/demo-apps/**
+      - examples/demo-apps/android/**
+      - extension/android/**
       - extension/module/**
   workflow_dispatch:
 
