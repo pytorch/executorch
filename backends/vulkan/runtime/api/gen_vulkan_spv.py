@@ -77,27 +77,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
         "int8": "rgba8i",
         "uint8": "rgba8ui",
     },
-    "TEXEL_EXTRACT_TYPE": {
-        "rgba32f": "vec4",
-        "rgba16f": "vec4",
-        "rgba32i": "ivec4",
-        "rgba32ui": "uvec4",
-        "int8": "ivec4",
-        "uint8": "uvec4",
-    },
-    "TEXEL_COMPONENT_TYPE": {
-        "vec4": "float",
-        "ivec4": "int",
-        "uvec4": "uint",
-    },
-    "BUFFER_SCALAR_TYPE": {
-        "float": "float",
-        "half": "float",
-        "int": "int",
-        "uint": "uint",
-        "int8": "int",
-        "uint8": "uint",
-    },
     # Kept for backwards compatibility
     # TODO(ssjia): remove when no more shaders use these
     "VEC4_T": {
@@ -120,16 +99,36 @@ TYPE_MAPPINGS: Dict[str, Any] = {
 
 
 def get_buffer_scalar_type(dtype: str) -> str:
-    return TYPE_MAPPINGS["BUFFER_SCALAR_TYPE"][dtype]
+    # TODO(ssjia): use float16_t for half types
+    if dtype == "half":
+        return "float"
+    # TODO(ssjia): use int8_t for int8 types
+    elif dtype[-1] == "8":
+        return dtype[:-1]
+
+    return dtype
 
 
 def get_texel_type(dtype: str) -> str:
     image_format = TYPE_MAPPINGS["IMAGE_FORMAT"][dtype]
-    return TYPE_MAPPINGS["TEXEL_EXTRACT_TYPE"][image_format]
+    if image_format[-1] == "f":
+        return "vec4"
+    elif image_format[-2] == "ui":
+        return "uvec4"
+    elif image_format[-1] == "i":
+        return "ivec4"
+    raise AssertionError(f"Invalid image format: {image_format}")
 
 
 def get_texel_component_type(dtype: str) -> str:
-    return TYPE_MAPPINGS["TEXEL_COMPONENT_TYPE"][get_texel_type(dtype)]
+    vec4_type = get_texel_type(dtype)
+    if vec4_type[:3] == "vec":
+        return "float"
+    elif vec4_type[:4] == "ivec":
+        return "int"
+    elif vec4_type[:4] == "uvec":
+        return "uint"
+    raise AssertionError(f"Invalid vec4 type: {vec4_type}")
 
 
 UTILITY_FNS: Dict[str, Any] = {

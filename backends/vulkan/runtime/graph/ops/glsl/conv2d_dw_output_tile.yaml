@@ -6,7 +6,7 @@
 
 conv2d_dw_output_tile:
   parameter_names_with_default_values:
-    ND: 3
+    NDIM: 3
     DTYPE: float
     TILE_SIZE: 3
   generate_variant_forall:

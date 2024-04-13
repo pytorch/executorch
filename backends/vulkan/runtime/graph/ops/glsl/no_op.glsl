@@ -8,16 +8,14 @@
 
 #version 450 core
 
+#define PRECISION ${PRECISION}
+
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"
 
-#define PRECISION ${PRECISION}
-
-#define OP(X, Y, A) ${OPERATOR}
-
 layout(std430) buffer;
 
-layout(set = 0, binding = 0) uniform PRECISION ${SAMPLER_T[ND][DTYPE]} image_in;
+layout(set = 0, binding = 0) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} image_in;
 
 layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 

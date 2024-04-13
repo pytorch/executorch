@@ -13,8 +13,8 @@
 #define PRECISION ${PRECISION}
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly image3D im_out;
-layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[ND][DTYPE]} im_mat1;
-layout(set = 0, binding = 2) uniform PRECISION ${SAMPLER_T[ND][DTYPE]} im_mat2;
+layout(set = 0, binding = 1) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat1;
+layout(set = 0, binding = 2) uniform PRECISION ${SAMPLER_T[NDIM][DTYPE]} im_mat2;
 
 layout(set = 0, binding = 3) uniform PRECISION restrict OutExtents {
   uvec4 data;

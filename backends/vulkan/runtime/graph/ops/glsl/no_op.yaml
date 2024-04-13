@@ -6,11 +6,10 @@
 
 no_op:
   parameter_names_with_default_values:
-    OPERATOR: X + A * Y
-    ND: 3
+    NDIM: 3
     DTYPE: float
   generate_variant_forall:
-    ND:
+    NDIM:
       - VALUE: 3
         SUFFIX: 3d
       - VALUE: 2

@@ -8,9 +8,9 @@
 
 #define divup4(x) ((x + 3) / 4)
 
-#define coord_to_buffer_idx(coord, sizes)                  \
-  coord.x + coord.y* sizes.x + coord.z* sizes.y* sizes.x + \
-      coord.w* sizes.z* sizes.y* sizes.x;
+#define to_buffer_i(idx, sizes)                      \
+  idx.x + idx.y* sizes.x + idx.z* sizes.y* sizes.x + \
+      idx.w* sizes.z* sizes.y* sizes.x;
 
 #define get_packed_dim_C_packed(vec) vec.z
 #define get_packed_dim_W_packed(vec) vec.x
@@ -20,23 +20,23 @@
 #define get_packed_stride_W_packed(vec) (1)
 #define get_packed_stride_H_packed(vec) (vec.x)
 
-#define pos_to_coord_C_packed(pos, sizes) \
+#define to_tensor_idx_C_packed(pos, sizes) \
   ivec4(pos.x, pos.y, (pos.z * 4) % sizes.z, (pos.z * 4) / sizes.z)
 
-#define pos_to_coord_W_packed(pos, sizes) \
+#define to_tensor_idx_W_packed(pos, sizes) \
   ivec4((pos.x * 4), pos.y, pos.z % sizes.z, pos.z / sizes.z)
 
-#define pos_to_coord_H_packed(pos, sizes) \
+#define to_tensor_idx_H_packed(pos, sizes) \
   ivec4(pos.x, (pos.y * 4), pos.z % sizes.z, pos.z / sizes.z)
 
-#define coord_to_pos_C_packed(coord, sizes) \
-  ivec3(coord.x, coord.y, (coord.z + coord.w * sizes.z) / 4)
+#define to_texture_pos_C_packed(idx, sizes) \
+  ivec3(idx.x, idx.y, (idx.z + idx.w * sizes.z) / 4)
 
-#define coord_to_pos_W_packed(coord, sizes) \
-  ivec3(coord.x / 4, coord.y, (coord.z + coord.w * sizes.z))
+#define to_texture_pos_W_packed(idx, sizes) \
+  ivec3(idx.x / 4, idx.y, (idx.z + idx.w * sizes.z))
 
-#define coord_to_pos_H_packed(coord, sizes) \
-  ivec3(coord.x, coord.y / 4, (coord.z + coord.w * sizes.z))
+#define to_texture_pos_H_packed(idx, sizes) \
+  ivec3(idx.x, idx.y / 4, (idx.z + idx.w * sizes.z))
 
 // Given a buffer(1-D) index cur, compute a new index where the corresponding
 // tensor(N-D)'s adjacent dimensions are swapped. The parameters x,y and plane
@@ -69,21 +69,21 @@
 #define POS_TO_COORD_HEIGHT_PACKED(pos, sizes) \
   ivec4(pos.x, (pos.y * 4), pos.z % sizes.z, pos.z / sizes.z)
 
-#define COORD_TO_POS_CHANNELS_PACKED(coord, sizes) \
-  ivec3(coord.x, coord.y, (coord.z + coord.w * sizes.z) / 4)
+#define COORD_TO_POS_CHANNELS_PACKED(idx, sizes) \
+  ivec3(idx.x, idx.y, (idx.z + idx.w * sizes.z) / 4)
 
-#define COORD_TO_POS_WIDTH_PACKED(coord, sizes) \
-  ivec3(coord.x / 4, coord.y, (coord.z + coord.w * sizes.z))
+#define COORD_TO_POS_WIDTH_PACKED(idx, sizes) \
+  ivec3(idx.x / 4, idx.y, (idx.z + idx.w * sizes.z))
 
-#define COORD_TO_POS_HEIGHT_PACKED(coord, sizes) \
-  ivec3(coord.x, coord.y / 4, (coord.z + coord.w * sizes.z))
+#define COORD_TO_POS_HEIGHT_PACKED(idx, sizes) \
+  ivec3(idx.x, idx.y / 4, (idx.z + idx.w * sizes.z))
 
-#define COORD_TO_POS_CHANNELS_PACKED(coord, sizes) \
-  ivec3(coord.x, coord.y, (coord.z + coord.w * sizes.z) / 4)
+#define COORD_TO_POS_CHANNELS_PACKED(idx, sizes) \
+  ivec3(idx.x, idx.y, (idx.z + idx.w * sizes.z) / 4)
 
-#define COORD_TO_BUFFER_IDX(coord, sizes)                  \
-  coord.x + coord.y* sizes.x + coord.z* sizes.y* sizes.x + \
-      coord.w* sizes.z* sizes.y* sizes.x;
+#define COORD_TO_BUFFER_IDX(idx, sizes)              \
+  idx.x + idx.y* sizes.x + idx.z* sizes.y* sizes.x + \
+      idx.w* sizes.z* sizes.y* sizes.x;
 
 #define STRIDE_CHANNELS_PACKED(vec) (vec.x * vec.y)
 

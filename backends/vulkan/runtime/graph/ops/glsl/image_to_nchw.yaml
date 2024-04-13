@@ -6,7 +6,7 @@
 
 image_to_nchw:
   parameter_names_with_default_values:
-    ND: 3
+    NDIM: 3
     DTYPE: float
     PACKING: CHANNELS_PACKED
   generate_variant_forall:
@@ -21,4 +21,4 @@ image_to_nchw:
   shader_variants:
     - NAME: image3d_to_nchw
     - NAME: image2d_to_nchw
-      ND: 2
+      NDIM: 2

@@ -9,14 +9,13 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+#define VEC4_T ${texel_type(DTYPE)}
 
 #include "indexing_utils.h"
 
 layout(std430) buffer;
 
-#define VEC4_T ${texel_type(DTYPE)}
-
-layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[ND][DTYPE]} image_out;
+layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D image_in;
 layout(set = 0, binding = 2) uniform PRECISION sampler2D kernel_in;
 layout(set = 0, binding = 3) uniform PRECISION sampler2D bias_in;
@@ -72,10 +71,10 @@ void main() {
   ivec2 kstart = (start - ipos) / params.dilation;
   // During prepacking, the weight tensor was rearranged in order to optimize
   // for data access linearity in this shader. Therefore we need to adjust the
-  // canonical coordinates to the corresponding index in the rearranged weight
-  // tensor. The x-coordinate is multipled by 4 since each group of 4 channels
-  // is folded into the X axis. The y-coordinate is offset based on the z-
-  // coordinate because the 2D planes were stacked atop each other vertically.
+  // canonical idxinates to the corresponding index in the rearranged weight
+  // tensor. The x-idxinate is multipled by 4 since each group of 4 channels
+  // is folded into the X axis. The y-idxinate is offset based on the z-
+  // idxinate because the 2D planes were stacked atop each other vertically.
   kstart.x *= 4;
   kstart.y += pos.z * params.kernel_size.y;
 

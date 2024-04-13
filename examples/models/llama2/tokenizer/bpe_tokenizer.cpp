@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <executorch/examples/models/llama2/tokenizer/tokenizer.h>
+#include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
 
 #include <string>
 
@@ -23,11 +23,11 @@ static int compare_tokens(const void* a, const void* b) {
   return strcmp(((TokenIndex*)a)->str, ((TokenIndex*)b)->str);
 }
 
-Tokenizer::Tokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok)
-    : initialized_(false),
-      vocab_size_(vocab_size),
-      bos_tok_(bos_tok),
-      eos_tok_(eos_tok),
+BPETokenizer::BPETokenizer(
+    int32_t vocab_size,
+    uint64_t bos_tok,
+    uint64_t eos_tok)
+    : Tokenizer(vocab_size, bos_tok, eos_tok),
       vocab_(std::make_unique<char*[]>(vocab_size)),
       vocab_scores_(std::make_unique<float[]>(vocab_size)),
       sorted_vocab_(std::make_unique<TokenIndex[]>(vocab_size)) {
@@ -47,7 +47,7 @@ Tokenizer::Tokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok)
  * @param tokenizer_path The path to the tokenizer file.
  * @return Error
  */
-Error Tokenizer::load(const std::string& tokenizer_path) {
+Error BPETokenizer::load(const std::string& tokenizer_path) {
   if (initialized_) {
     ET_LOG(Info, "Tokenizer already initialized");
     return Error::Ok;
@@ -131,7 +131,7 @@ Error Tokenizer::load(const std::string& tokenizer_path) {
   return Error::Ok;
 }
 
-Tokenizer::~Tokenizer() {
+BPETokenizer::~BPETokenizer() {
   for (int i = 0; i < vocab_size_; i++) {
     delete[] vocab_[i];
   }
@@ -145,7 +145,7 @@ Tokenizer::~Tokenizer() {
  * @return Result<std::string> A pointer to the string representation of the
  * token.
  */
-Result<std::string> Tokenizer::decode(uint64_t prev_token, uint64_t token) {
+Result<std::string> BPETokenizer::decode(uint64_t prev_token, uint64_t token) {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;
@@ -187,7 +187,7 @@ str_lookup(const char* str, TokenIndex* sorted_vocab, int32_t vocab_size) {
  * @return Result<std::vector<uint64_t>>
  */
 Result<std::vector<uint64_t>>
-Tokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
+BPETokenizer::encode(const std::string& text, int8_t bos, int8_t eos) {
   if (!initialized_) {
     ET_LOG(Error, "Tokenizer not initialized");
     return Error::NotSupported;
