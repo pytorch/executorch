@@ -28,7 +28,7 @@ public class PerfTest implements LlamaCallback {
   private static final String TOKENIZER_BIN = "tokenizer.bin";
 
   // From https://github.com/pytorch/executorch/blob/main/examples/models/llama2/README.md
-  private static final Float EXPECTED_TPS = 7.0F;
+  private static final Float EXPECTED_TPS = 10.0F;
 
   private final List<String> results = new ArrayList<>();
   private final List<Float> tokensPerSecond = new ArrayList<>();

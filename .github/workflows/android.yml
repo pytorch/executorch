@@ -33,6 +33,7 @@ jobs:
       submodules: 'true'
       ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       timeout: 90
+      upload-artifact: android-apps
       script: |
         set -eux
 
@@ -45,3 +46,62 @@ jobs:
         PYTHON_EXECUTABLE=python bash .ci/scripts/setup-linux.sh "${BUILD_TOOL}"
         # Build Android demo app
         bash build/test_android_ci.sh
+
+        mkdir -p artifacts-to-be-uploaded
+        # Copy the app and its test suite to S3
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/debug/*.apk artifacts-to-be-uploaded/
+        cp examples/demo-apps/android/LlamaDemo/app/build/outputs/apk/androidTest/debug/*.apk artifacts-to-be-uploaded/
+        # Also copy the share libraries
+        cp cmake-out-android/lib/*.a artifacts-to-be-uploaded/
+
+  # Upload the app and its test suite to S3 so that they can be downloaded by the test job
+  upload-artifacts:
+    needs: test-demo-android
+    runs-on: linux.2xlarge
+    steps:
+      - name: Download the artifacts
+        uses: actions/download-artifact@v3
+        with:
+          # The name here needs to match the name of the upload-artifact parameter
+          name: android-apps
+          path: ${{ runner.temp }}/artifacts/
+
+      - name: Verify the artifacts
+        shell: bash
+        working-directory: ${{ runner.temp }}/artifacts/
+        run: |
+          ls -lah ./
+
+      - name: Upload the artifacts to S3
+        uses: seemethere/upload-artifact-s3@v5
+        with:
+          s3-bucket: gha-artifacts
+          s3-prefix: |
+            ${{ github.repository }}/${{ github.run_id }}/artifact
+          retention-days: 14
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/artifacts/
+
+  # Let's see how expensive this job is, we might want to tone it down by running it periodically
+  test-llama-app:
+    needs: upload-artifacts
+    permissions:
+      id-token: write
+      contents: read
+    uses: pytorch/test-infra/.github/workflows/mobile_job.yml@main
+    with:
+      device-type: android
+      runner: ubuntu-latest
+      test-infra-ref: ''
+      # This is the ARN of ExecuTorch project on AWS
+      project-arn: arn:aws:devicefarm:us-west-2:308535385114:project:02a2cf0f-6d9b-45ee-ba1a-a086587469e6
+      # This is the custom Android device pool that only includes Samsung Galaxy S2x
+      device-pool-arn: arn:aws:devicefarm:us-west-2:308535385114:devicepool:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/e59f866a-30aa-4aa1-87b7-4510e5820dfa
+      # Uploaded to S3 from the previous job, the name of the app comes from the project itself
+      android-app-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/app-debug.apk
+      android-test-archive: https://gha-artifacts.s3.amazonaws.com/${{ github.repository }}/${{ github.run_id }}/artifact/app-debug-androidTest.apk
+      # The test spec can be downloaded from https://ossci-assets.s3.amazonaws.com/android-llama2-device-farm-test-spec.yml
+      test-spec: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/414cb54d-4d83-4576-8317-93244e4dc50e
+      # The exported llama2 model and its tokenizer, can be downloaded from https://ossci-assets.s3.amazonaws.com/executorch-android-llama2-7b.zip.
+      # Among the input, this is the biggest file and uploading it to AWS beforehand makes the test run much faster
+      extra-data: arn:aws:devicefarm:us-west-2:308535385114:upload:02a2cf0f-6d9b-45ee-ba1a-a086587469e6/bd15825b-ddab-4e47-9fef-a9c8935778dd

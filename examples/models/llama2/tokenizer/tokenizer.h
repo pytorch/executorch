@@ -26,22 +26,21 @@
 namespace torch {
 namespace executor {
 
-struct TokenIndex {
-  const char* str;
-  int32_t id;
-};
-
 class Tokenizer {
  public:
-  explicit Tokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok);
-  ~Tokenizer();
+  explicit Tokenizer(int32_t vocab_size, uint64_t bos_tok, uint64_t eos_tok)
+      : initialized_(false),
+        vocab_size_(vocab_size),
+        bos_tok_(bos_tok),
+        eos_tok_(eos_tok) {}
+  virtual ~Tokenizer() {}
 
-  Error load(const std::string& tokenizer_path);
+  virtual Error load(const std::string& tokenizer_path) = 0;
 
-  Result<std::vector<uint64_t>>
-  encode(const std::string& input, int8_t bos, int8_t eos);
+  virtual Result<std::vector<uint64_t>>
+  encode(const std::string& input, int8_t bos, int8_t eos) = 0;
 
-  Result<std::string> decode(uint64_t prev_token, uint64_t token);
+  virtual Result<std::string> decode(uint64_t prev_token, uint64_t token) = 0;
 
   // getters
   int32_t vocab_size() const {
@@ -56,15 +55,10 @@ class Tokenizer {
     return eos_tok_;
   }
 
- private:
+ protected:
   bool initialized_;
   const int32_t vocab_size_;
   uint64_t bos_tok_, eos_tok_;
-  std::unique_ptr<char*[]> vocab_;
-  std::unique_ptr<float[]> vocab_scores_;
-  std::unique_ptr<TokenIndex[]> sorted_vocab_;
-  unsigned int max_token_length_;
-  unsigned char byte_pieces_[512]; // stores all single-byte strings
 };
 
 } // namespace executor
