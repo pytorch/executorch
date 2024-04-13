@@ -14,8 +14,18 @@ namespace torch {
 namespace executor {
 namespace native {
 
+namespace {
+// Passing std::isinf directly to unary_ufunc_realhb_to_bool can cause "error:
+// cannot resolve overloaded function ‘isinf’ based on conversion to type
+// ‘torch::executor::FunctionRef<bool(double)>’" in some compilation
+// environments.
+bool isinf_wrapper(double num) {
+  return std::isinf(num);
+}
+} // namespace
+
 Tensor& isinf_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhb_to_bool(std::isinf, ctx, in, out);
+  return internal::unary_ufunc_realhb_to_bool(isinf_wrapper, ctx, in, out);
 }
 
 } // namespace native
