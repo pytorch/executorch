@@ -14,8 +14,18 @@ namespace torch {
 namespace executor {
 namespace native {
 
+namespace {
+// Passing std::isnan directly to unary_ufunc_realhb_to_bool can cause "error:
+// cannot resolve overloaded function ‘isnan’ based on conversion to type
+// ‘torch::executor::FunctionRef<bool(double)>’" in some compilation
+// environments.
+bool isnan_wrapper(double num) {
+  return std::isnan(num);
+}
+} // namespace
+
 Tensor& isnan_out(RuntimeContext& ctx, const Tensor& in, Tensor& out) {
-  return internal::unary_ufunc_realhb_to_bool(std::isnan, ctx, in, out);
+  return internal::unary_ufunc_realhb_to_bool(isnan_wrapper, ctx, in, out);
 }
 
 } // namespace native
