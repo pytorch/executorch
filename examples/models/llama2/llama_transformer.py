@@ -214,11 +214,13 @@ class SDPA(nn.Module):
         self,
         kv_cache: KVCache,
         dim: int,
+        head_dim: int,
         n_rep: int,
     ):
         super().__init__()
         self.kv_cache = kv_cache
         self.dim = dim
+        self.head_dim = head_dim
         self.n_rep = n_rep
 
     def forward(
@@ -236,7 +238,7 @@ class SDPA(nn.Module):
         v = v.transpose(1, 2)
 
         k, v = self.kv_cache.update(input_pos, k, v)
-        attn_mask = self.mask[None, None, input_pos]
+        attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
@@ -286,9 +288,10 @@ class Attention(nn.Module):
                 not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
             )
             self.SDPA = SDPA(
-                self.kv_cache,
-                self.dim,
-                self.n_rep,
+                kv_cache=self.kv_cache,
+                dim=self.dim,
+                head_dim=self.head_dim,
+                n_rep=self.n_rep,
             )
 
     def forward(

@@ -649,9 +649,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         qnn_quantizer = QnnQuantizer()
-        logging.info(
-            "More custom quantization are supported including 16a4w etc. default to 8bit quantized"
-        )
+        # more custom quantization are supported including 16a4w etc. default to 8bit quantized
         custom_annotations = ()
         qnn_quantizer.add_custom_quant_annotations(custom_annotations)
         quantizers.append(qnn_quantizer)
@@ -767,13 +765,8 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        use_fp16 = False if args.pt2e_quantize else True
-        if use_fp16:
-            logging.info("Using fp16 for QNN backend, expect performance degradation")
-        backend_options = generate_htp_compiler_spec(use_fp16=use_fp16)
-        soc_model = QcomChipset.SM8650
-        logging.info(
-            f"Default to soc {soc_model}, other available options can be found in {QcomChipset}"
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False if args.pt2e_quantize else True
         )
         partitioners.append(
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
@@ -781,7 +774,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
                 # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
                 generate_qnn_executorch_compiler_spec(
                     # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
-                    soc_model=soc_model,  # default to SM8650
+                    soc_model=QcomChipset.SM8650,  # default to SM8650
                     backend_options=backend_options,
                     debug=False,
                     saver=False,
