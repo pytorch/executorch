@@ -649,7 +649,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`.
         qnn_quantizer = QnnQuantizer()
-        # more custom quantization are supported including 16a4w etc. default to 8bit quantized
+        logging.info(
+            "More custom quantization are supported including 16a4w etc. default to 8bit quantized"
+        )
         custom_annotations = ()
         qnn_quantizer.add_custom_quant_annotations(custom_annotations)
         quantizers.append(qnn_quantizer)
