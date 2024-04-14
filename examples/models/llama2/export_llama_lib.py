@@ -19,6 +19,7 @@ from typing import Any, Optional, Union
 
 import pkg_resources
 import torch
+import torch.nn.functional as F
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
@@ -34,7 +35,6 @@ from executorch.exir.backend.backend_details import CompileSpec
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
-from torch.nn import functional as F
 
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .quant_lib import _get_pt2e_quantization_params, get_pt2e_quantizers
@@ -607,6 +607,8 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
     if args.use_sdpa_with_kv_cache:
         transforms.append(replace_sdpa_with_custom_op)
 
+    if args.qnn and args.use_kv_cache:
+        transforms.append(replace_sdpa_with_simple_sdpa)
     return (
         load_llama_model(
             checkpoint=checkpoint_path,
@@ -629,7 +631,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
     # export_to_edge
     pt2e_quant_params = _get_pt2e_quantization_params(args)
     quantizers = get_pt2e_quantizers(pt2e_quant_params, args)
-    if args.qnn:
+    if args.qnn and args.pt2e_quantize:
         assert (
             args.quantization_mode is None
         ), "Currently qnn backend only supports QnnQuantizer via pt2e flow"
@@ -763,7 +765,9 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
 
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        backend_options = generate_htp_compiler_spec(use_fp16=False)
+        backend_options = generate_htp_compiler_spec(
+            use_fp16=False if args.pt2e_quantize else True
+        )
         partitioners.append(
             # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
             QnnPartitioner(
@@ -780,7 +784,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             )
         )
         # pyre-ignore: Undefined attribute [16]: Module `executorch.backends` has no attribute `qualcomm`
-        _transform(builder_exported_to_edge.export_program())
+        _transform(builder_exported_to_edge.edge_manager.exported_program())
 
     if args.generate_etrecord:
         if not builder_exported_to_edge.edge_manager:
