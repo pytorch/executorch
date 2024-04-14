@@ -9,6 +9,7 @@
 import argparse
 import copy
 import logging
+import math
 import os
 import shlex
 
@@ -33,6 +34,7 @@ from executorch.exir.backend.backend_details import CompileSpec
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
+from torch.nn import functional as F
 
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .quant_lib import _get_pt2e_quantization_params, get_pt2e_quantizers
@@ -140,6 +142,61 @@ def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
     from executorch.examples.models.llama2.custom_ops import sdpa_with_kv_cache  # noqa
 
     _replace_sdpa_with_custom_op(module)
+    return module
+
+
+class SDPASimple(torch.nn.Module):
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        dim: int,
+        head_dim: int,
+        n_rep: int,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.dim = dim
+        self.head_dim = head_dim
+        self.n_rep = n_rep
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+        mask,
+    ):
+        q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        k = k.transpose(1, 2)
+        v = v.transpose(1, 2)
+
+        k, v = self.kv_cache.update(input_pos, k, v)
+        mask = mask[None, None, input_pos]
+
+        k = k.repeat_interleave(self.n_rep, dim=1)
+        v = v.repeat_interleave(self.n_rep, dim=1)
+        scores = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
+        scores = F.softmax(scores.float(), dim=-1).type_as(q)
+        scores = scores + mask
+        output = torch.matmul(scores, v)  # (bs, n_local_heads, seqlen, head_dim)
+
+        output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
+        return output
+
+
+def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, SDPA):
+            setattr(
+                module,
+                name,
+                SDPASimple(child.kv_cache, child.dim, child.head_dim, child.n_rep),
+            )
+        else:
+            replace_sdpa_with_simple_sdpa(child)
     return module
 
 
