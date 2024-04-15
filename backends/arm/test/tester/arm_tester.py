@@ -128,7 +128,7 @@ class ArmTester(Tester):
             to_edge_stage = ToEdge(EdgeCompileConfig(_check_ir_validity=False))
         return super().to_edge(to_edge_stage)
 
-    def partition(self, partition_stage: Optional[Partition] = None):
+    def partition(self, partition_stage: Optional[Partition] = None):  # pyre-ignore
         if partition_stage is None:
             arm_partitioner = ArmPartitioner(compile_spec=self.compile_spec)
             partition_stage = Partition(arm_partitioner)
@@ -194,6 +194,34 @@ class ArmTester(Tester):
 
         self.stage_output = tosa_output
 
+        return self
+
+    def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
+        """
+        Compares the original of the original nn module with the output of the generated artifact.
+        This requres calling run_method before calling compare_outputs. As that runs the generated
+        artifact on the sample inputs and sets the stage output to be compared against the reference.
+        """
+        assert self.reference_output is not None
+        assert self.stage_output is not None
+
+        # Wrap both outputs as tuple, since executor output is always a tuple even if single tensor
+        if isinstance(self.reference_output, torch.Tensor):
+            self.reference_output = (self.reference_output,)
+        if isinstance(self.stage_output, torch.Tensor):
+            self.stage_output = (self.stage_output,)
+
+        # If a qtol is provided and we found an dequantization node prior to the output, relax the
+        # atol by qtol quant units.
+        if self.quantization_scale is not None:
+            atol += self.quantization_scale * qtol
+
+        self._assert_outputs_equal(
+            self.stage_output,
+            self.reference_output,
+            atol=atol,
+            rtol=rtol,
+        )
         return self
 
     def _get_input_params(

@@ -534,6 +534,22 @@ class Tester:
 
         return self
 
+    def run_method(
+        self, stage: Optional[str] = None, inputs: Optional[Tuple[torch.Tensor]] = None
+    ):
+        # This is to avoid accidental ommition of compare_outputs resulting in
+        # false positive of the test passing.
+        raise NotImplementedError(
+            "run_method is deprecated, please use run_method_and_compare_outputs"
+        )
+
+    def compare_outputs(self, atol=1e-03, rtol=1e-03, qtol=0):
+        # This is to avoid accidental ommition of compare_outputs resulting in
+        # false positive of the test passing.
+        raise NotImplementedError(
+            "compare_outputs is deprecated, please use run_method_and_compare_outputs"
+        )
+
     def run_method_and_compare_outputs(
         self,
         stage: Optional[str] = None,
