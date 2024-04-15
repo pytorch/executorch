@@ -52,7 +52,7 @@ phases:
         then
           OBSERVED_TPS=$(grep "The observed TPS " $INSTRUMENT_LOG | tail -n 1)
 
-          if [ -n $OBSERVED_TPS ];
+          if [ -n "${OBSERVED_TPS}" ];
           then
             echo "[PyTorch] ${OBSERVED_TPS}";
           else
