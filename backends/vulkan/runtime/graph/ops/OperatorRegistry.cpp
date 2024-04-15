@@ -16,7 +16,9 @@ bool OperatorRegistry::has_op(const std::string& name) {
 
 OperatorRegistry::OpFunction& OperatorRegistry::get_op_fn(
     const std::string& name) {
-  return table_.find(name)->second;
+  const auto it = table_.find(name);
+  VK_CHECK_COND(it != table_.end(), "Could not find operator with name ", name);
+  return it->second;
 }
 
 void OperatorRegistry::register_op(const std::string& name, OpFunction& fn) {
