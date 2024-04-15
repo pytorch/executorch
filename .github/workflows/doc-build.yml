@@ -74,17 +74,10 @@ jobs:
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 
-# Enable preview later. Previews are available publicly
-#
-# upload-preview:
-#    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
-#        (github.ref_type == 'branch' && github.ref_name == 'main')
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-
   upload-gh-pages:
     needs: build
     if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
-        ((github.ref_type == 'branch' && github.ref_name == 'main') || github.ref_type == 'tag')
+        (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
