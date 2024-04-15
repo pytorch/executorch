@@ -6,7 +6,6 @@
 
 no_op:
   parameter_names_with_default_values:
-    OPERATOR: X + A * Y
     NDIM: 3
     DTYPE: float
   generate_variant_forall:
@@ -17,10 +16,7 @@ no_op:
         SUFFIX: 2d
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
       - VALUE: int
-        SUFFIX: int
   shader_variants:
     - NAME: no_op

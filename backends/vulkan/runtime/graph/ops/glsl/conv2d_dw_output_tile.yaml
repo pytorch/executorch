@@ -12,9 +12,7 @@ conv2d_dw_output_tile:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
   shader_variants:
     - NAME: conv2d_dw_output_tile_3x3
     - NAME: conv2d_dw_output_tile_5x5

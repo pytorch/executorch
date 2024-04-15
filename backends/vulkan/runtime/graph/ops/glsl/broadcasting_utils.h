@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-ivec4 out_coord_to_in_coord(const ivec4 out_coord, const ivec4 in_sizes) {
-  ivec4 in_coord = out_coord;
+ivec4 broadcast_indices(const ivec4 out_idx, const ivec4 in_sizes) {
+  ivec4 in_idx = out_idx;
   for (int i = 0; i < 4; ++i) {
-    if (out_coord[i] >= in_sizes[i]) {
-      in_coord[i] = 0;
+    if (out_idx[i] >= in_sizes[i]) {
+      in_idx[i] = 0;
     }
   }
-  return in_coord;
+  return in_idx;
 }

@@ -10,13 +10,20 @@
 
 #define PRECISION ${PRECISION}
 
+#define BUF_T ${buffer_scalar_type(DTYPE)}
+#define VEC4_T ${texel_type(DTYPE)}
+#define SCALAR_T ${texel_component_type(DTYPE)}
+
+#define to_tensor_idx to_tensor_idx_${PACKING}
+#define get_packed_stride get_packed_stride_${PACKING}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[2][DTYPE]} image_out;
 layout(set = 0, binding = 1) buffer  PRECISION restrict readonly Buffer {
-  ${T[DTYPE]} data[];
+  BUF_T data[];
 }
 buffer_in;
 
@@ -53,17 +60,17 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
  */
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 coord = POS_TO_COORD_CHANNELS_PACKED(pos, gpu_sizes.data);
+  const ivec4 idx = to_tensor_idx(pos, gpu_sizes.data);
 
-  if (any(greaterThanEqual(coord, gpu_sizes.data))) {
+  if (any(greaterThanEqual(idx, gpu_sizes.data))) {
     return;
   }
 
   // As in usual staging shaders, map from GPU texel position to normal CPU
   // buffer indices: (36,6) -> (4,6,36)
-  const int base_index = COORD_TO_BUFFER_IDX(coord, gpu_sizes.data);
+  const int base_index = to_buffer_i(idx, gpu_sizes.data);
   const ivec4 p0 =
-      base_index + ivec4(0, 1, 2, 3) * STRIDE_CHANNELS_PACKED(gpu_sizes.data);
+      base_index + ivec4(0, 1, 2, 3) * get_packed_stride(gpu_sizes.data);
 
   // Re-map the normal CPU buffer indices to special indices, through a series
   // of mappings: reshape is a no-op to the underlying indices, so we only map
@@ -81,14 +88,14 @@ void main() {
   // Undo step 3 permute, part 2: (8,a,c,b,4) -> (8,c,a,b,4)
   // Undo step 3 permute, part 3: (8,c,a,b,4) -> (8,c,a,4,b)
   // Undo step 3 permute, part 4: (8,c,a,4,b) -> (8,c,4,a,b)
-  const ivec4 p1 = SWAP_ADJ_DIMS(p0, 4, (Cp / 4), (H * Np * W));
-  const ivec4 p2 = SWAP_ADJ_DIMS(p1, W, (Np / 4), 4);
-  const ivec4 p3 = SWAP_ADJ_DIMS(p2, H, (Np / 4), (W * 4));
-  const ivec4 p4 = SWAP_ADJ_DIMS(p3, W, 4, 1);
-  const ivec4 p5 = SWAP_ADJ_DIMS(p4, H, 4, W);
+  const ivec4 p1 = swap_adj_dims(p0, 4, (Cp / 4), (H * Np * W));
+  const ivec4 p2 = swap_adj_dims(p1, W, (Np / 4), 4);
+  const ivec4 p3 = swap_adj_dims(p2, H, (Np / 4), (W * 4));
+  const ivec4 p4 = swap_adj_dims(p3, W, 4, 1);
+  const ivec4 p5 = swap_adj_dims(p4, H, 4, W);
 
   // Undo step 0 permute: (8,12,3,3) -> (12,8,3,3)
-  const ivec4 p6 = SWAP_ADJ_DIMS(p5, Cp, Np, (W * H));
+  const ivec4 p6 = swap_adj_dims(p5, Cp, Np, (W * H));
   // Undo step 0 flip: (2,3)
   const ivec4 w = p6 % W;
   const ivec4 h = p6 % (H * W) / W;
@@ -102,12 +109,12 @@ void main() {
   const ivec4 mask = ivec4(greaterThanEqual(c, ivec4(C))) |
       ivec4(greaterThanEqual(n, ivec4(N)));
 
-  ${T[DTYPE]} val_x = mix(buffer_in.data[p8.x], 0, mask.x);
-  ${T[DTYPE]} val_y = mix(buffer_in.data[p8.y], 0, mask.y);
-  ${T[DTYPE]} val_z = mix(buffer_in.data[p8.z], 0, mask.z);
-  ${T[DTYPE]} val_w = mix(buffer_in.data[p8.w], 0, mask.w);
+  SCALAR_T val_x = mix(SCALAR_T(buffer_in.data[p8.x]), 0, mask.x);
+  SCALAR_T val_y = mix(SCALAR_T(buffer_in.data[p8.y]), 0, mask.y);
+  SCALAR_T val_z = mix(SCALAR_T(buffer_in.data[p8.z]), 0, mask.z);
+  SCALAR_T val_w = mix(SCALAR_T(buffer_in.data[p8.w]), 0, mask.w);
 
-  ${VEC4_T[DTYPE]} texel = ${VEC4_T[DTYPE]}(val_x, val_y, val_z, val_w);
+  VEC4_T texel = VEC4_T(val_x, val_y, val_z, val_w);
 
   imageStore(image_out, pos.xy, texel);
 }

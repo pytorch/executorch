@@ -8,9 +8,9 @@
 
 #version 450 core
 
-#include "indexing_utils.h"
-
 #define PRECISION ${PRECISION}
+
+#include "indexing_utils.h"
 
 layout(std430) buffer;
 

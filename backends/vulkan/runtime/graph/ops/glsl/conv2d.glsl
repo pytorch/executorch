@@ -10,6 +10,8 @@
 
 #define PRECISION ${PRECISION}
 
+#define VEC4_T ${texel_type(DTYPE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -78,12 +80,12 @@ void main() {
   kstart.y += pos.z * params.kernel_size.y;
 
   // Perform the convolution by iterating over the overlay region.
-  ${VEC4_T[DTYPE]} sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
+  VEC4_T sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
   const int ic4 = extra_params.in_group_size / 4;
   for (int z4 = 0; z4 < ic4; ++z4, kstart.x += params.kernel_size.x * 4) {
     for (int y = start.y, ky = kstart.y; y < end.y; y += params.dilation.y, ++ky) {
       for (int x = start.x, kx = kstart.x; x < end.x; x += params.dilation.x, kx += 4) {
-        const ${VEC4_T[DTYPE]} in_texel = texelFetch(image_in, ivec3(x, y, z4), 0);
+        const VEC4_T in_texel = texelFetch(image_in, ivec3(x, y, z4), 0);
         const ivec4 kxs = kx + ivec4(0, 1, 2, 3);
 
         // To explain the calculation below, the contents of in_texel and the
