@@ -20,10 +20,33 @@ def define_common_targets():
         },
     )
 
+    runtime.cxx_test(
+        name = "test_tiktoken",
+        srcs = [
+            "test_tiktoken.cpp",
+        ],
+        deps = [
+            "//executorch/examples/models/llama2/tokenizer:tokenizer",
+        ],
+        env = {
+            "RESOURCES_PATH": "$(location :resources_fb_only)/resources",
+        },
+        external_deps = [
+            "re2",
+        ],
+    )
+
     runtime.filegroup(
         name = "resources",
         srcs = native.glob([
             "resources/**",
+        ]),
+    )
+
+    runtime.filegroup(
+        name = "resources_fb_only",
+        srcs = native.glob([
+            "resources/fb/**",
         ]),
     )
 

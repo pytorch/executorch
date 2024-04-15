@@ -39,6 +39,11 @@ DEFINE_int32(
     -1,
     "Number of CPU threads for inference. Defaults to -1, which implies we'll use a heuristic to derive the # of performant cores for a specific device.");
 
+DEFINE_bool(
+    use_tiktoken,
+    false,
+    "Use Tiktoken tokenizer instead of the default BPE tokenizer.");
+
 int32_t main(int32_t argc, char** argv) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
@@ -57,6 +62,8 @@ int32_t main(int32_t argc, char** argv) {
 
   int32_t cpu_threads = FLAGS_cpu_threads;
 
+  bool use_tiktoken = FLAGS_use_tiktoken;
+
 #if defined(ET_USE_THREADPOOL)
   uint32_t num_performant_cores = cpu_threads == -1
       ? torch::executorch::cpuinfo::get_num_performant_cores()
@@ -69,7 +76,8 @@ int32_t main(int32_t argc, char** argv) {
   }
 #endif
   // create llama runner
-  ::torch::executor::Runner runner(model_path, tokenizer_path, temperature);
+  ::torch::executor::Runner runner(
+      model_path, tokenizer_path, temperature, use_tiktoken);
 
   // generate
   runner.generate(prompt, seq_len);

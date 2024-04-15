@@ -11,6 +11,7 @@
 
 #include <executorch/examples/models/llama2/runner/runner.h>
 #include <executorch/examples/models/llama2/tokenizer/bpe_tokenizer.h>
+#include <executorch/examples/models/llama2/tokenizer/tiktoken.h>
 #include <executorch/extension/evalue_util/print_evalue.h>
 #include <executorch/extension/runner_util/managed_tensor.h>
 
@@ -37,8 +38,10 @@ std::string statsToJsonString(const Runner::Stats& stats);
 Runner::Runner(
     const std::string& model_path,
     const std::string& tokenizer_path,
-    const float temperature)
-    : module_(std::make_unique<Module>(
+    const float temperature,
+    bool use_tiktoken)
+    : use_tiktoken_(use_tiktoken),
+      module_(std::make_unique<Module>(
           model_path,
           Module::MlockConfig::UseMlockIgnoreErrors)),
       tokenizer_path_(tokenizer_path),
@@ -77,7 +80,11 @@ Error Runner::load() {
   append_eos_ = getMetadataHelper("append_eos_to_prompt", false);
 
   // Load tokenizer
-  tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
+  if (use_tiktoken_) {
+    tokenizer_ = std::make_unique<Tiktoken>(vocab_size_, bos_id_, eos_id_);
+  } else {
+    tokenizer_ = std::make_unique<BPETokenizer>(vocab_size_, bos_id_, eos_id_);
+  }
   tokenizer_->load(tokenizer_path_);
   if (tokenizer_->bos_tok() != bos_id_) {
     ET_LOG(
