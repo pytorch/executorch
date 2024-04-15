@@ -21,7 +21,9 @@ AT_TENSOR = "at::Tensor"
 AT_TENSOR_OPT = "::std::optional<at::Tensor>"
 BOOL = "bool"
 INT = "int64_t"
-TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
+DOUBLE = "double"
+TWO_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor>"
+THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
 
 ###########################
 ## Test Suite definition ##
@@ -130,6 +132,8 @@ class TestSuiteGen:
         elif cpp_type == BOOL:
             ret_str += f"{str(data).lower()};"
         elif cpp_type == INT:
+            ret_str += f"{str(data).lower()};"
+        elif cpp_type == DOUBLE:
             ret_str += f"{str(data).lower()};"
         else:
             raise RuntimeError(f"Unsupported cpp type {cpp_type}")
