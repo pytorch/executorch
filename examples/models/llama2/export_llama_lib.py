@@ -174,17 +174,17 @@ class SDPASimple(torch.nn.Module):
         v = v.transpose(1, 2)
 
         k, v = self.kv_cache.update(input_pos, k, v)
-        mask = mask[None, None, input_pos]
+        attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
-        scores = torch.matmul(q, k.transpose(2, 3)) / math.sqrt(self.head_dim)
-        scores = F.softmax(scores.float(), dim=-1).type_as(q)
-        scores = scores + mask
-        output = torch.matmul(scores, v)  # (bs, n_local_heads, seqlen, head_dim)
+        scale_factor = 1 / math.sqrt(q.size(-1))
+        attn_weight = q @ k.transpose(-2, -1) * scale_factor
+        attn_weight += attn_mask
+        attn_weight = torch.softmax(attn_weight, dim=-1)
+        y = attn_weight @ v
 
-        output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)
-        return output
+        return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
 
 def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
@@ -197,6 +197,24 @@ def replace_sdpa_with_simple_sdpa(module: torch.nn.Module):
             )
         else:
             replace_sdpa_with_simple_sdpa(child)
+    return module
+
+
+def replace_causal_mask(module: torch.nn.Module):
+    for buffer_fqn_name, buffer in module.named_buffers():
+        buffer_name = buffer_fqn_name.split(".")[-1]
+        if buffer_name == "mask":
+            max_seq_len = buffer.shape[-1]
+            mask = torch.full(
+                (max_seq_len, max_seq_len),
+                float("-inf"),
+                device="cpu",
+            )
+
+            mask = torch.triu(mask, diagonal=1)
+            module.register_buffer(buffer_name, mask)
+    for _, child in module.named_children():
+        replace_causal_mask(child)
     return module
 
 
@@ -616,6 +634,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
 
     if args.qnn and args.use_kv_cache:
         transforms.append(replace_sdpa_with_simple_sdpa)
+        transforms.append(replace_causal_mask)
     return (
         load_llama_model(
             checkpoint=checkpoint_path,
