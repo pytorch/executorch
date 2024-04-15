@@ -8,6 +8,7 @@ from typing import Optional
 
 import torch
 from torch.library import impl, impl_abstract
+from torch.ao.quantization.fx._decomposed import quantized_decomposed_lib
 
 # NOTE: this is a hacky way to get around the fact that we can't use quantized_decomposed::embedding_byte in exir directly in eager model. That op can be found under exir/passes/_quant_patterns_and_replacements.py. Ideally we should consolidate these 2 versions.
 # This op share the same signature and C++ kernel implementation with quantized_decomposed::embedding_byte.
@@ -161,3 +162,20 @@ def embedding_byte_dtype_out_meta(
         indices,
         dtype=dtype,
     )
+
+# NOTE: this is a temporary hack to get dequantize_per_channel_group working correctly, before we migrate to the new PyTorch custom ops API. Will clean this up after the migration.
+@impl(quantized_decomposed_lib,
+    "dequantize_per_channel_group",
+    "Meta",
+)
+def dequantize_per_channel_group(
+    w_int8: torch.Tensor,
+    scales: torch.Tensor,
+    zero_points: Optional[torch.Tensor],
+    quant_min: int,
+    quant_max: int,
+    dtype: torch.dtype,
+    group_size: int = 128,
+    output_dtype: torch.dtype = torch.float32,
+):
+    return torch.empty_like(w_int8).to(output_dtype)
