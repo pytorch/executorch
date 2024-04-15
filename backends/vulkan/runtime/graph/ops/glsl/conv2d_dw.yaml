@@ -11,8 +11,6 @@ conv2d_dw:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
   shader_variants:
     - NAME: conv2d_dw

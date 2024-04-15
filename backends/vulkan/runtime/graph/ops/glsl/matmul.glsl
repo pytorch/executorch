@@ -39,15 +39,15 @@ void main() {
 
   ivec3 mat1_pos = ivec3(0, pos.y, pos.z);
 
-  $if MAT2_PACKING == "HEIGHT_PACKED":
+  $if MAT2_PACKING == "H_packed":
     ivec3 mat2_pos = ivec3(pos.x * 4, 0, pos.z);
   $else:
     ivec3 mat2_pos = ivec3(pos.x, 0, pos.z);
 
-  $if MAT1_PACKING == "WIDTH_PACKED":
-    int K = DIVUP4(in_sizes.data[0]);
+  $if MAT1_PACKING == "W_packed":
+    int K = divup4(in_sizes.data[0]);
     for (int i = 0; i < K; ++i) {
-      $if MAT2_PACKING == "HEIGHT_PACKED":
+      $if MAT2_PACKING == "H_packed":
         vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
         vec4 sums = vec4(
             dot(mat1_tex, texelFetch(im_mat2, mat2_pos, 0)),
@@ -59,7 +59,7 @@ void main() {
 
         mat1_pos.x++;
         mat2_pos.y++;
-      $elif MAT2_PACKING == "WIDTH_PACKED":
+      $elif MAT2_PACKING == "W_packed":
         vec4 mat1_tex = texelFetch(im_mat1, mat1_pos, 0);
         texel = fma(mat1_tex.xxxx, texelFetch(im_mat2, mat2_pos, 0), texel);
         mat2_pos.y++;
@@ -74,7 +74,7 @@ void main() {
       $else:
         $raise Exception("Unsupported value for MAT2_PACKING")
     }
-  $elif MAT1_PACKING == "CHANNELS_PACKED" and MAT2_PACKING == "CHANNELS_PACKED":
+  $elif MAT1_PACKING == "C_packed" and MAT2_PACKING == "C_packed":
     int K = in_sizes.data[0];
     for (int i = 0; i < K; ++i) {
       texel = fma(

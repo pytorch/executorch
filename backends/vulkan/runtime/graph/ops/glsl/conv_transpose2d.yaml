@@ -11,8 +11,6 @@ conv_transpose2d:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
   shader_variants:
     - NAME: conv_transpose2d

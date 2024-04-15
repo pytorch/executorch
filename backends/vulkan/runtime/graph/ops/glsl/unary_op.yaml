@@ -6,9 +6,7 @@ unary_op:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
   shader_variants:
     - NAME: abs
       OPERATOR: abs(X)
