@@ -74,8 +74,8 @@ class optional final {
   }
 
   optional& operator=(optional&& rhs) noexcept(
-      std::is_nothrow_move_assignable<T>::value&&
-          std::is_nothrow_move_constructible<T>::value) {
+      std::is_nothrow_move_assignable<T>::value &&
+      std::is_nothrow_move_constructible<T>::value) {
     if (init_ && !rhs.init_) {
       clear();
     } else if (!init_ && rhs.init_) {
