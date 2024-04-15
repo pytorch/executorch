@@ -98,6 +98,15 @@ TYPE_MAPPINGS: Dict[str, Any] = {
 }
 
 
+def define_variable(name: str) -> str:
+    if name in locals():
+        return f"#define {name} {locals()[name]}"
+    elif name in globals():
+        return f"#define {name} {globals()[name]}"
+    else:
+        raise RuntimeError(f"{name} is not defined")
+
+
 def get_buffer_scalar_type(dtype: str) -> str:
     # TODO(ssjia): use float16_t for half types
     if dtype == "half":
@@ -120,6 +129,11 @@ def get_texel_type(dtype: str) -> str:
     raise AssertionError(f"Invalid image format: {image_format}")
 
 
+def get_gvec_type(dtype: str, n: int) -> str:
+    gvec4_type = get_texel_type(dtype)
+    return gvec4_type[:-1] + str(n)
+
+
 def get_texel_component_type(dtype: str) -> str:
     vec4_type = get_texel_type(dtype)
     if vec4_type[:3] == "vec":
@@ -132,12 +146,14 @@ def get_texel_component_type(dtype: str) -> str:
 
 
 UTILITY_FNS: Dict[str, Any] = {
+    "macro_define": define_variable,
     "get_pos": {
         3: lambda pos: pos,
         2: lambda pos: f"{pos}.xy",
     },
     "buffer_scalar_type": get_buffer_scalar_type,
     "texel_type": get_texel_type,
+    "gvec_type": get_gvec_type,
     "texel_component_type": get_texel_component_type,
 }
 

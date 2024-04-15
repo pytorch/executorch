@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-ivec4 broadcast(const ivec4 out_idx, const ivec4 in_sizes) {
+ivec4 broadcast_indices(const ivec4 out_idx, const ivec4 in_sizes) {
   ivec4 in_idx = out_idx;
   for (int i = 0; i < 4; ++i) {
     if (out_idx[i] >= in_sizes[i]) {

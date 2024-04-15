@@ -71,10 +71,10 @@ void main() {
   ivec2 kstart = (start - ipos) / params.dilation;
   // During prepacking, the weight tensor was rearranged in order to optimize
   // for data access linearity in this shader. Therefore we need to adjust the
-  // canonical idxinates to the corresponding index in the rearranged weight
-  // tensor. The x-idxinate is multipled by 4 since each group of 4 channels
-  // is folded into the X axis. The y-idxinate is offset based on the z-
-  // idxinate because the 2D planes were stacked atop each other vertically.
+  // canonical coordinates to the corresponding index in the rearranged weight
+  // tensor. The x-coordinate is multipled by 4 since each group of 4 channels
+  // is folded into the X axis. The y-coordinate is offset based on the z-
+  // coordinate because the 2D planes were stacked atop each other vertically.
   kstart.x *= 4;
   kstart.y += pos.z * params.kernel_size.y;
 

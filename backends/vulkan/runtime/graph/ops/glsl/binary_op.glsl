@@ -9,9 +9,11 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+
 #define op(X, Y, A) ${OPERATOR}
 
 #define VEC4_T ${texel_type(DTYPE)}
+
 #define to_tensor_idx to_tensor_idx_${PACKING}
 #define to_texture_pos to_texture_pos_${PACKING}
 
@@ -59,13 +61,13 @@ void main() {
     return;
   }
 
-  ivec4 in_idx = broadcast(idx, in_sizes.data);
+  ivec4 in_idx = broadcast_indices(idx, in_sizes.data);
   VEC4_T in_texel = VEC4_T(texelFetch(
     image_in,
     to_texture_pos(in_idx, in_sizes.data),
     0));
 
-  ivec4 other_idx = broadcast(idx, other_sizes.data);
+  ivec4 other_idx = broadcast_indices(idx, other_sizes.data);
   VEC4_T other_texel = VEC4_T(texelFetch(
     image_other,
     to_texture_pos(other_idx, other_sizes.data),
