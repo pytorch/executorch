@@ -29,7 +29,8 @@ class Runner {
   explicit Runner(
       const std::string& model_path,
       const std::string& tokenizer_path,
-      const float temperature = 0.8f);
+      const float temperature = 0.8f,
+      bool use_tiktoken = false);
 
   struct Stats {
     // Scaling factor for timestamps - in this case, we use ms.
@@ -85,6 +86,7 @@ class Runner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
+  bool use_tiktoken_;
   bool use_kv_cache_;
   bool use_sdpa_with_kv_cache_;
   bool append_eos_;

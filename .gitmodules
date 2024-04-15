@@ -62,3 +62,9 @@
 [submodule "examples/third-party/LLaVA"]
 	path = examples/third-party/LLaVA
 	url = https://github.com/haotian-liu/LLaVA.git
+[submodule "examples/models/llama2/third-party/re2"]
+	path = examples/models/llama2/third-party/re2
+	url = https://github.com/google/re2.git
+[submodule "examples/models/llama2/third-party/abseil-cpp"]
+	path = examples/models/llama2/third-party/abseil-cpp
+	url = https://github.com/abseil/abseil-cpp.git
