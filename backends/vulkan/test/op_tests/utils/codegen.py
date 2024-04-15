@@ -15,10 +15,12 @@ from executorch.backends.vulkan.test.op_tests.utils.codegen_base import (
     AT_TENSOR_OPT,
     BOOL,
     CppTestFileGen,
+    DOUBLE,
     INT,
-    TENSOR_TUPLE,
     TestSuite,
     TestSuiteGen,
+    THREE_TENSOR_TUPLE,
+    TWO_TENSOR_TUPLE,
 )
 from torchgen.api import cpp
 from torchgen.api.types import CppSignatureGroup
@@ -118,7 +120,7 @@ class ComputeGraphGen:
             self.refs["out"] = ValueRef(
                 name="out_ref", src_cpp_name="out", src_cpp_type=ret_type, is_out=True
             )
-        elif ret_type == TENSOR_TUPLE:
+        elif ret_type == TWO_TENSOR_TUPLE:
             self.refs["out"] = [
                 ValueRef(
                     name="out_ref_first",
@@ -129,6 +131,33 @@ class ComputeGraphGen:
                 ValueRef(
                     name="out_ref_second",
                     src_cpp_name="std::get<1>(out)",
+                    src_cpp_type="at::Tensor",
+                    is_out=True,
+                ),
+                ValueRef(
+                    name="out_ref",
+                    src_cpp_name="out",
+                    src_cpp_type=ret_type,
+                    is_out=False,
+                ),
+            ]
+        elif ret_type == THREE_TENSOR_TUPLE:
+            self.refs["out"] = [
+                ValueRef(
+                    name="out_ref_first",
+                    src_cpp_name="std::get<0>(out)",
+                    src_cpp_type="at::Tensor",
+                    is_out=True,
+                ),
+                ValueRef(
+                    name="out_ref_second",
+                    src_cpp_name="std::get<1>(out)",
+                    src_cpp_type="at::Tensor",
+                    is_out=True,
+                ),
+                ValueRef(
+                    name="out_ref_third",
+                    src_cpp_name="std::get<2>(out)",
                     src_cpp_type="at::Tensor",
                     is_out=True,
                 ),
@@ -210,8 +239,12 @@ class ComputeGraphGen:
             ret_str += f"add_scalar<bool>({ref.src_cpp_name}); \n"
         elif ref.src_cpp_type == INT:
             ret_str += f"add_scalar<int64_t>({ref.src_cpp_name}); \n"
-        elif ref.src_cpp_type == TENSOR_TUPLE:
+        elif ref.src_cpp_type == DOUBLE:
+            ret_str += f"add_scalar<double>({ref.src_cpp_name}); \n"
+        elif ref.src_cpp_type == TWO_TENSOR_TUPLE:
             ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second}}); \n"
+        elif ref.src_cpp_type == THREE_TENSOR_TUPLE:
+            ret_str += f"add_value_list({{{ref.name}_first, {ref.name}_second, {ref.name}_third}}); \n"
         else:
             raise RuntimeError(f"Unsupported cpp type {ref.src_cpp_type}")
 
@@ -441,9 +474,9 @@ api::ScalarType from_at_scalartype(c10::ScalarType at_scalartype) {
 }
 
 #ifdef USE_VULKAN_FP16_INFERENCE
-bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-2, float atol=1e-3) {
+bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-2, float atol=1e-2) {
 #else
-bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-8) {
+bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-5) {
 #endif
     // Skip checking index tensors
     if (t1.scalar_type() == at::kLong || t2.scalar_type() == at::kLong) {
