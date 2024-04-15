@@ -37,7 +37,7 @@ ATEN_MODULE_DEPS = [
 # Generated lib for all ATen ops with aten kernel used by models in model inventory
 MODELS_ATEN_OPS_ATEN_MODE_GENERATED_LIB = [
     "//executorch/kernels/quantized:generated_lib_aten",
-    "//executorch/kernels/aten:generated_lib_aten",
+    "//executorch/kernels/aten:generated_lib",
 ]
 
 def executorch_pybindings(python_module_name, srcs = [], cppdeps = [], visibility = ["//executorch/..."], types = [], compiler_flags = []):
