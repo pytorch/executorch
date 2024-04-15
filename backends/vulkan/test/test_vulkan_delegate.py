@@ -665,3 +665,19 @@ class TestBackends(unittest.TestCase):
             sample_inputs,
             memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
         )
+
+    def test_vulkan_backend_full(self):
+        class FullModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+
+            def forward(self, x):
+                return torch.full(x.shape, 42.0)
+
+        sample_inputs = (torch.randn(size=(2, 3, 4, 5), dtype=torch.float32),)
+
+        self.lower_module_and_test_output(
+            FullModule(),
+            sample_inputs,
+            memory_layouts=[vk_graph_schema.VkMemoryLayout.TENSOR_CHANNELS_PACKED],
+        )

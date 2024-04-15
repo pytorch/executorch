@@ -54,6 +54,7 @@ class VulkanSupportedOperators(OperatorSupportBase):
             exir_ops.edge.aten.native_layer_norm.default,
             # Other
             operator.getitem,
+            exir_ops.edge.aten.full.default,
         ]
         return supported
 
