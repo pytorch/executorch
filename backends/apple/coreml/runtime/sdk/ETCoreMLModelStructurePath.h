@@ -17,7 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 ///
 /// The class is a thin wrapper over `executorchcoreml::modelstructure::path`.
 ///
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelStructurePath : NSObject<NSCopying>
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLModelStructurePath : NSObject<NSCopying>
 
 - (instancetype)init NS_UNAVAILABLE;
 
