@@ -103,7 +103,8 @@ ETDumpGen::ETDumpGen(Span<uint8_t> buffer) {
     alloc.set_buffer(
         (uint8_t*)buffer_with_builder,
         buffer_size,
-        (size_t)((buffer_size / 4 > max_alloc_buf_size) ? max_alloc_buf_size : buffer_size / 4));
+        (size_t)((buffer_size / 4 > max_alloc_buf_size) ? max_alloc_buf_size
+                                                        : buffer_size / 4));
     et_flatcc_custom_init(builder, &alloc);
   } else {
     builder = (struct flatcc_builder*)malloc(sizeof(struct flatcc_builder));

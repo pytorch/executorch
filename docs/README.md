@@ -57,7 +57,11 @@ To build the documentation locally:
    ```bash
    pip3 install -r ./.ci/docker/requirements-ci.txt
    ```
+1. Update submodules
 
+   ```bash
+   git submodule sync && git submodule update --init
+   ```
 1. Run:
 
    ```bash
