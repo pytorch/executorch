@@ -401,8 +401,7 @@ std::string Adapter::stringize() const {
   ss << "  Memory Info {" << std::endl;
   ss << "    Memory Types [" << std::endl;
   for (size_t i = 0; i < mem_props.memoryTypeCount; ++i) {
-    ss << "      "
-       << " [Heap " << mem_props.memoryTypes[i].heapIndex << "] "
+    ss << "      " << " [Heap " << mem_props.memoryTypes[i].heapIndex << "] "
        << get_memory_properties_str(mem_props.memoryTypes[i].propertyFlags)
        << std::endl;
   }

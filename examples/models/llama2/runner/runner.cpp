@@ -472,8 +472,7 @@ std::string statsToJsonString(const Runner::Stats& stats) {
      << "\"prompt_eval_end_ms\":" << stats.prompt_eval_end_ms << ","
      << "\"first_token_ms\":" << stats.first_token_ms << ","
      << "\"aggregate_sampling_time_ms\":" << stats.aggregate_sampling_time_ms
-     << ","
-     << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
+     << "," << "\"SCALING_FACTOR_UNITS_PER_SECOND\":"
      << stats.SCALING_FACTOR_UNITS_PER_SECOND << "}";
   return ss.str();
 }
