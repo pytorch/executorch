@@ -13,7 +13,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 /// The default model executor, the executor ignores logging options.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLDefaultModelExecutor : NSObject<ETCoreMLModelExecutor>
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLDefaultModelExecutor : NSObject<ETCoreMLModelExecutor>
 
 + (instancetype)new NS_UNAVAILABLE;
 
