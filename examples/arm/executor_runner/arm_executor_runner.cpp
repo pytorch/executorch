@@ -31,8 +31,8 @@ using namespace std;
 using torch::executor::Error;
 using torch::executor::Result;
 
-__attribute__((section(".sram.data"), aligned(16)))
-uint8_t method_allocator_pool[4 * 1024U];
+__attribute__((section(".sram.data"), aligned(16))) uint8_t
+    method_allocator_pool[4 * 1024U];
 
 void et_pal_init(void) {}
 
