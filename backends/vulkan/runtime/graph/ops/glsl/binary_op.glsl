@@ -10,12 +10,12 @@
 
 #define PRECISION ${PRECISION}
 
-#define op(X, Y, A) ${OPERATOR}
-
 #define VEC4_T ${texel_type(DTYPE)}
 
 #define to_tensor_idx to_tensor_idx_${PACKING}
 #define to_texture_pos to_texture_pos_${PACKING}
+
+#define op(X, Y, A) ${OPERATOR}
 
 #include "broadcasting_utils.h"
 #include "indexing_utils.h"

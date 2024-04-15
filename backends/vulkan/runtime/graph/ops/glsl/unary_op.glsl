@@ -9,9 +9,10 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
-#define op(X, A, B) ${OPERATOR}
 
 #define VEC4_T ${texel_type(DTYPE)}
+
+#define op(X, A, B) ${OPERATOR}
 
 layout(std430) buffer;
 

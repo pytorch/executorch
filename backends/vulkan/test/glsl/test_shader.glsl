@@ -7,11 +7,10 @@
  */
 
 #version 450 core
+
 #define PRECISION ${PRECISION}
 
 layout(std430) buffer;
-
-/* Qualifiers: layout - storage - precision - memory */
 
 layout(set = 0, binding = 0, rgba32f) uniform PRECISION restrict writeonly image3D   uOutput;
 layout(set = 0, binding = 1) uniform PRECISION sampler3D uInput;

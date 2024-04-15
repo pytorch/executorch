@@ -77,24 +77,6 @@ TYPE_MAPPINGS: Dict[str, Any] = {
         "int8": "rgba8i",
         "uint8": "rgba8ui",
     },
-    # Kept for backwards compatibility
-    # TODO(ssjia): remove when no more shaders use these
-    "VEC4_T": {
-        "float": "vec4",
-        "half": "vec4",
-        "int": "ivec4",
-        "uint": "uvec4",
-        "int8": "vec4",
-        "uint8": "uvec4",
-    },
-    "T": {
-        "float": "float",
-        "half": "float",
-        "int": "int",
-        "uint": "uint",
-        "int8": "int",
-        "uint8": "uint8",
-    },
 }
 
 

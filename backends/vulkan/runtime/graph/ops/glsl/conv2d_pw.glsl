@@ -9,6 +9,7 @@
 #version 450 core
 
 #define PRECISION ${PRECISION}
+
 #define VEC4_T ${texel_type(DTYPE)}
 
 #include "indexing_utils.h"

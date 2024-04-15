@@ -10,11 +10,11 @@
 
 #define PRECISION ${PRECISION}
 
+#define VEC4_T ${texel_type(DTYPE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
-
-#define VEC4_T ${texel_type(DTYPE)}
 
 layout(set = 0, binding = 0, ${IMAGE_FORMAT[DTYPE]}) uniform PRECISION restrict writeonly ${IMAGE_T[NDIM][DTYPE]} image_out;
 
