@@ -42,6 +42,8 @@ jobs:
             post-script: build/packaging/post_build_script.sh
             smoke-test-script: build/packaging/smoke_test.py
             package-name: executorch
+    env:
+      CHANNEL: test
     name: ${{ matrix.repository }}
     uses: pytorch/test-infra/.github/workflows/build_wheels_linux.yml@main
     with:
