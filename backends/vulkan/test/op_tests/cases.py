@@ -176,6 +176,7 @@ test_suites = {
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),
     "aten.select.int": get_select_int_inputs(),
+    "aten.select_copy.int": get_select_int_inputs(),
 }
 
 prepacked_args = {"aten.mm.default": {"mat2"}}
