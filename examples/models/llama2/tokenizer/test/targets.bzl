@@ -8,12 +8,12 @@ def define_common_targets():
     """
 
     runtime.cxx_test(
-        name = "test",
+        name = "test_bpe_tokenizer",
         srcs = [
-            "test_tokenizer.cpp",
+            "test_bpe_tokenizer.cpp",
         ],
         deps = [
-            "//executorch/examples/models/llama2/tokenizer:tokenizer",
+            "//executorch/examples/models/llama2/tokenizer:bpe_tokenizer",
         ],
         env = {
             "RESOURCES_PATH": "$(location :resources)/resources",
@@ -26,7 +26,7 @@ def define_common_targets():
             "test_tiktoken.cpp",
         ],
         deps = [
-            "//executorch/examples/models/llama2/tokenizer:tokenizer",
+            "//executorch/examples/models/llama2/tokenizer:tiktoken",
         ],
         env = {
             "RESOURCES_PATH": "$(location :resources_fb_only)/resources",
