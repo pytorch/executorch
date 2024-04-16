@@ -8,12 +8,17 @@
 
 #version 450 core
 
-#include "broadcasting_utils.h"
-#include "indexing_utils.h"
-
 #define PRECISION ${PRECISION}
 
-#define OP(X, Y, A) ${OPERATOR}
+#define VEC4_T ${texel_type(DTYPE)}
+
+#define to_tensor_idx to_tensor_idx_${PACKING}
+#define to_texture_pos to_texture_pos_${PACKING}
+
+#define op(X, Y, A) ${OPERATOR}
+
+#include "broadcasting_utils.h"
+#include "indexing_utils.h"
 
 layout(std430) buffer;
 
@@ -50,22 +55,22 @@ layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main() {
   const ivec3 pos = ivec3(gl_GlobalInvocationID);
-  const ivec4 coord = POS_TO_COORD_${PACKING}(pos, out_sizes.data);
+  const ivec4 idx = to_tensor_idx(pos, out_sizes.data);
 
-  if (any(greaterThanEqual(coord, out_sizes.data))) {
+  if (any(greaterThanEqual(idx, out_sizes.data))) {
     return;
   }
 
-  ivec4 in_coord = out_coord_to_in_coord(coord, in_sizes.data);
-  ${VEC4_T[DTYPE]} in_texel = ${VEC4_T[DTYPE]}(texelFetch(
+  ivec4 in_idx = broadcast_indices(idx, in_sizes.data);
+  VEC4_T in_texel = VEC4_T(texelFetch(
     image_in,
-    COORD_TO_POS_${PACKING}(in_coord, in_sizes.data),
+    to_texture_pos(in_idx, in_sizes.data),
     0));
 
-  ivec4 other_coord = out_coord_to_in_coord(coord, other_sizes.data);
-  ${VEC4_T[DTYPE]} other_texel = ${VEC4_T[DTYPE]}(texelFetch(
+  ivec4 other_idx = broadcast_indices(idx, other_sizes.data);
+  VEC4_T other_texel = VEC4_T(texelFetch(
     image_other,
-    COORD_TO_POS_${PACKING}(other_coord, other_sizes.data),
+    to_texture_pos(other_idx, other_sizes.data),
     0));
 
   // Check boolean broadcast flags; we use ivec2 instead of bvec2 for alignment.
@@ -76,5 +81,5 @@ void main() {
     other_texel = other_texel.xxxx;
   }
 
-  imageStore(image_out, pos, ${VEC4_T[DTYPE]}(OP(in_texel, other_texel, alpha.data)));
+  imageStore(image_out, pos, VEC4_T(op(in_texel, other_texel, alpha.data)));
 }

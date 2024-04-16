@@ -20,7 +20,8 @@ class ModelEventLogger;
 typedef void ModelHandle;
 
 /// A class responsible for managing the models loaded by the delegate.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelManager : NSObject
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLModelManager : NSObject
 
 + (instancetype)new NS_UNAVAILABLE;
 

@@ -10,7 +10,9 @@
 
 #define PRECISION ${PRECISION}
 
-#define OP(X, A, B) ${OPERATOR}
+#define VEC4_T ${texel_type(DTYPE)}
+
+#define op(X, A, B) ${OPERATOR}
 
 layout(std430) buffer;
 
@@ -41,6 +43,6 @@ void main() {
     return;
   }
 
-  vec4 in_texel = texelFetch(image_in, pos, 0);
-  imageStore(image_out, pos, OP(in_texel, minimum.data, maximum.data));
+  VEC4_T in_texel = texelFetch(image_in, pos, 0);
+  imageStore(image_out, pos, op(in_texel, minimum.data, maximum.data));
 }
