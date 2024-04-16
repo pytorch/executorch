@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <executorch/backends/vulkan/runtime/api/Utils.h>
+
 #include <ostream>
 #include <vector>
 
@@ -21,6 +23,10 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec) {
   }
   os << ']';
   return os; // Return the ostream to allow chaining
+}
+
+inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec3& v) {
+  return api::utils::operator<<(os, v);
 }
 
 } // namespace vkcompute

@@ -142,6 +142,29 @@ def get_full_inputs():
     return test_suite
 
 
+def get_select_int_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((6, 2, 7), 0, 3),
+            ((6, 2, 7), 1, 0),
+            ((6, 2, 7), 2, 3),
+            ((6, 10, 7), 0, 3),
+            ((6, 10, 7), 1, 0),
+            ((6, 10, 7), 1, 9),
+            ((6, 10, 7), 2, 6),
+            ((9, 2, 9, 4), 0, 8),
+            ((9, 2, 9, 4), 1, 1),
+            ((9, 2, 9, 4), 2, 0),
+            ((9, 2, 9, 4), 2, 8),
+            ((9, 2, 9, 4), 3, 3),
+            ((8, 6, 1, 1), 0, 4),
+            ((8, 6, 1, 1), 1, 4),
+        ]
+    )
+    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -152,6 +175,7 @@ test_suites = {
     "aten.convolution.default": get_conv2d_inputs(),
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),
+    "aten.select.int": get_select_int_inputs(),
 }
 
 prepacked_args = {"aten.mm.default": {"mat2"}}
