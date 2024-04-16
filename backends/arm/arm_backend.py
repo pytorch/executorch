@@ -132,9 +132,7 @@ class ArmCompileSpecBuilder:
             )
 
         if self.quantize_io:
-            self.compile_spec.append(
-                CompileSpec("quantize_io", "True".encode())
-            )
+            self.compile_spec.append(CompileSpec("quantize_io", "True".encode()))
 
         return self.compile_spec
 
@@ -182,6 +180,7 @@ def generate_ethosu_compile_spec(
         .set_quantize_io(quantize_io)
         .build()
     )
+
 
 def generate_tosa_compile_spec(
     permute_memory_to_nhwc: Optional[bool] = None,
