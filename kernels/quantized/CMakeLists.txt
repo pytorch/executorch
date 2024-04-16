@@ -10,6 +10,9 @@
 # ~~~
 cmake_minimum_required(VERSION 3.19)
 
+option(EXECUTORCH_BUILD_QUANTIZED_OPS_AOT
+       "Build the optimized ops library for AOT export usage" OFF)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -49,7 +52,7 @@ message("Generated files ${gen_command_sources}")
 # quantized_ops_aot_lib quantized_ops_lib but none of these is a common
 # dependency of the other(s). This is not allowed by the Xcode "new build
 # system".
-if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
+if(NOT CMAKE_GENERATOR STREQUAL "Xcode" AND EXECUTORCH_BUILD_QUANTIZED_OPS_AOT)
   # Build a AOT library to register quantized ops into PyTorch. This is a hack.
   set(_quantized_sources
       ${_quantized_kernels__srcs}
