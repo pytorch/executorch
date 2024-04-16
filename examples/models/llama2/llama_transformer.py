@@ -213,14 +213,14 @@ class SDPA(nn.Module):
     def __init__(
         self,
         kv_cache: KVCache,
-        mask,
         dim: int,
+        head_dim: int,
         n_rep: int,
     ):
         super().__init__()
         self.kv_cache = kv_cache
-        self.mask = mask
         self.dim = dim
+        self.head_dim = head_dim
         self.n_rep = n_rep
 
     def forward(
@@ -231,17 +231,18 @@ class SDPA(nn.Module):
         v: torch.Tensor,
         bsz,
         seqlen,
+        mask: torch.Tensor,
     ) -> torch.Tensor:
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
         k, v = self.kv_cache.update(input_pos, k, v)
-        mask = self.mask[None, None, input_pos]
+        attn_mask = mask[None, None, input_pos]
 
         k = k.repeat_interleave(self.n_rep, dim=1)
         v = v.repeat_interleave(self.n_rep, dim=1)
-        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=0.0)
+        y = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask, dropout_p=0.0)
 
         return y.transpose(1, 2).contiguous().view(bsz, seqlen, self.dim)
 
@@ -287,10 +288,10 @@ class Attention(nn.Module):
                 not args.use_sdpa_with_kv_cache_op,  # if we are using the custom op dont transpose the cache. Expect untransposed q k v
             )
             self.SDPA = SDPA(
-                self.kv_cache,
-                self.mask,
-                self.dim,
-                self.n_rep,
+                kv_cache=self.kv_cache,
+                dim=self.dim,
+                head_dim=self.head_dim,
+                n_rep=self.n_rep,
             )
 
     def forward(
@@ -314,7 +315,7 @@ class Attention(nn.Module):
 
         if self.use_kv_cache:
             assert input_pos is not None
-            output = self.SDPA(input_pos, q, k, v, bsz, seqlen)
+            output = self.SDPA(input_pos, q, k, v, bsz, seqlen, self.mask)
             return self.wo(output)
 
         q = q.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
