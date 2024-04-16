@@ -39,6 +39,11 @@ list(TRANSFORM _llama_runner__srcs PREPEND "${EXECUTORCH_ROOT}/")
 target_include_directories(extension_module
                            INTERFACE ${_common_include_directories})
 
+if(EXECUTORCH_USE_TIKTOKEN)
+  list(APPEND _llama_runner__srcs ${CMAKE_CURRENT_SOURCE_DIR}/../tokenizer/tiktoken.cpp)
+  set(_preprocessor_flag -DET_USE_TIKTOKEN)
+endif()
+
 if(CMAKE_TOOLCHAIN_IOS OR ANDROID OR APPLE)
   # Building a share library on iOS requires code signing
   # On Android we see duplicated registration when using shared lib
@@ -55,3 +60,4 @@ target_link_libraries(
 target_include_directories(llama_runner
                            INTERFACE ${_common_include_directories}
                            ${EXECUTORCH_ROOT})
+target_compile_options(llama_runner PUBLIC ${_preprocessor_flag})
