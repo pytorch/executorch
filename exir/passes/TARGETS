@@ -326,3 +326,33 @@ python_library(
         "//executorch/exir/dialects:lib",
     ],
 )
+
+python_library(
+    name = "replace_select_copy_with_view_copy_pass",
+    srcs = [
+        "replace_select_copy_with_view_copy_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "replace_squeeze_copy_with_view_copy_pass",
+    srcs = [
+        "replace_squeeze_copy_with_view_copy_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
+
+python_library(
+    name = "replace_unsqueeze_copy_with_view_copy_pass",
+    srcs = [
+        "replace_unsqueeze_copy_with_view_copy_pass.py",
+    ],
+    deps = [
+        "//caffe2:torch",
+    ],
+)
