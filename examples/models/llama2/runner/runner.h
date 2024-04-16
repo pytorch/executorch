@@ -85,7 +85,6 @@ class Runner {
   int32_t n_bos_;
   int32_t n_eos_;
   int32_t max_seq_len_;
-  bool use_tiktoken_;
   bool use_kv_cache_;
   bool use_sdpa_with_kv_cache_;
   bool append_eos_;
