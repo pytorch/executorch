@@ -110,6 +110,7 @@ jobs:
           case "${REF_NAME}" in
             *-rc*)
               echo "Aborting upload since this is an RC tag: ${REF_NAME}"
+              # We don't generate -rc* documentation but for actual tag only.
               exit 0
               ;;
             *)
