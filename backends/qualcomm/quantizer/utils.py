@@ -42,6 +42,7 @@ def register_annotator(ops: List[OpOverload]):
 
     return decorator
 
+
 def _is_input_float_tensor(node: Node):
     """Check if the input is not a float tensor, so that we can skip quantization for the node
     since observers only works with float Tensors
