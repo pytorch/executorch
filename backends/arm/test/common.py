@@ -4,6 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 import shutil
 import tempfile
 
@@ -23,6 +24,8 @@ def get_tosa_compile_spec(permute_memory_to_nhwc=False, custom_path=None):
     Default compile spec for TOSA tests.
     """
     intermediate_path = custom_path or tempfile.mkdtemp(prefix="arm_tosa_")
+    if not os.path.exists(intermediate_path):
+        os.makedirs(intermediate_path, exist_ok=True)
     compile_spec = (
         ArmCompileSpecBuilder()
         .tosa_compile_spec()
