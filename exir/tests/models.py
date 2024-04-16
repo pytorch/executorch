@@ -7,7 +7,7 @@
 # pyre-strict
 
 import itertools
-from typing import List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import executorch.exir as exir
 
@@ -33,6 +33,11 @@ class Repeat(nn.Module):
 
     def get_random_inputs(self) -> Tuple[torch.Tensor, torch.Tensor]:
         return (torch.rand(4), torch.rand(5))
+
+    def get_dynamic_shape(self) -> Any:  # pyre-ignore[3]
+        dim = torch.export.Dim("dim", max=10)
+        dim2 = torch.export.Dim("dim2", max=10)
+        return ({0: dim}, {0: dim2})
 
 
 class ModelWithUnusedArg(nn.Module):
