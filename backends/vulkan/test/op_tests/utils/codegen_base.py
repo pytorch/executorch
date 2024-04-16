@@ -4,7 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-from dataclasses import dataclass
 from typing import Any, List
 
 from torchgen.api import cpp
@@ -34,11 +33,12 @@ THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
 ###########################
 
 
-@dataclass
 class TestSuite:
-    input_cases: List[Any]
-    prepacked_args = []
-    requires_prepack = False
+    def __init__(self, input_cases: List[Any]):
+        self.input_cases: List[Any] = input_cases
+        self.prepacked_args: List[str] = []
+        self.requires_prepack: bool = False
+        self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
@@ -239,6 +239,6 @@ class CppTestFileGen:
     def generate_test_suites_cpp(self) -> str:
         return "\n".join([h.generate_suite_cpp() for h in self.suites_gens])
 
-    def add_suite(self, f: NativeFunction, test_suite: TestSuite) -> None:
-        suites_gen = TestSuiteGen(f, test_suite)
+    def add_suite(self, op_reg_name: str, f: NativeFunction, all_input_cases) -> None:
+        suites_gen = TestSuiteGen(f, all_input_cases)
         self.suites_gens.append(suites_gen)

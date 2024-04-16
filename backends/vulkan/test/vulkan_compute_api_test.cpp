@@ -815,8 +815,12 @@ void run_from_gpu_test(
         api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     api::ScalarType dtype = api::kFloat,
     api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  if (dtype == api::kHalf &&
+      !api::context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
   vTensor vten =
-      vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
+      vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
   std::string kernel_name("idx_fill_texture");
   add_memory_layout_suffix(kernel_name, vten);
@@ -838,16 +842,14 @@ void run_from_gpu_test(
         vten.cpu_sizes_ubo()->buffer());
   }
 
-  api::StorageBuffer staging_buffer(
-      api::context(), api::kFloat, vten.gpu_numel());
+  api::StorageBuffer staging_buffer(api::context(), dtype, vten.gpu_numel());
 
   record_image_to_nchw_op(api::context(), vten, staging_buffer.buffer());
 
   submit_to_gpu();
 
   std::vector<T> data_out(staging_buffer.numel());
-  copy_staging_to_ptr(
-      staging_buffer, data_out.data(), sizeof(float) * staging_buffer.numel());
+  copy_staging_to_ptr(staging_buffer, data_out.data(), staging_buffer.nbytes());
 
   for (int i = 0; i < vten.numel(); i++) {
     CHECK_VALUE(data_out, i, i);
@@ -861,12 +863,16 @@ void run_to_gpu_test(
         api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     api::ScalarType dtype = api::kFloat,
     api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  if (dtype == api::kHalf &&
+      !api::context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
+
   vTensor vten =
       vTensor(api::context(), sizes, api::kFloat, storage_type, memory_layout);
 
   // Create and fill input staging buffer
-  api::StorageBuffer staging_buffer_in(
-      api::context(), api::kFloat, vten.gpu_numel());
+  api::StorageBuffer staging_buffer_in(api::context(), dtype, vten.gpu_numel());
 
   std::vector<T> data_in(staging_buffer_in.numel());
   for (int i = 0; i < staging_buffer_in.numel(); i++) {
@@ -876,7 +882,7 @@ void run_to_gpu_test(
 
   // Output staging buffer
   api::StorageBuffer staging_buffer_out(
-      api::context(), api::kFloat, vten.gpu_numel());
+      api::context(), dtype, vten.gpu_numel());
 
   // Copy data in and out of the tensor
   record_nchw_to_image_op(api::context(), staging_buffer_in.buffer(), vten);
@@ -888,9 +894,7 @@ void run_to_gpu_test(
   // Extract data from output staging buffer
   std::vector<T> data_out(staging_buffer_out.numel());
   copy_staging_to_ptr(
-      staging_buffer_out,
-      data_out.data(),
-      sizeof(float) * staging_buffer_out.numel());
+      staging_buffer_out, data_out.data(), staging_buffer_out.nbytes());
 
   // All indices should be equal to the input data
   for (int i = 0; i < vten.numel(); i++) {
@@ -943,7 +947,7 @@ TEST(VulkanToFromGPUShaderTest, to_gpu_and_from_gpu_test_texture) {
 
   for (auto& sizes : to_test) {
     RUN_TESTS(float, api::kFloat)
-    RUN_TESTS(float, api::kHalf)
+    RUN_TESTS(c10::Half, api::kHalf)
   }
 #undef RUN_TESTS
 }
