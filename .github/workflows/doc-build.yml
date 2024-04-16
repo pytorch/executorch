@@ -105,6 +105,8 @@ jobs:
         if [[ "${REF_TYPE}" == branch ]]; then
           TARGET_FOLDER="${REF_NAME}"
         elif [[ "${REF_TYPE}" == tag ]]; then
+        # Strip the leading "v" as well as the trailing patch version and "-rc" suffix.
+        # For example: 'v0.1.2' -> '0.1' and 'v0.1.2-rc1' -> 0.1.
           case "${REF_NAME}" in
             *-rc*)
               echo "Aborting upload since this is an RC tag: ${REF_NAME}"
