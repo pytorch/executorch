@@ -30,14 +30,17 @@ def define_common_targets():
             exported_deps = [
                 "//executorch/backends/xnnpack:xnnpack_backend",
                 "//executorch/examples/models/llama2/sampler:sampler" + aten_suffix,
-                "//executorch/examples/models/llama2/tokenizer:tokenizer",
                 "//executorch/extension/evalue_util:print_evalue" + aten_suffix,
                 "//executorch/extension/runner_util:managed_tensor" + aten_suffix,
                 "//executorch/extension/module:module" + aten_suffix,
                 "//executorch/kernels/quantized:generated_lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten:lib" + aten_suffix,
                 "//executorch/runtime/core/exec_aten/util:tensor_util" + aten_suffix,
-            ] + (_get_operator_lib(aten)) + ([
+            ] + ([
+                "//executorch/examples/models/llama2/tokenizer:tiktoken",
+            ] if native.read_config("llama", "use_tiktoken", "0") == "1" else [
+                "//executorch/examples/models/llama2/tokenizer:bpe_tokenizer",
+            ]) + (_get_operator_lib(aten)) + ([
                 # Vulkan API currently cannot build on some platforms (e.g. Apple, FBCODE)
                 # Therefore enable it explicitly for now to avoid failing tests
                 "//executorch/backends/vulkan:vulkan_backend_lib",
