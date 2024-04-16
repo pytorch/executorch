@@ -815,6 +815,10 @@ void run_from_gpu_test(
         api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED,
     api::ScalarType dtype = api::kFloat,
     api::StorageType storage_type = api::StorageType::TEXTURE_3D) {
+  if (dtype == api::kHalf &&
+      !api::context()->adapter_ptr()->has_16bit_storage()) {
+    return;
+  }
   vTensor vten =
       vTensor(api::context(), sizes, dtype, storage_type, memory_layout);
 
