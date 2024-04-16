@@ -69,7 +69,8 @@ jobs:
         cd ..
 
         # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        echo "Ref name: ${REF_NAME}"
+        GITHUB_REF=${{ github.ref }}
+        echo "GitHub Ref: ${GITHUB_REF}"
         if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
           find docs/_build/html/ -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
         fi
