@@ -141,7 +141,7 @@ if [[ "${CUSTOM}" == "ON" ]]; then
   EXPORT_ARGS="${EXPORT_ARGS} --use_sdpa_with_kv_cache"
 fi
 if [[ "${QE}" == "ON" ]]; then
-  EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize '8,1024'"
+  EXPORT_ARGS="${EXPORT_ARGS} --embedding-quantize 8,1024"
 fi
 # Add dynamically linked library location
 $PYTHON_EXECUTABLE -m examples.models.llama2.export_llama ${EXPORT_ARGS}
