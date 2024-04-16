@@ -88,7 +88,6 @@ class ComputeGraphGen:
         self.dot = "->"
 
         self.args = []
-        self.out = None
         self.refs = {}
 
         self.should_prepack = False
@@ -288,6 +287,7 @@ class ComputeGraphGen:
         return ret_str
 
     def virtual_resize(self, ref: ValueRefList) -> str:
+        assert isinstance(ref, ValueRef)
         assert ref.src_cpp_type == AT_TENSOR and ref.is_in
         if self.prepack_ref(ref):
             return ""
@@ -296,6 +296,7 @@ class ComputeGraphGen:
         return ret_str
 
     def copy_into_staging(self, ref: ValueRefList) -> str:
+        assert isinstance(ref, ValueRef)
         assert ref.src_cpp_type == AT_TENSOR and ref.is_in
         if self.prepack_ref(ref):
             return ""
@@ -336,7 +337,7 @@ class ComputeGraphGen:
                 ret_str += self.check_graph_out(r)
             return ret_str
 
-        return f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}));\n"
+        return f"EXPECT_TRUE(check_close({ref.src_cpp_name}, vk_{ref.name}, rtol, atol));\n"
 
     ## Top level code generation
 
@@ -374,11 +375,19 @@ class ComputeGraphGen:
 
         return graph_exec
 
+    def gen_conditional_skips(self) -> str:
+        skips = f"if (test_dtype == at::kHalf && "
+        skips += f"!{self.graph}{self.dot}context()->adapter_ptr()->has_16bit_storage()) {{\n"
+        skips += "  GTEST_SKIP();"
+        skips += "}\n"
+        return skips
+
     def gen_op_check_fn(self) -> str:
         op_name = self.f.func.name.unambiguous_name()
         op_check_fn = self.gen_decl(f"check_{op_name}") + " {"
         if self.should_prepack:
             op_check_fn = self.gen_decl(f"prepacked_check_{op_name}") + " {"
+        op_check_fn += self.gen_conditional_skips()
         op_check_fn += self.gen_graph_build_code()
         op_check_fn += self.gen_graph_exec_code()
         op_check_fn += self.check_graph_out(self.refs["out"])
@@ -391,19 +400,26 @@ class ComputeGraphGen:
 ##################################
 
 test_fixture_template = """
-class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<api::StorageType, api::GPUMemoryLayout>> {{
+class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple<at::ScalarType, api::StorageType, api::GPUMemoryLayout>> {{
   protected:
     ComputeGraph* graph;
     at::ScalarType test_dtype = at::kFloat;
+    float rtol = 1e-5;
+    float atol = 1e-5;
 
     void SetUp() override {{
         GraphConfig config;
         api::StorageType default_storage_type;
         api::GPUMemoryLayout default_memory_layout;
-        std::tie(default_storage_type, default_memory_layout) = GetParam();
+        std::tie(test_dtype, default_storage_type, default_memory_layout) = GetParam();
         config.setStorageTypeOverride(default_storage_type);
         config.setMemoryLayoutOverride(default_memory_layout);
         graph = new ComputeGraph(config);
+
+        if (test_dtype == at::kHalf) {{
+            rtol = 1e-2;
+            atol = 1e-2;
+        }}
     }}
 
     void TearDown() override {{
@@ -420,7 +436,7 @@ class GeneratedOpsTest_{op_name} : public ::testing::TestWithParam< ::std::tuple
 
 
 class VkTestSuiteGen(TestSuiteGen):
-    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: List[Any]):
+    def __init__(self, op_reg_name: str, f: NativeFunction, inputs: VkTestSuite):
         super().__init__(f, inputs)
         self.op_reg_name = op_reg_name
         self.generator = ComputeGraphGen(self.op_reg_name, self.f, self.suite_def)
@@ -442,6 +458,8 @@ class VkTestSuiteGen(TestSuiteGen):
         )
 
     def gen_parameterization(self) -> str:
+        # pyre-ignore
+        dtypes = self.suite_def.dtypes
         storage_types = self.suite_def.supports["storage_types"]
         layouts = self.suite_def.supports["layouts"]
 
@@ -450,6 +468,7 @@ class VkTestSuiteGen(TestSuiteGen):
             StorageLayoutCombos_{self.op_name},
             GeneratedOpsTest_{self.op_name},
             ::testing::Combine(
+                ::testing::Values({', '.join(dtypes)}),
                 ::testing::Values({', '.join(storage_types)}),
                 ::testing::Values({', '.join(layouts)})));
         """

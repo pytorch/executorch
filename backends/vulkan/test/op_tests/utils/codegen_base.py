@@ -39,6 +39,7 @@ class TestSuite:
     input_cases: List[Any]
     prepacked_args = []
     requires_prepack = False
+    dtypes = ["at::kFloat", "at::kHalf"]
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0
@@ -239,6 +240,6 @@ class CppTestFileGen:
     def generate_test_suites_cpp(self) -> str:
         return "\n".join([h.generate_suite_cpp() for h in self.suites_gens])
 
-    def add_suite(self, f: NativeFunction, test_suite: TestSuite) -> None:
-        suites_gen = TestSuiteGen(f, test_suite)
+    def add_suite(self, op_reg_name: str, f: NativeFunction, all_input_cases) -> None:
+        suites_gen = TestSuiteGen(f, all_input_cases)
         self.suites_gens.append(suites_gen)

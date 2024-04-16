@@ -54,6 +54,8 @@ class TestBackends(unittest.TestCase):
                         )
                     )
         else:
+            print(model_output[0])
+            print(ref_output)
             # If one output, eager returns tensor while executor tuple of size 1
             self.assertTrue(
                 torch.allclose(model_output[0], ref_output, atol=atol, rtol=rtol)
@@ -198,8 +200,8 @@ class TestBackends(unittest.TestCase):
 
         sub_module = SubModule()
         sample_inputs = (
-            torch.rand(size=(2, 3), dtype=torch.float32),
-            torch.rand(size=(2, 3), dtype=torch.float32),
+            torch.rand(size=(2, 3), dtype=torch.float16),
+            torch.rand(size=(2, 3), dtype=torch.float16),
         )
 
         self.lower_module_and_test_output(sub_module, sample_inputs)

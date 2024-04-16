@@ -90,9 +90,8 @@ def define_variable(name: str) -> str:
 
 
 def get_buffer_scalar_type(dtype: str) -> str:
-    # TODO(ssjia): use float16_t for half types
     if dtype == "half":
-        return "float"
+        return "float16_t"
     # TODO(ssjia): use int8_t for int8 types
     elif dtype[-1] == "8":
         return dtype[:-1]

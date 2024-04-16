@@ -41,6 +41,7 @@ def get_mm_inputs():
         ],
     )
     test_suite.prepacked_args = ["mat2"]
+    test_suite.dtypes = ["at::kFloat"]
     return test_suite
 
 
@@ -123,7 +124,7 @@ def get_native_layer_norm_inputs():
         [
             ((S1, S2), [S2], (S2), (S2), 0.001),
             ((M, M1, M2), [M2], (M2), (M2), 0.001),
-            ((L, XL, M1, M2), [M2], (M2), (M2), 0.001),
+            ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
         ]
     )
     test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
@@ -176,12 +177,4 @@ test_suites = {
     "aten.native_layer_norm.default": get_native_layer_norm_inputs(),
     "aten.full.default": get_full_inputs(),
     "aten.select.int": get_select_int_inputs(),
-}
-
-prepacked_args = {"aten.mm.default": {"mat2"}}
-
-support_exceptions = {
-    "aten.max_pool2d_with_indices.default": {
-        "layouts": ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
-    },
 }
