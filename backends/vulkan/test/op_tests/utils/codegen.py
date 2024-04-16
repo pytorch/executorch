@@ -39,13 +39,10 @@ from torchgen.model import NativeFunction
 
 @dataclass
 class VkTestSuite(TestSuite):
-    supports = {
-        "storage_types": ["api::StorageType::TEXTURE_3D"],
-        "layouts": [
-            "api::GPUMemoryLayout::TENSOR_WIDTH_PACKED",
-            "api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED",
-        ],
-    }
+    def __init__(self, input_cases: List[Any]):
+        super().__init__(input_cases)
+        self.storage_types: List[str] = ["api::kTexture3D"]
+        self.layouts: List[str] = ["api::kChannelsPacked"]
 
 
 ##########################
@@ -376,7 +373,7 @@ class ComputeGraphGen:
         return graph_exec
 
     def gen_conditional_skips(self) -> str:
-        skips = f"if (test_dtype == at::kHalf && "
+        skips = "if (test_dtype == at::kHalf && "
         skips += f"!{self.graph}{self.dot}context()->adapter_ptr()->has_16bit_storage()) {{\n"
         skips += "  GTEST_SKIP();"
         skips += "}\n"
@@ -458,14 +455,13 @@ class VkTestSuiteGen(TestSuiteGen):
         )
 
     def gen_parameterization(self) -> str:
-        # pyre-ignore
         dtypes = self.suite_def.dtypes
-        storage_types = self.suite_def.supports["storage_types"]
-        layouts = self.suite_def.supports["layouts"]
+        storage_types = self.suite_def.storage_types
+        layouts = self.suite_def.layouts
 
         return f"""
         INSTANTIATE_TEST_SUITE_P(
-            StorageLayoutCombos_{self.op_name},
+            Combos_{self.op_name},
             GeneratedOpsTest_{self.op_name},
             ::testing::Combine(
                 ::testing::Values({', '.join(dtypes)}),
@@ -513,9 +509,11 @@ bool check_close(at::Tensor& t1, at::Tensor& t2, float rtol=1e-5, float atol=1e-
         return true;
     }
     bool is_close = at::allclose(t1, t2, rtol, atol);
-    if (!is_close) {
-        std::cout << "t1:" << t1 << std::endl;
-        std::cout << "t2:" << t2 << std::endl;
+    if (!is_close && t1.numel() < 500) {
+        std::cout << "reference: " << std::endl;
+        print(t1, 150);
+        std::cout << "vulkan: " << std::endl;
+        print(t2, 150);
     }
     return is_close;
 }

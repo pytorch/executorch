@@ -34,12 +34,12 @@ THREE_TENSOR_TUPLE = "::std::tuple<at::Tensor,at::Tensor,at::Tensor>"
 ###########################
 
 
-@dataclass
 class TestSuite:
-    input_cases: List[Any]
-    prepacked_args = []
-    requires_prepack = False
-    dtypes = ["at::kFloat", "at::kHalf"]
+    def __init__(self, input_cases: List[Any]):
+        self.input_cases: List[Any] = input_cases
+        self.prepacked_args: List[str] = []
+        self.requires_prepack: bool = False
+        self.dtypes: List[str] = ["at::kFloat", "at::kHalf"]
 
     def supports_prepack(self):
         return len(self.prepacked_args) > 0

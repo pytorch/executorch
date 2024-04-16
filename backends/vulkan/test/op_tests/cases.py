@@ -21,7 +21,7 @@ XS = 3
 
 
 def get_binary_elementwise_inputs():
-    return VkTestSuite(
+    test_suite = VkTestSuite(
         [
             ((M1, M2), (M1, M2)),
             ((M1, M2), (M1, 1), 2.0),
@@ -31,6 +31,11 @@ def get_binary_elementwise_inputs():
             ((S, S1, S2), (S, 1, S2), 2.0),
         ]
     )
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
+    return test_suite
 
 
 def get_mm_inputs():
@@ -41,7 +46,12 @@ def get_mm_inputs():
         ],
     )
     test_suite.prepacked_args = ["mat2"]
+    # ATen matmul doesn't support half
     test_suite.dtypes = ["at::kFloat"]
+    test_suite.layouts = [
+        "api::kWidthPacked",
+        "api::kChannelsPacked",
+    ]
     return test_suite
 
 
@@ -51,7 +61,6 @@ def get_pool2d_inputs():
             ((S, M1, M2), [2, 2], [1, 1], [0, 0], [1, 1]),
         ]
     )
-    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
     return test_suite
 
 
@@ -115,7 +124,6 @@ def get_conv2d_inputs():
             ),
         ]
     )
-    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
     return test_suite
 
 
@@ -127,7 +135,6 @@ def get_native_layer_norm_inputs():
             ((S, XL, M1, M2), [M2], (M2), (M2), 0.001),
         ]
     )
-    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
     return test_suite
 
 
@@ -139,7 +146,6 @@ def get_full_inputs():
             ([L, M, M1, M2], 2.72),
         ]
     )
-    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
     return test_suite
 
 
@@ -162,7 +168,6 @@ def get_select_int_inputs():
             ((8, 6, 1, 1), 1, 4),
         ]
     )
-    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
     return test_suite
 
 

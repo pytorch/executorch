@@ -92,6 +92,6 @@ def define_common_targets(is_fbcode = False):
         deps = [
             "//third-party/googletest:gtest_main",
             "//executorch/backends/vulkan:vulkan_graph_runtime",
-            ":all_aten_ops_lib",
+            runtime.external_dep_location("libtorch"),
         ],
     )
