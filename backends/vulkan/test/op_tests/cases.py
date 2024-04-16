@@ -165,6 +165,29 @@ def get_select_int_inputs():
     return test_suite
 
 
+def get_permute_inputs():
+    test_suite = VkTestSuite(
+        [
+            ((9, 2, 9, 4), [0, 1, 2, 3]),
+            ((9, 2, 9, 4), [0, 1, 3, 2]),
+            ((9, 2, 9, 4), [0, 2, 1, 3]),
+            ((9, 2, 9, 4), [0, 2, 3, 1]),
+            ((9, 2, 9, 4), [0, 3, 1, 2]),
+            ((9, 2, 9, 4), [0, 3, 2, 1]),
+            ((9, 2, 9, 4), [3, 0, 1, 2]),
+            ((9, 2, 9, 4), [3, 2, 0, 1]),
+            ((9, 2, 9, 4), [2, 3, 0, 1]),
+            ((9, 2, 9, 4), [2, 0, 3, 1]),
+            ((9, 2, 9), [2, 0, 1]),
+            ((9, 2, 9), [1, 2, 0]),
+            ((9, 2), [0, 1]),
+            ((9, 2), [1, 0]),
+        ]
+    )
+    test_suite.supports["layouts"] = ["api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED"]
+    return test_suite
+
+
 test_suites = {
     "aten.add.Tensor": get_binary_elementwise_inputs(),
     "aten.sub.Tensor": get_binary_elementwise_inputs(),
@@ -177,6 +200,7 @@ test_suites = {
     "aten.full.default": get_full_inputs(),
     "aten.select.int": get_select_int_inputs(),
     "aten.select_copy.int": get_select_int_inputs(),
+    "aten.permute_copy.default": get_permute_inputs(),
 }
 
 prepacked_args = {"aten.mm.default": {"mat2"}}
