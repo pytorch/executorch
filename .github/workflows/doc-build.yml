@@ -74,17 +74,9 @@ jobs:
 
         ls -R "${RUNNER_ARTIFACT_DIR}"/*/*.html
 
-# Enable preview later. Previews are available publicly
-#
-# upload-preview:
-#    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
-#        (github.ref_type == 'branch' && github.ref_name == 'main')
-#    uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
-
   upload-gh-pages:
     needs: build
-    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' &&
-        ((github.ref_type == 'branch' && github.ref_name == 'main') || github.ref_type == 'tag')
+    if: github.repository == 'pytorch/executorch' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: write
     uses: pytorch/test-infra/.github/workflows/linux_job.yml@main
@@ -99,6 +91,13 @@ jobs:
         REF_TYPE=${{ github.ref_type }}
         REF_NAME=${{ github.ref_name }}
 
+        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
+        REF_NAME=$(echo "${{ github.ref }}")
+        echo "Ref name: ${REF_NAME}"
+        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
+          find docs -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
+        fi
+
         # If building for a release tag, branch, set the branch/tag name
         # as the target folder in the gh-pages branch. The artifacts created
         # during the build will be copied over to the target dir in the
@@ -108,10 +107,16 @@ jobs:
         elif [[ "${REF_TYPE}" == tag ]]; then
           # Strip the leading "v" as well as the trailing patch version and "-rc" suffix.
           # For example: 'v0.1.2' -> '0.1' and 'v0.1.2-rc1' -> 0.1.
-          TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/^v//i; s/-rc[0-9]*$//; s/\.[0-9]*$//')
-        else
-          echo "ERROR: Invalid REF_TYPE: ${REF_TYPE}. Expected 'branch' or 'tag'."
-          exit 1
+          case "${REF_NAME}" in
+            *-rc*)
+              echo "Aborting upload since this is an RC tag: ${REF_NAME}"
+              # We don't generate -rc* documentation but for actual tag only.
+              exit 0
+              ;;
+            *)
+              TARGET_FOLDER=$(echo "${REF_NAME}" | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.[0-9]\+/\1.\2/')
+              ;;
+          esac
         fi
         echo "Target Folder: ${TARGET_FOLDER}"
 
@@ -121,12 +126,6 @@ jobs:
         rm -rf "${TARGET_FOLDER}"/*
         mv "${RUNNER_ARTIFACT_DIR}"/html/* "${TARGET_FOLDER}"
         git add "${TARGET_FOLDER}" || true
-
-        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        if [[ "${REF_NAME}" == 'main' ]]; then
-          find "${TARGET_FOLDER}" -type f -name "*.html" -exec sed -i '/<head>/a <meta name="robots" content="noindex">' {} \;
-          git add "${TARGET_FOLDER}"/**/*.html || true
-        fi
 
         git config user.name 'pytorchbot'
         git config user.email 'soumith+bot@pytorch.org'
