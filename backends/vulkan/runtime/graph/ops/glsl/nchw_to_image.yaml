@@ -8,22 +8,16 @@ nchw_to_image:
   parameter_names_with_default_values:
     NDIM: 3
     DTYPE: float
-    PACKING: CHANNELS_PACKED
+    PACKING: C_packed
   generate_variant_forall:
     PACKING:
-      - VALUE: CHANNELS_PACKED
-        SUFFIX: C_packed
-      - VALUE: WIDTH_PACKED
-        SUFFIX: W_packed
-      - VALUE: HEIGHT_PACKED
-        SUFFIX: H_packed
+      - VALUE: C_packed
+      - VALUE: W_packed
+      - VALUE: H_packed
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
       - VALUE: int
-        SUFFIX: int
   shader_variants:
     - NAME: nchw_to_image3d
     - NAME: nchw_to_image2d

@@ -21,7 +21,8 @@ typedef NSDictionary<ETCoreMLModelStructurePath*, ETCoreMLOperationProfilingInfo
 
 NS_ASSUME_NONNULL_BEGIN
 /// A class responsible for profiling a model.
-__attribute__((objc_subclassing_restricted)) @interface ETCoreMLModelProfiler : NSObject
+__attribute__((objc_subclassing_restricted))
+@interface ETCoreMLModelProfiler : NSObject
 
 - (instancetype)init NS_UNAVAILABLE;
 

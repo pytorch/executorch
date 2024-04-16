@@ -11,8 +11,6 @@ sum_dim_keepdim:
   generate_variant_forall:
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
   shader_variants:
     - NAME: sum_dim_keepdim

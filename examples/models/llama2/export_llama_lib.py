@@ -826,10 +826,7 @@ def _export_llama(modelname, args) -> str:  # noqa: C901
             use_fp16 = False
             # TODO: fix the lowering error without skipping nodes
             if quant_dtype == QuantDtype.use_8a8w:
-                skip_node_op_set = {
-                    "aten.unsqueeze_copy.default",
-                    "aten.permute_copy.default",
-                }
+                raise NotImplementedError("8a8w for llama is still under development")
             elif quant_dtype == QuantDtype.use_16a16w:
                 raise NotImplementedError("16a16w for llama is still under development")
             elif quant_dtype == QuantDtype.use_16a4w:

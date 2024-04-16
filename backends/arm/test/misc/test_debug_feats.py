@@ -10,8 +10,9 @@ import tempfile
 import unittest
 
 import torch
-from executorch.backends.arm.test.test_models import TosaProfile
-from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+from executorch.backends.arm.test import common
+
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -45,8 +46,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=module.get_inputs(),
-                profile=TosaProfile.MI,
-                backend=ArmBackendSelector.TOSA,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .export()
             .to_edge()
@@ -60,8 +60,7 @@ class TestDumpPartitionedArtifact(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=module.get_inputs(),
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.TOSA,
+                compile_spec=common.get_tosa_compile_spec(),
             )
             .quantize()
             .export()
