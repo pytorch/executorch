@@ -8,11 +8,10 @@ conv_transpose2d_prepack_weights:
   parameter_names_with_default_values:
     NDIM: 3
     DTYPE: float
+    PACKING: C_packed
   generate_variant_forall:
     DTYPE:
       - VALUE: half
-        SUFFIX: half
       - VALUE: float
-        SUFFIX: float
   shader_variants:
     - NAME: conv_transpose2d_prepack_weights

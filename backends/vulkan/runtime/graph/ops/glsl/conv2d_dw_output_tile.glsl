@@ -10,6 +10,8 @@
 
 #define PRECISION ${PRECISION}
 
+#define VEC4_T ${texel_type(DTYPE)}
+
 #include "indexing_utils.h"
 
 layout(std430) buffer;
@@ -66,7 +68,7 @@ void main() {
   const ivec2 start = ipos;
   const ivec2 end = ipos + extra_params.overlay_region.xy;
 
-  ${VEC4_T[DTYPE]} sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
+  VEC4_T sum = texelFetch(bias_in, ivec2(pos.z, 0), 0);
   int kx = 0;
   for (int y = start.y, i = 0; i < ${TILE_SIZE}; y += params.dilation.y, i++) {
     for (int x = start.x, j = 0; j < ${TILE_SIZE}; x += params.dilation.x, j++) {

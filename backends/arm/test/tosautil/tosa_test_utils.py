@@ -15,8 +15,6 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from executorch.backends.arm.test.test_models import TosaProfile
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
 
@@ -39,15 +37,11 @@ This class is used to work with TOSA artifacts.
 class TosaTestUtils:
     def __init__(
         self,
-        intermediate_path: Optional[str] = None,
+        intermediate_path: str,
         tosa_ref_model_path: Optional[str] = None,
-        profile: Optional[TosaProfile] = None,
     ):
-        self.intermediate_path = intermediate_path or tempfile.mkdtemp(
-            prefix="arm_tosa_"
-        )
+        self.intermediate_path = intermediate_path
         self.tosa_ref_model_path = tosa_ref_model_path or "tosa_reference_model"
-        self.profile = profile or TosaProfile.MI
         assert os.path.exists(
             self.intermediate_path
         ), f"TOSA artifact path don't exist! Path: {self.intermediate_path}"
@@ -145,7 +139,7 @@ class TosaTestUtils:
               as a next step. See:
               https://review.mlplatform.org/plugins/gitiles/tosa/reference_model/#executable-usage
         """
-
+        is_quantized = param_output[1] is not None
         desc_file_path = os.path.join(self.intermediate_path, "desc.json")
         assert os.path.exists(
             desc_file_path
@@ -159,7 +153,7 @@ class TosaTestUtils:
         ):
             data_np = data.detach().numpy()
 
-            if self.profile is TosaProfile.BI:
+            if is_quantized:
                 assert (
                     quant_param.node_name == input_name
                 ), "These quantization params do not match the input tensor name"
@@ -190,7 +184,7 @@ class TosaTestUtils:
         # Load the output file (OFM) and return it as a numpy array
         tosa_ref_output = np.load(ofm_file_npy)
 
-        if self.profile is TosaProfile.BI:
+        if is_quantized:
             # Need to dequant back to FP32 for comparison with torch output
             quant_param = param_output[1]
             assert (

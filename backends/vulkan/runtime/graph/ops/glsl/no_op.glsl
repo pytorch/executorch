@@ -8,12 +8,10 @@
 
 #version 450 core
 
-#include "broadcasting_utils.h"
-#include "indexing_utils.h"
-
 #define PRECISION ${PRECISION}
 
-#define OP(X, Y, A) ${OPERATOR}
+#include "broadcasting_utils.h"
+#include "indexing_utils.h"
 
 layout(std430) buffer;
 
