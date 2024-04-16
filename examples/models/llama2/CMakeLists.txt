@@ -21,7 +21,7 @@ project(llama_runner)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
-option(EXECUTORCH_BUILD_RE2 "Build RE2" OFF)
+option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
 
 include(CMakeDependentOption)
 #
@@ -88,7 +88,7 @@ endif()
 
 # llama_runner library
 add_subdirectory(runner)
-if(EXECUTORCH_BUILD_RE2)
+if(EXECUTORCH_USE_TIKTOKEN)
   # find RE2 for tokenizer
   set(ABSL_ENABLE_INSTALL ON)
   set(_pic_flag
