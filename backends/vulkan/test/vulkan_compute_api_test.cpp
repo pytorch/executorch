@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include <c10/util/Half.h>
+
 #include <executorch/backends/vulkan/runtime/api/api.h>
 
 #include <executorch/backends/vulkan/runtime/graph/ops/OperatorRegistry.h>
@@ -36,6 +38,10 @@ class VulkanComputeAPITest : public ::testing::Test {
     EXPECT_TRUE(get_vma_allocation_count() == 0);
   }
 };
+
+TEST_F(VulkanComputeAPITest, print_adapter) {
+  std::cout << *(api::context()->adapter_ptr()) << std::endl;
+}
 
 TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
   // Try to get shader from custom shader library
@@ -97,6 +103,72 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
   submit_to_gpu();
   check_staging_buffer(staging_buffer, 4.0f);
+}
+
+template <typename T, api::ScalarType dtype>
+void test_storage_buffer_type(const size_t len) {
+  api::StorageBuffer buffer(api::context(), dtype, len);
+
+  std::string kernel_name("idx_fill_buffer");
+  switch (dtype) {
+    case api::kFloat:
+      kernel_name += "_float";
+      break;
+    case api::kHalf:
+      kernel_name += "_half";
+      break;
+    case api::kQInt8:
+      kernel_name += "_int8";
+      break;
+    case api::kQUInt8:
+      kernel_name += "_uint8";
+      break;
+    default:
+      throw std::runtime_error("Unsupported dtype");
+      break;
+  }
+
+  api::UniformParamsBuffer params(api::context(), int32_t(len));
+
+  {
+    uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
+    api::PipelineBarrier pipeline_barrier{};
+    api::context()->submit_compute_job(
+        VK_KERNEL_FROM_STR(kernel_name),
+        pipeline_barrier,
+        {64, 1, 1},
+        {len_div4, 1, 1},
+        VK_NULL_HANDLE,
+        buffer.buffer(),
+        params.buffer());
+  }
+
+  submit_to_gpu();
+
+  std::vector<T> data(len);
+  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+
+  for (size_t i = 0; i < len; ++i) {
+    CHECK_VALUE(data, i, T(i));
+  }
+}
+
+TEST_F(VulkanComputeAPITest, test_buffer_float) {
+  test_storage_buffer_type<float, api::kFloat>(16);
+}
+
+TEST_F(VulkanComputeAPITest, test_buffer_float16) {
+  if (!api::context()->adapter_ptr()->has_full_float16_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_storage_buffer_type<c10::Half, api::kHalf>(16);
+}
+
+TEST_F(VulkanComputeAPITest, test_buffer_int8) {
+  if (!api::context()->adapter_ptr()->has_full_int8_buffers_support()) {
+    GTEST_SKIP();
+  }
+  test_storage_buffer_type<int8_t, api::kQInt8>(16);
 }
 
 TEST_F(VulkanComputeAPITest, texture_add_sanity_check) {
