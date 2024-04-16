@@ -118,6 +118,11 @@ else()
   target_link_options_shared_lib(portable_ops_lib)
 endif()
 
+if(EXECUTORCH_BUILD_QUANTIZED)
+  list(APPEND link_libraries quantized_ops_lib)
+  target_link_options_shared_lib(quantized_ops_lib)
+endif()
+
 if(EXECUTORCH_BUILD_CUSTOM)
   target_link_options_shared_lib(custom_ops)
   list(APPEND link_libraries custom_ops)
