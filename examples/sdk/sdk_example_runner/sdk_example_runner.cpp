@@ -32,8 +32,6 @@
 #include <executorch/util/util.h>
 
 static uint8_t method_allocator_pool[4 * 1024U * 1024U]; // 4MB
-static constexpr size_t kBundledAllocatorPoolSize = 16 * 1024U;
-static uint8_t bundled_allocator_pool[kBundledAllocatorPoolSize];
 
 DEFINE_string(
     bundled_program_path,
