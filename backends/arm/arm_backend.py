@@ -38,6 +38,118 @@ if TOSA_DBG_VERBOSE:
     logger.setLevel(logging.INFO)
 
 
+class ArmCompileSpecBuilder:
+    def __init__(self):
+        self.compile_spec: List[CompileSpec] = []
+        self.compiler_flags = []
+        self.output_format = None
+        self.path_for_intermediates = None
+        self.permute_nhwc = False
+
+    def ethosu_compile_spec(
+        self,
+        config: str,
+        system_config: Optional[str] = None,
+        memory_mode: Optional[str] = None,
+        extra_flags: Optional[str] = None,
+        config_ini: Optional[str] = "Arm/vela.ini",
+    ):
+        """
+        Generate compile spec for Ethos-U NPU
+
+        Args:
+            config: Ethos-U accelerator configuration, e.g. ethos-u55-128
+            system_config: System configuration to select from the Vel
+                configuration file
+            memory_mode: Memory mode to select from the Vela configuration file
+            extra_flags: Extra flags for the Vela compiler
+            config_ini: Vela configuration file(s) in Python ConfigParser .ini
+                file format
+        """
+        assert (
+            self.output_format is None
+        ), f"Output format already set to f{self.output_format}"
+        self.output_format = "vela"
+        self.compiler_flags = [
+            f"--accelerator-config={config}",
+            f"--config={config_ini}",
+        ]
+        if system_config is not None:
+            self.compiler_flags.append(f"--system-config={system_config}")
+        if memory_mode is not None:
+            self.compiler_flags.append(f"--memory-mode={memory_mode}")
+        if extra_flags is not None:
+            self.compiler_flags.append(extra_flags)
+
+        return self
+
+    def tosa_compile_spec(self):
+        """
+        Generate compile spec for TOSA flatbuffer output
+        """
+        assert (
+            self.output_format is None
+        ), f"Output format already set: {self.output_format}"
+        self.output_format = "tosa"
+        return self
+
+    def dump_intermediate_tosa(self, output_path: str):
+        """
+        Output intermediate .tosa file
+        """
+        self.path_for_intermediates = output_path
+        return self
+
+    def set_permute_memory_format(self, set_nhwc_permutation: bool = True):
+        self.permute_nhwc = set_nhwc_permutation
+        return self
+
+    def build(self):
+        """
+        Generate a list of compile spec objects from the builder
+        """
+        if self.output_format == "vela":
+            self.compile_spec += [
+                CompileSpec("output_format", "vela".encode()),
+                CompileSpec("compile_flags", " ".join(self.compiler_flags).encode()),
+            ]
+        elif self.output_format == "tosa":
+            self.compile_spec.append(CompileSpec("output_format", "tosa".encode()))
+
+        if self.path_for_intermediates is not None:
+            self.compile_spec.append(
+                CompileSpec("debug_tosa_path", self.path_for_intermediates.encode())
+            )
+
+        if self.permute_nhwc:
+            self.compile_spec.append(
+                CompileSpec("permute_memory_format", "nhwc".encode())
+            )
+
+        return self.compile_spec
+
+
+def is_permute_memory(compile_spec: List[CompileSpec]) -> bool:
+    for spec in compile_spec:
+        if spec.key == "permute_memory_format":
+            return spec.value.decode() == "nhwc"
+    return False
+
+
+def is_tosa(compile_spec: List[CompileSpec]) -> bool:
+    for spec in compile_spec:
+        if spec.key == "output_format":
+            return spec.value.decode() == "tosa"
+    return False
+
+
+def get_intermediate_path(compile_spec: List[CompileSpec]) -> str:
+    for spec in compile_spec:
+        if spec.key == "debug_tosa_path":
+            return spec.value.decode()
+    return None
+
+
 def generate_ethosu_compile_spec(
     config: str,
     permute_memory_to_nhwc: Optional[bool] = None,
@@ -46,45 +158,31 @@ def generate_ethosu_compile_spec(
     extra_flags: Optional[str] = None,
     config_ini: Optional[str] = "Arm/vela.ini",
 ) -> List[CompileSpec]:
-    """
-    Generate compile spec for Ethos-U NPU
-    """
-    compiler_flags = [f"--accelerator-config={config}", f"--config={config_ini}"]
-    if system_config is not None:
-        compiler_flags.append(f"--system-config={system_config}")
-    if memory_mode is not None:
-        compiler_flags.append(f"--memory-mode={memory_mode}")
-    if extra_flags is not None:
-        compiler_flags.append(extra_flags)
-
-    compile_spec = [
-        CompileSpec("output_format", "vela".encode()),
-        CompileSpec("compile_flags", " ".join(compiler_flags).encode()),
-    ]
-
-    if permute_memory_to_nhwc:
-        compile_spec.append(CompileSpec("permute_memory_format", "nhwc".encode()))
-
-    return compile_spec
+    return (
+        ArmCompileSpecBuilder()
+        .ethosu_compile_spec(
+            config,
+            system_config=system_config,
+            memory_mode=memory_mode,
+            extra_flags=extra_flags,
+            config_ini=config_ini,
+        )
+        .set_permute_memory_format(permute_memory_to_nhwc)
+        .build()
+    )
 
 
 def generate_tosa_compile_spec(
     permute_memory_to_nhwc: Optional[bool] = None,
     output_path: Optional[str] = None,
 ) -> List[CompileSpec]:
-    """
-    Generate compile spec for TOSA flatbuffer output
-    """
-
-    compile_spec = [CompileSpec("output_format", "tosa".encode())]
-
-    if permute_memory_to_nhwc:
-        compile_spec.append(CompileSpec("permute_memory_format", "nhwc".encode()))
-
-    if output_path is not None:
-        compile_spec.append(CompileSpec("debug_tosa_path", output_path.encode()))
-
-    return compile_spec
+    return (
+        ArmCompileSpecBuilder()
+        .tosa_compile_spec()
+        .set_permute_memory_format(permute_memory_to_nhwc)
+        .dump_intermediate_tosa(output_path)
+        .build()
+    )
 
 
 @final
