@@ -91,6 +91,7 @@ add_subdirectory(runner)
 if(EXECUTORCH_USE_TIKTOKEN)
   # find RE2 for tokenizer
   set(ABSL_ENABLE_INSTALL ON)
+  set(ABSL_PROPAGATE_CXX_STD ON)
   set(_pic_flag
     ${CMAKE_POSITION_INDEPENDENT_CODE})
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -116,6 +117,11 @@ if(EXECUTORCH_BUILD_OPTIMIZED)
 else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
   target_link_options_shared_lib(portable_ops_lib)
+endif()
+
+if(EXECUTORCH_BUILD_QUANTIZED)
+  list(APPEND link_libraries quantized_ops_lib quantized_kernels)
+  target_link_options_shared_lib(quantized_ops_lib)
 endif()
 
 if(EXECUTORCH_BUILD_CUSTOM)
