@@ -12,8 +12,7 @@ from typing import Tuple
 
 import torch
 from executorch.backends.arm.test import common
-from executorch.backends.arm.test.test_models import TosaProfile
-from executorch.backends.arm.test.tester.arm_tester import ArmBackendSelector, ArmTester
+from executorch.backends.arm.test.tester.arm_tester import ArmTester
 from parameterized import parameterized
 
 logger = logging.getLogger(__name__)
@@ -51,9 +50,7 @@ class TestAvgPool2d(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=test_data,
-                profile=TosaProfile.MI,
-                backend=ArmBackendSelector.TOSA,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .export()
             .check(["torch.ops.aten.avg_pool2d.default"])
@@ -65,7 +62,7 @@ class TestAvgPool2d(unittest.TestCase):
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method().compare_outputs()
+            tester.run_method_and_compare_outputs()
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -78,9 +75,7 @@ class TestAvgPool2d(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=test_data,
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.TOSA,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_tosa_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .export()
@@ -93,7 +88,7 @@ class TestAvgPool2d(unittest.TestCase):
             .to_executorch()
         )
         if common.TOSA_REF_MODEL_INSTALLED:
-            tester.run_method().compare_outputs(qtol=1)
+            tester.run_method_and_compare_outputs(qtol=1)
         else:
             logger.warning(
                 "TOSA ref model tool not installed, skip numerical correctness tests"
@@ -106,9 +101,7 @@ class TestAvgPool2d(unittest.TestCase):
             ArmTester(
                 module,
                 inputs=test_data,
-                profile=TosaProfile.BI,
-                backend=ArmBackendSelector.ETHOS_U55,
-                permute_memory_to_nhwc=True,
+                compile_spec=common.get_u55_compile_spec(permute_memory_to_nhwc=True),
             )
             .quantize()
             .export()

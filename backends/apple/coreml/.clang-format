@@ -1,5 +1,4 @@
 BasedOnStyle: WebKit
-BreakBeforeBraces: Attach
 AllowShortIfStatementsOnASingleLine: false
 BreakBeforeBinaryOperators: None
 BreakConstructorInitializers: BeforeColon
