@@ -228,7 +228,14 @@ vTensor::vTensor(
           memory_layout_,
           gpu_sizes_,
           dtype_,
-          allocate_memory)) {}
+          allocate_memory)) {
+  if (dtype == api::kHalf) {
+    VK_CHECK_COND(
+        api::context()->adapter_ptr()->has_16bit_storage(),
+        "Half dtype is only available if the physical device supports float16 "
+        "storage buffers!");
+  }
+}
 
 vTensor::vTensor(
     api::Context* const context,

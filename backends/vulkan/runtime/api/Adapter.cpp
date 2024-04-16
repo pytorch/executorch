@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+// NOLINTBEGIN(clang-diagnostic-missing-field-initializers)
+
 #include <executorch/backends/vulkan/runtime/api/Adapter.h>
 
 #include <bitset>
