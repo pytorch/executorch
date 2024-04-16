@@ -68,6 +68,12 @@ jobs:
         make html
         cd ..
 
+        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
+        echo "Ref name: ${REF_NAME}"
+        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
+          find docs/_build/html/ -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
+        fi
+
         cp -rf docs/_build/html/* "${RUNNER_DOCS_DIR}"
 
         mv docs/_build/html "${RUNNER_ARTIFACT_DIR}"
@@ -90,13 +96,6 @@ jobs:
 
         REF_TYPE=${{ github.ref_type }}
         REF_NAME=${{ github.ref_name }}
-
-        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        REF_NAME=$(echo "${{ github.ref }}")
-        echo "Ref name: ${REF_NAME}"
-        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
-          find docs -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
-        fi
 
         # If building for a release tag, branch, set the branch/tag name
         # as the target folder in the gh-pages branch. The artifacts created
