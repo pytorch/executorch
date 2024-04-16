@@ -43,6 +43,15 @@ from executorch.exir.passes.normalize_view_copy_base_pass import (
 from executorch.exir.passes.remove_graph_asserts_pass import RemoveGraphAssertsPass
 from executorch.exir.passes.remove_mixed_type_operators import RemoveMixedTypeOperators
 from executorch.exir.passes.replace_edge_with_backend_pass import EdgeToBackendOpsPass
+from executorch.exir.passes.replace_select_copy_with_view_copy_pass import (
+    ReplaceSelectCopyWithViewCopyPass,
+)
+from executorch.exir.passes.replace_squeeze_copy_with_view_copy_pass import (
+    ReplaceSqueezeCopyWithViewCopyPass,
+)
+from executorch.exir.passes.replace_unsqueeze_copy_with_view_copy_pass import (
+    ReplaceUnsqueezeCopyWithViewCopyPass,
+)
 from executorch.exir.passes.replace_view_copy_with_view_pass import (
     ReplaceViewCopyWithViewPass,
 )
@@ -1580,17 +1589,6 @@ class TestPasses(unittest.TestCase):
         self.assertEqual(n_view_copy_bases_after, 0)
 
     def test_replace_view_copy_with_view_pass(self) -> None:  # noqa: C901
-
-        # Helper functions
-        def is_view_copy(node: torch.fx.Node) -> bool:
-            return (
-                node.op == "call_function"
-                and node.target == torch.ops.aten.view_copy.default
-            )
-
-        def is_memory_view(node: torch.fx.Node) -> bool:
-            return node.op == "call_function" and node.target == memory.view
-
         # Test example set up
         class TestViewCopies(torch.nn.Module):
             def __init__(self):
@@ -1635,3 +1633,155 @@ class TestPasses(unittest.TestCase):
         FileCheck().check_count("executorch_exir_memory_view", 2, exactly=True).run(
             gm.code
         )
+
+    def test_replace_squeeze_copy_with_view_copy_pass(self) -> None:
+
+        class TestModel(torch.nn.Module):
+            def forward(self, x):
+                x = torch.ops.aten.view.default(x, [2, 1, 10, 1])
+                y1 = torch.ops.aten.squeeze_copy.dims(x, [1, 2])  # view [2, 10, 1]
+                y2 = torch.ops.aten.squeeze_copy.dim(x, 1)  # view [2, 10, 1]
+                y3 = torch.ops.aten.squeeze_copy.default(x)  # view [2, 10]
+                y4 = torch.ops.aten.squeeze_copy.dim(x, -1)  # view [2, 1, 10]
+                y5 = torch.ops.aten.squeeze_copy.dim(x, -3)  # view [2, 10, 1]
+                return y1, y2, y3, y4, y5
+
+        model = TestModel()
+        ep = torch.export.export(model, (torch.ones(20),))
+        gm = ep.graph_module
+
+        # Check before transformation
+        FileCheck().check_count(
+            "torch.ops.aten.squeeze_copy.default", 1, exactly=True
+        ).run(gm.code)
+
+        # For some reason FileCheck().check_count("torch.ops.aten.squeeze_copy.dim", 3, exactly=True).run(gm.code) fails
+        n_squeeze_dim = 0
+        for node in gm.graph.nodes:
+            if (
+                node.op == "call_function"
+                and node.target == torch.ops.aten.squeeze_copy.dim
+            ):
+                n_squeeze_dim += 1
+        self.assertEqual(n_squeeze_dim, 3)
+
+        FileCheck().check_count(
+            "torch.ops.aten.squeeze_copy.dims", 1, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 0, exactly=True
+        ).run(gm.code)
+
+        # Do transformation
+        p = ReplaceSqueezeCopyWithViewCopyPass()
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+        # Check after transformation
+        FileCheck().check_count(
+            "torch.ops.aten.squeeze_copy.default", 0, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count("torch.ops.aten.squeeze_copy.dim", 0, exactly=True).run(
+            gm.code
+        )
+        FileCheck().check_count(
+            "torch.ops.aten.squeeze_copy.dims", 0, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 5, exactly=True
+        ).run(gm.code)
+
+        out_node = [node for node in gm.graph.nodes if node.op == "output"][0]
+        self.assertEqual(out_node.args[0][0].args[1], [2, 10, 1])
+        self.assertEqual(out_node.args[0][1].args[1], [2, 10, 1])
+        self.assertEqual(out_node.args[0][2].args[1], [2, 10])
+        self.assertEqual(out_node.args[0][3].args[1], [2, 1, 10])
+        self.assertEqual(out_node.args[0][4].args[1], [2, 10, 1])
+
+    def test_replace_unsqueeze_copy_with_view_copy_pass(self) -> None:
+        class TestModel(torch.nn.Module):
+            def forward(self, x):
+                x = torch.ops.aten.view.default(x, [2, 10])
+                y1 = torch.ops.aten.unsqueeze_copy.default(x, 0)  # view [1, 2, 10]
+                y2 = torch.ops.aten.unsqueeze_copy.default(x, 1)  # view [2, 1, 10]
+                y3 = torch.ops.aten.unsqueeze_copy.default(x, 2)  # view [2, 10, 1]
+                y4 = torch.ops.aten.unsqueeze_copy.default(x, -1)  # view [2, 10, 1]
+                y5 = torch.ops.aten.unsqueeze_copy.default(x, -2)  # view [2, 1, 10]
+                y6 = torch.ops.aten.unsqueeze_copy.default(x, -3)  # view [1, 2, 10]
+                return y1, y2, y3, y4, y5, y6
+
+        model = TestModel()
+        ep = torch.export.export(model, (torch.ones(20),))
+        gm = ep.graph_module
+
+        # Check before transformation
+        FileCheck().check_count(
+            "torch.ops.aten.unsqueeze_copy.default", 6, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 0, exactly=True
+        ).run(gm.code)
+
+        # Do transformation
+        p = ReplaceUnsqueezeCopyWithViewCopyPass()
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+        # Check after transformation
+        FileCheck().check_count(
+            "torch.ops.aten.unsqueeze_copy.default", 0, exactly=True
+        ).run(gm.code)
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 6, exactly=True
+        ).run(gm.code)
+
+        out_node = [node for node in gm.graph.nodes if node.op == "output"][0]
+        self.assertEqual(out_node.args[0][0].args[1], [1, 2, 10])
+        self.assertEqual(out_node.args[0][1].args[1], [2, 1, 10])
+        self.assertEqual(out_node.args[0][2].args[1], [2, 10, 1])
+        self.assertEqual(out_node.args[0][3].args[1], [2, 10, 1])
+        self.assertEqual(out_node.args[0][4].args[1], [2, 1, 10])
+        self.assertEqual(out_node.args[0][5].args[1], [1, 2, 10])
+
+    def test_replace_select_copy_with_view_copy_pass(self) -> None:
+        class TestModel(torch.nn.Module):
+            def forward(self, x):
+                x = torch.ops.aten.view.default(x, [2, 1, 10])
+                y1 = torch.ops.aten.select_copy.int(x, 1, 0)  # view [2, 10]
+                y2 = torch.ops.aten.select_copy.int(x, -2, 0)  # view [2, 10]
+                y3 = torch.ops.aten.select_copy.int(x, 2, 0)  # not replaced
+                y4 = torch.ops.aten.select_copy.int(x, -1, 0)  # not replaced
+
+                return y1, y2, y3, y4
+
+        model = TestModel()
+        ep = torch.export.export(model, (torch.ones(20),))
+        gm = ep.graph_module
+
+        # Check before transformation
+        FileCheck().check_count("torch.ops.aten.select_copy.int", 4, exactly=True).run(
+            gm.code
+        )
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 0, exactly=True
+        ).run(gm.code)
+
+        # Do transformation
+        p = ReplaceSelectCopyWithViewCopyPass()
+        gm_res = p(gm)
+        assert gm_res is not None
+        gm = gm_res.graph_module
+
+        # Check after transformation
+        FileCheck().check_count("torch.ops.aten.select_copy.int", 2, exactly=True).run(
+            gm.code
+        )
+        FileCheck().check_count(
+            "torch.ops.aten.view_copy.default", 2, exactly=True
+        ).run(gm.code)
+
+        out_node = [node for node in gm.graph.nodes if node.op == "output"][0]
+        self.assertEqual(out_node.args[0][0].args[1], [2, 10])
+        self.assertEqual(out_node.args[0][1].args[1], [2, 10])
