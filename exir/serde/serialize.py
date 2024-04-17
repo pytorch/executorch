@@ -33,7 +33,6 @@ from executorch.exir.dialects.edge._ops import EdgeOpOverload
 from executorch.exir.lowered_backend_module import (
     LoweredBackendModule as ExirLoweredBackendModule,
 )
-from executorch.exir.serde.export_serialize import SerializedArtifact
 from executorch.exir.serde.schema import (
     CompileSpec,
     LoweredBackendModule as SerdeLoweredBackendModule,
@@ -680,7 +679,7 @@ class ExportedProgramDeserializer(export_serialize.ExportedProgramDeserializer):
             root=state_dict,
             graph=dummy_g,
             graph_signature=ep.ExportGraphSignature(input_specs=[], output_specs=[]),
-            state_dict={},  # TODO(T157676982)
+            state_dict=state_dict,  # TODO(T157676982)
             range_constraints=range_constraints,
             module_call_graph=module_call_graph,
             verifier=load_verifier(
@@ -765,7 +764,7 @@ def save(
     if not isinstance(ep_save, ep.ExportedProgram):
         raise TypeError(f"save() expects an ExportedProgram but got {type(ep)}")
 
-    artifact: SerializedArtifact = serialize(ep_save, opset_version)
+    artifact: export_serialize.SerializedArtifact = serialize(ep_save, opset_version)
 
     if isinstance(f, (str, os.PathLike)):
         f = os.fspath(f)
@@ -836,10 +835,12 @@ def load(
         assert serialized_exported_program is not None
         assert serialized_state_dict is not None
         assert serialized_constants is not None
-        artifact: SerializedArtifact = SerializedArtifact(
-            serialized_exported_program,
-            serialized_state_dict,
-            serialized_constants,
+        artifact: export_serialize.SerializedArtifact = (
+            export_serialize.SerializedArtifact(
+                serialized_exported_program,
+                serialized_state_dict,
+                serialized_constants,
+            )
         )
 
         # Deserialize ExportedProgram
