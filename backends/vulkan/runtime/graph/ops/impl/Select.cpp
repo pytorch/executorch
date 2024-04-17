@@ -127,6 +127,7 @@ void select_int(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 
 REGISTER_OPERATORS {
   VK_REGISTER_OP(aten.select.int, select_int);
+  VK_REGISTER_OP(aten.select_copy.int, select_int);
 }
 
 } // namespace vkcompute
