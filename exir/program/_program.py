@@ -743,7 +743,7 @@ class EdgeProgramManager:
 
     def __init__(
         self,
-        edge_programs: Dict[str, ExportedProgram],
+        edge_programs: Union[ExportedProgram, Dict[str, ExportedProgram]],
         constant_methods: Optional[Dict[str, Any]] = None,
         compile_config: Optional[EdgeCompileConfig] = None,
     ):
@@ -753,6 +753,8 @@ class EdgeProgramManager:
         Constructs an EdgeProgramManager from an existing set of exported programs in edge dialect.
         """
         config = compile_config or EdgeCompileConfig()
+        if not isinstance(edge_programs, dict):
+            edge_programs = {"forward": edge_programs}
         for name, program in edge_programs.items():
             try:
                 EXIREdgeDialectVerifier(
@@ -763,7 +765,7 @@ class EdgeProgramManager:
                 logging.info(f"Input program {name} is not in aten dialect.")
                 raise e
 
-        self._edge_programs = edge_programs
+        self._edge_programs: Dict[str, ExportedProgram] = edge_programs
         self._config_methods = constant_methods
 
     @property
