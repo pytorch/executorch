@@ -16,7 +16,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Un
 
 import torch
 from executorch.exir import memory
-from executorch.exir.control_flow import while_loop as exir_while
 from executorch.exir.delegate import executorch_call_delegate
 from executorch.exir.error import (
     ExportError,
@@ -400,7 +399,6 @@ def collect_specs_from_nodes(  # noqa: C901
                     memory.view,
                     operator.getitem,
                     torch.ops.higher_order.cond,
-                    exir_while,
                     torch.ops.higher_order.map_impl,
                     executorch_call_delegate,
                 ],
@@ -661,12 +659,6 @@ def get_algo(algo_name: str) -> Callable[..., List[int]]:
 def get_cond_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
     for nd in graph_module.graph.nodes:
         if nd.target is torch.ops.higher_order.cond:
-            yield nd
-
-
-def get_while_nodes(graph_module: torch.fx.GraphModule) -> Iterable[Node]:
-    for nd in graph_module.graph.nodes:
-        if nd.target is exir_while:
             yield nd
 
 
