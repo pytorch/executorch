@@ -301,7 +301,7 @@ def replace_embedding_weight_only_grouped_int8_per_channel(
             )
 
 
-class EmbeddingOnlyInt8QuantHandler(QuantHandler):
+class EmbeddingQuantHandler(QuantHandler):
     def __init__(
         self,
         mod,

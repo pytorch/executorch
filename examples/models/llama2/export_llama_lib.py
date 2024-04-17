@@ -37,7 +37,7 @@ from sentencepiece import SentencePieceProcessor
 from .builder import DType, LlamaEdgeManager, load_llama_model, WeightType
 from .quant_lib import _get_pt2e_quantization_params, get_pt2e_quantizers
 
-from .quantize import EmbeddingOnlyInt8QuantHandler, WeightOnlyInt8QuantHandler
+from .quantize import EmbeddingQuantHandler, WeightOnlyInt8QuantHandler
 
 
 IS_FBCODE = True  #  os.environ.get("FBCODE_PLATFORM", False)
@@ -540,7 +540,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
             group_size = int(group_size)
         bitwidth = int(bitwidth)
         transforms.append(
-            lambda model: EmbeddingOnlyInt8QuantHandler(
+            lambda model: EmbeddingQuantHandler(
                 model, bitwidth=bitwidth, group_size=group_size
             ).quantized_model()
         )
