@@ -29,4 +29,8 @@ inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec3& v) {
   return api::utils::operator<<(os, v);
 }
 
+inline std::ostream& operator<<(std::ostream& os, const api::utils::uvec4& v) {
+  return api::utils::operator<<(os, v);
+}
+
 } // namespace vkcompute
