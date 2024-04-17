@@ -218,6 +218,25 @@ at::Tensor make_rand_tensor(
     return at::rand(sizes, at::device(at::kCPU).dtype(dtype)) * (high - low) + low;
 }}
 
+
+at::Tensor make_seq_tensor(
+    std::vector<int64_t> sizes,
+      at::ScalarType dtype = at::kFloat) {{
+  int64_t n = 1;
+  for (auto size: sizes) {{
+    n *= size;
+  }}
+
+  std::vector<float> values(n);
+  for (int i=0;i<n;i++) {{
+    values[i] = (float) i;
+  }}
+
+  // from_blob doesn't take ownership of data. Hence must create a copy as
+  // "values" will go out of scope.
+  return at::from_blob(values.data(), sizes, dtype).detach().clone();
+}}
+
 {test_suites_cpp}
 """
 
