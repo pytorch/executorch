@@ -227,7 +227,7 @@ adb push cmake-out-android/examples/models/llama2/llama_main /data/local/tmp/lla
 
 **2.3 Run model**
 ```
-adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt "Once upon a time" --seq_len 120
+adb shell "cd /data/local/tmp/llama && ./llama_main --model_path <model.pte> --tokenizer_path <tokenizer.bin> --prompt \"Once upon a time\" --seq_len 120"
 ```
 ## Step 6: Build Mobile apps
 
