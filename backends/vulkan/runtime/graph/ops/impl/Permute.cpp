@@ -96,6 +96,7 @@ void permute(ComputeGraph& graph, const std::vector<ValueRef>& args) {
 }
 
 REGISTER_OPERATORS {
+  VK_REGISTER_OP(aten.permute.default, permute);
   VK_REGISTER_OP(aten.permute_copy.default, permute);
 }
 

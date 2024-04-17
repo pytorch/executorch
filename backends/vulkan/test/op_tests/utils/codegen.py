@@ -310,7 +310,9 @@ class ComputeGraphGen:
                 ret_str += self.declare_vk_out_for(r)
             return ret_str
 
-        return f"at::Tensor vk_{ref.name} = at::empty_like({ref.src_cpp_name});\n"
+        ret_str = f"at::Tensor vk_{ref.name} = at::empty_like({ref.src_cpp_name})"
+        ret_str += ".contiguous();\n"
+        return ret_str
 
     def copy_from_staging(self, ref: ValueRefList) -> str:
         if isinstance(ref, list):
