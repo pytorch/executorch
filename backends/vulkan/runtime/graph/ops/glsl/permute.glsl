@@ -51,7 +51,6 @@ void main() {
 
   const int out_channel_4up = int(uBlock.ch_info.x);
   const int in_channel_4up = int(uBlock.ch_info.y);
-
   const int out_batch = int(out_sizes.data[3]);
   const int max_dst_index = out_batch * out_channel_4up;
   VEC4_T outval = VEC4_T(0.0);
