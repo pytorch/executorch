@@ -103,6 +103,9 @@ def _parse_tensor_value(
         return torch.zeros(tensor.sizes, dtype=torch_dtype)
 
     tensor_bytes_size = math.prod(tensor.sizes) * dtype_size
+    if tensor_bytes_size == 0:
+        # Empty tensor. Return empty tensor.
+        return torch.zeros(tensor.sizes, dtype=torch_dtype)
 
     if tensor.offset is None:
         raise ValueError("Tensor offset cannot be None")

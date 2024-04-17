@@ -1,4 +1,4 @@
-load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
+load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "is_xplat", "runtime")
 load("@fbsource//xplat/executorch/build:selects.bzl", "selects")
 
 def op_target(name, deps = [], android_deps = [], _allow_third_party_deps = False, _aten_mode_deps = []):
@@ -122,7 +122,17 @@ def define_op_library(name, deps, android_deps, aten_target, _allow_third_party_
         fbandroid_platform_deps = android_deps,
         # kernels often have helpers with no prototypes just disabling the warning here as the headers
         # are codegend and linked in later
-        compiler_flags = ["-Wno-missing-prototypes"],
+        compiler_flags = ["-Wno-missing-prototypes"] + (
+            # For shared library build, we don't want to expose symbols of
+            # kernel implementation (ex torch::executor::native::tanh_out)
+            # to library users. They should use kernels through registry only.
+            # With visibility=hidden, linker won't expose kernel impl symbols
+            # so it can prune unregistered kernels.
+            # Currently fbcode linkes all dependent libraries through shared
+            # library, and it blocks users like unit tests to use kernel
+            # implementation directly. So we enable this for xplat only.
+            ["-fvisibility=hidden"] if is_xplat() else []
+        ),
         deps = [
             "//executorch/runtime/kernel:kernel_includes" + aten_suffix,
         ] + deps,

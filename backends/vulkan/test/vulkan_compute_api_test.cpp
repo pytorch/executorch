@@ -153,12 +153,13 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
   {
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         {4, 4, 4},
         {4, 4, 4},
-        {},
+        specialization_constants,
         VK_NULL_HANDLE,
         a.image(
             pipeline_barrier,
@@ -213,12 +214,13 @@ void test_storage_buffer_type(const size_t len) {
   {
     uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         {64, 1, 1},
         {len_div4, 1, 1},
-        {},
+        specialization_constants,
         VK_NULL_HANDLE,
         buffer.buffer(),
         params.buffer());
@@ -909,12 +911,13 @@ void run_from_gpu_test(
 
   {
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         vten.virtual_extents(),
         {4, 4, 4},
-        {},
+        specialization_constants,
         VK_NULL_HANDLE,
         vten.image(
             pipeline_barrier,

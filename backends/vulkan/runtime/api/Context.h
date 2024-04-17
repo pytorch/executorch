@@ -495,7 +495,7 @@ inline bool Context::submit_compute_job(
     PipelineBarrier& pipeline_barrier,
     const utils::uvec3& global_work_group,
     const utils::uvec3& local_work_group_size,
-    const SpecVarList& specialization,
+    const SpecVarList& specialization_constants,
     VkFence fence_handle,
     Arguments&&... arguments) {
   // If any of the provided arguments does not have memory associated with it,
@@ -538,8 +538,8 @@ inline bool Context::submit_compute_job(
 #endif /* USE_VULKAN_GPU_DIAGNOSTICS */
 
   // Factor out template parameter independent code to minimize code bloat.
-  DescriptorSet descriptor_set =
-      get_descriptor_set(shader, local_work_group_size, specialization);
+  DescriptorSet descriptor_set = get_descriptor_set(
+      shader, local_work_group_size, specialization_constants);
 
   detail::bind(
       descriptor_set,

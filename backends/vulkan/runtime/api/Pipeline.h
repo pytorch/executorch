@@ -53,11 +53,16 @@ struct SpecVar final {
 
 bool operator==(const SpecVar& lhs, const SpecVar& rhs);
 
-struct SpecVarList final {
+class SpecVarList final {
   std::vector<SpecVar> vars;
 
+ public:
   SpecVarList();
   SpecVarList(std::initializer_list<SpecVar> init_list);
+
+  inline const SpecVar& at(const size_t index) const {
+    return vars.at(index);
+  }
 
   inline const SpecVar* data() const {
     return vars.data();
@@ -235,7 +240,7 @@ class ComputePipelineCache final {
       seed = utils::hash_combine(seed, std::hash<uint32_t>()(spec_vars.size()));
 
       for (int i = 0; i < spec_vars.size(); ++i) {
-        const SpecVar& spec_var = spec_vars.vars.at(i);
+        const SpecVar& spec_var = spec_vars.at(i);
         size_t new_seed = 0;
         switch (spec_var.type) {
           case SpecVar::Type::FLOAT:
