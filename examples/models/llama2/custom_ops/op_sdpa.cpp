@@ -219,12 +219,20 @@ void cpu_flash_attention(
   int64_t qSize = query.size(2);
   int64_t headSize = query.size(3);
   int64_t kvSize = value.size(2);
+  int64_t num_heads_kv = key.size(1);
 
   if (is_with_kv_cache) {
     num_head = query.size(2);
+    num_heads_kv = key.size(2);
     qSize = query.size(1);
     kvSize = value.size(1);
   }
+
+  ET_CHECK_MSG(
+      num_heads_kv <= num_head, "FlashAttention does not support num kv heads > num query heads.Got num query heads=%" PRId64 " num key heads:%" PRId64, num_head, num_heads_kv);
+  ET_CHECK_MSG(
+      num_head % num_heads_kv == 0, "FlashAttention: num qyery heads must be divisible by num kv heads but got num query heads=%" PRId64 " and num kv heads=%" PRId64, num_head, num_heads_kv);
+  int64_t num_reps = num_head / num_heads_kv;
 
   bool has_attn_mask = attn_mask.has_value() && attn_mask.value().numel();
   if (has_attn_mask) {
@@ -365,6 +373,7 @@ void cpu_flash_attention(
       fill_stub(
           qk_max_data, -std::numeric_limits<accum_t>::infinity(), qBlockSize);
       int64_t num_keys = is_causal ? std::min(m + qBlockSize, kvSize) : kvSize;
+      auto j_kv = j / num_reps;
       for (int64_t n = 0; n < num_keys; n += kvSplitSize) {
         int64_t kvBlockSize = std::min(kvSplitSize, kvSize - n);
         // Calculate scale * q @ k.T
@@ -376,7 +385,7 @@ void cpu_flash_attention(
             qBlockSize,
             headSize,
             static_cast<accum_t>(1),
-            k_data + i * kStrideB + j * kStrideH + n * kStrideN,
+            k_data + i * kStrideB + j_kv * kStrideH + n * kStrideN,
             kStrideN,
             q_data + i * qStrideB + j * qStrideH + m * qStrideM,
             qStrideM,
@@ -460,7 +469,7 @@ void cpu_flash_attention(
             qBlockSize,
             kvBlockSize,
             static_cast<accum_t>(1),
-            v_data + i * vStrideB + j * vStrideH + n * vStrideN,
+            v_data + i * vStrideB + j_kv * vStrideH + n * vStrideN,
             vStrideN,
             conditional_data_ptr(qk_data, qk_reduced_data),
             kvBlockSize,
