@@ -149,12 +149,12 @@ void print_tensor(std::ostream& os, exec_aten::Tensor tensor) {
   //
   // TODO(T159700776): Format multidimensional data like numpy/PyTorch does.
   // https://github.com/pytorch/pytorch/blob/main/torch/_tensor_str.py
-#define PRINT_TENSOR_DATA(ctype, dtype)                            \
-  case ScalarType::dtype:                                          \
-    print_scalar_list(                                             \
-        os,                                                        \
-        ArrayRef<ctype>(tensor.data_ptr<ctype>(), tensor.numel()), \
-        /*print_length=*/false);                                   \
+#define PRINT_TENSOR_DATA(ctype, dtype)                                  \
+  case ScalarType::dtype:                                                \
+    print_scalar_list(                                                   \
+        os,                                                              \
+        ArrayRef<ctype>(tensor.const_data_ptr<ctype>(), tensor.numel()), \
+        /*print_length=*/false);                                         \
     break;
 
   switch (tensor.scalar_type()) {
