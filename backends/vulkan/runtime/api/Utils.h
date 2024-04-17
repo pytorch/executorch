@@ -262,6 +262,12 @@ inline std::ostream& operator<<(std::ostream& os, const uvec3& v) {
   return os;
 }
 
+inline std::ostream& operator<<(std::ostream& os, const uvec4& v) {
+  os << "(" << v.data[0u] << ", " << v.data[1u] << ", " << v.data[2u] << ", "
+     << v.data[3u] << ")";
+  return os;
+}
+
 //
 // std::vector<T> Handling
 //
