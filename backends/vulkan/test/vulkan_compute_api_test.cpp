@@ -97,6 +97,38 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
   ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);
 }
 
+TEST_F(VulkanComputeAPITest, spec_var_shader_test) {
+  size_t len = 16;
+  api::StorageBuffer buffer(api::context(), api::kFloat, len);
+
+  float scale = 3.0f;
+  float offset = 1.5f;
+
+  {
+    api::UniformParamsBuffer params(api::context(), int32_t(len));
+    uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
+    api::PipelineBarrier pipeline_barrier{};
+    api::context()->submit_compute_job(
+        VK_KERNEL(fill_buffer),
+        pipeline_barrier,
+        {64, 1, 1},
+        {len_div4, 1, 1},
+        {SV(scale), SV(offset)},
+        VK_NULL_HANDLE,
+        buffer.buffer(),
+        params.buffer());
+  }
+
+  submit_to_gpu();
+
+  std::vector<float> data(len);
+  copy_staging_to_ptr(buffer, data.data(), buffer.nbytes());
+
+  for (size_t i = 0; i < len; ++i) {
+    CHECK_VALUE(data, i, scale * i + offset);
+  }
+}
+
 TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   api::context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {4, 4, 2};
@@ -121,11 +153,13 @@ TEST_F(VulkanComputeAPITest, update_params_between_submit) {
 
   {
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         {4, 4, 4},
         {4, 4, 4},
+        specialization_constants,
         VK_NULL_HANDLE,
         a.image(
             pipeline_barrier,
@@ -180,11 +214,13 @@ void test_storage_buffer_type(const size_t len) {
   {
     uint32_t len_div4 = api::utils::div_up(uint32_t(len), uint32_t(4));
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         {64, 1, 1},
         {len_div4, 1, 1},
+        specialization_constants,
         VK_NULL_HANDLE,
         buffer.buffer(),
         params.buffer());
@@ -875,11 +911,13 @@ void run_from_gpu_test(
 
   {
     api::PipelineBarrier pipeline_barrier{};
+    api::SpecVarList specialization_constants = {};
     api::context()->submit_compute_job(
         VK_KERNEL_FROM_STR(kernel_name),
         pipeline_barrier,
         vten.virtual_extents(),
         {4, 4, 4},
+        specialization_constants,
         VK_NULL_HANDLE,
         vten.image(
             pipeline_barrier,
