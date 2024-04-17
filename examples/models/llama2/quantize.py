@@ -436,18 +436,10 @@ class QuantizedGroupEmbedding(torch.nn.Module):
     @torch.no_grad()
     def forward(self, indices: torch.Tensor) -> torch.Tensor:
         if not self.packed:  # 8bit
-<<<<<<< HEAD
             return torch.ops.quantized_decomposed.embedding_byte.dtype(
                 self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
             )
         else:  # 4bit packed
             return torch.ops.quantized_decomposed.embedding_4bit.dtype(
-=======
-            return torch.ops.llama_quantized.DEPRECATED_DO_NOT_USE_embedding_byte.dtype(
-                self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
-            )
-        else:  # 4bit packed
-            return torch.ops.llama_quantized.embedding_4bit.dtype(
->>>>>>> 6b3b7228c (4b embedding quantizer (#3081))
                 self.weight, self.scales, None, 0, 0, indices, dtype=self.dtype
             )

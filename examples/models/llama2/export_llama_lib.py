@@ -29,7 +29,7 @@ from executorch.examples.models.llama2.llama_transformer import (
     Transformer,
 )
 from executorch.exir.backend.backend_details import CompileSpec
-
+from executorch.exir.passes import *
 from executorch.sdk.etrecord import generate_etrecord
 from executorch.util.activation_memory_profiler import generate_memory_trace
 from sentencepiece import SentencePieceProcessor
@@ -539,7 +539,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         bitwidth = int(bitwidth)
         transforms.append(
             lambda model: EmbeddingQuantHandler(
-                model, bitwidth=bitwidth, group_size=group_size
+                model, bitwidth=bitwidth, group_size=group_size, packed=(bitwidth==4),
             ).quantized_model()
         )
 
