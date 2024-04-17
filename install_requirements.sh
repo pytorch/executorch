@@ -27,10 +27,14 @@ fi
 
 # Parse options.
 EXECUTORCH_BUILD_PYBIND=OFF
+INSTALL_EXECUTORCH=1
 CMAKE_ARGS=""
 
 for arg in "$@"; do
   case $arg in
+    --deps-only)
+      INSTALL_EXECUTORCH=0
+      ;;
     --pybind)
       EXECUTORCH_BUILD_PYBIND=ON
       ;;
@@ -102,7 +106,10 @@ $PIP_EXECUTABLE install --extra-index-url "${TORCH_URL}" \
 #
 # Install executorch pip package. This also makes `flatc` available on the path.
 #
-
-EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
-    CMAKE_ARGS="${CMAKE_ARGS}" \
-    $PIP_EXECUTABLE install . --no-build-isolation -v
+if (( INSTALL_EXECUTORCH )); then
+  EXECUTORCH_BUILD_PYBIND="${EXECUTORCH_BUILD_PYBIND}" \
+      CMAKE_ARGS="${CMAKE_ARGS}" \
+      $PIP_EXECUTABLE install . --no-build-isolation -v
+else
+  echo "Not installing executorch because --deps-only is set"
+fi
