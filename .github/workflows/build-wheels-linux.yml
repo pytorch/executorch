@@ -1,6 +1,7 @@
 # From https://github.com/pytorch/test-infra/wiki/Using-Nova-Reusable-Build-Workflows
 name: Build Linux Wheels
 
+# @nocommit: edit to trigger wheel building on the test channel
 on:
   pull_request:
     paths:
