@@ -7,8 +7,10 @@
 from unittest import TestCase
 
 from executorch import exir
+from executorch.exir import to_edge
 from executorch.exir.passes import DebugPass, HintBasedSymShapeEvalPass, SpecPropPass
 from executorch.exir.tests.models import Repeat
+from torch.export import export
 
 
 class TestDynamicShapeProp(TestCase):
@@ -17,15 +19,14 @@ class TestDynamicShapeProp(TestCase):
         inputs = eager_model.get_random_inputs()
         inputs = inputs[0], inputs[1]
 
-        prog = exir.capture(
-            eager_model,
-            inputs,
-            exir.CaptureConfig(enable_dynamic_shape=True),
-        ).to_edge(exir.EdgeCompileConfig(_check_ir_validity=False))
+        prog = to_edge(
+            export(eager_model, inputs, dynamic_shapes=eager_model.get_dynamic_shape()),
+            compile_config=exir.EdgeCompileConfig(_check_ir_validity=False),
+        )
 
-        new_prog = prog.transform(SpecPropPass(), HintBasedSymShapeEvalPass())
+        new_prog = prog.transform([SpecPropPass(), HintBasedSymShapeEvalPass()])
 
-        gm = new_prog.exported_program.graph_module
+        gm = new_prog.exported_program().graph_module
 
         DebugPass(show_spec=True)(gm)
         *_, return_node = gm.graph.nodes
