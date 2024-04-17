@@ -206,5 +206,6 @@ test_suites = {
     "aten.full.default": get_full_inputs(),
     "aten.select.int": get_select_int_inputs(),
     "aten.select_copy.int": get_select_int_inputs(),
+    "aten.permute.default": get_permute_inputs(),
     "aten.permute_copy.default": get_permute_inputs(),
 }
