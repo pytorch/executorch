@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Lowering a Model as a Delegate &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="Building and Running ExecuTorch with XNNPACK Backend" href="tutorial-xnnpack-delegate-lowering.html" />
+    <link rel="prev" title="Building an ExecuTorch Android Demo App" href="demo-apps-android.html" />
 
 
   <!-- Google Tag Manager -->
@@ -277,13 +278,13 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
-<li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Lowering a Model as a Delegate</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/examples-end-to-end-to-lower-model-to-delegate.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,184 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="lowering-a-model-as-a-delegate">
+<h1>Lowering a Model as a Delegate<a class="headerlink" href="#lowering-a-model-as-a-delegate" title="Permalink to this heading">¶</a></h1>
+<p>Audience: ML Engineers, who are interested in applying delegates to accelerate their program in runtime.</p>
+<p>Backend delegation is an entry point for backends to process and execute PyTorch
+programs to leverage the performance and efficiency benefits of specialized
+backends and hardware, while still providing PyTorch users with an experience
+close to that of the PyTorch runtime. The backend delegate is usually either provided by
+ExecuTorch or vendors. The way to leverage delegation in your program is via a standard entry point <code class="docutils literal notranslate"><span class="pre">to_backend</span></code>.</p>
+<div class="section" id="frontend-interfaces">
+<h2>Frontend Interfaces<a class="headerlink" href="#frontend-interfaces" title="Permalink to this heading">¶</a></h2>
+<p>There are three flows for delegating a program to a backend:</p>
+<ol class="arabic simple">
+<li><p>Lower the whole module to a backend. This is good for testing backends and
+the preprocessing stage.</p></li>
+<li><p>Lower the whole module to a backend and compose it with another module. This
+is good for reusing lowered modules exported from other flows.</p></li>
+<li><p>Lower parts of a module according to a partitioner. This is good for
+lowering models that include both lowerable and non-lowerable nodes, and is
+the most streamlined procecss.</p></li>
+</ol>
+<div class="section" id="flow-1-lowering-the-whole-module">
+<h3>Flow 1: Lowering the whole module<a class="headerlink" href="#flow-1-lowering-the-whole-module" title="Permalink to this heading">¶</a></h3>
+<p>This flow starts from a traced graph module with Edge Dialect representation. To
+lower it, we call the following function which returns a <code class="docutils literal notranslate"><span class="pre">LoweredBackendModule</span></code> (more documentation on this function can be found in the <a class="reference internal" href="export-to-executorch-api-reference.html"><span class="doc std std-doc">Export API reference</span></a>)</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># defined in backend_api.py</span>
+<span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">backend_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">compile_spec</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">CompileSpec</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">LoweredBackendModule</span><span class="p">:</span>
+</pre></div>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
-</div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
-</div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
-</div>
-</div>
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
+<p>Within this function, the backend’s <code class="docutils literal notranslate"><span class="pre">preprocess()</span></code> function is called which
+produces a compiled blob which will be emitted to the flatbuffer binary. The
+lowered module can be directly captured, or be put back in a parent module to be
+captured. Eventually the captured module is serialized in the flatbuffer’s model
+that can be loaded by the runtime.</p>
+<p>The following is an example of this flow:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">to_edge</span>
 
-  <hr class="tutorials-hr">
+<span class="c1"># The submodule runs in a specific backend. In this example,  `BackendWithCompilerDemo` backend</span>
+<span class="k">class</span> <span class="nc">LowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+
+<span class="c1"># Convert the lowerable module to Edge IR Representation</span>
+<span class="n">to_be_lowered</span> <span class="o">=</span> <span class="n">LowerableSubModel</span><span class="p">()</span>
+<span class="n">example_input</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
+<span class="n">to_be_lowered_exir_submodule</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">to_be_lowered</span><span class="p">,</span> <span class="n">example_input</span><span class="p">))</span>
+
+<span class="c1"># Import the backend implementation</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.backend_with_compiler_demo</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">BackendWithCompilerDemo</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">lowered_module</span> <span class="o">=</span> <span class="n">to_backend</span><span class="p">(</span><span class="s1">&#39;BackendWithCompilerDemo&#39;</span><span class="p">,</span> <span class="n">to_be_lowered_exir_submodule</span><span class="o">.</span><span class="n">exported_program</span><span class="p">(),</span> <span class="p">[])</span>
+</pre></div>
+</div>
+<p>We can serialize the program to a flatbuffer format by directly running:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">lowered_module</span><span class="o">.</span><span class="n">buffer</span><span class="p">())</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="flow-2-lowering-the-whole-module-and-composite">
+<h3>Flow 2: Lowering the whole module and composite<a class="headerlink" href="#flow-2-lowering-the-whole-module-and-composite" title="Permalink to this heading">¶</a></h3>
+<p>Alternatively, after flow 1, we can compose this lowered module with another
+module:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># This submodule runs in executor runtime</span>
+<span class="k">class</span> <span class="nc">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bias</span> <span class="o">=</span> <span class="n">bias</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">),</span> <span class="bp">self</span><span class="o">.</span><span class="n">bias</span><span class="p">)</span>
+
+
+<span class="c1"># The composite module, including lower part and non-lowerpart</span>
+<span class="k">class</span> <span class="nc">CompositeModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span> <span class="o">=</span> <span class="n">NonLowerableSubModel</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="mf">0.3</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span> <span class="o">=</span> <span class="n">lowered_module</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">):</span>
+        <span class="n">a</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+        <span class="n">b</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">)</span>
+        <span class="n">ret</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">non_lowerable</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">ret</span>
+
+<span class="n">composite_model</span> <span class="o">=</span> <span class="n">CompositeModel</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="mi">1</span><span class="p">),</span> <span class="p">)</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">composite_model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">))</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="flow-3-partitioning">
+<h3>Flow 3: Partitioning<a class="headerlink" href="#flow-3-partitioning" title="Permalink to this heading">¶</a></h3>
+<p>The third flow also starts from a traced graph module with Edge Dialect
+representation. To lower certain nodes in this graph module, we can use the
+overloaded <a class="reference external" href="https://github.com/pytorch/executorch/blob/d9eef24bb720804aa7b400b05241487510ae0dc2/exir/backend/backend_api.py#L39"><code class="docutils literal notranslate"><span class="pre">to_backend</span></code>
+function</a>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">to_backend</span><span class="p">(</span>
+    <span class="n">edge_program</span><span class="p">:</span> <span class="n">ExportedProgram</span><span class="p">,</span>
+    <span class="n">partitioner</span><span class="p">:</span> <span class="n">Partitioner</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ExportedProgram</span><span class="p">:</span>
+</pre></div>
+</div>
+<p>This function takes in a <code class="docutils literal notranslate"><span class="pre">Partitioner</span></code> which adds a tag to all the nodes that
+are meant to be lowered. It will return a <code class="docutils literal notranslate"><span class="pre">partition_tags</span></code> dictionary mapping tags to
+backend names and module compile specs. The tagged nodes will then be
+partitioned and lowered to their mapped backends using Flow 1’s process.
+Available helper partitioners are documented
+<a class="reference internal" href="compiler-custom-compiler-passes.html"><span class="doc std std-doc">here</span></a>. These lowered modules
+will be inserted into the top-level module and serialized.</p>
+<p>The following is an example of the flow:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">executorch.exir</span> <span class="k">as</span> <span class="nn">exir</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.test.op_partitioner_demo</span> <span class="kn">import</span> <span class="n">AddMulPartitionerDemo</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.program</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">EdgeProgramManager</span><span class="p">,</span>
+    <span class="n">to_edge</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span>
+<span class="kn">import</span> <span class="nn">torch</span>
+
+<span class="k">class</span> <span class="nc">Model</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">-</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">/</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">y</span>
+        <span class="n">x</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+        <span class="k">return</span> <span class="n">x</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">Model</span><span class="p">()</span>
+<span class="n">model_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+
+<span class="n">core_aten_ep</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">model_inputs</span><span class="p">)</span>
+<span class="n">edge</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">core_aten_ep</span><span class="p">)</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">AddMulPartitionerDemo</span><span class="p">())</span>
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="c1"># Save the flatbuffer to a local file</span>
+<span class="n">save_path</span> <span class="o">=</span> <span class="s2">&quot;delegate.pte&quot;</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">save_path</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exec_prog</span><span class="o">.</span><span class="n">buffer</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="runtime">
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
+<p>After having the program with delegates, to run the model with the backend, we’d need to register the backend.
+Depending on the delegate implementation, the backend can be registered either as part of global variables or
+explicitly registered inside the main function.</p>
+<ul class="simple">
+<li><p>If it’s registered during global variables initialization, the backend will be registered as long as it’s statically linked. Users only need to include the library as part of the dependency.</p></li>
+<li><p>If the vendor provides an API to register the backend, users need to include the library as part of the dependency, and call the API provided by vendors to explicitly register the backend as part of the main function.</p></li>
+</ul>
 </div>
 </div>
 
@@ -716,8 +615,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="tutorial-xnnpack-delegate-lowering.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with XNNPACK Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="demo-apps-android.html" class="btn btn-neutral" title="Building an ExecuTorch Android Demo App" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +652,14 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#">Lowering a Model as a Delegate</a><ul>
+<li><a class="reference internal" href="#frontend-interfaces">Frontend Interfaces</a><ul>
+<li><a class="reference internal" href="#flow-1-lowering-the-whole-module">Flow 1: Lowering the whole module</a></li>
+<li><a class="reference internal" href="#flow-2-lowering-the-whole-module-and-composite">Flow 2: Lowering the whole module and composite</a></li>
+<li><a class="reference internal" href="#flow-3-partitioning">Flow 3: Partitioning</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+<li><a class="reference internal" href="#runtime">Runtime</a></li>
 </ul>
 </li>
 </ul>

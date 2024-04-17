@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Running an ExecuTorch Model in C++ Tutorial &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="Using the ExecuTorch SDK to Profile a Model" href="tutorials/sdk-integration-tutorial.html" />
+    <link rel="prev" title="Exporting to ExecuTorch Tutorial" href="tutorials/export-to-executorch-tutorial.html" />
 
 
   <!-- Google Tag Manager -->
@@ -277,9 +278,9 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
-<li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Running an ExecuTorch Model in C++ Tutorial</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/running-a-model-cpp-tutorial.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,134 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="running-an-executorch-model-in-c-tutorial">
+<h1>Running an ExecuTorch Model in C++ Tutorial<a class="headerlink" href="#running-an-executorch-model-in-c-tutorial" title="Permalink to this heading">¶</a></h1>
+<p><strong>Author:</strong> <a class="reference external" href="https://github.com/JacobSzwejbka">Jacob Szwejbka</a></p>
+<p>In this tutorial, we will cover the APIs to load an ExecuTorch model,
+prepare the MemoryManager, set inputs, execute the model, and retrieve outputs.</p>
+<p>For a high level overview of the ExecuTorch Runtime please see <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Runtime Overview</span></a>, and for more in-depth documentation on
+each API please see the <a class="reference internal" href="executorch-runtime-api-reference.html"><span class="doc std std-doc">Runtime API Reference</span></a>.
+<a class="reference external" href="https://github.com/pytorch/executorch/blob/main/examples/portable/executor_runner/executor_runner.cpp">Here</a> is a fully functional version C++ model runner, and the <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a> doc shows how to build and run it.</p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<p>You will need an ExecuTorch model to follow along. We will be using
+the model <code class="docutils literal notranslate"><span class="pre">SimpleConv</span></code> generated from the <a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Exporting to ExecuTorch tutorial</span></a>.</p>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
-</div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
-</div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
-</div>
-</div>
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
+<div class="section" id="model-loading">
+<h2>Model Loading<a class="headerlink" href="#model-loading" title="Permalink to this heading">¶</a></h2>
+<p>The first step towards running your model is to load it. ExecuTorch uses an abstraction called a <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code> to handle the specifics of retrieving the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file data, and then <code class="docutils literal notranslate"><span class="pre">Program</span></code> represents the loaded state.</p>
+<p>Users can define their own <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code>s to fit the needs of their particular system. In this tutorial we will be using the <code class="docutils literal notranslate"><span class="pre">FileDataLoader</span></code>, but you can look under <a class="reference external" href="https://github.com/pytorch/executorch/tree/main/extension/data_loader">Example Data Loader Implementations</a> to see other options provided by the ExecuTorch project.</p>
+<p>For the <code class="docutils literal notranslate"><span class="pre">FileDataLoader</span></code> all we need to do is provide a file path to the constructor.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">torch</span><span class="o">::</span><span class="nn">executor</span><span class="p">;</span>
 
-  <hr class="tutorials-hr">
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">util</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">loader</span><span class="w"> </span><span class="o">=</span>
+<span class="w">        </span><span class="n">util</span><span class="o">::</span><span class="n">FileDataLoader</span><span class="o">::</span><span class="n">from</span><span class="p">(</span><span class="s">&quot;/tmp/model.pte&quot;</span><span class="p">);</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
 
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">Program</span><span class="o">&gt;</span><span class="w"> </span><span class="n">program</span><span class="w"> </span><span class="o">=</span>
+<span class="w">      </span><span class="n">torch</span><span class="o">::</span><span class="n">executor</span><span class="o">::</span><span class="n">Program</span><span class="o">::</span><span class="n">load</span><span class="p">(</span><span class="n">loader</span><span class="p">.</span><span class="n">get</span><span class="p">());</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">program</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="setting-up-the-memorymanager">
+<h2>Setting Up the MemoryManager<a class="headerlink" href="#setting-up-the-memorymanager" title="Permalink to this heading">¶</a></h2>
+<p>Next we will set up the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code>.</p>
+<p>One of the principles of ExecuTorch is giving users control over where the memory used by the runtime comes from. Today (late 2023) users need to provide 2 different allocators:</p>
+<ul class="simple">
+<li><p>Method Allocator: A <code class="docutils literal notranslate"><span class="pre">MemoryAllocator</span></code> used to allocate runtime structures at <code class="docutils literal notranslate"><span class="pre">Method</span></code> load time. Things like Tensor metadata, the internal chain of instructions, and other runtime state come from this.</p></li>
+<li><p>Planned Memory: A <code class="docutils literal notranslate"><span class="pre">HierarchicalAllocator</span></code> containing 1 or more memory arenas where internal mutable tensor data buffers are placed. At <code class="docutils literal notranslate"><span class="pre">Method</span></code> load time internal tensors have their data pointers assigned to various offsets within. The positions of those offsets and the sizes of the arenas are determined by memory planning ahead of time.</p></li>
+</ul>
+<p>For this example we will retrieve the size of the planned memory arenas dynamically from the <code class="docutils literal notranslate"><span class="pre">Program</span></code>, but for heapless environments users could retrieve this information from the <code class="docutils literal notranslate"><span class="pre">Program</span></code> ahead of time and allocate the arena statically. We will also be using a malloc based allocator for the method allocator.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Method names map back to Python nn.Module method names. Most users will only have the singular method &quot;forward&quot;.</span>
+<span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">method_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;forward&quot;</span><span class="p">;</span>
+
+<span class="c1">// MethodMeta is a lightweight structure that lets us gather metadata</span>
+<span class="c1">// information about a specific method. In this case we are looking to</span>
+<span class="c1">// get the required size of the memory planned buffers for the method</span>
+<span class="c1">// &quot;forward&quot;.</span>
+<span class="n">Result</span><span class="o">&lt;</span><span class="n">MethodMeta</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method_meta</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">method_meta</span><span class="p">(</span><span class="n">method_name</span><span class="p">);</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">method_meta</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
+
+<span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="p">[]</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">planned_buffers</span><span class="p">;</span><span class="w"> </span><span class="c1">// Owns the Memory</span>
+<span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="n">Span</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="n">planned_arenas</span><span class="p">;</span><span class="w"> </span><span class="c1">// Passed to the allocator</span>
+
+<span class="kt">size_t</span><span class="w"> </span><span class="n">num_memory_planned_buffers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">num_memory_planned_buffers</span><span class="p">();</span>
+
+<span class="c1">// It is possible to have multiple layers in our memory hierarchy; for example, SRAM and DRAM.</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="kt">size_t</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">id</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">num_memory_planned_buffers</span><span class="p">;</span><span class="w"> </span><span class="o">++</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">  </span><span class="c1">// .get() will always succeed because id &lt; num_memory_planned_buffers.</span>
+<span class="w">  </span><span class="kt">size_t</span><span class="w"> </span><span class="n">buffer_size</span><span class="w"> </span><span class="o">=</span>
+<span class="w">      </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">size_t</span><span class="o">&gt;</span><span class="p">(</span><span class="n">method_meta</span><span class="o">-&gt;</span><span class="n">memory_planned_buffer_size</span><span class="p">(</span><span class="n">id</span><span class="p">).</span><span class="n">get</span><span class="p">());</span>
+<span class="w">  </span><span class="n">planned_buffers</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">make_unique</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="p">[]</span><span class="o">&gt;</span><span class="p">(</span><span class="n">buffer_size</span><span class="p">));</span>
+<span class="w">  </span><span class="n">planned_arenas</span><span class="p">.</span><span class="n">push_back</span><span class="p">({</span><span class="n">planned_buffers</span><span class="p">.</span><span class="n">back</span><span class="p">().</span><span class="n">get</span><span class="p">(),</span><span class="w"> </span><span class="n">buffer_size</span><span class="p">});</span>
+<span class="p">}</span>
+<span class="n">HierarchicalAllocator</span><span class="w"> </span><span class="n">planned_memory</span><span class="p">(</span>
+<span class="w">    </span><span class="p">{</span><span class="n">planned_arenas</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">planned_arenas</span><span class="p">.</span><span class="n">size</span><span class="p">()});</span>
+
+<span class="c1">// Version of MemoryAllocator that uses malloc to handle allocations</span>
+<span class="c1">// rather then a fixed buffer.</span>
+<span class="n">util</span><span class="o">::</span><span class="n">MallocMemoryAllocator</span><span class="w"> </span><span class="n">method_allocator</span><span class="p">;</span>
+
+<span class="c1">// Assemble all of the allocators into the MemoryManager that the Executor</span>
+<span class="c1">// will use.</span>
+<span class="n">MemoryManager</span><span class="w"> </span><span class="nf">memory_manager</span><span class="p">(</span><span class="o">&amp;</span><span class="n">method_allocator</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">planned_memory</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="loading-a-method">
+<h2>Loading a Method<a class="headerlink" href="#loading-a-method" title="Permalink to this heading">¶</a></h2>
+<p>In ExecuTorch we load and initialize from the <code class="docutils literal notranslate"><span class="pre">Program</span></code> at a method granularity. Many programs will only have one method ‘forward’. <code class="docutils literal notranslate"><span class="pre">load_method</span></code> is where initialization is done, from setting up tensor metadata, to intializing delegates, etc.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Result</span><span class="o">&lt;</span><span class="n">Method</span><span class="o">&gt;</span><span class="w"> </span><span class="n">method</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">program</span><span class="o">-&gt;</span><span class="n">load_method</span><span class="p">(</span><span class="n">method_name</span><span class="p">);</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">method</span><span class="p">.</span><span class="n">ok</span><span class="p">());</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="setting-inputs">
+<h2>Setting Inputs<a class="headerlink" href="#setting-inputs" title="Permalink to this heading">¶</a></h2>
+<p>Now that we have our method we need to set up its inputs before we can
+perform an inference. In this case we know our model takes a single (1, 3, 256, 256)
+sized float tensor.</p>
+<p>Depending on how your model was memory planned, the planned memory may or may
+not contain buffer space for your inputs and outputs.</p>
+<p>If the outputs were not memory planned then users will need to set up the output data pointer with ‘set_output_data_ptr’. In this case we will just assume our model was exported with inputs and outputs handled by the memory plan.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="c1">// Create our input tensor.</span>
+<span class="kt">float</span><span class="w"> </span><span class="n">data</span><span class="p">[</span><span class="mi">1</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">256</span><span class="p">];</span>
+<span class="n">Tensor</span><span class="o">::</span><span class="n">SizesType</span><span class="w"> </span><span class="n">sizes</span><span class="p">[]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="p">};</span>
+<span class="n">Tensor</span><span class="o">::</span><span class="n">DimOrderType</span><span class="w"> </span><span class="n">dim_order</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">3</span><span class="p">};</span>
+<span class="n">TensorImpl</span><span class="w"> </span><span class="nf">impl</span><span class="p">(</span>
+<span class="w">    </span><span class="n">ScalarType</span><span class="o">::</span><span class="n">Float</span><span class="p">,</span><span class="w"> </span><span class="c1">// dtype</span>
+<span class="w">    </span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="c1">// number of dimensions</span>
+<span class="w">    </span><span class="n">sizes</span><span class="p">,</span>
+<span class="w">    </span><span class="n">data</span><span class="p">,</span>
+<span class="w">    </span><span class="n">dim_order</span><span class="p">);</span>
+<span class="n">Tensor</span><span class="w"> </span><span class="nf">t</span><span class="p">(</span><span class="o">&amp;</span><span class="n">impl</span><span class="p">);</span>
+
+<span class="c1">// Implicitly casts t to EValue</span>
+<span class="n">Error</span><span class="w"> </span><span class="n">set_input_error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">set_input</span><span class="p">(</span><span class="n">t</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">set_input_error</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="perform-an-inference">
+<h2>Perform an Inference<a class="headerlink" href="#perform-an-inference" title="Permalink to this heading">¶</a></h2>
+<p>Now that our method is loaded and our inputs are set we can perform an inference. We do this by calling <code class="docutils literal notranslate"><span class="pre">execute</span></code>.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">Error</span><span class="w"> </span><span class="n">execute_error</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">execute</span><span class="p">();</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">execute_error</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="n">Error</span><span class="o">::</span><span class="n">Ok</span><span class="p">);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="retrieve-outputs">
+<h2>Retrieve Outputs<a class="headerlink" href="#retrieve-outputs" title="Permalink to this heading">¶</a></h2>
+<p>Once our inference completes we can retrieve our output. We know that our model only returns a single output tensor. One potential pitfall here is that the output we get back is owned by the <code class="docutils literal notranslate"><span class="pre">Method</span></code>. Users should take care to clone their output before performing any mutations on it, or if they need it to have a lifespan separate from the <code class="docutils literal notranslate"><span class="pre">Method</span></code>.</p>
+<div class="highlight-none notranslate highlight-cpp"><div class="highlight"><pre><span></span><span class="n">EValue</span><span class="w"> </span><span class="n">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">method</span><span class="o">-&gt;</span><span class="n">get_output</span><span class="p">(</span><span class="mi">0</span><span class="p">);</span>
+<span class="n">assert</span><span class="p">(</span><span class="n">output</span><span class="p">.</span><span class="n">isTensor</span><span class="p">());</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="conclusion">
+<h2>Conclusion<a class="headerlink" href="#conclusion" title="Permalink to this heading">¶</a></h2>
+<p>In this tutorial, we went over the APIs and steps required to load and perform an inference with an ExecuTorch model in C++.</p>
 </div>
 </div>
 
@@ -716,8 +565,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="tutorials/sdk-integration-tutorial.html" class="btn btn-neutral float-right" title="Using the ExecuTorch SDK to Profile a Model" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="tutorials/export-to-executorch-tutorial.html" class="btn btn-neutral" title="Exporting to ExecuTorch Tutorial" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +602,15 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
-</ul>
-</li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+<li><a class="reference internal" href="#">Running an ExecuTorch Model in C++ Tutorial</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#model-loading">Model Loading</a></li>
+<li><a class="reference internal" href="#setting-up-the-memorymanager">Setting Up the MemoryManager</a></li>
+<li><a class="reference internal" href="#loading-a-method">Loading a Method</a></li>
+<li><a class="reference internal" href="#setting-inputs">Setting Inputs</a></li>
+<li><a class="reference internal" href="#perform-an-inference">Perform an Inference</a></li>
+<li><a class="reference internal" href="#retrieve-outputs">Retrieve Outputs</a></li>
+<li><a class="reference internal" href="#conclusion">Conclusion</a></li>
 </ul>
 </li>
 </ul>

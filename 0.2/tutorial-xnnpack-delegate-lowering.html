@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Building and Running ExecuTorch with XNNPACK Backend &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="Building and Running ExecuTorch with ARM Ethos-U Backend" href="executorch-arm-delegate-tutorial.html" />
+    <link rel="prev" title="Lowering a Model as a Delegate" href="examples-end-to-end-to-lower-model-to-delegate.html" />
 
 
   <!-- Google Tag Manager -->
@@ -277,14 +278,14 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-ios.html">Building an ExecuTorch iOS Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with XNNPACK Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Building and Running ExecuTorch with XNNPACK Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/tutorial-xnnpack-delegate-lowering.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,193 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
-</div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
+  <div class="section" id="building-and-running-executorch-with-xnnpack-backend">
+<h1>Building and Running ExecuTorch with XNNPACK Backend<a class="headerlink" href="#building-and-running-executorch-with-xnnpack-backend" title="Permalink to this heading">¶</a></h1>
+<p>The following tutorial will familiarize you with leveraging the ExecuTorch XNNPACK Delegate for accelerating your ML Models using CPU hardware. It will go over exporting and serializing a model to a binary file, targeting the XNNPACK Delegate Backend and running the model on a supported target  platform. To get started quickly, use the script in the ExecuTorch repository with instructions on exporting and generating  a binary file for a few sample models demonstrating the flow.</p>
+<!----This will show a grid card on the page----->
 <div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
 <div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
+What you will learn in this tutorial:</div>
+<p class="sd-card-text">In this tutorial, you will learn how to export an XNNPACK lowered Model and run it on a target platform</p>
 </div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
+</div>
 </div>
 <div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
 <div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
-</div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
+Before you begin it is recommended you go through the following:</div>
+<ul class="simple">
+<li><p class="sd-card-text"><a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc">Setting up ExecuTorch</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html"><span class="doc std std-doc">Model Lowering Tutorial</span></a></p></li>
+<li><p class="sd-card-text"><a class="reference internal" href="native-delegates-executorch-xnnpack-delegate.html"><span class="doc std std-doc">ExecuTorch XNNPACK Delegate</span></a></p></li>
+</ul>
 </div>
 </div>
 </div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
 </div>
 </div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
+<div class="section" id="lowering-a-model-to-xnnpack">
+<h2>Lowering a model to XNNPACK<a class="headerlink" href="#lowering-a-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span> <span class="nn">torchvision.models</span> <span class="k">as</span> <span class="nn">models</span>
 
-  <hr class="tutorials-hr">
+<span class="kn">from</span> <span class="nn">torch.export</span> <span class="kn">import</span> <span class="n">export</span><span class="p">,</span> <span class="n">ExportedProgram</span>
+<span class="kn">from</span> <span class="nn">torchvision.models.mobilenetv2</span> <span class="kn">import</span> <span class="n">MobileNet_V2_Weights</span>
+<span class="kn">from</span> <span class="nn">executorch.backends.xnnpack.partition.xnnpack_partitioner</span> <span class="kn">import</span> <span class="n">XnnpackPartitioner</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeProgramManager</span><span class="p">,</span> <span class="n">ExecutorchProgramManager</span><span class="p">,</span> <span class="n">to_edge</span>
+<span class="kn">from</span> <span class="nn">executorch.exir.backend.backend_api</span> <span class="kn">import</span> <span class="n">to_backend</span>
 
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">exported_program</span><span class="p">:</span> <span class="n">ExportedProgram</span> <span class="o">=</span> <span class="n">export</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span>
+<span class="n">edge</span><span class="p">:</span> <span class="n">EdgeProgramManager</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">exported_program</span><span class="p">)</span>
+
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
+</pre></div>
+</div>
+<p>We will go through this example with the <a class="reference external" href="https://pytorch.org/hub/pytorch_vision_mobilenet_v2/">MobileNetV2</a> pretrained model downloaded from the TorchVision library. The flow of lowering a model starts after exporting the model <code class="docutils literal notranslate"><span class="pre">to_edge</span></code>. We call the <code class="docutils literal notranslate"><span class="pre">to_backend</span></code> api with the <code class="docutils literal notranslate"><span class="pre">XnnpackPartitioner</span></code>. The partitioner identifies the subgraphs suitable for XNNPACK backend delegate to consume. Afterwards, the identified subgraphs will be serialized with the XNNPACK Delegate flatbuffer schema and each subgraph will be replaced with a call to the XNNPACK Delegate.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="gp">&gt;&gt;&gt; </span><span class="nb">print</span><span class="p">(</span><span class="n">edge</span><span class="o">.</span><span class="n">exported_program</span><span class="p">()</span><span class="o">.</span><span class="n">graph_module</span><span class="p">)</span>
+<span class="go">GraphModule(</span>
+<span class="go">  (lowered_module_0): LoweredBackendModule()</span>
+<span class="go">  (lowered_module_1): LoweredBackendModule()</span>
+<span class="go">)</span>
+
+<span class="go">def forward(self, arg314_1):</span>
+<span class="go">    lowered_module_0 = self.lowered_module_0</span>
+<span class="go">    executorch_call_delegate = torch.ops.higher_order.executorch_call_delegate(lowered_module_0, arg314_1);  lowered_module_0 = arg314_1 = None</span>
+<span class="go">    getitem = executorch_call_delegate[0];  executorch_call_delegate = None</span>
+<span class="go">    aten_view_copy_default = executorch_exir_dialects_edge__ops_aten_view_copy_default(getitem, [1, 1280]);  getitem = None</span>
+<span class="go">    aten_clone_default = executorch_exir_dialects_edge__ops_aten_clone_default(aten_view_copy_default);  aten_view_copy_default = None</span>
+<span class="go">    lowered_module_1 = self.lowered_module_1</span>
+<span class="go">    executorch_call_delegate_1 = torch.ops.higher_order.executorch_call_delegate(lowered_module_1, aten_clone_default);  lowered_module_1 = aten_clone_default = None</span>
+<span class="go">    getitem_1 = executorch_call_delegate_1[0];  executorch_call_delegate_1 = None</span>
+<span class="go">    return (getitem_1,)</span>
+</pre></div>
+</div>
+<p>We print the graph after lowering above to show the new nodes that were inserted to call the XNNPACK Delegate. The subgraphs which are being delegated to XNNPACK are the first argument at each call site. It can be observed that the majority of <code class="docutils literal notranslate"><span class="pre">convolution-relu-add</span></code> blocks and <code class="docutils literal notranslate"><span class="pre">linear</span></code> blocks were able to be delegated to XNNPACK. We can also see the operators which were not able to be lowered to the XNNPACK delegate, such as <code class="docutils literal notranslate"><span class="pre">clone</span></code> and <code class="docutils literal notranslate"><span class="pre">view_copy</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">exec_prog</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>After lowering to the XNNPACK Program, we can then prepare it for executorch and save the model as a <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file. <code class="docutils literal notranslate"><span class="pre">.pte</span></code> is a binary format that stores the serialized ExecuTorch graph.</p>
+</div>
+<div class="section" id="lowering-a-quantized-model-to-xnnpack">
+<h2>Lowering a Quantized Model to XNNPACK<a class="headerlink" href="#lowering-a-quantized-model-to-xnnpack" title="Permalink to this heading">¶</a></h2>
+<p>The XNNPACK delegate can also execute symmetrically quantized models. To understand the quantization flow and learn how to quantize models, refer to <span class="xref myst">Custom Quantization</span> note. For the sake of this tutorial, we will leverage the <code class="docutils literal notranslate"><span class="pre">quantize()</span></code> python helper function conveniently added to the <code class="docutils literal notranslate"><span class="pre">executorch/executorch/examples</span></code> folder.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch._export</span> <span class="kn">import</span> <span class="n">capture_pre_autograd_graph</span>
+<span class="kn">from</span> <span class="nn">executorch.exir</span> <span class="kn">import</span> <span class="n">EdgeCompileConfig</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">mobilenetv2</span><span class="o">.</span><span class="n">mobilenet_v2</span><span class="p">(</span><span class="n">weights</span><span class="o">=</span><span class="n">MobileNet_V2_Weights</span><span class="o">.</span><span class="n">DEFAULT</span><span class="p">)</span><span class="o">.</span><span class="n">eval</span><span class="p">()</span>
+<span class="n">sample_inputs</span> <span class="o">=</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">224</span><span class="p">,</span> <span class="mi">224</span><span class="p">),</span> <span class="p">)</span>
+
+<span class="n">mobilenet_v2</span> <span class="o">=</span> <span class="n">capture_pre_autograd_graph</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span> <span class="c1"># 2-stage export for quantization path</span>
+
+<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantize_pt2e</span> <span class="kn">import</span> <span class="n">convert_pt2e</span><span class="p">,</span> <span class="n">prepare_pt2e</span>
+<span class="kn">from</span> <span class="nn">torch.ao.quantization.quantizer.xnnpack_quantizer</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">get_symmetric_quantization_config</span><span class="p">,</span>
+    <span class="n">XNNPACKQuantizer</span><span class="p">,</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">quantize</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">example_inputs</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This is the official recommended flow for quantization in pytorch 2.0 export&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original model: </span><span class="si">{</span><span class="n">model</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">quantizer</span> <span class="o">=</span> <span class="n">XNNPACKQuantizer</span><span class="p">()</span>
+    <span class="c1"># if we set is_per_channel to True, we also need to add out_variant of quantize_per_channel/dequantize_per_channel</span>
+    <span class="n">operator_config</span> <span class="o">=</span> <span class="n">get_symmetric_quantization_config</span><span class="p">(</span><span class="n">is_per_channel</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">quantizer</span><span class="o">.</span><span class="n">set_global</span><span class="p">(</span><span class="n">operator_config</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">prepare_pt2e</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">quantizer</span><span class="p">)</span>
+    <span class="c1"># calibration</span>
+    <span class="n">m</span><span class="p">(</span><span class="o">*</span><span class="n">example_inputs</span><span class="p">)</span>
+    <span class="n">m</span> <span class="o">=</span> <span class="n">convert_pt2e</span><span class="p">(</span><span class="n">m</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Quantized model: </span><span class="si">{</span><span class="n">m</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># make sure we can export to flat buffer</span>
+    <span class="k">return</span> <span class="n">m</span>
+
+<span class="n">quantized_mobilenetv2</span> <span class="o">=</span> <span class="n">quantize</span><span class="p">(</span><span class="n">mobilenet_v2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Quantization requires a two stage export. First we use the <code class="docutils literal notranslate"><span class="pre">capture_pre_autograd_graph</span></code> API to capture the model before giving it to <code class="docutils literal notranslate"><span class="pre">quantize</span></code> utility function. After performing the quantization step, we can now leverage the XNNPACK delegate to lower the quantized exported model graph. From here, the procedure is the same as for the non-quantized model lowering to XNNPACK.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Continued from earlier...</span>
+<span class="n">edge</span> <span class="o">=</span> <span class="n">to_edge</span><span class="p">(</span><span class="n">export</span><span class="p">(</span><span class="n">quantized_mobilenetv2</span><span class="p">,</span> <span class="n">sample_inputs</span><span class="p">),</span> <span class="n">compile_config</span><span class="o">=</span><span class="n">EdgeCompileConfig</span><span class="p">(</span><span class="n">_check_ir_validity</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
+
+<span class="n">edge</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_backend</span><span class="p">(</span><span class="n">XnnpackPartitioner</span><span class="p">())</span>
+
+<span class="n">exec_prog</span> <span class="o">=</span> <span class="n">edge</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">()</span>
+
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;qs8_xnnpack_mobilenetv2.pte&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">file</span><span class="p">:</span>
+    <span class="n">exec_prog</span><span class="o">.</span><span class="n">write_to_file</span><span class="p">(</span><span class="n">file</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="lowering-with-aot-compiler-py-script">
+<h2>Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script<a class="headerlink" href="#lowering-with-aot-compiler-py-script" title="Permalink to this heading">¶</a></h2>
+<p>We have also provided a script to quickly lower and export a few example models. You can run the script to generate lowered fp32 and quantized models. This script is used simply for convenience and performs all the same steps as those listed in the previous two sections.</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">python</span> <span class="o">-</span><span class="n">m</span> <span class="n">examples</span><span class="o">.</span><span class="n">xnnpack</span><span class="o">.</span><span class="n">aot_compiler</span> <span class="o">--</span><span class="n">model_name</span><span class="o">=</span><span class="s2">&quot;mv2&quot;</span> <span class="o">--</span><span class="n">quantize</span> <span class="o">--</span><span class="n">delegate</span>
+</pre></div>
+</div>
+<p>Note in the example above,</p>
+<ul class="simple">
+<li><p>the <code class="docutils literal notranslate"><span class="pre">-—model_name</span></code> specifies the model to use</p></li>
+<li><p>the <code class="docutils literal notranslate"><span class="pre">-—quantize</span></code> flag controls whether the model should be quantized or not</p></li>
+<li><p>the <code class="docutils literal notranslate"><span class="pre">-—delegate</span></code> flag controls whether we attempt to lower parts of the graph to the XNNPACK delegate.</p></li>
+</ul>
+<p>The generated model file will be named <code class="docutils literal notranslate"><span class="pre">[model_name]_xnnpack_[qs8/fp32].pte</span></code> depending on the arguments supplied.</p>
+</div>
+<div class="section" id="running-the-xnnpack-model-with-cmake">
+<h2>Running the XNNPACK Model with CMake<a class="headerlink" href="#running-the-xnnpack-model-with-cmake" title="Permalink to this heading">¶</a></h2>
+<p>After exporting the XNNPACK Delegated model, we can now try running it with example inputs using CMake. We can build and use the xnn_executor_runner, which is a sample wrapper for the ExecuTorch Runtime and XNNPACK Backend. We first begin by configuring the CMake build like such:</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span><span class="c1"># cd to the root of executorch repo</span>
+<span class="nb">cd</span><span class="w"> </span>executorch
+
+<span class="c1"># Get a clean cmake-out directory</span>
+rm-<span class="w"> </span>-rf<span class="w"> </span>cmake-out
+mkdir<span class="w"> </span>cmake-out
+
+<span class="c1"># Configure cmake</span>
+cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-out<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_BUILD_TYPE<span class="o">=</span>Release<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_XNNPACK<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_ENABLE_LOGGING<span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-out<span class="w"> </span>.
+</pre></div>
+</div>
+<p>Then you can build the runtime componenets with</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-out<span class="w"> </span>-j9<span class="w"> </span>--target<span class="w"> </span>install<span class="w"> </span>--config<span class="w"> </span>Release
+</pre></div>
+</div>
+<p>Now you should be able to find the executable built at <code class="docutils literal notranslate"><span class="pre">./cmake-out/backends/xnnpack/xnn_executor_runner</span></code> you can run the executable with the model you generated as such</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>./cmake-out/backends/xnnpack/xnn_executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_fp32.pte
+<span class="c1"># or to run the quantized variant</span>
+./cmake-out/backends/xnnpack/xnn_executor_runner<span class="w"> </span>--model_path<span class="o">=</span>./mv2_xnnpack_q8.pte
+</pre></div>
+</div>
+</div>
+<div class="section" id="running-the-xnnpack-model-with-buck">
+<h2>Running the XNNPACK Model with Buck<a class="headerlink" href="#running-the-xnnpack-model-with-buck" title="Permalink to this heading">¶</a></h2>
+<p>Alternatively, you can use <code class="docutils literal notranslate"><span class="pre">buck2</span></code> to run the <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file with XNNPACK delegate instructions in it on your host platform. You can follow the instructions here to install <span class="xref myst">buck2</span>. You can now run it with the prebuilt <code class="docutils literal notranslate"><span class="pre">xnn_executor_runner</span></code> provided in the examples. This will run the model on some sample inputs.</p>
+<div class="highlight-none notranslate highlight-bash"><div class="highlight"><pre><span></span>buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_fp32.pte
+<span class="c1"># or to run the quantized variant</span>
+buck2<span class="w"> </span>run<span class="w"> </span>examples/xnnpack:xnn_executor_runner<span class="w"> </span>--<span class="w"> </span>--model_path<span class="w"> </span>./mv2_xnnpack_q8.pte
+</pre></div>
+</div>
+</div>
+<div class="section" id="building-and-linking-with-the-xnnpack-backend">
+<h2>Building and Linking with the XNNPACK Backend<a class="headerlink" href="#building-and-linking-with-the-xnnpack-backend" title="Permalink to this heading">¶</a></h2>
+<p>You can build the XNNPACK backend <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/targets.bzl#L54">BUCK target</a> and <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/backends/xnnpack/CMakeLists.txt#L83">CMake target</a>, and link it with your application binary such as an Android or iOS application. For more information on this you may take a look at this <a class="reference internal" href="demo-apps-android.html"><span class="doc std std-doc">resource</span></a> next.</p>
 </div>
 </div>
 
@@ -716,8 +624,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with ARM Ethos-U Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="examples-end-to-end-to-lower-model-to-delegate.html" class="btn btn-neutral" title="Lowering a Model as a Delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +661,13 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
-</ul>
-</li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+<li><a class="reference internal" href="#">Building and Running ExecuTorch with XNNPACK Backend</a><ul>
+<li><a class="reference internal" href="#lowering-a-model-to-xnnpack">Lowering a model to XNNPACK</a></li>
+<li><a class="reference internal" href="#lowering-a-quantized-model-to-xnnpack">Lowering a Quantized Model to XNNPACK</a></li>
+<li><a class="reference internal" href="#lowering-with-aot-compiler-py-script">Lowering with <code class="docutils literal notranslate"><span class="pre">aot_compiler.py</span></code> script</a></li>
+<li><a class="reference internal" href="#running-the-xnnpack-model-with-cmake">Running the XNNPACK Model with CMake</a></li>
+<li><a class="reference internal" href="#running-the-xnnpack-model-with-buck">Running the XNNPACK Model with Buck</a></li>
+<li><a class="reference internal" href="#building-and-linking-with-the-xnnpack-backend">Building and Linking with the XNNPACK Backend</a></li>
 </ul>
 </li>
 </ul>

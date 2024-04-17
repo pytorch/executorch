@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Kernel Library Selective Build &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="ExecuTorch XNNPACK delegate" href="native-delegates-executorch-xnnpack-delegate.html" />
+    <link rel="prev" title="Kernel Registration" href="kernel-library-custom-aten-kernel.html" />
 
 
   <!-- Google Tag Manager -->
@@ -325,10 +326,10 @@
 <li class="toctree-l1"><a class="reference internal" href="quantization-overview.html">Quantization Overview</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Kernel Library</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-overview.html">Overview of ExecuTorch’s Kernel Libraries</a></li>
 <li class="toctree-l1"><a class="reference internal" href="kernel-library-custom-aten-kernel.html">Kernel Registration</a></li>
-<li class="toctree-l1"><a class="reference internal" href="kernel-library-selective-build.html">Kernel Library Selective Build</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Kernel Library Selective Build</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Backend Delegates</span></p>
 <ul>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Kernel Library Selective Build</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/kernel-library-selective-build.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,114 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="kernel-library-selective-build">
+<h1>Kernel Library Selective Build<a class="headerlink" href="#kernel-library-selective-build" title="Permalink to this heading">¶</a></h1>
+<p><em>Selective build</em> is a build mode on ExecuTorch that uses model metadata to guide ExecuTorch build. This build mode contains build tool APIs available on both CMake and buck2. ExecuTorch users can use selective build APIs to build an ExecuTorch runtime binary with minimal binary size by only including operators required by models.</p>
+<p>This document aims to help ExecuTorch users better use selective build, by listing out available APIs, providing an overview of high level architecture and showcasing examples.</p>
+<p>Preread: <a class="reference internal" href="runtime-overview.html"><span class="doc std std-doc">Overview of the ExecuTorch runtime</span></a>, <a class="reference internal" href="getting-started-architecture.html"><span class="doc std std-doc">High-level architecture and components of ExecuTorch</span></a></p>
+<div class="section" id="design-principles">
+<h2>Design Principles<a class="headerlink" href="#design-principles" title="Permalink to this heading">¶</a></h2>
+<p><strong>Why selective build?</strong> Many ExecuTorch use cases are constrained by binary size. Selective build can reduce the binary size of the ExecuTorch runtime without compromising support for a target model.</p>
+<p><strong>What are we selecting?</strong> Our core ExecuTorch library is around 50kB with no operators/kernels or delegates. If we link in kernel libraries such as the ExecuTorch in-house portable kernel library, the binary size of the whole application surges, due to unused kernels being registered into the ExecuTorch runtime. Selective build is able to apply a filter on the kernel libraries, so that only the kernels actually being used are linked, thus reducing the binary size of the application.</p>
+<p><strong>How do we select?</strong> Selective build provides APIs to allow users to pass in <em>op info</em>, operator metadata derived from target models. Selective build tools will gather these op info and build a filter for all kernel libraries being linked in.</p>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
+<div class="section" id="high-level-architecture">
+<h2>High Level Architecture<a class="headerlink" href="#high-level-architecture" title="Permalink to this heading">¶</a></h2>
+<p><img alt="" src="_images/kernel-library-selective-build.png" /></p>
+<p>Note that all of the selective build tools are running at build-time (to be distinguished from compile-time or runtime). Therefore selective build tools only have access to static data from user input or models.</p>
+<p>The basic flow looks like this:</p>
+<ol class="arabic simple">
+<li><p>For each of the models we plan to run, we extract op info from it, either manually or via a Python tool. Op info will be written into yaml files and generated at build time.</p></li>
+<li><p>An _op info aggregator _will collect these model op info and merge them into a single op info yaml file.</p></li>
+<li><p>A _kernel resolver _takes in the linked kernel libraries as well as the merged op info yaml file, then makes a decision on which kernels to be registered into ExecuTorch runtime.</p></li>
+</ol>
 </div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
+<div class="section" id="apis">
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
+<p>We expose build macros for CMake and Buck2, to allow users specifying op info.</p>
+<p>On CMake:</p>
+<p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/build/Codegen.cmake#L12">gen_selected_ops</a></p>
+<p>On Buck2:</p>
+<p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/shim/xplat/executorch/codegen/codegen.bzl#L44C21-L44C21">et_operator_library</a></p>
+<p>Both of these build macros take the following inputs:</p>
+<div class="section" id="select-all-ops">
+<h3>Select all ops<a class="headerlink" href="#select-all-ops" title="Permalink to this heading">¶</a></h3>
+<p>If this input is set to true, it means we are registering all the kernels from all the kernel libraries linked into the application. If set to true it is effectively turning off selective build mode.</p>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
+<div class="section" id="select-ops-from-schema-yaml">
+<h3>Select ops from schema yaml<a class="headerlink" href="#select-ops-from-schema-yaml" title="Permalink to this heading">¶</a></h3>
+<p>Context: each kernel library is designed to have a yaml file associated with it. For more information on this yaml file, see <a class="reference internal" href="kernel-library-overview.html"><span class="doc std std-doc">Kernel Library Overview</span></a>. This API allows users to pass in the schema yaml for a kernel library directly, effectively allowlisting all kernels in the library to be registered.</p>
 </div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
+<div class="section" id="select-root-ops-from-operator-list">
+<h3>Select root ops from operator list<a class="headerlink" href="#select-root-ops-from-operator-list" title="Permalink to this heading">¶</a></h3>
+<p>This API lets users pass in a list of operator names. Note that this API can be combined with the API above and we will create a allowlist from the union of both API inputs.</p>
 </div>
 </div>
+<div class="section" id="example-walkthrough">
+<h2>Example Walkthrough<a class="headerlink" href="#example-walkthrough" title="Permalink to this heading">¶</a></h2>
+<div class="section" id="buck2-example">
+<h3>Buck2 example<a class="headerlink" href="#buck2-example" title="Permalink to this heading">¶</a></h3>
+<p>Let’s take a look at the following build:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select a list of operators: defined in `ops`</span>
+<span class="n">et_operator_library</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_in_list&quot;</span><span class="p">,</span>
+    <span class="n">ops</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;aten::add.out&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;aten::mm.out&quot;</span><span class="p">,</span>
+    <span class="p">],</span>
+<span class="p">)</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>This target generates the yaml file containing op info for these two ops.</p>
+<p>In addition to that, if we want to select all ops from a kernel library, we can do:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="c1"># Select all ops from a yaml file</span>
+<span class="n">et_operator_library</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_from_yaml&quot;</span><span class="p">,</span>
+    <span class="n">ops_schema_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>Then in the kernel registration library we can do:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">executorch_generated_lib</span><span class="p">(</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot;select_ops_lib&quot;</span><span class="p">,</span>
+    <span class="n">custom_ops_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops.yaml&quot;</span><span class="p">,</span>
+<span class="n">functions_yaml_target</span> <span class="o">=</span> <span class="s2">&quot;//executorch/kernels/portable:functions.yaml&quot;</span><span class="p">,</span>
+    <span class="n">deps</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_1&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
+        <span class="s2">&quot;//executorch/examples/portable/custom_ops:custom_ops_2&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
+  <span class="s2">&quot;//executorch/kernels/portable:operators&quot;</span><span class="p">,</span> <span class="c1"># kernel library</span>
+        <span class="s2">&quot;:select_ops_from_yaml&quot;</span><span class="p">,</span>
+  <span class="s2">&quot;:select_ops_in_list&quot;</span><span class="p">,</span>
+    <span class="p">],</span>
+<span class="p">)</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>Notice we are allowlisting both add.out, mm.out from the list, and the ones from the schema yaml (<code class="docutils literal notranslate"><span class="pre">custom_ops.yaml</span></code>).</p>
 </div>
-<div class="toctree-wrapper compound">
+<div class="section" id="cmake-example">
+<h3>CMake example<a class="headerlink" href="#cmake-example" title="Permalink to this heading">¶</a></h3>
+<p>In CMakeLists.txt we have the following logic:</p>
+<div class="highlight-none notranslate highlight-cmake"><div class="highlight"><pre><span></span><span class="nb">set</span><span class="p">(</span><span class="s">_kernel_lib</span><span class="p">)</span>
+<span class="nb">if</span><span class="p">(</span><span class="s">SELECT_ALL_OPS</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_ALL_OPS}&quot;</span><span class="p">)</span>
+<span class="nb">elseif</span><span class="p">(</span><span class="s">SELECT_OPS_LIST</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;${SELECT_OPS_LIST}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="nb">elseif</span><span class="p">(</span><span class="s">SELECT_OPS_YAML</span><span class="p">)</span>
+<span class="w"> </span><span class="nb">set</span><span class="p">(</span><span class="s">_custom_ops_yaml</span><span class="w"> </span><span class="o">${</span><span class="nv">EXECUTORCH_ROOT</span><span class="o">}</span><span class="s">/examples/portable/custom_ops/custom_ops.yaml</span><span class="p">)</span>
+<span class="w">  </span><span class="nb">gen_selected_ops</span><span class="p">(</span><span class="s2">&quot;${_custom_ops_yaml}&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">)</span>
+<span class="nb">endif</span><span class="p">()</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>Then when calling CMake, we can do:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cmake -D… -DSELECT_OPS_LIST=&quot;aten::add.out,aten::mm.out”
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>Or</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span>cmake -D… -DSELECT_OPS_YAML=ON
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>To select from either an operator name list or a schema yaml from kernel library.</p>
 </div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
-
-  <hr class="tutorials-hr">
-
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
 </div>
 </div>
 
@@ -716,8 +545,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="native-delegates-executorch-xnnpack-delegate.html" class="btn btn-neutral float-right" title="ExecuTorch XNNPACK delegate" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="kernel-library-custom-aten-kernel.html" class="btn btn-neutral" title="Kernel Registration" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +582,20 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#">Kernel Library Selective Build</a><ul>
+<li><a class="reference internal" href="#design-principles">Design Principles</a></li>
+<li><a class="reference internal" href="#high-level-architecture">High Level Architecture</a></li>
+<li><a class="reference internal" href="#apis">APIs</a><ul>
+<li><a class="reference internal" href="#select-all-ops">Select all ops</a></li>
+<li><a class="reference internal" href="#select-ops-from-schema-yaml">Select ops from schema yaml</a></li>
+<li><a class="reference internal" href="#select-root-ops-from-operator-list">Select root ops from operator list</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+<li><a class="reference internal" href="#example-walkthrough">Example Walkthrough</a><ul>
+<li><a class="reference internal" href="#buck2-example">Buck2 example</a></li>
+<li><a class="reference internal" href="#cmake-example">CMake example</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
