@@ -22,7 +22,7 @@ CUSTOM=OFF
 MPS=OFF
 OPTIMIZED=OFF
 PORTABLE=OFF
-QUANTIZED=OFF
+QUANTIZED=ON
 XNNPACK=OFF
 HEADERS_PATH="include"
 EXECUTORCH_FRAMEWORK="executorch:libexecutorch.a,libexecutorch_no_prim_ops.a,libextension_apple.a,libextension_data_loader.a,libextension_module.a:$HEADERS_PATH"
@@ -51,7 +51,6 @@ usage() {
   echo "  --mps                Include this flag to build the Metal Performance Shaders backend."
   echo "  --optimized          Include this flag to build the Optimized backend."
   echo "  --portable           Include this flag to build the Portable backend."
-  echo "  --quantized          Include this flag to build the Quantized backend."
   echo "  --xnnpack            Include this flag to build the XNNPACK backend."
   echo
   echo "Example:"
@@ -74,7 +73,6 @@ for arg in "$@"; do
       --mps) MPS=ON ;;
       --optimized) OPTIMIZED=ON ;;
       --portable) PORTABLE=ON ;;
-      --quantized) QUANTIZED=ON ;;
       --xnnpack) XNNPACK=ON ;;
       *)
       if [[ -z "$SOURCE_ROOT_DIR" ]]; then
@@ -137,7 +135,6 @@ cmake_build() {
         -DEXECUTORCH_BUILD_CUSTOM=$CUSTOM \
         -DEXECUTORCH_BUILD_MPS=$MPS \
         -DEXECUTORCH_BUILD_OPTIMIZED=$OPTIMIZED \
-        -DEXECUTORCH_BUILD_QUANTIZED=$QUANTIZED \
         -DEXECUTORCH_BUILD_XNNPACK=$XNNPACK \
         ${platform_flag:+-DIOS_PLATFORM=$platform_flag}
     cmake --build . --config $MODE
@@ -181,7 +178,7 @@ append_framework_flag "$CUSTOM" "$CUSTOM_FRAMEWORK"
 append_framework_flag "$MPS" "$MPS_FRAMEWORK"
 append_framework_flag "$OPTIMIZED" "$OPTIMIZED_FRAMEWORK"
 append_framework_flag "$PORTABLE" "$PORTABLE_FRAMEWORK"
-append_framework_flag "$QUANTIZED" "$QUANTIZED_FRAMEWORK"
+append_framework_flag "ON" "$QUANTIZED_FRAMEWORK"
 append_framework_flag "$XNNPACK" "$XNNPACK_FRAMEWORK"
 
 "$SOURCE_ROOT_DIR"/build/create_frameworks.sh "${FRAMEWORK_FLAGS[@]}"
