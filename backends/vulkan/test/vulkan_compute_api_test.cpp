@@ -445,6 +445,60 @@ TEST_F(VulkanComputeAPITest, texture_virtual_resize) {
   }
 }
 
+TEST_F(VulkanComputeAPITest, copy_test) {
+  std::vector<int64_t> sizes = {1, 3, 4};  // c, h, w
+  vTensor a = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::MemoryAllocation a_mem = allocate_memory_for(a);
+  a.image().bind_allocation(a_mem);
+
+  std::vector<float> data_a(a.gpu_numel());
+  std::iota(data_a.begin(), data_a.end(), 0.0);
+  fill_vtensor(a, data_a);
+
+  vTensor b = CREATE_FLOAT_TEXTURE(sizes, /*allocate_memory = */ false);
+  api::MemoryAllocation b_mem = allocate_memory_for(b);
+  b.image().bind_allocation(b_mem);
+
+	// Force clear memory
+  fill_vtensor(b, 0.0);
+
+  auto context = api::context();
+
+  // These operates on texture coordinate in (x, y, z), corresponds to (w, h,
+  // packed_c).
+  api::utils::uvec3 copy_range{2, 2, 1};
+  api::utils::uvec3 src_offset{0, 0, 0};
+  api::utils::uvec3 dst_offset{2, 1, 0};
+
+  vkcompute::api::PipelineBarrier pipeline_barrier{};
+
+  context->register_copy(
+      pipeline_barrier,
+      a.image(),
+      b.image(),
+      copy_range,
+      src_offset,
+      dst_offset
+      );
+
+  submit_to_gpu();
+
+  // Fetch result back
+  std::vector<float> data_out(b.gpu_numel());
+  extract_vtensor(b, data_out);
+
+  // w shifted by 2, h shifted by 1.
+  std::vector<float> expected{
+    0, 0, 0, 0,
+    0, 0, 0, 1,
+    0, 0, 4, 5,
+  };
+
+  for (size_t i = 0; i < expected.size(); i++) {
+    CHECK_VALUE(data_out, i, expected[i]);
+  }
+}
+
 //
 // Compute Graph Tests
 //
@@ -789,6 +843,57 @@ TEST(VulkanComputeGraphTest, test_large_graph) {
 
     for (int i = 0; i < graph.get_tensor(out.value)->numel(); i++) {
       CHECK_VALUE(data_out, i, val_e);
+    }
+  }
+}
+
+
+TEST(VulkanComputeGraphTest, test_register_copy) {
+  GraphConfig config;
+  ComputeGraph graph(config);
+
+  std::vector<int64_t> size = {1, 3, 4};
+
+  auto memory_layout = api::GPUMemoryLayout::TENSOR_CHANNELS_PACKED;
+  IOValueRef a = graph.add_input_tensor(size, api::kFloat, memory_layout);
+
+  IOValueRef out = {};
+  out.value = graph.add_tensor(size, api::kFloat, memory_layout);
+
+  api::utils::uvec3 copy_range{2, 2, 1};
+  api::utils::uvec3 src_offset{0, 0, 0};
+  api::utils::uvec3 dst_offset{2, 1, 0};
+
+  graph.execute_nodes().emplace_back(new ExecuteNode(
+    graph,
+    {a.value, api::MemoryAccessType::READ},
+    {out.value, api::MemoryAccessType::WRITE},
+    copy_range,
+    src_offset,
+    dst_offset));
+
+  out.staging = graph.set_output_tensor(out.value);
+
+  graph.prepare();
+  graph.encode_execute();
+
+  // The tensor region that is not within the dst_offset + copy_range region is
+  // undefined, since they are outside the copy region. Hence we set the target
+  // value from 1.0. In the expected value, 0.0 are the don't-care values.
+  fill_vtensor(graph, a, 1.0, /* iota = */ true);
+
+  graph.execute();
+  EXTRACT_TENSOR(out);
+
+  std::vector<float> expected{
+    0, 0, 0, 0,
+    0, 0, 1, 2,
+    0, 0, 5, 6,
+  };
+
+  for (size_t i = 0; i < expected.size(); i++) {
+    if (expected[i] > 0){
+      CHECK_VALUE(data_out, i, expected[i]);
     }
   }
 }

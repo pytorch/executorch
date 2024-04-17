@@ -101,6 +101,24 @@ void Context::register_shader_dispatch(
   cmd_.dispatch(effective_global_wg);
 }
 
+
+void Context::register_copy(
+      PipelineBarrier& pipeline_barrier,
+      const VulkanImage& src,
+      const VulkanImage& dst,
+      const api::utils::uvec3& copy_range,
+      const api::utils::uvec3& src_offset,
+      const api::utils::uvec3& dst_offset) {
+  cmd_.insert_barrier(pipeline_barrier);
+  cmd_.copy_texture_to_texture(
+      src,
+      dst,
+      copy_range,
+      src_offset,
+      dst_offset);
+}
+
+
 void Context::submit_cmd_to_gpu(VkFence fence_handle, const bool final_use) {
   if (cmd_) {
     cmd_.end();

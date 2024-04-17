@@ -180,6 +180,14 @@ class Context final {
       const ShaderInfo&,
       const utils::uvec3&);
 
+  void register_copy(
+      PipelineBarrier&,
+      const VulkanImage& src,
+      const VulkanImage& dst,
+      const api::utils::uvec3& copy_range,
+      const api::utils::uvec3& src_offset,
+      const api::utils::uvec3& dst_offset);
+
   template <class S, class D>
   bool submit_copy(
       PipelineBarrier&,
