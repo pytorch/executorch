@@ -324,12 +324,14 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 
 #endif
 
-    ET_CHECK_MSG(
-        result.ok(),
-        "Execution of method %s failed with status 0x%" PRIx32,
-        method.c_str(),
-        static_cast<error_code_t>(result.error()));
-    ET_LOG(Info, "Model executed successfully.");
+    if (!result.ok()) {
+      ET_LOG(
+          Error,
+          "Execution of method %s failed with status 0x%" PRIx32,
+          method.c_str(),
+          static_cast<error_code_t>(result.error()));
+      return {};
+    }
 
     facebook::jni::local_ref<facebook::jni::JArrayClass<JEValue>> jresult =
         facebook::jni::JArrayClass<JEValue>::newArray(result.get().size());
