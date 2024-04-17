@@ -50,6 +50,53 @@ TEST_F(VulkanComputeAPITest, retrieve_custom_shader_test) {
   ASSERT_TRUE(kernel.kernel_name == "test_shader");
 }
 
+TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
+  // Check equality operator
+  ASSERT_TRUE(SV(1.5f) == SV(1.5f));
+  ASSERT_FALSE(SV(15.0f) == SV(15));
+  ASSERT_FALSE(SV(1u) == SV(true));
+
+  size_t sv_size = sizeof(api::SpecVar);
+
+  api::SpecVarList spec_vars = {};
+  ASSERT_TRUE(spec_vars.size() == 0);
+  spec_vars = {SV(1.1f), SV(32), SV(45)};
+  ASSERT_TRUE(spec_vars.size() == 3);
+  api::SpecVarList spec_vars_other = {SV(2.6f), SV(true), SV(78u), SV(5.5f)};
+  spec_vars.append(spec_vars_other);
+  ASSERT_TRUE(spec_vars.size() == 7);
+
+  // Check validity of the data
+  const api::SpecVar* data = spec_vars.data();
+  ASSERT_TRUE(*(reinterpret_cast<const float*>(data + 3)) == 2.6f);
+  ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(data + 1)) == 32);
+  ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(data + 5)) == 78u);
+
+  // Check validity of the map entries
+  std::vector<VkSpecializationMapEntry> entries =
+      spec_vars.generate_map_entries();
+
+  for (size_t i = 0; i < spec_vars.size(); ++i) {
+    ASSERT_TRUE(entries[i].constantID == i);
+    ASSERT_TRUE(entries[i].offset == sv_size * i);
+    if (i != 4) {
+      ASSERT_TRUE(entries[i].size == 4);
+    } else {
+      ASSERT_TRUE(entries[i].size == 1);
+    }
+  }
+
+  // Check copy
+  api::SpecVarList spec_vars_copy(spec_vars);
+  ASSERT_TRUE(spec_vars_copy.size() == 7);
+
+  // Check validity of the copied data
+  const api::SpecVar* copy_data = spec_vars_copy.data();
+  ASSERT_TRUE(*(reinterpret_cast<const bool*>(copy_data + 4)) == true);
+  ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(copy_data + 2)) == 45);
+  ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);
+}
+
 TEST_F(VulkanComputeAPITest, update_params_between_submit) {
   api::context()->set_cmd(/*reusable = */ true);
   std::vector<int64_t> sizes = {4, 4, 2};
