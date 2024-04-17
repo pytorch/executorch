@@ -33,14 +33,28 @@ ExecuteNode::ExecuteNode(
   graph.update_descriptor_counts(shader, /*execute = */ true);
 }
 
-void ExecuteNode::encode(ComputeGraph* graph) {
+ExecuteNode::ExecuteNode(
+      ComputeGraph& graph,
+      const ArgGroup& src,
+      const ArgGroup& dst,
+      const api::utils::uvec3& copy_range,
+      const api::utils::uvec3& src_offset,
+      const api::utils::uvec3& dst_offset)
+  :
+    src_(src), dst_(dst), copy_range_(copy_range),
+    src_offset_(src_offset), dst_offset_(dst_offset) {
+  // TODO: Update descriptor counts in graph.
+}
+
+
+void ExecuteNode::encode_shader(ComputeGraph* graph) {
   api::Context* const context = graph->context();
   api::PipelineBarrier pipeline_barrier{};
 
   std::unique_lock<std::mutex> cmd_lock = context->dispatch_lock();
 
   api::DescriptorSet descriptor_set =
-      context->get_descriptor_set(shader_, local_workgroup_size_);
+      context->get_descriptor_set(shader_, *local_workgroup_size_);
 
   uint32_t idx = 0;
   idx = bind_values_to_descriptor_set(
@@ -48,7 +62,38 @@ void ExecuteNode::encode(ComputeGraph* graph) {
   bind_params_to_descriptor_set(params_, descriptor_set, idx);
 
   context->register_shader_dispatch(
-      descriptor_set, pipeline_barrier, shader_, global_workgroup_size_);
+      descriptor_set, pipeline_barrier, shader_, *global_workgroup_size_);
+}
+
+void ExecuteNode::encode_copy(ComputeGraph* graph) {
+  api::Context* const context = graph->context();
+  api::PipelineBarrier pipeline_barrier{};
+
+  vTensorPtr src_v_t = graph->get_tensor(src_->refs[0]);
+  api::VulkanImage& src_image = src_v_t->image(
+      pipeline_barrier,
+      api::PipelineStage::COMPUTE, api::MemoryAccessType::READ);
+
+  vTensorPtr dst_v_t = graph->get_tensor(dst_->refs[0]);
+  api::VulkanImage& dst_image = dst_v_t->image(
+      pipeline_barrier,
+      api::PipelineStage::COMPUTE, api::MemoryAccessType::WRITE);
+
+  context->register_copy(
+      pipeline_barrier,
+      src_image,
+      dst_image,
+      *copy_range_,
+      *src_offset_,
+      *dst_offset_);
+}
+
+void ExecuteNode::encode(ComputeGraph* graph) {
+  if (shader_.src_code.size > 0) {
+    return encode_shader(graph);
+  } else {
+    return encode_copy(graph);
+  }
 }
 
 } // namespace vkcompute

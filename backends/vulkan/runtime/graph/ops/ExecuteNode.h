@@ -12,6 +12,8 @@
 
 #include <executorch/backends/vulkan/runtime/graph/containers/Value.h>
 
+#include <optional>
+
 namespace vkcompute {
 
 class ComputeGraph;
@@ -23,6 +25,8 @@ class ComputeGraph;
 struct ArgGroup {
   ArgGroup(const ValueRef ref, const api::MemoryAccessType access)
       : refs{ref}, access(access) {}
+
+  ArgGroup(const ArgGroup& ag): refs(ag.refs), access(ag.access) {}
 
   ArgGroup(
       const std::vector<ValueRef>& refs,
@@ -58,6 +62,14 @@ class ExecuteNode final {
       const ResizeFunction& resize_fn = nullptr,
       const std::vector<ValueRef>& resize_args = {});
 
+  ExecuteNode(
+      ComputeGraph& graph,
+      const ArgGroup& src,
+      const ArgGroup& dst,
+      const api::utils::uvec3& copy_range,
+      const api::utils::uvec3& src_offset,
+      const api::utils::uvec3& dst_offset);
+
   ~ExecuteNode() = default;
 
   void encode(ComputeGraph* graph);
@@ -70,12 +82,22 @@ class ExecuteNode final {
 
  protected:
   const api::ShaderInfo shader_;
-  const api::utils::uvec3 global_workgroup_size_;
-  const api::utils::uvec3 local_workgroup_size_;
+  const std::optional<api::utils::uvec3> global_workgroup_size_;
+  const std::optional<api::utils::uvec3> local_workgroup_size_;
   const std::vector<ArgGroup> args_;
   std::vector<std::shared_ptr<api::UniformParamsBuffer>> params_;
   const ResizeFunction resize_fn_;
   const std::vector<ValueRef> resize_args_;
+
+  const std::optional<ArgGroup> src_;
+  const std::optional<ArgGroup> dst_;
+  const std::optional<api::utils::uvec3> copy_range_;
+  const std::optional<api::utils::uvec3> src_offset_;
+  const std::optional<api::utils::uvec3> dst_offset_;
+
+ private:
+  void encode_shader(ComputeGraph *graph);
+  void encode_copy(ComputeGraph *graph);
 };
 
 } // namespace vkcompute
