@@ -240,6 +240,7 @@ void cpu_flash_attention(
       " and num kv heads=%" PRId64,
       num_head,
       num_heads_kv);
+
   int64_t num_reps = num_head / num_heads_kv;
 
   bool has_attn_mask = attn_mask.has_value() && attn_mask.value().numel();
