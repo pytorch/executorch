@@ -74,8 +74,6 @@ function(executorch_print_configuration_summary)
     STATUS "  EXECUTORCH_BUILD_QNN                   : ${EXECUTORCH_BUILD_QNN}")
   message(STATUS "  EXECUTORCH_BUILD_OPTIMIZED             : "
                  "${EXECUTORCH_BUILD_OPTIMIZED}")
-  message(STATUS "  EXECUTORCH_BUILD_QUANTIZED             : "
-                 "${EXECUTORCH_BUILD_QUANTIZED}")
   message(
     STATUS "  EXECUTORCH_BUILD_SDK                   : ${EXECUTORCH_BUILD_SDK}")
   message(
