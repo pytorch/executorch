@@ -149,13 +149,14 @@ class vTensor final {
   // to be interpreted as a tensor with a different size.
   api::utils::uvec3 virtual_extents_;
 
-  // A Vulkan uniform buffer containing the tensor sizes that can be passed into
-  // a shader.
+  // A Vulkan uniform buffer containing the tensor sizes in WHCN that can be
+  // passed into a shader.
   std::shared_ptr<api::UniformParamsBuffer> cpu_sizes_uniform_;
 
-  // A Vulkan uniform buffer containing the GPU tensor sizes that can be passed
-  // into a shader. GPU sizes refers to the sizes of the tensor after padding
-  // has been applied to one dimension to align it to the next multiple of 4.
+  // A Vulkan uniform buffer containing the GPU tensor sizes in WHCN that can
+  // be passed into a shader. GPU sizes refers to the sizes of the tensor after
+  // padding has been applied to one dimension to align it to the next multiple
+  // of 4.
   std::shared_ptr<api::UniformParamsBuffer> gpu_sizes_uniform_;
 
   // A Vulkan uniform buffer containing the image extents of the underlying
