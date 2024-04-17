@@ -172,7 +172,16 @@ class Context final {
     }
   }
 
-  DescriptorSet get_descriptor_set(const ShaderInfo&, const utils::uvec3&);
+  DescriptorSet get_descriptor_set(
+      const ShaderInfo&,
+      const utils::uvec3&,
+      const SpecVarList&);
+
+  inline DescriptorSet get_descriptor_set(
+      const ShaderInfo& shader_descriptor,
+      const utils::uvec3& local_work_group_size) {
+    return get_descriptor_set(shader_descriptor, local_work_group_size, {});
+  }
 
   void register_shader_dispatch(
       const DescriptorSet&,
