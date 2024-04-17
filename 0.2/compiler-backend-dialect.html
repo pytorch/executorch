@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Backend Dialect &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="Custom Compiler Passes and Partitioners" href="compiler-custom-compiler-passes.html" />
+    <link rel="prev" title="Backend and Delegate" href="compiler-delegate-and-partitioner.html" />
 
 
   <!-- Google Tag Manager -->
@@ -306,9 +307,9 @@
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Backend Dialect</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/compiler-backend-dialect.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,205 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="backend-dialect">
+<h1>Backend Dialect<a class="headerlink" href="#backend-dialect" title="Permalink to this heading">¶</a></h1>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
+<p><em>Backend dialect</em> is a special variant of <a class="reference internal" href="ir-exir.html"><span class="doc std std-doc">edge dialect</span></a>, because it contains backend specific nodes and metadata, after backend specific graph transformations. Backend dialect is an optional stage, only needed if we want to introduce backend-awareness into the graph. More specifically, a graph in backend dialect may contain operators or delegated lowered modules (see <a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">delegate doc</span></a>) that are only meaningful to the target backend. One use case is that if we want to fuse operators into a single operator, for example, fusing consecutive addmm + relu to a single operator addmm_relu, we can do that here.</p>
+<p>This document describes how to introduce backend specific operators.</p>
+<p>Difference between custom ops and backend specific ops: while custom ops are showing up in eager mode, ATen dialect, and edge dialect, backend-specific ops are only being introduced by passes happening after edge dialect.</p>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
+<div class="section" id="when-to-use">
+<h2>When to use<a class="headerlink" href="#when-to-use" title="Permalink to this heading">¶</a></h2>
+<p>This dialect allows the introduction of operators that do not conform to the schema defined in the canonical ATen operator set, and which do not appear in any of the dialects above (ATen dialect and edge dialect). Consider using backend operators if your use case satisfies one or more of the following criteria:</p>
+<ul class="simple">
+<li><p>Your backend provides a library that optimizes a certain operator that is equivalent to a subgraph. For example, <code class="docutils literal notranslate"><span class="pre">linear_relu</span></code> (equivalent to linear + relu) that can be executed faster on a certain backend.</p></li>
+<li><p>There’s a need to retrace the graph module after it is already lowered to a backend. When we retrace, backend operators can transform back to the original subgraph (in ATen dialect) where normal custom op doesn’t take care of that.</p></li>
+<li><p>Your backend-specific operator doesn’t have a generic CPU kernel but only a kernel for a certain backend. Using a backend operator can workaround this issue by using the original subgraph as default kernel and keeping the graph module runnable.</p></li>
+<li><p>Alternatively, you can use delegate if you are concerned it might be an overkill and just want something more lightweight and only requires Python code at the compiler stage.</p></li>
+</ul>
 </div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
+<div class="section" id="apis">
+<h2>APIs<a class="headerlink" href="#apis" title="Permalink to this heading">¶</a></h2>
+<p>For an operator/subgraph replacement, the common flow is:</p>
+<ol class="arabic simple">
+<li><p>Register an operator that has the same input and output as the subgraph. This operator won’t have the target-specific implementations (also, doesn’t need to in the compilation stage), but it needs to give the same result as the subgraph.</p></li>
+<li><p>Create a pattern that allows the compiler to find the subgraph and substitute it with the replacement.</p></li>
+<li><p>Write a pass to replace the subgraph with the new operator.</p></li>
+</ol>
+<p>In order to facilitate the process, we provide an API to help reduce the effort for ExecuTorch users to do these steps.</p>
+<div class="section" id="pass-infra-entry-point">
+<h3>Pass Infra Entry Point<a class="headerlink" href="#pass-infra-entry-point" title="Permalink to this heading">¶</a></h3>
+<p>To lower edge ops to backend ops, a pass will perform pattern matching to identify the edge ops of interest in the graph, and then replace them with equivalent backend operators. There are two APIs to register such passes:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">transform()</span></code>. An API on ExportProgram that allows users to provide custom passes. Note that this is not guarded by any validator so the soundness of the program is not guaranteed.</p></li>
+<li><p><a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/capture/_config.py#L40">ExecutorchBackendConfig.passes</a>. If added here, the pass will be part of the lowering process from backend dialect to ExecutorchProgram.</p></li>
+</ul>
+<p>Example: one such pass is QuantFusion. This pass takes a “canonical quantization pattern”, ie. “dequant - some_op - quant” and fuses this pattern into a single operator that is backend specific, i.e. <code class="docutils literal notranslate"><span class="pre">quantized_decomposed::some_op</span></code>. Another simpler example is <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/replace_edge_with_backend_pass.py#L20">here</a> where we replace <code class="docutils literal notranslate"><span class="pre">sym_size</span></code> operators to the ones that are understood by ExecuTorch</p>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
-</div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
+<div class="section" id="pattern-binding-decorator">
+<h3>Pattern Binding Decorator<a class="headerlink" href="#pattern-binding-decorator" title="Permalink to this heading">¶</a></h3>
+<p>We provide a decorator <code class="docutils literal notranslate"><span class="pre">bind_pattern_to_op</span></code> to help users easily register their backend operators into EXIR. This decorator takes:</p>
+<ul class="simple">
+<li><p>a <code class="docutils literal notranslate"><span class="pre">torch.Library</span></code> object, it indicates which library or namespace this backend operator belongs to.</p></li>
+<li><p>a name or schema. If we already defined the schema of the backend operator in the <code class="docutils literal notranslate"><span class="pre">torch.Library</span></code> object, only a name is needed. Otherwise we can register the schema if a schema string is being passed in.</p></li>
+</ul>
+<p>This decorator should be added to the pattern we are trying to match (and then lower to this backend op) on edge dialect. This way we are registering this pattern as a <code class="docutils literal notranslate"><span class="pre">CompositeImplicitAutograd</span></code> kernel for this backend operator.</p>
+<p>Then the operator can be accessed/used from the passes. The <code class="docutils literal notranslate"><span class="pre">CompositeImplicitAutograd</span></code> kernel makes sure:</p>
+<ol class="arabic simple">
+<li><p>No need for the user to write a (CPU) runnable kernel.</p></li>
+<li><p>Ensures the retrace-ability of <code class="docutils literal notranslate"><span class="pre">ExportProgram</span></code>. Once retraced, the backend operator will be decomposed into the ATen ops used in the pattern.</p></li>
+</ol>
 </div>
 </div>
+<div class="section" id="example">
+<h2>Example<a class="headerlink" href="#example" title="Permalink to this heading">¶</a></h2>
+<p>Let’s assume a simple program that contains both add and relu operators:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">f</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>After lowering to edge dialect it becomes:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">graph</span><span class="p">():</span>
+    <span class="o">%</span><span class="n">arg0_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg0_1</span><span class="p">]</span>
+    <span class="o">%</span><span class="n">arg1_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg1_1</span><span class="p">]</span>
+    <span class="o">%</span><span class="n">aten_add_tensor</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">arg0_1</span><span class="p">,</span> <span class="o">%</span><span class="n">arg1_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="o">%</span><span class="n">aten_relu_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">aten_add_tensor</span><span class="p">,),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">aten_relu_default</span><span class="p">,)</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
+<p>Now I want to write a pass to merge <code class="docutils literal notranslate"><span class="pre">add</span></code> and <code class="docutils literal notranslate"><span class="pre">relu</span></code> into <code class="docutils literal notranslate"><span class="pre">add_relu</span></code>, the first step is to write a pattern:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># In the pattern, we can use edge ops and ATen ops interchangably</span>
+<span class="k">def</span> <span class="nf">pattern</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+    <span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+    <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">out</span>
+</pre></div>
 </div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
+<p>Then we need to create an operator library from the fused operator namespace, then use the decorator on our pattern:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">lib</span> <span class="o">=</span> <span class="n">Library</span><span class="p">(</span><span class="s2">&quot;foo_namespace&quot;</span><span class="p">,</span> <span class="s2">&quot;DEF&quot;</span><span class="p">)</span>
 
-  <hr class="tutorials-hr">
+<span class="nd">@bind_pattern_to_op</span><span class="p">(</span><span class="n">lib</span><span class="p">,</span> <span class="s2">&quot;add_relu(Tensor self, Tensor other) -&gt; Tensor&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">pattern</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+        <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">out</span>
+</pre></div>
+</div>
+<p>This way we are registering the pattern as a kernel to <code class="docutils literal notranslate"><span class="pre">add_relu</span></code> and it is ready to be used in a pass. A simple pass looks like this:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">AddReluFusionPass</span><span class="p">(</span><span class="n">ExportPass</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">:</span> <span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PassResult</span><span class="p">:</span>
+        <span class="c1"># decorator registers this pattern as a CompositeExplicitAutograd kernel, since there&#39;s no kernel registered before.</span>
+        <span class="nd">@bind_pattern_to_op</span><span class="p">(</span><span class="n">lib</span><span class="p">,</span> <span class="s2">&quot;add_relu&quot;</span><span class="p">)</span>
+        <span class="k">def</span> <span class="nf">pattern</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+            <span class="n">z</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+            <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">relu</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">out</span>
 
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
+        <span class="k">def</span> <span class="nf">replacement</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">y</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">foo_namespace</span><span class="o">.</span><span class="n">add_relu</span><span class="o">.</span><span class="n">default</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">)</span>
+
+        <span class="n">subgraph_rewriter</span><span class="o">.</span><span class="n">replace_pattern</span><span class="p">(</span>
+            <span class="n">graph_module</span><span class="p">,</span>
+            <span class="n">_trace_and_lower_to_edge_ops</span><span class="p">(</span><span class="n">pattern</span><span class="p">),</span>
+            <span class="n">_trace_and_lower_to_edge_ops</span><span class="p">(</span><span class="n">replacement</span><span class="p">),</span>
+        <span class="p">)</span>
+        <span class="k">return</span> <span class="n">PassResult</span><span class="p">(</span><span class="n">graph_module</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>The result graph looks like this:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">graph</span><span class="p">():</span>
+    <span class="o">%</span><span class="n">arg0_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg0_1</span><span class="p">]</span>
+    <span class="o">%</span><span class="n">arg1_1</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">placeholder</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">arg1_1</span><span class="p">]</span>
+    <span class="o">%</span><span class="n">foo_namespace_add_relu_default</span> <span class="p">:</span> <span class="p">[</span><span class="n">num_users</span><span class="o">=</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">call_function</span><span class="p">[</span><span class="n">target</span><span class="o">=</span><span class="n">executorch</span><span class="o">.</span><span class="n">exir</span><span class="o">.</span><span class="n">dialects</span><span class="o">.</span><span class="n">edge</span><span class="o">.</span><span class="n">_ops</span><span class="o">.</span><span class="n">foo_namespace</span><span class="o">.</span><span class="n">add_relu</span><span class="o">.</span><span class="n">default</span><span class="p">](</span><span class="n">args</span> <span class="o">=</span> <span class="p">(</span><span class="o">%</span><span class="n">arg0_1</span><span class="p">,</span> <span class="o">%</span><span class="n">arg1_1</span><span class="p">),</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="p">{})</span>
+    <span class="k">return</span> <span class="p">(</span><span class="n">foo_namespace_add_relu_default</span><span class="p">,)</span>
+</pre></div>
+</div>
+<div class="section" id="op-set">
+<h3>Op Set<a class="headerlink" href="#op-set" title="Permalink to this heading">¶</a></h3>
+<p>There are the backend operators currently using <code class="docutils literal notranslate"><span class="pre">bind_pattern_to_op</span></code> API.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::add.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
+<ul>
+<li><p>pattern: builtin.add</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::mul.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
+<ul>
+<li><p>pattern: builtin.mul</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::sub.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
+<ul>
+<li><p>pattern: builtin.sub</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::floordiv.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">SymInt</span></code></p>
+<ul>
+<li><p>pattern: builtin.floordiv</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::gt.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
+<ul>
+<li><p>pattern: builtin.gt</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::lt.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
+<ul>
+<li><p>pattern: builtin.lt</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::ge.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
+<ul>
+<li><p>pattern: builtin.ge</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::le.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
+<ul>
+<li><p>pattern: builtin.le</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">executorch_prims::eq.int(SymInt</span> <span class="pre">a,</span> <span class="pre">SymInt</span> <span class="pre">b)</span> <span class="pre">-&gt;</span> <span class="pre">bool</span></code></p>
+<ul>
+<li><p>pattern: builtin.eq</p></li>
+<li><p>backend: executor</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::embedding_byte(Tensor</span> <span class="pre">weight,</span> <span class="pre">Tensor</span> <span class="pre">weight_scales,</span> <span class="pre">Tensor</span> <span class="pre">weight_zero_points,</span> <span class="pre">int</span> <span class="pre">weight_quant_min,</span> <span class="pre">int</span> <span class="pre">weight_quant_max,</span> <span class="pre">Tensor</span> <span class="pre">indices)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span></code></p>
+<ul>
+<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
+<li><p>backend: quantization</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::add(Tensor</span> <span class="pre">a,</span> <span class="pre">float</span> <span class="pre">a_scale,</span> <span class="pre">int</span> <span class="pre">a_zero_point,</span> <span class="pre">int</span> <span class="pre">a_quant_min,</span> <span class="pre">int</span> <span class="pre">a_quant_max,</span> <span class="pre">Tensor</span> <span class="pre">b,</span> <span class="pre">float</span> <span class="pre">b_scale,</span> <span class="pre">int</span> <span class="pre">b_zero_point,</span> <span class="pre">int</span> <span class="pre">b_quant_min,</span> <span class="pre">int</span> <span class="pre">b_quant_max,</span> <span class="pre">float</span> <span class="pre">out_scale,</span> <span class="pre">int</span> <span class="pre">out_zero_point,</span> <span class="pre">int</span> <span class="pre">out_quant_min,</span> <span class="pre">int</span> <span class="pre">out_quant_max)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span> <span class="pre">qc</span></code></p>
+<ul>
+<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
+<li><p>backend: quantization</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::add.scalar(Tensor</span> <span class="pre">qa,</span> <span class="pre">float</span> <span class="pre">a_scale,</span> <span class="pre">int</span> <span class="pre">a_zero_point,</span> <span class="pre">int</span> <span class="pre">a_quant_min,</span> <span class="pre">int</span> <span class="pre">a_quant_max,</span> <span class="pre">ScalarType</span> <span class="pre">a_dtype,</span> <span class="pre">Scalar</span> <span class="pre">b,</span> <span class="pre">float</span> <span class="pre">out_scale,</span> <span class="pre">int</span> <span class="pre">out_zero_point,</span> <span class="pre">int</span> <span class="pre">out_quant_min,</span> <span class="pre">int</span> <span class="pre">out_quant_max,</span> <span class="pre">ScalarType</span> <span class="pre">out_dtype)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span></code></p>
+<ul>
+<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
+<li><p>backend: quantization</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">quantized_decomposed::add_relu(Tensor</span> <span class="pre">a,</span> <span class="pre">float</span> <span class="pre">a_scale,</span> <span class="pre">int</span> <span class="pre">a_zero_point,</span> <span class="pre">int</span> <span class="pre">a_quant_min,</span> <span class="pre">int</span> <span class="pre">a_quant_max,</span> <span class="pre">Tensor</span> <span class="pre">b,</span> <span class="pre">float</span> <span class="pre">b_scale,</span> <span class="pre">int</span> <span class="pre">b_zero_point,</span> <span class="pre">int</span> <span class="pre">b_quant_min,</span> <span class="pre">int</span> <span class="pre">b_quant_max,</span> <span class="pre">float</span> <span class="pre">out_scale,</span> <span class="pre">int</span> <span class="pre">out_zero_point,</span> <span class="pre">int</span> <span class="pre">out_quant_min,</span> <span class="pre">int</span> <span class="pre">out_quant_max)</span> <span class="pre">-&gt;</span> <span class="pre">Tensor</span> <span class="pre">qc</span></code></p>
+<ul>
+<li><p>pattern: <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/passes/_quant_patterns_and_replacements.py">source</a></p></li>
+<li><p>backend: quantization</p></li>
+</ul>
+</li>
+</ul>
+</div>
 </div>
 </div>
 
@@ -716,8 +636,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="compiler-custom-compiler-passes.html" class="btn btn-neutral float-right" title="Custom Compiler Passes and Partitioners" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="compiler-delegate-and-partitioner.html" class="btn btn-neutral" title="Backend and Delegate" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +673,18 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#">Backend Dialect</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#when-to-use">When to use</a></li>
+<li><a class="reference internal" href="#apis">APIs</a><ul>
+<li><a class="reference internal" href="#pass-infra-entry-point">Pass Infra Entry Point</a></li>
+<li><a class="reference internal" href="#pattern-binding-decorator">Pattern Binding Decorator</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+<li><a class="reference internal" href="#example">Example</a><ul>
+<li><a class="reference internal" href="#op-set">Op Set</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

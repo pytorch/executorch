@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Portable C++ Programming &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title=".pte file format" href="pte-file-format.html" />
+    <link rel="prev" title="Runtime Platform Abstraction Layer (PAL)" href="runtime-platform-abstraction-layer.html" />
 
 
   <!-- Google Tag Manager -->
@@ -313,11 +314,11 @@
 <li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="runtime-overview.html">ExecuTorch Runtime Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-backend-delegate-implementation-and-linking.html">Backend Delegate Implementation and Linking</a></li>
 <li class="toctree-l1"><a class="reference internal" href="runtime-platform-abstraction-layer.html">Runtime Platform Abstraction Layer (PAL)</a></li>
-<li class="toctree-l1"><a class="reference internal" href="portable-cpp-programming.html">Portable C++ Programming</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Portable C++ Programming</a></li>
 <li class="toctree-l1"><a class="reference internal" href="pte-file-format.html"><code class="docutils literal notranslate"><span class="pre">.pte</span></code> file format</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Quantization</span></p>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Portable C++ Programming</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/portable-cpp-programming.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,173 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="portable-c-programming">
+<h1>Portable C++ Programming<a class="headerlink" href="#portable-c-programming" title="Permalink to this heading">¶</a></h1>
+<p>NOTE: This document covers the code that needs to build for and execute in
+target hardware environments. This applies to the core execution runtime, as
+well as kernel and backend implementations in this repo. These rules do not
+necessarily apply to code that only runs on the development host, like authoring
+or build tools.</p>
+<p>The ExecuTorch runtime code is intendend to be portable, and should build for a
+wide variety of systems, from servers to mobile phones to DSPs, from POSIX to
+Windows to bare-metal environments.</p>
+<p>This means that it can’t assume the existence of:</p>
+<ul class="simple">
+<li><p>Files</p></li>
+<li><p>Threads</p></li>
+<li><p>Exceptions</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stdout</span></code>, <code class="docutils literal notranslate"><span class="pre">stderr</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">printf()</span></code>, <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code></p></li>
+<li><p>POSIX APIs and concepts in general</p></li>
+</ul>
+<p>It also can’t assume:</p>
+<ul class="simple">
+<li><p>64 bit pointers</p></li>
+<li><p>The size of a given integer type</p></li>
+<li><p>The signedness of <code class="docutils literal notranslate"><span class="pre">char</span></code></p></li>
+</ul>
+<p>To keep the binary size to a minimum, and to keep tight control over memory
+allocation, the code may not use:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">malloc()</span></code>, <code class="docutils literal notranslate"><span class="pre">free()</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">new</span></code>, <code class="docutils literal notranslate"><span class="pre">delete</span></code></p></li>
+<li><p>Most <code class="docutils literal notranslate"><span class="pre">stdlibc++</span></code> types; especially container types that manage their own
+memory like <code class="docutils literal notranslate"><span class="pre">string</span></code> and <code class="docutils literal notranslate"><span class="pre">vector</span></code>, or memory-management wrapper types like
+<code class="docutils literal notranslate"><span class="pre">unique_ptr</span></code> and <code class="docutils literal notranslate"><span class="pre">shared_ptr</span></code>.</p></li>
+</ul>
+<p>And to help reduce complexity, the code may not depend on any external
+dependencies except:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">flatbuffers</span></code> (for <code class="docutils literal notranslate"><span class="pre">.pte</span></code> file deserialization)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flatcc</span></code> (for event trace serialization)</p></li>
+<li><p>Core PyTorch (only for ATen mode)</p></li>
+</ul>
+<div class="section" id="platform-abstraction-layer-pal">
+<h2>Platform Abstraction Layer (PAL)<a class="headerlink" href="#platform-abstraction-layer-pal" title="Permalink to this heading">¶</a></h2>
+<p>To avoid assuming the capabilities of the target system, the ExecuTorch runtime
+lets clients override low-level functions in its Platform Abstraction Layer
+(PAL), defined in <code class="docutils literal notranslate"><span class="pre">//executorch/runtime/platform/platform.h</span></code>, to perform operations
+like:</p>
+<ul class="simple">
+<li><p>Getting the current timestamp</p></li>
+<li><p>Printing a log message</p></li>
+<li><p>Panicking the system</p></li>
+</ul>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
+<div class="section" id="memory-allocation">
+<h2>Memory Allocation<a class="headerlink" href="#memory-allocation" title="Permalink to this heading">¶</a></h2>
+<p>Instead of using <code class="docutils literal notranslate"><span class="pre">malloc()</span></code> or <code class="docutils literal notranslate"><span class="pre">new</span></code>, the runtime code should allocate memory
+using the <code class="docutils literal notranslate"><span class="pre">MemoryManager</span></code> (<code class="docutils literal notranslate"><span class="pre">//executorch/runtime/executor/memory_manager.h</span></code>)
+provided by the client.</p>
 </div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
+<div class="section" id="file-loading">
+<h2>File Loading<a class="headerlink" href="#file-loading" title="Permalink to this heading">¶</a></h2>
+<p>Instead of loading files directly, clients should provide buffers with the data
+already loaded, or wrapped in types like <code class="docutils literal notranslate"><span class="pre">DataLoader</span></code>.</p>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
+<div class="section" id="integer-types">
+<h2>Integer Types<a class="headerlink" href="#integer-types" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch runtime code should not assume anything about the sizes of primitive
+types like <code class="docutils literal notranslate"><span class="pre">int</span></code>, <code class="docutils literal notranslate"><span class="pre">short</span></code>, or <code class="docutils literal notranslate"><span class="pre">char</span></code>. For example, the C++ standard only
+guarantees that <code class="docutils literal notranslate"><span class="pre">int</span></code> will be at least 16 bits wide. And ARM toolchains treat
+<code class="docutils literal notranslate"><span class="pre">char</span></code> as unsigned, while other toolchains often treat it as signed.</p>
+<p>Instead, the runtime APIs use a set of more predictable, but still standard,
+integer types:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">&lt;cstdint&gt;</span></code> types like <code class="docutils literal notranslate"><span class="pre">uint64_t</span></code>, <code class="docutils literal notranslate"><span class="pre">int32_t</span></code>; these types guarantee the bit
+width and signedness, regardless of the architecture. Use these types when you
+need a very specific integer width.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">size_t</span></code> for counts of things, or memory offsets. <code class="docutils literal notranslate"><span class="pre">size_t</span></code> is guaranteed to be
+big enough to represent any memory byte offset; i.e., it will be as wide as
+the native pointer type for the target system. Prefer using this instead of
+<code class="docutils literal notranslate"><span class="pre">uint64_t</span></code> for counts/offsets so that 32-bit systems don’t need to pay for the
+unnecessary overhead of a 64-bit value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssize_t</span></code> for some ATen-compatibility situations where <code class="docutils literal notranslate"><span class="pre">Tensor</span></code> returns a
+signed count. Prefer <code class="docutils literal notranslate"><span class="pre">size_t</span></code> when possible.</p></li>
+</ul>
 </div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
+<div class="section" id="floating-point-arithmetic">
+<h2>Floating Point Arithmetic<a class="headerlink" href="#floating-point-arithmetic" title="Permalink to this heading">¶</a></h2>
+<p>Not every system has support for floating point arithmetic: some don’t even enable
+floating point emulation in their toolchains. Therefore, the core runtime code
+must not perform any floating point arithmetic at runtime, although it is ok to
+simply create or manage <code class="docutils literal notranslate"><span class="pre">float</span></code> or <code class="docutils literal notranslate"><span class="pre">double</span></code> values (e.g., in an <code class="docutils literal notranslate"><span class="pre">EValue</span></code>).</p>
+<p>Kernels, being outside of the core runtime, are allowed to perform floating point
+arithmetic. Though some kernels may choose not to, so that they can run on systems
+without floating point support.</p>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
+<div class="section" id="logging">
+<h2>Logging<a class="headerlink" href="#logging" title="Permalink to this heading">¶</a></h2>
+<p>Instead of using <code class="docutils literal notranslate"><span class="pre">printf()</span></code>, <code class="docutils literal notranslate"><span class="pre">fprintf()</span></code>, <code class="docutils literal notranslate"><span class="pre">cout</span></code>, <code class="docutils literal notranslate"><span class="pre">cerr</span></code>, or a library like
+<code class="docutils literal notranslate"><span class="pre">folly::logging</span></code> or <code class="docutils literal notranslate"><span class="pre">glog</span></code>, the ExecuTorch runtime provides the <code class="docutils literal notranslate"><span class="pre">ET_LOG</span></code>
+interface in <code class="docutils literal notranslate"><span class="pre">//executorch/runtime/platform/log.h</span></code> and the <code class="docutils literal notranslate"><span class="pre">ET_CHECK</span></code> interface in
+<code class="docutils literal notranslate"><span class="pre">//executorch/runtime/platform/assert.h</span></code>. The messages are printed using a hook in the PAL,
+which means that clients can redirect them to any underlying logging system, or
+just print them to <code class="docutils literal notranslate"><span class="pre">stderr</span></code> if available.</p>
+<div class="section" id="logging-format-portability">
+<h3>Logging Format Portability<a class="headerlink" href="#logging-format-portability" title="Permalink to this heading">¶</a></h3>
+<div class="section" id="fixed-width-integers">
+<h4>Fixed-Width Integers<a class="headerlink" href="#fixed-width-integers" title="Permalink to this heading">¶</a></h4>
+<p>When you have a log statement like</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">int64_t</span> <span class="n">value</span><span class="p">;</span>
+<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">&quot;Value %??? is bad&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
+</pre></div>
 </div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
+<p>what should you put for the <code class="docutils literal notranslate"><span class="pre">%???</span></code> part, to match the <code class="docutils literal notranslate"><span class="pre">int64_t</span></code>? On different
+systems, the <code class="docutils literal notranslate"><span class="pre">int64_t</span></code> typdef might be <code class="docutils literal notranslate"><span class="pre">int</span></code>, <code class="docutils literal notranslate"><span class="pre">long</span> <span class="pre">int</span></code>, or <code class="docutils literal notranslate"><span class="pre">long</span> <span class="pre">long</span> <span class="pre">int</span></code>.
+Picking a format like <code class="docutils literal notranslate"><span class="pre">%d</span></code>, <code class="docutils literal notranslate"><span class="pre">%ld</span></code>, or <code class="docutils literal notranslate"><span class="pre">%lld</span></code> might work on one target, but break
+on the others.</p>
+<p>To be portable, the runtime code uses the standard (but admittedly awkward)
+helper macros from <code class="docutils literal notranslate"><span class="pre">&lt;cinttypes&gt;</span></code>. Each portable integer type has a corresponding
+<code class="docutils literal notranslate"><span class="pre">PRIn##</span></code> macro, like</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">int32_t</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">PRId32</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uint32_t</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">PRIu32</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">int64_t</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">PRId64</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">uint64_t</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">PRIu64</span></code></p></li>
+<li><p>See https://en.cppreference.com/w/cpp/header/cinttypes for more</p></li>
+</ul>
+<p>These macros are literal strings that can concatenate with other parts of the
+format string, like</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">int64_t</span> <span class="n">value</span><span class="p">;</span>
+<span class="n">ET_LOG</span><span class="p">(</span><span class="n">Error</span><span class="p">,</span> <span class="s2">&quot;Value %&quot;</span> <span class="n">PRId64</span> <span class="s2">&quot; is bad&quot;</span><span class="p">,</span> <span class="n">value</span><span class="p">);</span>
+</pre></div>
+</div>
+<p>Note that this requires chopping up the literal format string (the extra double
+quotes). It also requires the leading <code class="docutils literal notranslate"><span class="pre">%</span></code> before the macro.</p>
+<p>But, by using these macros, you’re guaranteed that the toolchain will use the
+appropriate format pattern for the type.</p>
+</div>
+<div class="section" id="size-t-ssize-t">
+<h4><code class="docutils literal notranslate"><span class="pre">size_t</span></code>, <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code><a class="headerlink" href="#size-t-ssize-t" title="Permalink to this heading">¶</a></h4>
+<p>Unlike the fixed-width integer types, format strings already have a portable
+way to handle <code class="docutils literal notranslate"><span class="pre">size_t</span></code> and <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code>:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">size_t</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">%zu</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ssize_t</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">%zd</span></code></p></li>
+</ul>
+</div>
+<div class="section" id="casting">
+<h4>Casting<a class="headerlink" href="#casting" title="Permalink to this heading">¶</a></h4>
+<p>Sometimes, especially in code that straddles ATen and lean mode, the type of the
+value itself might be different across build modes. In those cases, cast the
+value to the lean mode type, like:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">ET_CHECK_MSG</span><span class="p">(</span>
+    <span class="nb">input</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">==</span> <span class="n">output</span><span class="o">.</span><span class="n">dim</span><span class="p">(),</span>
+    <span class="s2">&quot;input.dim() %zd not equal to output.dim() %zd&quot;</span><span class="p">,</span>
+    <span class="p">(</span><span class="n">ssize_t</span><span class="p">)</span><span class="nb">input</span><span class="o">.</span><span class="n">dim</span><span class="p">(),</span>
+    <span class="p">(</span><span class="n">ssize_t</span><span class="p">)</span><span class="n">output</span><span class="o">.</span><span class="n">dim</span><span class="p">());</span>
+</pre></div>
+</div>
+<p>In this case, <code class="docutils literal notranslate"><span class="pre">Tensor::dim()</span></code> returns <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code> in lean mode, while
+<code class="docutils literal notranslate"><span class="pre">at::Tensor::dim()</span></code> returns <code class="docutils literal notranslate"><span class="pre">int64_t</span></code> in ATen mode. Since they both conceptually
+return (signed) counts, <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code> is the most appropriate integer type.
+<code class="docutils literal notranslate"><span class="pre">int64_t</span></code> would work, but it would unnecessarily require 32-bit systems to deal
+with a 64-bit value in lean mode.</p>
+<p>This is the only situation where casting should be necessary, when lean and ATen
+modes disagree. Otherwise, use the format pattern that matches the type.</p>
 </div>
 </div>
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
-
-  <hr class="tutorials-hr">
-
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
 </div>
 </div>
 
@@ -716,8 +604,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="pte-file-format.html" class="btn btn-neutral float-right" title=".pte file format" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="runtime-platform-abstraction-layer.html" class="btn btn-neutral" title="Runtime Platform Abstraction Layer (PAL)" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +641,21 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#">Portable C++ Programming</a><ul>
+<li><a class="reference internal" href="#platform-abstraction-layer-pal">Platform Abstraction Layer (PAL)</a></li>
+<li><a class="reference internal" href="#memory-allocation">Memory Allocation</a></li>
+<li><a class="reference internal" href="#file-loading">File Loading</a></li>
+<li><a class="reference internal" href="#integer-types">Integer Types</a></li>
+<li><a class="reference internal" href="#floating-point-arithmetic">Floating Point Arithmetic</a></li>
+<li><a class="reference internal" href="#logging">Logging</a><ul>
+<li><a class="reference internal" href="#logging-format-portability">Logging Format Portability</a><ul>
+<li><a class="reference internal" href="#fixed-width-integers">Fixed-Width Integers</a></li>
+<li><a class="reference internal" href="#size-t-ssize-t"><code class="docutils literal notranslate"><span class="pre">size_t</span></code>, <code class="docutils literal notranslate"><span class="pre">ssize_t</span></code></a></li>
+<li><a class="reference internal" href="#casting">Casting</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

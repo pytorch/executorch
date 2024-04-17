@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>Memory Planning &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="ExecuTorch Runtime Overview" href="runtime-overview.html" />
+    <link rel="prev" title="Custom Compiler Passes and Partitioners" href="compiler-custom-compiler-passes.html" />
 
 
   <!-- Google Tag Manager -->
@@ -306,11 +307,11 @@
 <li class="toctree-l1"><a class="reference internal" href="ir-ops-set-definition.html">Definition of the Core ATen Operator Set</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Compiler Entry Points</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="compiler-delegate-and-partitioner.html">Backend and Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-backend-dialect.html">Backend Dialect</a></li>
 <li class="toctree-l1"><a class="reference internal" href="compiler-custom-compiler-passes.html">Custom Compiler Passes and Partitioners</a></li>
-<li class="toctree-l1"><a class="reference internal" href="compiler-memory-planning.html">Memory Planning</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Memory Planning</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Runtime</span></p>
 <ul>
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>Memory Planning</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/compiler-memory-planning.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,83 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="memory-planning">
+<h1>Memory Planning<a class="headerlink" href="#memory-planning" title="Permalink to this heading">¶</a></h1>
+<p>Audience: Backend integrators and embedded developers who are interested in customizing the regions of memory ExecuTorch programs operate in.</p>
+<div class="section" id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
+<p>MemoryPlanning is the very last action taken before taking an <code class="docutils literal notranslate"><span class="pre">ExportedProgram</span></code> and undergoing emission to an ExecuTorch program. During this process, ExecuTorch takes the size and lifespan of each mutable tensor, and plans out their location in fixed size memory arenas.</p>
+<p>Concretely, there are three passes related to memory planning:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">SpecPropPass</span></code> computes a TensorSpec for each tensor in the graph (inputs, intermediates or outputs). The most important field of the tensor spec is a symbolic expression of the shapes of the tensor, where the initial set of symbols comes from the dimensions of input tensors, intermediate tensor shapes’ symbolic expression is propagated via tensor operations. The dimensions can be marked as either dynamic or static by users and when the dims are dynamic, users are required to annotate the dim with a ValueRange.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">SymShapEvalPass</span></code> evaluates the symbolic expressions to concrete integers with their upper bounds. There are two ways to doing the upper bound specialization:
+HintBasedSymShapeEval (to be deprecated) is the old way of evaluating the upper bound. It doesn’t look at the ValueRange of the symbols but uses the shapes of example inputs to replace all the symbols. We call it “hint based“ because the example inputs’ shapes are just hints of what the input shapes might be at run time and are used for tracing only. ValueRangeBasedSymShapeEval is the recommended way of doing UpperBoundMemory planning. It will actually look at the ValueRange of the symbols and do an inference over the ranges to get a real upper bound.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">MemoryPlanningPass</span></code> does the actual memory planning given all tensors get a TensorSpec with concrete integer shapes.</p></li>
+</ul>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
+<div class="section" id="algorithms">
+<h2>Algorithms<a class="headerlink" href="#algorithms" title="Permalink to this heading">¶</a></h2>
+<p>ExecuTorch provides two options for memory planning algorithms out of the box, but users can define their own if the provided options are inappropriate or insufficient for their use case.</p>
+<ul class="simple">
+<li><p>The naive algorithm simply concatenates all the tensors together in a linear memory without considering any memory re-use. It serves as an upper bound for total memory consumption and serves as a baseline.</p></li>
+<li><p>The Greedy algorithm tries to re-use the already allocated memory and choose based on the best-fit criteria. Specifically:
+When there isn’t an allocated memory whose lifetime doesn’t overlap with the current tensor that we try to do memory planning for, we allocate a new memory buffer with the same size and lifetime as the current tensor. When there is one or more allocated memory buffer, whose lifetime overlaps with the current tensor, we pick the buffer that has the closest size with current tensor so as to reduce memory fragmentation. Finally, we allocate these memory buffers linearly in memory.</p></li>
+</ul>
 </div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
+<div class="section" id="method-inputs-and-outputs">
+<h2>Method Inputs and Outputs<a class="headerlink" href="#method-inputs-and-outputs" title="Permalink to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">MemoryPlanningPass</span></code> exposes the option to not memory plan program inputs and outputs. If the IO is not planned then users will be expected to provide data buffers to back these values at runtime. Example:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+            <span class="n">exir</span><span class="o">.</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
+                <span class="n">memory_planning_pass</span><span class="o">=</span><span class="n">MemoryPlanningPass</span><span class="p">(</span>
+                    <span class="n">memory_planning_algo</span><span class="o">=</span><span class="s2">&quot;greedy&quot;</span><span class="p">,</span>
+                    <span class="n">alloc_graph_input</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="c1"># Inputs will not be memory planned, the data_ptr for input tensors after model load will be nullptr</span>
+                    <span class="n">alloc_graph_output</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="c1"># Outputs will be memory planned, the data_ptr for input tensors after model load will be in the `planned_memory`.</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+</pre></div>
 </div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
+<p>One common set-up would be for models where the outputs of the model are provided as inputs to subsequent inferences. In that situation, it would generally be better to not memory plan the IO, and instead provide the same buffer to both the input and output at runtime to avoid a copy.</p>
 </div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
-</div>
-</div>
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
+<div class="section" id="custom-memory-plans">
+<h2>Custom Memory Plans<a class="headerlink" href="#custom-memory-plans" title="Permalink to this heading">¶</a></h2>
+<p>Users can write custom memory plans to take advantage of multiple memory locations (like SRAM and DRAM), place the outputs of specific nodes in specific locations, or even change the planning algorithm itself. The following example shows how you could reuse the provided planning algorithms, but with multiple hierarchies and placing the outputs of specific ops in specific memory arenas.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">CustomPoolMemoryPlanningPass</span><span class="p">(</span><span class="n">MemoryPlanningPass</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">call</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">graph_module</span><span class="p">:</span> <span class="n">GraphModule</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PassResult</span><span class="p">:</span>
+        <span class="k">for</span> <span class="n">subgm</span> <span class="ow">in</span> <span class="n">graph_module</span><span class="o">.</span><span class="n">modules</span><span class="p">():</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">subgm</span><span class="p">,</span> <span class="n">GraphModule</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">for</span> <span class="n">node</span> <span class="ow">in</span> <span class="n">subgm</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">nodes</span><span class="p">:</span>
+                <span class="c1"># mem_id = 1 placeholder and outputs of mul</span>
+                <span class="c1"># mem_id = 2 for outputs of add</span>
+                <span class="c1"># parent class will copy spec will to alloc nodes</span>
+                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">==</span> <span class="s2">&quot;placeholder&quot;</span><span class="p">:</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">1</span>
+                    <span class="k">continue</span>
 
-  <hr class="tutorials-hr">
+                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">op</span> <span class="o">!=</span> <span class="s2">&quot;call_function&quot;</span><span class="p">:</span>
+                    <span class="k">continue</span>
 
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
+                <span class="k">if</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">add</span><span class="o">.</span><span class="n">out</span><span class="p">:</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">2</span>
+                <span class="k">elif</span> <span class="n">node</span><span class="o">.</span><span class="n">target</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">mul</span><span class="o">.</span><span class="n">out</span><span class="p">:</span>
+                    <span class="n">node</span><span class="o">.</span><span class="n">meta</span><span class="p">[</span><span class="s2">&quot;spec&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">mem_id</span> <span class="o">=</span> <span class="mi">1</span>
+
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">call</span><span class="p">(</span><span class="n">graph_module</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>Then later when lowering to ExecuTorch you can use your custom plan in the following way:</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">program</span> <span class="o">=</span> <span class="n">edge_program</span><span class="o">.</span><span class="n">to_executorch</span><span class="p">(</span>
+            <span class="n">exir</span><span class="o">.</span><span class="n">ExecutorchBackendConfig</span><span class="p">(</span>
+                <span class="n">memory_planning_pass</span><span class="o">=</span><span class="n">CustomPoolMemoryPlanningPass</span><span class="p">(</span>
+                    <span class="n">memory_planning_algo</span><span class="o">=</span><span class="s2">&quot;greedy&quot;</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="p">)</span>
+        <span class="p">)</span>
+</pre></div>
+</div>
+<p>Users attempting to write a custom memory planning algorithm should start by looking at <a class="reference external" href="https://github.com/pytorch/executorch/blob/d62c41ca86435e5316e7ed292b6d68aff27a2fb7/exir/memory_planning.py#L459C1-L459C12">the greedy algorithm’s implementation</a></p>
 </div>
 </div>
 
@@ -716,8 +514,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="runtime-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Runtime Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="compiler-custom-compiler-passes.html" class="btn btn-neutral" title="Custom Compiler Passes and Partitioners" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +551,11 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
-</ul>
-</li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+<li><a class="reference internal" href="#">Memory Planning</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#algorithms">Algorithms</a></li>
+<li><a class="reference internal" href="#method-inputs-and-outputs">Method Inputs and Outputs</a></li>
+<li><a class="reference internal" href="#custom-memory-plans">Custom Memory Plans</a></li>
 </ul>
 </li>
 </ul>

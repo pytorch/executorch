@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Welcome to the ExecuTorch Documentation &mdash; ExecuTorch  documentation</title>
+  <title>SDK Delegate Integration &mdash; ExecuTorch  documentation</title>
   
 
   
@@ -41,7 +41,8 @@
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="ExecuTorch Overview" href="intro-overview.html" />
+    <link rel="next" title="SDK usage tutorial" href="sdk-tutorial.html" />
+    <link rel="prev" title="Inspector APIs" href="sdk-inspector.html" />
 
 
   <!-- Google Tag Manager -->
@@ -337,7 +338,7 @@
 <li class="toctree-l1"><a class="reference internal" href="backend-delegates-dependencies.html">Third-Party Dependency Management for Backend Delegates</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">SDK</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="sdk-overview.html">Introduction to the ExecuTorch SDK</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-bundled-io.html">Bundled Program – a Tool for ExecuTorch Model Validation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-etrecord.html">Prerequisite | ETRecord - ExecuTorch Record</a></li>
@@ -345,7 +346,7 @@
 <li class="toctree-l1"><a class="reference internal" href="sdk-profiling.html">Profiling Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-debugging.html">Debugging Models in ExecuTorch</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-inspector.html">Inspector APIs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="sdk-delegate-integration.html">SDK Delegate Integration</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">SDK Delegate Integration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="sdk-tutorial.html">SDK usage tutorial</a></li>
 </ul>
 
@@ -379,7 +380,7 @@
   <ul class="pytorch-breadcrumbs">
     
       <li>
-        <a href="#">
+        <a href="index.html">
           
             Docs
           
@@ -387,13 +388,13 @@
       </li>
 
         
-      <li>Welcome to the ExecuTorch Documentation</li>
+      <li>SDK Delegate Integration</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
-            <a href="_sources/index.rst.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+            <a href="_sources/sdk-delegate-integration.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
           
         
       </li>
@@ -425,286 +426,141 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-  <div class="section" id="welcome-to-the-executorch-documentation">
-<span id="home"></span><h1>Welcome to the ExecuTorch Documentation<a class="headerlink" href="#welcome-to-the-executorch-documentation" title="Permalink to this heading">¶</a></h1>
-<div class="admonition important">
-<p class="admonition-title">Important</p>
-<p>This is a preview version of ExecuTorch and should be used for testing
-and evaluation purposes only. It is not recommended for use in production
-settings. We welcome any feedback, suggestions, and bug reports from the
-community to help us improve the technology. Please use the <a class="reference external" href="https://discuss.pytorch.org/c/executorch">PyTorch
-Forums</a> for discussion and
-feedback about ExecuTorch using the <strong>ExecuTorch</strong> category, and our <a class="reference external" href="https://github.com/pytorch/executorch/issues">GitHub
-repository</a> for bug
-reporting.</p>
+  <div class="section" id="sdk-delegate-integration">
+<h1>SDK Delegate Integration<a class="headerlink" href="#sdk-delegate-integration" title="Permalink to this heading">¶</a></h1>
+<p><a class="reference internal" href="compiler-delegate-and-partitioner.html"><span class="doc std std-doc">Delegate backends</span></a> are a prominent component of on-device models due to their flexibility in defining behavior. A side effect of this flexibility is that it operates as an opaque transformation. This obfuscates rich associations and mutations that are valuable in post-processing.</p>
+<ul class="simple">
+<li><p>For example, if two different operator fusions were to occur within a delegate, post processing wouldn’t be able to separate the two transformations.</p></li>
+</ul>
+<p>Specifically, it makes associating runtime information (such as profiling results) through delegated graphs difficult. Delegate Debug Identifiers provides a framework through which delegate authors can propagate this information and utilize it for post run analysis.</p>
+<p>The preparation is broken down into three stages:</p>
+<ul class="simple">
+<li><p><strong>Ahead-of-time (AOT)</strong>: Delegate authors generate a <strong>Debug Handle Map</strong>.</p></li>
+<li><p><strong>Runtime</strong>: Delegate authors log using the <strong>Delegate Debug Identifiers</strong> registered AOT in the <strong>Debug Handle Map</strong>.</p></li>
+<li><p><strong>Deserialization</strong>: Delegate authors provide a parser for custom metadata in delegate events.</p></li>
+</ul>
+<div class="section" id="ahead-of-time">
+<h2>Ahead-of-Time<a class="headerlink" href="#ahead-of-time" title="Permalink to this heading">¶</a></h2>
+<p>Delegate authors propagate what transformations occur in a lowered backend by returning a <strong>Debug Handle Map</strong> from the backend implementation.</p>
+<div class="section" id="generating-a-debug-handle-map">
+<h3>Generating a Debug Handle Map<a class="headerlink" href="#generating-a-debug-handle-map" title="Permalink to this heading">¶</a></h3>
+<p><strong>Debug Handle Maps</strong> communicate what transformations occurred in a backend by mapping <strong>Delegate Debug Identifiers</strong> to debug handles.</p>
+<p><strong>Delegate Debug Identifiers</strong> are generated or user-provided identifiers for representing points of interest during runtime. Recall that debug handles are unique identifiers to operator instances in the model graph.</p>
+<p>For example:</p>
+<ul class="simple">
+<li><p><strong>{ 0: (10, 11), 1: (11, 12) }:</strong> Identifiers 0 and 1 in the runtime correspond to operators with the debug handles (10, 11) and (11, 12) respectively.</p></li>
+<li><p><strong>{ “Fancy Fusion”: (11, 12, 15) }</strong>: Identifier “Fancy Fusion” in the runtime corresponds to operators with debug handles (11, 12, 15).</p></li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Identifiers are a means of connecting runtime results to the model graph; the interpretation of the identifiers is defined by the delegate author.</p>
 </div>
-<div class="et-page-column-row">
-  <div class="et-page-column1"><p><strong>ExecuTorch</strong> is a PyTorch platform that provides infrastructure to run PyTorch programs everywhere from AR/VR wearables to standard on-device iOS and Android mobile deployments. One of the main goals for ExecuTorch is to enable wider customization and deployment capabilities of the PyTorch programs.</p>
-  <p>ExecuTorch heavily relies on such PyTorch technologies as <a href="https://pytorch.org/docs/stable/torch.compiler.html">torch.compile</a> and <a href="https://pytorch.org/docs/main/export.html">torch.export</a>. If you are not familiar with these APIs, you might want to read about them in the PyTorch documentation before diving into the ExecuTorch documentation.</p></div>
-  <div class="et-page-column2"><img src="_static/img/ExecuTorch-Logo-cropped.svg" alt="ExecuTorch logo" title="ExecuTorch logo"></div>
-</div><p>The ExecuTorch source is hosted on GitHub at
-<a class="reference external" href="https://github.com/pytorch/executorch">https://github.com/pytorch/executorch</a>.</p>
-<div class="section" id="getting-started">
-<h2>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading">¶</a></h2>
-<p>Topics in this section will help you get started with ExecuTorch.</p>
-<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
-<div class="sd-row sd-row-cols-3 sd-row-cols-xs-3 sd-row-cols-sm-3 sd-row-cols-md-3 sd-row-cols-lg-3 docutils">
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-What is ExecuTorch?</div>
-<p class="sd-card-text">A gentle introduction to ExecuTorch. In this section,
-you will learn about main features of ExecuTorch
-and how you can use them in your projects.</p>
-</div>
-<a class="sd-stretched-link reference external" href="intro-overview.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-Getting started with ExecuTorch</div>
-<p class="sd-card-text">A step-by-step tutorial on how to get started with
-ExecuTorch.</p>
-</div>
-<a class="sd-stretched-link reference external" href="getting-started-setup.html"></a></div>
-</div>
-<div class="sd-col sd-d-flex-row docutils">
-<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
-<img alt="" class="sd-card-img-top" src="_images/card-background.svg" /><div class="sd-card-body docutils">
-<div class="sd-card-title sd-font-weight-bold docutils">
-<svg version="1.1" width="1.0em" height="1.0em" class="sd-octicon sd-octicon-file-code" viewBox="0 0 16 16" aria-hidden="true"><path fill-rule="evenodd" d="M4 1.75C4 .784 4.784 0 5.75 0h5.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v8.586A1.75 1.75 0 0114.25 15h-9a.75.75 0 010-1.5h9a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 0110 4.25V1.5H5.75a.25.25 0 00-.25.25v2.5a.75.75 0 01-1.5 0v-2.5zm7.5-.188V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM5.72 6.72a.75.75 0 000 1.06l1.47 1.47-1.47 1.47a.75.75 0 101.06 1.06l2-2a.75.75 0 000-1.06l-2-2a.75.75 0 00-1.06 0zM3.28 7.78a.75.75 0 00-1.06-1.06l-2 2a.75.75 0 000 1.06l2 2a.75.75 0 001.06-1.06L1.81 9.25l1.47-1.47z"></path></svg>
-ExecuTorch Intermediate Representation API</div>
-<p class="sd-card-text">Learn about EXIR, a graph-based intermediate
-representation (IR) of PyTorch programs.</p>
-</div>
-<a class="sd-stretched-link reference external" href="ir-exir.html"></a></div>
-</div>
-</div>
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-<div class="toctree-wrapper compound">
-</div>
-</div>
-<div class="section" id="tutorials-and-examples">
-<h2>Tutorials and Examples<a class="headerlink" href="#tutorials-and-examples" title="Permalink to this heading">¶</a></h2>
-<p>Ready to experiment? Check out some of the
-ExecuTorch tutorials.</p>
-<p><div id="tutorial-cards-container">
-  <nav class="navbar navbar-expand-lg navbar-light tutorials-nav col-12">
-    <div class="tutorial-tags-container">
-      <div id="dropdown-filter-tags">
-        <div class="tutorial-filter-menu">
-          <div class="tutorial-filter filter-btn all-tag-selected" data-tag="all">All</div>
-        </div>
-      </div>
-    </div>
-  </nav>
+<p><strong>Debug Handle Maps</strong> are constructed through the use of <strong>DelegateMappingBuilder</strong> and returned as a part of <code class="docutils literal notranslate"><span class="pre">PreprocessResult</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">PreprocessResult</span><span class="p">:</span>
+    <span class="n">processed_bytes</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">()</span>
 
-  <hr class="tutorials-hr">
+    <span class="n">debug_handle_map</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+        <span class="n">Union</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span>
+    <span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+</pre></div>
+</div>
+<p>PreprocessResult is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/backend_details.py">here</a>.</p>
+<div class="section" id="delegatemappingbuilder">
+<h4>DelegateMappingBuilder<a class="headerlink" href="#delegatemappingbuilder" title="Permalink to this heading">¶</a></h4>
+<p><code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> is a helper class for managing and constructing Debug Handle Maps. The result of the builder should be passed in when constructing PreprocessResult.</p>
+<p><code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> is defined <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/utils.py">here</a></p>
+<p>A <code class="docutils literal notranslate"><span class="pre">DelegateMappingBuilder</span></code> instance can be constructed in one of 2 modes: manual identifiers or generated identifiers.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="c1"># Manual Identifiers, Default</span>
+<span class="n">builder</span> <span class="o">=</span> <span class="n">DelegateMappingBuilder</span><span class="p">(</span><span class="n">generated_identifiers</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
-  <div class="row">
-    <div id="tutorial-cards">
-      <div class="list"></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation,Quantization>
-  <div class="card tutorials-card">
-    <a href="tutorials/export-to-executorch-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Exporting to ExecuTorch Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation,Quantization</span></p>
-        <p class="card-summary">A tutorial for exporting a model and lowering a it to be runnable on the ExecuTorch runtime.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=>
-  <div class="card tutorials-card">
-    <a href="running-a-model-cpp-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Running an ExecuTorch Model C++ Tutorial</h4>
-        </div>
-        <p>Topics: <span class="tags"></span></p>
-        <p class="card-summary">A tutorial for setting up memory pools, loading a model, setting inputs, executing the model, and retrieving outputs on device.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=SDK>
-  <div class="card tutorials-card">
-    <a href="tutorials/sdk-integration-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Using the ExecuTorch SDK to Profile a Model</h4>
-        </div>
-        <p>Topics: <span class="tags">SDK</span></p>
-        <p class="card-summary">A tutorial for using the ExecuTorch SDK to profile and analyze a model with linkage back to source code.</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,iOS>
-  <div class="card tutorials-card">
-    <a href="demo-apps-ios.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch iOS Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,iOS</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into iOS frameworks and run an iOS app.</p>
-        <div class="tutorials-image"><img src='_static/img/demo_ios_app.jpg'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Delegation,Android>
-  <div class="card tutorials-card">
-    <a href="demo-apps-android.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building an ExecuTorch Android Demo App</h4>
-        </div>
-        <p>Topics: <span class="tags">Delegation,Android</span></p>
-        <p class="card-summary">A demo tutorial that explains how to build ExecuTorch into a JNI library and build an Android app.</p>
-        <div class="tutorials-image"><img src='_static/img/android_app.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Delegation>
-  <div class="card tutorials-card">
-    <a href="examples-end-to-end-to-lower-model-to-delegate.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Lowering a Model as a Delegate</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Delegation</span></p>
-        <p class="card-summary">An end-to-end example showing how to lower a model as a delegate</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,Quantization,XNNPACK>
-  <div class="card tutorials-card">
-    <a href="tutorial-xnnpack-delegate-lowering.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with XNNPACK Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,Quantization,XNNPACK</span></p>
-        <p class="card-summary">A demo tutorial for lowering and exporting models with the XNNPACK Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,ARM,Ethos-U>
-  <div class="card tutorials-card">
-    <a href="executorch-arm-delegate-tutorial.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with ARM Ethos-U Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,ARM,Ethos-U</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with ARM Ethos-U Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,CoreML>
-  <div class="card tutorials-card">
-    <a href="build-run-coreml.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with CoreML Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,CoreML</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with CoreML Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,MPS,MPSGraph>
-  <div class="card tutorials-card">
-    <a href="build-run-mps.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with MPS Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,MPS,MPSGraph</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with MPSGraph Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Backend,Delegation,QNN>
-  <div class="card tutorials-card">
-    <a href="build-run-qualcomm-ai-engine-direct-backend.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch with Qualcomm AI Engine Direct Backend</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Backend,Delegation,QNN</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch with Qualcomm AI Engine Direct Backend</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p><div class="col-md-12 tutorials-card-container" data-tags=Export,Custom-Operators,DSP,Xtensa>
-  <div class="card tutorials-card">
-    <a href="build-run-xtensa.html">
-      <div class="card-body">
-        <div class="card-title-container">
-          <h4>Building and Running ExecuTorch on Xtensa HiFi4 DSP</h4>
-        </div>
-        <p>Topics: <span class="tags">Export,Custom-Operators,DSP,Xtensa</span></p>
-        <p class="card-summary">A tutorial that walks you through the process of building ExecuTorch for an Xtensa Hifi4 DSP using custom operators</p>
-        <div class="tutorials-image"><img src='_static/img/generic-pytorch-logo.png'></div>
-      </div>
-    </a>
-  </div>
-</div></p>
-<p>      </div>
-      <div class="pagination d-flex justify-content-center"></div>
-    </div>
-  </div>
-</div></p>
+<span class="c1"># Generated Identifiers</span>
+<span class="n">builder</span> <span class="o">=</span> <span class="n">DelegateMappingBuilder</span><span class="p">(</span><span class="n">generated_identifiers</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>With <strong>manual identifiers</strong>, users pass in a <strong>Delegate Debug Identifier</strong> when creating entries.
+With <strong>generated identifiers</strong>, the builder will auto-assign a <strong>Delegate Debug Identifier</strong>.</p>
+<p>To add an entry to the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">insert_delegate_mapping_entry</span></code>. It associates one of <code class="docutils literal notranslate"><span class="pre">fx.Node(s)</span></code> or debug handles(s) (sourced from node.meta[“debug_handle”]) to an optional <strong>Delegate Debug Identifier</strong> (used for the manual identifiers). The identifier recorded is returned from the call.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">insert_delegate_mapping_entry</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span>
+    <span class="n">nodes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">Node</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">Node</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">handles</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">identifier</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+</pre></div>
+</div>
+<p>To retrieve the <strong>Debug Handle Map</strong>, use <code class="docutils literal notranslate"><span class="pre">get_delegate_mapping</span></code>.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">get_delegate_mapping</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">]]]</span>
+</pre></div>
+</div>
+<p>A demo of the AOT mapping can be found <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/exir/backend/test/backend_with_delegate_mapping_demo.py">here</a></p>
+</div>
+</div>
+</div>
+<div class="section" id="runtime">
+<h2>Runtime<a class="headerlink" href="#runtime" title="Permalink to this heading">¶</a></h2>
+<p>Corresponding to the AOT map, the runtime then defines the functionality through which these events are logged.</p>
+<div class="section" id="real-time-logging">
+<h3>Real-Time Logging<a class="headerlink" href="#real-time-logging" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch allows you to log in real time. <strong>Real time Logging</strong> is useful when timestamps are available as the execution occurs. It provides minimal overhead and is intuitive for authors to call.</p>
+<p>To log events in real-time (for example, explicitly denoting the profiling start and stop), <code class="docutils literal notranslate"><span class="pre">event_tracer_start_profiling_delegate</span></code> is used to create an <code class="docutils literal notranslate"><span class="pre">EventEntry</span></code> and <code class="docutils literal notranslate"><span class="pre">event_tracer_end_profiling_delegate</span></code> is used to conclude the <code class="docutils literal notranslate"><span class="pre">EventEntry</span></code> for the provided <code class="docutils literal notranslate"><span class="pre">EventTracer</span></code>.</p>
+<p>To start an <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code> using <code class="docutils literal notranslate"><span class="pre">event_tracer_start_profiling_delegate</span></code>, the <strong>Delegate Debug Identifier</strong> (provided AOT to the <code class="docutils literal notranslate"><span class="pre">debug_handle_map</span></code>) is passed as either the name or <code class="docutils literal notranslate"><span class="pre">delegate_debug_id</span></code> argument depending on the <strong>Delegate Debug Identifier</strong> type (str and int respectively)</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="n">EventTracerEntry</span><span class="w"> </span><span class="n">event_tracer_start_profiling_delegate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">name</span><span class="p">,</span>
+<span class="w">    </span><span class="n">DebugHandle</span><span class="w"> </span><span class="n">delegate_debug_id</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>To conclude an <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code>, <code class="docutils literal notranslate"><span class="pre">event_tracer_end_profiling_delegate</span></code> is simply provided the original <code class="docutils literal notranslate"><span class="pre">EventTracerEntry</span></code>.</p>
+<p>Optionally, additional runtime <code class="docutils literal notranslate"><span class="pre">metadata</span></code> can also be logged at this point.</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="n">event_tracer_end_profiling_delegate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
+<span class="w">    </span><span class="n">EventTracerEntry</span><span class="w"> </span><span class="n">event_tracer_entry</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">,</span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">metadata_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="post-time-logging">
+<h3>Post-Time Logging<a class="headerlink" href="#post-time-logging" title="Permalink to this heading">¶</a></h3>
+<p>ExecuTorch also allows you to log in post time. Some runtime settings don’t have access to timestamps while it is executing. <strong>Post-Time Logging</strong> enables authors to still be able to log these events.</p>
+<p>To log events in post (for example, logging start and end time simultaneously) <code class="docutils literal notranslate"><span class="pre">event_tracer_log_profiling_delegate</span></code> is called with a combination of the arguments used in the real-time logging API’s and timestamps.</p>
+<div class="highlight-none notranslate highlight-c++"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="n">event_tracer_log_profiling_delegate</span><span class="p">(</span>
+<span class="w">    </span><span class="n">EventTracer</span><span class="o">*</span><span class="w"> </span><span class="n">event_tracer</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">name</span><span class="p">,</span>
+<span class="w">    </span><span class="n">DebugHandle</span><span class="w"> </span><span class="n">delegate_debug_id</span><span class="p">,</span>
+<span class="w">    </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">start_time</span><span class="p">,</span>
+<span class="w">    </span><span class="n">et_timestamp_t</span><span class="w"> </span><span class="n">end_time</span><span class="p">,</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">,</span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">metadata_len</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>A demo of the runtime code can be found <a class="reference external" href="https://github.com/pytorch/executorch/blob/main/runtime/executor/test/test_backend_with_delegate_mapping.cpp">here</a>.</p>
+</div>
+</div>
+<div class="section" id="surfacing-custom-metadata-from-delegate-events">
+<h2>Surfacing custom metadata from delegate events<a class="headerlink" href="#surfacing-custom-metadata-from-delegate-events" title="Permalink to this heading">¶</a></h2>
+<p>As seen in the runtime logging API’s above, users can log an array of bytes along with their delegate profiling event. We make this data available for users in post processing via the <a class="reference internal" href="sdk-inspector.html"><span class="doc std std-doc">Inspector API</span></a>.</p>
+<p>Users can pass a metadata parser when creating an instance of the Inspector. The parser is a callable that deserializes the data and returns a list of strings or a dictionary containing key-value pairs. The deserialized data is then added back to the corresponding event in the event block for user consumption. Here’s an example of how to write this parser:</p>
+<p>NOTE: The input to the deserializer is a list where each entry is a series of bytes (essentially each entry is an immutable bytearray). Users are expected to iterate over this list, deserialize each entry and then return it in the expected format which is either a list of strings, or a dict.</p>
+<div class="highlight-none notranslate highlight-python"><div class="highlight"><pre><span></span><span class="n">Inspector</span><span class="p">(</span>
+    <span class="n">etdump_path</span><span class="o">=</span><span class="n">etdump_path</span><span class="p">,</span>
+    <span class="c1"># Optional</span>
+    <span class="n">etrecord</span><span class="o">=</span><span class="n">etrecord_path</span><span class="p">,</span>
+    <span class="c1"># Optional, only needed if debugging was enabled.</span>
+    <span class="n">buffer_path</span><span class="o">=</span><span class="n">buffer_path</span><span class="p">,</span>
+    <span class="n">delegate_metadata_parser</span><span class="o">=</span><span class="n">parse_delegate_metadata</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">parse_delegate_metadata</span><span class="p">(</span><span class="n">delegate_metadatas</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">bytes</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">Union</span><span class="p">[</span><span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]]:</span>
+    <span class="n">metadata_str</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">metadata_bytes</span> <span class="ow">in</span> <span class="n">delegate_metadatas</span><span class="p">:</span>
+        <span class="n">metadata_str</span> <span class="o">+=</span> <span class="nb">str</span><span class="p">(</span><span class="n">metadata_bytes</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">metadata_str</span>
+</pre></div>
+</div>
 </div>
 </div>
 
@@ -716,8 +572,10 @@ ExecuTorch tutorials.</p>
   
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
       
-        <a href="intro-overview.html" class="btn btn-neutral float-right" title="ExecuTorch Overview" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+        <a href="sdk-tutorial.html" class="btn btn-neutral float-right" title="SDK usage tutorial" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
       
+      
+        <a href="sdk-inspector.html" class="btn btn-neutral" title="Inspector APIs" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
       
     </div>
   
@@ -751,11 +609,20 @@ ExecuTorch tutorials.</p>
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
               <ul>
-<li><a class="reference internal" href="#">Welcome to the ExecuTorch Documentation</a><ul>
-<li><a class="reference internal" href="#getting-started">Getting Started</a><ul>
+<li><a class="reference internal" href="#">SDK Delegate Integration</a><ul>
+<li><a class="reference internal" href="#ahead-of-time">Ahead-of-Time</a><ul>
+<li><a class="reference internal" href="#generating-a-debug-handle-map">Generating a Debug Handle Map</a><ul>
+<li><a class="reference internal" href="#delegatemappingbuilder">DelegateMappingBuilder</a></li>
 </ul>
 </li>
-<li><a class="reference internal" href="#tutorials-and-examples">Tutorials and Examples</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#runtime">Runtime</a><ul>
+<li><a class="reference internal" href="#real-time-logging">Real-Time Logging</a></li>
+<li><a class="reference internal" href="#post-time-logging">Post-Time Logging</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#surfacing-custom-metadata-from-delegate-events">Surfacing custom metadata from delegate events</a></li>
 </ul>
 </li>
 </ul>
