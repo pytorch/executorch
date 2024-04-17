@@ -18,8 +18,6 @@
 #include <mutex>
 #include <unordered_map>
 
-#define SPECVAR_LIST_LIMIT 8
-
 #define SV(x) ::vkcompute::api::SpecVar(x)
 
 namespace vkcompute {
@@ -55,38 +53,29 @@ struct SpecVar final {
 
 bool operator==(const SpecVar& lhs, const SpecVar& rhs);
 
-// using SpecVarList = std::vector<SpecVar>;
+struct SpecVarList final {
+  std::vector<SpecVar> vars;
 
-class SpecVarList final {
-  SpecVar arr[SPECVAR_LIST_LIMIT];
-  VkSpecializationMapEntry map_entries[SPECVAR_LIST_LIMIT];
-  uint32_t arr_size;
-
- public:
-  SpecVarList() : arr_size(0) {}
+  SpecVarList();
   SpecVarList(std::initializer_list<SpecVar> init_list);
 
-  inline const SpecVar* var_data() const {
-    return &(arr[0]);
-  }
-
-  inline const void* data() const {
-    return &(arr[0]);
+  inline const SpecVar* data() const {
+    return vars.data();
   }
 
   inline uint32_t size() const {
-    return arr_size;
+    return api::utils::safe_downcast<uint32_t>(vars.size());
   }
 
-  inline const VkSpecializationMapEntry* map_entries_data() const {
-    return &(map_entries[0]);
-  }
-
-  inline size_t map_entries_data_size() const {
-    return arr_size * sizeof(VkSpecializationMapEntry);
+  inline uint32_t data_nbytes() const {
+    return vars.size() * sizeof(SpecVar);
   }
 
   void append(const SpecVarList& other);
+
+  std::vector<VkSpecializationMapEntry> generate_map_entries() const;
+
+  friend bool operator==(const SpecVarList& lhs, const SpecVarList& rhs);
 };
 
 bool operator==(const SpecVarList& lhs, const SpecVarList& rhs);
@@ -246,7 +235,7 @@ class ComputePipelineCache final {
       seed = utils::hash_combine(seed, std::hash<uint32_t>()(spec_vars.size()));
 
       for (int i = 0; i < spec_vars.size(); ++i) {
-        const SpecVar& spec_var = spec_vars.var_data()[i];
+        const SpecVar& spec_var = spec_vars.vars.at(i);
         size_t new_seed = 0;
         switch (spec_var.type) {
           case SpecVar::Type::FLOAT:
