@@ -36,6 +36,7 @@ runtime.python_library(
     },
     visibility = [
         "//bento/...",
+        "//bento_kernels/...",
         "//executorch/...",
     ],
     deps = [
@@ -75,6 +76,7 @@ runtime.python_library(
     base_module = "executorch.examples.models.llama2",
     visibility = [
         "//bento/...",
+        "//bento_kernels/...",
         "//executorch/examples/...",
     ],
     deps = [
