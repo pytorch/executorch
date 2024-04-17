@@ -98,13 +98,6 @@ jobs:
         REF_TYPE=${{ github.ref_type }}
         REF_NAME=${{ github.ref_name }}
 
-        # If it's main branch, add noindex tag to all .html files to exclude from Google Search indexing.
-        REF_NAME=$(echo "${{ github.ref }}")
-        echo "Ref name: ${REF_NAME}"
-        if [[ "${{ github.ref }}" == 'refs/heads/main' ]]; then
-          find docs -name "*.html" -print0 | xargs -0 sed -i '/<head>/a \ \ <meta name="robots" content="noindex">';
-        fi
-
         # If building for a release tag, branch, set the branch/tag name
         # as the target folder in the gh-pages branch. The artifacts created
         # during the build will be copied over to the target dir in the
