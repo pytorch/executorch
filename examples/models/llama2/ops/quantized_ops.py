@@ -15,22 +15,22 @@ quantized_lib = torch.library.Library(
     "llama_quantized", "DEF"
 )  # to not be confused with torch.ops.quantized.* ops.
 quantized_lib.define(
-    "embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "DEPRECATED_DO_NOT_USE_embedding_byte(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices) -> Tensor",
 )
 
 quantized_lib.define(
-    "embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "DEPRECATED_DO_NOT_USE_embedding_byte.out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices, *, Tensor(a!) out) -> Tensor(a!)",
 )
 
 quantized_lib.define(
-    "embedding_byte.dtype(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "DEPRECATED_DO_NOT_USE_embedding_byte.dtype(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None) -> Tensor",
 )
 
 quantized_lib.define(
-    "embedding_byte.dtype_out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
+    "DEPRECATED_DO_NOT_USE_embedding_byte.dtype_out(Tensor weight, Tensor weight_scales, Tensor? weight_zero_points, "
     "int weight_quant_min, int weight_quant_max, Tensor indices, *, ScalarType? dtype=None, Tensor(a!) out) -> Tensor(a!)",
 )
 
@@ -66,7 +66,9 @@ def embedding_byte_weight_checks(weight, weight_scales, weight_zero_points):
     ), f"Expecting weight_zero_points tensor to be None or have same number of rows as weights, but found {weight.size()} and {weight_zero_points.size()}"
 
 
-@impl(quantized_lib, "embedding_byte", "CompositeExplicitAutograd")
+@impl(
+    quantized_lib, "DEPRECATED_DO_NOT_USE_embedding_byte", "CompositeExplicitAutograd"
+)
 def embedding_byte(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -92,7 +94,7 @@ def embedding_byte(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("llama_quantized::embedding_byte.out")
+@impl_abstract("llama_quantized::DEPRECATED_DO_NOT_USE_embedding_byte.out")
 def embedding_byte_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -112,7 +114,11 @@ def embedding_byte_out_meta(
     )
 
 
-@impl(quantized_lib, "embedding_byte.dtype", "CompositeExplicitAutograd")
+@impl(
+    quantized_lib,
+    "DEPRECATED_DO_NOT_USE_embedding_byte.dtype",
+    "CompositeExplicitAutograd",
+)
 def embedding_byte_dtype(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,
@@ -140,7 +146,7 @@ def embedding_byte_dtype(
     return torch.ops.aten.embedding.default(weight, indices)
 
 
-@impl_abstract("llama_quantized::embedding_byte.dtype_out")
+@impl_abstract("llama_quantized::DEPRECATED_DO_NOT_USE_embedding_byte.dtype_out")
 def embedding_byte_dtype_out_meta(
     weight: torch.Tensor,
     weight_scales: torch.Tensor,

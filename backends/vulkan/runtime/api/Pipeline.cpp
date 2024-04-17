@@ -157,9 +157,7 @@ bool operator==(const SpecVar& lhs, const SpecVar& rhs) {
   return false;
 }
 
-SpecVarList::SpecVarList() {
-  vars.reserve(8);
-}
+SpecVarList::SpecVarList() {}
 
 SpecVarList::SpecVarList(std::initializer_list<SpecVar> init_list) {
   vars.resize(init_list.size());
@@ -176,7 +174,7 @@ std::vector<VkSpecializationMapEntry> SpecVarList::generate_map_entries()
   map_entries.resize(vars.size());
   uint32_t cur_offset = 0u;
   for (uint32_t i = 0; i < vars.size(); ++i) {
-    map_entries[i] = {
+    map_entries.at(i) = {
         i, cur_offset + vars.at(i).val_offset(), vars.at(i).val_size()};
     cur_offset += sizeof(SpecVar);
   }
