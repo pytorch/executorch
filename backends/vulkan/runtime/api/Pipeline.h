@@ -18,8 +18,78 @@
 #include <mutex>
 #include <unordered_map>
 
+#define SPECVAR_LIST_LIMIT 8
+
+#define SV(x) ::vkcompute::api::SpecVar(x)
+
 namespace vkcompute {
 namespace api {
+
+struct SpecVar final {
+  enum class Type : uint8_t {
+    FLOAT,
+    INT,
+    UINT,
+    BOOL,
+  };
+
+  union Value {
+    int32_t as_int32;
+    uint32_t as_uint32;
+    float as_float;
+    bool as_bool;
+  };
+
+  Value value;
+  Type type;
+
+  SpecVar();
+  SpecVar(const float val);
+  SpecVar(const int32_t val);
+  SpecVar(const uint32_t val);
+  SpecVar(const bool val);
+
+  uint32_t val_size() const;
+  uint32_t val_offset() const;
+};
+
+bool operator==(const SpecVar& lhs, const SpecVar& rhs);
+
+// using SpecVarList = std::vector<SpecVar>;
+
+class SpecVarList final {
+  SpecVar arr[SPECVAR_LIST_LIMIT];
+  VkSpecializationMapEntry map_entries[SPECVAR_LIST_LIMIT];
+  uint32_t arr_size;
+
+ public:
+  SpecVarList() : arr_size(0) {}
+  SpecVarList(std::initializer_list<SpecVar> init_list);
+
+  inline const SpecVar* var_data() const {
+    return &(arr[0]);
+  }
+
+  inline const void* data() const {
+    return &(arr[0]);
+  }
+
+  inline uint32_t size() const {
+    return arr_size;
+  }
+
+  inline const VkSpecializationMapEntry* map_entries_data() const {
+    return &(map_entries[0]);
+  }
+
+  inline size_t map_entries_data_size() const {
+    return arr_size * sizeof(VkSpecializationMapEntry);
+  }
+
+  void append(const SpecVarList& other);
+};
+
+bool operator==(const SpecVarList& lhs, const SpecVarList& rhs);
 
 struct PipelineBarrier final {
   struct Stages final {
@@ -83,7 +153,7 @@ class ComputePipeline final {
   struct Descriptor final {
     VkPipelineLayout pipeline_layout;
     VkShaderModule shader_module;
-    utils::uvec3 local_work_group;
+    SpecVarList specialization_constants;
   };
 
   explicit ComputePipeline(
@@ -171,12 +241,29 @@ class ComputePipelineCache final {
           seed, std::hash<VkPipelineLayout>()(descriptor.pipeline_layout));
       seed = utils::hash_combine(
           seed, std::hash<VkShaderModule>()(descriptor.shader_module));
-      seed = utils::hash_combine(
-          seed, std::hash<uint32_t>()(descriptor.local_work_group.data[0u]));
-      seed = utils::hash_combine(
-          seed, std::hash<uint32_t>()(descriptor.local_work_group.data[1u]));
-      seed = utils::hash_combine(
-          seed, std::hash<uint32_t>()(descriptor.local_work_group.data[2u]));
+
+      const SpecVarList& spec_vars = descriptor.specialization_constants;
+      seed = utils::hash_combine(seed, std::hash<uint32_t>()(spec_vars.size()));
+
+      for (int i = 0; i < spec_vars.size(); ++i) {
+        const SpecVar& spec_var = spec_vars.var_data()[i];
+        size_t new_seed = 0;
+        switch (spec_var.type) {
+          case SpecVar::Type::FLOAT:
+            new_seed = std::hash<float>()(spec_var.value.as_float);
+            break;
+          case SpecVar::Type::INT:
+            new_seed = std::hash<int32_t>()(spec_var.value.as_int32);
+            break;
+          case SpecVar::Type::UINT:
+            new_seed = std::hash<uint32_t>()(spec_var.value.as_uint32);
+            break;
+          case SpecVar::Type::BOOL:
+            new_seed = std::hash<bool>()(spec_var.value.as_bool);
+            break;
+        }
+        seed = utils::hash_combine(seed, new_seed);
+      }
 
       return seed;
     }
