@@ -276,11 +276,11 @@ class TestConvCombos(unittest.TestCase):
         test_data = (test_data,)
         self._test_conv_combo_tosa_BI_pipeline(model, test_data)
 
+    @parameterized.expand(ComboConvRelu6.test_data)
     @unittest.skipIf(
         not common.VELA_INSTALLED,
         "There is no point in running U55 tests if the Vela tool is not installed",
     )
-    @parameterized.expand(ComboConvRelu6.test_data)
     def test_conv_relu6_u55_BI(self, test_data: torch.Tensor):
         model = ComboConvRelu6()
         test_data = (test_data,)

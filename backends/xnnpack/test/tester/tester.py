@@ -555,7 +555,10 @@ class Tester:
             print(f"Run {run_iteration} with input shapes: {input_shapes}")
 
             # Reference output (and quantization scale)
-            (reference_output, quantization_scale,) = self._calculate_reference_output(
+            (
+                reference_output,
+                quantization_scale,
+            ) = self._calculate_reference_output(
                 reference_stage.artifact, inputs_to_run
             )
 
@@ -583,7 +586,12 @@ class Tester:
         for i in range(len(model_output)):
             model = model_output[i]
             ref = ref_output[i]
-            assert torch.allclose(model, ref, atol=atol, rtol=rtol,), (
+            assert torch.allclose(
+                model,
+                ref,
+                atol=atol,
+                rtol=rtol,
+            ), (
                 f"Output {i} does not match reference output.\n"
                 f"\tGiven atol: {atol}, rtol: {rtol}.\n"
                 f"\tOutput tensor shape: {model.shape}, dtype: {model.dtype}\n"
