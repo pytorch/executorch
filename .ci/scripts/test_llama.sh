@@ -75,7 +75,6 @@ cmake_install_executorch_libraries() {
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
-        -DEXECUTORCH_BUILD_QUANTIZED="$QE" \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out .
@@ -91,7 +90,6 @@ cmake_build_llama_runner() {
         -DEXECUTORCH_BUILD_CUSTOM="$CUSTOM" \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
         -DEXECUTORCH_BUILD_XNNPACK="$XNNPACK" \
-        -DEXECUTORCH_BUILD_QUANTIZED="$QE" \
         -DPYTHON_EXECUTABLE="$PYTHON_EXECUTABLE" \
         -Bcmake-out/${dir} \
         ${dir}
