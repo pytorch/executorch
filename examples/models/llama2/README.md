@@ -146,6 +146,7 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
         -DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER=ON \
         -DEXECUTORCH_BUILD_XNNPACK=ON \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_CUSTOM=ON \
         -Bcmake-out .
 
     cmake --build cmake-out -j16 --target install --config Release
@@ -156,7 +157,9 @@ The Wikitext results generated above used: `{max_seq_len: 2048, limit: 1000}`
     cmake -DPYTHON_EXECUTABLE=python \
         -DCMAKE_INSTALL_PREFIX=cmake-out \
         -DCMAKE_BUILD_TYPE=Release \
+        -DEXECUTORCH_BUILD_CUSTOM=ON \
         -DEXECUTORCH_BUILD_OPTIMIZED=ON \
+        -DEXECUTORCH_BUILD_XNNPACK=ON \
         -Bcmake-out/examples/models/llama2 \
         examples/models/llama2
 
