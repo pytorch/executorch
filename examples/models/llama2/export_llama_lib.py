@@ -23,7 +23,11 @@ from executorch.backends.xnnpack.partition.xnnpack_partitioner import (
     XnnpackDynamicallyQuantizedPartitioner,
 )
 
-from executorch.examples.models.llama2.llama_transformer import Transformer
+from executorch.examples.models.llama2.llama_transformer import (
+    KVCache,
+    SDPA,
+    Transformer,
+)
 from executorch.exir.backend.backend_details import CompileSpec
 
 from executorch.sdk.etrecord import generate_etrecord
@@ -85,6 +89,58 @@ def materialze_broadcast_of_rope_freq_cis(
     ), f"sin and cos freq table sizes must match. Mismatch found at dim 1: {dim1} vs {module.freqs_sin.size(1)}"
     module.freqs_sin = module.freqs_sin.view(dim0, 1, dim1)
     module.freqs_sin = module.freqs_sin.expand(dim0, num_heads, dim1).contiguous()
+    return module
+
+
+class SDPACustom(torch.nn.Module):
+    def __init__(
+        self,
+        kv_cache: KVCache,
+        mask,
+        dim: int,
+    ):
+        super().__init__()
+        self.kv_cache = kv_cache
+        self.mask = mask
+        self.dim = dim
+
+    def forward(
+        self,
+        input_pos: torch.Tensor,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        bsz,
+        seqlen,
+    ):
+        output = torch.ops.llama.sdpa_with_kv_cache(
+            q,
+            k,
+            v,
+            self.kv_cache.k_cache,
+            self.kv_cache.v_cache,
+            input_pos[-1].item(),
+            seqlen,
+        )
+        return output.view(bsz, seqlen, self.dim)
+
+
+def _replace_sdpa_with_custom_op(module: torch.nn.Module):
+    for name, child in module.named_children():
+        if isinstance(child, SDPA):
+            setattr(
+                module,
+                name,
+                SDPACustom(child.kv_cache, child.mask, child.dim),
+            )
+        else:
+            _replace_sdpa_with_custom_op(child)
+
+
+def replace_sdpa_with_custom_op(module: torch.nn.Module) -> torch.nn.Module:
+    from executorch.examples.models.llama2.custom_ops import sdpa_with_kv_cache  # noqa
+
+    _replace_sdpa_with_custom_op(module)
     return module
 
 
@@ -483,8 +539,7 @@ def _prepare_for_llama_export(modelname: str, args) -> LlamaEdgeManager:
         transforms.append(materialze_broadcast_of_rope_freq_cis)
 
     if args.use_sdpa_with_kv_cache:
-        pass
-        # TODO: Next diff transforms.append()
+        transforms.append(replace_sdpa_with_custom_op)
 
     return (
         load_llama_model(
