@@ -325,8 +325,8 @@ class ExecuTorchJni : public facebook::jni::HybridClass<ExecuTorchJni> {
 #endif
 
     if (!result.ok()) {
-      ET_LOG(
-          Error,
+      facebook::jni::throwNewJavaException(
+          "java/lang/Exception",
           "Execution of method %s failed with status 0x%" PRIx32,
           method.c_str(),
           static_cast<error_code_t>(result.error()));
