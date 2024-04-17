@@ -67,13 +67,14 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
   ASSERT_TRUE(spec_vars.size() == 7);
 
   // Check validity of the data
-  const api::SpecVar* data = spec_vars.var_data();
+  const api::SpecVar* data = spec_vars.data();
   ASSERT_TRUE(*(reinterpret_cast<const float*>(data + 3)) == 2.6f);
   ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(data + 1)) == 32);
   ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(data + 5)) == 78u);
 
   // Check validity of the map entries
-  const VkSpecializationMapEntry* entries = spec_vars.map_entries_data();
+  std::vector<VkSpecializationMapEntry> entries =
+      spec_vars.generate_map_entries();
 
   for (size_t i = 0; i < spec_vars.size(); ++i) {
     ASSERT_TRUE(entries[i].constantID == i);
@@ -86,11 +87,11 @@ TEST_F(VulkanComputeAPITest, spec_var_classes_test) {
   }
 
   // Check copy
-  api::SpecVarList spec_vars_2(spec_vars);
-  ASSERT_TRUE(spec_vars.size() == 7);
+  api::SpecVarList spec_vars_copy(spec_vars);
+  ASSERT_TRUE(spec_vars_copy.size() == 7);
 
   // Check validity of the copied data
-  const api::SpecVar* copy_data = spec_vars.var_data();
+  const api::SpecVar* copy_data = spec_vars_copy.data();
   ASSERT_TRUE(*(reinterpret_cast<const bool*>(copy_data + 4)) == true);
   ASSERT_TRUE(*(reinterpret_cast<const int32_t*>(copy_data + 2)) == 45);
   ASSERT_TRUE(*(reinterpret_cast<const float*>(copy_data + 6)) == 5.5f);

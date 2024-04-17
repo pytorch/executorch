@@ -157,26 +157,30 @@ bool operator==(const SpecVar& lhs, const SpecVar& rhs) {
   return false;
 }
 
+SpecVarList::SpecVarList() {
+  vars.reserve(8);
+}
+
 SpecVarList::SpecVarList(std::initializer_list<SpecVar> init_list) {
-  VK_CHECK_COND(init_list.size() <= SPECVAR_LIST_LIMIT);
-  arr_size = init_list.size();
-  std::copy(init_list.begin(), init_list.end(), arr);
-  uint32_t cur_offset = 0u;
-  for (uint32_t i = 0; i < arr_size; ++i) {
-    map_entries[i] = {i, cur_offset + arr[i].val_offset(), arr[i].val_size()};
-    cur_offset += sizeof(SpecVar);
-  }
+  vars.resize(init_list.size());
+  std::copy(init_list.begin(), init_list.end(), vars.begin());
 }
 
 void SpecVarList::append(const SpecVarList& other) {
-  VK_CHECK_COND(arr_size + other.size() <= SPECVAR_LIST_LIMIT);
-  std::copy(other.arr, other.arr + other.size(), arr + arr_size);
-  uint32_t cur_offset = arr_size * sizeof(SpecVar);
-  for (uint32_t i = arr_size; i < arr_size + other.size(); ++i) {
-    map_entries[i] = {i, cur_offset + arr[i].val_offset(), arr[i].val_size()};
+  vars.insert(vars.end(), other.vars.begin(), other.vars.end());
+}
+
+std::vector<VkSpecializationMapEntry> SpecVarList::generate_map_entries()
+    const {
+  std::vector<VkSpecializationMapEntry> map_entries;
+  map_entries.resize(vars.size());
+  uint32_t cur_offset = 0u;
+  for (uint32_t i = 0; i < vars.size(); ++i) {
+    map_entries[i] = {
+        i, cur_offset + vars.at(i).val_offset(), vars.at(i).val_size()};
     cur_offset += sizeof(SpecVar);
   }
-  arr_size += other.size();
+  return map_entries;
 }
 
 bool operator==(const SpecVarList& lhs, const SpecVarList& rhs) {
@@ -184,7 +188,7 @@ bool operator==(const SpecVarList& lhs, const SpecVarList& rhs) {
     return false;
   }
   for (uint32_t i = 0; i < lhs.size(); ++i) {
-    if (lhs.var_data()[i] != rhs.var_data()[i]) {
+    if (lhs.vars.at(i) != rhs.vars.at(i)) {
       return false;
     }
   }
@@ -247,10 +251,13 @@ ComputePipeline::ComputePipeline(
     const ComputePipeline::Descriptor& descriptor,
     VkPipelineCache pipeline_cache)
     : device_(device), handle_{VK_NULL_HANDLE} {
+  std::vector<VkSpecializationMapEntry> map_entries =
+      descriptor.specialization_constants.generate_map_entries();
+
   const VkSpecializationInfo specialization_info{
       descriptor.specialization_constants.size(), // mapEntryCount
-      descriptor.specialization_constants.map_entries_data(), // pMapEntries
-      descriptor.specialization_constants.map_entries_data_size(), // dataSize
+      map_entries.data(), // pMapEntries
+      descriptor.specialization_constants.data_nbytes(), // dataSize
       descriptor.specialization_constants.data(), // pData
   };
 
