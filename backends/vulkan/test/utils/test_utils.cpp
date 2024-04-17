@@ -27,6 +27,7 @@ void record_nchw_to_image_op(
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
+      {},
       VK_NULL_HANDLE,
       v_dst.image(
           pipeline_barrier,
@@ -47,6 +48,7 @@ void record_image_to_nchw_op(
       pipeline_barrier,
       v_src.virtual_extents(),
       adaptive_work_group_size(v_src.virtual_extents()),
+      {},
       VK_NULL_HANDLE,
       v_src.image(pipeline_barrier, api::PipelineStage::COMPUTE),
       dst_buffer,
@@ -83,6 +85,7 @@ void record_conv2d_prepack_weights_op(
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
+      {},
       VK_NULL_HANDLE,
       v_dst.image(
           pipeline_barrier,
@@ -109,6 +112,7 @@ void record_binary_op(
       pipeline_barrier,
       v_dst.virtual_extents(),
       adaptive_work_group_size(v_dst.virtual_extents()),
+      {},
       VK_NULL_HANDLE,
       v_dst.image(
           pipeline_barrier,

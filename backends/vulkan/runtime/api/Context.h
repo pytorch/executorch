@@ -205,6 +205,7 @@ class Context final {
       PipelineBarrier&,
       const utils::uvec3&,
       const utils::uvec3&,
+      const SpecVarList&,
       VkFence fence_handle,
       Arguments&&...);
 
@@ -494,6 +495,7 @@ inline bool Context::submit_compute_job(
     PipelineBarrier& pipeline_barrier,
     const utils::uvec3& global_work_group,
     const utils::uvec3& local_work_group_size,
+    const SpecVarList& specialization,
     VkFence fence_handle,
     Arguments&&... arguments) {
   // If any of the provided arguments does not have memory associated with it,
@@ -537,7 +539,7 @@ inline bool Context::submit_compute_job(
 
   // Factor out template parameter independent code to minimize code bloat.
   DescriptorSet descriptor_set =
-      get_descriptor_set(shader, local_work_group_size);
+      get_descriptor_set(shader, local_work_group_size, specialization);
 
   detail::bind(
       descriptor_set,
