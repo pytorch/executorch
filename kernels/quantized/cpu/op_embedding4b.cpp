@@ -195,7 +195,7 @@ void resize_out_tensor(
   for (size_t i = 0; i < indices.dim(); i++) {
     expected_output_size[i] = indices.size(i);
   }
-  const size_t embedding_dim = weight.size(1);
+  const size_t embedding_dim = weight.size(1) * 2;
   expected_output_size[out.dim() - 1] = embedding_dim;
 
   exec_aten::ArrayRef<exec_aten::SizesType> output_size{
