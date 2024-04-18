@@ -9,7 +9,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>Index &mdash; ExecuTorch main documentation</title>
+  <title>Building and Running ExecuTorch with the Vulkan Backend &mdash; ExecuTorch main documentation</title>
   
 
   
@@ -39,8 +39,10 @@
   <link rel="stylesheet" href="_static/design-style.1e8bd061cd6da7fc9cf755528e8ffc24.min.css" type="text/css" />
   <link rel="stylesheet" href="_static/css/custom.css" type="text/css" />
   <link rel="stylesheet" href="_static/progress-bar.css" type="text/css" />
-    <link rel="index" title="Index" href="#" />
+    <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Building and Running ExecuTorch with ARM Ethos-U Backend" href="executorch-arm-delegate-tutorial.html" />
+    <link rel="prev" title="Building and Running ExecuTorch with XNNPACK Backend" href="tutorial-xnnpack-delegate-lowering.html" />
 
 
   <!-- Google Tag Manager -->
@@ -276,7 +278,7 @@
 <li class="toctree-l1"><a class="reference internal" href="llm/getting-started.html">Getting Started with LLMs via ExecuTorch</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Tutorials</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="tutorials/export-to-executorch-tutorial.html">Exporting to ExecuTorch Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running-a-model-cpp-tutorial.html">Running an ExecuTorch Model in C++ Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorials/sdk-integration-tutorial.html">Using the ExecuTorch SDK to Profile a Model</a></li>
@@ -284,7 +286,7 @@
 <li class="toctree-l1"><a class="reference internal" href="demo-apps-android.html">Building an ExecuTorch Android Demo App</a></li>
 <li class="toctree-l1"><a class="reference internal" href="examples-end-to-end-to-lower-model-to-delegate.html">Lowering a Model as a Delegate</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorial-xnnpack-delegate-lowering.html">Building and Running ExecuTorch with XNNPACK Backend</a></li>
-<li class="toctree-l1"><a class="reference internal" href="build-run-vulkan.html">Building and Running ExecuTorch with the Vulkan Backend</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building and Running ExecuTorch with the Vulkan Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="executorch-arm-delegate-tutorial.html">Building and Running ExecuTorch with ARM Ethos-U Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-coreml.html">Building and Running ExecuTorch with Core ML Backend</a></li>
 <li class="toctree-l1"><a class="reference internal" href="build-run-mps.html">Building and Running ExecuTorch with MPS Backend</a></li>
@@ -388,12 +390,14 @@
       </li>
 
         
-      <li>Index</li>
+      <li>Building and Running ExecuTorch with the Vulkan Backend</li>
     
     
       <li class="pytorch-breadcrumbs-aside">
         
             
+            <a href="_sources/build-run-vulkan.md.txt" rel="nofollow"><img src="_static/images/view-page-source-icon.svg"></a>
+          
         
       </li>
     
@@ -424,341 +428,165 @@
             <div role="main" class="main-content" itemscope="itemscope" itemtype="http://schema.org/Article">
              <article itemprop="articleBody" id="pytorch-article" class="pytorch-article">
               
-
-<h1 id="index">Index</h1>
-
-<div class="genindex-jumpbox">
- <a href="#_"><strong>_</strong></a>
- | <a href="#B"><strong>B</strong></a>
- | <a href="#C"><strong>C</strong></a>
- | <a href="#D"><strong>D</strong></a>
- | <a href="#E"><strong>E</strong></a>
- | <a href="#F"><strong>F</strong></a>
- | <a href="#G"><strong>G</strong></a>
- | <a href="#L"><strong>L</strong></a>
- | <a href="#M"><strong>M</strong></a>
- | <a href="#O"><strong>O</strong></a>
- | <a href="#P"><strong>P</strong></a>
- | <a href="#T"><strong>T</strong></a>
- 
+  <div class="section" id="building-and-running-executorch-with-the-vulkan-backend">
+<h1>Building and Running ExecuTorch with the Vulkan Backend<a class="headerlink" href="#building-and-running-executorch-with-the-vulkan-backend" title="Permalink to this heading">¶</a></h1>
+<p>The <a class="reference internal" href="native-delegates-executorch-vulkan-delegate.html"><span class="doc std std-doc">ExecuTorch Vulkan Delegate</span></a>
+is a native GPU delegate for ExecuTorch.</p>
+<!----This will show a grid card on the page----->
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-content docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+What you will learn in this tutorial:</div>
+<ul class="simple">
+<li><p class="sd-card-text">How to export the Stories 110M parameter model with partial GPU delegation</p></li>
+<li><p class="sd-card-text">How to execute the partially delegated model on Android</p></li>
+</ul>
 </div>
-<h2 id="_">_</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#executorch.sdk.Inspector.__init__">__init__() (in module executorch.sdk.Inspector)</a>
-</li>
-  </ul></td>
-</tr></table>
+</div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm card-prerequisites docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Prerequisites:</div>
+<ul class="simple">
+<li><p class="sd-card-text">Follow <a class="reference internal" href="getting-started-setup.html"><span class="doc std std-doc"><strong>Setting up ExecuTorch</strong></span></a></p></li>
+<li><p class="sd-card-text">Follow <a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc"><strong>Setting up the ExecuTorch LLaMA Android Demo App</strong></span></a></p></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading">¶</a></h2>
+<p>Note that all the steps below should be performed from the ExecuTorch repository
+root directory, and assumes that you have gone through the steps of setting up
+ExecuTorch.</p>
+<p>You should also refer to the <strong>Prerequisites</strong> section of the <a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc"><strong>Setting up the ExecuTorch LLaMA Android Demo App</strong></span></a>
+Tutorial in order to install the specified versions of the Android NDK and the
+Android SDK.</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># Recommended version is Android NDK r25c.</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_NDK</span><span class="o">=</span>&lt;path_to_ndk&gt;
+<span class="c1"># Select an appropriate Android ABI</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ANDROID_ABI</span><span class="o">=</span>arm64-v8a
+<span class="c1"># All subsequent commands should be performed from ExecuTorch repo root</span>
+<span class="nb">cd</span><span class="w"> </span>&lt;path_to_executorch_root&gt;
+<span class="c1"># Make sure adb works</span>
+adb<span class="w"> </span>--version
+</pre></div>
+</div>
+</div>
+<div class="section" id="lowering-the-stories-110m-model-to-vulkan">
+<h2>Lowering the Stories 110M model to Vulkan<a class="headerlink" href="#lowering-the-stories-110m-model-to-vulkan" title="Permalink to this heading">¶</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The resultant model will only be partially delegated to the Vulkan backend. In
+particular, only binary arithmetic operators (<code class="docutils literal notranslate"><span class="pre">aten.add</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.sub</span></code>,
+<code class="docutils literal notranslate"><span class="pre">aten.mul</span></code>, <code class="docutils literal notranslate"><span class="pre">aten.div</span></code>) and the matrix multiplication operator (<code class="docutils literal notranslate"><span class="pre">aten.mm</span></code>) will
+be executed on the GPU via the Vulkan delegate. The rest of the model will be
+executed using Portable operators. This is because the Vulkan delegate is still
+early in development and currently has limited operator coverage.</p>
+</div>
+<p>First, download <code class="docutils literal notranslate"><span class="pre">stories110M.pt</span></code> and <code class="docutils literal notranslate"><span class="pre">tokenizer.model</span></code> from Github:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>wget<span class="w"> </span><span class="s2">&quot;https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.pt&quot;</span>
+wget<span class="w"> </span><span class="s2">&quot;https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.model&quot;</span>
+</pre></div>
+</div>
+<p>Next, create the params file:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span><span class="s1">&#39;{&quot;dim&quot;: 768, &quot;multiple_of&quot;: 32, &quot;n_heads&quot;: 12, &quot;n_layers&quot;: 12, &quot;norm_eps&quot;: 1e-05, &quot;vocab_size&quot;: 32000}&#39;</span><span class="w"> </span>&gt;<span class="w"> </span>params.json
+</pre></div>
+</div>
+<p>Then, create a tokenizer binary file:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama2.tokenizer.tokenizer<span class="w"> </span>-t<span class="w"> </span>tokenizer.model<span class="w"> </span>-o<span class="w"> </span>tokenizer.bin
+</pre></div>
+</div>
+<p>Finally, export the <code class="docutils literal notranslate"><span class="pre">stories110M.pt</span></code> file into an ExecuTorch program:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>examples.models.llama2.export_llama<span class="w"> </span>-c<span class="w"> </span>stories110M.pt<span class="w"> </span>-p<span class="w"> </span>params.json<span class="w"> </span>--vulkan
+</pre></div>
+</div>
+<p>A <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> file should have been created as a result of the last step.</p>
+<p>Push the tokenizer binary and <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> onto your Android device:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>mkdir<span class="w"> </span>/data/local/tmp/llama/
+adb<span class="w"> </span>push<span class="w"> </span>tokenizer.bin<span class="w"> </span>/data/local/tmp/llama/
+adb<span class="w"> </span>push<span class="w"> </span>vulkan_llama2.pte<span class="w"> </span>/data/local/tmp/llama/
+</pre></div>
+</div>
+</div>
+<div class="section" id="build-and-run-the-llama-runner-binary-on-android">
+<h2>Build and Run the LLaMA runner binary on Android<a class="headerlink" href="#build-and-run-the-llama-runner-binary-on-android" title="Permalink to this heading">¶</a></h2>
+<p>First, build and install ExecuTorch libraries, then build the LLaMA runner
+binary using the Android NDK toolchain.</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>cmake<span class="w"> </span>.<span class="w"> </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_MODULE<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_EXTENSION_DATA_LOADER<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_VULKAN<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DEXECUTORCH_BUILD_OPTIMIZED<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-android-out<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out<span class="w"> </span>-j16<span class="w"> </span>--target<span class="w"> </span>install<span class="o">)</span>
 
-<h2 id="B">B</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.backend_id">backend_id (executorch.exir.backend.backend_api.LoweredBackendModule property)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.buffer">buffer (executorch.exir.ExecutorchProgramManager property)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.buffer">buffer() (executorch.exir.backend.backend_api.LoweredBackendModule method)</a>
-</li>
-  </ul></td>
-</tr></table>
+<span class="c1"># Build LLaMA Runner library</span>
+<span class="o">(</span>rm<span class="w"> </span>-rf<span class="w"> </span>cmake-android-out/examples/models/llama2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>cmake<span class="w"> </span>examples/models/llama2<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_TOOLCHAIN_FILE<span class="o">=</span><span class="nv">$ANDROID_NDK</span>/build/cmake/android.toolchain.cmake<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DANDROID_ABI<span class="o">=</span><span class="nv">$ANDROID_ABI</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DCMAKE_INSTALL_PREFIX<span class="o">=</span>cmake-android-out<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-DPYTHON_EXECUTABLE<span class="o">=</span>python<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-Bcmake-android-out/examples/models/llama2<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>cmake<span class="w"> </span>--build<span class="w"> </span>cmake-android-out/examples/models/llama2<span class="w"> </span>-j16<span class="o">)</span>
+</pre></div>
+</div>
+<p>Finally, push and run the llama runner binary on your Android device.</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span>adb<span class="w"> </span>push<span class="w"> </span>cmake-android-out/examples/models/llama2/llama_main<span class="w"> </span>/data/local/tmp/llama_main
 
-<h2 id="C">C</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.compile_specs">compile_specs (executorch.exir.backend.backend_api.LoweredBackendModule property)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.config_methods">config_methods (executorch.exir.EdgeProgramManager property)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.config_methods">(executorch.exir.ExecutorchProgramManager property)</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="D">D</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.dump_executorch_program">dump_executorch_program() (executorch.exir.ExecutorchProgramManager method)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="E">E</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager">EdgeProgramManager (class in executorch.exir)</a>
-</li>
-      <li><a href="sdk-inspector.html#executorch.sdk.inspector.Event">Event (class in executorch.sdk.inspector)</a>
-</li>
-      <li><a href="sdk-inspector.html#executorch.sdk.inspector.EventBlock">EventBlock (class in executorch.sdk.inspector)</a>
-</li>
-      <li>
-    executorch.exir
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#module-executorch.exir">module</a>
-</li>
-      </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li>
-    executorch.exir.backend.backend_api
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#module-executorch.exir.backend.backend_api">module</a>
-</li>
-      </ul></li>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager">ExecutorchProgramManager (class in executorch.exir)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.exported_program">exported_program() (executorch.exir.EdgeProgramManager method)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.exported_program">(executorch.exir.ExecutorchProgramManager method)</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="F">F</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#executorch.sdk.Inspector.find_total_for_module">find_total_for_module() (in module executorch.sdk.Inspector)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="G">G</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-etrecord.html#executorch.sdk.etrecord._etrecord.generate_etrecord">generate_etrecord() (in module executorch.sdk.etrecord._etrecord)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#executorch.sdk.Inspector.get_exported_program">get_exported_program() (in module executorch.sdk.Inspector)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="L">L</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule">LoweredBackendModule (class in executorch.exir.backend.backend_api)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="M">M</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.methods">methods (executorch.exir.EdgeProgramManager property)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#executorch.exir.ExecutorchProgramManager.methods">(executorch.exir.ExecutorchProgramManager property)</a>
-</li>
-      </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li>
-    module
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#module-executorch.exir">executorch.exir</a>
-</li>
-        <li><a href="export-to-executorch-api-reference.html#module-executorch.exir.backend.backend_api">executorch.exir.backend.backend_api</a>
-</li>
-      </ul></li>
-  </ul></td>
-</tr></table>
-
-<h2 id="O">O</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.original_module">original_module (executorch.exir.backend.backend_api.LoweredBackendModule property)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="P">P</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="sdk-inspector.html#executorch.sdk.Inspector.print_data_tabular">print_data_tabular() (in module executorch.sdk.Inspector)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.LoweredBackendModule.processed_bytes">processed_bytes (executorch.exir.backend.backend_api.LoweredBackendModule property)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="T">T</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_backend">to_backend() (executorch.exir.EdgeProgramManager method)</a>
-
-      <ul>
-        <li><a href="export-to-executorch-api-reference.html#executorch.exir.backend.backend_api.to_backend">(in module executorch.exir.backend.backend_api)</a>
-</li>
-      </ul></li>
-      <li><a href="sdk-inspector.html#executorch.sdk.Inspector.to_dataframe">to_dataframe() (in module executorch.sdk.Inspector)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.to_edge">to_edge() (in module executorch.exir)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.to_executorch">to_executorch() (executorch.exir.EdgeProgramManager method)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor10DataLoaderE">torch::executor::DataLoader (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValueE">torch::executor::EValue (C++ struct)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue6EValueEN9exec_aten6ScalarE">torch::executor::EValue::EValue (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue7PayloadE">torch::executor::EValue::Payload (C++ union)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6EValue7Payload24TriviallyCopyablePayloadE">torch::executor::EValue::Payload::TriviallyCopyablePayload (C++ union)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6EValue10toOptionalEN9exec_aten8optionalI1TEEv">torch::executor::EValue::toOptional (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocatorE">torch::executor::HierarchicalAllocator (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE4SpanI4SpanI7uint8_tEE">torch::executor::HierarchicalAllocator::HierarchicalAllocator (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor21HierarchicalAllocator21HierarchicalAllocatorE8uint32_tP15MemoryAllocator">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocatorE">torch::executor::MemoryAllocator (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator8allocateE6size_t6size_t">torch::executor::MemoryAllocator::allocate (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0EN5torch8executor15MemoryAllocator16allocateInstanceEP1T6size_t">torch::executor::MemoryAllocator::allocateInstance (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0EN5torch8executor15MemoryAllocator12allocateListEP1T6size_t6size_t">torch::executor::MemoryAllocator::allocateList (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator17kDefaultAlignmentE">torch::executor::MemoryAllocator::kDefaultAlignment (C++ member)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor15MemoryAllocator15MemoryAllocatorE8uint32_tP7uint8_t">torch::executor::MemoryAllocator::MemoryAllocator (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManagerE">torch::executor::MemoryManager (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocator">torch::executor::MemoryManager::MemoryManager (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor13MemoryManager13MemoryManagerEP15MemoryAllocatorP21HierarchicalAllocatorP15MemoryAllocatorP15MemoryAllocator">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager16method_allocatorEv">torch::executor::MemoryManager::method_allocator (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager14planned_memoryEv">torch::executor::MemoryManager::planned_memory (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor13MemoryManager14temp_allocatorEv">torch::executor::MemoryManager::temp_allocator (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6MethodE">torch::executor::Method (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method10get_outputE6size_t">torch::executor::Method::get_output (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method11inputs_sizeEv">torch::executor::Method::inputs_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Method6MethodERR6Method">torch::executor::Method::Method (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method11method_metaEv">torch::executor::Method::method_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Method12outputs_sizeEv">torch::executor::Method::outputs_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor10MethodMetaE">torch::executor::MethodMeta (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta9input_tagE6size_t">torch::executor::MethodMeta::input_tag (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta17input_tensor_metaE6size_t">torch::executor::MethodMeta::input_tensor_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta26memory_planned_buffer_sizeE6size_t">torch::executor::MethodMeta::memory_planned_buffer_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta4nameEv">torch::executor::MethodMeta::name (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta21non_const_buffer_sizeE6size_t">torch::executor::MethodMeta::non_const_buffer_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta10num_inputsEv">torch::executor::MethodMeta::num_inputs (C++ function)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta26num_memory_planned_buffersEv">torch::executor::MethodMeta::num_memory_planned_buffers (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta11num_outputsEv">torch::executor::MethodMeta::num_outputs (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta10output_tagE6size_t">torch::executor::MethodMeta::output_tag (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor10MethodMeta18output_tensor_metaE6size_t">torch::executor::MethodMeta::output_tensor_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7ProgramE">torch::executor::Program (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12check_headerEPKv6size_t">torch::executor::Program::check_header (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program24get_constant_buffer_dataE6size_t6size_t">torch::executor::Program::get_constant_buffer_data (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program15get_method_nameE6size_t">torch::executor::Program::get_method_name (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatusE">torch::executor::Program::HeaderStatus (C++ enum)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus17CompatibleVersionE">torch::executor::Program::HeaderStatus::CompatibleVersion (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus19IncompatibleVersionE">torch::executor::Program::HeaderStatus::IncompatibleVersion (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus10NotPresentE">torch::executor::Program::HeaderStatus::NotPresent (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12HeaderStatus9ShortDataE">torch::executor::Program::HeaderStatus::ShortData (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program13kMinHeadBytesE">torch::executor::Program::kMinHeadBytes (C++ member)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11load_methodEPKcP13MemoryManagerP11EventTracer">torch::executor::Program::load_method (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11method_metaEPKc">torch::executor::Program::method_meta (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor7Program11num_methodsEv">torch::executor::Program::num_methods (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12VerificationE">torch::executor::Program::Verification (C++ enum)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12Verification19InternalConsistencyE">torch::executor::Program::Verification::InternalConsistency (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor7Program12Verification7MinimalE">torch::executor::Program::Verification::Minimal (C++ enumerator)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6TensorE">torch::executor::Tensor (C++ class)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6Tensor14const_data_ptrEPK1Tv">torch::executor::Tensor::const_data_ptr (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor14const_data_ptrEv">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor3dimEv">torch::executor::Tensor::dim (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor9dim_orderEv">torch::executor::Tensor::dim_order (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor12DimOrderTypeE">torch::executor::Tensor::DimOrderType (C++ type)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor12element_sizeEv">torch::executor::Tensor::element_size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4I0ENK5torch8executor6Tensor16mutable_data_ptrEP1Tv">torch::executor::Tensor::mutable_data_ptr (C++ function)</a>, <a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor16mutable_data_ptrEv">[1]</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor6nbytesEv">torch::executor::Tensor::nbytes (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor5numelEv">torch::executor::Tensor::numel (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor11scalar_typeEv">torch::executor::Tensor::scalar_type (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor4sizeE7ssize_t">torch::executor::Tensor::size (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor5sizesEv">torch::executor::Tensor::sizes (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor9SizesTypeE">torch::executor::Tensor::SizesType (C++ type)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor7stridesEv">torch::executor::Tensor::strides (C++ function)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4N5torch8executor6Tensor11StridesTypeE">torch::executor::Tensor::StridesType (C++ type)</a>
-</li>
-      <li><a href="executorch-runtime-api-reference.html#_CPPv4NK5torch8executor6Tensor19unsafeGetTensorImplEv">torch::executor::Tensor::unsafeGetTensorImpl (C++ function)</a>
-</li>
-      <li><a href="export-to-executorch-api-reference.html#executorch.exir.EdgeProgramManager.transform">transform() (executorch.exir.EdgeProgramManager method)</a>
-</li>
-  </ul></td>
-</tr></table>
-
+adb<span class="w"> </span>shell<span class="w"> </span>/data/local/tmp/llama_main<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--model_path<span class="o">=</span>/data/local/tmp/llama/vulkan_llama2.pte<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--tokenizer_path<span class="o">=</span>/data/local/tmp/llama/tokenizer.bin<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--prompt<span class="w"> </span><span class="s2">&quot;hi&quot;</span><span class="w"> </span><span class="se">\-</span>-temperature<span class="o">=</span><span class="m">0</span>
+</pre></div>
+</div>
+<p>The following output will be produced:</p>
+<div class="highlight-none notranslate highlight-default"><div class="highlight"><pre><span></span><span class="n">hippo</span> <span class="n">named</span> <span class="n">Hippy</span> <span class="n">lived</span> <span class="ow">in</span> <span class="n">a</span> <span class="n">big</span> <span class="n">pond</span><span class="o">.</span> <span class="n">Hippy</span> <span class="n">was</span> <span class="n">a</span> <span class="n">very</span> <span class="n">happy</span> <span class="n">hippo</span><span class="o">.</span> <span class="n">He</span> <span class="n">liked</span> <span class="n">to</span> <span class="n">play</span><span class="o">...</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="running-with-the-llama-android-demo-app">
+<h2>Running with the LLaMA Android Demo App<a class="headerlink" href="#running-with-the-llama-android-demo-app" title="Permalink to this heading">¶</a></h2>
+<p>It is also possible to run the partially delegated Vulkan model inside the LLaMA
+Android demo app.</p>
+<p>First, make some modifications to the Android app setup script to make sure that
+the Vulkan backend is built when building and installing ExecuTorch libraries:</p>
+<div class="highlight-none notranslate highlight-shell"><div class="highlight"><pre><span></span><span class="c1"># Run from executorch root directory. You can also edit this in a code editor</span>
+sed<span class="w"> </span>-i<span class="w"> </span><span class="s1">&#39;s/-DEXECUTORCH_BUILD_XNNPACK=ON/-DEXECUTORCH_BUILD_XNNPACK=ON -DEXECUTORCH_BUILD_VULKAN=ON/g&#39;</span><span class="w"> </span>examples/demo-apps/android/LlamaDemo/setup.sh
+</pre></div>
+</div>
+<p>Then, Follow the instructions at <a class="reference internal" href="llm/llama-demo-android.html"><span class="doc std std-doc"><strong>Setting up the ExecuTorch LLaMA Android Demo App</strong></span></a>
+to build and run the demo application on your Android device. Once the app
+starts up, you can load and run the <code class="docutils literal notranslate"><span class="pre">vulkan_llama2.pte</span></code> model with the app.</p>
+</div>
+</div>
 
 
              </article>
              
             </div>
             <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="executorch-arm-delegate-tutorial.html" class="btn btn-neutral float-right" title="Building and Running ExecuTorch with ARM Ethos-U Backend" accesskey="n" rel="next">Next <img src="_static/images/chevron-right-orange.svg" class="next-page"></a>
+      
+      
+        <a href="tutorial-xnnpack-delegate-lowering.html" class="btn btn-neutral" title="Building and Running ExecuTorch with XNNPACK Backend" accesskey="p" rel="prev"><img src="_static/images/chevron-right-orange.svg" class="previous-page"> Previous</a>
+      
+    </div>
   
 
   
@@ -789,7 +617,16 @@
         <div class="pytorch-content-right" id="pytorch-content-right">
           <div class="pytorch-right-menu" id="pytorch-right-menu">
             <div class="pytorch-side-scroll" id="pytorch-side-scroll-right">
-              
+              <ul>
+<li><a class="reference internal" href="#">Building and Running ExecuTorch with the Vulkan Backend</a><ul>
+<li><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li><a class="reference internal" href="#lowering-the-stories-110m-model-to-vulkan">Lowering the Stories 110M model to Vulkan</a></li>
+<li><a class="reference internal" href="#build-and-run-the-llama-runner-binary-on-android">Build and Run the LLaMA runner binary on Android</a></li>
+<li><a class="reference internal" href="#running-with-the-llama-android-demo-app">Running with the LLaMA Android Demo App</a></li>
+</ul>
+</li>
+</ul>
+
             </div>
           </div>
         </div>
