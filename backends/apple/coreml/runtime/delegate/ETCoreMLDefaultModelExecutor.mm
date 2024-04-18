@@ -26,6 +26,9 @@
                                               loggingOptions:(const executorchcoreml::ModelLoggingOptions& __unused)loggingOptions
                                                  eventLogger:(const executorchcoreml::ModelEventLogger* _Nullable __unused)eventLogger
                                                        error:(NSError * __autoreleasing *)error {
+    if (self.ignoreOutputBackings) {
+        predictionOptions.outputBackings = @{};
+    }
     id<MLFeatureProvider> outputs = [self.model.mlModel predictionFromFeatures:inputs
                                                                        options:predictionOptions
                                                                          error:error];

@@ -7,55 +7,17 @@
 
 #import <MLMultiArray_Copy.h>
 
+#import <objc_array_util.h>
 #import <multiarray.h>
 
 namespace {
 using namespace executorchcoreml;
 
-template<typename T>
-T toValue(NSNumber *value);
-
-template<> size_t toValue(NSNumber *value) {
-    return value.unsignedLongValue;
-}
-
-template<> ssize_t toValue(NSNumber *value) {
-    return value.longLongValue;
-}
-
-template<typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type>
-std::vector<T> to_vector(NSArray<NSNumber *> *numbers) {
-    std::vector<T> result;
-    result.reserve(numbers.count);
-    for (NSNumber *number in numbers) {
-        result.emplace_back(toValue<T>(number));
-    }
-    
-    return result;
-}
-
-MultiArray::DataType to_multi_array_data_type(MLMultiArrayDataType data_type) {
-    switch (data_type) {
-        case MLMultiArrayDataTypeInt32: {
-            return MultiArray::DataType::Int;
-        }
-        case MLMultiArrayDataTypeFloat: {
-            return MultiArray::DataType::Float;
-        }
-        case MLMultiArrayDataTypeFloat16: {
-            return MultiArray::DataType::Float16;
-        }
-        case MLMultiArrayDataTypeDouble: {
-            return MultiArray::DataType::Double;
-        }
-    }
-}
-
 MultiArray to_multi_array(void *data,
                           MLMultiArrayDataType dataType,
                           NSArray<NSNumber *> *shape,
                           NSArray<NSNumber *> *strides) {
-    auto layout = MultiArray::MemoryLayout(to_multi_array_data_type(dataType),
+    auto layout = MultiArray::MemoryLayout(to_multiarray_data_type(dataType).value(),
                                            to_vector<size_t>(shape),
                                            to_vector<ssize_t>(strides));
     return MultiArray(data, std::move(layout));

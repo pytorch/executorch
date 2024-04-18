@@ -7,6 +7,6 @@
 	<key>shouldPrewarmModel</key>
 	<true/>
 	<key>maxAssetsSizeInBytes</key>
-	<integer>2147483648</integer>
+	<integer>1073741824</integer>
 </dict>
 </plist>

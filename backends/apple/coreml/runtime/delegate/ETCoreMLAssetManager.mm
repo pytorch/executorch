@@ -630,7 +630,7 @@ get_assets_to_remove(ModelAssetsStore& store,
     }
     
     if (_estimatedSizeInBytes <= sizeInBytes) {
-        return YES;
+        return _estimatedSizeInBytes;
     }
     
     std::error_code ec;
