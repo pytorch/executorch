@@ -115,7 +115,7 @@
     NSArray<MLMultiArray *> *args = [inputs arrayByAddingObject:output];
     XCTAssertTrue([self.modelManager executeModelWithHandle:handle 
                                                        args:args
-                                            loggingOptions:executorchcoreml::ModelLoggingOptions()
+                                             loggingOptions:executorchcoreml::ModelLoggingOptions()
                                                 eventLogger:nullptr
                                                       error:&localError]);
     for (NSUInteger i = 0; i < output.count; i++) {
