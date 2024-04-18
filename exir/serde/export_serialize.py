@@ -1190,13 +1190,17 @@ class GraphModuleDeserializer:
                 ),
             )
 
-    def deserialize_graph_output(self, output) -> torch.fx.Node:
+    def deserialize_graph_output(self, output) -> Optional[Union[torch.fx.Node, int]]:
         if output.type == "as_tensor":
             return self.serialized_name_to_node[output.as_tensor.name]
         elif output.type == "as_sym_int":
             return self.serialized_name_to_node[output.as_sym_int.as_name]
         elif output.type == "as_sym_bool":
             return self.serialized_name_to_node[output.as_sym_bool.as_name]
+        elif output.type == "as_int":
+            return output.as_int
+        elif output.type == "as_none":
+            return None
         else:
             raise SerializeError(f"Unable to deserialize output node {output}")
 
@@ -1249,7 +1253,8 @@ class GraphModuleDeserializer:
             output_node.meta["val"] = output_node.args[0].meta["val"]
         else:
             output_node.meta["val"] = tuple(
-                arg.meta["val"] for arg in output_node.args[0]
+                arg.meta["val"] if isinstance(arg, torch.fx.Node) else arg
+                for arg in output_node.args[0]
             )
 
         return self.graph

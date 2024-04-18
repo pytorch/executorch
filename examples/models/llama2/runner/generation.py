@@ -71,7 +71,7 @@ class LlamaRunner:
         self,
         prompt_tokens: List[List[int]],
         max_gen_len: int,
-        temperature: float = 0.6,
+        temperature: float = 0.8,
         top_p: float = 0.9,
         logprobs: bool = False,
         echo: bool = False,

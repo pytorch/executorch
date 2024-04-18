@@ -21,6 +21,8 @@ project(llama_runner)
 # Duplicating options as root CMakeLists.txt
 option(EXECUTORCH_BUILD_OPTIMIZED "Build the optimized kernels" OFF)
 
+option(EXECUTORCH_USE_TIKTOKEN "Use Tiktoken as a tokenizer" OFF)
+
 include(CMakeDependentOption)
 #
 # pthreadpool: build pthreadpool library. Disable on unsupported platforms
@@ -86,8 +88,20 @@ endif()
 
 # llama_runner library
 add_subdirectory(runner)
+if(EXECUTORCH_USE_TIKTOKEN)
+  # find RE2 for tokenizer
+  set(ABSL_ENABLE_INSTALL ON)
+  set(ABSL_PROPAGATE_CXX_STD ON)
+  set(_pic_flag
+    ${CMAKE_POSITION_INDEPENDENT_CODE})
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
+  add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ${_pic_flag})
+  target_link_libraries(llama_runner PUBLIC re2::re2)
+endif()
 
-set(link_libraries)
+set(link_libraries gflags)
 set(_srcs main.cpp)
 
 if(EXECUTORCH_BUILD_OPTIMIZED)
@@ -104,6 +118,10 @@ else()
   list(APPEND link_libraries portable_ops_lib portable_kernels)
   target_link_options_shared_lib(portable_ops_lib)
 endif()
+
+# quantized_ops_lib: Register quantized op kernels into the runtime
+target_link_options_shared_lib(quantized_ops_lib)
+list(APPEND link_libraries quantized_kernels quantized_ops_lib)
 
 if(EXECUTORCH_BUILD_CUSTOM)
   target_link_options_shared_lib(custom_ops)
@@ -162,7 +180,7 @@ if(CMAKE_BUILD_TYPE EQUAL "RELEASE")
 endif()
 
 target_include_directories(llama_main PUBLIC ${_common_include_directories})
-target_link_libraries(llama_main PUBLIC gflags llama_runner ${link_libraries})
+target_link_libraries(llama_main PUBLIC llama_runner ${link_libraries})
 target_compile_options(llama_main PUBLIC ${_common_compile_options})
 
 if(APPLE)

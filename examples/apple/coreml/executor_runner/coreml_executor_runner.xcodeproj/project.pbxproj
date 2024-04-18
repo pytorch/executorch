@@ -15,6 +15,8 @@
 		C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51632ACFCBC500AF47FD /* CoreML.framework */; };
 		C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51652ACFCBCB00AF47FD /* Accelerate.framework */; };
 		C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */; };
+		C97BFFA42BC0C17300F55BAC /* libportable_kernels.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C97BFFA32BC0C17300F55BAC /* libportable_kernels.a */; };
+		C97BFFA62BC0C1F200F55BAC /* libportable_ops_lib.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C97BFFA52BC0C1F200F55BAC /* libportable_ops_lib.a */; };
 		C988D69D2B998CDE00979CF6 /* libprotobuf-lite.a in Frameworks */ = {isa = PBXBuildFile; fileRef = C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */; };
 		F24817E72BC65B2000E80D98 /* libexecutorch_no_prim_ops.a in Frameworks */ = {isa = PBXBuildFile; fileRef = F24817E62BC65B2000E80D98 /* libexecutorch_no_prim_ops.a */; };
 /* End PBXBuildFile section */
@@ -41,6 +43,8 @@
 		C94D51632ACFCBC500AF47FD /* CoreML.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreML.framework; path = System/Library/Frameworks/CoreML.framework; sourceTree = SDKROOT; };
 		C94D51652ACFCBCB00AF47FD /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcoremldelegate.a; path = libraries/libcoremldelegate.a; sourceTree = "<group>"; };
+		C97BFFA32BC0C17300F55BAC /* libportable_kernels.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libportable_kernels.a; path = libraries/libportable_kernels.a; sourceTree = "<group>"; };
+		C97BFFA52BC0C1F200F55BAC /* libportable_ops_lib.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libportable_ops_lib.a; path = libraries/libportable_ops_lib.a; sourceTree = "<group>"; };
 		C988D69C2B998CD700979CF6 /* libprotobuf-lite.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libprotobuf-lite.a"; path = "libraries/libprotobuf-lite.a"; sourceTree = "<group>"; };
 		F24817E62BC65B2000E80D98 /* libexecutorch_no_prim_ops.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libexecutorch_no_prim_ops.a; path = libraries/libexecutorch_no_prim_ops.a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -56,7 +60,9 @@
 				C94D51682ACFCC7100AF47FD /* libcoremldelegate.a in Frameworks */,
 				C94D51662ACFCBCB00AF47FD /* Accelerate.framework in Frameworks */,
 				C988D69D2B998CDE00979CF6 /* libprotobuf-lite.a in Frameworks */,
+				C97BFFA62BC0C1F200F55BAC /* libportable_ops_lib.a in Frameworks */,
 				C94D51642ACFCBC500AF47FD /* CoreML.framework in Frameworks */,
+				C97BFFA42BC0C17300F55BAC /* libportable_kernels.a in Frameworks */,
 				C94D51622ACFCBBA00AF47FD /* libsqlite3.tbd in Frameworks */,
 				C94D515E2ACFCBA000AF47FD /* libexecutorch.a in Frameworks */,
 			);
@@ -94,6 +100,8 @@
 				C94D51612ACFCBBA00AF47FD /* libsqlite3.tbd */,
 				C94D51672ACFCC7100AF47FD /* libcoremldelegate.a */,
 				F24817E62BC65B2000E80D98 /* libexecutorch_no_prim_ops.a */,
+				C97BFFA32BC0C17300F55BAC /* libportable_kernels.a */,
+				C97BFFA52BC0C1F200F55BAC /* libportable_ops_lib.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
